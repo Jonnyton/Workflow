@@ -1,0 +1,63 @@
+"""Activity logging and phase tracking for scene nodes.
+
+Writes timestamped lines to ``{universe_path}/activity.log`` and
+updates ``current_phase`` in ``status.json`` so that external tools
+(API, GPT, dashboard) can track what the daemon is doing inside
+long-running subgraphs.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Guards all reads/writes to status.json across threads (heartbeat + nodes).
+_status_lock = threading.Lock()
+
+
+def activity_log(state: dict[str, Any], message: str) -> None:
+    """Append a timestamped line to the universe's activity.log.
+
+    Safe to call from any node -- silently does nothing if
+    ``_universe_path`` is missing or empty.
+    """
+    universe_path = state.get("_universe_path", "")
+    if not universe_path:
+        return
+    try:
+        log_path = Path(universe_path) / "activity.log"
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {message}\n")
+    except OSError:
+        logger.debug("Failed to write activity.log entry: %s", message)
+
+
+def update_phase(state: dict[str, Any], phase: str) -> None:
+    """Update current_phase in status.json so external tools see live progress.
+
+    Called at node entry so status shows "orient", "plan", "draft", "commit",
+    "worldbuild" during long-running LLM calls instead of stale "select_task".
+    """
+    universe_path = state.get("_universe_path", "")
+    if not universe_path:
+        return
+    status_path = Path(universe_path) / "status.json"
+    with _status_lock:
+        try:
+            data: dict[str, Any] = {}
+            if status_path.exists():
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+            data["current_phase"] = phase
+            data["last_updated"] = datetime.now(timezone.utc).isoformat()
+            status_path.write_text(
+                json.dumps(data, indent=2) + "\n", encoding="utf-8",
+            )
+        except (OSError, json.JSONDecodeError):
+            logger.debug("Failed to update phase in status.json")

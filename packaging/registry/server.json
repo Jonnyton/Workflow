@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jfarnsworth/workflow-universe-server",
+  "title": "Workflow Universe Server",
+  "description": "Inspect and steer Workflow universes through a host-run daemon MCP server.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/jfarnsworth/workflow",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/jfarnsworth/workflow",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/jfarnsworth/workflow/main/assets/icon.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/jfarnsworth/workflow/releases/download/v0.1.0/workflow-universe-server-0.1.0.mcpb",
+      "version": "0.1.0",
+      "fileSha256": "79fd128642e7787e4a831697426695213c73ebc2c5ceb55a1dabd672681a739d",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

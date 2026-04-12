@@ -1,0 +1,2094 @@
+"""Tests for upgraded universe-level nodes.
+
+Covers:
+- worldbuild: promotion gates, fact counting, KG re-index, canon generation,
+  signal-driven worldbuilding
+- select_task: user overrides, stuck detection, stale world state,
+  creative signal routing
+- diagnose: revert patterns, recurring failures, recovery suggestions
+- universe_cycle: health metrics, memory cleanup, queue management
+- reflect: reflexion engine, canon quality review, signal-driven review
+- commit: worldbuild signal generation
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+from fantasy_author.nodes.diagnose import diagnose
+from fantasy_author.nodes.reflect import (
+    _MAX_REWRITES_PER_CYCLE,
+    _collect_reviewable_canon,
+    _evaluate_canon,
+    _extract_signal_topics,
+    _parse_issues,
+    _recently_reviewed,
+    _stamp_reviewed,
+    reflect,
+)
+from fantasy_author.nodes.select_task import select_task
+from fantasy_author.nodes.universe_cycle import universe_cycle
+from fantasy_author.nodes.worldbuild import (
+    _MAX_DOCS_PER_CYCLE,
+    WORLDBUILD_TOPICS,
+    _identify_gaps,
+    _mock_worldbuild_response,
+    _read_direction_notes,
+    _read_premise,
+    _scan_existing_canon,
+    worldbuild,
+)
+from fantasy_author.notes import add_note, update_note_status
+
+# -----------------------------------------------------------------------
+# worldbuild tests
+# -----------------------------------------------------------------------
+
+
+class TestWorldbuild:
+    """Tests for the worldbuild node."""
+
+    def test_increments_version(self):
+        state = {"world_state_version": 5}
+        result = worldbuild(state)
+        assert result["world_state_version"] == 6
+
+    def test_increments_version_from_zero(self):
+        state = {}
+        result = worldbuild(state)
+        assert result["world_state_version"] == 1
+
+    def test_returns_quality_trace(self):
+        state = {"world_state_version": 0}
+        result = worldbuild(state)
+        assert len(result["quality_trace"]) == 1
+        trace = result["quality_trace"][0]
+        assert trace["node"] == "worldbuild"
+        assert trace["action"] == "worldbuild_real"
+
+    def test_counts_canon_facts_from_db(self, tmp_story_db):
+        """High-confidence facts in the DB should be counted."""
+        from fantasy_author.nodes.world_state_db import connect, init_db, store_fact
+
+        init_db(tmp_story_db)
+        with connect(tmp_story_db) as conn:
+            store_fact(conn, fact_id="f1", text="A fact", confidence=0.9,
+                       scene_id="s1")
+            store_fact(conn, fact_id="f2", text="Another", confidence=0.9,
+                       scene_id="s1")
+            store_fact(conn, fact_id="f3", text="Low conf", confidence=0.3,
+                       scene_id="s1")
+
+        state = {"world_state_version": 0, "_db_path": tmp_story_db}
+        result = worldbuild(state)
+        # Only f1 and f2 have confidence >= 0.8
+        assert result["canon_facts_count"] == 2
+
+    def test_runs_promotion_gates_with_manager(self):
+        mgr = MagicMock()
+        promotion_result = MagicMock()
+        promotion_result.promoted_facts = [{"id": "f1"}]
+        promotion_result.promoted_style_rules = []
+        promotion_result.asp_rule_candidates = []
+        mgr.run_promotion_gates.return_value = promotion_result
+
+        with patch("fantasy_author.runtime.memory_manager", mgr):
+            state = {"world_state_version": 0}
+            result = worldbuild(state)
+
+        mgr.run_promotion_gates.assert_called_once()
+        assert result["quality_trace"][0]["promoted_facts"] == 1
+
+    def test_graceful_when_no_manager(self):
+        state = {"world_state_version": 0}
+        result = worldbuild(state)
+        # Should not crash, promoted_facts should be 0
+        assert result["quality_trace"][0]["promoted_facts"] == 0
+
+    def test_graceful_when_manager_fails(self):
+        from fantasy_author import runtime
+
+        mgr = MagicMock()
+        mgr.run_promotion_gates.side_effect = RuntimeError("oops")
+
+        runtime.memory_manager = mgr
+        try:
+            state = {"world_state_version": 0}
+            result = worldbuild(state)
+        finally:
+            runtime.memory_manager = None
+        # Should not crash
+        assert result["world_state_version"] == 1
+        assert result["quality_trace"][0]["promoted_facts"] == 0
+
+    def test_read_direction_notes_returns_active_user_notes(self, tmp_path):
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        add_note(
+            universe_dir,
+            source="user",
+            text="Keep the magic costly.",
+            category="direction",
+        )
+        text = _read_direction_notes(universe_dir)
+        assert "Keep the magic costly." in text
+
+    def test_read_direction_notes_skips_dismissed_and_acted_on(self, tmp_path):
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        active = add_note(
+            universe_dir,
+            source="user",
+            text="Keep the river city central.",
+            category="direction",
+        )
+        dismissed = add_note(
+            universe_dir,
+            source="user",
+            text="Old discarded direction.",
+            category="direction",
+        )
+        acted_on = add_note(
+            universe_dir,
+            source="user",
+            text="Resolved direction.",
+            category="direction",
+        )
+        assert update_note_status(universe_dir, dismissed.id, "dismissed")
+        assert update_note_status(universe_dir, acted_on.id, "acted_on")
+
+        text = _read_direction_notes(universe_dir)
+        assert active.text in text
+        assert dismissed.text not in text
+        assert acted_on.text not in text
+
+
+# -----------------------------------------------------------------------
+# worldbuild auto-premise tests
+# -----------------------------------------------------------------------
+
+
+class TestWorldbuildAutoPremise:
+    """Tests for auto-premise generation from canon files."""
+
+    def test_generates_premise_from_canon(self, tmp_path):
+        """When PROGRAM.md is missing and canon has files, generate premise."""
+        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("A realm of shattered glass.", encoding="utf-8")
+        (canon_dir / "chars.md").write_text("Ryn, a glass-walker scout.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "",
+        }
+
+        with patch(
+            "fantasy_author.nodes._provider_stub.call_provider",
+            return_value="A story of Ryn navigating the shattered glass realm.",
+        ):
+            result = _maybe_generate_premise(state)
+
+        assert result == "A story of Ryn navigating the shattered glass realm."
+        assert (universe_dir / "PROGRAM.md").exists()
+        assert "Ryn" in (universe_dir / "PROGRAM.md").read_text(encoding="utf-8")
+
+    def test_skips_when_program_md_exists(self, tmp_path):
+        """Should not generate if PROGRAM.md already exists."""
+        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        (universe_dir / "PROGRAM.md").write_text("Existing premise.", encoding="utf-8")
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("Some content.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "",
+        }
+        result = _maybe_generate_premise(state)
+        assert result == ""
+
+    def test_skips_when_premise_kernel_set(self, tmp_path):
+        """Should not generate if premise_kernel is already in state."""
+        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("Some content.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "Already have a premise.",
+        }
+        result = _maybe_generate_premise(state)
+        assert result == ""
+
+    def test_skips_when_version_positive(self, tmp_path):
+        """Should only fire on first worldbuild pass (version == 0)."""
+        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("Some content.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "",
+        }
+        result = _maybe_generate_premise(state)
+        assert result == ""
+
+    def test_skips_when_no_canon_files(self, tmp_path):
+        """Should not generate if canon/ is empty."""
+        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "",
+        }
+        result = _maybe_generate_premise(state)
+        assert result == ""
+
+    def test_worldbuild_propagates_auto_premise(self, tmp_path):
+        """worldbuild() should include premise in return when auto-generated."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("Glass realm lore.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "",
+            "workflow_instructions": {},
+            "_db_path": str(tmp_path / "story.db"),
+        }
+
+        with patch(
+            "fantasy_author.nodes._provider_stub.call_provider",
+            return_value="A tale of the glass realm.",
+        ):
+            result = worldbuild(state)
+
+        assert result.get("premise_kernel") == "A tale of the glass realm."
+        assert result["workflow_instructions"]["premise"] == "A tale of the glass realm."
+        assert result["quality_trace"][0]["auto_premise"] is True
+
+
+# -----------------------------------------------------------------------
+# worldbuild canon generation tests
+# -----------------------------------------------------------------------
+
+
+class TestWorldbuildCanonGeneration:
+    """Tests for creative worldbuilding (canon document generation)."""
+
+    def _make_universe(self, tmp_path: Path, premise: str = "") -> Path:
+        """Create a minimal universe directory with optional premise."""
+        universe_dir = tmp_path / "test-universe"
+        universe_dir.mkdir()
+        if premise:
+            (universe_dir / "PROGRAM.md").write_text(premise, encoding="utf-8")
+        return universe_dir
+
+    def test_generates_canon_files(self, tmp_path):
+        """Worldbuild should create canon files when premise exists."""
+        universe_dir = self._make_universe(
+            tmp_path, "A dark fantasy world with warring kingdoms."
+        )
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        canon_dir = universe_dir / "canon"
+        assert canon_dir.exists()
+        generated = result["quality_trace"][0]["generated_files"]
+        assert len(generated) > 0
+        assert len(generated) <= _MAX_DOCS_PER_CYCLE
+        # Files should actually exist on disk
+        for filename in generated:
+            assert (canon_dir / filename).exists()
+            content = (canon_dir / filename).read_text(encoding="utf-8")
+            assert len(content) > 0
+
+    def test_skips_existing_topics(self, tmp_path):
+        """Should not regenerate topics that already have canon files."""
+        universe_dir = self._make_universe(
+            tmp_path, "An epic fantasy premise."
+        )
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        # Pre-create the first two topics
+        (canon_dir / "characters.md").write_text("# Characters\n\nExisting.", encoding="utf-8")
+        (canon_dir / "locations.md").write_text("# Locations\n\nExisting.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        # Should not have regenerated characters or locations
+        assert "characters.md" not in generated
+        assert "locations.md" not in generated
+        # Should have generated the next topics in priority order
+        if generated:
+            assert generated[0] == "factions.md"
+
+    def test_skips_when_no_premise(self, tmp_path):
+        """No generation when there is no premise."""
+        universe_dir = self._make_universe(tmp_path)  # No premise
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert generated == []
+
+    def test_skips_when_no_universe_path(self):
+        """No generation when universe_path is missing."""
+        state = {"world_state_version": 0}
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert generated == []
+
+    def test_falls_back_to_premise_kernel(self, tmp_path):
+        """Should use premise_kernel from state if PROGRAM.md is absent."""
+        universe_dir = self._make_universe(tmp_path)  # No PROGRAM.md
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "A story about ancient dragons.",
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert len(generated) > 0
+
+    def test_reads_direction_notes_into_prompt(self, tmp_path):
+        """Direction notes should be read when present."""
+        from fantasy_author.notes import add_note
+
+        universe_dir = self._make_universe(
+            tmp_path, "Fantasy world premise."
+        )
+        add_note(
+            universe_dir, source="user", text="Focus on the magic system.",
+            category="direction",
+        )
+        result = _read_direction_notes(universe_dir)
+        assert "magic system" in result
+
+    def test_no_notes_returns_empty(self, tmp_path):
+        """Missing notes should return empty string, not crash."""
+        universe_dir = self._make_universe(tmp_path)
+        result = _read_direction_notes(universe_dir)
+        assert result == ""
+
+    def test_all_topics_covered_skips_generation(self, tmp_path):
+        """When all topics exist, nothing should be generated."""
+        universe_dir = self._make_universe(
+            tmp_path, "A complete world."
+        )
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        for topic in WORLDBUILD_TOPICS:
+            (canon_dir / f"{topic}.md").write_text(
+                f"# {topic}\n\nContent.", encoding="utf-8"
+            )
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert generated == []
+
+    def test_generates_at_most_max_per_cycle(self, tmp_path):
+        """Should never generate more than _MAX_DOCS_PER_CYCLE files."""
+        universe_dir = self._make_universe(
+            tmp_path, "A world with many gaps."
+        )
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert len(generated) <= _MAX_DOCS_PER_CYCLE
+
+    def test_graceful_when_provider_fails(self, tmp_path):
+        """LLM failure should not crash the node."""
+        universe_dir = self._make_universe(
+            tmp_path, "A premise for testing failures."
+        )
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        with patch(
+            "fantasy_author.nodes.worldbuild._call_for_worldbuild",
+            side_effect=RuntimeError("LLM down"),
+        ):
+            result = worldbuild(state)
+        # Node should still complete without crashing
+        assert result["world_state_version"] == 1
+        generated = result["quality_trace"][0]["generated_files"]
+        assert generated == []
+
+    def test_scan_existing_canon_normalizes_names(self, tmp_path):
+        """Scan should normalize filenames to match topic slugs."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "Magic-System.md").write_text("content", encoding="utf-8")
+        (canon_dir / "characters.md").write_text("content", encoding="utf-8")
+
+        existing = _scan_existing_canon(canon_dir)
+        assert "magic_system" in existing
+        assert "characters" in existing
+
+    def test_scan_empty_canon_dir(self, tmp_path):
+        """Empty canon dir returns empty set."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        assert _scan_existing_canon(canon_dir) == set()
+
+    def test_scan_nonexistent_canon_dir(self, tmp_path):
+        """Nonexistent canon dir returns empty set."""
+        canon_dir = tmp_path / "nonexistent"
+        assert _scan_existing_canon(canon_dir) == set()
+
+    def test_identify_gaps_returns_priority_order(self):
+        """Gaps should follow WORLDBUILD_TOPICS priority."""
+        existing = {"characters", "locations"}
+        gaps = _identify_gaps(existing)
+        assert gaps[0] == "factions"
+        assert "characters" not in gaps
+        assert "locations" not in gaps
+
+    def test_identify_gaps_all_covered(self):
+        """No gaps when everything is covered."""
+        existing = set(WORLDBUILD_TOPICS)
+        assert _identify_gaps(existing) == []
+
+    def test_mock_worldbuild_response_has_content(self):
+        """Mock response should produce valid markdown."""
+        content = _mock_worldbuild_response("magic_system")
+        assert "# Magic System" in content
+        assert len(content) > 50
+
+    def test_read_premise_from_file(self, tmp_path):
+        """Should read premise from PROGRAM.md."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        (universe_dir / "PROGRAM.md").write_text(
+            "My epic story premise.", encoding="utf-8"
+        )
+        premise = _read_premise(universe_dir, {})
+        assert premise == "My epic story premise."
+
+    def test_read_premise_fallback_to_state(self, tmp_path):
+        """Should fall back to premise_kernel when no PROGRAM.md."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        state = {"premise_kernel": "Fallback premise."}
+        premise = _read_premise(universe_dir, state)
+        assert premise == "Fallback premise."
+
+    def test_generated_files_in_trace(self, tmp_path):
+        """quality_trace should include the list of generated filenames."""
+        universe_dir = self._make_universe(
+            tmp_path, "A world to build."
+        )
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        trace = result["quality_trace"][0]
+        assert "generated_files" in trace
+        assert isinstance(trace["generated_files"], list)
+
+    def test_uses_universe_path_key_fallback(self, tmp_path):
+        """Should fall back to 'universe_path' when '_universe_path' missing."""
+        universe_dir = self._make_universe(
+            tmp_path, "A fallback path test."
+        )
+        state = {
+            "world_state_version": 0,
+            "universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        generated = result["quality_trace"][0]["generated_files"]
+        assert len(generated) > 0
+
+    def test_creates_canon_dir_if_missing(self, tmp_path):
+        """Canon dir should be created automatically if it does not exist."""
+        universe_dir = self._make_universe(
+            tmp_path, "Canon dir creation test."
+        )
+        canon_dir = universe_dir / "canon"
+        assert not canon_dir.exists()
+
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        worldbuild(state)
+        assert canon_dir.exists()
+
+
+# -----------------------------------------------------------------------
+# select_task tests
+# -----------------------------------------------------------------------
+
+
+class TestSelectTask:
+    """Tests for the select_task node."""
+
+    def test_defaults_to_worldbuild_when_new(self):
+        """New universe (version 0, few facts) should worldbuild first."""
+        state = {"task_queue": [], "health": {}}
+        result = select_task(state)
+        assert result["task_queue"] == ["worldbuild"]
+
+    def test_defaults_to_idle_when_no_user_task(self):
+        """Without a user-directed task, daemon idles (not auto-write)."""
+        state = {"task_queue": [], "health": {"cycles_completed": 1},
+                 "canon_facts_count": 10, "world_state_version": 1}
+        result = select_task(state)
+        assert result["task_queue"] == ["idle"]
+
+    def test_writes_when_user_directed(self):
+        """User-directed write task should proceed."""
+        state = {"task_queue": ["write"], "health": {"cycles_completed": 1},
+                 "canon_facts_count": 10, "world_state_version": 1,
+                 "workflow_instructions": {"next_task": "write"}}
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_preserves_existing_queue(self):
+        state = {"task_queue": ["worldbuild", "write"], "health": {}}
+        result = select_task(state)
+        assert result["task_queue"][0] == "worldbuild"
+
+    def test_stuck_pushes_diagnose(self):
+        state = {"task_queue": ["write"], "health": {"stuck_level": 4}}
+        result = select_task(state)
+        assert result["task_queue"][0] == "diagnose"
+        # write should still be in the queue
+        assert "write" in result["task_queue"]
+
+    def test_stuck_level_3_does_not_trigger(self):
+        """stuck_level must be > 3, not >= 3."""
+        state = {"task_queue": ["write"], "health": {"stuck_level": 3, "cycles_completed": 1},
+                 "canon_facts_count": 10, "world_state_version": 1,
+                 "workflow_instructions": {"next_task": "write"}}
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_bootstrap_skipped_after_first_cycle(self):
+        """After cycles_completed > 0, bootstrap worldbuild should NOT fire.
+
+        This prevents the daemon from looping on worldbuild when canon
+        files fail to write but the cycle has already completed once.
+        """
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "world_state_version": 0,
+            "canon_facts_count": 0,
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        # Should NOT worldbuild -- bootstrap already attempted
+        assert result["task_queue"][0] == "write"
+
+    def test_bootstrap_skipped_when_version_positive(self):
+        """version > 0 means worldbuild already returned — skip bootstrap."""
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "world_state_version": 1,
+            "canon_facts_count": 0,
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_bootstrap_skipped_when_canon_files_exist(self, tmp_path):
+        """After first cycle, canon files on disk skip bootstrap."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("World lore.", encoding="utf-8")
+        (canon_dir / "magic.md").write_text("Magic system.", encoding="utf-8")
+
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "world_state_version": 1,
+            "canon_facts_count": 0,
+            "_universe_path": str(tmp_path),
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_stale_world_pushes_worldbuild(self):
+        """Chapters far outpacing worldbuilds triggers worldbuild (fallback)."""
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "world_state_version": 0,
+            "total_chapters": 15,
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "worldbuild"
+
+    def test_world_state_not_stale_when_fresh(self):
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "world_state_version": 3,
+            "total_chapters": 5,
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_user_override_from_instructions(self):
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "workflow_instructions": {"next_task": "reflect"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "reflect"
+
+    def test_invalid_override_idles(self):
+        """Invalid override falls through to idle (daemon is directed)."""
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "workflow_instructions": {"next_task": "invalid_task"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "idle"
+
+    def test_stuck_takes_priority_over_stale(self):
+        """stuck_level > 3 should take priority over stale world state."""
+        state = {
+            "task_queue": ["write"],
+            "health": {"stuck_level": 5},
+            "world_state_version": 0,
+            "total_chapters": 20,
+        }
+        # But user_override has the highest priority
+        result = select_task(state)
+        assert result["task_queue"][0] == "diagnose"
+
+    def test_user_override_takes_priority_over_stuck(self):
+        state = {
+            "task_queue": ["write"],
+            "health": {"stuck_level": 5},
+            "workflow_instructions": {"next_task": "reflect"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "reflect"
+
+    def test_returns_quality_trace(self):
+        state = {"task_queue": ["write"], "health": {"cycles_completed": 1},
+                 "canon_facts_count": 10, "world_state_version": 1,
+                 "workflow_instructions": {"next_task": "write"}}
+        result = select_task(state)
+        assert len(result["quality_trace"]) == 1
+        trace = result["quality_trace"][0]
+        assert trace["node"] == "select_task"
+        assert trace["selected"] == "write"
+
+    def test_empty_state_worldbuilds_first(self):
+        """Completely empty state should worldbuild, not write."""
+        state = {}
+        result = select_task(state)
+        assert result["task_queue"] == ["worldbuild"]
+
+
+# -----------------------------------------------------------------------
+# diagnose tests
+# -----------------------------------------------------------------------
+
+
+class TestDiagnose:
+    """Tests for the diagnose node."""
+
+    def test_basic_recovery_resets_stuck_level(self):
+        state = {"health": {"stuck_level": 4}, "quality_trace": []}
+        result = diagnose(state)
+        # stuck_level should be reduced (4 - 2 = 2)
+        assert result["health"]["stuck_level"] == 2
+        assert "recovery_suggestions" in result["health"]
+        assert len(result["health"]["recovery_suggestions"]) >= 1
+
+    def test_revert_pattern_detected(self):
+        trace = [
+            {"node": "commit", "verdict": "revert"},
+            {"node": "commit", "verdict": "revert"},
+            {"node": "commit", "verdict": "revert"},
+        ]
+        state = {"health": {"stuck_level": 4}, "quality_trace": trace}
+        result = diagnose(state)
+
+        suggestions = result["health"]["recovery_suggestions"]
+        types = [s["type"] for s in suggestions]
+        assert "revert_pattern" in types
+
+    def test_no_revert_pattern_below_threshold(self):
+        trace = [
+            {"node": "commit", "verdict": "revert"},
+            {"node": "commit", "verdict": "accept"},
+            {"node": "commit", "verdict": "revert"},
+        ]
+        state = {"health": {"stuck_level": 4}, "quality_trace": trace}
+        result = diagnose(state)
+
+        suggestions = result["health"]["recovery_suggestions"]
+        types = [s["type"] for s in suggestions]
+        assert "revert_pattern" not in types
+
+    def test_recurring_structural_failures(self):
+        trace = [
+            {
+                "node": "commit",
+                "verdict": "revert",
+                "structural_checks": [
+                    {"name": "pacing", "passed": False},
+                    {"name": "continuity", "passed": True},
+                ],
+            },
+            {
+                "node": "commit",
+                "verdict": "revert",
+                "structural_checks": [
+                    {"name": "pacing", "passed": False},
+                ],
+            },
+        ]
+        state = {"health": {"stuck_level": 3}, "quality_trace": trace}
+        result = diagnose(state)
+
+        assert "pacing" in result["health"]["recurring_failures"]
+        assert result["health"]["recurring_failures"]["pacing"] == 2
+
+    def test_general_stuck_when_no_patterns(self):
+        state = {"health": {"stuck_level": 3}, "quality_trace": []}
+        result = diagnose(state)
+
+        suggestions = result["health"]["recovery_suggestions"]
+        types = [s["type"] for s in suggestions]
+        assert "general_stuck" in types
+
+    def test_stuck_level_never_goes_negative(self):
+        state = {"health": {"stuck_level": 1}, "quality_trace": []}
+        result = diagnose(state)
+        assert result["health"]["stuck_level"] >= 0
+
+    def test_recent_reverts_counted(self):
+        trace = [
+            {"node": "commit", "verdict": "accept"},
+            {"node": "orient", "action": "orient"},  # non-commit ignored
+            {"node": "commit", "verdict": "revert"},
+            {"node": "commit", "verdict": "revert"},
+        ]
+        state = {"health": {"stuck_level": 3}, "quality_trace": trace}
+        result = diagnose(state)
+        assert result["health"]["recent_reverts"] == 2
+
+    def test_empty_health_defaults(self):
+        state = {}
+        result = diagnose(state)
+        assert result["health"]["stuck_level"] >= 0
+        assert "recovery_suggestions" in result["health"]
+
+
+# -----------------------------------------------------------------------
+# universe_cycle tests
+# -----------------------------------------------------------------------
+
+
+class TestUniverseCycle:
+    """Tests for the universe_cycle node."""
+
+    def test_continues_when_queue_empty_after_pop(self):
+        """Daemon runs indefinitely -- empty queue does not stop it."""
+        state = {
+            "health": {},
+            "task_queue": ["write"],
+            "total_words": 1000,
+            "total_chapters": 5,
+        }
+        result = universe_cycle(state)
+        assert result["health"]["stopped"] is False
+        assert result["task_queue"] == []
+
+    def test_continues_when_queue_has_more(self):
+        state = {
+            "health": {},
+            "task_queue": ["write", "worldbuild"],
+            "total_words": 500,
+            "total_chapters": 2,
+        }
+        result = universe_cycle(state)
+        assert result["health"]["stopped"] is False
+        assert result["task_queue"] == ["worldbuild"]
+
+    def test_updates_health_metrics(self):
+        state = {
+            "health": {},
+            "task_queue": ["write"],
+            "total_words": 5000,
+            "total_chapters": 10,
+        }
+        result = universe_cycle(state)
+        assert result["health"]["total_words"] == 5000
+        assert result["health"]["total_chapters"] == 10
+        assert result["health"]["cycles_completed"] == 1
+
+    def test_increments_cycles_completed(self):
+        state = {
+            "health": {"cycles_completed": 3},
+            "task_queue": ["write"],
+            "total_words": 0,
+            "total_chapters": 0,
+        }
+        result = universe_cycle(state)
+        assert result["health"]["cycles_completed"] == 4
+
+    def test_calls_memory_cleanup(self):
+        from fantasy_author import runtime
+
+        mgr = MagicMock()
+        mgr.evict_old_data.return_value = 5
+
+        runtime.memory_manager = mgr
+        try:
+            state = {
+                "health": {},
+                "task_queue": ["write"],
+                "total_words": 0,
+                "total_chapters": 3,
+            }
+            result = universe_cycle(state)
+        finally:
+            runtime.memory_manager = None
+        mgr.evict_old_data.assert_called_once_with(current_chapter=3)
+        assert result["quality_trace"][0]["evicted_records"] == 5
+
+    def test_graceful_when_no_manager(self):
+        state = {
+            "health": {},
+            "task_queue": ["write"],
+            "total_words": 0,
+            "total_chapters": 0,
+        }
+        result = universe_cycle(state)
+        assert result["quality_trace"][0]["evicted_records"] == 0
+
+    def test_graceful_when_manager_fails(self):
+        from fantasy_author import runtime
+
+        mgr = MagicMock()
+        mgr.evict_old_data.side_effect = RuntimeError("fail")
+
+        runtime.memory_manager = mgr
+        try:
+            state = {
+                "health": {},
+                "task_queue": ["write"],
+            }
+            result = universe_cycle(state)
+        finally:
+            runtime.memory_manager = None
+        assert result["quality_trace"][0]["evicted_records"] == 0
+
+    def test_returns_quality_trace(self):
+        state = {
+            "health": {},
+            "task_queue": ["write"],
+            "total_words": 100,
+            "total_chapters": 1,
+        }
+        result = universe_cycle(state)
+        assert len(result["quality_trace"]) == 1
+        trace = result["quality_trace"][0]
+        assert trace["node"] == "universe_cycle"
+        assert trace["completed_task"] == "write"
+        assert trace["stopped"] is False
+
+    def test_empty_queue_does_not_stop(self):
+        """Daemon runs indefinitely -- empty queue does not stop."""
+        state = {"health": {}, "task_queue": []}
+        result = universe_cycle(state)
+        assert result["health"]["stopped"] is False
+
+    def test_pops_front_task(self):
+        state = {
+            "health": {},
+            "task_queue": ["worldbuild", "write", "reflect"],
+        }
+        result = universe_cycle(state)
+        assert result["task_queue"] == ["write", "reflect"]
+        assert result["quality_trace"][0]["completed_task"] == "worldbuild"
+
+    def test_forwards_world_state_version(self):
+        """world_state_version must persist across the cycle boundary."""
+        state = {
+            "health": {},
+            "task_queue": ["worldbuild"],
+            "world_state_version": 3,
+        }
+        result = universe_cycle(state)
+        assert result["world_state_version"] == 3
+        assert result["quality_trace"][0]["world_state_version"] == 3
+
+    def test_forwards_world_state_version_default(self):
+        """Missing world_state_version defaults to 0."""
+        state = {"health": {}, "task_queue": ["write"]}
+        result = universe_cycle(state)
+        assert result["world_state_version"] == 0
+
+
+# -----------------------------------------------------------------------
+# reflect tests
+# -----------------------------------------------------------------------
+
+
+class TestReflect:
+    """Tests for the reflect node."""
+
+    def test_returns_quality_trace(self):
+        """Reflect should always return a quality_trace entry."""
+        state = {}
+        result = reflect(state)
+        assert "quality_trace" in result
+        assert len(result["quality_trace"]) == 1
+        trace = result["quality_trace"][0]
+        assert trace["node"] == "reflect"
+
+    def test_reflexion_runs_with_manager(self):
+        from fantasy_author import runtime
+
+        mgr = MagicMock()
+        reflexion_result = MagicMock()
+        reflexion_result.critique = "Test critique text"
+        reflexion_result.updated_weights = {"continuity_check": 1.5}
+        mgr.run_reflexion.return_value = reflexion_result
+
+        runtime.memory_manager = mgr
+        try:
+            state = {}
+            result = reflect(state)
+        finally:
+            runtime.memory_manager = None
+
+        mgr.run_reflexion.assert_called_once_with(state)
+        assert result["quality_trace"][0]["reflexion_ran"] is True
+
+    def test_reflexion_skipped_without_manager(self):
+        state = {}
+        result = reflect(state)
+        assert result["quality_trace"][0]["reflexion_ran"] is False
+
+    def test_reflexion_failure_is_graceful(self):
+        from fantasy_author import runtime
+
+        mgr = MagicMock()
+        mgr.run_reflexion.side_effect = RuntimeError("boom")
+
+        runtime.memory_manager = mgr
+        try:
+            result = reflect({})
+        finally:
+            runtime.memory_manager = None
+
+        assert result["quality_trace"][0]["reflexion_ran"] is False
+
+    def test_no_crash_on_empty_state(self):
+        """Reflect must never crash, even with an empty state dict."""
+        result = reflect({})
+        assert isinstance(result, dict)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 0
+
+
+class TestReflectCanonReview:
+    """Tests for canon quality review in the reflect node."""
+
+    def _make_universe(
+        self, tmp_path: Path, premise: str = "", canon_files: dict[str, str] | None = None
+    ) -> Path:
+        """Create a minimal universe directory with optional premise and canon."""
+        universe_dir = tmp_path / "test-universe"
+        universe_dir.mkdir()
+        if premise:
+            (universe_dir / "PROGRAM.md").write_text(premise, encoding="utf-8")
+        if canon_files:
+            canon_dir = universe_dir / "canon"
+            canon_dir.mkdir()
+            for name, content in canon_files.items():
+                (canon_dir / name).write_text(content, encoding="utf-8")
+        return universe_dir
+
+    def test_reviews_canon_files(self, tmp_path):
+        """Should review existing canon files and report count."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dark fantasy world.",
+            canon_files={
+                "characters.md": "# Characters\n\nGeneric content.",
+                "locations.md": "# Locations\n\nSome places.",
+            },
+        )
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        trace = result["quality_trace"][0]
+        assert trace["canon_files_reviewed"] == 2
+
+    def test_skips_without_universe_path(self):
+        """No universe path means no review."""
+        result = reflect({})
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 0
+
+    def test_skips_without_canon_dir(self, tmp_path):
+        """No canon directory means no review."""
+        universe_dir = self._make_universe(tmp_path, premise="A story.")
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 0
+
+    def test_skips_without_premise(self, tmp_path):
+        """No premise means no review."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            canon_files={"characters.md": "# Characters"},
+        )
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 0
+
+    def test_rewrites_drifted_files(self, tmp_path):
+        """When evaluate_canon finds issues, files should be rewritten."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A high-tech sci-fi world.",
+            canon_files={
+                "characters.md": "# Characters\n\nGeneric fantasy folk.",
+            },
+        )
+
+        issues = [
+            {
+                "filename": "characters.md",
+                "reason": "Characters are generic fantasy, not sci-fi",
+                "severity": 8,
+            }
+        ]
+
+        state = {"_universe_path": str(universe_dir)}
+        with patch(
+            "fantasy_author.nodes.reflect._evaluate_canon",
+            return_value=issues,
+        ):
+            result = reflect(state)
+
+        trace = result["quality_trace"][0]
+        assert "characters.md" in trace["canon_files_rewritten"]
+        # File should still exist after rewrite
+        canon_dir = universe_dir / "canon"
+        assert (canon_dir / "characters.md").exists()
+
+    def test_limits_rewrites_per_cycle(self, tmp_path):
+        """Should rewrite at most _MAX_REWRITES_PER_CYCLE files."""
+        canon_files = {
+            f"topic_{i}.md": f"# Topic {i}\n\nShallow content."
+            for i in range(5)
+        }
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A complex world.",
+            canon_files=canon_files,
+        )
+
+        issues = [
+            {"filename": f"topic_{i}.md", "reason": "shallow", "severity": 7}
+            for i in range(5)
+        ]
+
+        state = {"_universe_path": str(universe_dir)}
+        with patch(
+            "fantasy_author.nodes.reflect._evaluate_canon",
+            return_value=issues,
+        ):
+            result = reflect(state)
+
+        trace = result["quality_trace"][0]
+        assert len(trace["canon_files_rewritten"]) <= _MAX_REWRITES_PER_CYCLE
+
+    def test_graceful_when_evaluate_fails(self, tmp_path):
+        """LLM evaluation failure should not crash the node."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A premise.",
+            canon_files={"characters.md": "# Characters"},
+        )
+        state = {"_universe_path": str(universe_dir)}
+        with patch(
+            "fantasy_author.nodes.reflect._evaluate_canon",
+            side_effect=RuntimeError("LLM down"),
+        ):
+            result = reflect(state)
+
+        # Should not crash
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 0
+
+    def test_graceful_when_rewrite_fails(self, tmp_path):
+        """Rewrite failure should not crash and should not corrupt file."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A premise.",
+            canon_files={"characters.md": "# Original Content"},
+        )
+        original = (universe_dir / "canon" / "characters.md").read_text(
+            encoding="utf-8"
+        )
+
+        issues = [
+            {"filename": "characters.md", "reason": "drift", "severity": 9}
+        ]
+
+        state = {"_universe_path": str(universe_dir)}
+        with (
+            patch(
+                "fantasy_author.nodes.reflect._evaluate_canon",
+                return_value=issues,
+            ),
+            patch(
+                "fantasy_author.nodes.reflect._rewrite_canon_file",
+                side_effect=RuntimeError("rewrite failed"),
+            ),
+        ):
+            result = reflect(state)
+
+        # Should not crash
+        assert result["quality_trace"][0]["canon_files_rewritten"] == []
+        # Original file should be intact
+        current = (universe_dir / "canon" / "characters.md").read_text(
+            encoding="utf-8"
+        )
+        assert current == original
+
+    def test_uses_premise_kernel_fallback(self, tmp_path):
+        """Should use premise_kernel from state if PROGRAM.md absent."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            canon_files={"characters.md": "# Characters"},
+        )
+        state = {
+            "_universe_path": str(universe_dir),
+            "premise_kernel": "A world of ancient magic.",
+        }
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 1
+
+    def test_non_md_files_ignored(self, tmp_path):
+        """Only .md files in canon/ should be reviewed."""
+        universe_dir = self._make_universe(
+            tmp_path, premise="A story."
+        )
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "characters.md").write_text("# Chars", encoding="utf-8")
+        (canon_dir / "notes.txt").write_text("notes", encoding="utf-8")
+        (canon_dir / "data.json").write_text("{}", encoding="utf-8")
+
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 1
+
+
+class TestCanonReviewHelpers:
+    """Tests for reflect node internal helper functions."""
+
+    def test_parse_issues_valid_json(self):
+        """Should parse a valid JSON array of issues."""
+        raw = json.dumps([
+            {"filename": "a.md", "reason": "drift", "severity": 7},
+            {"filename": "b.md", "reason": "shallow", "severity": 3},
+        ])
+        issues = _parse_issues(raw)
+        assert len(issues) == 2
+        # Should be sorted by severity descending
+        assert issues[0]["filename"] == "a.md"
+        assert issues[1]["filename"] == "b.md"
+
+    def test_parse_issues_empty_array(self):
+        """Empty array means no issues."""
+        assert _parse_issues("[]") == []
+
+    def test_parse_issues_invalid_json(self):
+        """Invalid JSON should return empty list, not crash."""
+        assert _parse_issues("not json at all") == []
+
+    def test_parse_issues_strips_code_fences(self):
+        """Should handle markdown code fences around JSON."""
+        raw = '```json\n[{"filename": "a.md", "reason": "drift", "severity": 5}]\n```'
+        issues = _parse_issues(raw)
+        assert len(issues) == 1
+        assert issues[0]["filename"] == "a.md"
+
+    def test_parse_issues_missing_filename(self):
+        """Items without filename should be skipped."""
+        raw = json.dumps([
+            {"reason": "no filename", "severity": 5},
+            {"filename": "good.md", "reason": "ok", "severity": 3},
+        ])
+        issues = _parse_issues(raw)
+        assert len(issues) == 1
+        assert issues[0]["filename"] == "good.md"
+
+    def test_parse_issues_defaults(self):
+        """Missing reason/severity should get defaults."""
+        raw = json.dumps([{"filename": "a.md"}])
+        issues = _parse_issues(raw)
+        assert issues[0]["reason"] == "unspecified issue"
+        assert issues[0]["severity"] == 5
+
+    def test_parse_issues_non_list(self):
+        """Non-list JSON should return empty list."""
+        assert _parse_issues('{"not": "a list"}') == []
+
+    def test_collect_reviewable_canon_no_signals_returns_all(self, tmp_path):
+        """Without signal_topics, all canon files are reviewable."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "chars.md").write_text("# Characters", encoding="utf-8")
+        (canon_dir / "locations.md").write_text("# Locations", encoding="utf-8")
+        _stamp_reviewed(canon_dir / "chars.md")  # Stamp should NOT block
+
+        result = _collect_reviewable_canon(canon_dir)
+        assert "chars.md" in result
+        assert "locations.md" in result
+
+    def test_collect_reviewable_canon_with_signal_topics(self, tmp_path):
+        """With signal_topics, only matching files are reviewable."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "characters.md").write_text("# Characters", encoding="utf-8")
+        (canon_dir / "locations.md").write_text("# Locations", encoding="utf-8")
+        (canon_dir / "magic_system.md").write_text("# Magic", encoding="utf-8")
+
+        result = _collect_reviewable_canon(canon_dir, signal_topics={"characters"})
+        assert "characters.md" in result
+        assert "locations.md" not in result
+        assert "magic_system.md" not in result
+
+    def test_collect_reviewable_canon_includes_unreviewed(self, tmp_path):
+        """Files never reviewed should be included."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "chars.md").write_text("# Characters", encoding="utf-8")
+
+        result = _collect_reviewable_canon(canon_dir)
+        assert "chars.md" in result
+
+    def test_recently_reviewed_always_false(self, tmp_path):
+        """_recently_reviewed always returns False (cooldown removed)."""
+        f = tmp_path / "test.md"
+        f.write_text("content", encoding="utf-8")
+        _stamp_reviewed(f)
+        assert _recently_reviewed(f, 999999999.0) is False
+
+    def test_recently_reviewed_no_marker(self, tmp_path):
+        """No marker file means not recently reviewed."""
+        f = tmp_path / "test.md"
+        f.write_text("content", encoding="utf-8")
+        assert _recently_reviewed(f, 999999999.0) is False
+
+    def test_stamp_reviewed_creates_marker(self, tmp_path):
+        """Stamping should create a sidecar marker file."""
+        f = tmp_path / "test.md"
+        f.write_text("content", encoding="utf-8")
+        _stamp_reviewed(f)
+        marker = tmp_path / ".test.md.reviewed"
+        assert marker.exists()
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        assert "reviewed_at" in data
+
+    def test_evaluate_canon_returns_list(self, tmp_path):
+        """_evaluate_canon should return a list (possibly empty in mock mode)."""
+        canon_files = {"chars.md": "# Characters\n\nContent."}
+        premise = "A dark fantasy world."
+        # In test mode (_FORCE_MOCK=True), call_provider returns the
+        # fallback which is "[]", so _evaluate_canon returns []
+        issues = _evaluate_canon(canon_files, premise)
+        assert isinstance(issues, list)
+
+
+# -----------------------------------------------------------------------
+# commit worldbuild signals tests
+# -----------------------------------------------------------------------
+
+
+class TestCommitWorldbuildSignals:
+    """Tests for worldbuild signal generation in the commit node."""
+
+    def _make_universe(self, tmp_path: Path, canon_files: dict[str, str] | None = None) -> Path:
+        universe_dir = tmp_path / "test-universe"
+        universe_dir.mkdir()
+        (universe_dir / "PROGRAM.md").write_text("A fantasy world.", encoding="utf-8")
+        if canon_files:
+            canon_dir = universe_dir / "canon"
+            canon_dir.mkdir()
+            for name, content in canon_files.items():
+                (canon_dir / name).write_text(content, encoding="utf-8")
+        return universe_dir
+
+    def test_commit_returns_worldbuild_signals_key(self, tmp_story_db):
+        """Commit output should always contain worldbuild_signals."""
+        from fantasy_author.nodes.commit import commit
+
+        state = {
+            "draft_output": {
+                "scene_id": "s1",
+                "prose": "Ryn walked through the Northern Gate.",
+                "word_count": 50,
+            },
+            "_db_path": tmp_story_db,
+        }
+        result = commit(state)
+        assert "worldbuild_signals" in result
+        assert isinstance(result["worldbuild_signals"], list)
+
+    def test_signals_empty_without_universe_path(self, tmp_story_db):
+        """No signals generated when no universe_path is set."""
+        from fantasy_author.nodes.commit import commit
+
+        state = {
+            "draft_output": {
+                "scene_id": "s1",
+                "prose": "Ryn walked through the gate.",
+                "word_count": 50,
+            },
+            "_db_path": tmp_story_db,
+        }
+        result = commit(state)
+        assert result["worldbuild_signals"] == []
+
+    def test_signals_empty_without_canon(self, tmp_path, tmp_story_db):
+        """No signals when there is no canon directory."""
+        from fantasy_author.nodes.commit import commit
+
+        universe_dir = self._make_universe(tmp_path)
+        state = {
+            "draft_output": {
+                "scene_id": "s1",
+                "prose": "Ryn walked through the gate.",
+                "word_count": 50,
+            },
+            "_universe_path": str(universe_dir),
+            "_db_path": tmp_story_db,
+        }
+        result = commit(state)
+        assert result["worldbuild_signals"] == []
+
+    def test_signals_count_in_quality_trace(self, tmp_story_db):
+        """quality_trace should include signal count."""
+        from fantasy_author.nodes.commit import commit
+
+        state = {
+            "draft_output": {
+                "scene_id": "s1",
+                "prose": "Ryn walked.",
+                "word_count": 10,
+            },
+            "_db_path": tmp_story_db,
+        }
+        result = commit(state)
+        trace = result["quality_trace"][0]
+        assert "worldbuild_signals" in trace
+        assert isinstance(trace["worldbuild_signals"], int)
+
+    def test_parse_worldbuild_signals_valid(self):
+        """Valid JSON should be parsed into signals."""
+        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+
+        raw = json.dumps([
+            {"type": "new_element", "topic": "character", "detail": "Serakh found"},
+            {"type": "contradiction", "topic": "magic_system", "detail": "Touch vs range"},
+        ])
+        signals = _parse_worldbuild_signals(raw)
+        assert len(signals) == 2
+        assert signals[0]["type"] == "new_element"
+        assert signals[1]["type"] == "contradiction"
+
+    def test_parse_worldbuild_signals_empty(self):
+        """Empty array should return empty list."""
+        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+
+        assert _parse_worldbuild_signals("[]") == []
+
+    def test_parse_worldbuild_signals_invalid_json(self):
+        """Invalid JSON should return empty list, not crash."""
+        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+
+        assert _parse_worldbuild_signals("not json") == []
+
+    def test_parse_worldbuild_signals_bad_types_filtered(self):
+        """Signals with invalid type should be filtered out."""
+        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+
+        raw = json.dumps([
+            {"type": "new_element", "topic": "char", "detail": "ok"},
+            {"type": "invalid_type", "topic": "x", "detail": "skip me"},
+            {"type": "expansion", "topic": "lore", "detail": "ok too"},
+        ])
+        signals = _parse_worldbuild_signals(raw)
+        assert len(signals) == 2
+        assert signals[0]["type"] == "new_element"
+        assert signals[1]["type"] == "expansion"
+
+    def test_parse_worldbuild_signals_strips_code_fences(self):
+        """Should handle markdown code fences around JSON."""
+        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+
+        raw = '```json\n[{"type": "new_element", "topic": "a", "detail": "b"}]\n```'
+        signals = _parse_worldbuild_signals(raw)
+        assert len(signals) == 1
+
+    def test_persist_worldbuild_signals(self, tmp_path):
+        """Signals should be persisted to disk."""
+        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+
+        signals = [{"type": "new_element", "topic": "char", "detail": "test"}]
+        _persist_worldbuild_signals({"_universe_path": str(universe_dir)}, signals)
+
+        signals_file = universe_dir / "worldbuild_signals.json"
+        assert signals_file.exists()
+        data = json.loads(signals_file.read_text(encoding="utf-8"))
+        assert len(data) == 1
+        assert data[0]["type"] == "new_element"
+
+    def test_persist_appends_to_existing(self, tmp_path):
+        """New signals should be appended to existing ones."""
+        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        signals_file = universe_dir / "worldbuild_signals.json"
+        signals_file.write_text(
+            json.dumps([{"type": "expansion", "topic": "x", "detail": "old"}]),
+            encoding="utf-8",
+        )
+
+        new = [{"type": "new_element", "topic": "y", "detail": "new"}]
+        _persist_worldbuild_signals({"_universe_path": str(universe_dir)}, new)
+
+        data = json.loads(signals_file.read_text(encoding="utf-8"))
+        assert len(data) == 2
+
+    def test_persist_graceful_without_universe_path(self):
+        """Persist should not crash without universe_path."""
+        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+
+        _persist_worldbuild_signals({}, [{"type": "new_element", "topic": "a", "detail": "b"}])
+
+
+# -----------------------------------------------------------------------
+# select_task signal-driven tests
+# -----------------------------------------------------------------------
+
+
+class TestSelectTaskSignals:
+    """Tests for signal-driven task selection."""
+
+    def test_worldbuild_signals_in_state_trigger_worldbuild(self):
+        """Signals in state should route to worldbuild."""
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "canon_facts_count": 10,
+            "worldbuild_signals": [
+                {"type": "new_element", "topic": "char", "detail": "test"},
+            ],
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "worldbuild"
+        trace = result["quality_trace"][0]
+        assert trace["reason"] == "worldbuild_signals"
+
+    def test_worldbuild_signals_on_disk_trigger_worldbuild(self, tmp_path):
+        """Signals in file should route to worldbuild."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        signals_file = universe_dir / "worldbuild_signals.json"
+        signals_file.write_text(
+            json.dumps([{"type": "contradiction", "topic": "magic", "detail": "conflict"}]),
+            encoding="utf-8",
+        )
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "canon_facts_count": 10,
+            "_universe_path": str(universe_dir),
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "worldbuild"
+        assert result["quality_trace"][0]["reason"] == "worldbuild_signals"
+
+    def test_empty_signals_file_does_not_trigger(self, tmp_path):
+        """Empty signals file should not trigger worldbuild."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        (universe_dir / "worldbuild_signals.json").write_text("[]", encoding="utf-8")
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_stuck_takes_priority_over_signals(self):
+        """stuck_level > 3 should take priority over signals."""
+        state = {
+            "task_queue": ["write"],
+            "health": {"stuck_level": 5},
+            "worldbuild_signals": [
+                {"type": "new_element", "topic": "char", "detail": "test"},
+            ],
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "diagnose"
+
+    def test_user_override_takes_priority_over_signals(self):
+        """User override should take priority over signals."""
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "worldbuild_signals": [
+                {"type": "new_element", "topic": "char", "detail": "test"},
+            ],
+            "workflow_instructions": {"next_task": "reflect"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "reflect"
+
+    def test_no_signals_no_staleness_idles(self):
+        """Without signals, staleness, or user task, daemon idles."""
+        state = {
+            "task_queue": [],
+            "health": {},
+            "canon_facts_count": 10,
+            "world_state_version": 5,
+            "total_chapters": 5,
+        }
+        result = select_task(state)
+        assert result["task_queue"] == ["idle"]
+
+    def test_corrupt_signals_file_ignored(self, tmp_path):
+        """Corrupt signals file should be ignored gracefully."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        (universe_dir / "worldbuild_signals.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+    def test_old_chapter_threshold_is_high(self):
+        """Chapter-count staleness threshold should be high (low priority)."""
+        # With threshold at 15, 10 chapters should NOT trigger
+        state = {
+            "task_queue": ["write"],
+            "health": {},
+            "world_state_version": 1,
+            "total_chapters": 10,
+            "canon_facts_count": 10,
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+
+
+# -----------------------------------------------------------------------
+# Global (cross-universe) synthesis tests
+# -----------------------------------------------------------------------
+
+
+class TestGlobalSynthesisQueue:
+    """Tests for cross-universe synthesis scanning."""
+
+    def test_cross_universe_synthesis_switches(self, tmp_path):
+        """When idle, daemon should detect synthesis needed in another universe."""
+        # Current universe: no signals
+        current = tmp_path / "universe-a"
+        current.mkdir()
+
+        # Other universe: has pending synthesis
+        other = tmp_path / "universe-b"
+        other.mkdir()
+        (other / "worldbuild_signals.json").write_text(
+            json.dumps([{"type": "synthesize_source", "file": "notes.pdf"}]),
+            encoding="utf-8",
+        )
+
+        state = {
+            "task_queue": [],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "universe_path": str(current),
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "worldbuild"
+        assert result.get("switch_universe") == "universe-b"
+        assert "cross_universe_synthesis" in result["quality_trace"][0]["reason"]
+
+    def test_no_cross_universe_when_all_clear(self, tmp_path):
+        """When no sibling has synthesis, daemon idles."""
+        current = tmp_path / "universe-a"
+        current.mkdir()
+
+        other = tmp_path / "universe-b"
+        other.mkdir()
+        # Empty signals
+        (other / "worldbuild_signals.json").write_text("[]", encoding="utf-8")
+
+        state = {
+            "task_queue": [],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "universe_path": str(current),
+        }
+        result = select_task(state)
+        assert result["task_queue"] == ["idle"]
+        assert result.get("switch_universe") is None
+
+    def test_cross_universe_skips_non_synthesis_signals(self, tmp_path):
+        """Non-synthesis signals in other universes don't trigger switch."""
+        current = tmp_path / "universe-a"
+        current.mkdir()
+
+        other = tmp_path / "universe-b"
+        other.mkdir()
+        (other / "worldbuild_signals.json").write_text(
+            json.dumps([{"type": "new_element", "topic": "char"}]),
+            encoding="utf-8",
+        )
+
+        state = {
+            "task_queue": [],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "universe_path": str(current),
+        }
+        result = select_task(state)
+        assert result["task_queue"] == ["idle"]
+
+    def test_cross_universe_ignores_current(self, tmp_path):
+        """Current universe's own signals don't trigger cross-universe switch."""
+        current = tmp_path / "universe-a"
+        current.mkdir()
+        # Current has signals, but they're handled by the normal path (step 0)
+        (current / "worldbuild_signals.json").write_text(
+            json.dumps([{"type": "synthesize_source", "file": "notes.pdf"}]),
+            encoding="utf-8",
+        )
+
+        state = {
+            "task_queue": [],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "universe_path": str(current),
+        }
+        result = select_task(state)
+        # Should be caught by step 0 (local synthesis), not cross-universe
+        assert result["task_queue"][0] == "worldbuild"
+        assert result.get("switch_universe") is None
+
+    def test_cross_universe_no_path_idles(self):
+        """Without universe_path, cross-universe scan is skipped."""
+        state = {
+            "task_queue": [],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 5,
+        }
+        result = select_task(state)
+        assert result["task_queue"] == ["idle"]
+
+    def test_user_directed_write_skips_cross_universe(self, tmp_path):
+        """User-directed write takes priority over cross-universe synthesis."""
+        current = tmp_path / "universe-a"
+        current.mkdir()
+
+        other = tmp_path / "universe-b"
+        other.mkdir()
+        (other / "worldbuild_signals.json").write_text(
+            json.dumps([{"type": "synthesize_source", "file": "notes.pdf"}]),
+            encoding="utf-8",
+        )
+
+        state = {
+            "task_queue": ["write"],
+            "health": {"cycles_completed": 1},
+            "canon_facts_count": 10,
+            "world_state_version": 1,
+            "universe_path": str(current),
+            "workflow_instructions": {"next_task": "write"},
+        }
+        result = select_task(state)
+        assert result["task_queue"][0] == "write"
+        assert result.get("switch_universe") is None
+
+
+# -----------------------------------------------------------------------
+# worldbuild signal-driven tests
+# -----------------------------------------------------------------------
+
+
+class TestWorldbuildSignalDriven:
+    """Tests for signal-driven worldbuilding."""
+
+    def _make_universe(
+        self, tmp_path: Path, premise: str = "",
+        canon_files: dict[str, str] | None = None,
+        signals: list[dict[str, Any]] | None = None,
+    ) -> Path:
+        universe_dir = tmp_path / "test-universe"
+        universe_dir.mkdir()
+        if premise:
+            (universe_dir / "PROGRAM.md").write_text(premise, encoding="utf-8")
+        if canon_files:
+            canon_dir = universe_dir / "canon"
+            canon_dir.mkdir()
+            for name, content in canon_files.items():
+                (canon_dir / name).write_text(content, encoding="utf-8")
+        if signals:
+            (universe_dir / "worldbuild_signals.json").write_text(
+                json.dumps(signals), encoding="utf-8"
+            )
+        return universe_dir
+
+    def test_acts_on_signals_from_state(self, tmp_path):
+        """Should act on signals from state dict."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A fantasy world with magic.",
+            canon_files={"magic_system.md": "# Magic System\n\nBasic magic."},
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+            "worldbuild_signals": [
+                {"type": "expansion", "topic": "magic_system",
+                 "detail": "New spell types revealed"},
+            ],
+        }
+        result = worldbuild(state)
+        assert result["quality_trace"][0]["signals_acted"] > 0
+
+    def test_acts_on_signals_from_file(self, tmp_path):
+        """Should act on signals from disk file."""
+        signals = [
+            {"type": "new_element", "topic": "artifacts", "detail": "A golden sword"},
+        ]
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A fantasy world.",
+            canon_files={"characters.md": "# Characters\n\nHeroes."},
+            signals=signals,
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        assert result["quality_trace"][0]["signals_acted"] > 0
+
+    def test_clears_signals_after_acting(self, tmp_path):
+        """Signals file should be cleared after acting on them."""
+        signals = [
+            {"type": "new_element", "topic": "creatures", "detail": "A dragon"},
+        ]
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dragon-filled world.",
+            canon_files={"characters.md": "# Chars"},
+            signals=signals,
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+        }
+        worldbuild(state)
+        signals_file = universe_dir / "worldbuild_signals.json"
+        data = json.loads(signals_file.read_text(encoding="utf-8"))
+        assert data == []
+
+    def test_returns_empty_worldbuild_signals(self, tmp_path):
+        """Return value should have empty worldbuild_signals (consumed)."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A world.",
+            signals=[{"type": "new_element", "topic": "x", "detail": "y"}],
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        assert result["worldbuild_signals"] == []
+
+    def test_falls_back_to_gap_filling(self, tmp_path):
+        """Without signals, should use gap-filling behavior."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A world with gaps.",
+        )
+        state = {
+            "world_state_version": 0,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        assert result["quality_trace"][0]["signals_acted"] == 0
+        # Should have generated gap-fill files instead
+        assert len(result["quality_trace"][0]["generated_files"]) > 0
+
+    def test_graceful_when_signal_handling_fails(self, tmp_path):
+        """Signal handler failure should not crash the node."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A world.",
+            signals=[{"type": "contradiction", "topic": "magic_system", "detail": "conflict"}],
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+        }
+        with patch(
+            "fantasy_author.nodes.worldbuild._handle_contradiction",
+            side_effect=RuntimeError("LLM down"),
+        ):
+            result = worldbuild(state)
+        # Should complete without crashing
+        assert result["world_state_version"] == 2
+
+    def test_max_signals_per_cycle(self, tmp_path):
+        """Should not act on more than _MAX_DOCS_PER_CYCLE signals."""
+        signals = [
+            {"type": "new_element", "topic": f"topic_{i}", "detail": f"detail {i}"}
+            for i in range(10)
+        ]
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A world.",
+            canon_files={"characters.md": "# Chars"},
+            signals=signals,
+        )
+        state = {
+            "world_state_version": 1,
+            "_universe_path": str(universe_dir),
+        }
+        result = worldbuild(state)
+        assert result["quality_trace"][0]["signals_acted"] <= _MAX_DOCS_PER_CYCLE
+
+
+# -----------------------------------------------------------------------
+# reflect signal-driven tests
+# -----------------------------------------------------------------------
+
+
+class TestReflectSignalDriven:
+    """Tests for signal-driven reflection (no timer cooldown)."""
+
+    def _make_universe(
+        self, tmp_path: Path, premise: str = "",
+        canon_files: dict[str, str] | None = None,
+        signals: list[dict[str, Any]] | None = None,
+    ) -> Path:
+        universe_dir = tmp_path / "test-universe"
+        universe_dir.mkdir()
+        if premise:
+            (universe_dir / "PROGRAM.md").write_text(premise, encoding="utf-8")
+        if canon_files:
+            canon_dir = universe_dir / "canon"
+            canon_dir.mkdir()
+            for name, content in canon_files.items():
+                (canon_dir / name).write_text(content, encoding="utf-8")
+        if signals:
+            (universe_dir / "worldbuild_signals.json").write_text(
+                json.dumps(signals), encoding="utf-8"
+            )
+        return universe_dir
+
+    def test_reviews_all_files_without_signals(self, tmp_path):
+        """Without signals, all canon files should be reviewed."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dark fantasy world.",
+            canon_files={
+                "characters.md": "# Characters\n\nContent.",
+                "locations.md": "# Locations\n\nContent.",
+            },
+        )
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 2
+
+    def test_focuses_on_signal_topics(self, tmp_path):
+        """With signals, only matching canon files should be reviewed."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dark fantasy world.",
+            canon_files={
+                "characters.md": "# Characters\n\nContent.",
+                "locations.md": "# Locations\n\nContent.",
+                "magic_system.md": "# Magic\n\nContent.",
+            },
+            signals=[
+                {"type": "contradiction", "topic": "characters", "detail": "conflict"},
+            ],
+        )
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        # Should only review the characters file (matching signal topic)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 1
+
+    def test_recently_stamped_files_still_reviewed(self, tmp_path):
+        """Stamped files should NOT be skipped (cooldown removed)."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dark fantasy world.",
+            canon_files={"characters.md": "# Characters\n\nContent."},
+        )
+        # Stamp the file
+        _stamp_reviewed(universe_dir / "canon" / "characters.md")
+
+        state = {"_universe_path": str(universe_dir)}
+        result = reflect(state)
+        assert result["quality_trace"][0]["canon_files_reviewed"] == 1
+
+    def test_extract_signal_topics_from_state(self, tmp_path):
+        """Should extract topics from worldbuild_signals in state."""
+        universe_dir = self._make_universe(tmp_path)
+        state = {
+            "worldbuild_signals": [
+                {"type": "new_element", "topic": "characters"},
+                {"type": "expansion", "topic": "magic_system"},
+            ],
+        }
+        topics = _extract_signal_topics(state, universe_dir)
+        assert topics == {"characters", "magic_system"}
+
+    def test_extract_signal_topics_from_file(self, tmp_path):
+        """Should extract topics from signals file on disk."""
+        universe_dir = self._make_universe(
+            tmp_path,
+            signals=[
+                {"type": "contradiction", "topic": "factions"},
+            ],
+        )
+        topics = _extract_signal_topics({}, universe_dir)
+        assert topics == {"factions"}
+
+    def test_extract_signal_topics_none_when_no_signals(self, tmp_path):
+        """Should return None when no signals exist."""
+        universe_dir = self._make_universe(tmp_path)
+        topics = _extract_signal_topics({}, universe_dir)
+        assert topics is None
+
+    def test_model_tier_guard_still_works(self, tmp_path):
+        """Model quality tier guard should still prevent weak overwrites."""
+        from fantasy_author import runtime
+
+        universe_dir = self._make_universe(
+            tmp_path,
+            premise="A dark fantasy world.",
+            canon_files={"characters.md": "# Characters\n\nContent."},
+        )
+        # Mark file as written by a strong model
+        marker = universe_dir / "canon" / ".characters.md.reviewed"
+        marker.write_text(
+            json.dumps({"reviewed_at": 0, "model": "claude-code"}),
+            encoding="utf-8",
+        )
+
+        # Severity 5 is too low for a tier-3 gap (ollama→claude needs ≥8)
+        issues = [{"filename": "characters.md", "reason": "drift", "severity": 5}]
+        # Set current provider to a weaker model.  The reflect code reads
+        # state["provider"] only when runtime.memory_manager is not None.
+        mgr = MagicMock()
+        reflexion_result = MagicMock()
+        reflexion_result.critique = ""
+        reflexion_result.updated_weights = {}
+        mgr.run_reflexion.return_value = reflexion_result
+
+        runtime.memory_manager = mgr
+        try:
+            state = {"_universe_path": str(universe_dir), "provider": "ollama-local"}
+            with patch(
+                "fantasy_author.nodes.reflect._evaluate_canon",
+                return_value=issues,
+            ):
+                result = reflect(state)
+        finally:
+            runtime.memory_manager = None
+
+        # Weak model should NOT have rewritten the strong model's file
+        trace = result["quality_trace"][0]
+        assert "characters.md" not in trace["canon_files_rewritten"]

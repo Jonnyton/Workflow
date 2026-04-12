@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Databases (local state)
+*.db
+*.db-wal
+*.db-shm
+lancedb/
+
+# Agent tooling (local config)
+.codex/
+.claude/projects/
+.claude/settings.json
+.claude/settings.local.json
+.claude/worktrees/
+.claude/agent-memory/
+
+# Secrets
+.provider_keys.json
+.mcp.json
+.env
+*.key
+*.pem
+
+# OS / editor
+.fuse_hidden*
+.DS_Store
+Thumbs.db
+*.truncated
+
+# Obsidian (local vault config)
+.obsidian/
+
+# Local output
+output/
+universes/
+logs/
+
+# Personal docs (not part of the engine)
+BettaFish_Deep_Dive_Research.docx
+Community_Branches_Plan.docx

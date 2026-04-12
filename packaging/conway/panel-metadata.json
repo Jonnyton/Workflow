@@ -1,0 +1,72 @@
+{
+  "$schema": "https://conway.anthropic.com/schema/panel.json",
+  "_note": "Speculative Conway panel metadata — format will be confirmed when Conway ships. This is a readiness scaffold, not a final spec.",
+  "name": "workflow-universe-server",
+  "display_name": "Universe Server",
+  "description": "Autonomous daemon platform for collaborative fiction writing",
+  "version": "0.1.0",
+  "icon": "../../assets/icon.svg",
+  "panels": [
+    {
+      "id": "universe-overview",
+      "title": "Universe Overview",
+      "description": "Live dashboard showing daemon status, word count, recent activity, and active work targets for the current universe.",
+      "type": "status",
+      "refresh_interval_seconds": 30,
+      "data_source": {
+        "tool": "universe",
+        "args": { "action": "inspect" }
+      }
+    },
+    {
+      "id": "activity-feed",
+      "title": "Activity Feed",
+      "description": "Real-time feed of daemon activity — scene completions, reviews, notes, and errors.",
+      "type": "feed",
+      "refresh_interval_seconds": 10,
+      "data_source": {
+        "tool": "universe",
+        "args": { "action": "get_activity", "limit": 50 }
+      }
+    },
+    {
+      "id": "world-state",
+      "title": "World State",
+      "description": "Browse characters, facts, promises, and timeline events in the universe.",
+      "type": "explorer",
+      "data_source": {
+        "tool": "universe",
+        "args": { "action": "query_world" }
+      }
+    }
+  ],
+  "webhook": {
+    "path": "/webhook/conway",
+    "events": [
+      "scene_completed",
+      "chapter_completed",
+      "review_gate_triggered",
+      "daemon_paused",
+      "daemon_resumed",
+      "direction_received",
+      "canon_added"
+    ],
+    "description": "Webhook endpoint for Conway to receive real-time events from the daemon platform."
+  },
+  "quick_actions": [
+    {
+      "id": "pause-daemon",
+      "label": "Pause Daemon",
+      "tool": "universe",
+      "args": { "action": "control_daemon", "text": "pause" },
+      "confirmation_required": true
+    },
+    {
+      "id": "resume-daemon",
+      "label": "Resume Daemon",
+      "tool": "universe",
+      "args": { "action": "control_daemon", "text": "resume" },
+      "confirmation_required": false
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fantasy-author"
+version = "0.1.0"
+description = "Autonomous daemon platform for collaborative long-form fiction — host-run workflow engine with MCP interface"
+requires-python = ">=3.11"
+authors = [
+    {name = "Jonathan", email = "jonathan@example.com"}
+]
+dependencies = [
+    # Core orchestration
+    "langgraph>=0.4,<0.5",
+    "langchain-core>=0.3,<0.4",
+
+    # Vector & KG storage
+    "lancedb>=0.15,<1.0",
+    "igraph>=0.11,<1.0",
+
+    # Symbolic solving & planning
+    "clingo>=5.7,<6.0",
+
+    # Desktop app
+    "pystray>=0.19,<1.0",
+    "pillow>=10.0",
+
+    # NLP (entity extraction, coreference)
+    "spacy>=3.7,<4.0",
+
+    # Async file I/O
+    "aiofiles>=24.1",
+
+    # Robust JSON parsing for LLM output
+    "json-repair>=0.30",
+
+    # Retry with backoff for provider calls
+    "tenacity>=9.0,<10.0",
+]
+
+[project.scripts]
+fantasy-author-cli = "fantasy_author.__main__:main"
+fantasy-author-mcp = "fantasy_author.mcp_server:main"
+fantasy-author-universe-server = "fantasy_author.universe_server:main"
+
+[project.gui-scripts]
+fantasy-author = "fantasy_author.desktop.launcher:main"
+
+[project.optional-dependencies]
+desktop = ["Pillow>=10.0", "pystray>=0.19"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "pytest-cov>=5.0",
+    "httpx>=0.24",
+]
+gemini = [
+    "google-genai>=1.0",
+]
+groq = [
+    "groq>=0.9",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+mcp = [
+    "fastmcp>=3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["fantasy_author", "workflow", "domains"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

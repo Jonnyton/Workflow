@@ -1,0 +1,21 @@
+{
+  "name": "workflow-plugins",
+  "owner": {
+    "name": "Jonathan Farnsworth"
+  },
+  "metadata": {
+    "version": "0.1.0",
+    "description": "Workflow daemon plugins for Claude Code and compatible hosts."
+  },
+  "plugins": [
+    {
+      "name": "workflow-universe-server",
+      "description": "Inspect and steer local Workflow universes through a bundled stdio MCP server and explicit workflow commands.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jonathan Farnsworth"
+      },
+      "source": "./plugins/workflow-universe-server"
+    }
+  ]
+}
