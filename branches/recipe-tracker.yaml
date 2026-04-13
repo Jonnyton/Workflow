@@ -15,7 +15,10 @@ state_schema:
 - description: ''
   name: capture_output
   type: str
-- name: categorize_output
+- description: ''
+  name: categorize_output
+  type: str
+- name: archive_output
   type: str
   description: ''
 nodes:
@@ -51,4 +54,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:25:08.396040+00:00'
-updated_at: 1776093911.073921
+updated_at: 1776093911.3687196
