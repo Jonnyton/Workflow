@@ -7,7 +7,7 @@ goal_id: null
 tags: []
 version: 1
 parent_def_id: null
-entry_point: ''
+entry_point: capture
 state_schema: []
 nodes:
 - id: capture
@@ -42,4 +42,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:21:38.384746+00:00'
-updated_at: 1776093699.866734
+updated_at: 1776093700.1548543
