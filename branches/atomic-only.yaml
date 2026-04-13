@@ -19,6 +19,8 @@ graph_nodes:
 edges:
 - from: START
   to: n1
+- from: n1
+  to: END
 conditional_edges: []
 published: false
 stats:
@@ -26,4 +28,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:22:42.660676+00:00'
-updated_at: 1776093762.8263118
+updated_at: 1776093763.015502
