@@ -1,7 +1,9 @@
 id: categorize
-display_name: Categorize recipe
+display_name: Categorize
 phase: custom
-prompt_template: Classify by cuisine and meal type.
+prompt_template: 'Classify: {capture_output}'
+output_keys:
+- categorize_output
 timeout_seconds: 300.0
 approved: false
 enabled: true
