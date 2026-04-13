@@ -3,7 +3,7 @@ name: Trivial
 description: ''
 author: tester
 domain_id: workflow
-goal_id: deed18da7c09
+goal_id: null
 tags: []
 version: 1
 parent_def_id: null
@@ -31,4 +31,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:22:33.447068+00:00'
-updated_at: 1776093753.489022
+updated_at: 1776093753.695938
