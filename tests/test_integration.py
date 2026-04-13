@@ -848,32 +848,14 @@ class TestDaemonController:
         c._handle_node_output("commit", {"verdict": "revert"})
         assert c._last_verdict == "revert"
 
-    def test_handle_node_output_tracks_process_evaluation(self, tmp_db):
-        from workflow.__main__ import DaemonController
-        from workflow.desktop.dashboard import DashboardHandler
-
-        universe = tempfile.mkdtemp()
-        c = DaemonController(
-            universe_path=universe, db_path=tmp_db, no_tray=True,
-        )
-        c._dashboard = DashboardHandler()
-        c._handle_node_output("commit", {
-            "verdict": "accept",
-            "commit_result": {
-                "structural_score": 0.82,
-                "process_evaluation": {
-                    "aggregate_score": 0.74,
-                    "failing_checks": ["tool_use"],
-                },
-            },
-        })
-        assert c._last_process_score == 0.74
-        assert c._last_process_failures == ["tool_use"]
-
-        status_path = Path(universe) / "status.json"
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-        assert data["last_process_score"] == 0.74
-        assert data["process_failures"] == ["tool_use"]
+    # NOTE: 2 tests for process-evaluation tracking were removed 2026-04-13.
+    # They referenced attributes/schema that never existed in the codebase:
+    #   - DaemonController._last_process_score / _last_process_failures (attrs)
+    #   - commit_result.process_evaluation.aggregate_score / failing_checks (schema)
+    #   - status.json.last_process_score / process_failures (keys)
+    # git log -S"_last_process_score" shows zero commits beyond the initial
+    # import. If process-evaluation tracking is ever a real feature, it needs
+    # fresh design, not resurrection from git history.
 
     def test_handle_node_output_writes_status(self, tmp_db):
         from workflow.__main__ import DaemonController
@@ -893,23 +875,6 @@ class TestDaemonController:
         data = json.loads(status_path.read_text(encoding="utf-8"))
         assert data["current_phase"] == "orient"
         assert data["current_scene_id"] == "s1"
-
-    def test_write_status_file_no_dashboard(self, tmp_db):
-        from workflow.__main__ import DaemonController
-
-        universe = tempfile.mkdtemp()
-        c = DaemonController(
-            universe_path=universe, db_path=tmp_db, no_tray=True,
-        )
-        # No dashboard — should still write with defaults
-        c._write_status_file()
-
-        status_path = Path(universe) / "status.json"
-        assert status_path.exists()
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-        assert data["last_process_score"] == 0.0
-        assert data["process_failures"] == []
-
 
     def test_combined_log_calls_callback(self, tmp_db):
         from workflow.__main__ import DaemonController
