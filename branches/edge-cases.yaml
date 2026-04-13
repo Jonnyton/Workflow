@@ -1,27 +1,22 @@
-id: bd7efc9325b4
+id: 09063f96a578
 name: Edge cases
 description: ''
 author: tester
 domain_id: workflow
-goal_id: null
+goal_id: ''
 tags: []
 version: 1
 parent_def_id: null
 entry_point: ''
 state_schema: []
-nodes:
-- id: weird
-  path: nodes/edge-cases/weird.yaml
-graph_nodes:
-- id: weird
-  node_def_id: weird
-  position: 0
+nodes: []
+graph_nodes: []
 edges: []
 conditional_edges: []
 published: false
 stats:
-  avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:21:19.710713+00:00'
-updated_at: 1776093679.7275167
+  avg_quality_score: 0.0
+created_at: '2026-04-13T15:21:49.077268+00:00'
+updated_at: '2026-04-13T15:21:49.077283+00:00'
