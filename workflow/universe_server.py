@@ -41,6 +41,8 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from workflow.storage import DirtyFileError
+
 logger = logging.getLogger("universe_server")
 
 # ---------------------------------------------------------------------------
@@ -322,6 +324,27 @@ WRITE_ACTIONS: dict[str, Any] = {
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
 }
+
+
+def _format_dirty_file_conflict(exc: DirtyFileError) -> dict[str, Any]:
+    """Shape a :class:`DirtyFileError` for MCP clients.
+
+    The structured payload lets the chat-side render the conflict as
+    actionable options instead of an opaque traceback. Used by Phase 7.3
+    write handlers; the formatter is wired separately from the raising
+    sites so each handler can keep its existing return-shape idiom.
+    """
+    paths = [str(p) for p in getattr(exc, "paths", []) or []]
+    primary = paths[0] if paths else ""
+    return {
+        "status": "local_edit_conflict",
+        "conflicting_path": primary,
+        "all_conflicts": paths,
+        "options": [
+            "pass force=True to overwrite",
+            "commit or stash local edits first",
+        ],
+    }
 
 
 def _ledger_target_dir(action: str, kwargs: dict[str, Any]) -> Path:

@@ -19,6 +19,7 @@ Reads stay through SQLite for query performance in both backends.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,6 +39,8 @@ __all__ = [
     "SqliteCachedBackend",
     "SqliteOnlyBackend",
     "StorageBackend",
+    "get_backend",
+    "invalidate_backend_cache",
 ]
 
 
@@ -354,3 +357,64 @@ def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
 def _noop_stage(_path: Path) -> None:
     """Phase 7.1 stub; Phase 7.2 replaces with git_bridge.stage."""
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Backend factory (Phase 7.3 H1)
+# ─────────────────────────────────────────────────────────────────────
+
+_BACKEND_CACHE: "StorageBackend | None" = None
+
+_BACKEND_SQLITE_ONLY = "sqlite_only"
+_BACKEND_SQLITE_CACHED = "sqlite_cached"
+
+
+def get_backend(
+    base_path: str | Path,
+    *,
+    repo_root: str | Path | None = None,
+) -> StorageBackend:
+    """Return the process-singleton :class:`StorageBackend`.
+
+    Selection:
+
+    1. ``WORKFLOW_STORAGE_BACKEND`` env var, if set to
+       ``sqlite_only`` or ``sqlite_cached`` (other values ignored).
+    2. Otherwise probe :func:`git_bridge.is_enabled` against
+       ``repo_root`` (falls back to the process CWD). Git enabled →
+       :class:`SqliteCachedBackend`; git disabled → :class:`SqliteOnlyBackend`.
+
+    The first call materializes the backend; subsequent calls return
+    the same instance. Tests that need to re-probe must call
+    :func:`invalidate_backend_cache` first.
+
+    ``repo_root`` is required for the cached backend and defaults to
+    ``Path.cwd()`` when not provided — matches the common case where
+    the Universe Server runs from the repo root.
+    """
+    global _BACKEND_CACHE
+    if _BACKEND_CACHE is not None:
+        return _BACKEND_CACHE
+
+    resolved_repo = Path(repo_root) if repo_root is not None else Path.cwd()
+    choice = os.environ.get("WORKFLOW_STORAGE_BACKEND", "").strip().lower()
+    if choice == _BACKEND_SQLITE_ONLY:
+        _BACKEND_CACHE = SqliteOnlyBackend(base_path)
+    elif choice == _BACKEND_SQLITE_CACHED:
+        _BACKEND_CACHE = SqliteCachedBackend(base_path, repo_root=resolved_repo)
+    elif git_bridge.is_enabled(resolved_repo):
+        _BACKEND_CACHE = SqliteCachedBackend(base_path, repo_root=resolved_repo)
+    else:
+        _BACKEND_CACHE = SqliteOnlyBackend(base_path)
+    return _BACKEND_CACHE
+
+
+def invalidate_backend_cache() -> None:
+    """Drop the cached backend. Test helper.
+
+    Also invalidates the git_bridge cache so a subsequent ``get_backend``
+    call re-probes the current environment.
+    """
+    global _BACKEND_CACHE
+    _BACKEND_CACHE = None
+    git_bridge.invalidate_cache()

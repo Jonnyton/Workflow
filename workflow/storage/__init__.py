@@ -28,6 +28,8 @@ from workflow.storage.backend import (
     SqliteCachedBackend,
     SqliteOnlyBackend,
     StorageBackend,
+    get_backend,
+    invalidate_backend_cache,
 )
 from workflow.storage.layout import YamlRepoLayout
 from workflow.storage.serializer import (
@@ -45,6 +47,8 @@ __all__ = [
     "YamlRepoLayout",
     "branch_from_yaml_payload",
     "branch_to_yaml_payload",
+    "get_backend",
     "goal_from_yaml_payload",
     "goal_to_yaml_payload",
+    "invalidate_backend_cache",
 ]
