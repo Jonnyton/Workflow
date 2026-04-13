@@ -8,7 +8,10 @@ tags: []
 version: 1
 parent_def_id: null
 entry_point: capture
-state_schema: []
+state_schema:
+- name: raw_recipe
+  type: str
+  description: ''
 nodes:
 - id: capture
   path: nodes/recipe-tracker/capture.yaml
@@ -42,4 +45,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:21:58.039895+00:00'
-updated_at: 1776093719.909775
+updated_at: 1776093720.2148063
