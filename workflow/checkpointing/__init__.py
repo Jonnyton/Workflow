@@ -1,4 +1,4 @@
-"""Checkpointing utilities for Fantasy Author.
+"""Checkpointing utilities for Workflow.
 
 Wraps LangGraph's SqliteSaver with WAL mode, retention policies,
 and helpers for creating and resuming from checkpoints.

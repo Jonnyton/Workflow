@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from workflow.utils.json_parsing import parse_llm_json
+
 logger = logging.getLogger(__name__)
 
 # At most this many canon files will be rewritten per cycle.
@@ -45,7 +47,7 @@ def reflect(state: dict[str, Any]) -> dict[str, Any]:
     dict
         Partial state with ``quality_trace`` entry.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     trace: dict[str, Any] = {
         "node": "reflect",
@@ -132,7 +134,7 @@ def _review_canon_quality(state: dict[str, Any]) -> dict[str, Any]:
     current_model = ""
     try:
         # Probe which provider is currently active
-        from fantasy_author import runtime
+        from workflow import runtime
         if runtime.memory_manager is not None:
             # The provider name is tracked in state from the last call
             current_model = state.get("provider", "")
@@ -311,7 +313,7 @@ def _get_file_model(filepath: Path) -> str:
 
 # Model quality tiers -- higher number = stronger model.
 # Weaker models need stronger evidence (higher severity) to rewrite.
-# User edits (via API/Custom GPT) are highest tier but NOT untouchable --
+# User edits (via API/MCP) are highest tier but NOT untouchable --
 # if Opus finds a genuine contradiction between user edits and multiple
 # other canon sources, it can fix it.
 _MODEL_TIERS: dict[str, int] = {
@@ -320,7 +322,7 @@ _MODEL_TIERS: dict[str, int] = {
     "gemini-free": 2,
     "codex": 3,
     "claude-code": 4,
-    "user": 5,  # Human-directed edits (via Custom GPT)
+    "user": 5,  # Human-directed edits (via API/MCP)
 }
 
 # Minimum severity (0-10) needed to rewrite a file, indexed by tier gap.
@@ -410,21 +412,9 @@ def _evaluate_canon(
 
 def _parse_issues(raw: str) -> list[dict[str, Any]]:
     """Parse the LLM's JSON response into a sorted list of issues."""
-    # Strip markdown code fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Drop first and last fence lines
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines)
-
-    try:
-        issues = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
+    issues = parse_llm_json(raw, expect_type=list, fallback=None)
+    if issues is None:
         logger.warning("Could not parse canon review response as JSON")
-        return []
-
-    if not isinstance(issues, list):
         return []
 
     # Validate and normalize

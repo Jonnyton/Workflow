@@ -15,6 +15,13 @@ import json
 import logging
 from typing import Any
 
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 logger = logging.getLogger(__name__)
 
 # Set to True to skip real provider calls and use mock responses.
@@ -326,6 +333,30 @@ def _mock_extraction_response(prose: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _call_router_with_retry(role: str, prompt: str, system: str) -> str:
+    """Call the real router with tenacity retry on transient exhaustion.
+
+    Retries up to 3 times with exponential backoff (2s, 4s, 8s) when
+    all providers are temporarily exhausted. This handles the common case
+    where rate-limit cooldowns expire between attempts.
+    """
+    from workflow.exceptions import AllProvidersExhaustedError
+
+    @retry(
+        retry=retry_if_exception_type(AllProvidersExhaustedError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=8),
+        reraise=True,
+    )
+    def _attempt() -> str:
+        global last_provider
+        result = _real_router.call_sync(role, prompt, system)
+        last_provider = result.provider
+        return result.text
+
+    return _attempt()
+
+
 def call_provider(
     prompt: str,
     system: str = "",
@@ -338,6 +369,9 @@ def call_provider(
     Uses the real ProviderRouter's ``call_sync`` method which runs the
     async fallback chain in a dedicated thread.  Falls back to mock
     output only when all providers are exhausted.
+
+    On transient exhaustion (all providers in cooldown), retries up to 3
+    times with exponential backoff before giving up.
 
     Parameters
     ----------
@@ -361,16 +395,13 @@ def call_provider(
             return fallback_response
         return "[Mock response -- _FORCE_MOCK is True]"
 
-    # Use the real router's synchronous entry point
-    global last_provider
+    # Use the real router's synchronous entry point with retry
     if _real_router is not None:
         try:
-            result = _real_router.call_sync(role, prompt, system)
-            last_provider = result.provider
-            return result.text
+            return _call_router_with_retry(role, prompt, system)
         except Exception as e:
             logger.error(
-                "All providers exhausted for role=%s: %s", role, e,
+                "All providers exhausted for role=%s after retries: %s", role, e,
             )
 
     # Fallback: only use mock content if an explicit fallback was provided.

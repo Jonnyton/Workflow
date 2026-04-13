@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fantasy_author.memory.core import CoreMemory
-from fantasy_author.memory.episodic import EpisodicMemory
-from fantasy_author.memory.manager import DRAFT, EVALUATE, ORIENT, PLAN, MemoryManager
-from fantasy_author.memory.promotion import PromotionGates
-from fantasy_author.memory.reflexion import ReflexionEngine, ReflexionResult
+from workflow.memory.core import CoreMemory
+from workflow.memory.episodic import EpisodicMemory
+from workflow.memory.manager import DRAFT, EVALUATE, ORIENT, PLAN, MemoryManager
+from workflow.memory.promotion import PromotionGates
+from workflow.memory.reflexion import ReflexionEngine, ReflexionResult
 
 # =====================================================================
 # CoreMemory

@@ -1,1 +1,2 @@
-"""Judge infrastructure -- legacy module, will be removed."""
+"""Shim: use workflow.judges instead."""
+from workflow.judges import *  # noqa: F401,F403

@@ -306,9 +306,70 @@ def initialize_author_server(base_path: str | Path) -> Path:
         updated_at REAL NOT NULL,
         PRIMARY KEY(universe_id, priority_id)
     );
+
+    CREATE TABLE IF NOT EXISTS branch_definitions (
+        branch_def_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        author TEXT NOT NULL DEFAULT 'anonymous',
+        domain_id TEXT NOT NULL DEFAULT 'workflow',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        version INTEGER NOT NULL DEFAULT 1,
+        parent_def_id TEXT,
+        entry_point TEXT NOT NULL DEFAULT '',  -- also in graph_json for export/fork
+        graph_json TEXT NOT NULL DEFAULT '{}',
+        node_defs_json TEXT NOT NULL DEFAULT '[]',
+        state_schema_json TEXT NOT NULL DEFAULT '[]',
+        published INTEGER NOT NULL DEFAULT 0,
+        stats_json TEXT NOT NULL DEFAULT '{}',
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_branch_defs_author
+        ON branch_definitions(author);
+    CREATE INDEX IF NOT EXISTS idx_branch_defs_published
+        ON branch_definitions(published);
+    CREATE INDEX IF NOT EXISTS idx_branch_defs_parent
+        ON branch_definitions(parent_def_id);
+    CREATE INDEX IF NOT EXISTS idx_branch_defs_domain
+        ON branch_definitions(domain_id);
+
+    -- Phase 5: Goal as first-class shared primitive.
+    -- Flat namespace; users propose Goals freely. Soft-delete via
+    -- visibility='deleted'. See docs/specs/community_branches_phase5.md.
+    CREATE TABLE IF NOT EXISTS goals (
+        goal_id     TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        author      TEXT NOT NULL DEFAULT 'anonymous',
+        tags_json   TEXT NOT NULL DEFAULT '[]',
+        visibility  TEXT NOT NULL DEFAULT 'public',
+        created_at  REAL NOT NULL,
+        updated_at  REAL NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_goals_author ON goals(author);
+    CREATE INDEX IF NOT EXISTS idx_goals_visibility ON goals(visibility);
     """
     with _connect(base_path) as conn:
         conn.executescript(schema)
+        # Phase 5 migration: branch_definitions.goal_id column. Older
+        # installs predate Phase 5. SQLite lacks ADD COLUMN IF NOT EXISTS,
+        # so probe table_info first. Nullable so existing rows stay
+        # valid; index on goal_id for leaderboard/list filters.
+        existing_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(branch_definitions)")
+        }
+        if "goal_id" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE branch_definitions ADD COLUMN goal_id TEXT"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_branch_defs_goal "
+            "ON branch_definitions(goal_id)"
+        )
     ensure_default_author(base_path)
     return author_server_db_path(base_path)
 
@@ -2004,3 +2065,784 @@ def _request_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["metadata"] = _json_loads(result.pop("metadata_json", None), {})
     return result
+
+
+def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    # goal_id is Phase 5; older rows created before the ADD COLUMN
+    # migration may surface the column but with NULL. Accessing
+    # sqlite3.Row by key raises IndexError when the column is absent
+    # from the SELECT, so guard via `.keys()`.
+    row_keys = row.keys() if hasattr(row, "keys") else []
+    goal_id = row["goal_id"] if "goal_id" in row_keys else None
+    return {
+        "branch_def_id": row["branch_def_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "author": row["author"],
+        "domain_id": row["domain_id"],
+        "tags": _json_loads(row["tags_json"], []),
+        "version": row["version"],
+        "parent_def_id": row["parent_def_id"],
+        "entry_point": row["entry_point"],
+        "graph": _json_loads(row["graph_json"], {}),
+        "node_defs": _json_loads(row["node_defs_json"], []),
+        "state_schema": _json_loads(row["state_schema_json"], []),
+        "published": bool(row["published"]),
+        "stats": _json_loads(row["stats_json"], {}),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "goal_id": goal_id,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Community Branches — CRUD
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def save_branch_definition(
+    base_path: str | Path,
+    *,
+    branch_def: dict[str, Any],
+) -> dict[str, Any]:
+    """Insert or replace a branch definition.
+
+    Accepts a dict matching BranchDefinition.to_dict(). Graph topology
+    (graph_nodes + edges + conditional_edges) is stored in graph_json.
+    Node definitions are stored separately in node_defs_json. State
+    schema is an unvalidated JSON blob in state_schema_json.
+
+    Also accepts legacy format with "nodes" key (flat node list stored
+    in graph_json for backward compatibility during migration).
+    """
+    now = _now()
+    branch_def_id = branch_def.get("branch_def_id", uuid.uuid4().hex[:12])
+
+    # Build graph topology JSON (LangGraph-native shape)
+    graph = {
+        "nodes": branch_def.get("graph_nodes", []),
+        "edges": branch_def.get("edges", []),
+        "conditional_edges": branch_def.get("conditional_edges", []),
+        "entry_point": branch_def.get("entry_point", ""),
+    }
+
+    # Legacy compat: if "nodes" key exists and graph_nodes doesn't,
+    # store nodes in graph_json (migration path from old format)
+    if not graph["nodes"] and "nodes" in branch_def:
+        graph["nodes"] = branch_def["nodes"]
+
+    # Node definitions — separate from graph topology
+    node_defs = branch_def.get("node_defs", [])
+
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO branch_definitions (
+                branch_def_id, name, description, author, domain_id,
+                tags_json, version, parent_def_id, entry_point,
+                graph_json, node_defs_json, state_schema_json,
+                published, stats_json, created_at, updated_at, goal_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                branch_def_id,
+                branch_def.get("name", ""),
+                branch_def.get("description", ""),
+                branch_def.get("author", "anonymous"),
+                branch_def.get("domain_id", "workflow"),
+                _json_dumps(branch_def.get("tags", [])),
+                branch_def.get("version", 1),
+                branch_def.get("parent_def_id"),
+                branch_def.get("entry_point", ""),
+                _json_dumps(graph),
+                _json_dumps(node_defs),
+                _json_dumps(branch_def.get("state_schema", [])),
+                1 if branch_def.get("published") else 0,
+                _json_dumps(branch_def.get("stats", {})),
+                branch_def.get("created_at", now),
+                now,
+                branch_def.get("goal_id") or None,
+            ),
+        )
+    return get_branch_definition(base_path, branch_def_id=branch_def_id)
+
+
+def get_branch_definition(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+) -> dict[str, Any]:
+    """Retrieve a single branch definition by ID."""
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM branch_definitions WHERE branch_def_id = ?",
+            (branch_def_id,),
+        ).fetchone()
+    if row is None:
+        raise KeyError(branch_def_id)
+    return _branch_def_from_row(row)
+
+
+def list_branch_definitions(
+    base_path: str | Path,
+    *,
+    published_only: bool = False,
+    author: str = "",
+    domain_id: str = "",
+    tag: str = "",
+    name_contains: str = "",
+    goal_id: str = "",
+) -> list[dict[str, Any]]:
+    """List branch definitions with optional filters.
+
+    Args:
+        published_only: If True, return only published branches.
+        author: Filter by author name (exact match).
+        domain_id: Filter by domain (exact match).
+        tag: Filter by tag (substring match in JSON array).
+        name_contains: Filter by name (case-insensitive substring).
+        goal_id: Filter by bound Goal (exact match). Phase 5.
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if published_only:
+        clauses.append("published = 1")
+    if author:
+        clauses.append("author = ?")
+        params.append(author)
+    if domain_id:
+        clauses.append("domain_id = ?")
+        params.append(domain_id)
+    if tag:
+        clauses.append("tags_json LIKE ?")
+        params.append(f'%"{tag}"%')
+    if name_contains:
+        clauses.append("name LIKE ?")
+        params.append(f"%{name_contains}%")
+    if goal_id:
+        clauses.append("goal_id = ?")
+        params.append(goal_id)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM branch_definitions
+            {where}
+            ORDER BY updated_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [_branch_def_from_row(row) for row in rows]
+
+
+def update_branch_definition(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Update specific fields of a branch definition.
+
+    Supports updating: name, description, domain_id, tags, version,
+    entry_point, graph_nodes, edges, conditional_edges, node_defs,
+    state_schema, published, stats. Also accepts legacy "nodes" key.
+    """
+    now = _now()
+    sets: list[str] = ["updated_at = ?"]
+    params: list[Any] = [now]
+
+    simple_fields = {
+        "name": "name",
+        "description": "description",
+        "author": "author",
+        "domain_id": "domain_id",
+        "version": "version",
+        "entry_point": "entry_point",
+        # Phase 5: goal binding. `None` or empty string unbinds.
+        "goal_id": "goal_id",
+    }
+    for key, col in simple_fields.items():
+        if key in updates:
+            value = updates[key]
+            # Normalize empty-string goal_id to NULL for unbind semantics.
+            if key == "goal_id" and not value:
+                value = None
+            sets.append(f"{col} = ?")
+            params.append(value)
+
+    json_fields = {
+        "tags": "tags_json",
+        "stats": "stats_json",
+        "state_schema": "state_schema_json",
+    }
+    for key, col in json_fields.items():
+        if key in updates:
+            sets.append(f"{col} = ?")
+            params.append(_json_dumps(updates[key]))
+
+    if "published" in updates:
+        sets.append("published = ?")
+        params.append(1 if updates["published"] else 0)
+
+    # Update node_defs separately from graph topology
+    if "node_defs" in updates:
+        sets.append("node_defs_json = ?")
+        params.append(_json_dumps(updates["node_defs"]))
+
+    # If graph topology fields are updated, rebuild graph_json
+    graph_keys = {"graph_nodes", "edges", "conditional_edges", "nodes"}
+    if graph_keys & updates.keys():
+        existing = get_branch_definition(base_path, branch_def_id=branch_def_id)
+        graph = existing.get("graph", {})
+        if "graph_nodes" in updates:
+            graph["nodes"] = updates["graph_nodes"]
+        elif "nodes" in updates:
+            # Legacy compat
+            graph["nodes"] = updates["nodes"]
+        if "edges" in updates:
+            graph["edges"] = updates["edges"]
+        if "conditional_edges" in updates:
+            graph["conditional_edges"] = updates["conditional_edges"]
+        if "entry_point" in updates:
+            graph["entry_point"] = updates["entry_point"]
+        sets.append("graph_json = ?")
+        params.append(_json_dumps(graph))
+
+    params.append(branch_def_id)
+
+    with _connect(base_path) as conn:
+        conn.execute(
+            f"UPDATE branch_definitions SET {', '.join(sets)} "
+            f"WHERE branch_def_id = ?",
+            params,
+        )
+    return get_branch_definition(base_path, branch_def_id=branch_def_id)
+
+
+def delete_branch_definition(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+) -> bool:
+    """Delete a branch definition. Returns True if a row was deleted."""
+    with _connect(base_path) as conn:
+        cursor = conn.execute(
+            "DELETE FROM branch_definitions WHERE branch_def_id = ?",
+            (branch_def_id,),
+        )
+    return cursor.rowcount > 0
+
+
+def fork_branch_definition(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+    new_name: str = "",
+    author: str = "anonymous",
+) -> dict[str, Any]:
+    """Fork an existing branch definition.
+
+    Creates a new branch with a new ID, version reset to 1, and
+    parent_def_id set to the source branch for lineage tracking.
+    """
+    from workflow.branches import BranchDefinition
+
+    source = get_branch_definition(base_path, branch_def_id=branch_def_id)
+
+    # from_dict handles the DB row shape (nested "graph" dict) directly
+    branch = BranchDefinition.from_dict(source)
+    forked = branch.fork(new_name=new_name, author=author)
+
+    # Increment fork count on source
+    stats = source.get("stats", {})
+    stats["fork_count"] = stats.get("fork_count", 0) + 1
+    update_branch_definition(
+        base_path, branch_def_id=branch_def_id, updates={"stats": stats}
+    )
+
+    return save_branch_definition(base_path, branch_def=forked.to_dict())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 5: Goals — first-class shared primitive above Branches
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "goal_id": row["goal_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "author": row["author"],
+        "tags": _json_loads(row["tags_json"], []),
+        "visibility": row["visibility"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def save_goal(
+    base_path: str | Path,
+    *,
+    goal: dict[str, Any],
+) -> dict[str, Any]:
+    """Insert or update a Goal. Returns the stored row as a dict."""
+    initialize_author_server(base_path)
+    now = _now()
+    goal_id = goal.get("goal_id") or uuid.uuid4().hex[:12]
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO goals (
+                goal_id, name, description, author, tags_json,
+                visibility, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                goal_id,
+                goal.get("name", ""),
+                goal.get("description", ""),
+                goal.get("author", "anonymous"),
+                _json_dumps(list(goal.get("tags", []) or [])),
+                goal.get("visibility", "public"),
+                goal.get("created_at", now),
+                now,
+            ),
+        )
+    return get_goal(base_path, goal_id=goal_id)
+
+
+def get_goal(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+) -> dict[str, Any]:
+    """Fetch a Goal by id. Raises KeyError if missing."""
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM goals WHERE goal_id = ?",
+            (goal_id,),
+        ).fetchone()
+    if row is None:
+        raise KeyError(goal_id)
+    return _goal_from_row(row)
+
+
+def update_goal(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Patch mutable fields on a Goal. Returns the updated row.
+
+    Supported fields: name, description, tags, visibility. Author is
+    immutable; timestamps are server-managed.
+    """
+    initialize_author_server(base_path)
+    now = _now()
+    sets: list[str] = ["updated_at = ?"]
+    params: list[Any] = [now]
+    simple = {"name": "name", "description": "description",
+              "visibility": "visibility"}
+    for key, col in simple.items():
+        if key in updates:
+            sets.append(f"{col} = ?")
+            params.append(updates[key])
+    if "tags" in updates:
+        sets.append("tags_json = ?")
+        params.append(_json_dumps(list(updates["tags"] or [])))
+    params.append(goal_id)
+    with _connect(base_path) as conn:
+        conn.execute(
+            f"UPDATE goals SET {', '.join(sets)} WHERE goal_id = ?",
+            params,
+        )
+    return get_goal(base_path, goal_id=goal_id)
+
+
+def list_goals(
+    base_path: str | Path,
+    *,
+    author: str = "",
+    tag: str = "",
+    include_deleted: bool = False,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List Goals with optional filters. Soft-deleted Goals are hidden
+    unless ``include_deleted=True`` (used by admin surfaces + get)."""
+    initialize_author_server(base_path)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if not include_deleted:
+        clauses.append("visibility != 'deleted'")
+    if author:
+        clauses.append("author = ?")
+        params.append(author)
+    if tag:
+        clauses.append("tags_json LIKE ?")
+        params.append(f'%"{tag}"%')
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM goals {where}
+            ORDER BY updated_at DESC LIMIT ?
+            """,
+            (*params, max(1, int(limit))),
+        ).fetchall()
+    return [_goal_from_row(row) for row in rows]
+
+
+def search_goals(
+    base_path: str | Path,
+    *,
+    query: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """LIKE-based full-field search over name + description + tags.
+
+    Per spec §Search: LIKE for v1, FTS5 if we hit scale. Case-insensitive
+    substring match against a concatenated haystack. Hidden Goals
+    (visibility='deleted') are excluded.
+    """
+    initialize_author_server(base_path)
+    pattern = f"%{(query or '').lower()}%"
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM goals
+            WHERE visibility != 'deleted'
+              AND (
+                LOWER(name) LIKE ?
+                OR LOWER(description) LIKE ?
+                OR LOWER(tags_json) LIKE ?
+              )
+            ORDER BY updated_at DESC LIMIT ?
+            """,
+            (pattern, pattern, pattern, max(1, int(limit))),
+        ).fetchall()
+    return [_goal_from_row(row) for row in rows]
+
+
+def delete_goal(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+) -> dict[str, Any]:
+    """Soft-delete a Goal by flipping visibility to 'deleted'.
+
+    Per AGENTS.md "nothing is lost, nothing is deleted": bound Branches
+    keep their ``goal_id`` reference; `get_goal(...)` still resolves
+    deleted Goals so lineage is inspectable.
+    """
+    return update_goal(
+        base_path, goal_id=goal_id, updates={"visibility": "deleted"},
+    )
+
+
+def branches_for_goal(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return Branches bound to a Goal (full branch-def dicts)."""
+    return list_branch_definitions(
+        base_path, goal_id=goal_id,
+    )[:max(1, int(limit))]
+
+
+def goal_leaderboard(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    metric: str = "run_count",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Rank Branches under a Goal by the requested metric.
+
+    v1 metrics:
+    - ``run_count`` — Phase 3 ``runs`` table, grouped by ``branch_def_id``.
+    - ``forks`` — walk of ``parent_def_id`` chains.
+    - ``outcome`` — Phase 6 stub. Returns empty list (the handler turns
+      this into a spec-compliant forward-compat response).
+
+    Unknown metric raises ValueError so the handler can translate it
+    into a ``{error, available_metrics}`` response.
+    """
+    initialize_author_server(base_path)
+    metric = (metric or "run_count").strip().lower()
+    if metric == "run_count":
+        runs_db = Path(base_path) / ".runs.db"
+        if not runs_db.exists():
+            branches = branches_for_goal(base_path, goal_id=goal_id)
+            return [
+                {**b, "metric": metric, "value": 0}
+                for b in branches[:limit]
+            ]
+        # Join requires attaching the runs DB. Use a fresh connection
+        # with ATTACH for the scope of this query.
+        branches = branches_for_goal(base_path, goal_id=goal_id)
+        branch_ids = [b["branch_def_id"] for b in branches]
+        if not branch_ids:
+            return []
+        placeholders = ",".join("?" for _ in branch_ids)
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(runs_db, timeout=10.0)
+        conn.row_factory = _sqlite3.Row
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT branch_def_id, COUNT(*) AS n
+                FROM runs
+                WHERE branch_def_id IN ({placeholders})
+                GROUP BY branch_def_id
+                """,
+                branch_ids,
+            ).fetchall()
+            counts = {r["branch_def_id"]: r["n"] for r in rows}
+        finally:
+            conn.close()
+        ranked = sorted(
+            branches,
+            key=lambda b: counts.get(b["branch_def_id"], 0),
+            reverse=True,
+        )
+        return [
+            {**b, "metric": metric, "value": counts.get(b["branch_def_id"], 0)}
+            for b in ranked[:limit]
+        ]
+    if metric == "forks":
+        branches = branches_for_goal(base_path, goal_id=goal_id)
+        branch_ids = {b["branch_def_id"] for b in branches}
+        # Count Branches anywhere in the DB whose parent_def_id is in
+        # our goal's Branch set.
+        with _connect(base_path) as conn:
+            if branch_ids:
+                placeholders = ",".join("?" for _ in branch_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT parent_def_id, COUNT(*) AS n
+                    FROM branch_definitions
+                    WHERE parent_def_id IN ({placeholders})
+                    GROUP BY parent_def_id
+                    """,
+                    list(branch_ids),
+                ).fetchall()
+                counts = {r["parent_def_id"]: r["n"] for r in rows}
+            else:
+                counts = {}
+        ranked = sorted(
+            branches,
+            key=lambda b: counts.get(b["branch_def_id"], 0),
+            reverse=True,
+        )
+        return [
+            {**b, "metric": metric, "value": counts.get(b["branch_def_id"], 0)}
+            for b in ranked[:limit]
+        ]
+    if metric == "outcome":
+        # Phase 6 stub — handler formats the "not available yet" payload.
+        return []
+    raise ValueError(f"Unknown metric '{metric}'")
+
+
+def goal_common_nodes(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    min_branches: int = 2,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Return NodeDefinitions that appear in at least ``min_branches``
+    Branches under this Goal. Compares on ``node_id`` equality.
+
+    Shape: ``[{node_id, display_name, occurrence_count, branch_ids,
+    first_seen_in}]`` ordered by occurrence_count desc.
+    """
+    branches = branches_for_goal(base_path, goal_id=goal_id)
+    counters: dict[str, dict[str, Any]] = {}
+    for branch in branches:
+        seen_this_branch: set[str] = set()
+        for node in branch.get("node_defs") or []:
+            nid = node.get("node_id") or ""
+            if not nid or nid in seen_this_branch:
+                continue
+            seen_this_branch.add(nid)
+            entry = counters.setdefault(nid, {
+                "node_id": nid,
+                "display_name": node.get("display_name", nid),
+                "occurrence_count": 0,
+                "branch_ids": [],
+                "first_seen_in": branch["branch_def_id"],
+            })
+            entry["occurrence_count"] += 1
+            entry["branch_ids"].append(branch["branch_def_id"])
+    survivors = [
+        v for v in counters.values()
+        if v["occurrence_count"] >= max(1, int(min_branches))
+    ]
+    survivors.sort(key=lambda v: v["occurrence_count"], reverse=True)
+    return survivors[:max(1, int(limit))]
+
+
+def goal_common_nodes_all(
+    base_path: str | Path,
+    *,
+    min_branches: int = 2,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Return NodeDefinitions that appear in at least ``min_branches``
+    Branches across ALL Goals (cross-Goal aggregation).
+
+    Same shape as ``goal_common_nodes`` plus a ``goal_ids`` field listing
+    every Goal under which the node has been seen. Unbound branches
+    (goal_id is None) count toward the aggregate but contribute an empty
+    goal entry rather than being dropped, so nodes in unbound pipelines
+    still surface. See #62 — bot failed to reuse ``rigor_checker`` across
+    research-paper-pipeline and prosecutorial-brief because the per-Goal
+    ``goal_common_nodes`` didn't see both.
+    """
+    branches = list_branch_definitions(base_path)
+    counters: dict[str, dict[str, Any]] = {}
+    for branch in branches:
+        seen_this_branch: set[str] = set()
+        branch_goal = branch.get("goal_id") or ""
+        for node in branch.get("node_defs") or []:
+            nid = node.get("node_id") or ""
+            if not nid or nid in seen_this_branch:
+                continue
+            seen_this_branch.add(nid)
+            entry = counters.setdefault(nid, {
+                "node_id": nid,
+                "display_name": node.get("display_name", nid),
+                "description": node.get("description", ""),
+                "occurrence_count": 0,
+                "branch_ids": [],
+                "goal_ids": [],
+                "first_seen_in": branch["branch_def_id"],
+            })
+            entry["occurrence_count"] += 1
+            entry["branch_ids"].append(branch["branch_def_id"])
+            if branch_goal and branch_goal not in entry["goal_ids"]:
+                entry["goal_ids"].append(branch_goal)
+    survivors = [
+        v for v in counters.values()
+        if v["occurrence_count"] >= max(1, int(min_branches))
+    ]
+    survivors.sort(key=lambda v: v["occurrence_count"], reverse=True)
+    return survivors[:max(1, int(limit))]
+
+
+def search_nodes(
+    base_path: str | Path,
+    *,
+    query: str = "",
+    role: str = "",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Search NodeDefinitions across every Branch by free-text ``query``
+    and optional ``role`` (phase) filter.
+
+    Returns cards for the calling tool surface to render as reuse
+    candidates. A node is scored by substring hits in ``node_id``,
+    ``display_name``, ``description``, and ``prompt_template``; the
+    ``reuse_count`` across Branches acts as a tiebreaker.
+
+    Shape: ``[{node_id, display_name, description, phase,
+    branch_def_id, reuse_count, prompt_template_preview, goal_ids}]``
+    ordered by score desc, reuse_count desc.
+
+    Dedupes on ``node_id``: the first-seen definition wins, and
+    ``branch_def_id`` points at the canonical branch (earliest
+    published, then first registered). Callers who need all branches
+    using a node_id can intersect ``reuse_count`` with the full
+    branch list via ``list_branch_definitions``.
+    """
+    branches = list_branch_definitions(base_path)
+    q = (query or "").strip().lower()
+    q_tokens = [t for t in q.split() if t]
+    phase_filter = (role or "").strip().lower()
+
+    cards: dict[str, dict[str, Any]] = {}
+    reuse_counts: dict[str, int] = {}
+    node_goals: dict[str, list[str]] = {}
+    for branch in branches:
+        branch_goal = branch.get("goal_id") or ""
+        seen_in_branch: set[str] = set()
+        for node in branch.get("node_defs") or []:
+            nid = node.get("node_id") or ""
+            if not nid:
+                continue
+            if nid not in seen_in_branch:
+                seen_in_branch.add(nid)
+                reuse_counts[nid] = reuse_counts.get(nid, 0) + 1
+                if branch_goal:
+                    goals_for_nid = node_goals.setdefault(nid, [])
+                    if branch_goal not in goals_for_nid:
+                        goals_for_nid.append(branch_goal)
+            if nid in cards:
+                continue
+            cards[nid] = {
+                "node_id": nid,
+                "display_name": node.get("display_name", nid),
+                "description": node.get("description", ""),
+                "phase": node.get("phase", ""),
+                "branch_def_id": branch["branch_def_id"],
+                "prompt_template_preview": _preview(
+                    node.get("prompt_template", ""), 160,
+                ),
+                "source_code_preview": _preview(
+                    node.get("source_code", ""), 160,
+                ),
+            }
+
+    results: list[dict[str, Any]] = []
+    for nid, card in cards.items():
+        if phase_filter and (card["phase"] or "").lower() != phase_filter:
+            continue
+        score = 0
+        if q_tokens:
+            haystack = " ".join([
+                nid,
+                card["display_name"],
+                card["description"],
+                card["prompt_template_preview"],
+            ]).lower()
+            for token in q_tokens:
+                hits = haystack.count(token)
+                score += hits
+                if token == nid.lower():
+                    score += 5
+                if token in card["display_name"].lower():
+                    score += 2
+            if score == 0:
+                continue
+        card["reuse_count"] = reuse_counts.get(nid, 0)
+        card["goal_ids"] = list(node_goals.get(nid, []))
+        card["_score"] = score
+        results.append(card)
+
+    results.sort(
+        key=lambda c: (c.get("_score", 0), c.get("reuse_count", 0)),
+        reverse=True,
+    )
+    for card in results:
+        card.pop("_score", None)
+    return results[:max(1, int(limit))]
+
+
+def _preview(text: str, max_len: int) -> str:
+    """Return a short single-line preview of a longer string."""
+    if not text:
+        return ""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[: max_len - 1] + "…"

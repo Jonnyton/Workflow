@@ -1,4 +1,4 @@
-"""Shared fixtures for Fantasy Author tests.
+"""Shared fixtures for Workflow tests.
 
 Provides checkpointer, compiled graphs, and default state dicts
 that all test modules can reuse.
@@ -14,7 +14,7 @@ import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 # Force mock provider responses in all tests to avoid real API calls
-import fantasy_author.nodes._provider_stub as _provider_stub
+import domains.fantasy_author.phases._provider_stub as _provider_stub
 
 _provider_stub._FORCE_MOCK = True
 
@@ -26,7 +26,7 @@ def _reset_runtime():
     The pre-test reset catches cases where a prior test's background thread
     (e.g. LangGraph executor) sets the global after the prior test's teardown.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     runtime.reset()
     yield

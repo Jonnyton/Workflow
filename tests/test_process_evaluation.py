@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fantasy_author.evaluation.process import (
+from workflow.evaluation.process import (
     ProcessEvaluation,
     evaluate_scene_process,
 )

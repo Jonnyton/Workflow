@@ -34,7 +34,7 @@ def book_close(state: dict[str, Any]) -> dict[str, Any]:
         Partial state with:
         - ``book_summary``: summary of the completed book.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is not None:

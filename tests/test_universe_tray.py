@@ -1,0 +1,265 @@
+"""Tests for universe_tray.UniverseServerManager multi-provider lifecycle.
+
+Exercises the parts of the tray that don't depend on pystray event loops:
+constraint enforcement, lifecycle bookkeeping, auto-start ordering,
+hover/status rendering, and log-handle teardown.
+
+Real subprocess spawning is replaced with a stub Popen so these tests
+stay hermetic.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+# universe_tray imports PIL + pystray at module load. Skip if unavailable.
+pystray = pytest.importorskip("pystray")  # noqa: F841
+PIL = pytest.importorskip("PIL")  # noqa: F841
+
+import universe_tray  # noqa: E402
+from workflow import preferences  # noqa: E402
+
+
+class FakePopen:
+    """Minimal Popen stand-in: `poll()` returns None until `terminate()`."""
+
+    def __init__(self) -> None:
+        self._returncode: int | None = None
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return self._returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self._returncode = 0
+
+    def kill(self) -> None:
+        self.killed = True
+        self._returncode = -9
+
+    def wait(self, timeout: float | None = None) -> int:
+        return self._returncode or 0
+
+    def exit_with(self, code: int = 0) -> None:
+        self._returncode = code
+
+
+class FakeLog:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+    def write(self, _s: str) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+
+@pytest.fixture
+def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Return a UniverseServerManager wired to tmp_path, no real spawns."""
+    # Isolate preferences.
+    prefs_path = tmp_path / "preferences.json"
+    monkeypatch.setattr(preferences, "_PREFS_PATH", prefs_path)
+    preferences.reset_cache()
+
+    # Redirect project + log dirs to tmp to avoid touching repo state.
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "testverse").mkdir()
+    (output / ".active_universe").write_text("testverse", encoding="utf-8")
+    monkeypatch.setattr(universe_tray, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(universe_tray, "LOG_DIR", tmp_path / "logs")
+
+    # Patch spawn machinery so nothing real boots.
+    spawned: list[dict[str, Any]] = []
+
+    def fake_popen(cmd, **kwargs):
+        spawned.append({"cmd": cmd, "kwargs": kwargs})
+        return FakePopen()
+
+    def fake_open(path, *_args, **_kwargs):
+        return FakeLog()
+
+    monkeypatch.setattr(universe_tray.subprocess, "Popen", fake_popen)
+    # Replace the global `open` universe_tray uses for log handles.
+    monkeypatch.setattr("builtins.open", fake_open, raising=False)
+
+    m = universe_tray.UniverseServerManager()
+    m._spawn_log = spawned  # test-visible handle
+    yield m
+    preferences.reset_cache()
+
+
+# ---------------------------------------------------------------------------
+# Constraint enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_start_refuses_unknown_provider(mgr: universe_tray.UniverseServerManager) -> None:
+    assert mgr.start_daemon_for("bogus-provider") is False
+    assert mgr.daemon_procs == {}
+
+
+def test_start_refuses_duplicate_subscription_provider(mgr) -> None:
+    assert mgr.start_daemon_for("claude-code") is True
+    # Second start for same provider is refused.
+    assert mgr.start_daemon_for("claude-code") is False
+    assert list(mgr.daemon_procs.keys()) == ["claude-code"]
+
+
+def test_start_refuses_second_local_provider(mgr, monkeypatch) -> None:
+    # Pretend there's a second local provider registered.
+    monkeypatch.setattr(
+        universe_tray, "_LOCAL_PROVIDER_SET", {"ollama-local", "fake-local"}
+    )
+    monkeypatch.setattr(
+        universe_tray, "ALL_PROVIDERS",
+        universe_tray.ALL_PROVIDERS + ["fake-local"],
+    )
+    assert mgr.start_daemon_for("ollama-local") is True
+    assert mgr.start_daemon_for("fake-local") is False
+
+
+def test_start_allows_subscription_alongside_local(mgr) -> None:
+    assert mgr.start_daemon_for("ollama-local") is True
+    assert mgr.start_daemon_for("claude-code") is True
+    assert set(mgr.daemon_procs.keys()) == {"ollama-local", "claude-code"}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle + FD hygiene
+# ---------------------------------------------------------------------------
+
+
+def test_kill_closes_log_handle(mgr) -> None:
+    mgr.start_daemon_for("codex")
+    _, log = mgr.daemon_procs["codex"]
+    assert not log.closed
+
+    mgr._kill_daemon_for("codex")
+    assert "codex" not in mgr.daemon_procs
+    assert log.closed
+
+
+def test_kill_all_daemons_closes_every_log(mgr) -> None:
+    mgr.start_daemon_for("claude-code")
+    mgr.start_daemon_for("codex")
+    mgr.start_daemon_for("ollama-local")
+    handles = [log for _, log in mgr.daemon_procs.values()]
+
+    mgr._kill_all_daemons()
+    assert mgr.daemon_procs == {}
+    assert all(log.closed for log in handles)
+
+
+def test_check_health_reaps_dead_daemons(mgr) -> None:
+    mgr.start_daemon_for("codex")
+    proc, log = mgr.daemon_procs["codex"]
+    proc.exit_with(1)  # simulate crash
+
+    mgr.check_health()
+    assert "codex" not in mgr.daemon_procs
+    assert log.closed
+
+
+# ---------------------------------------------------------------------------
+# Running-providers + hover text
+# ---------------------------------------------------------------------------
+
+
+def test_running_providers_filters_dead(mgr) -> None:
+    mgr.start_daemon_for("codex")
+    mgr.start_daemon_for("ollama-local")
+    # Mark codex as dead without reaping.
+    mgr.daemon_procs["codex"][0].exit_with(0)
+
+    running = mgr._running_providers()
+    assert running == ["ollama-local"]
+
+
+def test_hover_text_aggregates_active_providers(mgr) -> None:
+    mgr.start_daemon_for("claude-code")
+    mgr.start_daemon_for("ollama-local")
+    hover = mgr.hover_text
+    assert "Active:" in hover
+    assert "claude-code" in hover
+    assert "ollama-local" in hover
+
+
+def test_hover_text_no_suffix_when_idle(mgr) -> None:
+    hover = mgr.hover_text
+    assert "Active:" not in hover
+
+
+def test_status_text_lists_active_providers(mgr) -> None:
+    mgr.start_daemon_for("codex")
+    assert "codex" in mgr.status_text
+    assert "testverse" in mgr.status_text
+
+
+# ---------------------------------------------------------------------------
+# Auto-start ordering
+# ---------------------------------------------------------------------------
+
+
+def test_auto_start_reads_preferences(mgr) -> None:
+    preferences.save_preferences({
+        "default_providers": ["claude-code", "ollama-local"],
+        "auto_start_default": True,
+    })
+    # Locals are ordered first to respect the one-local rule.
+    assert mgr._auto_start_providers() == ["ollama-local", "claude-code"]
+
+
+def test_auto_start_respects_disabled_flag(mgr) -> None:
+    preferences.save_preferences({
+        "default_providers": ["claude-code"],
+        "auto_start_default": False,
+    })
+    assert mgr._auto_start_providers() == []
+
+
+def test_auto_start_drops_unknown_providers(mgr) -> None:
+    preferences.save_preferences({
+        "default_providers": ["claude-code", "not-a-provider"],
+        "auto_start_default": True,
+    })
+    assert mgr._auto_start_providers() == ["claude-code"]
+
+
+# ---------------------------------------------------------------------------
+# Spawn command shape
+# ---------------------------------------------------------------------------
+
+
+def test_spawn_passes_provider_flag_and_env(mgr) -> None:
+    mgr.start_daemon_for("claude-code")
+    record = mgr._spawn_log[-1]
+    assert "--provider" in record["cmd"]
+    flag_idx = record["cmd"].index("--provider")
+    assert record["cmd"][flag_idx + 1] == "claude-code"
+    assert record["kwargs"]["env"]["WORKFLOW_PIN_WRITER"] == "claude-code"
+
+
+def test_spawn_writes_per_provider_log_name(mgr, monkeypatch) -> None:
+    opened: list[Path] = []
+    real_open = open
+
+    def tracking_open(path, *args, **kwargs):
+        opened.append(Path(path))
+        return FakeLog()
+
+    monkeypatch.setattr("builtins.open", tracking_open, raising=False)
+    mgr.start_daemon_for("grok-free")
+    assert any(p.name == "daemon.grok-free.log" for p in opened)
+    # Restore not strictly needed; pytest unwinds monkeypatch at test end.
+    _ = real_open

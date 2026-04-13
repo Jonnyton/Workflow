@@ -1,4 +1,4 @@
-"""Fantasy Author domain-specific memory schemas.
+"""Workflow domain-specific memory schemas.
 
 Defines the memory tier structure (core/episodic/archival) for the narrative.
 """

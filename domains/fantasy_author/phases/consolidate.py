@@ -48,7 +48,7 @@ def consolidate(state: dict[str, Any]) -> dict[str, Any]:
 
     promoted_facts: list[dict[str, Any]] = []
 
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is not None:

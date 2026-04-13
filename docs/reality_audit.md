@@ -95,7 +95,7 @@ Observed directly during this audit:
 
 These claims appear strong enough to treat as current working intent.
 
-### 1. Fantasy Author is a benchmark for broader agent-workflow design
+### 1. Fantasy authoring is a benchmark for broader agent-workflow design
 
 Evidence:
 

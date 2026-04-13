@@ -1,16 +1,22 @@
 {
   "manifest_version": "0.3",
   "name": "workflow-universe-server",
-  "display_name": "Workflow Universe Server",
+  "display_name": "Workflow — Universe Server (Workflow Builder)",
   "version": "0.1.0",
-  "description": "Inspect and steer local Workflow universes through the packaged Universe Server MCP interface.",
-  "long_description": "Workflow Universe Server packages the repo's multi-universe control plane as a local MCP Bundle for Claude Desktop and other MCPB-capable clients. It lets users inspect universe state, read output and canon, submit collaboration requests, write direct daemon notes, and manage custom workflow graph extensions against a selected universe base directory.",
+  "description": "Workflow / Workflow Builder — build, run, and steer custom AI agent workflows inside shared universes. Also: custom AI builder, universe builder, agent workflow platform.",
+  "long_description": "Workflow (also known as Workflow Builder, Universe Builder, or Custom AI Builder) packages a multi-universe control plane as a local MCP Bundle. Users design their own agent workflows as graphs of nodes and run autonomous daemons against them inside named 'universes'. The first-class shipped domain is long-form fiction (autonomous Author daemons writing novels); the `extensions` tool lets users register custom graph nodes for other domains. Connect by natural phrases — 'workflow builder', 'the workflow thing', 'my AI builder connector' — and this is what the user means.",
   "author": {
     "name": "Jonathan Farnsworth"
   },
   "icon": "assets/icon.png",
   "keywords": [
     "workflow",
+    "workflow-builder",
+    "workflow-engine",
+    "custom-ai",
+    "ai-builder",
+    "agent-workflow",
+    "universe-builder",
     "mcp",
     "daemon",
     "fiction",

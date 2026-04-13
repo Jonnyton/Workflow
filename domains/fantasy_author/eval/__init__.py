@@ -1,4 +1,4 @@
-"""Fantasy Author domain-specific evaluation criteria.
+"""Workflow domain-specific evaluation criteria.
 
 Provides EvalCriteria dicts for assessing scene quality.
 """

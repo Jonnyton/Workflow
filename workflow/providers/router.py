@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import os
 
 from workflow.exceptions import (
     AllProvidersExhaustedError,
@@ -121,16 +122,24 @@ class ProviderRouter:
         cfg = config or _default_config()
         chain = FALLBACK_CHAINS.get(role, FALLBACK_CHAINS["writer"])
 
-        # Apply per-universe provider preference from config.yaml
-        try:
-            from workflow import runtime
-            ucfg = runtime.universe_config
-            if role == "writer" and ucfg.preferred_writer:
-                chain = self._apply_preference(chain, ucfg.preferred_writer)
-            elif role == "judge" and ucfg.preferred_judge:
-                chain = self._apply_preference(chain, ucfg.preferred_judge)
-        except Exception:
-            pass
+        # Hard pin: WORKFLOW_PIN_WRITER narrows the writer chain to a
+        # single provider for this call. No fallback — if the pinned
+        # provider fails, the call fails loudly (hard rule #8).
+        pin_writer = os.environ.get("WORKFLOW_PIN_WRITER", "").strip()
+        is_pinned_writer = role == "writer" and bool(pin_writer)
+        if is_pinned_writer:
+            chain = [pin_writer]
+        else:
+            # Apply per-universe provider preference from config.yaml
+            try:
+                from workflow import runtime
+                ucfg = runtime.universe_config
+                if role == "writer" and ucfg.preferred_writer:
+                    chain = self._apply_preference(chain, ucfg.preferred_writer)
+                elif role == "judge" and ucfg.preferred_judge:
+                    chain = self._apply_preference(chain, ucfg.preferred_judge)
+            except Exception:
+                pass
 
         for provider_name in chain:
             provider = self._providers.get(provider_name)
@@ -169,6 +178,15 @@ class ProviderRouter:
                 logger.exception("Unexpected error from %s", provider_name)
 
         # All providers exhausted.
+        if is_pinned_writer:
+            # Hard pin must fail loudly rather than silently falling through
+            # to a different provider (hard rule #8).
+            raise AllProvidersExhaustedError(
+                f"Pinned writer provider {pin_writer!r} exhausted. "
+                "WORKFLOW_PIN_WRITER disables fallback — clear the env var "
+                "to re-enable the default chain."
+            )
+
         if role == "judge":
             logger.warning("All judge providers exhausted -- returning degraded response")
             return DEGRADED_JUDGE_RESPONSE

@@ -2,7 +2,7 @@
 
 Extends the base workflow state with research-specific fields.
 This domain demonstrates a flat workflow topology with revision loops,
-contrasting with Fantasy Author's 4-level hierarchy.
+contrasting with Workflow's 4-level hierarchy.
 """
 
 from __future__ import annotations

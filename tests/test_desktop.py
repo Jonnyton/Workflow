@@ -12,12 +12,12 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fantasy_author.desktop.dashboard import DashboardHandler, DashboardMetrics
-from fantasy_author.desktop.host_tray import HostTrayService
-from fantasy_author.desktop.icon_gen import create_icon_image, generate_icon
-from fantasy_author.desktop.launcher import LauncherApp, _default_universe_path
-from fantasy_author.desktop.notifications import NotificationManager
-from fantasy_author.desktop.tray import TrayApp, _create_icon_image
+from workflow.desktop.dashboard import DashboardHandler, DashboardMetrics
+from workflow.desktop.host_tray import HostTrayService
+from workflow.desktop.icon_gen import create_icon_image, generate_icon
+from workflow.desktop.launcher import LauncherApp, _default_universe_path
+from workflow.desktop.notifications import NotificationManager
+from workflow.desktop.tray import TrayApp, _create_icon_image
 
 # =====================================================================
 # Icon image generation
@@ -53,7 +53,7 @@ class TestTrayApp:
         assert app._status == "Writing chapter 3"
 
     def test_start_creates_icon(self):
-        with patch("fantasy_author.desktop.tray.Icon") as MockIcon:
+        with patch("workflow.desktop.tray.Icon") as MockIcon:
             mock_icon = MagicMock()
             MockIcon.return_value = mock_icon
 
@@ -64,7 +64,7 @@ class TestTrayApp:
             mock_icon.run_detached.assert_called_once()
 
     def test_start_is_idempotent(self):
-        with patch("fantasy_author.desktop.tray.Icon") as MockIcon:
+        with patch("workflow.desktop.tray.Icon") as MockIcon:
             mock_icon = MagicMock()
             MockIcon.return_value = mock_icon
 
@@ -594,10 +594,10 @@ class TestLauncherApp:
         mock_root.configure = MagicMock()
         mock_root.iconbitmap = MagicMock()
 
-        with patch("fantasy_author.desktop.launcher.ttk") as mock_ttk, \
-             patch("fantasy_author.desktop.launcher.tk.StringVar") as MockSV, \
-             patch("fantasy_author.desktop.launcher.tk.BooleanVar") as MockBV, \
-             patch("fantasy_author.desktop.launcher.tk.Text") as MockText:
+        with patch("workflow.desktop.launcher.ttk") as mock_ttk, \
+             patch("workflow.desktop.launcher.tk.StringVar") as MockSV, \
+             patch("workflow.desktop.launcher.tk.BooleanVar") as MockBV, \
+             patch("workflow.desktop.launcher.tk.Text") as MockText:
             # StringVar mock
             sv_instance = MagicMock()
             sv_instance.get.return_value = _default_universe_path()
@@ -641,10 +641,10 @@ class TestLauncherApp:
 
     def test_title_set(self):
         app = self._make_app()
-        app.root.title.assert_called_with("Fantasy Author")
+        app.root.title.assert_called_with("Workflow")
 
     def test_default_universe_path(self):
-        expected = str(Path.home() / "Documents" / "Fantasy Author" / "default-universe")
+        expected = str(Path.home() / "Documents" / "Workflow" / "default-universe")
         assert _default_universe_path() == expected
 
     def test_universe_path_property(self):
@@ -727,18 +727,18 @@ class TestLauncherApp:
 
         with (
             patch(
-                "fantasy_author.desktop.launcher.DaemonController",
+                "workflow.desktop.launcher.DaemonController",
                 return_value=mock_controller,
             ) if False else patch(
-                "fantasy_author.__main__.DaemonController",
+                "workflow.__main__.DaemonController",
                 return_value=mock_controller,
             ),
             patch(
-                "fantasy_author.desktop.host_tray.HostTrayService.shared",
+                "workflow.desktop.host_tray.HostTrayService.shared",
                 return_value=mock_host_tray,
             ),
             patch(
-                "fantasy_author.desktop.launcher.threading.Thread",
+                "workflow.desktop.launcher.threading.Thread",
             ) as mock_thread_cls,
         ):
             mock_thread = MagicMock()
@@ -842,7 +842,7 @@ class TestLauncherAddFiles(TestLauncherApp):
     def test_handle_add_files_no_selection(self):
         app = self._make_app()
         with patch(
-            "fantasy_author.desktop.launcher.filedialog.askopenfilenames",
+            "workflow.desktop.launcher.filedialog.askopenfilenames",
             return_value=(),
         ):
             app._handle_add_files()
@@ -857,7 +857,7 @@ class TestLauncherAddFiles(TestLauncherApp):
         src.write_text("Hello world", encoding="utf-8")
 
         with patch(
-            "fantasy_author.desktop.launcher.filedialog.askopenfilenames",
+            "workflow.desktop.launcher.filedialog.askopenfilenames",
             return_value=(str(src),),
         ):
             app._handle_add_files()
@@ -877,7 +877,7 @@ class TestLauncherAddFiles(TestLauncherApp):
         src.write_text("# Notes", encoding="utf-8")
 
         with patch(
-            "fantasy_author.desktop.launcher.filedialog.askopenfilenames",
+            "workflow.desktop.launcher.filedialog.askopenfilenames",
             return_value=(str(src),),
         ):
             app._handle_add_files()
@@ -892,7 +892,7 @@ class TestLauncherAddFiles(TestLauncherApp):
         src.write_text("content", encoding="utf-8")
 
         with patch(
-            "fantasy_author.desktop.launcher.filedialog.askopenfilenames",
+            "workflow.desktop.launcher.filedialog.askopenfilenames",
             return_value=(str(src),),
         ):
             app._handle_add_files()
@@ -944,7 +944,7 @@ class TestLauncherReload(TestLauncherApp):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = " M fantasy_author/nodes/draft.py\n"
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "code"
 
     def test_classify_changes_config(self):
@@ -952,7 +952,7 @@ class TestLauncherReload(TestLauncherApp):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = " M PROGRAM.md\n"
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "config"
 
     def test_classify_changes_ui(self):
@@ -960,7 +960,7 @@ class TestLauncherReload(TestLauncherApp):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = " M fantasy_author/desktop/launcher.py\n"
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "ui"
 
     def test_classify_changes_ui_and_code_returns_code(self):
@@ -971,7 +971,7 @@ class TestLauncherReload(TestLauncherApp):
             " M fantasy_author/desktop/launcher.py\n"
             " M fantasy_author/nodes/draft.py\n"
         )
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "code"
 
     def test_classify_changes_none(self):
@@ -979,20 +979,20 @@ class TestLauncherReload(TestLauncherApp):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "none"
 
     def test_classify_changes_git_failure(self):
         app = self._make_app()
         mock_result = MagicMock()
         mock_result.returncode = 128
-        with patch("fantasy_author.desktop.launcher.subprocess.run", return_value=mock_result):
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "code"
 
     def test_classify_changes_git_exception(self):
         app = self._make_app()
         with patch(
-            "fantasy_author.desktop.launcher.subprocess.run",
+            "workflow.desktop.launcher.subprocess.run",
             side_effect=FileNotFoundError("git not found"),
         ):
             assert app._classify_changes() == "code"
@@ -1026,7 +1026,7 @@ class TestLauncherReload(TestLauncherApp):
 
     def test_reimport_modules(self):
         app = self._make_app()
-        with patch("fantasy_author.desktop.launcher.importlib.reload") as mock_reload:
+        with patch("workflow.desktop.launcher.importlib.reload") as mock_reload:
             app._reimport_modules()
             # Should have attempted to reload some modules
             # (exact count depends on what's imported)
@@ -1035,7 +1035,7 @@ class TestLauncherReload(TestLauncherApp):
     def test_reimport_modules_handles_failure(self):
         app = self._make_app()
         with patch(
-            "fantasy_author.desktop.launcher.importlib.reload",
+            "workflow.desktop.launcher.importlib.reload",
             side_effect=ImportError("bad module"),
         ):
             # Should not raise
@@ -1186,14 +1186,14 @@ class TestTrayShowWindow:
 
     def test_load_icon_image_fallback(self):
         """_load_icon_image falls back when path does not exist."""
-        from fantasy_author.desktop.tray import _load_icon_image
+        from workflow.desktop.tray import _load_icon_image
 
         img = _load_icon_image("/nonexistent/path.ico")
         assert img.size == (64, 64)
 
     def test_load_icon_image_from_file(self):
         """_load_icon_image loads from a real .ico file."""
-        from fantasy_author.desktop.tray import _load_icon_image
+        from workflow.desktop.tray import _load_icon_image
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ico_path = Path(tmpdir) / "test.ico"
@@ -1212,11 +1212,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class TestPywLauncher:
     def test_pyw_exists(self):
-        pyw = PROJECT_ROOT / "fantasy_author.pyw"
-        assert pyw.exists(), f"fantasy_author.pyw not found at {pyw}"
+        pyw = PROJECT_ROOT / "workflow.pyw"
+        assert pyw.exists(), f"workflow.pyw not found at {pyw}"
 
     def test_pyw_is_valid_python(self):
-        pyw = PROJECT_ROOT / "fantasy_author.pyw"
+        pyw = PROJECT_ROOT / "workflow.pyw"
         # py_compile raises if the file has syntax errors.
         py_compile.compile(str(pyw), doraise=True)
 
@@ -1228,23 +1228,23 @@ class TestPywLauncher:
 
 class TestCreateShortcut:
     def test_import(self):
-        from fantasy_author.desktop import create_shortcut  # noqa: F401
+        from workflow.desktop import create_shortcut  # noqa: F401
 
     def test_project_root(self):
-        from fantasy_author.desktop.create_shortcut import _project_root
+        from workflow.desktop.create_shortcut import _project_root
 
         root = _project_root()
         assert (root / "fantasy_author" / "__init__.py").exists()
 
     def test_pyw_path(self):
-        from fantasy_author.desktop.create_shortcut import _pyw_path
+        from workflow.desktop.create_shortcut import _pyw_path
 
-        assert _pyw_path().name == "fantasy_author.pyw"
+        assert _pyw_path().name == "workflow.pyw"
 
     def test_create_bat(self, tmp_path: Path):
-        from fantasy_author.desktop.create_shortcut import _create_bat
+        from workflow.desktop.create_shortcut import _create_bat
 
-        target = tmp_path / "fantasy_author.pyw"
+        target = tmp_path / "workflow.pyw"
         target.write_text("# stub")
         result = _create_bat(target, tmp_path)
         assert result.exists()
@@ -1255,15 +1255,15 @@ class TestCreateShortcut:
 
     def test_create_shortcut_bat_fallback(self, tmp_path: Path):
         """create_shortcut falls back to .bat when winshell is absent."""
-        from fantasy_author.desktop.create_shortcut import create_shortcut as cs
+        from workflow.desktop.create_shortcut import create_shortcut as cs
 
         with (
             patch(
-                "fantasy_author.desktop.create_shortcut._desktop_dir",
+                "workflow.desktop.create_shortcut._desktop_dir",
                 return_value=tmp_path,
             ),
             patch(
-                "fantasy_author.desktop.create_shortcut._create_lnk",
+                "workflow.desktop.create_shortcut._create_lnk",
                 side_effect=ImportError("no winshell"),
             ),
         ):
@@ -1273,21 +1273,21 @@ class TestCreateShortcut:
 
     def test_create_shortcut_lnk(self, tmp_path: Path):
         """create_shortcut prefers .lnk when winshell is available."""
-        fake_lnk = tmp_path / "Fantasy Author.lnk"
+        fake_lnk = tmp_path / "Workflow.lnk"
 
         def mock_create_lnk(target, desktop, icon):
             fake_lnk.write_text("lnk-stub")
             return fake_lnk
 
-        from fantasy_author.desktop.create_shortcut import create_shortcut as cs
+        from workflow.desktop.create_shortcut import create_shortcut as cs
 
         with (
             patch(
-                "fantasy_author.desktop.create_shortcut._desktop_dir",
+                "workflow.desktop.create_shortcut._desktop_dir",
                 return_value=tmp_path,
             ),
             patch(
-                "fantasy_author.desktop.create_shortcut._create_lnk",
+                "workflow.desktop.create_shortcut._create_lnk",
                 side_effect=mock_create_lnk,
             ),
         ):
@@ -1308,8 +1308,8 @@ class TestPyprojectEntryPoints:
         toml_path = PROJECT_ROOT / "pyproject.toml"
         data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
         gui = data.get("project", {}).get("gui-scripts", {})
-        assert "fantasy-author" in gui
-        assert "launcher:main" in gui["fantasy-author"]
+        assert "workflow" in gui
+        assert "launcher:main" in gui["workflow"]
 
     def test_has_cli_scripts(self):
         import tomllib
@@ -1317,8 +1317,8 @@ class TestPyprojectEntryPoints:
         toml_path = PROJECT_ROOT / "pyproject.toml"
         data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
         scripts = data.get("project", {}).get("scripts", {})
-        assert "fantasy-author-cli" in scripts
-        assert "__main__:main" in scripts["fantasy-author-cli"]
+        assert "workflow-cli" in scripts
+        assert "__main__:main" in scripts["workflow-cli"]
 
     def test_has_desktop_optional_deps(self):
         import tomllib

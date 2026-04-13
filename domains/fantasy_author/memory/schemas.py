@@ -1,6 +1,6 @@
-"""Fantasy Author domain-specific memory schemas.
+"""Workflow domain-specific memory schemas.
 
-Defines how Fantasy Author stores and retrieves information across episodes,
+Defines how Workflow stores and retrieves information across episodes,
 sessions, and long-running narratives.
 
 The three-tier model (core/episodic/archival) represents different timescales
@@ -12,7 +12,7 @@ and accessibility patterns:
 
 This module documents the domain's memory needs. The workflow engine's
 MemoryManager provides the infrastructure; this module describes what
-domain-specific storage patterns Fantasy Author uses.
+domain-specific storage patterns Workflow uses.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from workflow.protocols import MemorySchema
 
 
 def get_fantasy_memory_schemas() -> list[MemorySchema]:
-    """Return memory schema definitions for Fantasy Author.
+    """Return memory schema definitions for Workflow.
 
     These describe what information the domain stores and retrieves across
     long narrative timescales.

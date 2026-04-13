@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fantasy_author.config import UniverseConfig, load_universe_config
+from workflow.config import UniverseConfig, load_universe_config
 
 
 class TestUniverseConfigDefaults:
@@ -158,12 +158,12 @@ class TestRuntimeConfigIntegration:
     """Test that runtime.universe_config is properly typed."""
 
     def test_runtime_has_default_config(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         assert isinstance(runtime.universe_config, UniverseConfig)
 
     def test_reset_restores_default_config(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         runtime.universe_config = UniverseConfig(temperature=0.1)
         runtime.reset()

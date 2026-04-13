@@ -1,7 +1,7 @@
-"""Fantasy Author domain registration.
+"""Workflow domain registration.
 
 Implements the workflow.protocols.Domain protocol, connecting
-Fantasy Author's graph topology and phase implementations to
+Workflow's graph topology and phase implementations to
 the shared workflow engine infrastructure.
 """
 
@@ -17,7 +17,7 @@ from workflow.protocols import DomainConfig, DomainTool, EvalCriteria, MemorySch
 
 
 class FantasyAuthorDomain:
-    """Fantasy Author domain — implements workflow.protocols.Domain."""
+    """Workflow domain — implements workflow.protocols.Domain."""
 
     @property
     def config(self) -> DomainConfig:
@@ -28,11 +28,11 @@ class FantasyAuthorDomain:
         }
 
     def build_graph(self) -> Any:
-        """Return the compiled LangGraph for Fantasy Author."""
+        """Return the compiled LangGraph for Workflow."""
         return build_universe_graph()
 
     def state_extensions(self) -> dict[str, type]:
-        """Return TypedDict extensions for Fantasy Author state.
+        """Return TypedDict extensions for Workflow state.
 
         Fantasy-specific state fields are defined in domains/fantasy_author/state/
         and will be merged with the base engine state.
@@ -66,7 +66,7 @@ class FantasyAuthorDomain:
     def memory_schemas(self) -> list[MemorySchema]:
         """Return domain-specific memory schema definitions.
 
-        These schemas describe how Fantasy Author stores and retrieves
+        These schemas describe how Workflow stores and retrieves
         information across episodes and long narrative horizons.
         """
         return get_fantasy_memory_schemas()

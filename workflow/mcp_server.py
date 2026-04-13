@@ -1,13 +1,13 @@
-"""MCP server exposing the Fantasy Author daemon's file interface.
+"""MCP server exposing the Workflow daemon's file interface.
 
 Provides tools for any AI client to read status, add notes for the daemon,
 manage premises, read output, and control execution.
 
 Usage::
 
-    python -m fantasy_author.mcp_server
+    python -m workflow.mcp_server
 
-Set ``FANTASY_AUTHOR_UNIVERSE`` to the universe directory path,
+Set ``WORKFLOW_UNIVERSE`` to the universe directory path,
 or it defaults to ``output/default-universe/``.
 """
 
@@ -18,26 +18,51 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP(
     "fantasy-author",
     instructions=(
-        "Fantasy Author daemon interface. Use these tools to monitor "
-        "and guide an autonomous fiction-writing daemon through notes."
+        "Workflow daemon interface. Use these tools to monitor "
+        "and guide an autonomous fiction-writing daemon through notes. "
+        "Start with get_status to see the daemon's current phase, then "
+        "use get_progress for a human-readable summary of what's been written."
     ),
+    version="0.1.0",
 )
 
 
+def _repo_root() -> Path:
+    """Absolute path to the repository root (two levels up from this module)."""
+    return Path(__file__).resolve().parent.parent
+
+
 def _universe_dir() -> Path:
-    """Resolve the universe directory from environment or default."""
-    return Path(
-        os.environ.get("FANTASY_AUTHOR_UNIVERSE", "output/default-universe")
-    )
+    """Resolve the universe directory from environment or default.
+
+    The default is anchored to the repo root, not the process CWD. A
+    CWD-relative default would silently create a second
+    ``output/default-universe/`` under the wrong directory whenever the
+    server is launched from elsewhere — exactly the class of bug that
+    caused cross-universe contamination pre-2026-04-11 (see STATUS.md
+    #47/#48 and the ``KnowledgeGraph`` / ``VectorStore`` hard-refuse
+    guards from #51).
+    """
+    env = os.environ.get("WORKFLOW_UNIVERSE")
+    if env:
+        return Path(env)
+    return _repo_root() / "output" / "default-universe"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"status", "monitoring"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
+)
 def get_status() -> str:
-    """Read the daemon's current status (phase, word count, accept rate, etc.)."""
+    """Read the daemon's current status including phase, word count, and accept rate.
+
+    Call this first to orient yourself.
+    """
     status_path = _universe_dir() / "status.json"
     if not status_path.exists():
         return "No status.json found. The daemon may not be running."
@@ -47,15 +72,21 @@ def get_status() -> str:
         return f"Error reading status.json: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"notes", "steering", "direction"},
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False),
+)
 def add_note(text: str, category: str = "direction") -> str:
-    """Add a note to the universe's notes system.
+    """Add a note that the daemon reads at each scene boundary.
 
-    The daemon reads notes at each scene boundary.
+    Notes are the primary feedback mechanism — use them to steer the story,
+    protect elements you like, flag concerns, or record observations.
 
     Args:
-        text: The note text.
-        category: One of 'direction', 'protect', 'concern', 'observation', 'error'.
+        text: The note text (what you want the Author to know).
+        category: One of 'direction' (steer the story), 'protect' (preserve
+            something), 'concern' (flag a problem), 'observation' (neutral
+            note), or 'error' (report a mistake).
     """
     valid_categories = {"direction", "protect", "concern", "observation", "error"}
     if category not in valid_categories:
@@ -77,9 +108,15 @@ def steer(directive: str, category: str = "direction") -> str:
     return add_note(directive, category)
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"premise", "story"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_premise() -> str:
-    """Read the current story premise from PROGRAM.md."""
+    """Read the current story premise from PROGRAM.md.
+
+    The premise seeds the daemon's creative direction.
+    """
     program_path = _universe_dir() / "PROGRAM.md"
     if not program_path.exists():
         return "No PROGRAM.md found. Use set_premise() to create one."
@@ -89,11 +126,16 @@ def get_premise() -> str:
         return f"Error reading PROGRAM.md: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"premise", "story"},
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True),
+)
 def set_premise(text: str) -> str:
     """Write or overwrite the story premise in PROGRAM.md.
 
-    The daemon reads this once at startup to seed the story direction.
+    The daemon reads this at startup to seed the story direction.
+    Overwrites any existing premise — use get_premise first if you want to
+    edit rather than replace.
     """
     program_path = _universe_dir() / "PROGRAM.md"
     try:
@@ -104,9 +146,15 @@ def set_premise(text: str) -> str:
         return f"Error writing PROGRAM.md: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"progress", "monitoring"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_progress() -> str:
-    """Read the human-readable progress summary from progress.md."""
+    """Read the human-readable progress summary.
+
+    Includes story outline, word counts, and current chapter status.
+    """
     progress_path = _universe_dir() / "progress.md"
     if not progress_path.exists():
         return "No progress.md found. The daemon may not have started writing yet."
@@ -116,9 +164,15 @@ def get_progress() -> str:
         return f"Error reading progress.md: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"work-targets", "planning"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_work_targets() -> str:
-    """Read the durable work target registry for the current universe."""
+    """Read the durable work target registry.
+
+    Shows what the daemon is working on, what's queued, and lifecycle state.
+    """
     path = _universe_dir() / "work_targets.json"
     if not path.exists():
         return "No work_targets.json found."
@@ -128,9 +182,12 @@ def get_work_targets() -> str:
         return f"Error reading work_targets.json: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"review", "monitoring"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_review_state() -> str:
-    """Read the latest review-state snapshot for the current universe."""
+    """Read the latest review-state snapshot including daemon phase, word count, and accept rate."""
     status_path = _universe_dir() / "status.json"
     if not status_path.exists():
         return "No status.json found."
@@ -140,13 +197,16 @@ def get_review_state() -> str:
         return f"Error reading status.json: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"output", "reading"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_chapter(book: int, chapter: int) -> str:
-    """Read a completed chapter file.
+    """Read a completed chapter from the daemon's output.
 
     Args:
         book: Book number (e.g. 1).
-        chapter: Chapter number (e.g. 3).
+        chapter: Chapter number (e.g. 3). Returns the full chapter markdown.
     """
     chapter_path = _universe_dir() / "output" / f"book-{book}" / f"chapter-{chapter:02d}.md"
     if not chapter_path.exists():
@@ -157,12 +217,17 @@ def get_chapter(book: int, chapter: int) -> str:
         return f"Error reading chapter file: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"activity", "monitoring"},
+    annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+)
 def get_activity(lines: int = 20) -> str:
-    """Read the most recent lines from the activity log.
+    """Read the most recent lines from the daemon's activity log.
+
+    Shows scene completions, reviews, and errors.
 
     Args:
-        lines: Number of lines to return (default 20).
+        lines: Number of lines to return (default 20, max 200).
     """
     log_path = _universe_dir() / "activity.log"
     if not log_path.exists():
@@ -176,9 +241,15 @@ def get_activity(lines: int = 20) -> str:
         return f"Error reading activity.log: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"control", "daemon"},
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True),
+)
 def pause() -> str:
-    """Pause the daemon. Creates a control file that the daemon checks."""
+    """Pause the daemon at the next scene boundary.
+
+    The daemon checks for a pause signal between scenes.
+    """
     pause_path = _universe_dir() / ".pause"
     try:
         _universe_dir().mkdir(parents=True, exist_ok=True)
@@ -190,9 +261,12 @@ def pause() -> str:
         return f"Error writing pause signal: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"control", "daemon"},
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True),
+)
 def resume() -> str:
-    """Resume the daemon by removing the pause control file."""
+    """Resume a paused daemon by removing the pause signal."""
     pause_path = _universe_dir() / ".pause"
     if not pause_path.exists():
         return "Daemon is not paused (no .pause file found)."
@@ -203,15 +277,19 @@ def resume() -> str:
         return f"Error removing pause signal: {e}"
 
 
-@mcp.tool
+@mcp.tool(
+    tags={"canon", "worldbuilding"},
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True),
+)
 def add_canon(filename: str, content: str) -> str:
-    """Add a reference file to the canon/ directory.
+    """Add a reference document to the canon/ directory for the daemon to ingest.
 
-    The daemon ingests canon files for worldbuilding context (character
-    sheets, maps, lore documents, etc.).
+    Canon files provide worldbuilding context — character sheets, maps, lore
+    documents, timelines, style guides, or any reference material the Author
+    should know about.
 
     Args:
-        filename: Name for the file (e.g. "characters.md").
+        filename: Name for the file (e.g. "characters.md", "magic-system.md").
         content: File content to write.
     """
     canon_dir = _universe_dir() / "canon"

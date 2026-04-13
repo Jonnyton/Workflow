@@ -1,7 +1,7 @@
 """Engine-domain interface protocols.
 
 Defines the contract between the shared workflow engine infrastructure
-and domain implementations. Fantasy Author is the first domain to
+and domain implementations. Workflow is the first domain to
 implement these protocols.
 
 These are deliberately minimal — designed from one domain, expected to
@@ -87,7 +87,7 @@ class WorkflowState(TypedDict, total=False):
     """Unique identifier for this workflow run."""
 
     domain_name: str
-    """Name of the domain (e.g., 'fantasy_author')."""
+    """Name of the domain (e.g., 'workflow')."""
 
     # --------
     # Health and control
@@ -150,7 +150,7 @@ class DomainConfig(TypedDict, total=False):
     """
 
     name: str
-    """Domain name (e.g., 'fantasy_author'). Used as a unique key."""
+    """Domain name (e.g., 'workflow'). Used as a unique key."""
 
     description: str
     """One-line description of what this domain does."""
@@ -257,7 +257,7 @@ class Domain(Protocol):
             A LangGraph StateGraph with no compiled runtime (the engine
             will add checkpointing and compile).
 
-        Expected structure (from Fantasy Author):
+        Expected structure (from Workflow):
             StateGraph(state=DomainState)
                 .add_node('phase1', phase1_impl)
                 .add_node('phase2', phase2_impl)
@@ -281,7 +281,7 @@ class Domain(Protocol):
             The engine will merge these into the full state schema before
             graph compilation.
 
-        Expected (from Fantasy Author):
+        Expected (from Workflow):
             {
                 'universe_id': str,
                 'active_series': str | None,
@@ -307,7 +307,7 @@ class Domain(Protocol):
         Returns:
             List of tools with name, description, and __call__ method.
 
-        Expected (from Fantasy Author):
+        Expected (from Workflow):
             [
                 story_search,     # Retrieve canon, KG, notes
                 canon_query,      # Direct fact lookup
@@ -330,7 +330,7 @@ class Domain(Protocol):
         Returns:
             List of EvalCriteria dicts.
 
-        Expected (from Fantasy Author):
+        Expected (from Workflow):
             [
                 {
                     'name': 'scene_coherence',
@@ -355,7 +355,7 @@ class Domain(Protocol):
         Returns:
             List of MemorySchema dicts describing storage patterns.
 
-        Expected (from Fantasy Author):
+        Expected (from Workflow):
             [
                 {
                     'tier': 'episodic',
@@ -381,7 +381,7 @@ class Domain(Protocol):
         Returns:
             A FastAPI APIRouter, or None if no routes are needed.
 
-        Expected (from Fantasy Author):
+        Expected (from Workflow):
             APIRouter()
                 .get('/status')(get_status_handler)
                 .post('/note')(post_note_handler)

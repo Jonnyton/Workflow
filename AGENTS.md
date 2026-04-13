@@ -1,7 +1,7 @@
-# Fantasy Author
+# Workflow
 
-An autonomous fantasy novel writing system. The daemon drives its own
-creative and structural decisions.
+A goal-agnostic daemon engine. You summon it, bind it to a domain, and
+let it drive. Fantasy authoring is one domain. There will be others.
 
 ---
 
@@ -55,9 +55,9 @@ This habit must be automatic. The check happens before you think about your resp
 - **Contradictions must be downgraded immediately.** If current code, runtime artifacts, or verification output contradict an older claim, rewrite the `STATUS.md` claim or add a Concern before responding. Do not leave stale certainty in place.
 - **Revalidate `PLAN.md` section by section when trust is damaged.** Treat the plan as candidate design intent until the relevant sections are confirmed against code and runtime evidence.
 
-### GPT Conversations Are Bug Reports
+### Client Conversations Are Bug Reports
 
-When the user pastes a GPT conversation, extract issues and fix them immediately.
+When the user pastes a chat conversation (from any MCP client or interface), extract issues and fix them immediately.
 
 ### Large Docs And Artifacts
 
@@ -164,7 +164,7 @@ Read-only overlap is fine — add it as a Depends instead.
 
 If you finish early and no pending tasks have satisfied dependencies,
 look for tasks in other areas of the project (docs, skills, tests,
-GPT) that don't overlap with in-progress work. The goal is maximum
+MCP surfaces) that don't overlap with in-progress work. The goal is maximum
 useful concurrency, not waiting.
 
 ---
@@ -176,10 +176,10 @@ useful concurrency, not waiting.
 3. **No API SDKs for primary writer** -- Claude/Codex use `claude -p` and `codex exec` subprocesses.
 4. **Never block on human input** -- every gate has an autonomous default.
 5. **TypedDict + Annotated reducers** -- `Annotated[list, operator.add]` for accumulating fields.
-6. **FactWithContext with truth-value typing** -- every extracted fact needs source_type, narrator_reliability, temporal_bounds, language_type.
+6. **FactWithContext with truth-value typing** -- every extracted fact needs source_type, reliability, temporal_bounds, language_type. Domain skills may extend these fields.
 7. **Python 3.11+** required.
 8. **Fail loudly, never silently.** Mock fallbacks that look like real output are worse than crashes.
-9. **User uploads are canon.** Preserved verbatim. Never summarize, truncate, or reformat.
+9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
 
 ---
 
@@ -217,6 +217,3 @@ useful concurrency, not waiting.
 | `docs/conventions.md` | Any AI, any tool | Stable documentation and linking patterns. |
 | `docs/decisions/INDEX.md` | Any AI, any tool | ADR directory surface. |
 | `docs/specs/INDEX.md` | Any AI, any tool | Feature/change spec directory surface. |
-| `custom_gpt/README.md` | Human and GPT maintainers | GPT-facing artifact map. |
-| `custom_gpt/instructions.md` | Custom GPT | GPT system prompt (8000 char limit). |
-| `custom_gpt/actions_schema.yaml` | Custom GPT | OpenAPI 3.1.0 Actions schema. |

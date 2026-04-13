@@ -1,4 +1,4 @@
-"""Exception hierarchy for Fantasy Author.
+"""Exception hierarchy for Workflow.
 
 Every exception in the system inherits from FantasyAuthorError so callers
 can catch broadly when appropriate.
@@ -6,7 +6,7 @@ can catch broadly when appropriate.
 
 
 class FantasyAuthorError(Exception):
-    """Base exception for all Fantasy Author errors."""
+    """Base exception for all Workflow errors."""
 
 
 # ---------------------------------------------------------------------------

@@ -23,18 +23,18 @@ from unittest.mock import MagicMock
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-import fantasy_author.nodes._provider_stub as _provider_stub  # noqa: E402
+import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E402
 
 # Force mock provider responses
 _provider_stub._FORCE_MOCK = True
 
-from fantasy_author.desktop.dashboard import DashboardHandler  # noqa: E402
-from fantasy_author.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
-from fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
-from fantasy_author.nodes.commit import commit  # noqa: E402
-from fantasy_author.nodes.draft import draft  # noqa: E402
-from fantasy_author.nodes.orient import orient  # noqa: E402
-from fantasy_author.nodes.plan import plan  # noqa: E402
+from workflow.desktop.dashboard import DashboardHandler  # noqa: E402
+from workflow.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
+from domains.fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
+from domains.fantasy_author.phases.commit import commit  # noqa: E402
+from domains.fantasy_author.phases.draft import draft  # noqa: E402
+from domains.fantasy_author.phases.orient import orient  # noqa: E402
+from domains.fantasy_author.phases.plan import plan  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -100,8 +100,8 @@ class TestOrientRetrievalIntegration:
 
     def test_orient_populates_retrieved_context_with_kg(self, base_state, tmp_db):
         """When KG has data, retrieved_context should be non-empty."""
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
-        from fantasy_author.knowledge.models import GraphEntity
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.models import GraphEntity
 
         kg_path = tmp_db + ".kg"
         kg = KnowledgeGraph(kg_path)
@@ -144,12 +144,12 @@ class TestOrientRetrievalIntegration:
         """RetrievalRouter wiring should match the current search policy."""
         from unittest.mock import MagicMock, patch
 
-        import fantasy_author.nodes._provider_stub as provider_stub
+        import domains.fantasy_author.phases._provider_stub as provider_stub
 
         # Patch the router class at its import source
         mock_router_cls = MagicMock()
         mock_instance = mock_router_cls.return_value
-        from fantasy_author.retrieval.router import RetrievalResult
+        from workflow.retrieval.router import RetrievalResult
         empty = RetrievalResult(
             facts=[], relationships=[], prose_chunks=[],
             community_summaries=[], sources=[], token_count=0,
@@ -161,9 +161,9 @@ class TestOrientRetrievalIntegration:
         mock_instance.query = mock_query
 
         with patch(
-            "fantasy_author.retrieval.router.RetrievalRouter", mock_router_cls,
+            "workflow.retrieval.router.RetrievalRouter", mock_router_cls,
         ):
-            from fantasy_author.nodes.orient import _run_retrieval
+            from domains.fantasy_author.phases.orient import _run_retrieval
             _run_retrieval(base_state, "test-scene")
 
         if mock_router_cls.called:
@@ -177,7 +177,7 @@ class TestOrientRetrievalIntegration:
 
     def test_orient_passes_enriched_state_to_memory_manager(self, base_state):
         """MemoryManager should see the freshly assembled orient_result contract."""
-        from fantasy_author import runtime
+        from workflow import runtime
 
         captured: dict[str, Any] = {}
 
@@ -199,13 +199,13 @@ class TestOrientRetrievalIntegration:
         """orient retrieval must not close the daemon-owned KG singleton."""
         from unittest.mock import patch
 
-        from fantasy_author import runtime
-        from fantasy_author.knowledge.models import (
+        from workflow import runtime
+        from workflow.knowledge.models import (
             FactWithContext,
             RetrievalResult,
             SourceType,
         )
-        from fantasy_author.nodes.orient import _run_retrieval
+        from domains.fantasy_author.phases.orient import _run_retrieval
 
         class FakeKG:
             def __init__(self):
@@ -237,7 +237,7 @@ class TestOrientRetrievalIntegration:
         fake_kg = FakeKG()
         runtime.knowledge_graph = fake_kg
 
-        with patch("fantasy_author.retrieval.router.RetrievalRouter", FakeRouter):
+        with patch("workflow.retrieval.router.RetrievalRouter", FakeRouter):
             ctx = _run_retrieval(base_state, "test-scene")
 
         assert fake_kg.closed is False
@@ -261,10 +261,10 @@ class TestEpistemicFiltering:
 
     def test_pov_extracted_from_character_db(self, base_state, tmp_db):
         """When characters exist in the DB, orient picks the most recent."""
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             connect as ws_connect,
         )
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             init_db,
             upsert_character,
         )
@@ -313,13 +313,13 @@ class TestMemoryManagerIntegration:
         Uses monkeypatch so the global is automatically reverted even if
         the test raises.  This prevents mock leakage across test ordering.
         """
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         monkeypatch.setattr(runtime, "memory_manager", None)
 
     def test_orient_calls_memory_manager(self, base_state, monkeypatch):
         """Orient should call assemble_context with the enriched orient state."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {
@@ -338,7 +338,7 @@ class TestMemoryManagerIntegration:
 
     def test_plan_calls_memory_manager(self, base_state, monkeypatch):
         """Plan should call assemble_context('plan', state)."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"recent_beats": []}
@@ -350,7 +350,7 @@ class TestMemoryManagerIntegration:
 
     def test_draft_calls_memory_manager(self, base_state, monkeypatch):
         """Draft should call assemble_context('draft', state)."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"tone": "dark"}
@@ -365,7 +365,7 @@ class TestMemoryManagerIntegration:
 
     def test_commit_calls_memory_manager(self, base_state, monkeypatch):
         """Commit should call assemble_context('evaluate', state)."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"eval_context": True}
@@ -383,7 +383,7 @@ class TestMemoryManagerIntegration:
 
     def test_nodes_work_without_memory_manager(self, base_state, monkeypatch):
         """All nodes should work when runtime.memory_manager is None."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         monkeypatch.setattr(runtime, "memory_manager", None)
         result = orient(base_state)
@@ -392,7 +392,7 @@ class TestMemoryManagerIntegration:
 
     def test_commit_stores_to_memory_on_accept(self, base_state, monkeypatch):
         """Commit should call store_scene_result on accept."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {}
@@ -451,7 +451,7 @@ class TestProviderIntegration:
 
     def test_real_router_has_call_sync(self):
         """ProviderRouter should expose call_sync for sync nodes."""
-        from fantasy_author.providers.router import ProviderRouter
+        from workflow.providers.router import ProviderRouter
 
         router = ProviderRouter()
         assert hasattr(router, "call_sync")
@@ -470,7 +470,7 @@ class TestCommitEvaluationIntegration:
         """Commit module should import from evaluation.structural."""
         import importlib
 
-        commit_mod = importlib.import_module("fantasy_author.nodes.commit")
+        commit_mod = importlib.import_module("domains.fantasy_author.phases.commit")
         assert hasattr(commit_mod, "_structural_evaluator")
         assert isinstance(commit_mod._structural_evaluator, StructuralEvaluator)
 
@@ -705,7 +705,7 @@ class TestDaemonController:
 
     def test_daemon_controller_initializes(self):
         """DaemonController should initialize without errors."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         controller = DaemonController(
@@ -717,14 +717,14 @@ class TestDaemonController:
 
     def test_build_provider_router(self):
         """_build_provider_router should return a configured router."""
-        from fantasy_author.__main__ import _build_provider_router
+        from workflow.__main__ import _build_provider_router
 
         router = _build_provider_router()
         assert hasattr(router, "call_sync")
 
     def test_daemon_controller_has_signal_handling(self):
         """Entry point should define signal handlers."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         controller = DaemonController(
             universe_path="/tmp/test",
@@ -736,20 +736,20 @@ class TestDaemonController:
         assert controller._stop_event.is_set()
 
     def test_daemon_state_initializing(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         c = DaemonController(universe_path="/tmp/test", no_tray=True)
         assert c.daemon_state == "initializing"
 
     def test_daemon_state_running(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         c = DaemonController(universe_path="/tmp/test", no_tray=True)
         c._ready.set()
         assert c.daemon_state == "running"
 
     def test_daemon_state_paused(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         c = DaemonController(universe_path="/tmp/test", no_tray=True)
         c._ready.set()
@@ -757,7 +757,7 @@ class TestDaemonController:
         assert c.daemon_state == "paused"
 
     def test_daemon_state_idle(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         c = DaemonController(universe_path="/tmp/test", no_tray=True)
         c._stop_event.set()
@@ -768,7 +768,7 @@ class TestDaemonController:
         import threading
         import time
 
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         pause_file = Path(universe) / ".pause"
@@ -796,8 +796,8 @@ class TestDaemonController:
         assert resumed.wait(timeout=1.0)
 
     def test_write_status_file(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -823,8 +823,8 @@ class TestDaemonController:
         assert "last_updated" in data
 
     def test_handle_node_output_tracks_scene_id(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -837,8 +837,8 @@ class TestDaemonController:
         assert c._current_scene_id == "ch3-sc2"
 
     def test_handle_node_output_tracks_verdict(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -849,8 +849,8 @@ class TestDaemonController:
         assert c._last_verdict == "revert"
 
     def test_handle_node_output_tracks_process_evaluation(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -876,8 +876,8 @@ class TestDaemonController:
         assert data["process_failures"] == ["tool_use"]
 
     def test_handle_node_output_writes_status(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -895,7 +895,7 @@ class TestDaemonController:
         assert data["current_scene_id"] == "s1"
 
     def test_write_status_file_no_dashboard(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -912,7 +912,7 @@ class TestDaemonController:
 
 
     def test_combined_log_calls_callback(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         lines: list[str] = []
@@ -924,7 +924,7 @@ class TestDaemonController:
         assert lines == ["test line"]
 
     def test_combined_log_writes_activity_file(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -944,7 +944,7 @@ class TestDaemonController:
         assert lines[0].startswith("[")
 
     def test_combined_log_no_callback(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -956,7 +956,7 @@ class TestDaemonController:
         assert log_path.exists()
 
     def test_activity_log_append_only(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -976,7 +976,7 @@ class TestDaemonController:
 
     def test_emit_node_log_orient_writes_activity(self, tmp_db):
         """Orient node output should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -997,7 +997,7 @@ class TestDaemonController:
 
     def test_emit_node_log_plan_writes_activity(self, tmp_db):
         """Plan node output should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1016,7 +1016,7 @@ class TestDaemonController:
 
     def test_emit_node_log_draft_writes_activity(self, tmp_db):
         """Draft node output should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1031,7 +1031,7 @@ class TestDaemonController:
 
     def test_emit_node_log_draft_revision_writes_activity(self, tmp_db):
         """Revision draft should be labelled in activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1046,7 +1046,7 @@ class TestDaemonController:
 
     def test_emit_node_log_commit_accept_writes_activity(self, tmp_db):
         """Commit accept should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1063,7 +1063,7 @@ class TestDaemonController:
 
     def test_emit_node_log_commit_hard_failure_writes_activity(self, tmp_db):
         """Commit hard failure should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1084,7 +1084,7 @@ class TestDaemonController:
 
     def test_emit_node_log_select_task_writes_activity(self, tmp_db):
         """Select_task node output should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1105,7 +1105,7 @@ class TestDaemonController:
 
     def test_emit_node_log_worldbuild_signals_writes_activity(self, tmp_db):
         """Worldbuild with signals should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1126,7 +1126,7 @@ class TestDaemonController:
 
     def test_emit_node_log_worldbuild_generated_writes_activity(self, tmp_db):
         """Worldbuild gap-fill should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1146,7 +1146,7 @@ class TestDaemonController:
 
     def test_emit_node_log_reflect_writes_activity(self, tmp_db):
         """Reflect node output should write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1169,7 +1169,7 @@ class TestDaemonController:
 
     def test_emit_node_log_no_dashboard_still_writes(self, tmp_db):
         """Activity logging should work even without a dashboard."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1187,7 +1187,7 @@ class TestDaemonController:
 
     def test_handle_node_output_writes_activity_without_dashboard(self, tmp_db):
         """_handle_node_output should write activity.log without dashboard."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1204,7 +1204,7 @@ class TestDaemonController:
 
     def test_emit_node_log_unknown_node_no_crash(self, tmp_db):
         """Unknown node names should not crash or write to activity.log."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1218,7 +1218,7 @@ class TestDaemonController:
 
     def test_full_scene_cycle_writes_activity_trail(self, tmp_db):
         """A complete orient->plan->draft->commit cycle writes a trail."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1338,8 +1338,8 @@ class TestProgressFile:
     """DaemonController writes progress.md alongside status.json."""
 
     def test_write_progress_file(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1360,7 +1360,7 @@ class TestProgressFile:
         assert "Writing Progress" in content
 
     def test_progress_file_no_dashboard(self, tmp_db):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1374,8 +1374,8 @@ class TestProgressFile:
 
     def test_progress_updates_with_status(self, tmp_db):
         """_handle_node_output should write both status.json and progress.md."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1394,7 +1394,7 @@ class TestStateFlowUniversePath:
     """_universe_path flows from universe state through book/chapter to scene."""
 
     def test_universe_path_flows_to_book_via_internal_key(self):
-        from fantasy_author.graphs.universe import run_book
+        from domains.fantasy_author.graphs.universe import run_book
 
         state = {
             "universe_id": "test",
@@ -1409,7 +1409,7 @@ class TestStateFlowUniversePath:
         assert "total_chapters" in result
 
     def test_universe_path_falls_back_to_public_key(self):
-        from fantasy_author.graphs.universe import run_book
+        from domains.fantasy_author.graphs.universe import run_book
 
         state = {
             "universe_id": "test",
@@ -1423,7 +1423,7 @@ class TestStateFlowUniversePath:
         assert "total_chapters" in result
 
     def test_make_chapter_input_includes_universe_path(self):
-        from fantasy_author.graphs.book import _make_chapter_input
+        from domains.fantasy_author.graphs.book import _make_chapter_input
 
         state = {
             "universe_id": "test",
@@ -1442,7 +1442,7 @@ class TestStateFlowUniversePath:
         Without these, LangGraph silently strips them at the universe
         graph boundary and no downstream node gets the DB path.
         """
-        from fantasy_author.state.universe_state import UniverseState
+        from domains.fantasy_author.state.universe_state import UniverseState
 
         annotations = UniverseState.__annotations__
         assert "_db_path" in annotations, "_db_path missing from UniverseState"
@@ -1450,7 +1450,7 @@ class TestStateFlowUniversePath:
         assert "_kg_path" in annotations, "_kg_path missing from UniverseState"
 
     def test_make_scene_input_includes_universe_path(self):
-        from fantasy_author.graphs.chapter import _make_scene_input
+        from domains.fantasy_author.graphs.chapter import _make_scene_input
 
         state = {
             "universe_id": "test",
@@ -1476,7 +1476,7 @@ class TestEditorialVerdictIntegration:
 
     def test_clean_structural_pass_accepts(self):
         """Good structural result with no editorial should accept."""
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.85,
@@ -1487,7 +1487,7 @@ class TestEditorialVerdictIntegration:
 
     def test_hard_failure_reverts(self):
         """Hard structural failure should always revert."""
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.2,
@@ -1498,7 +1498,7 @@ class TestEditorialVerdictIntegration:
 
     def test_low_structural_score_records_debt(self):
         """Low score without hard failure should accept with debt."""
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.4,
@@ -1516,7 +1516,7 @@ class TestConsolidateNode:
     def test_consolidate_reads_prose_and_summarizes(self):
         """When chapter prose exists on disk, consolidate should call
         the provider and produce a real summary (mocked here)."""
-        from fantasy_author.nodes.consolidate import consolidate
+        from domains.fantasy_author.phases.consolidate import consolidate
 
         universe = tempfile.mkdtemp()
         book_dir = Path(universe) / "output" / "book-1"
@@ -1541,7 +1541,7 @@ class TestConsolidateNode:
 
     def test_consolidate_falls_back_when_no_prose(self):
         """Without prose on disk, consolidate should use fallback summary."""
-        from fantasy_author.nodes.consolidate import consolidate
+        from domains.fantasy_author.phases.consolidate import consolidate
 
         universe = tempfile.mkdtemp()
 
@@ -1560,7 +1560,7 @@ class TestConsolidateNode:
 
     def test_consolidate_falls_back_without_universe_path(self):
         """Without _universe_path, consolidate should use fallback."""
-        from fantasy_author.nodes.consolidate import consolidate
+        from domains.fantasy_author.phases.consolidate import consolidate
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -1586,8 +1586,8 @@ class TestCreativeBriefing:
     def test_progress_includes_briefing_after_chapter(self, tmp_db):
         """After _generate_creative_briefing, progress.md should include
         the briefing section."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1606,8 +1606,8 @@ class TestCreativeBriefing:
 
     def test_progress_without_briefing_has_no_separator(self, tmp_db):
         """Without a briefing, progress.md should just have stats."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1624,7 +1624,7 @@ class TestCreativeBriefing:
 
     def test_generate_creative_briefing_caches_result(self, tmp_db):
         """_generate_creative_briefing should populate the cache."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1642,7 +1642,7 @@ class TestCreativeBriefing:
 
     def test_generate_briefing_reads_prose_from_disk(self, tmp_db):
         """The briefing generator should find scene prose in chapter subdirs."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe = tempfile.mkdtemp()
         chapter_dir = Path(universe) / "output" / "book-1" / "chapter-01"
@@ -1660,8 +1660,8 @@ class TestCreativeBriefing:
 
     def test_handle_node_output_triggers_briefing(self, tmp_db):
         """_handle_node_output should trigger briefing on chapter_summary."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = tempfile.mkdtemp()
         c = DaemonController(
@@ -1689,8 +1689,8 @@ class TestStateMismatchFix:
     def test_progress_shows_idle_when_stopped(self, tmp_path, tmp_db):
         """When daemon is idle, progress.md should say 'N chapters complete'
         not 'Chapter N+1 in progress'."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = str(tmp_path / "idle-universe")
         Path(universe).mkdir()
@@ -1713,8 +1713,8 @@ class TestStateMismatchFix:
 
     def test_progress_shows_in_progress_when_running(self, tmp_path, tmp_db):
         """When daemon is running, progress should say 'Chapter N+1 in progress'."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = str(tmp_path / "running-universe")
         Path(universe).mkdir()
@@ -1734,8 +1734,8 @@ class TestStateMismatchFix:
 
     def test_cleanup_writes_final_status(self, tmp_path, tmp_db):
         """_cleanup should write a final status.json with idle state."""
-        from fantasy_author.__main__ import DaemonController
-        from fantasy_author.desktop.dashboard import DashboardHandler
+        from workflow.__main__ import DaemonController
+        from workflow.desktop.dashboard import DashboardHandler
 
         universe = str(tmp_path / "cleanup-universe")
         Path(universe).mkdir()
@@ -1768,13 +1768,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_from_facts(self, tmp_path):
         """_upsert_characters_from_facts should insert characters from facts."""
-        from fantasy_author.nodes.commit import _upsert_characters_from_facts
-        from fantasy_author.nodes.fact_extraction import (
+        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_author.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1808,13 +1808,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_skips_stopwords(self, tmp_path):
         """Stopwords like 'The', 'She' should not be upserted as characters."""
-        from fantasy_author.nodes.commit import _upsert_characters_from_facts
-        from fantasy_author.nodes.fact_extraction import (
+        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_author.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1841,8 +1841,8 @@ class TestCharacterUpsert:
 
     def test_commit_upserts_characters(self, tmp_path):
         """Full commit should result in characters in the DB."""
-        from fantasy_author.nodes.commit import commit
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_author.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1883,13 +1883,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_short_names(self, tmp_path):
         """Short names like Ryn (3 chars) should be upserted."""
-        from fantasy_author.nodes.commit import _upsert_characters_from_facts
-        from fantasy_author.nodes.fact_extraction import (
+        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_author.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1915,8 +1915,8 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_prose_fallback(self, tmp_path):
         """When facts are empty, characters should be extracted from prose."""
-        from fantasy_author.nodes.commit import _upsert_characters_from_facts
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_author.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1942,8 +1942,8 @@ class TestIndexerRegexFallback:
 
     def test_regex_fallback_populates_kg(self, tmp_path):
         """When provider returns empty, regex fallback adds entities to KG."""
-        from fantasy_author.ingestion.indexer import index_text
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.ingestion.indexer import index_text
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
         kg_path = str(tmp_path / "knowledge.db")
         kg = KnowledgeGraph(kg_path)
@@ -1967,8 +1967,8 @@ class TestIndexerRegexFallback:
 
     def test_regex_fallback_on_invalid_json(self, tmp_path):
         """When provider returns non-JSON, regex fallback kicks in."""
-        from fantasy_author.ingestion.indexer import index_text
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.ingestion.indexer import index_text
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
         kg_path = str(tmp_path / "knowledge.db")
         kg = KnowledgeGraph(kg_path)
@@ -1992,8 +1992,8 @@ class TestIndexerRegexFallback:
         """When provider returns valid JSON, LLM extraction is used."""
         import json
 
-        from fantasy_author.ingestion.indexer import index_text
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.ingestion.indexer import index_text
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
         kg_path = str(tmp_path / "knowledge.db")
         kg = KnowledgeGraph(kg_path)
@@ -2037,7 +2037,7 @@ class TestEditorialReader:
 
     def test_parse_editorial_response(self):
         """Valid editorial response should parse correctly."""
-        from fantasy_author.evaluation.editorial import _parse_editorial_response
+        from workflow.evaluation.editorial import _parse_editorial_response
 
         raw = json.dumps({
             "protect": ["vivid imagery", "strong character voice"],
@@ -2059,14 +2059,14 @@ class TestEditorialReader:
 
     def test_parse_editorial_invalid_json(self):
         """Non-JSON response should return None."""
-        from fantasy_author.evaluation.editorial import _parse_editorial_response
+        from workflow.evaluation.editorial import _parse_editorial_response
 
         result = _parse_editorial_response("This is not JSON")
         assert result is None
 
     def test_parse_editorial_code_fences(self):
         """JSON wrapped in markdown code fences should still parse."""
-        from fantasy_author.evaluation.editorial import _parse_editorial_response
+        from workflow.evaluation.editorial import _parse_editorial_response
 
         raw = '```json\n{"protect": ["good pacing"], "concerns": [], "next_scene": ""}\n```'
         result = _parse_editorial_response(raw)
@@ -2075,8 +2075,8 @@ class TestEditorialReader:
 
     def test_editorial_skips_on_hard_failure(self):
         """Editorial reader should be skipped on structural hard failure."""
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _run_editorial
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _run_editorial
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.0,
@@ -2087,7 +2087,7 @@ class TestEditorialReader:
 
     def test_editorial_skips_mock_response(self):
         """Editorial reader should return None for mock responses."""
-        from fantasy_author.evaluation.editorial import read_editorial
+        from workflow.evaluation.editorial import read_editorial
 
         result = read_editorial("Some prose")
         # With _FORCE_MOCK=True, call_provider returns mock -> None
@@ -2095,7 +2095,7 @@ class TestEditorialReader:
 
     def test_commit_includes_editorial_notes(self):
         """Commit result should include editorial_notes field."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -2120,7 +2120,7 @@ class TestEditorialReader:
 
     def test_commit_editorial_notes_in_state(self):
         """Commit should return editorial_notes in the state dict."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -2148,8 +2148,8 @@ class TestEditorialVerdict:
 
     def test_accept_without_editorial(self):
         """No editorial -> accept."""
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2160,9 +2160,9 @@ class TestEditorialVerdict:
 
     def test_revert_on_hard_failure(self):
         """Structural hard failure -> revert."""
-        from fantasy_author.evaluation.editorial import EditorialNotes
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from workflow.evaluation.editorial import EditorialNotes
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.0,
@@ -2174,12 +2174,12 @@ class TestEditorialVerdict:
 
     def test_second_draft_on_clearly_wrong(self):
         """Clearly wrong concern -> second_draft (first attempt)."""
-        from fantasy_author.evaluation.editorial import (
+        from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2197,12 +2197,12 @@ class TestEditorialVerdict:
 
     def test_accept_on_second_draft_even_with_clearly_wrong(self):
         """Clearly wrong on second draft -> accept (never block)."""
-        from fantasy_author.evaluation.editorial import (
+        from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2218,12 +2218,12 @@ class TestEditorialVerdict:
 
     def test_accept_with_non_wrong_concerns(self):
         """Concerns that aren't clearly_wrong -> accept."""
-        from fantasy_author.evaluation.editorial import (
+        from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
-        from fantasy_author.evaluation.structural import StructuralResult
-        from fantasy_author.nodes.commit import _compute_editorial_verdict
+        from workflow.evaluation.structural import StructuralResult
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2248,7 +2248,7 @@ class TestTunnelManagement:
         """_start_tunnel returns None when cloudflared is not found."""
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _start_tunnel
+        from workflow.__main__ import _start_tunnel
 
         with patch("shutil.which", return_value=None):
             result = _start_tunnel(8321)
@@ -2258,7 +2258,7 @@ class TestTunnelManagement:
         """_start_tunnel starts a quick tunnel when no name given."""
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _start_tunnel
+        from workflow.__main__ import _start_tunnel
 
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -2288,7 +2288,7 @@ class TestTunnelManagement:
         """_start_tunnel runs a named tunnel when name is given."""
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _start_tunnel
+        from workflow.__main__ import _start_tunnel
 
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -2311,7 +2311,7 @@ class TestTunnelManagement:
         """_start_tunnel registers atexit handler for orphan prevention."""
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _start_tunnel, _stop_tunnel
+        from workflow.__main__ import _start_tunnel, _stop_tunnel
 
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -2331,7 +2331,7 @@ class TestTunnelManagement:
         """On Windows, _start_tunnel sets CREATE_NO_WINDOW | DETACHED_PROCESS."""
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _start_tunnel
+        from workflow.__main__ import _start_tunnel
 
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -2356,7 +2356,7 @@ class TestTunnelManagement:
         import io
         from unittest.mock import patch
 
-        from fantasy_author.__main__ import _drain_tunnel_stderr
+        from workflow.__main__ import _drain_tunnel_stderr
 
         # Simulate cloudflared stderr output with a URL line
         fake_stderr = io.BytesIO(
@@ -2370,21 +2370,17 @@ class TestTunnelManagement:
         mock_proc = MagicMock()
         mock_proc.stderr = fake_stderr
 
-        with patch("fantasy_author.__main__.logger") as mock_logger, \
-             patch("fantasy_author.__main__._update_gpt_schema_url") as mock_update:
+        with patch("fantasy_author.__main__.logger") as mock_logger:
             _drain_tunnel_stderr(mock_proc)
 
-        # Verify the URL was logged and schema update was called
+        # Verify the URL was logged
         mock_logger.info.assert_any_call(
             "Tunnel URL: %s", "https://fancy-name-here.trycloudflare.com"
-        )
-        mock_update.assert_called_once_with(
-            "https://fancy-name-here.trycloudflare.com"
         )
 
     def test_stop_tunnel_terminates_process(self):
         """_stop_tunnel should terminate a running tunnel process."""
-        from fantasy_author.__main__ import _stop_tunnel
+        from workflow.__main__ import _stop_tunnel
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # still running
@@ -2395,7 +2391,7 @@ class TestTunnelManagement:
 
     def test_stop_tunnel_skips_already_exited(self):
         """_stop_tunnel should skip processes that already exited."""
-        from fantasy_author.__main__ import _stop_tunnel
+        from workflow.__main__ import _stop_tunnel
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0  # already exited
@@ -2403,57 +2399,6 @@ class TestTunnelManagement:
         _stop_tunnel(mock_proc)
         mock_proc.terminate.assert_not_called()
 
-    def test_update_gpt_schema_url(self, tmp_path):
-        """_update_gpt_schema_url replaces the server URL in the schema."""
-        from unittest.mock import patch
-
-        from fantasy_author.__main__ import _update_gpt_schema_url
-
-        # Create a fake project layout with the schema
-        fake_pkg = tmp_path / "fantasy_author"
-        fake_pkg.mkdir()
-        schema_dir = tmp_path / "custom_gpt"
-        schema_dir.mkdir()
-        schema = schema_dir / "actions_schema.yaml"
-        schema.write_text(
-            "servers:\n"
-            "  - url: https://old-name.trycloudflare.com\n"
-            "    description: Local tunnel\n",
-            encoding="utf-8",
-        )
-
-        # Patch __file__ resolution so it finds our temp schema
-        with patch(
-            "fantasy_author.__main__.__file__",
-            str(fake_pkg / "__main__.py"),
-        ):
-            _update_gpt_schema_url("https://new-fancy-url.trycloudflare.com")
-
-        result = schema.read_text(encoding="utf-8")
-        assert "new-fancy-url" in result
-        assert "old-name" not in result
-
-    def test_drain_tunnel_stderr_updates_schema(self):
-        """_drain_tunnel_stderr calls _update_gpt_schema_url with the URL."""
-        import io
-        from unittest.mock import patch
-
-        from fantasy_author.__main__ import _drain_tunnel_stderr
-
-        fake_stderr = io.BytesIO(
-            b"2026-04-03T00:00:01Z INF https://test-url.trycloudflare.com\n"
-        )
-        mock_proc = MagicMock()
-        mock_proc.stderr = fake_stderr
-
-        with patch(
-            "fantasy_author.__main__._update_gpt_schema_url"
-        ) as mock_update:
-            _drain_tunnel_stderr(mock_proc)
-
-        mock_update.assert_called_once_with(
-            "https://test-url.trycloudflare.com"
-        )
 
 
 # =====================================================================
@@ -2475,18 +2420,18 @@ class TestTrayMode:
 
     def test_run_tray_mode_importable(self):
         """_run_tray_mode should be importable."""
-        from fantasy_author.__main__ import _run_tray_mode
+        from workflow.__main__ import _run_tray_mode
         assert callable(_run_tray_mode)
 
     def test_pyw_contains_tray_flag(self):
-        """fantasy_author.pyw should pass --tray to main()."""
-        pyw = Path(__file__).resolve().parent.parent / "fantasy_author.pyw"
+        """workflow.pyw should pass --tray to main()."""
+        pyw = Path(__file__).resolve().parent.parent / "workflow.pyw"
         text = pyw.read_text(encoding="utf-8")
         assert "--tray" in text
 
     def test_pyw_uses_port_8321(self):
-        """fantasy_author.pyw should use port 8321."""
-        pyw = Path(__file__).resolve().parent.parent / "fantasy_author.pyw"
+        """workflow.pyw should use port 8321."""
+        pyw = Path(__file__).resolve().parent.parent / "workflow.pyw"
         text = pyw.read_text(encoding="utf-8")
         assert "8321" in text
 
@@ -2496,7 +2441,7 @@ class TestTrayMode:
         from unittest.mock import MagicMock, patch
 
         import fantasy_author.__main__ as main_mod
-        from fantasy_author.__main__ import (
+        from workflow.__main__ import (
             _drain_tunnel_stderr,
             _tunnel_url_ready,
         )
@@ -2510,8 +2455,7 @@ class TestTrayMode:
         mock_proc = MagicMock()
         mock_proc.stderr = fake_stderr
 
-        with patch("fantasy_author.__main__._update_gpt_schema_url"):
-            _drain_tunnel_stderr(mock_proc)
+        _drain_tunnel_stderr(mock_proc)
 
         assert _tunnel_url_ready.is_set()
         assert main_mod._tunnel_url_value == "https://fresh-url.trycloudflare.com"

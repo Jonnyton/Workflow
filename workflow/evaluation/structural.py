@@ -107,6 +107,7 @@ _CHECK_WEIGHTS: dict[str, float] = {
     "character_voice": 0.07,
     "canon_breach": 0.09,
     "asp_constraint": 0.07,
+    "premise_grounding": 0.14,
 }
 
 # Checks whose failure sets hard_failure=True (provable errors only).
@@ -114,7 +115,7 @@ _CHECK_WEIGHTS: dict[str, float] = {
 # high false-positive rate and the editorial reader handles nuance better.
 # name_consistency is now a placeholder -- editorial reader handles name issues.
 _HARD_FAILURE_CHECKS = {
-    "timeline_consistency", "asp_constraint",
+    "timeline_consistency", "asp_constraint", "premise_grounding",
 }
 
 
@@ -785,6 +786,215 @@ def _check_canon_breach(state: dict[str, Any]) -> CheckResult:
     )
 
 
+def _term_in_text(term: str, text: str) -> bool:
+    """Check if a proper noun appears in text, using word boundaries for short terms.
+
+    Short terms (under 4 chars) use regex word boundaries to avoid false
+    matches like "Val" in "interval".  Longer terms use simple substring
+    containment which is faster and sufficient.
+    """
+    term_lower = term.lower()
+    if len(term_lower) < 4:
+        return bool(re.search(rf"\b{re.escape(term_lower)}\b", text))
+    return term_lower in text
+
+
+def _extract_premise_terms(premise: str) -> tuple[list[str], list[str]]:
+    """Extract protagonist name(s) and world-specific proper nouns from premise.
+
+    Returns (protagonist_names, world_terms).
+    Protagonist is heuristically the first capitalized multi-word or single
+    proper noun in the premise text.
+    """
+    if not premise:
+        return [], []
+
+    # Find all capitalized proper nouns/phrases (2+ chars, not sentence-start)
+    # Split into sentences to skip sentence-initial capitals
+    words = premise.split()
+    proper_nouns: list[str] = []
+    for i, w in enumerate(words):
+        # Strip punctuation for matching
+        clean = re.sub(r"[^\w]", "", w)
+        if not clean or len(clean) < 2:
+            continue
+        # Skip common words that happen to be capitalized
+        if clean.lower() in {
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+            "for", "is", "are", "was", "were", "be", "been", "being", "have",
+            "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "shall", "can", "it", "its", "this",
+            "that", "these", "those", "with", "from", "by", "as", "of",
+            "not", "no", "nor", "so", "yet", "both", "each", "every",
+            "all", "any", "few", "more", "most", "some", "such", "than",
+            "too", "very", "just", "about", "above", "after", "before",
+            "between", "into", "through", "during", "until", "against",
+            "among", "throughout", "despite", "without", "within",
+            "along", "across", "behind", "beyond", "under", "over",
+            "where", "when", "who", "what", "which", "how", "why",
+            "book", "chapter", "scene", "story", "novel", "series",
+            "world", "universe", "fantasy", "fiction",
+        }:
+            continue
+        if clean[0].isupper() and not clean.isupper():
+            proper_nouns.append(clean)
+
+    # Protagonist heuristic: look for the first proper noun that is
+    # followed by a verb-like word (is, was, has, had, studies, explores,
+    # navigates, etc.).  Falls back to first proper noun if no verb follows.
+    _VERB_HINTS = {
+        "is", "was", "has", "had", "does", "did", "will", "would",
+        "could", "should", "may", "might", "shall", "can",
+    }
+    # Clean words for position lookup (strip punctuation to match proper_nouns)
+    cleaned_words = [re.sub(r"[^\w]", "", w) for w in words]
+    protagonist: list[str] = []
+    for noun in proper_nouns:
+        # Find this noun's position in the cleaned word list
+        try:
+            noun_idx = cleaned_words.index(noun)
+        except ValueError:
+            continue
+        if noun_idx + 1 < len(cleaned_words):
+            next_word = cleaned_words[noun_idx + 1].lower()
+            if next_word in _VERB_HINTS or next_word.endswith(("es", "ed", "ing", "ies")):
+                protagonist = [noun]
+                break
+    if not protagonist and proper_nouns:
+        protagonist = [proper_nouns[0]]
+    world_terms = proper_nouns
+
+    return protagonist, world_terms
+
+
+def _check_premise_grounding(state: dict[str, Any]) -> CheckResult:
+    """Check that scene prose is grounded in the universe premise.
+
+    Extracts key terms from the premise (PROGRAM.md / premise_kernel) and
+    verifies:
+    1. The protagonist appears in the prose or extracted facts.
+    2. At least some world-specific terms appear (zero = hard fail).
+
+    This catches total premise departure and cross-universe contamination
+    where the wrong story is being written.
+    """
+    # Get premise from state, with PROGRAM.md disk fallback (Item 4:
+    # belt-and-suspenders defense against pipeline not propagating premise)
+    premise = ""
+    wf_instructions = state.get("workflow_instructions") or {}
+    if isinstance(wf_instructions, dict):
+        premise = wf_instructions.get("premise", "")
+    if not premise:
+        premise = state.get("premise_kernel", "")
+    if not premise:
+        # Fallback: read PROGRAM.md from universe directory
+        uni_path = state.get("_universe_path", "")
+        if uni_path:
+            from pathlib import Path as _P
+            program_md = _P(uni_path) / "PROGRAM.md"
+            try:
+                if program_md.exists():
+                    premise = program_md.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
+    if not premise:
+        return CheckResult(
+            name="premise_grounding",
+            passed=True,
+            score=1.0,
+            details={"note": "No premise available to check against"},
+        )
+
+    protagonist_names, world_terms = _extract_premise_terms(premise)
+
+    draft = state.get("draft_output") or {}
+    prose = draft.get("prose", "")
+    if not prose:
+        return CheckResult(
+            name="premise_grounding",
+            passed=True,
+            score=1.0,
+            details={"note": "No prose to check"},
+        )
+
+    prose_lower = prose.lower()
+
+    # Check against prose and orient POV only.  extracted_facts is stale
+    # here (fact extraction runs after structural eval in the commit pipeline).
+    orient_result = state.get("orient_result") or {}
+    pov_character = (orient_result.get("pov_character") or "").lower()
+    combined_text = f"{prose_lower} {pov_character}"
+
+    violations: list[str] = []
+
+    # Check 1: Protagonist presence (observation, not violation —
+    # heuristic is best-effort so missing protagonist degrades score
+    # but doesn't produce a hard violation)
+    protagonist_found = False
+    if protagonist_names:
+        for name in protagonist_names:
+            if _term_in_text(name, combined_text):
+                protagonist_found = True
+                break
+
+    # Check 2: World term coverage
+    terms_found = 0
+    terms_missing: list[str] = []
+    if world_terms:
+        for term in world_terms:
+            if _term_in_text(term, combined_text):
+                terms_found += 1
+            else:
+                terms_missing.append(term)
+
+    world_term_ratio = terms_found / len(world_terms) if world_terms else 1.0
+
+    # Zero world terms is a hard failure — total premise departure
+    if world_terms and terms_found == 0:
+        violations.append(
+            f"Zero premise world terms found in scene. "
+            f"Missing: {', '.join(terms_missing[:10])}. "
+            f"This indicates total premise departure or "
+            f"cross-universe contamination."
+        )
+
+    # Score: 1.0 if all terms found, scales down proportionally
+    score = world_term_ratio
+    if protagonist_names and not protagonist_found:
+        score *= 0.5
+
+    passed = len(violations) == 0
+
+    observation = ""
+    if protagonist_names and not protagonist_found:
+        observation = (
+            f"Protagonist '{protagonist_names[0]}' from premise not found "
+            f"in scene prose — is this an intentional POV shift?"
+        )
+    elif passed and world_term_ratio < 0.5:
+        observation = (
+            f"Only {terms_found}/{len(world_terms)} premise terms appear "
+            f"in this scene — is the story drifting from the premise?"
+        )
+
+    return CheckResult(
+        name="premise_grounding",
+        passed=passed,
+        score=round(score, 3),
+        details={
+            "protagonist_names": protagonist_names,
+            "protagonist_found": protagonist_found,
+            "world_terms_total": len(world_terms),
+            "world_terms_found": terms_found,
+            "world_term_ratio": round(world_term_ratio, 3),
+            "missing_terms": terms_missing[:10],
+        },
+        violations=violations,
+        observation=observation,
+    )
+
+
 def _check_asp_constraint(state: dict[str, Any]) -> CheckResult:
     """ASP constraint check: validate via Clingo if available."""
     if not _HAS_ASP:
@@ -886,6 +1096,7 @@ class StructuralEvaluator:
             _check_timeline(scene_state),
             _check_character_voice(prose, scene_state),
             _check_canon_breach(scene_state),
+            _check_premise_grounding(scene_state),
             _check_asp_constraint(scene_state),
         ]
 

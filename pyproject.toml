@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fantasy-author"
+name = "workflow"
 version = "0.1.0"
-description = "Autonomous daemon platform for collaborative long-form fiction — host-run workflow engine with MCP interface"
+description = "Goal-agnostic daemon engine — summon it, bind it to a domain, let it drive. MCP interface for any chatbot."
 requires-python = ">=3.11"
 authors = [
     {name = "Jonathan", email = "jonathan@example.com"}
@@ -13,6 +13,7 @@ authors = [
 dependencies = [
     # Core orchestration
     "langgraph>=0.4,<0.5",
+    "langgraph-checkpoint-sqlite>=3.0,<4.0",
     "langchain-core>=0.3,<0.4",
 
     # Vector & KG storage
@@ -40,12 +41,12 @@ dependencies = [
 ]
 
 [project.scripts]
-fantasy-author-cli = "fantasy_author.__main__:main"
-fantasy-author-mcp = "fantasy_author.mcp_server:main"
-fantasy-author-universe-server = "fantasy_author.universe_server:main"
+workflow-cli = "workflow.__main__:main"
+workflow-mcp = "workflow.mcp_server:main"
+workflow-universe-server = "workflow.universe_server:main"
 
 [project.gui-scripts]
-fantasy-author = "fantasy_author.desktop.launcher:main"
+workflow = "workflow.desktop.launcher:main"
 
 [project.optional-dependencies]
 desktop = ["Pillow>=10.0", "pystray>=0.19"]

@@ -1,11 +1,11 @@
-"""Create a Windows desktop shortcut for Fantasy Author.
+"""Create a Windows desktop shortcut for Workflow.
 
 Usage::
 
-    python -m fantasy_author.desktop.create_shortcut
+    python -m workflow.desktop.create_shortcut
 
 Creates a .lnk shortcut (if ``winshell`` is installed) or a .bat launcher
-on the user's Desktop that runs ``fantasy_author.pyw`` via ``pythonw``.
+on the user's Desktop that runs ``workflow.pyw`` via ``pythonw``.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from pathlib import Path
 
 
 def _project_root() -> Path:
-    """Return the project root (parent of the fantasy_author package)."""
+    """Return the project root (parent of the workflow package)."""
     return Path(__file__).resolve().parent.parent.parent
 
 
 def _pyw_path() -> Path:
-    """Return the absolute path to fantasy_author.pyw."""
-    return _project_root() / "fantasy_author.pyw"
+    """Return the absolute path to workflow.pyw."""
+    return _project_root() / "workflow.pyw"
 
 
 def _icon_path() -> Path:
@@ -38,7 +38,7 @@ def _create_lnk(target: Path, desktop: Path, icon: Path) -> Path:
     """Create a .lnk shortcut using winshell."""
     import winshell  # type: ignore[import-untyped]
 
-    shortcut_path = desktop / "Fantasy Author.lnk"
+    shortcut_path = desktop / "Workflow.lnk"
     pythonw = Path(sys.executable).parent / "pythonw.exe"
 
     winshell.CreateShortcut(
@@ -47,14 +47,14 @@ def _create_lnk(target: Path, desktop: Path, icon: Path) -> Path:
         Arguments=f'"{target}"',
         StartIn=str(target.parent),
         Icon=(str(icon), 0) if icon.exists() else (str(pythonw), 0),
-        Description="Fantasy Author -- autonomous fiction generation",
+        Description="Workflow -- autonomous fiction generation",
     )
     return shortcut_path
 
 
 def _create_bat(target: Path, desktop: Path) -> Path:
     """Create a .bat launcher as a fallback when winshell is unavailable."""
-    bat_path = desktop / "Fantasy Author.bat"
+    bat_path = desktop / "Workflow.bat"
     pythonw = Path(sys.executable).parent / "pythonw.exe"
     bat_path.write_text(
         f'@echo off\nstart "" "{pythonw}" "{target}"\n',
@@ -82,7 +82,7 @@ def create_shortcut() -> Path:
 
 
 def main() -> None:
-    """Entry point for ``python -m fantasy_author.desktop.create_shortcut``."""
+    """Entry point for ``python -m workflow.desktop.create_shortcut``."""
     path = create_shortcut()
     print(f"Shortcut created: {path}")
 

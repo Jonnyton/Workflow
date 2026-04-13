@@ -1,6 +1,6 @@
 # Conway Readiness Strategy
 
-Deep research findings and day-1 discoverability plan for Fantasy Author / Universe Server.
+Deep research findings and day-1 discoverability plan for Workflow Universe Server.
 
 **Date:** 2026-04-08
 **Goal:** When Conway launches, our project is already listed, packaged, and discoverable — zero manual intervention required.
@@ -136,10 +136,10 @@ Package the Universe Server as a one-click installable desktop extension.
 1. **`manifest.json`** following MCPB v0.3+ spec:
    ```json
    {
-     "name": "fantasy-author-universe-server",
+     "name": "workflow-universe-server",
      "version": "0.1.0",
-     "display_name": "Fantasy Author Universe Server",
-     "description": "Autonomous fantasy novel writing system. Connect to living universes where AI Authors write, revise, and world-build collaboratively. Control the daemon, submit creative direction, register custom workflow nodes, and read evolving stories — all through natural conversation.",
+     "display_name": "Workflow Universe Server",
+     "description": "Goal-agnostic daemon engine. Summon the daemon, bind it to a domain, and let it drive. Connect to living universes, submit direction, register custom workflow nodes, and steer autonomous output — all through natural conversation.",
      "icon": "icon.png",
      "tools": [...all tool definitions with annotations...],
      "user_config": {

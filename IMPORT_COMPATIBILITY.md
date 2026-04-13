@@ -2,7 +2,7 @@
 
 ## Overview
 
-Phase 2 of the workflow extraction successfully restructured the Fantasy Author codebase into three distinct packages:
+Phase 2 of the workflow extraction successfully restructured the codebase into three distinct packages:
 
 - **workflow/** — Shared infrastructure library (79 Python files)
 - **domains/fantasy_author/** — Domain-specific fantasy author code (39 Python files)
@@ -114,27 +114,26 @@ Test file: `tests/test_import_compatibility.py`
 
 ## Migration Timeline
 
-### Phase 2a (Current)
+### Phase 2a (Done)
 
-Both old and new import paths work in parallel:
-- `fantasy_author/` retains original source with original imports
-- `workflow/` has rewritten imports using `workflow.*` paths
-- `domains/` has rewritten imports using `workflow.*` and `domains.fantasy_author.*` paths
-- Existing tests continue using `fantasy_author.*` imports without modification
+Both old and new import paths worked in parallel.
 
-### Phase 2b (Future)
+### Phase 2b (Done — 2026-04-11)
 
-Gradual migration of tests and code:
-- Update tests to use new import paths where beneficial
-- Update __main__.py and entry points to use new paths
-- No forced timeline—coexistence is stable indefinitely
+Full migration completed:
+- All 623 test and script imports migrated from `fantasy_author.*` to `workflow.*` / `domains.fantasy_author.*`
+- `fantasy_author/` converted to thin re-export shims (original backed up in `fantasy_author_original/`)
+- Entry points renamed: `workflow-cli`, `workflow-mcp`, `workflow-universe-server`, `workflow` (GUI)
+- Env vars renamed: `FANTASY_AUTHOR_UNIVERSE` → `WORKFLOW_UNIVERSE`
+- Unextracted modules (auth, branches, node_eval, node_sandbox, packets, universe_server, utils) copied to `workflow/`
+- Zero syntax errors across all migrated files
 
-### Phase 3 (Later)
+### Phase 3 (Future)
 
-Deprecation and removal:
-- Mark old imports as deprecated
-- Set removal deadline (e.g., version 1.0)
-- Remove fantasy_author/ re-export shims
+Removal of backward compatibility:
+- Remove `fantasy_author/` shim package entirely
+- Remove `fantasy_author_original/` backup
+- Update `pyproject.toml` packages list to drop `fantasy_author`
 
 ## Key Design Principles
 

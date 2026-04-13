@@ -15,23 +15,6 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
-def _resolve_kg_path(state: dict[str, Any]) -> str:
-    """Return the knowledge graph DB path from state, never CWD-relative."""
-    from pathlib import Path
-
-    kg_path = state.get("_kg_path", "")
-    if kg_path:
-        return kg_path
-    uni_path = state.get("_universe_path", "")
-    if uni_path:
-        return str(Path(uni_path) / "knowledge.db")
-    logger.warning(
-        "No _kg_path or _universe_path in state; "
-        "KG-based retrieval disabled for this query"
-    )
-    return ""
-
-
 def assemble_phase_search_context(
     state: dict[str, Any],
     phase: str,
@@ -126,8 +109,9 @@ def run_phase_retrieval(
         kg = runtime.knowledge_graph
         if kg is None:
             from workflow.knowledge.knowledge_graph import KnowledgeGraph
+            from domains.fantasy_author.phases._paths import resolve_kg_path
 
-            kg_path = _resolve_kg_path(state)
+            kg_path = resolve_kg_path(state)
             if kg_path:
                 kg = KnowledgeGraph(kg_path)
                 owns_kg = True
@@ -299,7 +283,7 @@ def build_phase_query(
 
 def _build_provider_call() -> Callable[[str, str, str], Any] | None:
     """Return the async decomposition callable when real providers are enabled."""
-    from workflow.nodes import _provider_stub
+    from domains.fantasy_author.phases import _provider_stub
 
     if _provider_stub._FORCE_MOCK:
         return None

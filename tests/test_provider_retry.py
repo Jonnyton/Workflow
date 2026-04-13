@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from fantasy_author.exceptions import AllProvidersExhaustedError
-from fantasy_author.nodes import _provider_stub
+from workflow.exceptions import AllProvidersExhaustedError
+from domains.fantasy_author.phases import _provider_stub
 
 
 class TestProviderRetry:

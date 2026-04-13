@@ -67,8 +67,9 @@ class SeriesPromiseTracker:
         universe_id: str = "default",
     ) -> None:
         self._universe_id = universe_id
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = sqlite3.connect(str(db_path), timeout=30)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(_SCHEMA)
 
     def close(self) -> None:

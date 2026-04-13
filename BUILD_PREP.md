@@ -1,4 +1,4 @@
-# Fantasy Author — Build Preparation Document
+# Workflow — Build Preparation Document
 
 **Date:** 2026-03-31
 **Purpose:** One-shot build session reference. Everything you need to ship shippable code without re-researching.

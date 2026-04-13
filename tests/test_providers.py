@@ -12,20 +12,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fantasy_author.exceptions import (
+from workflow.exceptions import (
     AllProvidersExhaustedError,
     ProviderError,
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from fantasy_author.providers.base import (
+from workflow.providers.base import (
     DEGRADED_JUDGE_RESPONSE,
     BaseProvider,
     ModelConfig,
     ProviderResponse,
 )
-from fantasy_author.providers.quota import QuotaTracker
-from fantasy_author.providers.router import FALLBACK_CHAINS, ProviderRouter
+from workflow.providers.quota import QuotaTracker
+from workflow.providers.router import FALLBACK_CHAINS, ProviderRouter
 
 # =====================================================================
 # Helpers -- fake providers for testing
@@ -269,8 +269,8 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_writer_tried_first(self, monkeypatch):
-        from fantasy_author import runtime
-        from fantasy_author.config import UniverseConfig
+        from workflow import runtime
+        from workflow.config import UniverseConfig
 
         monkeypatch.setattr(
             runtime, "universe_config",
@@ -284,8 +284,8 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_judge_tried_first(self, monkeypatch):
-        from fantasy_author import runtime
-        from fantasy_author.config import UniverseConfig
+        from workflow import runtime
+        from workflow.config import UniverseConfig
 
         monkeypatch.setattr(
             runtime, "universe_config",
@@ -299,8 +299,8 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_writer_falls_back_on_failure(self, monkeypatch):
-        from fantasy_author import runtime
-        from fantasy_author.config import UniverseConfig
+        from workflow import runtime
+        from workflow.config import UniverseConfig
 
         monkeypatch.setattr(
             runtime, "universe_config",
@@ -407,7 +407,7 @@ class TestProviderRegistration:
 class TestClaudeProvider:
     @pytest.mark.asyncio
     async def test_success(self):
-        from fantasy_author.providers.claude_provider import ClaudeProvider
+        from workflow.providers.claude_provider import ClaudeProvider
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"Hello world", b""))
@@ -416,7 +416,7 @@ class TestClaudeProvider:
         mock_proc.wait = AsyncMock()
 
         with (
-            patch("fantasy_author.providers.claude_provider._resolve_claude_cmd",
+            patch("workflow.providers.claude_provider._resolve_claude_cmd",
                   return_value=(["claude"], False)),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -429,7 +429,7 @@ class TestClaudeProvider:
 
     @pytest.mark.asyncio
     async def test_exit_code_1_quick_triggers_unavailable(self):
-        from fantasy_author.providers.claude_provider import ClaudeProvider
+        from workflow.providers.claude_provider import ClaudeProvider
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", b"unavailable"))
@@ -438,7 +438,7 @@ class TestClaudeProvider:
         mock_proc.wait = AsyncMock()
 
         with (
-            patch("fantasy_author.providers.claude_provider._resolve_claude_cmd",
+            patch("workflow.providers.claude_provider._resolve_claude_cmd",
                   return_value=(["claude"], False)),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -448,7 +448,7 @@ class TestClaudeProvider:
 
     @pytest.mark.asyncio
     async def test_timeout_kills_process(self):
-        from fantasy_author.providers.claude_provider import ClaudeProvider
+        from workflow.providers.claude_provider import ClaudeProvider
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
@@ -456,7 +456,7 @@ class TestClaudeProvider:
         mock_proc.wait = AsyncMock()
 
         with (
-            patch("fantasy_author.providers.claude_provider._resolve_claude_cmd",
+            patch("workflow.providers.claude_provider._resolve_claude_cmd",
                   return_value=(["claude"], False)),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
             patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
@@ -474,7 +474,7 @@ class TestClaudeProvider:
 class TestCodexProvider:
     @pytest.mark.asyncio
     async def test_success(self):
-        from fantasy_author.providers.codex_provider import CodexProvider
+        from workflow.providers.codex_provider import CodexProvider
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"codex output", b""))
@@ -483,7 +483,7 @@ class TestCodexProvider:
         mock_proc.wait = AsyncMock()
 
         with (
-            patch("fantasy_author.providers.codex_provider._resolve_codex_cmd",
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
                   return_value=(["codex"], False)),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -496,7 +496,7 @@ class TestCodexProvider:
 
     @pytest.mark.asyncio
     async def test_error_raises_provider_error(self):
-        from fantasy_author.providers.codex_provider import CodexProvider
+        from workflow.providers.codex_provider import CodexProvider
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", b"bad"))
@@ -505,7 +505,7 @@ class TestCodexProvider:
         mock_proc.wait = AsyncMock()
 
         with (
-            patch("fantasy_author.providers.codex_provider._resolve_codex_cmd",
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
                   return_value=(["codex"], False)),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -524,7 +524,7 @@ class TestOllamaProvider:
     async def test_success(self):
         import json
 
-        from fantasy_author.providers.ollama_provider import OllamaProvider
+        from workflow.providers.ollama_provider import OllamaProvider
 
         response_body = json.dumps({"response": "ollama output"}).encode()
         mock_response = MagicMock()
@@ -544,7 +544,7 @@ class TestOllamaProvider:
     async def test_connection_refused(self):
         import urllib.error
 
-        from fantasy_author.providers.ollama_provider import OllamaProvider
+        from workflow.providers.ollama_provider import OllamaProvider
 
         with patch(
             "urllib.request.urlopen",
@@ -575,7 +575,7 @@ class TestGrokProvider:
             patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
             patch("openai.OpenAI", return_value=mock_client),
         ):
-            from fantasy_author.providers.grok_provider import GrokProvider
+            from workflow.providers.grok_provider import GrokProvider
 
             provider = GrokProvider()
             resp = await provider.complete("prompt", "system", ModelConfig())
@@ -596,7 +596,7 @@ class TestGrokProvider:
             patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
             patch("openai.OpenAI", return_value=mock_client),
         ):
-            from fantasy_author.providers.grok_provider import GrokProvider
+            from workflow.providers.grok_provider import GrokProvider
 
             provider = GrokProvider()
             with pytest.raises(ProviderUnavailableError):
@@ -613,7 +613,7 @@ class TestGrokProvider:
             patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
             patch("openai.OpenAI", return_value=mock_client),
         ):
-            from fantasy_author.providers.grok_provider import GrokProvider
+            from workflow.providers.grok_provider import GrokProvider
 
             provider = GrokProvider()
             with pytest.raises(ProviderError):
@@ -624,7 +624,7 @@ class TestGrokProvider:
             patch.dict("os.environ", {}, clear=True),
             patch("openai.OpenAI"),
         ):
-            from fantasy_author.providers.grok_provider import GrokProvider
+            from workflow.providers.grok_provider import GrokProvider
 
             with pytest.raises(ProviderUnavailableError, match="XAI_API_KEY"):
                 GrokProvider()

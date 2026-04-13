@@ -1,4 +1,4 @@
-"""Tests for the world state database (fantasy_author.nodes.world_state_db).
+"""Tests for the world state database (domains.fantasy_author.phases.world_state_db).
 
 Covers: schema init, promise CRUD, character CRUD, scene history,
 fact storage, pacing flags, and edge cases.
@@ -6,7 +6,7 @@ fact storage, pacing flags, and edge cases.
 
 from __future__ import annotations
 
-from fantasy_author.nodes.world_state_db import (
+from domains.fantasy_author.phases.world_state_db import (
     add_promise,
     compute_pacing_flags,
     connect,

@@ -45,7 +45,7 @@ class NotificationManager:
 
     def error(self, message: str) -> None:
         """Notify about an error condition."""
-        self._send("Fantasy Author Error", message[:200])
+        self._send("Workflow Error", message[:200])
 
     def _send(self, title: str, message: str) -> None:
         if self._tray is not None:

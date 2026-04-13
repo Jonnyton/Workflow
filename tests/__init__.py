@@ -1,1 +1,1 @@
-"""Tests for the Fantasy Author system."""
+"""Tests for the Workflow system."""

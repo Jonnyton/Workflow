@@ -1,13 +1,13 @@
-# Fantasy Author — Architecture (As-Built)
+# Workflow — Architecture (As-Built)
 
-**Last updated:** 2026-04-02
+**Last updated:** 2026-04-02 (reframed 2026-04-11)
 **Status:** Living reference — reflects what exists today, not aspirations
 
 ---
 
 ## 1. System Overview
 
-Fantasy Author is an autonomous fiction-writing system. A daemon writes a novel scene by scene using LLM providers, with knowledge retrieval, constraint checking, multi-tier evaluation, and hierarchical memory keeping the narrative coherent. A FastAPI server exposes the daemon as an HTTP API. A Custom GPT on ChatGPT is the primary user interface.
+Workflow is a goal-agnostic daemon engine. The daemon drives autonomous long-horizon tasks using LLM providers, with knowledge retrieval, constraint checking, multi-tier evaluation, and hierarchical memory keeping output coherent. Fantasy authoring is the first domain — the daemon writes a novel scene by scene. A FastAPI server exposes the daemon as an HTTP API. The Universe Server MCP is the primary user interface.
 
 ```
 User <-> Custom GPT <-> FastAPI (30 endpoints) <-> Daemon (LangGraph)

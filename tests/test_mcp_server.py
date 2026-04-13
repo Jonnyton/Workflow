@@ -1,7 +1,7 @@
 """Tests for the MCP server tool functions.
 
 Each tool is a plain function that reads/writes files in a universe
-directory. We test them by pointing FANTASY_AUTHOR_UNIVERSE at a
+directory. We test them by pointing WORKFLOW_UNIVERSE at a
 temp directory and calling them directly.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_author.mcp_server import (
+from workflow.mcp_server import (
     add_canon,
     add_note,
     get_activity,
@@ -33,7 +33,7 @@ from fantasy_author.mcp_server import (
 @pytest.fixture(autouse=True)
 def universe_dir(tmp_path, monkeypatch):
     """Point the MCP server at a temp directory for every test."""
-    monkeypatch.setenv("FANTASY_AUTHOR_UNIVERSE", str(tmp_path))
+    monkeypatch.setenv("WORKFLOW_UNIVERSE", str(tmp_path))
     return tmp_path
 
 
@@ -47,6 +47,43 @@ class TestMCPServerSetup:
 
     def test_server_name(self):
         assert mcp.name == "fantasy-author"
+
+
+class TestUniverseDirResolution:
+    """_universe_dir() resolves paths without cwd-relative landmines."""
+
+    def test_env_var_is_honored(self, tmp_path, monkeypatch):
+        from workflow.mcp_server import _universe_dir
+
+        monkeypatch.setenv("WORKFLOW_UNIVERSE", str(tmp_path / "custom"))
+        assert _universe_dir() == Path(str(tmp_path / "custom"))
+
+    def test_default_is_absolute(self, monkeypatch):
+        """Default must be absolute so a wrong cwd cannot redirect writes."""
+        from workflow.mcp_server import _universe_dir
+
+        monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+        result = _universe_dir()
+        assert result.is_absolute()
+        assert result.name == "default-universe"
+
+    def test_default_anchored_at_repo_root(self, tmp_path, monkeypatch):
+        """Changing cwd must NOT change where the default resolves to."""
+        import os
+
+        from workflow.mcp_server import _universe_dir
+
+        monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+        before = _universe_dir()
+
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            after = _universe_dir()
+        finally:
+            os.chdir(original_cwd)
+
+        assert before == after
 
     def test_server_has_tools(self):
         import asyncio
@@ -126,7 +163,7 @@ class TestSteer:
 
     def test_creates_directory_if_needed(self, tmp_path, monkeypatch):
         sub = tmp_path / "nested" / "universe"
-        monkeypatch.setenv("FANTASY_AUTHOR_UNIVERSE", str(sub))
+        monkeypatch.setenv("WORKFLOW_UNIVERSE", str(sub))
         steer("test")
         assert (sub / "notes.json").exists()
 
@@ -328,7 +365,7 @@ class TestMCPFlag:
         """The --mcp argument should be recognized by the arg parser."""
         # We can't easily test the full main() with --mcp without
         # actually starting a server, but we can verify the import path.
-        from fantasy_author.mcp_server import main as mcp_main
+        from workflow.mcp_server import main as mcp_main
 
         assert callable(mcp_main)
 
@@ -347,8 +384,8 @@ class TestMCPConfig:
         config_path = Path(__file__).parent.parent / ".mcp.json"
         data = json.loads(config_path.read_text(encoding="utf-8"))
         assert "mcpServers" in data
-        assert "fantasy-author" in data["mcpServers"]
-        server = data["mcpServers"]["fantasy-author"]
+        assert "workflow" in data["mcpServers"]
+        server = data["mcpServers"]["workflow"]
         assert server["command"] == "python"
         assert "-m" in server["args"]
-        assert "fantasy_author.mcp_server" in server["args"]
+        assert "workflow.mcp_server" in server["args"]

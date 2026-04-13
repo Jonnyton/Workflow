@@ -11,10 +11,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fantasy_author.nodes.commit import commit
-from fantasy_author.nodes.draft import draft
-from fantasy_author.nodes.orient import _estimate_arc_position, orient
-from fantasy_author.nodes.plan import (
+from domains.fantasy_author.phases.commit import commit
+from domains.fantasy_author.phases.draft import draft
+from domains.fantasy_author.phases.orient import _estimate_arc_position, orient
+from domains.fantasy_author.phases.plan import (
     _default_plan,
     _parse_plan_response,
     _parse_tension,
@@ -108,7 +108,7 @@ class TestOrientNode:
         assert "warnings_count" in trace[0]
 
     def test_orient_with_promises_in_db(self, tmp_story_db):
-        from fantasy_author.nodes.world_state_db import add_promise, connect, init_db
+        from domains.fantasy_author.phases.world_state_db import add_promise, connect, init_db
 
         init_db(tmp_story_db)
         with connect(tmp_story_db) as conn:
@@ -121,7 +121,7 @@ class TestOrientNode:
         assert len(result["orient_result"]["overdue_promises"]) >= 1
 
     def test_orient_with_character_gaps(self, tmp_story_db):
-        from fantasy_author.nodes.world_state_db import connect, init_db, upsert_character
+        from domains.fantasy_author.phases.world_state_db import connect, init_db, upsert_character
 
         init_db(tmp_story_db)
         with connect(tmp_story_db) as conn:
@@ -357,7 +357,7 @@ class TestDraftNode:
         state.update(orient(state))
         state.update(plan(state))
         with patch(
-            "fantasy_author.nodes._provider_stub.call_for_draft",
+            "domains.fantasy_author.phases._provider_stub.call_for_draft",
             return_value="",
         ):
             result = draft(state)
@@ -400,7 +400,7 @@ class TestCommitNode:
         assert "process_failures" in trace[0]
 
     def test_commit_updates_world_state(self, tmp_story_db):
-        from fantasy_author.nodes.world_state_db import connect, get_recent_scenes, init_db
+        from domains.fantasy_author.phases.world_state_db import connect, get_recent_scenes, init_db
 
         state = _base_state(tmp_story_db)
         state.update(orient(state))
@@ -459,9 +459,9 @@ class TestCommitNode:
     def test_commit_persists_consistency_audit_notes(self, tmp_story_db, tmp_path):
         from unittest.mock import patch
 
-        from fantasy_author.evaluation.process import ProcessCheck, ProcessEvaluation
-        from fantasy_author.evaluation.structural import CheckResult, StructuralResult
-        from fantasy_author.notes import list_notes
+        from workflow.evaluation.process import ProcessCheck, ProcessEvaluation
+        from workflow.evaluation.structural import CheckResult, StructuralResult
+        from workflow.notes import list_notes
 
         state = _base_state(tmp_story_db, _universe_path=str(tmp_path))
         state.update(orient(state))
@@ -498,12 +498,12 @@ class TestCommitNode:
 
         with (
             patch(
-                "fantasy_author.nodes.commit._structural_evaluator.evaluate",
+                "domains.fantasy_author.phases.commit._structural_evaluator.evaluate",
                 return_value=structural,
             ),
-            patch("fantasy_author.nodes.commit._run_editorial", return_value=None),
+            patch("domains.fantasy_author.phases.commit._run_editorial", return_value=None),
             patch(
-                "fantasy_author.nodes.commit.evaluate_scene_process",
+                "domains.fantasy_author.phases.commit.evaluate_scene_process",
                 return_value=process_eval,
             ),
         ):

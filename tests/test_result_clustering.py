@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from fantasy_author.knowledge.models import (
+from workflow.knowledge.models import (
     FactWithContext,
     SourceType,
 )
-from fantasy_author.retrieval.router import (
+from workflow.retrieval.router import (
     _cluster_facts,
     _cluster_texts,
     _cosine_similarity,
@@ -151,9 +151,9 @@ class TestRetrievalResultClustering:
 
     def test_router_clusters_during_query(self, tmp_path):
         """Verify the router applies clustering to its results."""
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
-        from fantasy_author.knowledge.models import GraphEntity
-        from fantasy_author.retrieval.router import RetrievalRouter
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.models import GraphEntity
+        from workflow.retrieval.router import RetrievalRouter
 
         kg = KnowledgeGraph(str(tmp_path / "test.db"))
         kg.add_entity(

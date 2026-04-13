@@ -20,25 +20,40 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from langgraph.checkpoint.sqlite import SqliteSaver
+# Suppress langchain-core Pydantic V1 deprecation warning on Python 3.14+
+warnings.filterwarnings(
+    "ignore",
+    message="Core Pydantic V1 functionality",
+    category=UserWarning,
+    module=r"langchain_core\._api\.deprecation",
+)
 
-import fantasy_author.runtime as runtime
-from fantasy_author.desktop.dashboard import DashboardHandler
-from fantasy_author.desktop.notifications import NotificationManager
-from fantasy_author.desktop.tray import TrayApp
-from fantasy_author.graphs.universe import build_universe_graph
-from fantasy_author.memory.ingestion import IngestionPriority, ProgressiveIngestor
-from fantasy_author.memory.manager import MemoryManager
-from fantasy_author.memory.promises import SeriesPromiseTracker
-from fantasy_author.memory.versioning import OutputVersionStore
-from fantasy_author.providers.claude_provider import ClaudeProvider
-from fantasy_author.providers.codex_provider import CodexProvider
-from fantasy_author.providers.ollama_provider import OllamaProvider
-from fantasy_author.providers.router import ProviderRouter
+# Imports below intentionally follow the warnings filter above so that
+# `langchain_core` (pulled in transitively) loads with the filter already
+# active. noqa: E402 acknowledges the ordering.
+from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: E402
+
+import fantasy_author.runtime as runtime  # noqa: E402
+from fantasy_author.desktop.dashboard import DashboardHandler  # noqa: E402
+from fantasy_author.desktop.notifications import NotificationManager  # noqa: E402
+from fantasy_author.desktop.tray import TrayApp  # noqa: E402
+from fantasy_author.graphs.universe import build_universe_graph  # noqa: E402
+from fantasy_author.memory.ingestion import (  # noqa: E402
+    IngestionPriority,
+    ProgressiveIngestor,
+)
+from fantasy_author.memory.manager import MemoryManager  # noqa: E402
+from fantasy_author.memory.promises import SeriesPromiseTracker  # noqa: E402
+from fantasy_author.memory.versioning import OutputVersionStore  # noqa: E402
+from fantasy_author.providers.claude_provider import ClaudeProvider  # noqa: E402
+from fantasy_author.providers.codex_provider import CodexProvider  # noqa: E402
+from fantasy_author.providers.ollama_provider import OllamaProvider  # noqa: E402
+from fantasy_author.providers.router import ProviderRouter  # noqa: E402
 
 logger = logging.getLogger("fantasy_author")
 
@@ -118,6 +133,7 @@ class DaemonController:
         no_tray: bool = False,
         premise: str = "",
         log_callback: Any = None,
+        pinned_provider: str = "",
     ) -> None:
         self._universe_path = universe_path
         # Default DB paths inside the universe directory (not CWD)
@@ -174,6 +190,9 @@ class DaemonController:
         self._pending_universe_switch: str = ""
         self._last_status_write: float = 0.0
         self._STATUS_WRITE_COOLDOWN: float = 5.0  # seconds
+        self._pinned_provider: str = pinned_provider
+        self._runtime_status_path = Path(universe_path) / ".runtime_status.json"
+        self._runtime_status_thread: threading.Thread | None = None
 
     def start(self) -> None:
         """Initialize all subsystems and run the graph."""
@@ -263,8 +282,17 @@ class DaemonController:
 
         Creates KnowledgeGraph, VectorStore, and embed_fn. Each is
         optional -- failures are logged but don't block startup.
+
+        All paths are resolved absolutely under the universe directory so
+        that CWD changes during daemon runtime cannot silently redirect
+        writes to a cross-universe file. story.db/checkpoints.db already
+        have this guard (__init__); knowledge.db and lancedb were missing
+        it (regression pre-2026-04-11 that let every KG write land in an
+        unowned file at whatever the process CWD happened to be).
         """
-        kg_path = str(Path(self._universe_path) / "knowledge.db")
+        uni_resolved = Path(self._universe_path).resolve()
+        kg_path = str(uni_resolved / "knowledge.db")
+        lance_path = str(uni_resolved / "lancedb")
 
         # Knowledge graph
         try:
@@ -279,7 +307,6 @@ class DaemonController:
         try:
             from fantasy_author.retrieval.vector_store import VectorStore
 
-            lance_path = str(Path(self._universe_path) / "lancedb")
             runtime.vector_store = VectorStore(db_path=lance_path)
             logger.info("VectorStore initialized at %s", lance_path)
         except Exception as e:
@@ -293,12 +320,26 @@ class DaemonController:
 
             def _sync_embed(text: str) -> list[float]:
                 import asyncio
+                import concurrent.futures
 
-                loop = asyncio.new_event_loop()
                 try:
-                    return loop.run_until_complete(ollama.embed(text))
-                finally:
-                    loop.close()
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop is not None and loop.is_running():
+                    # Inside an async context (LangGraph node) — run in
+                    # a worker thread to avoid nested event-loop errors.
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        return pool.submit(
+                            lambda: asyncio.run(ollama.embed(text))
+                        ).result()
+                else:
+                    new_loop = asyncio.new_event_loop()
+                    try:
+                        return new_loop.run_until_complete(ollama.embed(text))
+                    finally:
+                        new_loop.close()
 
             runtime.embed_fn = _sync_embed
             logger.info("Ollama embed_fn ready")
@@ -452,6 +493,14 @@ class DaemonController:
                 target=self._heartbeat_loop, daemon=True,
             )
             self._heartbeat_thread.start()
+
+            # Faster cadence runtime_status.json for the tray provider
+            # bridge (updates ~every 5s independent of node events).
+            self._write_runtime_status()
+            self._runtime_status_thread = threading.Thread(
+                target=self._runtime_status_loop, daemon=True,
+            )
+            self._runtime_status_thread.start()
 
             try:
                 for event in compiled.stream(initial_state, config=config):
@@ -678,6 +727,48 @@ class DaemonController:
                 )
             except OSError:
                 logger.debug("Failed to write status.json", exc_info=True)
+
+    def _write_runtime_status(self) -> None:
+        """Write .runtime_status.json atomically for external status consumers.
+
+        Separate from status.json — this is the tray/lead contract for
+        provider visibility: pid, pinned provider (if any), last provider
+        used, label, and timestamp. Atomic write via tmp + os.replace.
+        """
+        payload = {
+            "pid": os.getpid(),
+            "provider": self._pinned_provider,
+            "last_used_provider": self._last_provider_used,
+            "active_provider_label": self.active_provider_label,
+            "updated": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp_path = self._runtime_status_path.with_suffix(".json.tmp")
+        try:
+            tmp_path.write_text(
+                json.dumps(payload, indent=2) + "\n", encoding="utf-8",
+            )
+            os.replace(tmp_path, self._runtime_status_path)
+        except OSError:
+            logger.debug("Failed to write .runtime_status.json", exc_info=True)
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _runtime_status_loop(self) -> None:
+        """Refresh .runtime_status.json every 5s until stop."""
+        while not self._stop_event.wait(timeout=5):
+            try:
+                self._write_runtime_status()
+            except Exception:
+                logger.debug("runtime_status loop write failed", exc_info=True)
+
+    def _remove_runtime_status(self) -> None:
+        """Delete .runtime_status.json on clean shutdown."""
+        try:
+            self._runtime_status_path.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("Failed to remove .runtime_status.json", exc_info=True)
 
     def _write_progress_file(self) -> None:
         """Write progress.md to the universe directory.
@@ -944,6 +1035,16 @@ class DaemonController:
         except Exception:
             logger.debug("Final status write on cleanup failed", exc_info=True)
 
+        # Stop the 5s runtime-status heartbeat. _stop_event is already set
+        # by the shutdown path, so the thread's wait() returns promptly;
+        # a bounded join keeps shutdown snappy even if a write is in flight.
+        if self._runtime_status_thread is not None:
+            self._runtime_status_thread.join(timeout=6)
+
+        # Runtime-status file is a liveness signal — remove on clean exit
+        # so the tray sees "no daemon" rather than stale provider text.
+        self._remove_runtime_status()
+
         # Close retrieval backends before resetting runtime
         if runtime.knowledge_graph is not None:
             try:
@@ -1130,33 +1231,12 @@ def _drain_tunnel_stderr(proc: subprocess.Popen) -> None:
 
 
 def _update_gpt_schema_url(url: str) -> None:
-    """Update the server URL in custom_gpt/actions_schema.yaml.
+    """No-op stub — Custom GPT schema removed.
 
-    Replaces the ``- url:`` line under ``servers:`` so the GPT schema
-    always points at the current tunnel URL without manual edits.
+    Retained because ``_drain_tunnel_stderr`` calls this. The tunnel URL
+    is still extracted and logged; it just no longer updates a schema file.
     """
-    import re
-
-    # Project root is the parent of the fantasy_author package
-    schema_path = Path(__file__).resolve().parent.parent / "custom_gpt" / "actions_schema.yaml"
-    if not schema_path.exists():
-        logger.debug("GPT schema not found at %s", schema_path)
-        return
-    try:
-        text = schema_path.read_text(encoding="utf-8")
-        updated = re.sub(
-            r"(  - url: )https?://\S+",
-            rf"\g<1>{url}",
-            text,
-            count=1,
-        )
-        if updated != text:
-            schema_path.write_text(updated, encoding="utf-8")
-            logger.info("Updated GPT schema URL to %s", url)
-        else:
-            logger.debug("GPT schema URL unchanged")
-    except OSError:
-        logger.debug("Failed to update GPT schema URL", exc_info=True)
+    logger.debug("Tunnel URL available: %s (GPT schema update skipped — legacy)", url)
 
 
 def _stop_tunnel(proc: subprocess.Popen) -> None:
@@ -1268,6 +1348,7 @@ def _run_tray_mode(args: argparse.Namespace) -> None:
             universe_path=universe_path,
             no_tray=True,  # We manage tray ourselves
             premise=args.premise,
+            pinned_provider=args.provider,
         )
         # Wire dashboard to update tray status
         controller._tray = tray
@@ -1435,8 +1516,36 @@ def main() -> None:
         choices=["streamable-http", "sse", "stdio"],
         help="MCP transport protocol (default: streamable-http)",
     )
+    parser.add_argument(
+        "--provider",
+        default="",
+        help=(
+            "Pin the writer role to a single provider (no fallback). "
+            "Known: claude-code, codex, gemini-free, groq-free, grok-free, "
+            "ollama-local. Omit for the default fallback chain."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # Apply --provider pin via WORKFLOW_PIN_WRITER env var so the router
+    # consults it per-call instead of mutating FALLBACK_CHAINS at import.
+    # Env-var routing survives subprocess boundaries for future multi-
+    # daemon tray work and keeps the module shape stable.
+    if args.provider:
+        from fantasy_author.providers import router as _router_mod
+
+        known = set().union(*_router_mod.FALLBACK_CHAINS.values())
+        if args.provider not in known:
+            parser.error(
+                f"--provider {args.provider!r} is not a known provider. "
+                f"Known: {sorted(known)}"
+            )
+        os.environ["WORKFLOW_PIN_WRITER"] = args.provider
+        logger.info(
+            "Writer role pinned to provider %s via WORKFLOW_PIN_WRITER",
+            args.provider,
+        )
 
     # Logging setup
     level = logging.DEBUG if args.verbose else logging.INFO
@@ -1447,7 +1556,7 @@ def main() -> None:
     )
 
     if args.mcp:
-        os.environ.setdefault("FANTASY_AUTHOR_UNIVERSE", args.universe)
+        os.environ.setdefault("WORKFLOW_UNIVERSE", args.universe)
         from fantasy_author.mcp_server import main as mcp_main
 
         mcp_main()
@@ -1527,6 +1636,7 @@ def main() -> None:
                 universe_path=universe_path,
                 no_tray=True,
                 premise=args.premise,
+                pinned_provider=args.provider,
             )
             daemon_thread = threading.Thread(
                 target=controller.start, name="daemon", daemon=False,
@@ -1585,6 +1695,7 @@ def main() -> None:
         checkpoint_path=args.checkpoint_db,
         no_tray=args.no_tray,
         premise=args.premise,
+        pinned_provider=args.provider,
     )
 
     # Handle SIGINT/SIGTERM gracefully

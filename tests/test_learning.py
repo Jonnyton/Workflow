@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fantasy_author.learning.craft_cards import CraftCard, generate_craft_cards
-from fantasy_author.learning.criteria_discovery import (
+from workflow.learning.craft_cards import CraftCard, generate_craft_cards
+from workflow.learning.criteria_discovery import (
     DiscoveredCriterion,
     discover_criteria,
 )
-from fantasy_author.learning.style_rules import (
+from workflow.learning.style_rules import (
     LearningSystem,
     Observation,
     StyleRule,
@@ -264,7 +264,7 @@ class TestLearnNode:
     def _get_learn_module(self):
         """Get the learn module (not the function re-exported by __init__)."""
         import importlib
-        return importlib.import_module("fantasy_author.nodes.learn")
+        return importlib.import_module("domains.fantasy_author.phases.learn")
 
     def test_learn_returns_expected_keys(self):
         learn_mod = self._get_learn_module()
@@ -371,7 +371,7 @@ class TestEditorialToObservations:
     """Test that editorial notes are converted to learning observations."""
 
     def test_protect_items_become_strength_observations(self):
-        from fantasy_author.nodes.learn import _editorial_to_observations
+        from domains.fantasy_author.phases.learn import _editorial_to_observations
 
         state = {
             "editorial_notes": {
@@ -388,7 +388,7 @@ class TestEditorialToObservations:
         assert "vivid imagery" in obs[0]["observation"]
 
     def test_concerns_become_growth_observations(self):
-        from fantasy_author.nodes.learn import _editorial_to_observations
+        from domains.fantasy_author.phases.learn import _editorial_to_observations
 
         state = {
             "editorial_notes": {
@@ -405,13 +405,13 @@ class TestEditorialToObservations:
         assert obs[1]["dimension"] == "craft"
 
     def test_empty_editorial_returns_empty(self):
-        from fantasy_author.nodes.learn import _editorial_to_observations
+        from domains.fantasy_author.phases.learn import _editorial_to_observations
 
         obs = _editorial_to_observations({}, chapter_number=1)
         assert obs == []
 
     def test_none_editorial_returns_empty(self):
-        from fantasy_author.nodes.learn import _editorial_to_observations
+        from domains.fantasy_author.phases.learn import _editorial_to_observations
 
         state = {"editorial_notes": None}
         obs = _editorial_to_observations(state, chapter_number=1)
@@ -423,7 +423,7 @@ class TestCraftCardsFromEditorial:
 
     def _get_learn_module(self):
         import importlib
-        return importlib.import_module("fantasy_author.nodes.learn")
+        return importlib.import_module("domains.fantasy_author.phases.learn")
 
     def test_protect_generates_strength_card(self):
         """Editorial protect items → strength craft cards via learn pipeline."""
@@ -497,7 +497,7 @@ class TestReflexionWithEditorial:
     """Test that reflexion uses editorial notes."""
 
     def test_template_critique_uses_editorial(self):
-        from fantasy_author.memory.reflexion import ReflexionEngine
+        from workflow.memory.reflexion import ReflexionEngine
 
         engine = ReflexionEngine()
         editorial = {

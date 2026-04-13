@@ -60,7 +60,7 @@ class OllamaProvider(BaseProvider):
 
         start = time.monotonic()
         import logging as _log
-        _logger = _log.getLogger("fantasy_author.providers.ollama")
+        _logger = _log.getLogger("workflow.providers.ollama")
         _logger.info("Ollama call starting: model=%s prompt_len=%d system_len=%d",
                       self._text_model, len(prompt), len(system))
 
@@ -93,27 +93,60 @@ class OllamaProvider(BaseProvider):
         )
 
     async def embed(self, text: str) -> list[float]:
-        """Generate embeddings using the local embedding model."""
+        """Generate embeddings using the local embedding model.
+
+        Tries the modern ``/api/embed`` endpoint first; falls back to the
+        legacy ``/api/embeddings`` if the server returns 404 (older Ollama).
+        """
+        # Modern endpoint (batching, float32, L2-normalized)
         payload = {
             "model": self._embed_model,
             "input": text,
         }
-
         try:
-            req = urllib.request.Request(
-                f"{self._base_url}/api/embed",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+            return self._embed_request("/api/embed", payload, key="embeddings")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise ProviderUnavailableError(
+                    f"Ollama embed HTTP {exc.code}: {exc}"
+                ) from exc
         except urllib.error.URLError as exc:
             raise ProviderUnavailableError(
                 f"Ollama unreachable for embedding: {exc}"
             ) from exc
+
+        # Legacy fallback (single prompt, float64)
+        legacy_payload = {
+            "model": self._embed_model,
+            "prompt": text,
+        }
+        try:
+            return self._embed_request(
+                "/api/embeddings", legacy_payload, key="embedding",
+            )
+        except urllib.error.URLError as exc:
+            raise ProviderUnavailableError(
+                f"Ollama unreachable for embedding (legacy): {exc}"
+            ) from exc
         except Exception as exc:
             raise ProviderError(f"Ollama embed failed: {exc}") from exc
 
-        embeddings = body.get("embeddings", [[]])
-        return embeddings[0] if embeddings else []
+    def _embed_request(
+        self, path: str, payload: dict, *, key: str
+    ) -> list[float]:
+        """Send an embedding request and extract the vector."""
+        req = urllib.request.Request(
+            f"{self._base_url}{path}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+
+        result = body.get(key, [[]])
+        if isinstance(result, list) and result:
+            # /api/embed returns [[...]], /api/embeddings returns [...]
+            first = result[0]
+            return first if isinstance(first, list) else result
+        return []

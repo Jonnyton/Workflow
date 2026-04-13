@@ -53,12 +53,6 @@ Top-level map for the repo and the Obsidian graph.
 - [IMPORT_COMPATIBILITY.md](IMPORT_COMPATIBILITY.md)
 - [AGENTIC_SEARCH_RESEARCH.md](AGENTIC_SEARCH_RESEARCH.md)
 
-## GPT Surface
-
-- [custom_gpt/README.md](custom_gpt/README.md)
-- [custom_gpt/instructions.md](custom_gpt/instructions.md)
-- [custom_gpt/actions_schema.yaml](custom_gpt/actions_schema.yaml)
-
 ## Packaging
 
 - [packaging/INDEX.md](packaging/INDEX.md)

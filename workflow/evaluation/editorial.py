@@ -11,11 +11,11 @@ Separate worker from evaluator.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from workflow.utils.json_parsing import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,10 @@ _EDITORIAL_SYSTEM = (
     "- 1-2 things that are working. Be specific -- name the technique.\n"
     "- 1-3 concerns. Quote the exact passage. For each:\n"
     "  clearly_wrong = provable error (wrong name, contradicts canon, "
-    "broken continuity, impossible action)\n"
+    "broken continuity, impossible action, or total premise departure)\n"
     "  clearly_wrong = false means it might be an intentional creative choice\n"
+    "- If a Universe Premise is provided, flag clearly_wrong if the scene's "
+    "protagonist, world, or setting has no connection to the premise.\n"
     "- One sentence for next scene direction.\n"
     "- Return ONLY the JSON object."
 )
@@ -80,6 +82,7 @@ def read_editorial(
     previous_scene: str = "",
     canon_facts: str = "",
     direction_notes: str = "",
+    premise: str = "",
     provider_call: Any = None,
 ) -> EditorialNotes | None:
     """Run the editorial reader on a scene.
@@ -97,6 +100,9 @@ def read_editorial(
         Relevant canon facts for accuracy checking.
     direction_notes : str
         Active user direction notes the scene should follow.
+    premise : str
+        The universe premise (PROGRAM.md). The editorial reader should flag
+        scenes that depart entirely from this premise.
     provider_call : callable
         The provider call function (defaults to call_provider from _provider_stub).
 
@@ -110,11 +116,13 @@ def read_editorial(
         return None
 
     if provider_call is None:
-        from workflow.nodes._provider_stub import call_provider
+        from domains.fantasy_author.phases._provider_stub import call_provider
         provider_call = call_provider
 
     # Build prompt with context sections
     parts: list[str] = []
+    if premise:
+        parts.append(f"## Universe Premise\n{premise[:2000]}")
     if previous_scene:
         parts.append(f"## Previous Scene\n{previous_scene[-2000:]}")
     if canon_facts:
@@ -139,30 +147,9 @@ def read_editorial(
 
 def _parse_editorial_response(raw: str) -> EditorialNotes | None:
     """Parse the editorial reader's JSON response into EditorialNotes."""
-    text = raw.strip()
-
-    # Strip markdown code fences
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines)
-
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        # Try extracting from code block
-        json_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", raw, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(1))
-            except (json.JSONDecodeError, TypeError):
-                logger.warning("Could not parse editorial response as JSON")
-                return None
-        else:
-            logger.warning("Could not parse editorial response as JSON")
-            return None
-
-    if not isinstance(data, dict):
+    data = parse_llm_json(raw, expect_type=dict, fallback=None)
+    if data is None:
+        logger.warning("Could not parse editorial response as JSON")
         return None
 
     # Parse protect list

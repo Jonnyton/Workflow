@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fantasy_author.notes import (
+from workflow.notes import (
     Note,
     add_note,
     bulk_update_status,

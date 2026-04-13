@@ -7,7 +7,7 @@ topologies.
 
 Key properties:
 - Flat loop topology (gather → analyze → synthesize → review with revision)
-- Uses only workflow.* infrastructure (no fantasy_author imports)
+- Uses only workflow.* infrastructure (no domain-specific imports)
 - Implements full Domain protocol
 - Domain-specific tools, state, and eval criteria
 """
@@ -48,7 +48,7 @@ class ResearchProbeDomain:
         Returns:
             Uncompiled LangGraph StateGraph with research topology
             (gather → analyze → synthesize → review with conditional loop).
-            This topology is deliberately different from Fantasy Author's
+            This topology is deliberately different from Workflow's
             4-level hierarchy, proving that domain-specific graph shapes
             are supported.
         """

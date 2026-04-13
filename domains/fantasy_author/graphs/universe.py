@@ -31,7 +31,7 @@ from workflow.work_targets import get_target, infer_execution_scope
 def _get_config_chapters_target() -> int:
     """Read chapters_target from universe config, default 1."""
     try:
-        from fantasy_author import runtime
+        from workflow import runtime
         return runtime.universe_config.chapters_target
     except Exception:
         return 1
@@ -40,7 +40,7 @@ def _get_config_chapters_target() -> int:
 def _get_config_scenes_target() -> int:
     """Read scenes_target from universe config, default 3."""
     try:
-        from fantasy_author import runtime
+        from workflow import runtime
 
         return runtime.universe_config.scenes_target
     except Exception:
@@ -290,7 +290,7 @@ def run_book(state: dict[str, Any]) -> dict[str, Any]:
         "_universe_path": state.get(
             "_universe_path", state.get("universe_path", "")
         ),
-        "_db_path": state.get("_db_path", "story.db"),
+        "_db_path": state.get("_db_path", ""),
         "_kg_path": state.get("_kg_path", ""),
     }
     initial_chapters_completed = book_state["chapters_completed"]

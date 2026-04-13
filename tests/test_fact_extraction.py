@@ -1,4 +1,4 @@
-"""Tests for fact extraction (fantasy_author.nodes.fact_extraction).
+"""Tests for fact extraction (domains.fantasy_author.phases.fact_extraction).
 
 Covers: FactWithContext dataclass, regex extraction, LLM response parsing,
 promise detection, enums, and temporal/access logic.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from fantasy_author.nodes.fact_extraction import (
+from domains.fantasy_author.phases.fact_extraction import (
     FactWithContext,
     LanguageType,
     NarrativeFunction,

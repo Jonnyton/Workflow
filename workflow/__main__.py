@@ -25,6 +25,44 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Phase 5 bridge re-exports
+# ---------------------------------------------------------------------------
+# The migration rewrote ``from fantasy_author.__main__ import …`` to
+# ``from workflow.__main__ import …`` across 60+ test call-sites.  Until the
+# runtime is fully extracted from fantasy_author, re-export the names so both
+# import paths work.
+# ---------------------------------------------------------------------------
+import threading  # noqa: E402, F401  — tests patch workflow.__main__.threading
+
+from fantasy_author.__main__ import (  # noqa: E402, F401
+    DaemonController,
+    _build_provider_router,
+    _drain_tunnel_stderr,
+    _first_trace,
+    _run_tray_mode,
+    _start_tunnel,
+    _stop_tunnel,
+    _tunnel_url_ready,
+    _update_gpt_schema_url,
+)
+import fantasy_author.__main__ as _fa_main  # noqa: E402
+
+# Module-level mutable that tests poke via ``main_mod._tunnel_url_value``
+_tunnel_url_value: str = getattr(_fa_main, "_tunnel_url_value", "")
+
+__all__ = [
+    "DaemonController",
+    "_build_provider_router",
+    "_drain_tunnel_stderr",
+    "_first_trace",
+    "_run_tray_mode",
+    "_start_tunnel",
+    "_stop_tunnel",
+    "_update_gpt_schema_url",
+    "main",
+]
+
 
 def _build_argparser() -> argparse.ArgumentParser:
     """Build the CLI argument parser for the workflow entry point."""

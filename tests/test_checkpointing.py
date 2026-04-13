@@ -19,17 +19,17 @@ import tempfile
 
 import pytest
 
-from fantasy_author.checkpointing import (
+from workflow.checkpointing import (
     CheckpointRetentionPolicy,
     compile_all_graphs,
     create_checkpointer,
     get_checkpoint_history,
 )
-from fantasy_author.checkpointing.sqlite_saver import (
+from workflow.checkpointing.sqlite_saver import (
     make_resume_config,
     verify_wal_mode,
 )
-from fantasy_author.graphs.scene import build_scene_graph
+from domains.fantasy_author.graphs.scene import build_scene_graph
 
 # -----------------------------------------------------------------------
 # Fixtures

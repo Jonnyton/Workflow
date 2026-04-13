@@ -24,12 +24,23 @@ _db: lancedb.DBConnection | None = None
 _db_path: str | None = None
 
 
-def get_db(path: str = "data/lancedb") -> lancedb.DBConnection:
+def get_db(path: str = "") -> lancedb.DBConnection:
     """Return the singleton LanceDB connection.
 
     The first call creates the connection; subsequent calls reuse it.
     Thread-safe via a lock.
+
+    ``path`` must be explicit. CWD-relative defaults cause
+    cross-universe contamination: two universes sharing the same
+    relative path end up reading and writing each other's vectors.
+    Mirror of the guard in
+    ``workflow/knowledge/knowledge_graph.py``.
     """
+    if not path:
+        raise ValueError(
+            "get_db requires an explicit path. "
+            "CWD-relative defaults cause cross-universe contamination."
+        )
     global _db, _db_path
     with _lock:
         if _db is None or _db_path != path:
@@ -67,10 +78,15 @@ class VectorStore:
 
     def __init__(
         self,
-        db_path: str = "data/lancedb",
+        db_path: str = "",
         table_name: str = "prose_chunks",
         embedding_dim: int = 384,
     ) -> None:
+        if not db_path:
+            raise ValueError(
+                "VectorStore requires an explicit db_path. "
+                "CWD-relative defaults cause cross-universe contamination."
+            )
         self._db = get_db(db_path)
         self._table_name = table_name
         self._embedding_dim = embedding_dim

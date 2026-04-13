@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_author.constraints.asp_engine import ASPEngine, surface_to_asp_facts
-from fantasy_author.constraints.constraint_surface import (
+from workflow.constraints.asp_engine import ASPEngine, surface_to_asp_facts
+from workflow.constraints.constraint_surface import (
     empty_constraint_surface,
     score_constraint_surface,
 )

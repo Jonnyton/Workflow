@@ -1,4 +1,4 @@
-"""Fantasy Author domain-specific tools.
+"""Workflow domain-specific tools.
 
 Provides DomainTool-compatible wrappers around the writer tool surface.
 """

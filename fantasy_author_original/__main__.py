@@ -1,0 +1,1604 @@
+"""Fantasy Author daemon entry point.
+
+Usage::
+
+    python -m fantasy_author [--universe PATH] [--no-tray] [--db PATH]
+
+Builds the universe graph, compiles it with SqliteSaver, wires the
+desktop tray and dashboard, and runs the daemon loop until stopped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import atexit
+import json
+import logging
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+import fantasy_author.runtime as runtime
+from fantasy_author.desktop.dashboard import DashboardHandler
+from fantasy_author.desktop.notifications import NotificationManager
+from fantasy_author.desktop.tray import TrayApp
+from fantasy_author.graphs.universe import build_universe_graph
+from fantasy_author.memory.ingestion import IngestionPriority, ProgressiveIngestor
+from fantasy_author.memory.manager import MemoryManager
+from fantasy_author.memory.promises import SeriesPromiseTracker
+from fantasy_author.memory.versioning import OutputVersionStore
+from fantasy_author.providers.claude_provider import ClaudeProvider
+from fantasy_author.providers.codex_provider import CodexProvider
+from fantasy_author.providers.ollama_provider import OllamaProvider
+from fantasy_author.providers.router import ProviderRouter
+
+logger = logging.getLogger("fantasy_author")
+
+
+def _first_trace(output: dict[str, Any]) -> dict[str, Any]:
+    """Extract the first quality_trace entry from node output."""
+    traces = output.get("quality_trace")
+    if traces and isinstance(traces, list) and len(traces) > 0:
+        return traces[0]
+    return {}
+
+# ---------------------------------------------------------------------------
+# Provider bootstrapping
+# ---------------------------------------------------------------------------
+
+
+def _build_provider_router() -> ProviderRouter:
+    """Instantiate a ProviderRouter with all available providers."""
+    router = ProviderRouter()
+
+    # Subprocess providers (always attempt registration).
+    router.register(ClaudeProvider())
+    router.register(CodexProvider())
+
+    # Local provider.
+    try:
+        router.register(OllamaProvider())
+    except Exception:
+        logger.warning("Ollama not available; local fallback disabled")
+
+    # Optional SDK providers (soft-fail if deps missing).
+    try:
+        from fantasy_author.providers.gemini_provider import GeminiProvider
+
+        router.register(GeminiProvider())
+    except Exception:
+        logger.debug("Gemini provider not available")
+
+    try:
+        from fantasy_author.providers.groq_provider import GroqProvider
+
+        router.register(GroqProvider())
+    except Exception:
+        logger.debug("Groq provider not available")
+
+    try:
+        from fantasy_author.providers.grok_provider import GrokProvider
+
+        router.register(GrokProvider())
+    except Exception:
+        logger.debug("Grok provider not available")
+
+    logger.info("Registered providers: %s", router.available_providers)
+    return router
+
+
+# ---------------------------------------------------------------------------
+# Graph execution
+# ---------------------------------------------------------------------------
+
+
+class DaemonController:
+    """Controls the universe graph execution lifecycle.
+
+    Wires together:
+    - Universe graph with SqliteSaver checkpointing
+    - MemoryManager for hierarchical memory
+    - ProviderRouter for LLM calls
+    - TrayApp + DashboardHandler for desktop integration
+    """
+
+    def __init__(
+        self,
+        universe_path: str,
+        db_path: str | None = "",
+        checkpoint_path: str | None = "",
+        no_tray: bool = False,
+        premise: str = "",
+        log_callback: Any = None,
+    ) -> None:
+        self._universe_path = universe_path
+        # Default DB paths inside the universe directory (not CWD)
+        self._db_path = db_path or str(Path(universe_path) / "story.db")
+        self._checkpoint_path = checkpoint_path or str(
+            Path(universe_path) / "checkpoints.db"
+        )
+
+        # Guard: DB paths must resolve inside the universe directory.
+        # A CWD-relative path like "story.db" would silently load stale
+        # data from the wrong universe.
+        uni_resolved = Path(universe_path).resolve()
+        db_resolved = Path(self._db_path).resolve()
+        if not db_resolved.is_relative_to(uni_resolved):
+            logger.warning(
+                "DB path %s resolves outside universe %s — "
+                "this will cause cross-universe contamination. "
+                "Falling back to %s/story.db",
+                db_resolved, uni_resolved, uni_resolved,
+            )
+            self._db_path = str(uni_resolved / "story.db")
+
+        cp_resolved = Path(self._checkpoint_path).resolve()
+        if not cp_resolved.is_relative_to(uni_resolved):
+            logger.warning(
+                "Checkpoint path %s resolves outside universe %s — "
+                "falling back to %s/checkpoints.db",
+                cp_resolved, uni_resolved, uni_resolved,
+            )
+            self._checkpoint_path = str(uni_resolved / "checkpoints.db")
+
+        self._no_tray = no_tray
+        self._premise = premise
+        self._log_callback = log_callback
+        self._activity_log_path = Path(universe_path) / "activity.log"
+
+        self._stop_event = threading.Event()
+        self._paused = threading.Event()
+        self._ready = threading.Event()
+        self._tray: TrayApp | None = None
+        self._dashboard: DashboardHandler | None = None
+        self._notifications: NotificationManager | None = None
+        self._memory: MemoryManager | None = None
+        self._router: ProviderRouter | None = None
+        self._version_store: OutputVersionStore | None = None
+        self._promise_tracker: SeriesPromiseTracker | None = None
+        self._current_scene_id: str = ""
+        self._last_verdict: str = ""
+        self._last_provider_used: str = ""
+        self._last_eval_score: float = 0.0
+        self._cached_creative_briefing: str = ""
+        self._universe_id: str = Path(universe_path).name or "default"
+        self._heartbeat_thread: threading.Thread | None = None
+        self._pending_universe_switch: str = ""
+        self._last_status_write: float = 0.0
+        self._STATUS_WRITE_COOLDOWN: float = 5.0  # seconds
+
+    def start(self) -> None:
+        """Initialize all subsystems and run the graph."""
+        universe_id = Path(self._universe_path).stem or "default"
+
+        # Load per-universe config.yaml
+        from fantasy_author.config import load_universe_config
+
+        runtime.universe_config = load_universe_config(self._universe_path)
+        logger.info(
+            "Universe config: temperature=%.1f, timeout=%ds, "
+            "scenes_target=%d, chapters_target=%d",
+            runtime.universe_config.temperature,
+            runtime.universe_config.timeout,
+            runtime.universe_config.scenes_target,
+            runtime.universe_config.chapters_target,
+        )
+
+        # Memory manager
+        self._memory = MemoryManager(
+            universe_id=universe_id,
+            db_path=self._db_path,
+        )
+
+        # Provider router
+        self._router = _build_provider_router()
+
+        # Inject router into the provider stub module so nodes can use it
+        try:
+            import fantasy_author.nodes._provider_stub as stub
+
+            stub._real_router = self._router
+        except ImportError:
+            pass
+
+        # Output version store
+        self._version_store = OutputVersionStore(
+            db_path=self._db_path,
+            universe_id=universe_id,
+        )
+
+        # Series promise tracker
+        self._promise_tracker = SeriesPromiseTracker(
+            db_path=self._db_path,
+            universe_id=universe_id,
+        )
+
+        # Set runtime singletons so nodes can access non-serializable objects
+        runtime.memory_manager = self._memory
+        runtime.version_store = self._version_store
+        runtime.promise_tracker = self._promise_tracker
+
+        # Retrieval backends
+        self._init_retrieval_backends()
+
+        # Progressive ingestion: prime knowledge graph with canon data
+        self._run_progressive_ingestion(universe_id)
+
+        # RAPTOR tree: build multi-level summaries from indexed content
+        self._build_raptor_tree()
+
+        # Desktop integration
+        if not self._no_tray:
+            self._tray = TrayApp(
+                on_start=self._on_tray_start,
+                on_pause=self._on_tray_pause,
+                on_resume=self._on_tray_resume,
+                on_quit=self._on_tray_quit,
+                output_dir=self._universe_path,
+            )
+            self._tray.start()
+
+        self._dashboard = DashboardHandler(
+            tray=self._tray, log_callback=self._combined_log,
+        )
+        self._dashboard.metrics.seed_from_db(self._db_path, self._universe_path)
+        self._notifications = NotificationManager(tray=self._tray)
+
+        # Signal that initialization is complete (API can now serve)
+        self._ready.set()
+
+        # Run the graph
+        self._run_graph(universe_id)
+
+    def _init_retrieval_backends(self) -> None:
+        """Initialize retrieval backends as runtime singletons.
+
+        Creates KnowledgeGraph, VectorStore, and embed_fn. Each is
+        optional -- failures are logged but don't block startup.
+        """
+        kg_path = str(Path(self._universe_path) / "knowledge.db")
+
+        # Knowledge graph
+        try:
+            from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+
+            runtime.knowledge_graph = KnowledgeGraph(kg_path)
+            logger.info("KnowledgeGraph initialized at %s", kg_path)
+        except Exception as e:
+            logger.warning("KnowledgeGraph init failed: %s", e)
+
+        # Vector store (LanceDB)
+        try:
+            from fantasy_author.retrieval.vector_store import VectorStore
+
+            lance_path = str(Path(self._universe_path) / "lancedb")
+            runtime.vector_store = VectorStore(db_path=lance_path)
+            logger.info("VectorStore initialized at %s", lance_path)
+        except Exception as e:
+            logger.warning("VectorStore init failed: %s", e)
+
+        # Embedding function (Ollama)
+        try:
+            from fantasy_author.providers.ollama_provider import OllamaProvider
+
+            ollama = OllamaProvider()
+
+            def _sync_embed(text: str) -> list[float]:
+                import asyncio
+
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(ollama.embed(text))
+                finally:
+                    loop.close()
+
+            runtime.embed_fn = _sync_embed
+            logger.info("Ollama embed_fn ready")
+        except Exception as e:
+            logger.debug("Ollama embed_fn not available: %s", e)
+
+    def _build_raptor_tree(self) -> None:
+        """Build a RAPTOR tree from canon files.
+
+        Reads canon/*.md, splits into paragraphs, embeds, and builds
+        the tree.  Uses the shared ``rebuild_raptor_from_canon`` helper
+        so the worldbuild node can trigger the same rebuild.
+        """
+        from fantasy_author.knowledge.raptor import rebuild_raptor_from_canon
+
+        canon_dir = str(Path(self._universe_path) / "canon")
+        universe_id = Path(self._universe_path).name or "default"
+        rebuild_raptor_from_canon(
+            canon_dir=canon_dir,
+            embed_fn=runtime.embed_fn,
+            universe_id=universe_id,
+        )
+
+    def _run_progressive_ingestion(self, universe_id: str) -> None:
+        """Survey and ingest canon files before writing begins."""
+        canon_dir = Path(self._universe_path) / "canon"
+        if not canon_dir.exists():
+            logger.debug("No canon directory at %s; skipping ingestion", canon_dir)
+            return
+
+        try:
+            ingestor = ProgressiveIngestor(canon_dir, universe_id)
+            ingestor.survey()
+            ingestor.triage()
+
+            # Ingest the first batch of immediate-priority sections
+            batch = ingestor.get_next_batch(IngestionPriority.IMMEDIATE)
+            for section in batch:
+                ingestor.mark_ingested(section)
+
+            logger.info(
+                "Progressive ingestion: surveyed %d sections, ingested %d immediate",
+                ingestor.state.total_sections,
+                ingestor.state.ingested_sections,
+            )
+        except Exception as e:
+            logger.warning("Progressive ingestion failed: %s", e)
+
+    def _heartbeat_loop(self) -> None:
+        """Periodically update status.json so external tools know we're alive.
+
+        Runs in a daemon thread; exits when ``_stop_event`` fires.
+        """
+        while not self._stop_event.wait(timeout=30):
+            try:
+                self._write_status_file()
+            except Exception:
+                logger.debug("Heartbeat status write failed", exc_info=True)
+
+    def _run_graph(self, universe_id: str) -> None:
+        """Build and execute the universe graph."""
+        graph_builder = build_universe_graph()
+
+        output_dir = Path(self._universe_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with SqliteSaver.from_conn_string(self._checkpoint_path) as checkpointer:
+            compiled = graph_builder.compile(checkpointer=checkpointer)
+
+            # Resolve premise: explicit value > PROGRAM.md fallback
+            premise = self._premise
+            if not premise:
+                program_md = output_dir / "PROGRAM.md"
+                if program_md.exists():
+                    try:
+                        premise = program_md.read_text(encoding="utf-8").strip()
+                    except OSError:
+                        logger.warning("Could not read %s", program_md)
+
+            # Workflow configuration
+            workflow = {"premise": premise}
+
+            # Seed initial counters from dashboard metrics (already
+            # seeded from DB or disk scan in start()) so graph state
+            # reflects existing work after a universe switch.
+            dm = self._dashboard.metrics if self._dashboard else None
+
+            initial_state: dict[str, Any] = {
+                "universe_id": universe_id,
+                "universe_path": str(output_dir),
+                "active_series": None,
+                "series_completed": [],
+                "world_state_version": 0,
+                "canon_facts_count": 0,
+                "total_words": dm.total_words if dm else 0,
+                "total_chapters": dm.chapters_complete if dm else 0,
+                "health": {},
+                "task_queue": ["write"],
+                "universal_style_rules": [],
+                "cross_series_facts": [],
+                "worldbuild_signals": [],
+                "premise_kernel": premise,
+                "workflow_instructions": workflow,
+                # Internal config (serializable scalars only)
+                "_universe_path": str(output_dir),
+                "_db_path": self._db_path,
+                "_kg_path": str(Path(self._universe_path) / "knowledge.db"),
+            }
+
+            config = {
+                "configurable": {"thread_id": universe_id},
+                "recursion_limit": 10000,
+            }
+
+            # Recover counters from existing checkpoint so a daemon
+            # restart doesn't regress total_words / total_chapters.
+            try:
+                existing = compiled.get_state(config)
+                if existing and existing.values:
+                    ev = existing.values
+                    for key in ("total_words", "total_chapters",
+                                "world_state_version", "canon_facts_count"):
+                        ckpt_val = ev.get(key, 0)
+                        cur_val = initial_state.get(key, 0)
+                        if isinstance(ckpt_val, int) and ckpt_val > cur_val:
+                            initial_state[key] = ckpt_val
+                    # Preserve active_series if checkpoint had one
+                    if ev.get("active_series"):
+                        initial_state["active_series"] = ev["active_series"]
+                    # Preserve series_completed list
+                    if ev.get("series_completed"):
+                        initial_state["series_completed"] = ev["series_completed"]
+                    logger.info(
+                        "Resumed from checkpoint: words=%d, chapters=%d",
+                        initial_state["total_words"],
+                        initial_state["total_chapters"],
+                    )
+            except Exception:
+                logger.debug("No existing checkpoint to resume from",
+                             exc_info=True)
+
+            if self._dashboard:
+                self._dashboard.handle_event({
+                    "type": "phase_start",
+                    "phase": "universe_start",
+                })
+
+            # Start heartbeat thread so status.json stays fresh during
+            # long-running scenes (can be 6+ minutes with Claude).
+            self._heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop, daemon=True,
+            )
+            self._heartbeat_thread.start()
+
+            try:
+                for event in compiled.stream(initial_state, config=config):
+                    if self._stop_event.is_set():
+                        logger.info("Stop signal received, shutting down")
+                        break
+
+                    # Pause support (thread event or .pause flag file)
+                    pause_file = Path(self._universe_path) / ".pause"
+                    while (
+                        (self._paused.is_set() or pause_file.exists())
+                        and not self._stop_event.is_set()
+                    ):
+                        self._paused.wait(timeout=1.0)
+
+                    # Stream events to dashboard
+                    if self._dashboard and isinstance(event, dict):
+                        for node_name, node_output in event.items():
+                            self._handle_node_output(node_name, node_output)
+
+            except KeyboardInterrupt:
+                logger.info("KeyboardInterrupt received")
+            except RuntimeError as e:
+                # LangGraph's internal ThreadPoolExecutor raises this when
+                # the interpreter is shutting down and the executor rejects
+                # new checkpoint writes.  Not actionable — log and exit.
+                if "cannot schedule new futures" in str(e):
+                    logger.info("Executor shutdown during graph stream (expected on exit)")
+                else:
+                    logger.exception("Graph execution failed")
+                    if self._notifications:
+                        self._notifications.error(f"Graph execution failed: {e}")
+            except Exception:
+                logger.exception("Graph execution failed")
+                if self._notifications:
+                    self._notifications.error("Graph execution failed")
+            finally:
+                self._cleanup()
+
+                # Handle cross-universe synthesis switch
+                if self._pending_universe_switch:
+                    self._trigger_universe_switch(
+                        self._pending_universe_switch
+                    )
+
+    def _handle_node_output(
+        self, node_name: str, output: dict[str, Any]
+    ) -> None:
+        """Translate graph node outputs into dashboard events and log lines."""
+        # Track scene ID and verdict (no dashboard dependency)
+        if "orient_result" in output:
+            orient = output["orient_result"] or {}
+            self._current_scene_id = str(orient.get("scene_id", ""))
+
+        if "verdict" in output:
+            self._last_verdict = output["verdict"]
+            commit_result = output.get("commit_result") or {}
+            self._last_eval_score = commit_result.get(
+                "structural_score", self._last_eval_score
+            )
+
+        # Track the most recently used LLM provider
+        try:
+            from fantasy_author.nodes._provider_stub import last_provider
+            if last_provider:
+                self._last_provider_used = last_provider
+        except ImportError:
+            pass
+
+        # Activity log (always -- writes to activity.log for the API)
+        self._emit_node_log(node_name, output)
+
+        # Dashboard events (only when dashboard is available)
+        if self._dashboard is not None:
+            self._dashboard.handle_event({
+                "type": "phase_start",
+                "phase": node_name,
+            })
+
+            # run_book returns total_words/total_chapters at the universe
+            # level — update dashboard metrics directly since subgraph
+            # scene/chapter events don't propagate to the universe stream.
+            if "total_words" in output or "total_chapters" in output:
+                new_words = output.get("total_words", 0)
+                new_chapters = output.get("total_chapters", 0)
+                if new_words > self._dashboard.metrics.total_words:
+                    self._dashboard.metrics.total_words = new_words
+                    self._dashboard.metrics.update_wph()
+                if new_chapters > self._dashboard.metrics.chapters_complete:
+                    self._dashboard.metrics.chapters_complete = new_chapters
+
+            if "draft_output" in output:
+                draft = output["draft_output"] or {}
+                self._dashboard.handle_event({
+                    "type": "draft_progress",
+                    "word_count": draft.get("word_count", 0),
+                })
+
+            if "verdict" in output and output["verdict"] == "accept":
+                self._dashboard.handle_event({
+                    "type": "scene_complete",
+                    "scene_number": output.get("scene_number", 0),
+                    "word_count": output.get("draft_output", {}).get(
+                        "word_count", 0
+                    ),
+                })
+
+            if "chapter_summary" in output and output["chapter_summary"]:
+                self._dashboard.handle_event({
+                    "type": "chapter_complete",
+                    "chapter": output.get("chapter_number", 0),
+                })
+
+            if "book_summary" in output and output["book_summary"]:
+                self._dashboard.handle_event({
+                    "type": "book_complete",
+                    "title": output.get("book_summary", ""),
+                })
+
+        # Generate creative briefing when a chapter completes
+        if "chapter_summary" in output and output["chapter_summary"]:
+            self._generate_creative_briefing(output)
+
+        # Check for cross-universe synthesis switch request
+        health = output.get("health", {})
+        switch_target = health.get("switch_to_universe", "")
+        if switch_target and node_name == "universe_cycle":
+            self._pending_universe_switch = switch_target
+            self._stop_event.set()
+            logger.info(
+                "Cross-universe synthesis: stopping to switch to %s",
+                switch_target,
+            )
+
+        # Write status file for external tools (throttled to avoid I/O storm)
+        now = time.monotonic()
+        if now - self._last_status_write >= self._STATUS_WRITE_COOLDOWN:
+            self._last_status_write = now
+            self._write_status_file()
+            self._write_progress_file()
+
+    def _combined_log(self, line: str) -> None:
+        """Log a line to both the UI callback and activity.log."""
+        if self._log_callback is not None:
+            try:
+                self._log_callback(line)
+            except Exception:
+                pass
+        self._write_activity_log(line)
+
+    def _write_activity_log(self, line: str) -> None:
+        """Append a line to the activity.log file."""
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            with open(
+                self._activity_log_path, "a", encoding="utf-8"
+            ) as f:
+                f.write(f"[{ts}] {line}\n")
+        except OSError:
+            logger.debug("Failed to write activity.log", exc_info=True)
+
+    @property
+    def daemon_state(self) -> str:
+        """Return the current daemon state."""
+        if self._stop_event.is_set():
+            return "idle"
+        if not self._ready.is_set():
+            return "initializing"
+        if self._paused.is_set():
+            return "paused"
+        return "running"
+
+    def _write_status_file(self) -> None:
+        """Write status.json to the universe directory.
+
+        Uses the shared ``_status_lock`` from ``_activity`` to prevent
+        corruption when the heartbeat thread and node threads write
+        concurrently.
+        """
+        from fantasy_author.nodes._activity import _status_lock
+
+        summary = (
+            self._dashboard.summary() if self._dashboard else {}
+        )
+        # Memory tier counts (lightweight — no LLM calls)
+        memory_tiers: dict[str, int] = {}
+        if self._memory is not None:
+            try:
+                core_count = sum(
+                    len(v) for v in self._memory.core._store.values()
+                )
+                memory_tiers["core"] = core_count
+            except Exception:
+                memory_tiers["core"] = 0
+            try:
+                row = self._memory.episodic._conn.execute(
+                    "SELECT COUNT(*) FROM scene_summaries"
+                ).fetchone()
+                memory_tiers["episodic"] = row[0] if row else 0
+            except Exception:
+                memory_tiers["episodic"] = 0
+
+        status = {
+            "current_phase": summary.get("current_phase", "idle"),
+            "word_count": summary.get("total_words", 0),
+            "chapters_complete": summary.get("chapters_complete", 0),
+            "scenes_complete": summary.get("scenes_complete", 0),
+            "accept_rate": summary.get("accept_rate", 0.0),
+            "current_scene_id": self._current_scene_id,
+            "verdict": self._last_verdict,
+            "provider": self.active_provider_label,
+            "current_provider": self._last_provider_used,
+            "last_eval_score": self._last_eval_score,
+            "memory_tiers": memory_tiers,
+            "daemon_state": self.daemon_state,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+        status_path = Path(self._universe_path) / "status.json"
+        with _status_lock:
+            try:
+                status_path.write_text(
+                    json.dumps(status, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            except OSError:
+                logger.debug("Failed to write status.json", exc_info=True)
+
+    def _write_progress_file(self) -> None:
+        """Write progress.md to the universe directory.
+
+        Human-readable creative briefing updated alongside status.json
+        after every node output.  Includes a stats header and, when
+        available, a cached creative briefing generated after each
+        chapter completes.
+        """
+        summary = (
+            self._dashboard.summary() if self._dashboard else {}
+        )
+        words = summary.get("total_words", 0)
+        chapters = summary.get("chapters_complete", 0)
+        scenes = summary.get("scenes_complete", 0)
+        accept_rate = summary.get("accept_rate", 0.0)
+
+        # Use authoritative daemon_state — dashboard phase can lag behind
+        # when the stop event fires.
+        is_running = self.daemon_state == "running"
+
+        book = 1
+
+        lines = [
+            "# Writing Progress",
+            "",
+            f"Book {book}, Chapter {chapters + 1} in progress."
+            if is_running
+            else f"Book {book}, {chapters} chapters complete.",
+            f"{words:,} words across {scenes} scenes.",
+            f"Accept rate {accept_rate:.0%}.",
+            "",
+            f"Current phase: {self.daemon_state}.",
+            f"Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}.",
+        ]
+
+        if self._cached_creative_briefing:
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+            lines.append(self._cached_creative_briefing)
+
+        progress_path = Path(self._universe_path) / "progress.md"
+        try:
+            progress_path.write_text(
+                "\n".join(lines) + "\n", encoding="utf-8",
+            )
+        except OSError:
+            logger.debug("Failed to write progress.md", exc_info=True)
+
+    def _generate_creative_briefing(
+        self, output: dict[str, Any]
+    ) -> None:
+        """Generate and cache a creative briefing after chapter completion.
+
+        Reads recent chapter prose and the chapter summary, calls the
+        provider to produce a structured briefing with story summary,
+        active characters, open plot threads, and recent creative
+        decisions.  Falls back to the chapter summary alone on failure.
+        """
+        from fantasy_author.nodes._provider_stub import call_provider
+
+        chapter_summary = output.get("chapter_summary", "")
+        if not chapter_summary:
+            return
+
+        # Read recent prose from disk
+        prose_excerpt = self._read_recent_prose()
+
+        # Read recent activity for creative decision context
+        recent_activity = self._read_recent_activity(20)
+
+        system = (
+            "You are a creative writing assistant generating a story briefing. "
+            "Given a chapter summary, recent prose, and activity log, produce a "
+            "structured briefing in Markdown with these sections:\n"
+            "## Story So Far\nA 3-5 sentence summary of everything that has happened.\n"
+            "## Active Characters\nBullet list of characters active in recent chapters "
+            "with a one-line note on each.\n"
+            "## Open Plot Threads\nBullet list of unresolved storylines or promises.\n"
+            "## Recent Creative Decisions\nBullet list of notable authorial choices "
+            "(POV shifts, tone changes, new worldbuilding introduced).\n\n"
+            "Be specific — name characters, places, and events. Keep it concise."
+        )
+
+        prompt_parts = [f"## Latest Chapter Summary\n{chapter_summary}"]
+        if prose_excerpt:
+            prompt_parts.append(
+                f"## Recent Prose (excerpt)\n{prose_excerpt[:3000]}"
+            )
+        if recent_activity:
+            prompt_parts.append(
+                f"## Recent Activity Log\n{recent_activity}"
+            )
+        prompt = "\n\n".join(prompt_parts)
+
+        fallback = f"## Story So Far\n{chapter_summary}"
+
+        try:
+            briefing = call_provider(
+                prompt, system, role="extract", fallback_response=fallback,
+            )
+            if briefing and briefing.strip():
+                self._cached_creative_briefing = briefing.strip()
+            else:
+                self._cached_creative_briefing = fallback
+        except Exception as e:
+            logger.warning("Creative briefing generation failed: %s", e)
+            self._cached_creative_briefing = fallback
+
+    def _read_recent_prose(self) -> str:
+        """Read the most recent scene prose from disk.
+
+        Scenes are stored as per-scene files inside chapter subdirectories:
+        ``output/book-N/chapter-NN/scene-NN.md``.  Returns the latest
+        scene file's content from the latest chapter in the latest book.
+        """
+        output_dir = Path(self._universe_path) / "output"
+        if not output_dir.exists():
+            return ""
+        try:
+            # Find the latest book directory
+            book_dirs = sorted(
+                [d for d in output_dir.iterdir() if d.is_dir() and d.name.startswith("book-")],
+                key=lambda d: d.name,
+                reverse=True,
+            )
+            if not book_dirs:
+                return ""
+            # Find the latest chapter directory in the latest book
+            chapter_dirs = sorted(
+                [d for d in book_dirs[0].iterdir() if d.is_dir() and d.name.startswith("chapter-")],
+                key=lambda d: d.name,
+                reverse=True,
+            )
+            if not chapter_dirs:
+                return ""
+            # Find the latest scene file in the latest chapter
+            scene_files = sorted(
+                [f for f in chapter_dirs[0].iterdir() if f.is_file() and f.suffix == ".md"],
+                key=lambda f: f.name,
+                reverse=True,
+            )
+            if not scene_files:
+                return ""
+            return scene_files[0].read_text(encoding="utf-8")
+        except OSError as e:
+            logger.debug("Failed to read recent prose: %s", e)
+            return ""
+
+    def _read_recent_activity(self, lines: int = 20) -> str:
+        """Read the last N lines from activity.log."""
+        try:
+            if not self._activity_log_path.exists():
+                return ""
+            text = self._activity_log_path.read_text(encoding="utf-8")
+            all_lines = text.strip().splitlines()
+            return "\n".join(all_lines[-lines:])
+        except OSError:
+            return ""
+
+    def _emit_node_log(
+        self, node_name: str, output: dict[str, Any]
+    ) -> None:
+        """Build a human-readable log line for a node output.
+
+        Routes through ``_combined_log`` so every node event is written
+        to ``activity.log`` regardless of whether a dashboard is connected.
+        """
+        if node_name == "orient":
+            orient = output.get("orient_result", {})
+            scene_id = orient.get("scene_id", "?")
+            overdue = len(orient.get("overdue_promises", []))
+            arc = orient.get("arc_position", "?")
+            parts = [f"Orient: Analyzing scene {scene_id}"]
+            if overdue:
+                parts.append(f"{overdue} overdue promise{'s' if overdue != 1 else ''}")
+            parts.append(f"{arc} arc position")
+            self._combined_log(" -- ".join(parts))
+
+        elif node_name == "plan":
+            plan = output.get("plan_output", {})
+            alts = plan.get("alternatives_considered", 0)
+            score = plan.get("best_score", 0.0)
+            suffix = "s" if alts != 1 else ""
+            self._combined_log(
+                f"Plan: Generated {alts} beat alternative{suffix},"
+                f" best score {score:.2f}"
+            )
+
+        elif node_name == "draft":
+            draft = output.get("draft_output", {})
+            wc = draft.get("word_count", 0)
+            is_rev = draft.get("is_revision", False)
+            prefix = "Draft (revision)" if is_rev else "Draft"
+            self._combined_log(f"{prefix}: Writing {wc:,} words...")
+
+        elif node_name == "commit":
+            result = output.get("commit_result", {})
+            verdict = output.get("verdict", "?")
+            score = result.get("structural_score", 0.0)
+            hard = result.get("hard_failure", False)
+            if hard:
+                warnings = result.get("warnings", [])
+                reason = warnings[0] if warnings else "structural failure"
+                self._combined_log(f"Commit: Hard failure ({reason}) -- REVERT")
+            elif verdict == "accept":
+                self._combined_log(f"Commit: Structural score {score:.2f} -- ACCEPT")
+            elif verdict == "second_draft":
+                self._combined_log(f"Commit: Structural score {score:.2f} -- SECOND DRAFT")
+            elif verdict == "revert":
+                self._combined_log(f"Commit: Structural score {score:.2f} -- REVERT")
+
+        elif node_name == "select_task":
+            trace = _first_trace(output)
+            queue = output.get("task_queue", ["?"])
+            selected = trace.get(
+                "selected", queue[0] if queue else "?"
+            )
+            reason = trace.get("reason", "default")
+            self._combined_log(
+                f"Select task: {selected} (reason={reason})"
+            )
+
+        elif node_name == "worldbuild":
+            trace = _first_trace(output)
+            signals_acted = trace.get("signals_acted", 0)
+            generated = trace.get("generated_files", [])
+            version = trace.get("world_state_version", "?")
+            if signals_acted:
+                self._combined_log(
+                    f"Worldbuild: Acted on {signals_acted}"
+                    f" signal(s), version {version}"
+                )
+            elif generated:
+                self._combined_log(
+                    f"Worldbuild: Generated {len(generated)}"
+                    f" canon file(s), version {version}"
+                )
+            else:
+                self._combined_log(
+                    f"Worldbuild: No changes, version {version}"
+                )
+
+        elif node_name == "reflect":
+            trace = _first_trace(output)
+            reviewed = trace.get("canon_files_reviewed", 0)
+            rewritten = trace.get("canon_files_rewritten", [])
+            reflexion = trace.get("reflexion_ran", False)
+            parts = ["Reflect:"]
+            if reflexion:
+                parts.append("reflexion ran")
+            parts.append(f"{reviewed} canon file(s) reviewed")
+            if rewritten:
+                parts.append(f"{len(rewritten)} rewritten")
+            self._combined_log(" -- ".join(parts))
+
+    def _cleanup(self) -> None:
+        """Release all resources."""
+        # Final status/progress write so external tools see idle state
+        try:
+            self._write_status_file()
+            self._write_progress_file()
+        except Exception:
+            logger.debug("Final status write on cleanup failed", exc_info=True)
+
+        # Close retrieval backends before resetting runtime
+        if runtime.knowledge_graph is not None:
+            try:
+                runtime.knowledge_graph.close()
+            except Exception:
+                pass
+        runtime.reset()
+        if self._memory:
+            self._memory.close()
+        if self._version_store:
+            self._version_store.close()
+        if self._promise_tracker:
+            self._promise_tracker.close()
+        if self._tray:
+            self._tray.stop()
+        logger.info("Daemon shutdown complete")
+
+    def _trigger_universe_switch(self, target_universe: str) -> None:
+        """Request the API to start a new daemon on a different universe.
+
+        Called after cleanup when cross-universe synthesis is needed.
+        Uses the API's internal _start_daemon_for function if available.
+        """
+        logger.info(
+            "Triggering cross-universe switch: %s -> %s",
+            self._universe_id, target_universe,
+        )
+        try:
+            from fantasy_author.api import _start_daemon_for
+
+            _start_daemon_for(target_universe)
+            logger.info("Started daemon on %s for synthesis", target_universe)
+        except Exception as e:
+            logger.warning(
+                "Cross-universe switch to %s failed: %s. "
+                "Synthesis will be picked up on next manual start.",
+                target_universe, e,
+            )
+
+    @property
+    def active_provider_label(self) -> str:
+        """Return a human-readable label for the current provider status."""
+        if self._router is None:
+            return "Mock (no LLM connected)"
+        providers = self._router.available_providers
+        if not providers:
+            return "Mock (no LLM connected)"
+        return ", ".join(providers)
+
+    # ------------------------------------------------------------------
+    # Tray callbacks
+    # ------------------------------------------------------------------
+
+    def _on_tray_start(self) -> None:
+        logger.info("Tray: start requested")
+
+    def _on_tray_pause(self) -> None:
+        logger.info("Tray: pause requested")
+        self._paused.set()
+
+    def _on_tray_resume(self) -> None:
+        logger.info("Tray: resume requested")
+        self._paused.clear()
+
+    def _on_tray_quit(self) -> None:
+        logger.info("Tray: quit requested")
+        self._stop_event.set()
+        self._paused.clear()  # Unblock if paused
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+# Cloudflare tunnel management
+# ---------------------------------------------------------------------------
+
+# Shared between _drain_tunnel_stderr and _run_tray_mode so the tray
+# can show the real URL without polling the schema file (which may
+# contain a stale URL from a previous session).
+_tunnel_url_ready = threading.Event()
+_tunnel_url_value: str = ""
+
+
+def _start_tunnel(
+    port: int,
+    tunnel_name: str = "",
+) -> subprocess.Popen | None:
+    """Start a Cloudflare tunnel as a subprocess.
+
+    Parameters
+    ----------
+    port : int
+        Local port to tunnel (the API server port).
+    tunnel_name : str
+        Named tunnel to run.  If empty, falls back to a quick tunnel
+        (ephemeral URL).
+
+    Returns
+    -------
+    subprocess.Popen or None
+        The tunnel process, or None if cloudflared is not available.
+    """
+    import shutil
+
+    cloudflared = shutil.which("cloudflared")
+    if not cloudflared:
+        logger.warning("cloudflared not found in PATH; tunnel not started")
+        return None
+
+    if tunnel_name:
+        cmd = [cloudflared, "tunnel", "run", tunnel_name]
+        logger.info("Starting named tunnel '%s' -> localhost:%d", tunnel_name, port)
+    else:
+        cmd = [
+            cloudflared, "tunnel", "--url", f"http://localhost:{port}",
+        ]
+        logger.info("Starting quick tunnel -> localhost:%d", port)
+
+    try:
+        kwargs: dict[str, Any] = {
+            "stdout": subprocess.DEVNULL,
+            # Capture stderr via PIPE so we can extract the tunnel URL,
+            # then drain continuously in a background thread to prevent
+            # pipe buffer deadlock.
+            "stderr": subprocess.PIPE,
+        }
+        # On Windows, fully decouple cloudflared from our process tree.
+        # CREATE_NO_WINDOW prevents console allocation (GDI exhaustion),
+        # DETACHED_PROCESS prevents it from sharing our console session
+        # (which caused black-screen crashes when the child flooded
+        # console-host resources).
+        if sys.platform == "win32":
+            kwargs["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+                | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+            )
+        proc = subprocess.Popen(cmd, **kwargs)
+        logger.info("Cloudflare tunnel started (PID %d)", proc.pid)
+        atexit.register(_stop_tunnel, proc)
+        # Drain stderr in a daemon thread — extracts tunnel URL, prevents
+        # pipe buffer deadlock from cloudflared's verbose logging.
+        drain = threading.Thread(
+            target=_drain_tunnel_stderr, args=(proc,), daemon=True,
+        )
+        drain.start()
+        return proc
+    except OSError as e:
+        logger.warning("Failed to start cloudflared: %s", e)
+        return None
+
+
+def _drain_tunnel_stderr(proc: subprocess.Popen) -> None:
+    """Read cloudflared stderr, extract the tunnel URL, discard the rest.
+
+    Runs in a daemon thread. Reads line-by-line looking for the
+    trycloudflare.com URL pattern, logs it prominently when found,
+    updates the GPT actions schema with the new URL, signals
+    _tunnel_url_ready so the tray can pick it up, then continues
+    draining to keep the pipe clear.
+    """
+    global _tunnel_url_value
+    import re
+
+    url_pattern = re.compile(r"(https://[a-zA-Z0-9-]+\.trycloudflare\.com)")
+    url_found = False
+    stderr = proc.stderr
+    if stderr is None:
+        return
+    try:
+        for raw_line in stderr:
+            if url_found:
+                continue  # drain without processing
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            match = url_pattern.search(line)
+            if match:
+                url = match.group(1)
+                logger.info("Tunnel URL: %s", url)
+                _update_gpt_schema_url(url)
+                _tunnel_url_value = url
+                _tunnel_url_ready.set()
+                url_found = True
+    except (OSError, ValueError):
+        pass  # process exited or pipe closed
+
+
+def _update_gpt_schema_url(url: str) -> None:
+    """Update the server URL in custom_gpt/actions_schema.yaml.
+
+    Replaces the ``- url:`` line under ``servers:`` so the GPT schema
+    always points at the current tunnel URL without manual edits.
+    """
+    import re
+
+    # Project root is the parent of the fantasy_author package
+    schema_path = Path(__file__).resolve().parent.parent / "custom_gpt" / "actions_schema.yaml"
+    if not schema_path.exists():
+        logger.debug("GPT schema not found at %s", schema_path)
+        return
+    try:
+        text = schema_path.read_text(encoding="utf-8")
+        updated = re.sub(
+            r"(  - url: )https?://\S+",
+            rf"\g<1>{url}",
+            text,
+            count=1,
+        )
+        if updated != text:
+            schema_path.write_text(updated, encoding="utf-8")
+            logger.info("Updated GPT schema URL to %s", url)
+        else:
+            logger.debug("GPT schema URL unchanged")
+    except OSError:
+        logger.debug("Failed to update GPT schema URL", exc_info=True)
+
+
+def _stop_tunnel(proc: subprocess.Popen) -> None:
+    """Gracefully stop a tunnel subprocess."""
+    if proc.poll() is not None:
+        return
+    logger.info("Stopping Cloudflare tunnel (PID %d)", proc.pid)
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            logger.warning("Cloudflare tunnel PID %d did not exit", proc.pid)
+            return
+    except OSError:
+        # Process already gone or access denied (detached process)
+        return
+    logger.info("Cloudflare tunnel stopped")
+
+
+def _run_tray_mode(args: argparse.Namespace) -> None:
+    """Tray-only mode: API + daemon + tunnel with system tray icon.
+
+    Designed for the desktop shortcut (pythonw.exe / .pyw): no console
+    window, no Tkinter launcher GUI.  Everything runs from the system
+    tray with right-click controls.
+
+    Flow: tray icon appears -> API starts -> daemon auto-selects a
+    universe -> tunnel starts -> GPT can reach it.
+    """
+    import uvicorn
+
+    from fantasy_author.api import app, configure
+
+    base_path = str(Path(args.universe).resolve())
+    Path(base_path).mkdir(parents=True, exist_ok=True)
+
+    # Resolve which universe to write
+    active_file = Path(base_path) / ".active_universe"
+    universe_path = ""
+    if active_file.exists():
+        try:
+            uid = active_file.read_text(encoding="utf-8").strip()
+            candidate = Path(base_path) / uid
+            if uid and candidate.is_dir():
+                universe_path = str(candidate)
+        except OSError:
+            pass
+
+    if not universe_path:
+        try:
+            for entry in sorted(Path(base_path).iterdir()):
+                if entry.is_dir() and (entry / "PROGRAM.md").exists():
+                    universe_path = str(entry)
+                    break
+        except OSError:
+            pass
+
+    # Shared state for the tray to control
+    shutdown_event = threading.Event()
+    controller: DaemonController | None = None
+    tunnel_proc: subprocess.Popen | None = None
+    tray: TrayApp | None = None
+    uvicorn_server: Any = None
+
+    def _on_tray_pause() -> None:
+        if controller is not None:
+            controller._paused.set()
+        if tray is not None:
+            tray.update_status("Paused")
+
+    def _on_tray_resume() -> None:
+        if controller is not None:
+            controller._paused.clear()
+        if tray is not None:
+            tray.update_status("Running")
+
+    def _on_tray_quit() -> None:
+        logger.info("Tray: quit requested")
+        shutdown_event.set()
+        if controller is not None:
+            controller._stop_event.set()
+            controller._paused.clear()
+        if tunnel_proc is not None:
+            _stop_tunnel(tunnel_proc)
+        if uvicorn_server is not None:
+            uvicorn_server.should_exit = True
+
+    # Create tray icon
+    universe_name = Path(universe_path).name if universe_path else ""
+    tray = TrayApp(
+        on_pause=_on_tray_pause,
+        on_resume=_on_tray_resume,
+        on_quit=_on_tray_quit,
+        output_dir=universe_path or base_path,
+    )
+    if universe_name:
+        tray.update_extended_status(universe_name=universe_name)
+    tray.start()
+    tray.update_status("Starting...")
+
+    # Start daemon if we have a universe
+    daemon_thread = None
+    if universe_path:
+        controller = DaemonController(
+            universe_path=universe_path,
+            no_tray=True,  # We manage tray ourselves
+            premise=args.premise,
+        )
+        # Wire dashboard to update tray status
+        controller._tray = tray
+        daemon_thread = threading.Thread(
+            target=controller.start, name="daemon", daemon=False,
+        )
+        daemon_thread.start()
+
+    # Configure API
+    configure(
+        base_path=base_path,
+        api_key=os.environ.get("FA_API_KEY", ""),
+        daemon=controller,
+        daemon_thread=daemon_thread,
+    )
+
+    # Start tunnel
+    port = args.port
+    tunnel_proc = _start_tunnel(port, args.tunnel_name)
+
+    # Wait for tunnel URL from the drain thread (not the schema file,
+    # which may contain a stale URL from a previous session).
+    def _watch_tunnel_url() -> None:
+        """Wait for _drain_tunnel_stderr to signal the URL, then update tray."""
+        # Clear any stale state from a previous tunnel start
+        _tunnel_url_ready.clear()
+        if _tunnel_url_ready.wait(timeout=30):
+            url = _tunnel_url_value
+            if url and tray is not None:
+                tray.update_extended_status(tunnel_url=url)
+                tray.notify("Tunnel Ready", url)
+
+    if tunnel_proc is not None:
+        threading.Thread(target=_watch_tunnel_url, daemon=True).start()
+
+    tray.update_status("Running")
+
+    # Periodic tray status update from dashboard metrics
+    def _tray_status_poller() -> None:
+        while not shutdown_event.is_set():
+            time.sleep(5)
+            if controller is not None and controller._dashboard is not None:
+                summary = controller._dashboard.summary()
+                words = summary.get("total_words", 0)
+                phase = summary.get("current_phase", "idle")
+                if tray is not None:
+                    tray.update_extended_status(word_count=words, phase=phase)
+
+    threading.Thread(target=_tray_status_poller, daemon=True).start()
+
+    # Run uvicorn (blocks until shutdown)
+    config = uvicorn.Config(
+        app, host=args.host, port=port, log_level="info",
+    )
+    uvicorn_server = uvicorn.Server(config)
+
+    # Handle SIGINT/SIGTERM
+    def _signal_handler(sig: int, frame: Any) -> None:
+        _on_tray_quit()
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _signal_handler)
+
+    uvicorn_server.run()
+
+    # Cleanup after uvicorn exits
+    shutdown_event.set()
+    if controller is not None:
+        controller._stop_event.set()
+        controller._paused.clear()
+    if daemon_thread is not None:
+        daemon_thread.join(timeout=5)
+    if tunnel_proc is not None:
+        _stop_tunnel(tunnel_proc)
+    if tray is not None:
+        tray.stop()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="fantasy-author",
+        description="Fantasy Author -- autonomous fiction generation daemon",
+    )
+    parser.add_argument(
+        "--universe",
+        default="output/default-universe",
+        help="Path to the universe output directory",
+    )
+    parser.add_argument(
+        "--db",
+        default="",
+        help="Path to the world state SQLite database (default: <universe>/story.db)",
+    )
+    parser.add_argument(
+        "--checkpoint-db",
+        default="",
+        help="Path to the LangGraph checkpoint database (default: <universe>/checkpoints.db)",
+    )
+    parser.add_argument(
+        "--no-tray",
+        action="store_true",
+        help="Run without the system tray icon",
+    )
+    parser.add_argument(
+        "--premise",
+        default="",
+        help="Story premise / prompt (overrides PROGRAM.md in universe dir)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose logging",
+    )
+    parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Start the MCP server instead of the writing daemon",
+    )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start the daemon + FastAPI HTTP server",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="API server bind address (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="API server port (default: 8000)",
+    )
+    parser.add_argument(
+        "--tunnel",
+        action="store_true",
+        help="Start a Cloudflare tunnel alongside the API server",
+    )
+    parser.add_argument(
+        "--tunnel-name",
+        default="",
+        help="Named tunnel to run (requires 'cloudflared tunnel create' first)",
+    )
+    parser.add_argument(
+        "--tray",
+        action="store_true",
+        help="Tray-only mode: API + daemon + tunnel with system tray icon, no console",
+    )
+    parser.add_argument(
+        "--universe-server",
+        action="store_true",
+        help="Start the Universe Server (remote MCP interface)",
+    )
+    parser.add_argument(
+        "--mcp-port",
+        type=int,
+        default=8001,
+        help="Universe Server MCP port (default: 8001)",
+    )
+    parser.add_argument(
+        "--mcp-transport",
+        default="streamable-http",
+        choices=["streamable-http", "sse", "stdio"],
+        help="MCP transport protocol (default: streamable-http)",
+    )
+
+    args = parser.parse_args()
+
+    # Logging setup
+    level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    if args.mcp:
+        os.environ.setdefault("WORKFLOW_UNIVERSE", args.universe)
+        from fantasy_author.mcp_server import main as mcp_main
+
+        mcp_main()
+        return
+
+    if args.universe_server:
+        # Set base path for Universe Server (resolves universe directories)
+        base = str(Path(args.universe).resolve())
+        os.environ.setdefault("UNIVERSE_SERVER_BASE", base)
+        logger.info(
+            "Starting Universe Server on %s:%d (transport=%s, base=%s)",
+            args.host, args.mcp_port, args.mcp_transport, base,
+        )
+
+        # Optionally start a Cloudflare tunnel for the MCP port
+        tunnel_proc = None
+        if args.tunnel:
+            tunnel_proc = _start_tunnel(args.mcp_port, args.tunnel_name)
+
+        try:
+            from fantasy_author.universe_server import main as us_main
+
+            us_main(
+                host=args.host,
+                port=args.mcp_port,
+                transport=args.mcp_transport,
+            )
+        finally:
+            if tunnel_proc is not None:
+                _stop_tunnel(tunnel_proc)
+        return
+
+    if args.tray:
+        _run_tray_mode(args)
+        return
+
+    if args.serve:
+        import uvicorn
+
+        from fantasy_author.api import app, configure
+
+        # Resolve base path: --universe is the base directory in serve mode
+        base_path = str(Path(args.universe).resolve())
+        Path(base_path).mkdir(parents=True, exist_ok=True)
+
+        # Resolve which universe to write in.  Priority:
+        # 1. .active_universe file (persisted from last session)
+        # 2. First universe subdir that has a PROGRAM.md
+        # 3. Don't start a daemon — let the API handle it on demand
+        active_file = Path(base_path) / ".active_universe"
+        universe_path = ""
+        if active_file.exists():
+            try:
+                uid = active_file.read_text(encoding="utf-8").strip()
+                candidate = Path(base_path) / uid
+                if uid and candidate.is_dir():
+                    universe_path = str(candidate)
+                    logger.info("Resuming daemon on persisted universe: %s", uid)
+            except OSError:
+                pass
+
+        if not universe_path:
+            # Scan for a universe with a premise
+            try:
+                for entry in sorted(Path(base_path).iterdir()):
+                    if entry.is_dir() and (entry / "PROGRAM.md").exists():
+                        universe_path = str(entry)
+                        logger.info("Auto-selected universe with premise: %s", entry.name)
+                        break
+            except OSError:
+                pass
+
+        controller = None
+        daemon_thread = None
+        if universe_path:
+            controller = DaemonController(
+                universe_path=universe_path,
+                no_tray=True,
+                premise=args.premise,
+            )
+            daemon_thread = threading.Thread(
+                target=controller.start, name="daemon", daemon=False,
+            )
+            daemon_thread.start()
+        else:
+            logger.info(
+                "No active universe found; daemon will start when a "
+                "universe is selected via the API"
+            )
+
+        # Configure API layer with base path
+        configure(
+            base_path=base_path,
+            api_key=os.environ.get("FA_API_KEY", ""),
+            daemon=controller,
+            daemon_thread=daemon_thread,
+        )
+
+        # Start Cloudflare tunnel if requested
+        tunnel_proc = None
+        if args.tunnel:
+            tunnel_proc = _start_tunnel(args.port, args.tunnel_name)
+
+        # Graceful shutdown: signal daemon to stop when uvicorn exits
+        def _serve_signal_handler(sig: int, frame: Any) -> None:
+            logger.info("Signal %d received, stopping daemon", sig)
+            if controller is not None:
+                controller._stop_event.set()
+                controller._paused.clear()
+            if tunnel_proc is not None:
+                _stop_tunnel(tunnel_proc)
+
+        signal.signal(signal.SIGINT, _serve_signal_handler)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, _serve_signal_handler)
+
+        logger.info(
+            "Starting API server on %s:%d serving universes from '%s'",
+            args.host, args.port, base_path,
+        )
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        # After uvicorn exits, ensure daemon cleanup and wait for thread
+        if controller is not None:
+            controller._stop_event.set()
+            controller._paused.clear()
+        if daemon_thread is not None:
+            daemon_thread.join(timeout=5)
+        if tunnel_proc is not None:
+            _stop_tunnel(tunnel_proc)
+        return
+
+    controller = DaemonController(
+        universe_path=args.universe,
+        db_path=args.db,
+        checkpoint_path=args.checkpoint_db,
+        no_tray=args.no_tray,
+        premise=args.premise,
+    )
+
+    # Handle SIGINT/SIGTERM gracefully
+    def _signal_handler(sig: int, frame: Any) -> None:
+        logger.info("Signal %d received, stopping", sig)
+        controller._stop_event.set()
+        controller._paused.clear()
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _signal_handler)
+
+    controller.start()
+
+
+if __name__ == "__main__":
+    main()

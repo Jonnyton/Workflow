@@ -20,6 +20,7 @@ from workflow.notes import (
     mark_notes_read,
 )
 from workflow.retrieval.agentic_search import assemble_phase_search_context
+from workflow.utils.json_parsing import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +129,8 @@ def _select_tool_names(
 
 def _parse_tool_selection(raw: str, allowed: set[str]) -> list[str]:
     """Parse a selector response into a de-duplicated ordered tool list."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if "\n" in text:
-            text = text.split("\n", 1)[1]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
+    data = parse_llm_json(raw, fallback=None)
+    if data is None:
         return []
 
     if isinstance(data, dict):

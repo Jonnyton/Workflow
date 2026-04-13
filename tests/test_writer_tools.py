@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fantasy_author.nodes.orient import orient
-from fantasy_author.nodes.writer_tools import select_and_run_writer_tools
-from fantasy_author.notes import add_note, list_notes
+from domains.fantasy_author.phases.orient import orient
+from domains.fantasy_author.phases.writer_tools import select_and_run_writer_tools
+from workflow.notes import add_note, list_notes
 
 
 def _state_with_context(tmp_path) -> dict:

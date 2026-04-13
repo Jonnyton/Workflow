@@ -6,7 +6,7 @@
 
 ## Overview
 
-Successfully implemented Phase 3.1 (Compaction Services and Durable Handoff Artifacts) and Phase 3.2 (Tool Guardrails) for the Fantasy Author workflow restructure. Both phases are complete, tested, and passing ruff linting.
+Successfully implemented Phase 3.1 (Compaction Services and Durable Handoff Artifacts) and Phase 3.2 (Tool Guardrails) for the Workflow restructure. Both phases are complete, tested, and passing ruff linting.
 
 ## Files Created
 

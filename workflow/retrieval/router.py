@@ -7,8 +7,6 @@ RAPTOR (thematic/global), or LanceDB vectors (tone/similarity).
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Callable
 
 import numpy as np
@@ -24,6 +22,7 @@ from workflow.knowledge.models import (
 from workflow.knowledge.raptor import RaptorTree, query_raptor_tree
 from workflow.retrieval.phase_context import should_use_backend
 from workflow.retrieval.vector_store import VectorStore
+from workflow.utils.json_parsing import parse_llm_json
 
 # ---------------------------------------------------------------------------
 # Query decomposition
@@ -58,14 +57,8 @@ Return JSON list. Example:
 
 def _parse_decomposition(raw: str) -> list[SubQuery]:
     """Parse LLM decomposition response into SubQuery objects."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    try:
-        items = json.loads(text)
-    except json.JSONDecodeError:
-        # Fallback: treat entire query as a single entity_relationship query
+    items = parse_llm_json(raw, expect_type=list, fallback=None)
+    if items is None:
         return [SubQuery(text=raw, query_type=QueryType.ENTITY_RELATIONSHIP)]
 
     return [
@@ -75,6 +68,7 @@ def _parse_decomposition(raw: str) -> list[SubQuery]:
             entity_hints=item.get("entity_hints", []),
         )
         for item in items
+        if isinstance(item, dict)
     ]
 
 

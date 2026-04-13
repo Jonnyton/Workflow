@@ -1,4 +1,4 @@
-﻿# Fantasy Author - Plan
+﻿# Workflow - Plan
 
 How the project should work and why. Architecture, principles, and design
 decisions. One source of truth - if it is about how the system works, it is
@@ -13,10 +13,20 @@ raise it as a STATUS.md Concern - do not implement the conflicting approach.
 
 ## Project Thesis
 
-Workflow uses fantasy writing as the first playful benchmark branch for a
-broader question: what design principles produce truly intelligent,
-iterative, self-improving agent workflows that many people can shape
-together?
+**Workflow is a global goals engine.** Humanity declares shared Goals —
+research breakthroughs, great novels, successful prosecutions, cures, open
+datasets, whatever people actually want done in the world — and a legion of
+diverse AI-augmented workflows pursues each Goal in parallel. Branches
+evolve, cross-pollinate, and get ranked by how far their outputs advance up
+each Goal's real-world outcome-gate ladder (drafts → reviewed → shipped →
+impact). The system's value is not one best workflow per Goal; it's the
+evolving ecology of many workflows all chasing the same real-world outcomes
+and learning from each other's wins.
+
+Fantasy writing is the first playful benchmark branch for a specific
+question inside that frame: what design principles produce truly
+intelligent, iterative, self-improving agent workflows that many people can
+shape together?
 
 Fantasy is not the trunk. It is one early branch that happens to be fun,
 social, rich in structure, easy to publish, and useful for stress-testing
@@ -154,7 +164,7 @@ everywhere.
 - **Universe = single consistent reality.** Time periods within a universe
   share one timeline. Alternative realities are separate universes with
   divergent facts. Only hard boundary is data isolation between universes.
-- **Upload provenance.** GPT tags each upload with a short description
+- **Upload provenance.** The client tags each upload with a short description
   (for example "published book" or "rough notes"). The writer uses those
   tags to weight how seriously to treat each canon source.
 - **Unified notes.** All feedback arrives as timestamped attributed notes on
@@ -173,10 +183,10 @@ everywhere.
   the universe.
 - **Universe server, not single-user daemon.** A host machine runs the server
   with its own subscriptions and local models, while many named users connect
-  through private GPT sessions to the same shared backend.
+  through MCP-compatible clients to the same shared backend.
 - **Workflow-first, domain-agnostic identity.** The project is a workflow
-  engine and multiplayer daemon platform first. Fantasy Author is an early
-  benchmark branch, not the trunk or permanent center of gravity.
+  engine and multiplayer daemon platform first. Fantasy authoring is an early
+  benchmark domain, not the trunk or permanent center of gravity.
 - **Open workflow playground.** The system should be open-source, social,
   remixable, and eventually viral to share: a place where many users and
   daemons co-design workflows, state architectures, and tracked outcomes.
@@ -184,9 +194,9 @@ everywhere.
   to spread socially and rigorous enough that labs, companies, and other
   institutions can use it as workflow infrastructure and research
   instrumentation.
-- **Shared GPT, local host dashboard.** Everyone uses the same GPT surface for
-  normal collaboration, but host-only operational controls should live in a
-  locally run dashboard rather than the shared GPT.
+- **MCP clients, local host dashboard.** Everyone uses the same MCP tool
+  surface for normal collaboration, but host-only operational controls should
+  live in a locally run dashboard rather than the shared client interface.
 - **One host tray, many dashboards.** The local desktop companion should use a
   shared host tray as a lightweight entry point, while each live universe keeps
   its own host dashboard window. Detached tray/runtime objects must be guarded
@@ -270,7 +280,7 @@ everywhere.
 ```text
 Users / Hosts
     <->
-Custom GPT / MCP-compatible chatbots / Host dashboard
+MCP-compatible clients / Host dashboard
     <->
 FastAPI + Universe Server (MCP) control plane
     <->
@@ -283,9 +293,8 @@ State/Artifacts Search/Tools  Evaluation    Providers
 Harness / Traces / Tests / Coordination
 ```
 
-The daemon writes autonomously. The GPT is one control surface, not the only
-one: MCP-compatible clients and the local host dashboard are also first-class
-interfaces. Communication remains primarily file-based and artifact-based:
+The daemon writes autonomously. MCP-compatible clients and the local host
+dashboard are the primary user-facing interfaces. Communication remains primarily file-based and artifact-based:
 the daemon writes to disk, the API and MCP surfaces expose state and actions,
 and the harness inspects the resulting artifacts and traces.
 
@@ -308,8 +317,8 @@ resource allocations bound to providers and models.
 **Defaults:**
 
 - host-run server with named user accounts
-- private per-user GPT sessions
-- shared GPT contract for all users
+- private per-user MCP sessions
+- shared MCP tool contract for all users
 - local per-universe host dashboard whenever that universe has a live daemon
 - public, attributable universe-affecting actions
 - public read + public fork for universes
@@ -323,7 +332,7 @@ resource allocations bound to providers and models.
 **Host Admin Surface:** The host should get a locally run dashboard for every
 universe with a live daemon/runtime. That dashboard is the operational control
 plane: live feed, runtime state, alerts, branch/work-target visibility, and
-host or delegated-admin controls. The GPT remains the shared collaborative
+host or delegated-admin controls. MCP clients remain the shared collaborative
 surface for users rather than the host operations console. The desktop tray is
 the companion surface, not a second control plane: one shared host tray should
 aggregate live universes and open their dashboards instead of spawning one tray
@@ -560,16 +569,17 @@ quota or cooldown management.
 
 ---
 
-## API And GPT Interface
+## API And MCP Interface
 
 **Goal:** Let the user steer the daemon through natural conversation and MCP
 tooling without letting any chat surface become the author.
 
-**Principle:** The GPT is a control station, not a creator. The same rule
-applies to MCP-connected chatbots and other interface clients. The API and
-Universe Server expose state and actions. The daemon performs the actual
-creative and structural work. If a chat surface writes story content itself,
-that indicates a missing daemon path.
+**Principle:** Any MCP-compatible client is a control station, not a creator.
+The Universe Server MCP surface is the primary public interface. The API
+exposes state and actions. The daemon performs the actual creative and
+structural work. If a chat surface writes story content itself, that indicates
+a missing daemon path. (The Custom GPT was an early control surface, now
+superseded by MCP.)
 
 **Assumption:** File-based and artifact-based communication is sufficient.
 Real-time streaming is optional if status, logs, notes, and outputs remain
@@ -577,7 +587,7 @@ legible and current, though MCP/Universe Server streaming is now a real
 first-class public interface rather than a hypothetical future add-on.
 
 **Connects to:** notes API, universe selection, canon uploads, daemon control,
-status inspection, GPT action schemas, and the Universe Server MCP surface.
+status inspection, Universe Server MCP tool schemas, and MCP registry listing.
 
 ---
 
@@ -636,8 +646,8 @@ agentic work.
 system quality more reliably than prompt tweaking alone once the workflow is
 stateful and long-running.
 
-**Connects to:** gpt_harness, gpt_builder, tests, dashboard, activity logs,
-agent definitions, and the three living files.
+**Connects to:** tests, dashboard, activity logs, agent definitions, and the
+three living files.
 
 ---
 
@@ -690,8 +700,8 @@ review artifacts, and test harness traces.
 
 ## Workflow Extraction
 
-**Goal:** Restructure Fantasy Author from a standalone application into a
-general-purpose workflow engine (`workflow/`) with Fantasy Author as its first
+**Goal:** Restructure the project from a standalone application into a
+general-purpose workflow engine (`workflow/`) with fantasy authoring as its first
 domain branch (`domains/fantasy_author/`). The engine is reusable
 infrastructure; future domains are new skill sets, not new codebases.
 
@@ -726,7 +736,7 @@ domains/fantasy_author/            # First domain — owns its graph
 
 **Timescale mapping (documentation, not a rename):**
 
-| Fantasy Author | General Intent | Timescale |
+| Fantasy Domain | General Intent | Timescale |
 |----------------|----------------|-----------|
 | Scene | Task | Short-horizon atomic action |
 | Chapter | Batch | Medium-horizon consolidation |
@@ -757,10 +767,10 @@ windows), explicit scope handling (universe/branch/author/user/session),
 Phase 4 — Minimal Generality Probe. **Done.** domains/research_probe/
 (11 files) implements a document research workflow with a flat
 gather→analyze→synthesize→review graph — deliberately different topology
-from Fantasy Author's 4-level hierarchy. Zero fantasy_author imports.
+from the fantasy domain's 4-level hierarchy. Zero fantasy_author imports.
 Proves the engine is domain-agnostic.
 
-Phase 5 — Ship Fantasy Author on Extracted Engine. **Structurally done,
+Phase 5 — Ship Fantasy Domain on Extracted Engine. **Structurally done,
 operationally bridged.** Domain stubs populated (4 tools, 5 eval criteria,
 8 memory schemas). Concrete DomainRegistry with auto-discovery. CLI entry
 point (`python -m workflow`). `create_app()` and runtime entry points landed,
@@ -779,6 +789,128 @@ a second domain pressures it.
 
 **Connects to:** All existing PLAN.md modules. The extraction changes where
 code lives, not what it does.
+
+---
+
+## Multi-User Evolutionary Design (Phase 5+ direction)
+
+**Vision:** The world open-source-collaboratively and simultaneously pursues
+shared broad Goals. Each Goal — "research papers", "fantasy writing",
+"investigative journalism", "scientific meta-analysis", "screenplay
+production", and many more — is a first-class shared pursuit. The whole
+internet contributes branches toward that Goal in parallel. The result is
+not one "correct" workflow per Goal but a legion of diverse evolving public
+workflows, all chasing the same ultimate outcome, all improving each other.
+
+**Goal is a first-class concept above Branch.**
+
+- A Goal is a shared, named pursuit (e.g. `research-paper`, `fantasy-novel`).
+- A Branch is one user's concrete take on how to achieve a Goal.
+- Many Branches can bind to one Goal. The system should make
+  "simultaneously pursue the same Goal via different Branches" the default
+  collaboration pattern, not forking one canonical Branch.
+- Goals themselves are extensible. Any user can propose a new Goal. Popular
+  Goals accrete Branches; unpopular ones fade. The Goal registry is a
+  living taxonomy of what people want AI workflows to actually do.
+
+**Principle:** The iteration loop from Phase 4 (judge → edit → rerun →
+compare) is the single-user within-branch version of the same behavior.
+Phase 5 is the within-Goal cross-user version: discover → fork or invent →
+diverge → rate → crosspollinate. Phase 6+ is cross-Goal learning: patterns
+that work for research papers inform screenplays because the underlying
+architecture primitives (orient-plan-draft-commit-learn) transfer.
+
+**Diverse-by-default:** 100 different research-paper workflows from 100
+users is a feature, not a duplication. Each expresses different priors,
+audiences, constraints. Consolidation into one "best" workflow is an
+anti-pattern; the value is the ecology.
+
+**Outcome gates — real-world impact is the truth signal.**
+
+Every Goal has a ladder of real-world outcome gates beyond the workflow's
+immediate output. Workflows succeed when their outputs advance through those
+gates, not when they merely produce polished drafts.
+
+Illustrative ladders (not exhaustive; each Goal declares its own):
+
+- **research-paper:** g0 synthesis draft → g1 licensed peer feedback
+  → g2 journal submission → g3 accepted → g4 published → g5 cited
+  → g6 recognized as seminal / award / breakthrough.
+- **fantasy-novel:** g0 manuscript complete → g1 beta readers → g2 agent
+  acquired → g3 publisher deal → g4 editor revisions complete → g5 published
+  → g6 bestseller → g7 awards.
+- **prosecutorial-brief:** g0 synthesis draft → g1 licensed attorney review
+  → g2 prosecutor engagement → g3 filed → g4 survives motion to dismiss
+  → g5 trial → g6 conviction or successful settlement.
+
+**Implications:**
+
+- **Outcome gates are first-class storage.** Each Goal declares its gates.
+  Each run/branch/workflow can be marked as having advanced through gates.
+  Self-reported by users, automated where possible (e.g. DOI lookup for
+  publication status, court docket APIs for filing status).
+- **Leaderboards rank on outcome progression, not output quality.** A
+  workflow whose outputs reached g4 is a stronger signal than a workflow
+  whose outputs are rated well in the chat that produced them.
+- **Evolution signal amplifies dramatically.** "Fork the branch whose
+  outputs actually got published" is orders of magnitude better than "fork
+  the branch that has high chat-side judgment." Real-world scrutiny is
+  harder to game.
+- **Tracking is manual at first, automated over time.** g0-g1 are chat
+  surface; g2+ are integrations (Crossref, journal APIs, court-docket
+  feeds, sales data, awards registries). Long runway. Start with
+  self-report by authors and human verification; add automation as
+  integrations prove worthwhile.
+- **Workflows can have sub-goals for intermediate gates.** Reaching g3
+  (journal acceptance) may itself be a workflow of revision loops. The
+  system should compose Goal-under-Goal (the acceptance workflow is a
+  sub-workflow of the research-paper workflow).
+
+**The real project mission becomes clear:** Workflow is infrastructure for
+collective pursuit of real-world outcomes, with AI workflows as one
+leverage layer. Every Goal's legion of branches is trying to push outputs
+further up the gate ladder. The system that best rewards real outcomes is
+the system that attracts serious users and serious work.
+
+**Required surfaces (not yet built):**
+
+- **Goal as first-class object.** Storage: `goals` table with id, name,
+  description, author, tags, visibility. `Branch` carries `goal_id`. Users
+  propose Goals; browse Branches per Goal.
+- **Node identity across branches.** Nodes need identity that survives
+  forking. When user B forks user A's `gap_finder`, B's node lineage points
+  back to A's — so judgments on A's variant inform B's decisions, and B's
+  improvements can flow back to A as a suggestion.
+- **Fork as a first-class action.** `fork_node(source_branch, node_id,
+  into_branch)` or `fork_branch(source)`. Today users copy spec inline,
+  breaking lineage.
+- **Invent parallel to fork.** Users pursuing a Goal should be able to
+  invent a new Branch from scratch without forking anything — "I'll try a
+  different approach" is as valid as "I'll improve this one". Both modes
+  bind to the same Goal.
+- **Search and filter over the public Branch corpus.** `list_branches`
+  returning flat "everything" breaks at scale. Filter by Goal first; then
+  tags, authorship, run count, judgment density, topology similarity.
+- **Leaderboards per Goal.** For each Goal, surface the most-run,
+  highest-judged, most-forked, most-influential Branches. Emergent signal,
+  not curated.
+- **Social judgment signals.** Aggregate Phase 4 judgment data across runs
+  across users per node and branch, then per Goal. "This pattern of nodes
+  works well for research papers" is the cross-branch learning signal.
+- **Authorship and attribution.** Every node/branch/Goal carries origin
+  author and lineage chain. Builds on ledger write-through; extends to
+  node-level provenance.
+- **Cross-Branch node library per Goal.** Nodes that many Branches reuse
+  against a Goal (say `gap_finder` for research-paper Goal) become a shared
+  library for that Goal, discoverable when composing a new Branch.
+
+**Privacy default:** Public-by-default (aligns with "public actions"
+principle) but users can mark a branch private for drafting. Policy surface
+TBD.
+
+**Non-goals for now:** account system, monetization, moderation. Those are
+product concerns a mature open-source platform addresses, not engineering
+scaffolding for the core evolution loop.
 
 ---
 

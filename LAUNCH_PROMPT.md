@@ -2,7 +2,7 @@ Read `STATUS.md` first (live state), then `PLAN.md` (principled architecture).
 
 ## Team Spawn
 
-Create an agent team for Fantasy Author. Use Agent Teams (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS enabled). Do NOT use subagents — they auto-complete and can't persist.
+Summon the daemon's agent team. Use Agent Teams (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS enabled). Do NOT use subagents — they auto-complete and can't persist.
 
 ### Core Team (always spawn)
 
@@ -19,10 +19,10 @@ Spawn these when the work requires them. Despawn when their task is done.
 
 - **dev-2** (developer agent type) — second developer. Spawn when parallel file work exists with no overlap. Despawn after.
 - **explorer** (explorer agent type) — deep codebase research. Spawn when planner or dev needs heavy context gathering that would blow up their context window. Despawn after reporting.
-- **critic** (critic agent type) — creative quality assessor. Spawn when daemon output exists to review. Despawn between batches.
-- **story-author** (story-author agent type) — creative collaborator. Spawn when user wants to work on story, steering, or canon.
+- **critic** (critic agent type) — output quality assessor. Spawn when daemon output exists to review. Despawn between batches.
+- **story-author** (story-author agent type) — domain collaborator. Spawn when user wants to work within a domain (e.g., story, steering, canon).
 
-**user agent** — NOT auto-spawned. Spawn manually when GPT testing needed and rate limit budget allows. See `.claude/agents/user.md`.
+**user agent** — NOT auto-spawned. Spawn manually when MCP client testing needed and rate limit budget allows. See `.claude/agents/user.md`.
 
 Lead absorbs debugger coordination: bug tasks go to dev with diagnostic framing.
 
@@ -58,13 +58,8 @@ Lead absorbs debugger coordination: bug tasks go to dev with diagnostic framing.
 - **Assume other providers may be live.** File-backed coordination beats any single chat window.
 - **Right-size the team.** 5-6 tasks per active teammate. If teammates are idle, despawn them. If work is piling up, spawn help.
 
-## GPT Testing
+## MCP Client Testing
 
-Read `/gpt-test` skill. Manual — only when lead decides and rate limit budget allows.
+Manual — only when lead decides and rate limit budget allows. See `.claude/agents/user.md`.
 
-GPT builder updates (lead only):
-```bash
-python -m fantasy_author.testing.gpt_builder update-all   # instructions + schema + save
-```
-
-See AGENTS.md > "GPT Conversations Are Bug Reports" for handling pasted conversations.
+See AGENTS.md > "Client Conversations Are Bug Reports" for handling pasted conversations.

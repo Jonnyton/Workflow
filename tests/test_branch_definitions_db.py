@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_author.author_server import (
+from workflow.author_server import (
     delete_branch_definition,
     fork_branch_definition,
     get_branch_definition,
@@ -15,7 +15,7 @@ from fantasy_author.author_server import (
     save_branch_definition,
     update_branch_definition,
 )
-from fantasy_author.branches import (
+from workflow.branches import (
     BranchDefinition,
     ConditionalEdge,
     EdgeDefinition,
@@ -424,3 +424,200 @@ class TestFork:
 
         all_defs = list_branch_definitions(db_path)
         assert len(all_defs) == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Cross-Goal node reuse discovery (#62)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _branch_with_nodes(
+    name: str,
+    node_specs: list[dict],
+    goal_id: str | None = None,
+) -> dict:
+    """Build a minimal branch dict with the given nodes."""
+    from workflow.branches import (
+        BranchDefinition,
+        EdgeDefinition,
+        GraphNodeRef,
+        NodeDefinition,
+    )
+
+    node_defs = [
+        NodeDefinition(**{"display_name": spec.get("node_id", ""), **spec})
+        for spec in node_specs
+    ]
+    graph_nodes = [
+        GraphNodeRef(id=nd.node_id, node_def_id=nd.node_id, position=i)
+        for i, nd in enumerate(node_defs)
+    ]
+    edges = [EdgeDefinition(from_node="START", to_node=node_defs[0].node_id)]
+    for i in range(len(node_defs) - 1):
+        edges.append(
+            EdgeDefinition(from_node=node_defs[i].node_id,
+                           to_node=node_defs[i + 1].node_id),
+        )
+    edges.append(EdgeDefinition(from_node=node_defs[-1].node_id, to_node="END"))
+
+    b = BranchDefinition(
+        name=name,
+        author="testuser",
+        domain_id="workflow",
+        entry_point=node_defs[0].node_id,
+        graph_nodes=graph_nodes,
+        edges=edges,
+        node_defs=node_defs,
+    )
+    d = b.to_dict()
+    if goal_id is not None:
+        d["goal_id"] = goal_id
+    return d
+
+
+class TestGoalCommonNodesAll:
+    """Cross-Goal variant of goal_common_nodes for #62."""
+
+    def test_aggregates_across_goals(self, db_path: Path):
+        from workflow.author_server import goal_common_nodes_all
+
+        rigor = {
+            "node_id": "rigor_checker",
+            "display_name": "Rigor Checker",
+            "description": "Audits citations for rigor",
+            "phase": "reflect",
+        }
+        other = {
+            "node_id": "drafter",
+            "display_name": "Drafter",
+            "phase": "draft",
+        }
+        # Two branches in different Goals share rigor_checker.
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "research-paper", [rigor, other], goal_id="goal-research",
+        ))
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "prosecutorial-brief", [rigor, other], goal_id="goal-legal",
+        ))
+
+        entries = goal_common_nodes_all(db_path, min_branches=2)
+        rigor_entry = next(
+            (e for e in entries if e["node_id"] == "rigor_checker"), None,
+        )
+        assert rigor_entry is not None, (
+            "rigor_checker appears in 2 branches and should surface"
+        )
+        assert rigor_entry["occurrence_count"] == 2
+        assert set(rigor_entry["goal_ids"]) == {"goal-research", "goal-legal"}
+
+    def test_threshold_filters_singletons(self, db_path: Path):
+        from workflow.author_server import goal_common_nodes_all
+
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "solo", [{"node_id": "unique_node", "display_name": "X"}],
+            goal_id="goal-a",
+        ))
+        entries_2 = goal_common_nodes_all(db_path, min_branches=2)
+        assert not any(e["node_id"] == "unique_node" for e in entries_2)
+        entries_1 = goal_common_nodes_all(db_path, min_branches=1)
+        assert any(e["node_id"] == "unique_node" for e in entries_1)
+
+    def test_unbound_branches_still_counted(self, db_path: Path):
+        """Branches with no goal_id should still contribute to the
+        aggregate; their node's goal_ids list just stays empty for
+        that contribution.
+        """
+        from workflow.author_server import goal_common_nodes_all
+
+        shared = {"node_id": "shared", "display_name": "S"}
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "bound", [shared], goal_id="goal-a",
+        ))
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "unbound", [shared], goal_id=None,
+        ))
+        entries = goal_common_nodes_all(db_path, min_branches=2)
+        shared_entry = next(
+            (e for e in entries if e["node_id"] == "shared"), None,
+        )
+        assert shared_entry is not None
+        assert shared_entry["occurrence_count"] == 2
+        assert shared_entry["goal_ids"] == ["goal-a"]
+
+
+class TestSearchNodes:
+    """Free-text search across every Branch's NodeDefinitions for #62."""
+
+    def test_empty_query_returns_all_nodes(self, db_path: Path):
+        from workflow.author_server import search_nodes
+
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "b1", [{"node_id": "alpha"}, {"node_id": "beta"}],
+        ))
+        results = search_nodes(db_path, query="", limit=10)
+        ids = {r["node_id"] for r in results}
+        assert {"alpha", "beta"}.issubset(ids)
+
+    def test_query_ranks_matching_over_non_matching(self, db_path: Path):
+        from workflow.author_server import search_nodes
+
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "b1", [
+                {"node_id": "rigor_checker",
+                 "display_name": "Rigor Checker",
+                 "description": "Audits citations for rigor"},
+                {"node_id": "unrelated",
+                 "display_name": "Unrelated",
+                 "description": "Unrelated work"},
+            ],
+        ))
+        results = search_nodes(db_path, query="rigor", limit=10)
+        # rigor_checker must come first; unrelated must not appear at
+        # all because it has zero substring hits.
+        assert results[0]["node_id"] == "rigor_checker"
+        assert not any(r["node_id"] == "unrelated" for r in results)
+
+    def test_reuse_count_counts_distinct_branches(self, db_path: Path):
+        from workflow.author_server import search_nodes
+
+        rigor = {"node_id": "rigor_checker", "display_name": "Rigor Checker"}
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "research", [rigor], goal_id="goal-research",
+        ))
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "legal", [rigor], goal_id="goal-legal",
+        ))
+        results = search_nodes(db_path, query="rigor", limit=10)
+        entry = next(r for r in results if r["node_id"] == "rigor_checker")
+        assert entry["reuse_count"] == 2
+        assert set(entry["goal_ids"]) == {"goal-research", "goal-legal"}
+
+    def test_role_filter_restricts_by_phase(self, db_path: Path):
+        from workflow.author_server import search_nodes
+
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "b1", [
+                {"node_id": "draft_one", "display_name": "D1", "phase": "draft"},
+                {"node_id": "reflect_one", "display_name": "R1", "phase": "reflect"},
+            ],
+        ))
+        results = search_nodes(db_path, query="", role="reflect", limit=10)
+        ids = {r["node_id"] for r in results}
+        assert ids == {"reflect_one"}
+
+    def test_prompt_template_preview_truncates(self, db_path: Path):
+        from workflow.author_server import search_nodes
+
+        long_template = "x " * 500  # 1000 chars of whitespace-separated x
+        save_branch_definition(db_path, branch_def=_branch_with_nodes(
+            "b1", [{
+                "node_id": "verbose",
+                "display_name": "Verbose",
+                "prompt_template": long_template,
+            }],
+        ))
+        results = search_nodes(db_path, query="verbose", limit=5)
+        entry = next(r for r in results if r["node_id"] == "verbose")
+        preview = entry["prompt_template_preview"]
+        assert len(preview) <= 160
+        assert preview.endswith("…")

@@ -1,4 +1,4 @@
-"""Icon generator for Fantasy Author desktop application.
+"""Icon generator for Workflow desktop application.
 
 Generates a stylized open-book icon with a quill using Pillow.
 Color scheme: deep blue/purple background, gold/amber book.
@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 
 
 def create_icon_image(size: int = 64) -> Image.Image:
-    """Create a branded Fantasy Author icon at the given pixel size.
+    """Create a branded Workflow icon at the given pixel size.
 
     Draws a stylized open book with a quill pen on a deep blue-purple
     background with gold/amber accents.
@@ -161,7 +161,7 @@ def generate_icon(output_path: str | Path | None = None) -> Path:
     ----------
     output_path : str or Path, optional
         Where to write the .ico file.  Defaults to
-        ``fantasy_author/desktop/app.ico``.
+        ``workflow/desktop/app.ico``.
 
     Returns
     -------

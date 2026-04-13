@@ -1,4 +1,4 @@
-"""Tests for fantasy_author.branches — Community Branches data models."""
+"""Tests for workflow.branches — Community Branches data models."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from fantasy_author.branches import (
+from workflow.branches import (
     VALID_FIELD_TYPES,
     VALID_PHASES,
     VALID_REDUCERS,

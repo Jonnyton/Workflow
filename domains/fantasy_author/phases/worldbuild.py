@@ -42,6 +42,13 @@ WORLDBUILD_TOPICS = [
 
 _MAX_DOCS_PER_CYCLE = 2
 
+# Phase-level loop guardrail: after this many consecutive worldbuild cycles
+# produce no signals_acted and no generated_files, self-pause the daemon
+# rather than spin forever. Counter lives in ``health["worldbuild_noop_streak"]``
+# and resets whenever a cycle lands real work. See STATUS.md entry for #9
+# (bounded reflection didn't fire) and #6 (default-universe stuck for 15h).
+_MAX_WORLDBUILD_NOOP_STREAK = 3
+
 
 def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
     """Perform worldbuilding: act on creative signals or fill gaps.
@@ -84,8 +91,9 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
         - ``quality_trace``: trace entry for this node.
     """
     from domains.fantasy_author.phases._activity import activity_log, update_phase
+    from domains.fantasy_author.phases._paths import resolve_db_path
 
-    db_path = state.get("_db_path", "story.db")
+    db_path = resolve_db_path(state)
     promoted_count = 0
     canon_count = state.get("canon_facts_count", 0)
 
@@ -130,7 +138,7 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
                 logger.warning("Canon re-ingestion failed: %s", e)
 
     # --- 5. Run promotion gates via MemoryManager ---
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is not None:
@@ -169,10 +177,35 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
 
     new_version = state.get("world_state_version", 0) + 1
 
+    # --- Phase-level loop guardrail: no-op streak tracking ---
+    # A cycle counts as "no-op" when it acted on zero signals AND generated
+    # zero new canon files. Unbounded no-op cycles starved default-universe
+    # for 15h (STATUS.md #6/#9). Self-pause via health["stopped"] so the
+    # universe graph's should_continue_universe routes to end.
+    health = dict(state.get("health", {}))
+    noop_this_cycle = signals_acted == 0 and not generated_files
+    if noop_this_cycle:
+        streak = int(health.get("worldbuild_noop_streak", 0)) + 1
+    else:
+        streak = 0
+    health["worldbuild_noop_streak"] = streak
+
+    stuck = noop_this_cycle and streak >= _MAX_WORLDBUILD_NOOP_STREAK
+    if stuck:
+        health["stopped"] = True
+        health["idle_reason"] = "worldbuild_stuck"
+        reason = (
+            f"Worldbuild stuck: {streak} consecutive no-op cycles "
+            "(no signals, no generated files). Self-pausing."
+        )
+        logger.warning(reason)
+        activity_log(state, f"Worldbuild: {reason}")
+
     result: dict[str, Any] = {
         "world_state_version": new_version,
         "canon_facts_count": canon_count,
         "worldbuild_signals": [],  # Signals consumed
+        "health": health,
         "quality_trace": [
             {
                 "node": "worldbuild",
@@ -183,6 +216,8 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
                 "generated_files": generated_files,
                 "signals_acted": signals_acted,
                 "auto_premise": bool(auto_premise),
+                "noop_streak": streak,
+                "self_paused": stuck,
             }
         ],
     }
@@ -979,7 +1014,7 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
     which extracts entities/relationships/facts and indexes text chunks.
     Uses runtime singletons for the retrieval backends.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     kg = runtime.knowledge_graph
     vs = runtime.vector_store
@@ -1040,7 +1075,7 @@ def _run_leiden_clustering(state: dict[str, Any]) -> None:
     stores them in the KG's community table. Non-blocking -- failures
     are logged but don't affect the worldbuild cycle.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     kg = runtime.knowledge_graph
     if kg is None:
@@ -1077,7 +1112,7 @@ def _rebuild_raptor(state: dict[str, Any]) -> None:
     router gets fresh multi-level summaries.  Uses the shared helper
     in ``knowledge.raptor`` which is also called at daemon startup.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     universe_path = state.get("_universe_path")
     if not universe_path:

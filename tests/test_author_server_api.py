@@ -7,7 +7,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from fantasy_author.api import app, configure
+from workflow.api import app, configure
 
 
 @pytest.fixture(autouse=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fantasy_author.utils.json_parsing import parse_llm_json
+from workflow.utils.json_parsing import parse_llm_json
 
 
 class TestParseLlmJson:

@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from fantasy_author.nodes.diagnose import diagnose
-from fantasy_author.nodes.reflect import (
+from domains.fantasy_author.phases.diagnose import diagnose
+from domains.fantasy_author.phases.reflect import (
     _MAX_REWRITES_PER_CYCLE,
     _collect_reviewable_canon,
     _evaluate_canon,
@@ -29,9 +29,9 @@ from fantasy_author.nodes.reflect import (
     _stamp_reviewed,
     reflect,
 )
-from fantasy_author.nodes.select_task import select_task
-from fantasy_author.nodes.universe_cycle import universe_cycle
-from fantasy_author.nodes.worldbuild import (
+from domains.fantasy_author.phases.select_task import select_task
+from domains.fantasy_author.phases.universe_cycle import universe_cycle
+from domains.fantasy_author.phases.worldbuild import (
     _MAX_DOCS_PER_CYCLE,
     WORLDBUILD_TOPICS,
     _identify_gaps,
@@ -41,7 +41,7 @@ from fantasy_author.nodes.worldbuild import (
     _scan_existing_canon,
     worldbuild,
 )
-from fantasy_author.notes import add_note, update_note_status
+from workflow.notes import add_note, update_note_status
 
 # -----------------------------------------------------------------------
 # worldbuild tests
@@ -71,7 +71,7 @@ class TestWorldbuild:
 
     def test_counts_canon_facts_from_db(self, tmp_story_db):
         """High-confidence facts in the DB should be counted."""
-        from fantasy_author.nodes.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
 
         init_db(tmp_story_db)
         with connect(tmp_story_db) as conn:
@@ -95,7 +95,7 @@ class TestWorldbuild:
         promotion_result.asp_rule_candidates = []
         mgr.run_promotion_gates.return_value = promotion_result
 
-        with patch("fantasy_author.runtime.memory_manager", mgr):
+        with patch("workflow.runtime.memory_manager", mgr):
             state = {"world_state_version": 0}
             result = worldbuild(state)
 
@@ -109,7 +109,7 @@ class TestWorldbuild:
         assert result["quality_trace"][0]["promoted_facts"] == 0
 
     def test_graceful_when_manager_fails(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         mgr = MagicMock()
         mgr.run_promotion_gates.side_effect = RuntimeError("oops")
@@ -165,6 +165,54 @@ class TestWorldbuild:
         assert dismissed.text not in text
         assert acted_on.text not in text
 
+    def test_noop_cycle_increments_streak(self):
+        """A cycle with no signals and no generated files bumps the streak."""
+        state = {"world_state_version": 0, "health": {}}
+        result = worldbuild(state)
+        assert result["health"]["worldbuild_noop_streak"] == 1
+        assert result["health"].get("stopped") is not True
+        assert result["quality_trace"][0]["noop_streak"] == 1
+        assert result["quality_trace"][0]["self_paused"] is False
+
+    def test_noop_streak_self_pauses_at_threshold(self):
+        """After 3 consecutive no-op cycles, worldbuild sets health.stopped."""
+        state = {
+            "world_state_version": 0,
+            "health": {"worldbuild_noop_streak": 2},
+        }
+        result = worldbuild(state)
+        assert result["health"]["worldbuild_noop_streak"] == 3
+        assert result["health"]["stopped"] is True
+        assert result["health"]["idle_reason"] == "worldbuild_stuck"
+        assert result["quality_trace"][0]["self_paused"] is True
+
+    def test_streak_resets_when_files_generated(self, tmp_path):
+        """A productive cycle (generated canon files) resets the streak to 0."""
+        universe_dir = tmp_path / "universe"
+        universe_dir.mkdir()
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "world.md").write_text("Existing lore.", encoding="utf-8")
+
+        state = {
+            "world_state_version": 1,  # past bootstrap auto-premise
+            "_universe_path": str(universe_dir),
+            "_db_path": str(tmp_path / "story.db"),
+            "health": {"worldbuild_noop_streak": 2},
+            "premise_kernel": "An existing premise.",
+        }
+        # Force _generate_canon_documents to return a non-empty list so the
+        # cycle counts as productive. Patching the function directly is the
+        # cleanest way since it has many branches.
+        with patch(
+            "domains.fantasy_author.phases.worldbuild._generate_canon_documents",
+            return_value=["canon/new_topic.md"],
+        ):
+            result = worldbuild(state)
+        assert result["health"]["worldbuild_noop_streak"] == 0
+        assert result["health"].get("stopped") is not True
+        assert result["quality_trace"][0]["self_paused"] is False
+
 
 # -----------------------------------------------------------------------
 # worldbuild auto-premise tests
@@ -176,7 +224,7 @@ class TestWorldbuildAutoPremise:
 
     def test_generates_premise_from_canon(self, tmp_path):
         """When PROGRAM.md is missing and canon has files, generate premise."""
-        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -192,7 +240,7 @@ class TestWorldbuildAutoPremise:
         }
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value="A story of Ryn navigating the shattered glass realm.",
         ):
             result = _maybe_generate_premise(state)
@@ -203,7 +251,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_program_md_exists(self, tmp_path):
         """Should not generate if PROGRAM.md already exists."""
-        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -222,7 +270,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_premise_kernel_set(self, tmp_path):
         """Should not generate if premise_kernel is already in state."""
-        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -240,7 +288,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_version_positive(self, tmp_path):
         """Should only fire on first worldbuild pass (version == 0)."""
-        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -258,7 +306,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_no_canon_files(self, tmp_path):
         """Should not generate if canon/ is empty."""
-        from fantasy_author.nodes.worldbuild import _maybe_generate_premise
+        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -290,7 +338,7 @@ class TestWorldbuildAutoPremise:
         }
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value="A tale of the glass realm.",
         ):
             result = worldbuild(state)
@@ -393,7 +441,7 @@ class TestWorldbuildCanonGeneration:
 
     def test_reads_direction_notes_into_prompt(self, tmp_path):
         """Direction notes should be read when present."""
-        from fantasy_author.notes import add_note
+        from workflow.notes import add_note
 
         universe_dir = self._make_universe(
             tmp_path, "Fantasy world premise."
@@ -454,7 +502,7 @@ class TestWorldbuildCanonGeneration:
             "_universe_path": str(universe_dir),
         }
         with patch(
-            "fantasy_author.nodes.worldbuild._call_for_worldbuild",
+            "domains.fantasy_author.phases.worldbuild._call_for_worldbuild",
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
@@ -893,7 +941,7 @@ class TestUniverseCycle:
         assert result["health"]["cycles_completed"] == 4
 
     def test_calls_memory_cleanup(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         mgr = MagicMock()
         mgr.evict_old_data.return_value = 5
@@ -923,7 +971,7 @@ class TestUniverseCycle:
         assert result["quality_trace"][0]["evicted_records"] == 0
 
     def test_graceful_when_manager_fails(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         mgr = MagicMock()
         mgr.evict_old_data.side_effect = RuntimeError("fail")
@@ -1004,7 +1052,7 @@ class TestReflect:
         assert trace["node"] == "reflect"
 
     def test_reflexion_runs_with_manager(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         mgr = MagicMock()
         reflexion_result = MagicMock()
@@ -1028,7 +1076,7 @@ class TestReflect:
         assert result["quality_trace"][0]["reflexion_ran"] is False
 
     def test_reflexion_failure_is_graceful(self):
-        from fantasy_author import runtime
+        from workflow import runtime
 
         mgr = MagicMock()
         mgr.run_reflexion.side_effect = RuntimeError("boom")
@@ -1123,7 +1171,7 @@ class TestReflectCanonReview:
 
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "fantasy_author.nodes.reflect._evaluate_canon",
+            "domains.fantasy_author.phases.reflect._evaluate_canon",
             return_value=issues,
         ):
             result = reflect(state)
@@ -1153,7 +1201,7 @@ class TestReflectCanonReview:
 
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "fantasy_author.nodes.reflect._evaluate_canon",
+            "domains.fantasy_author.phases.reflect._evaluate_canon",
             return_value=issues,
         ):
             result = reflect(state)
@@ -1170,7 +1218,7 @@ class TestReflectCanonReview:
         )
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "fantasy_author.nodes.reflect._evaluate_canon",
+            "domains.fantasy_author.phases.reflect._evaluate_canon",
             side_effect=RuntimeError("LLM down"),
         ):
             result = reflect(state)
@@ -1196,11 +1244,11 @@ class TestReflectCanonReview:
         state = {"_universe_path": str(universe_dir)}
         with (
             patch(
-                "fantasy_author.nodes.reflect._evaluate_canon",
+                "domains.fantasy_author.phases.reflect._evaluate_canon",
                 return_value=issues,
             ),
             patch(
-                "fantasy_author.nodes.reflect._rewrite_canon_file",
+                "domains.fantasy_author.phases.reflect._rewrite_canon_file",
                 side_effect=RuntimeError("rewrite failed"),
             ),
         ):
@@ -1382,7 +1430,7 @@ class TestCommitWorldbuildSignals:
 
     def test_commit_returns_worldbuild_signals_key(self, tmp_story_db):
         """Commit output should always contain worldbuild_signals."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1398,7 +1446,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_empty_without_universe_path(self, tmp_story_db):
         """No signals generated when no universe_path is set."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1413,7 +1461,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_empty_without_canon(self, tmp_path, tmp_story_db):
         """No signals when there is no canon directory."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         universe_dir = self._make_universe(tmp_path)
         state = {
@@ -1430,7 +1478,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_count_in_quality_trace(self, tmp_story_db):
         """quality_trace should include signal count."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1447,7 +1495,7 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_valid(self):
         """Valid JSON should be parsed into signals."""
-        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
 
         raw = json.dumps([
             {"type": "new_element", "topic": "character", "detail": "Serakh found"},
@@ -1460,19 +1508,19 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_empty(self):
         """Empty array should return empty list."""
-        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
 
         assert _parse_worldbuild_signals("[]") == []
 
     def test_parse_worldbuild_signals_invalid_json(self):
         """Invalid JSON should return empty list, not crash."""
-        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
 
         assert _parse_worldbuild_signals("not json") == []
 
     def test_parse_worldbuild_signals_bad_types_filtered(self):
         """Signals with invalid type should be filtered out."""
-        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
 
         raw = json.dumps([
             {"type": "new_element", "topic": "char", "detail": "ok"},
@@ -1486,7 +1534,7 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_strips_code_fences(self):
         """Should handle markdown code fences around JSON."""
-        from fantasy_author.nodes.commit import _parse_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
 
         raw = '```json\n[{"type": "new_element", "topic": "a", "detail": "b"}]\n```'
         signals = _parse_worldbuild_signals(raw)
@@ -1494,7 +1542,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_worldbuild_signals(self, tmp_path):
         """Signals should be persisted to disk."""
-        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -1510,7 +1558,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_appends_to_existing(self, tmp_path):
         """New signals should be appended to existing ones."""
-        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -1528,7 +1576,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_graceful_without_universe_path(self):
         """Persist should not crash without universe_path."""
-        from fantasy_author.nodes.commit import _persist_worldbuild_signals
+        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
 
         _persist_worldbuild_signals({}, [{"type": "new_element", "topic": "a", "detail": "b"}])
 
@@ -1921,7 +1969,7 @@ class TestWorldbuildSignalDriven:
             "_universe_path": str(universe_dir),
         }
         with patch(
-            "fantasy_author.nodes.worldbuild._handle_contradiction",
+            "domains.fantasy_author.phases.worldbuild._handle_contradiction",
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
@@ -2054,7 +2102,7 @@ class TestReflectSignalDriven:
 
     def test_model_tier_guard_still_works(self, tmp_path):
         """Model quality tier guard should still prevent weak overwrites."""
-        from fantasy_author import runtime
+        from workflow import runtime
 
         universe_dir = self._make_universe(
             tmp_path,
@@ -2082,7 +2130,7 @@ class TestReflectSignalDriven:
         try:
             state = {"_universe_path": str(universe_dir), "provider": "ollama-local"}
             with patch(
-                "fantasy_author.nodes.reflect._evaluate_canon",
+                "domains.fantasy_author.phases.reflect._evaluate_canon",
                 return_value=issues,
             ):
                 result = reflect(state)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fantasy_author.universe_server import mcp
+from workflow.universe_server import mcp
 
 
 def _list_tools():
@@ -21,16 +21,16 @@ class TestUniverseServerMetadata:
         assert universe.title == "Universe Operations"
         assert {"universe", "daemon", "fiction", "collaboration"} <= universe.tags
         assert universe.annotations.readOnlyHint is False
-        assert universe.annotations.destructiveHint is True
+        assert universe.annotations.destructiveHint is False
         assert universe.annotations.idempotentHint is False
-        assert universe.annotations.openWorldHint is False
+        assert universe.annotations.openWorldHint is True
         assert 'action="inspect"' in universe.description
 
         extensions = tools["extensions"]
         assert extensions.title == "Graph Extensions"
         assert {"extensions", "nodes", "plugins", "customization"} <= extensions.tags
         assert extensions.annotations.readOnlyHint is False
-        assert extensions.annotations.destructiveHint is True
+        assert extensions.annotations.destructiveHint is False
         assert extensions.annotations.idempotentHint is False
         assert extensions.annotations.openWorldHint is False
         assert "extension_guide" in extensions.description

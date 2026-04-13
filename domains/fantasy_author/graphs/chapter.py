@@ -58,7 +58,7 @@ def _make_scene_input(
         "quality_trace": [],
         "quality_debt": [],
         "_universe_path": state.get("_universe_path", ""),
-        "_db_path": state.get("_db_path", "story.db"),
+        "_db_path": state.get("_db_path", ""),
         "_kg_path": state.get("_kg_path", ""),
     }
 
@@ -209,7 +209,7 @@ def should_continue_chapter(state: ChapterState) -> str:
         # to stand as a chapter.  The daemon's narrative beats determine
         # whether this is a good stopping point.
         try:
-            from fantasy_author import runtime
+            from workflow import runtime
 
             min_words = runtime.universe_config.min_words_per_scene * 2
         except Exception:

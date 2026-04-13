@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from workflow.ingestion.core import FileType, detect_file_type
+from workflow.utils.json_parsing import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -255,8 +256,8 @@ def synthesize_source(
     list[str]
         Filenames of synthesized documents.
     """
-    from workflow.nodes._provider_stub import call_provider, last_provider
-    from workflow.nodes.worldbuild import _write_canon_file
+    from domains.fantasy_author.phases._provider_stub import call_provider, last_provider
+    from domains.fantasy_author.phases.worldbuild import _write_canon_file
 
     if not source_text.strip():
         return []
@@ -531,27 +532,10 @@ def _fixed_size_bites(text: str) -> list[str]:
 
 def _parse_synthesis_response(raw: str) -> dict[str, str]:
     """Parse the LLM's JSON response into topic -> content mapping."""
-    import json
-
-    # Try direct JSON parse
-    try:
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            return {k: v for k, v in data.items() if isinstance(v, str)}
-    except json.JSONDecodeError:
-        pass
-
-    # Try extracting JSON from markdown code block
-    json_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", raw, re.DOTALL)
-    if json_match:
-        try:
-            data = json.loads(json_match.group(1))
-            if isinstance(data, dict):
-                return {k: v for k, v in data.items() if isinstance(v, str)}
-        except json.JSONDecodeError:
-            pass
-
-    return {}
+    data = parse_llm_json(raw, expect_type=dict, fallback=None)
+    if data is None:
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, str)}
 
 
 def _verify_and_fill_gaps(
@@ -654,29 +638,12 @@ def _verify_and_fill_gaps(
 
 def _parse_gap_response(raw: str) -> list[str]:
     """Parse the verification LLM response into a list of gap descriptions."""
-    text = raw.strip()
-    # Strip markdown code fences
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines)
+    data = parse_llm_json(raw, expect_type=dict, fallback=None)
+    if data is None:
+        return []
 
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        # Try extracting from code block
-        json_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", raw, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(1))
-            except (json.JSONDecodeError, TypeError):
-                return []
-        else:
-            return []
-
-    if isinstance(data, dict):
-        gaps = data.get("gaps", [])
-        if isinstance(gaps, list):
-            return [g for g in gaps if isinstance(g, str) and g.strip()]
+    gaps = data.get("gaps", [])
+    if isinstance(gaps, list):
+        return [g for g in gaps if isinstance(g, str) and g.strip()]
 
     return []

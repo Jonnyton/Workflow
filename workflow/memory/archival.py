@@ -130,7 +130,11 @@ class ArchivalMemory:
                 from pathlib import Path
                 kg_path = str(Path(db_path).parent / "knowledge.db")
                 return KnowledgeGraph(db_path=kg_path)
-            return KnowledgeGraph()
+            logger.warning(
+                "No db_path provided to ArchivalMemory; KG disabled "
+                "(would create CWD-relative DB causing cross-universe contamination)"
+            )
+            return None
         except ImportError:
             logger.debug("knowledge_graph not available; archival KG disabled")
             return None

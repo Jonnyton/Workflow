@@ -25,9 +25,17 @@ from typing import Any
 
 from fastapi import FastAPI
 
-# Backward compatibility: re-export from fantasy_author.api
+# Re-export everything from fantasy_author.api (the Phase 5 bridge file).
+# The wildcard covers public names; private helpers used by tests are
+# imported explicitly so they're reachable via ``workflow.api``.
+from fantasy_author.api import *  # noqa: F401,F403
 from fantasy_author.api import app as fantasy_author_app
 from fantasy_author.api import configure as fantasy_author_configure
+from fantasy_author.api import (  # noqa: F401 – private but test-visible
+    _extract_username,
+    _load_provider_keys,
+    _slugify,
+)
 
 
 def create_app(registry: Any | None = None) -> FastAPI:

@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from fantasy_author.universe_server import (
+from workflow.universe_server import (
     _extract_keywords,
     _parse_frontmatter,
     _sanitize_slug,
@@ -244,6 +244,39 @@ class TestWikiWrite:
     def test_write_missing_params(self, wiki_dir):
         result = json.loads(wiki("write"))
         assert "error" in result
+
+    @pytest.mark.parametrize("category", [
+        # Original four.
+        "projects", "concepts", "people", "research",
+        # 2026-04-13 expansion — stop user-intent content landing in
+        # research/ by default. Mirrors wiki-mcp/server.js.
+        "recipes", "workflows", "notes", "references", "plans",
+    ])
+    def test_write_accepts_all_expanded_categories(self, wiki_dir, category):
+        """Regression gate for #55: every documented category is
+        actually accepted by the write handler."""
+        body = (
+            "---\ntitle: Test\ntype: note\nsources: []\n---\n\nBody.\n"
+        )
+        result = json.loads(
+            wiki(
+                "write",
+                category=category,
+                filename=f"test-{category}",
+                content=body,
+            )
+        )
+        assert result.get("status") in {"drafted", "updated"}, result
+
+    def test_wiki_categories_enum_matches_expanded_taxonomy(self):
+        """Lock-in: the module constant carries all nine categories in
+        the canonical order."""
+        from workflow.universe_server import _WIKI_CATEGORIES
+
+        assert _WIKI_CATEGORIES == (
+            "projects", "concepts", "people", "research",
+            "recipes", "workflows", "notes", "references", "plans",
+        )
 
 
 class TestWikiPromote:

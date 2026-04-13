@@ -14,7 +14,7 @@ Research current best practices for AI agent team design, prompt engineering for
 
 1. **LAUNCH_PROMPT.md** — Does the startup sequence still work? Are the team norms right? Did we learn new norms this session?
 
-2. **Each agent in `.claude/agents/`:**
+2. **Each agent in `.Codex/agents/`:**
    - **planner.md** — Did planner provide good strategic direction? Was it too verbose or too terse? Did it make architecture decisions it shouldn't have?
    - **developer.md** — Did dev ship code reliably? Did it go silent? Does it need stronger "report immediately" language?
    - **tester.md** — Did tester run proactively? Did it catch regressions? Did it flag the right things?

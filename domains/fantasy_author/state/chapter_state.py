@@ -55,7 +55,7 @@ class ChapterState(TypedDict):
     _kg_path: str
 
     # ==================================================================
-    # DOMAIN: Fantasy Author (narrative-specific)
+    # DOMAIN: Workflow (narrative-specific)
     # ==================================================================
 
     # ------------------------------------------------------------------

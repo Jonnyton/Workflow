@@ -24,7 +24,7 @@ from domains.fantasy_author.state.book_state import BookState
 def _get_config_scenes_target() -> int:
     """Read scenes_target from universe config, default 3."""
     try:
-        from fantasy_author import runtime
+        from workflow import runtime
         return runtime.universe_config.scenes_target
     except Exception:
         return 3
@@ -60,7 +60,7 @@ def _make_chapter_input(state: BookState) -> dict[str, Any]:
         "workflow_instructions": instructions,
         "_last_scene_prose": str(execution_scope.get("last_scene_prose", "")),
         "_universe_path": state.get("_universe_path", ""),
-        "_db_path": state.get("_db_path", "story.db"),
+        "_db_path": state.get("_db_path", ""),
         "_kg_path": state.get("_kg_path", ""),
     }
 

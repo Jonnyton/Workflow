@@ -10,11 +10,12 @@ the commit node, world state tracker, and (later) the knowledge graph.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+from workflow.utils.json_parsing import parse_llm_json
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -260,14 +261,8 @@ def extract_facts_from_llm_response(
     -------
     list[FactWithContext]
     """
-    # Try to extract JSON from the response
-    json_match = re.search(r"\[.*\]", response_text, re.DOTALL)
-    if not json_match:
-        return []
-
-    try:
-        facts_raw = json.loads(json_match.group())
-    except json.JSONDecodeError:
+    facts_raw = parse_llm_json(response_text, expect_type=list, fallback=None)
+    if facts_raw is None:
         return []
 
     facts: list[FactWithContext] = []

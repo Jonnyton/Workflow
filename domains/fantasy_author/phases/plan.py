@@ -17,9 +17,10 @@ Output: Partial SceneState with ``plan_output`` and ``quality_trace``.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
+
+from workflow.utils.json_parsing import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -186,29 +187,14 @@ def _parse_plan_response(
     Handles both JSON and free-text responses gracefully.
     Falls back to a single default alternative if parsing fails.
     """
-    # Try JSON parsing
-    try:
-        data = json.loads(raw_response)
-        if isinstance(data, dict) and "alternatives" in data:
-            alts = data["alternatives"]
-            if isinstance(alts, list) and len(alts) > 0:
-                return alts
-        if isinstance(data, list) and len(data) > 0:
-            return data
-    except (json.JSONDecodeError, TypeError):
-        pass
+    data = parse_llm_json(raw_response, fallback=None)
 
-    # Try extracting JSON from text
-    import re
-
-    json_match = re.search(r"\{.*\"alternatives\".*\}", raw_response, re.DOTALL)
-    if json_match:
-        try:
-            data = json.loads(json_match.group())
-            if "alternatives" in data:
-                return data["alternatives"]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    if isinstance(data, dict) and "alternatives" in data:
+        alts = data["alternatives"]
+        if isinstance(alts, list) and len(alts) > 0:
+            return alts
+    if isinstance(data, list) and len(data) > 0:
+        return data
 
     # Fallback: return a single default alternative
     scene_id = orient_result.get("scene_id", "unknown")

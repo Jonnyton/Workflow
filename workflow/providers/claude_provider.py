@@ -11,6 +11,7 @@ import asyncio
 import json
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 
@@ -20,6 +21,13 @@ from workflow.exceptions import (
     ProviderUnavailableError,
 )
 from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
+
+
+def _no_window_kwargs() -> dict:
+    """Return subprocess kwargs to suppress console windows on Windows."""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 def _resolve_claude_cmd() -> tuple[list[str], bool]:
@@ -51,12 +59,14 @@ class ClaudeProvider(BaseProvider):
         if system:
             cmd.extend(["--system-prompt", system])
 
+        win_kw = _no_window_kwargs()
         if use_shell:
             proc = await asyncio.create_subprocess_shell(
                 shlex.join(cmd),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
         else:
             proc = await asyncio.create_subprocess_exec(
@@ -64,6 +74,7 @@ class ClaudeProvider(BaseProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
 
         start = time.monotonic()
@@ -86,6 +97,18 @@ class ClaudeProvider(BaseProvider):
         if proc.returncode == 1 and elapsed_ms < 5000:
             raise ProviderUnavailableError(
                 "claude -p returned exit code 1 quickly -- API likely unavailable"
+            )
+
+        # Windows-specific crash codes: treat as unavailable so the
+        # router applies cooldown instead of retrying immediately.
+        # 0xC0000374 (3221225588) = heap corruption
+        # 0xC0000005 (3221225477) = access violation
+        # 0xC000013A (3221225786) = control-C / abnormal termination
+        _WINDOWS_CRASH_CODES = {3221225588, 3221225477, 3221225786}
+        if proc.returncode in _WINDOWS_CRASH_CODES:
+            raise ProviderUnavailableError(
+                f"claude -p crashed with Windows exit code {proc.returncode:#x} "
+                f"— subprocess failure, applying cooldown"
             )
 
         if proc.returncode != 0:
@@ -115,12 +138,14 @@ class ClaudeProvider(BaseProvider):
         if system:
             cmd.extend(["--system-prompt", system])
 
+        win_kw = _no_window_kwargs()
         if use_shell:
             proc = await asyncio.create_subprocess_shell(
                 shlex.join(cmd),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
         else:
             proc = await asyncio.create_subprocess_exec(
@@ -128,6 +153,7 @@ class ClaudeProvider(BaseProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
 
         start = time.monotonic()
@@ -147,6 +173,13 @@ class ClaudeProvider(BaseProvider):
         if proc.returncode == 1 and elapsed_ms < 5000:
             raise ProviderUnavailableError(
                 "claude -p (json) returned exit code 1 quickly"
+            )
+
+        _WINDOWS_CRASH_CODES = {3221225588, 3221225477, 3221225786}
+        if proc.returncode in _WINDOWS_CRASH_CODES:
+            raise ProviderUnavailableError(
+                f"claude -p (json) crashed with Windows exit code "
+                f"{proc.returncode:#x} — applying cooldown"
             )
 
         if proc.returncode != 0:

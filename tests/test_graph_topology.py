@@ -21,17 +21,17 @@ from unittest.mock import patch
 
 from langgraph.graph import END
 
-from fantasy_author.checkpointing import compile_all_graphs
-from fantasy_author.graphs import (
+from workflow.checkpointing import compile_all_graphs
+from domains.fantasy_author.graphs import (
     build_book_graph,
     build_chapter_graph,
     build_scene_graph,
     build_universe_graph,
 )
-from fantasy_author.graphs.book import route_after_diagnose, should_continue_book
-from fantasy_author.graphs.chapter import should_continue_chapter
-from fantasy_author.graphs.scene import route_after_commit
-from fantasy_author.graphs.universe import (
+from domains.fantasy_author.graphs.book import route_after_diagnose, should_continue_book
+from domains.fantasy_author.graphs.chapter import should_continue_chapter
+from domains.fantasy_author.graphs.scene import route_after_commit
+from domains.fantasy_author.graphs.universe import (
     route_after_foundation_review,
     route_dispatched_task,
     should_continue_universe,
@@ -387,7 +387,7 @@ class TestSecondDraftLoop:
                     "quality_debt": [],
                 }
 
-        with patch("fantasy_author.graphs.scene.commit", mock_commit_second_then_accept):
+        with patch("domains.fantasy_author.graphs.scene.commit", mock_commit_second_then_accept):
             compiled = build_scene_graph().compile(checkpointer=checkpointer)
             config = {"configurable": {"thread_id": "test-second-draft"}}
             result = compiled.invoke(scene_input, config)
@@ -490,13 +490,13 @@ class TestOrientRetrieval:
 
     def test_orient_returns_retrieval_context_with_kg(self, tmp_path, tmp_story_db):
         """Orient should populate retrieved_context when a KG is available."""
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
-        from fantasy_author.knowledge.models import (
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.models import (
             FactWithContext,
             GraphEntity,
             SourceType,
         )
-        from fantasy_author.nodes.orient import orient
+        from domains.fantasy_author.phases.orient import orient
 
         kg_path = str(tmp_path / "orient_test.db")
         kg = KnowledgeGraph(kg_path)
@@ -541,7 +541,7 @@ class TestOrientRetrieval:
 
     def test_orient_graceful_fallback_on_missing_kg(self, tmp_story_db, tmp_path):
         """Orient returns empty context when KG path doesn't exist yet."""
-        from fantasy_author.nodes.orient import orient
+        from domains.fantasy_author.phases.orient import orient
 
         state = {
             "universe_id": "test",
@@ -560,14 +560,14 @@ class TestOrientRetrieval:
 
     def test_orient_retrieved_context_has_hipporag_source(self, tmp_path, tmp_story_db):
         """Orient queries about relationships should route through hipporag."""
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
-        from fantasy_author.knowledge.models import (
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.models import (
             FactWithContext,
             GraphEdge,
             GraphEntity,
             SourceType,
         )
-        from fantasy_author.nodes.orient import orient
+        from domains.fantasy_author.phases.orient import orient
 
         kg_path = str(tmp_path / "hippo_test.db")
         kg = KnowledgeGraph(kg_path)
@@ -649,7 +649,7 @@ class TestChapterFallbackWordCount:
     def test_chapter_fallback_accumulates_word_count(self):
         """When chapter subgraph fails, fallback path should still
         accumulate chapter_word_count from run_scene results."""
-        from fantasy_author.graphs.book import _run_chapter_fallback
+        from domains.fantasy_author.graphs.book import _run_chapter_fallback
 
         call_count = {"n": 0}
 
@@ -679,15 +679,15 @@ class TestChapterFallbackWordCount:
 
         with (
             patch(
-                "fantasy_author.graphs.chapter.run_scene",
+                "domains.fantasy_author.graphs.chapter.run_scene",
                 mock_run_scene,
             ),
             patch(
-                "fantasy_author.graphs.book.consolidate",
+                "domains.fantasy_author.graphs.book.consolidate",
                 lambda s: {"chapter_summary": "done"},
             ),
             patch(
-                "fantasy_author.graphs.book.learn",
+                "domains.fantasy_author.graphs.book.learn",
                 lambda s: {},
             ),
         ):
@@ -699,7 +699,7 @@ class TestChapterFallbackWordCount:
     def test_run_chapter_uses_fallback_on_compile_failure(self):
         """run_chapter should use fallback when build_chapter_graph raises,
         and still return correct word count."""
-        from fantasy_author.graphs.book import run_chapter
+        from domains.fantasy_author.graphs.book import run_chapter
 
         def mock_build_chapter_graph():
             raise RuntimeError("Simulated compilation failure")
@@ -727,19 +727,19 @@ class TestChapterFallbackWordCount:
 
         with (
             patch(
-                "fantasy_author.graphs.chapter.build_chapter_graph",
+                "domains.fantasy_author.graphs.chapter.build_chapter_graph",
                 mock_build_chapter_graph,
             ),
             patch(
-                "fantasy_author.graphs.chapter.run_scene",
+                "domains.fantasy_author.graphs.chapter.run_scene",
                 mock_run_scene,
             ),
             patch(
-                "fantasy_author.graphs.book.consolidate",
+                "domains.fantasy_author.graphs.book.consolidate",
                 lambda s: {"chapter_summary": "done"},
             ),
             patch(
-                "fantasy_author.graphs.book.learn",
+                "domains.fantasy_author.graphs.book.learn",
                 lambda s: {},
             ),
         ):
@@ -756,7 +756,7 @@ class TestBookFallbackWordCount:
     def test_book_fallback_copies_word_count(self):
         """When book subgraph fails, fallback path should copy
         chapter_word_count from run_chapter result."""
-        from fantasy_author.graphs.universe import _run_book_fallback
+        from domains.fantasy_author.graphs.universe import _run_book_fallback
 
         def mock_run_chapter(state: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -778,7 +778,7 @@ class TestBookFallbackWordCount:
         }
 
         with patch(
-            "fantasy_author.graphs.book.run_chapter",
+            "domains.fantasy_author.graphs.book.run_chapter",
             mock_run_chapter,
         ):
             result = _run_book_fallback(book_state)
@@ -789,7 +789,7 @@ class TestBookFallbackWordCount:
     def test_run_book_uses_fallback_on_compile_failure(self):
         """run_book should use fallback when build_book_graph raises,
         and still return word count in total_words."""
-        from fantasy_author.graphs.universe import run_book
+        from domains.fantasy_author.graphs.universe import run_book
 
         def mock_build_book_graph():
             raise RuntimeError("Simulated compilation failure")
@@ -811,11 +811,11 @@ class TestBookFallbackWordCount:
 
         with (
             patch(
-                "fantasy_author.graphs.book.build_book_graph",
+                "domains.fantasy_author.graphs.book.build_book_graph",
                 mock_build_book_graph,
             ),
             patch(
-                "fantasy_author.graphs.book.run_chapter",
+                "domains.fantasy_author.graphs.book.run_chapter",
                 mock_run_chapter,
             ),
         ):
@@ -836,7 +836,7 @@ class TestSceneProsesContinuity:
     def test_last_scene_prose_declared_in_chapter_state(self):
         """_last_scene_prose must be in ChapterState TypedDict to avoid
         silent stripping at LangGraph subgraph boundaries."""
-        from fantasy_author.state.chapter_state import ChapterState
+        from domains.fantasy_author.state.chapter_state import ChapterState
 
         annotations = ChapterState.__annotations__
         assert "_last_scene_prose" in annotations, (
@@ -846,7 +846,7 @@ class TestSceneProsesContinuity:
 
     def test_run_scene_stores_last_scene_prose(self):
         """run_scene should set _last_scene_prose from draft output."""
-        from fantasy_author.graphs.chapter import run_scene
+        from domains.fantasy_author.graphs.chapter import run_scene
 
         fake_prose = "The wind howled through the canyon."
 
@@ -875,7 +875,7 @@ class TestSceneProsesContinuity:
             }
 
         with patch(
-            "fantasy_author.graphs.scene.build_scene_graph",
+            "domains.fantasy_author.graphs.scene.build_scene_graph",
         ) as mock_build:
             mock_compiled = mock_build.return_value.compile.return_value
             mock_compiled.invoke = mock_scene_invoke
@@ -887,7 +887,7 @@ class TestSceneProsesContinuity:
     def test_run_scene_passes_previous_prose(self):
         """run_scene should pass _last_scene_prose as recent_prose
         to the next scene."""
-        from fantasy_author.graphs.chapter import run_scene
+        from domains.fantasy_author.graphs.chapter import run_scene
 
         previous_prose = "She opened the iron gate."
 
@@ -916,7 +916,7 @@ class TestSceneProsesContinuity:
             }
 
         with patch(
-            "fantasy_author.graphs.scene.build_scene_graph",
+            "domains.fantasy_author.graphs.scene.build_scene_graph",
         ) as mock_build:
             mock_compiled = mock_build.return_value.compile.return_value
             mock_compiled.invoke = mock_scene_invoke

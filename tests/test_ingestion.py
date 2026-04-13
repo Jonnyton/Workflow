@@ -6,14 +6,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from fantasy_author.ingestion.core import (
+from workflow.ingestion.core import (
     SIZE_THRESHOLD,
     FileType,
     SourceManifest,
     detect_file_type,
     ingest_file,
 )
-from fantasy_author.ingestion.extractors import (
+from workflow.ingestion.extractors import (
     _parse_gap_response,
     _verify_and_fill_gaps,
     extract_text,
@@ -106,7 +106,7 @@ class TestDetectFileType:
 
 class TestSourceManifest:
     def test_save_and_load(self, tmp_path):
-        from fantasy_author.ingestion.core import ManifestEntry
+        from workflow.ingestion.core import ManifestEntry
 
         manifest = SourceManifest()
         manifest.add(ManifestEntry(
@@ -130,7 +130,7 @@ class TestSourceManifest:
         assert manifest.has_changed("new.md", "hash1") is True
 
     def test_has_changed_same_hash(self, tmp_path):
-        from fantasy_author.ingestion.core import ManifestEntry
+        from workflow.ingestion.core import ManifestEntry
 
         manifest = SourceManifest()
         manifest.add(ManifestEntry(
@@ -145,7 +145,7 @@ class TestSourceManifest:
         assert manifest.has_changed("existing.md", "same_hash") is False
 
     def test_has_changed_different_hash(self):
-        from fantasy_author.ingestion.core import ManifestEntry
+        from workflow.ingestion.core import ManifestEntry
 
         manifest = SourceManifest()
         manifest.add(ManifestEntry(
@@ -394,7 +394,7 @@ class TestSynthesizeSource:
         })
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value=mock_response,
         ):
             result = synthesize_source(
@@ -429,7 +429,7 @@ class TestSynthesizeSource:
         })
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value=mock_response,
         ):
             result = synthesize_source(
@@ -453,7 +453,7 @@ class TestSynthesizeSource:
         canon_dir.mkdir()
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value="# Worldbuilding\n\nSome content here.",
         ):
             result = synthesize_source(
@@ -592,7 +592,7 @@ class TestSynthesisWithVerification:
                 })
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             side_effect=mock_provider,
         ):
             result = synthesize_source(
@@ -616,7 +616,7 @@ class TestSplitIntoBites:
     """Tests for the bite splitting logic."""
 
     def test_small_text_returns_single_bite(self):
-        from fantasy_author.ingestion.extractors import _split_into_bites
+        from workflow.ingestion.extractors import _split_into_bites
 
         text = "Short text.\n\nAnother paragraph."
         bites = _split_into_bites(text)
@@ -624,7 +624,7 @@ class TestSplitIntoBites:
         assert text in bites[0]
 
     def test_natural_section_breaks(self):
-        from fantasy_author.ingestion.extractors import _split_into_bites
+        from workflow.ingestion.extractors import _split_into_bites
 
         # Build text with markdown headers and enough content to split
         sections = []
@@ -640,7 +640,7 @@ class TestSplitIntoBites:
         assert "Section 4" in full
 
     def test_paragraph_fallback(self):
-        from fantasy_author.ingestion.extractors import _split_into_bites
+        from workflow.ingestion.extractors import _split_into_bites
 
         # Many paragraphs, no headers
         paragraphs = [f"Paragraph {i}. " + "content " * 500 for i in range(20)]
@@ -653,7 +653,7 @@ class TestSplitIntoBites:
         assert "Paragraph 19" in full
 
     def test_fixed_size_fallback(self):
-        from fantasy_author.ingestion.extractors import _split_into_bites
+        from workflow.ingestion.extractors import _split_into_bites
 
         # Single massive block with no breaks
         text = "word " * 20000
@@ -661,7 +661,7 @@ class TestSplitIntoBites:
         assert len(bites) >= 2
 
     def test_bites_have_overlap(self):
-        from fantasy_author.ingestion.extractors import (
+        from workflow.ingestion.extractors import (
             _BITE_OVERLAP_CHARS,
             _group_paragraphs_into_bites,
         )
@@ -680,7 +680,7 @@ class TestSplitIntoBites:
             ), "Expected overlap between consecutive bites"
 
     def test_chapter_markers_as_breaks(self):
-        from fantasy_author.ingestion.extractors import _split_into_bites
+        from workflow.ingestion.extractors import _split_into_bites
 
         sections = []
         for i in range(4):
@@ -697,7 +697,7 @@ class TestSynthesizeBiteByBite:
 
     def test_large_source_triggers_tier2(self, tmp_path):
         """Source text exceeding threshold triggers bite-by-bite."""
-        from fantasy_author.ingestion.extractors import (
+        from workflow.ingestion.extractors import (
             _TIER2_THRESHOLD,
             synthesize_source,
         )
@@ -729,7 +729,7 @@ class TestSynthesizeBiteByBite:
             return '{"gaps": []}'
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             side_effect=mock_provider,
         ):
             result = synthesize_source(large_source, "big_world.md", canon_dir)
@@ -741,7 +741,7 @@ class TestSynthesizeBiteByBite:
 
     def test_small_source_uses_single_pass(self, tmp_path):
         """Source text under threshold uses single-pass (no bites)."""
-        from fantasy_author.ingestion.extractors import synthesize_source
+        from workflow.ingestion.extractors import synthesize_source
 
         canon_dir = tmp_path / "canon"
         canon_dir.mkdir()
@@ -755,7 +755,7 @@ class TestSynthesizeBiteByBite:
             return '{"gaps": []}'
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             side_effect=mock_provider,
         ):
             result = synthesize_source(
@@ -768,7 +768,7 @@ class TestSynthesizeBiteByBite:
 
     def test_bite_failure_doesnt_block_others(self, tmp_path):
         """If one bite's synthesis fails, other bites still produce output."""
-        from fantasy_author.ingestion.extractors import (
+        from workflow.ingestion.extractors import (
             _TIER2_THRESHOLD,
             synthesize_source,
         )
@@ -796,7 +796,7 @@ class TestSynthesizeBiteByBite:
             return '{"gaps": []}'
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             side_effect=mock_provider,
         ):
             result = synthesize_source(large_source, "partial.md", canon_dir)
@@ -806,7 +806,7 @@ class TestSynthesizeBiteByBite:
 
     def test_bite_results_merge_different_topics(self, tmp_path):
         """Different bites producing different topics should all appear."""
-        from fantasy_author.ingestion.extractors import _synthesize_bite_by_bite
+        from workflow.ingestion.extractors import _synthesize_bite_by_bite
 
         call_count = {"n": 0}
 
@@ -839,7 +839,7 @@ class TestSynthesizeBiteByBite:
 class TestWorldbuildSynthesisSignal:
     def test_worldbuild_handles_synthesize_source(self, tmp_path):
         """The worldbuild node should handle synthesize_source signals."""
-        from fantasy_author.nodes.worldbuild import _act_on_signals_incremental
+        from domains.fantasy_author.phases.worldbuild import _act_on_signals_incremental
 
         canon_dir = tmp_path / "canon"
         canon_dir.mkdir()
@@ -869,7 +869,7 @@ class TestWorldbuildSynthesisSignal:
         })
 
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value=mock_response,
         ):
             acted, consumed = _act_on_signals_incremental(signals, state)
@@ -882,7 +882,7 @@ class TestWorldbuildSynthesisSignal:
 
         The API re-emit mechanism will re-queue if retries remain.
         """
-        from fantasy_author.nodes.worldbuild import _act_on_signals_incremental
+        from domains.fantasy_author.phases.worldbuild import _act_on_signals_incremental
 
         canon_dir = tmp_path / "canon"
         canon_dir.mkdir()
@@ -908,7 +908,7 @@ class TestWorldbuildSynthesisSignal:
 
         # Provider returns empty string -> synthesis fails
         with patch(
-            "fantasy_author.nodes._provider_stub.call_provider",
+            "domains.fantasy_author.phases._provider_stub.call_provider",
             return_value="",
         ):
             acted, consumed = _act_on_signals_incremental(signals, state)
@@ -931,7 +931,7 @@ class TestWorldbuildSynthesisSignal:
 class TestImageExtractor:
     def test_placeholder_when_no_vision(self):
         """Should return placeholder when Ollama is unavailable."""
-        from fantasy_author.ingestion.image_extractor import (
+        from workflow.ingestion.image_extractor import (
             extract_image_description,
         )
 
@@ -939,7 +939,7 @@ class TestImageExtractor:
         png_data = _make_tiny_png()
 
         with patch(
-            "fantasy_author.ingestion.image_extractor._find_vision_model",
+            "workflow.ingestion.image_extractor._find_vision_model",
             return_value="",
         ):
             result = extract_image_description("map.png", png_data)
@@ -948,7 +948,7 @@ class TestImageExtractor:
 
     def test_ollama_vision_called_when_available(self):
         """Should call Ollama when a vision model is found."""
-        from fantasy_author.ingestion.image_extractor import (
+        from workflow.ingestion.image_extractor import (
             extract_image_description,
         )
 
@@ -959,7 +959,7 @@ class TestImageExtractor:
 
         with (
             patch(
-                "fantasy_author.ingestion.image_extractor._find_vision_model",
+                "workflow.ingestion.image_extractor._find_vision_model",
                 return_value="llava",
             ),
             patch(
@@ -975,7 +975,7 @@ class TestImageExtractor:
 
     def test_resize_preserves_small_images(self):
         """Images under MAX_IMAGE_DIMENSION should not be upscaled."""
-        from fantasy_author.ingestion.image_extractor import _resize_image
+        from workflow.ingestion.image_extractor import _resize_image
 
         png_data = _make_tiny_png()
         result = _resize_image(png_data)
@@ -988,7 +988,7 @@ class TestImageExtractor:
         png_data = _make_tiny_png()
 
         with patch(
-            "fantasy_author.ingestion.image_extractor._find_vision_model",
+            "workflow.ingestion.image_extractor._find_vision_model",
             return_value="",
         ):
             result = extract_text("world_map.png", png_data)
@@ -1001,14 +1001,14 @@ class TestImageExtractor:
 class TestVideoExtractor:
     def test_placeholder_when_no_ffmpeg(self):
         """Should return placeholder when ffmpeg is not found."""
-        from fantasy_author.ingestion.video_extractor import (
+        from workflow.ingestion.video_extractor import (
             extract_video_description,
         )
 
         video_data = b"\x00\x00\x00\x1cftyp" + b"\x00" * 1000
 
         with patch(
-            "fantasy_author.ingestion.video_extractor._find_ffmpeg",
+            "workflow.ingestion.video_extractor._find_ffmpeg",
             return_value="",
         ):
             result = extract_video_description("intro.mp4", video_data)
@@ -1018,7 +1018,7 @@ class TestVideoExtractor:
 
     def test_placeholder_contains_size_and_format(self):
         """Placeholder should include file metadata."""
-        from fantasy_author.ingestion.video_extractor import (
+        from workflow.ingestion.video_extractor import (
             _placeholder_description,
         )
 
@@ -1031,7 +1031,7 @@ class TestVideoExtractor:
 
     def test_format_timestamp(self):
         """Timestamps should format correctly."""
-        from fantasy_author.ingestion.video_extractor import (
+        from workflow.ingestion.video_extractor import (
             _format_timestamp,
         )
 
@@ -1041,7 +1041,7 @@ class TestVideoExtractor:
 
     def test_extract_with_ffmpeg_and_image_pipeline(self):
         """Full pipeline: ffmpeg extracts frames, image extractor describes."""
-        from fantasy_author.ingestion.video_extractor import (
+        from workflow.ingestion.video_extractor import (
             extract_video_description,
         )
 
@@ -1067,19 +1067,19 @@ class TestVideoExtractor:
 
         with (
             patch(
-                "fantasy_author.ingestion.video_extractor._find_ffmpeg",
+                "workflow.ingestion.video_extractor._find_ffmpeg",
                 return_value="/usr/bin/ffmpeg",
             ),
             patch(
-                "fantasy_author.ingestion.video_extractor._get_video_duration",
+                "workflow.ingestion.video_extractor._get_video_duration",
                 return_value=25.0,
             ),
             patch(
-                "fantasy_author.ingestion.video_extractor.subprocess.run",
+                "workflow.ingestion.video_extractor.subprocess.run",
                 side_effect=fake_ffmpeg_run,
             ),
             patch(
-                "fantasy_author.ingestion.image_extractor._find_vision_model",
+                "workflow.ingestion.image_extractor._find_vision_model",
                 return_value="",
             ),
         ):
@@ -1097,7 +1097,7 @@ class TestVideoExtractor:
         video_data = b"\x00\x00\x00\x1cftyp" + b"\x00" * 1000
 
         with patch(
-            "fantasy_author.ingestion.video_extractor._find_ffmpeg",
+            "workflow.ingestion.video_extractor._find_ffmpeg",
             return_value="",
         ):
             result = extract_text("cutscene.mp4", video_data)

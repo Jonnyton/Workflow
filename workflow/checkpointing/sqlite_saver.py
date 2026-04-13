@@ -62,8 +62,9 @@ def _ensure_wal_mode(db_path: str) -> None:
     if db_path == ":memory:":
         return
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
     try:
+        conn.execute("PRAGMA busy_timeout=30000")
         result = conn.execute("PRAGMA journal_mode=WAL;").fetchone()
         if result and result[0].lower() != "wal":
             raise CheckpointError(
@@ -163,7 +164,7 @@ def compile_all_graphs(
         Mapping from graph name to compiled graph:
         ``{"scene", "chapter", "book", "universe"}``.
     """
-    from workflow.graphs import (
+    from domains.fantasy_author.graphs import (
         build_book_graph,
         build_chapter_graph,
         build_scene_graph,

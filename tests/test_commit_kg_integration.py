@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def temp_kg(tmp_path):
 @pytest.fixture
 def _set_runtime_kg(temp_kg):
     """Set runtime.knowledge_graph to a real KG for the duration of the test."""
-    from fantasy_author import runtime
+    from workflow import runtime
 
     runtime.knowledge_graph = temp_kg
     yield
@@ -122,11 +122,11 @@ def _commit_patches():
     """Return context managers that patch commit.py's provider and editorial reader."""
     return (
         patch(
-            "fantasy_author.nodes.commit.call_provider",
+            "domains.fantasy_author.phases.commit.call_provider",
             return_value=EXTRACTION_JSON,
         ),
         patch(
-            "fantasy_author.nodes.commit._run_editorial",
+            "domains.fantasy_author.phases.commit._run_editorial",
             return_value=None,
         ),
     )
@@ -138,7 +138,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_with_entities(self, temp_kg, tmp_story_db):
         """Full integration: commit() with real prose -> KG has >0 entities."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -162,7 +162,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_edges(self, temp_kg, tmp_story_db):
         """Commit should also index relationships as edges."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -178,7 +178,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_facts(self, temp_kg, tmp_story_db):
         """Commit should index extracted facts into the KG."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -194,18 +194,18 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_regex_fallback_populates_kg(self, temp_kg, tmp_story_db):
         """When LLM extraction returns bad JSON, regex fallback still populates KG."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
         # Return non-JSON to trigger regex fallback
         with (
             patch(
-                "fantasy_author.nodes.commit.call_provider",
+                "domains.fantasy_author.phases.commit.call_provider",
                 return_value="This is not valid JSON at all",
             ),
             patch(
-                "fantasy_author.nodes.commit._run_editorial",
+                "domains.fantasy_author.phases.commit._run_editorial",
                 return_value=None,
             ),
         ):
@@ -223,8 +223,8 @@ class TestCommitKGIntegration:
 
     def test_kg_none_skips_extraction(self, tmp_story_db):
         """When runtime.knowledge_graph is None, entity indexing is skipped."""
-        from fantasy_author import runtime
-        from fantasy_author.nodes.commit import commit
+        from workflow import runtime
+        from domains.fantasy_author.phases.commit import commit
 
         assert runtime.knowledge_graph is None
 
@@ -240,7 +240,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_query_entities_after_commit(self, temp_kg, tmp_story_db):
         """Verify query_entities with type filter works after commit."""
-        from fantasy_author.nodes.commit import commit
+        from domains.fantasy_author.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -257,7 +257,7 @@ class TestCommitKGIntegration:
 
 def _build_commit_state(db_path: str) -> dict:
     """Build a minimal state dict that commit() can process."""
-    from fantasy_author.nodes.world_state_db import init_db
+    from domains.fantasy_author.phases.world_state_db import init_db
 
     init_db(db_path)
 

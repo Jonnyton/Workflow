@@ -52,7 +52,7 @@ def _load_icon_image(icon_path: str | Path | None = None) -> Image.Image:
 
 
 class TrayApp:
-    """System tray integration for Fantasy Author.
+    """System tray integration for Workflow.
 
     Parameters
     ----------
@@ -129,7 +129,7 @@ class TrayApp:
 
         menu = self._build_menu()
         self._icon = Icon(
-            "Fantasy Author",
+            "Workflow",
             _load_icon_image(self._icon_path),
             menu=menu,
         )
@@ -185,7 +185,7 @@ class TrayApp:
         if self._icon is None:
             return
         with self._lock:
-            parts = ["Fantasy Author"]
+            parts = ["Workflow"]
             if self._universe_name:
                 parts.append(self._universe_name)
             parts.append(self._status)

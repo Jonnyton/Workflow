@@ -1,1 +1,2 @@
-"""Shared utilities for the fantasy_author package."""
+"""Shim: use workflow.utils instead."""
+from workflow.utils import *  # noqa: F401,F403

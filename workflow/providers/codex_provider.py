@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import shlex
 import shutil
+import subprocess
 import sys
 import time
 
@@ -18,6 +19,13 @@ from workflow.exceptions import (
     ProviderUnavailableError,
 )
 from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
+
+
+def _no_window_kwargs() -> dict:
+    """Return subprocess kwargs to suppress console windows on Windows."""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 def _resolve_codex_cmd() -> tuple[list[str], bool]:
@@ -49,12 +57,14 @@ class CodexProvider(BaseProvider):
         base_cmd, use_shell = _resolve_codex_cmd()
         cmd = [*base_cmd, "exec", "--full-auto"]
 
+        win_kw = _no_window_kwargs()
         if use_shell:
             proc = await asyncio.create_subprocess_shell(
                 shlex.join(cmd),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
         else:
             proc = await asyncio.create_subprocess_exec(
@@ -62,6 +72,7 @@ class CodexProvider(BaseProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **win_kw,
             )
 
         start = time.monotonic()

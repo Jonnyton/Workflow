@@ -1,6 +1,6 @@
-"""Fantasy Author domain-specific evaluation criteria.
+"""Workflow domain-specific evaluation criteria.
 
-Defines what a "good" scene looks like from the Fantasy Author perspective.
+Defines what a "good" scene looks like from the Workflow perspective.
 These criteria are used during commit/evaluation phases to provide feedback
 to the writer.
 
@@ -126,7 +126,7 @@ def _check_prose_quality(output: Any) -> bool | str:
 
 
 def get_fantasy_eval_criteria() -> list[EvalCriteria]:
-    """Return the list of evaluation criteria for Fantasy Author.
+    """Return the list of evaluation criteria for Workflow.
 
     Each criterion checks one aspect of quality. All are optional/warnings,
     not hard blockers. The editorial reader provides human judgment.

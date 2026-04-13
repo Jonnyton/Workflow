@@ -129,7 +129,7 @@ def _run_memory_cleanup(state: dict[str, Any], current_chapter: int) -> int:
 
     Returns the number of records evicted, or 0 if no manager.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is None:

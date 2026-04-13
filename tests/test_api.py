@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from fantasy_author.api import (
+from workflow.api import (
     _extract_username,
     _slugify,
     app,
@@ -681,7 +681,7 @@ class TestProgress:
 class TestFacts:
     def test_returns_facts(self, client, universe_dir):
         """Should return facts stored in the world state DB."""
-        from fantasy_author.nodes.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -707,7 +707,7 @@ class TestFacts:
 
     def test_filter_by_chapter(self, client, universe_dir):
         """Should filter facts by chapter number."""
-        from fantasy_author.nodes.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -743,7 +743,7 @@ class TestFacts:
 class TestCharacters:
     def test_returns_characters(self, client, universe_dir):
         """Should return characters stored in the world state DB."""
-        from fantasy_author.nodes.world_state_db import connect, init_db, upsert_character
+        from domains.fantasy_author.phases.world_state_db import connect, init_db, upsert_character
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -779,7 +779,7 @@ class TestCharacters:
 class TestPromises:
     def test_returns_scene_promises(self, client, universe_dir):
         """Should return promises from the world state DB."""
-        from fantasy_author.nodes.world_state_db import add_promise, connect, init_db
+        from domains.fantasy_author.phases.world_state_db import add_promise, connect, init_db
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -802,7 +802,7 @@ class TestPromises:
 
     def test_filter_active(self, client, universe_dir):
         """?status=active should only return active promises."""
-        from fantasy_author.nodes.world_state_db import (
+        from domains.fantasy_author.phases.world_state_db import (
             add_promise,
             connect,
             init_db,
@@ -1427,7 +1427,7 @@ class TestDaemonSwitching:
 
     def test_start_with_universe_when_no_daemon(self, client, base_dir, monkeypatch):
         """Starting a universe when no daemon is running should start one."""
-        from fantasy_author import api as api_mod
+        from workflow import api as api_mod
 
         # Track what _start_daemon_for receives
         started = []
@@ -1453,7 +1453,7 @@ class TestDaemonSwitching:
 
     def test_switch_universe_stops_old_starts_new(self, client, base_dir, monkeypatch):
         """Switching universe should stop current daemon and start new one."""
-        from fantasy_author import api as api_mod
+        from workflow import api as api_mod
 
         # Create a second universe
         second = base_dir / "second-world"
@@ -1592,7 +1592,7 @@ class TestActivityBounds:
 
 class TestDaemonReady:
     def test_daemon_state_initializing(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         controller = DaemonController(universe_path="/tmp/test")
         assert not controller._ready.is_set()
@@ -1602,7 +1602,7 @@ class TestDaemonReady:
         assert controller.daemon_state == "running"
 
     def test_daemon_state_paused_after_ready(self):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         controller = DaemonController(universe_path="/tmp/test")
         controller._ready.set()
@@ -1688,12 +1688,12 @@ class TestPutOutput:
 
 class TestServeFlag:
     def test_serve_arg_exists(self):
-        from fantasy_author.__main__ import main
+        from workflow.__main__ import main
 
         assert callable(main)
 
     def test_api_module_importable(self):
-        from fantasy_author.api import app as api_app
+        from workflow.api import app as api_app
 
         assert api_app is not None
 
@@ -2381,8 +2381,8 @@ class TestEdgeCasePremise:
 class TestProviderKeyPersistence:
     def test_save_and_load_provider_key(self, tmp_path):
         """Keys saved via API should be loadable on restart."""
-        import fantasy_author.api as api_mod
-        from fantasy_author.api import (
+        import workflow.api as api_mod
+        from workflow.api import (
             _load_provider_keys,
             _save_provider_key,
         )
@@ -2410,8 +2410,8 @@ class TestProviderKeyPersistence:
         """Persisted keys should not overwrite keys already in env."""
         import os
 
-        import fantasy_author.api as api_mod
-        from fantasy_author.api import (
+        import workflow.api as api_mod
+        from workflow.api import (
             _load_provider_keys,
             _save_provider_key,
         )
@@ -2430,8 +2430,8 @@ class TestProviderKeyPersistence:
         """Env vars not in the whitelist should be ignored on load."""
         import os
 
-        import fantasy_author.api as api_mod
-        from fantasy_author.api import _load_provider_keys
+        import workflow.api as api_mod
+        from workflow.api import _load_provider_keys
 
         old_base = api_mod._base_path
         api_mod._base_path = str(tmp_path)
@@ -2489,7 +2489,7 @@ class TestStatusIsActive:
 
     def test_status_idle_when_daemon_on_different_universe(self, client, tmp_path):
         """Status should show idle when daemon is on a different universe."""
-        import fantasy_author.api as api_mod
+        import workflow.api as api_mod
 
         # Write a status.json that claims the daemon is running
         uni_dir = tmp_path / "test-universe"
@@ -2518,7 +2518,7 @@ class TestStatusIsActive:
 
     def test_status_active_when_daemon_on_same_universe(self, client, tmp_path):
         """Status should show is_active=True when daemon matches."""
-        import fantasy_author.api as api_mod
+        import workflow.api as api_mod
 
         uni_dir = tmp_path / "test-universe"
         status = {

@@ -113,11 +113,63 @@ class MemoryManager:
         tokens = self.core.estimated_tokens()
         if tokens > MAX_CONTEXT_TOKENS:
             logger.warning(
-                "Context bundle exceeds budget: ~%d tokens (max %d)",
+                "Context bundle exceeds budget: ~%d tokens (max %d) — trimming",
                 tokens, MAX_CONTEXT_TOKENS,
             )
+            bundle = self._trim_to_budget(bundle, tokens)
 
         return ContextBundle(bundle)
+
+    # ------------------------------------------------------------------
+    # Budget enforcement
+    # ------------------------------------------------------------------
+
+    def _trim_to_budget(
+        self, bundle: dict[str, Any], current_tokens: int
+    ) -> dict[str, Any]:
+        """Progressively trim low-priority fields until under budget.
+
+        Priority order (trimmed first to last):
+          1. recent_reflections — least critical, easily regenerated
+          2. recent_summaries / recent_scenes — reduce window
+          3. facts / canon_facts — keep first N
+          4. active_characters — summarise instead of full state
+          5. world_state — keep as-is (highest priority)
+        """
+        ratio = MAX_CONTEXT_TOKENS / max(current_tokens, 1)
+
+        # Trim list-valued fields proportionally
+        _list_fields = [
+            "recent_reflections",
+            "recent_summaries",
+            "recent_scenes",
+            "facts",
+            "canon_facts",
+            "promises",
+            "orient_warnings",
+            "character_goals",
+        ]
+        for key in _list_fields:
+            items = bundle.get(key)
+            if isinstance(items, list) and len(items) > 1:
+                keep = max(1, int(len(items) * ratio))
+                bundle[key] = items[:keep]
+
+        # Trim character dicts: strip verbose fields, keep essentials
+        chars = bundle.get("active_characters")
+        if isinstance(chars, dict) and current_tokens > MAX_CONTEXT_TOKENS * 2:
+            trimmed = {}
+            _keep_keys = {"name", "id", "role", "goals", "status"}
+            for cid, cdata in chars.items():
+                if isinstance(cdata, dict):
+                    trimmed[cid] = {
+                        k: v for k, v in cdata.items() if k in _keep_keys
+                    }
+                else:
+                    trimmed[cid] = cdata
+            bundle["active_characters"] = trimmed
+
+        return bundle
 
     # ------------------------------------------------------------------
     # Phase-specific assemblers

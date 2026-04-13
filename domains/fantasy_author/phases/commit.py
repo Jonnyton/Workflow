@@ -122,7 +122,8 @@ def commit(state: dict[str, Any]) -> dict[str, Any]:
             "quality_debt": [],
         }
 
-    db_path = state.get("_db_path", "story.db")
+    from domains.fantasy_author.phases._paths import resolve_db_path
+    db_path = resolve_db_path(state)
 
     # --- Memory context for evaluate phase ---
     memory_context = _assemble_memory(state, "evaluate")
@@ -160,6 +161,18 @@ def commit(state: dict[str, Any]) -> dict[str, Any]:
     # --- 6. Compute verdict ---
     verdict, quality_debt = _compute_editorial_verdict(
         structural, editorial, second_draft_used,
+    )
+
+    # --- 6b. Persist scene_history with the real verdict ---
+    # Must happen AFTER verdict is computed, otherwise scene_history rows
+    # are pinned at "pending" forever and accept_rate telemetry reads as
+    # 0/0 on universes with 30+ committed scenes.
+    _record_scene_verdict(
+        db_path=db_path,
+        scene_id=scene_id,
+        state=state,
+        word_count=draft_output.get("word_count", 0),
+        verdict=verdict,
     )
 
     # Serialize editorial notes
@@ -222,6 +235,18 @@ def commit(state: dict[str, Any]) -> dict[str, Any]:
     if verdict == "accept":
         _store_to_memory(state, extracted_facts)
         _export_prose(state, prose)
+        _emit_scene_packet(
+            state=state,
+            scene_id=scene_id,
+            facts_list=facts_list,
+            promises=promises,
+            structural=structural,
+            editorial=editorial,
+            verdict=verdict,
+            word_count=draft_output.get("word_count", 0),
+            is_revision=is_revision,
+            worldbuild_signals=worldbuild_signals,
+        )
         # Persist worldbuild signals for the universe-level nodes
         if worldbuild_signals:
             _persist_worldbuild_signals(state, worldbuild_signals)
@@ -283,10 +308,19 @@ def _build_editorial_context(state: dict[str, Any]) -> dict[str, str]:
                 exc_info=True,
             )
 
+    # Include premise so the editorial reader can flag premise departure
+    premise = ""
+    wf_instructions = state.get("workflow_instructions") or {}
+    if isinstance(wf_instructions, dict):
+        premise = wf_instructions.get("premise", "")
+    if not premise:
+        premise = state.get("premise_kernel", "")
+
     return {
         "previous_scene": previous_scene,
         "canon_facts": canon_facts,
         "direction_notes": direction_notes,
+        "premise": premise,
     }
 
 
@@ -309,6 +343,7 @@ def _run_editorial(
         previous_scene=context.get("previous_scene", ""),
         canon_facts=context.get("canon_facts", ""),
         direction_notes=context.get("direction_notes", ""),
+        premise=context.get("premise", ""),
     )
 
 
@@ -527,22 +562,18 @@ def _update_world_state(
     word_count: int,
     prose: str = "",
 ) -> None:
-    """Persist facts, promises, and scene history to the world state DB."""
+    """Persist facts, promises, and characters to the world state DB.
+
+    Scene history is NOT written here — it's recorded by
+    `_record_scene_verdict` after the verdict is computed, so the
+    `scene_history.verdict` column reflects the actual accept/reject
+    decision instead of always saying "pending". Writing it here with
+    a placeholder and never updating it is the regression that left
+    sporemarch's accept_rate stuck at 0/0.
+    """
     try:
         init_db(db_path)
         with connect(db_path) as conn:
-            # Record scene
-            record_scene(
-                conn,
-                scene_id=scene_id,
-                universe_id=state.get("universe_id", ""),
-                book_number=state.get("book_number", 1),
-                chapter_number=state.get("chapter_number", 1),
-                scene_number=state.get("scene_number", 1),
-                word_count=word_count,
-                verdict="pending",
-            )
-
             # Store extracted facts
             for fact in facts_list:
                 store_fact(
@@ -576,6 +607,40 @@ def _update_world_state(
     except Exception as e:
         logger.warning("Failed to update world state DB: %s", e)
         # Non-critical: commit should never fail because of DB issues
+
+
+def _record_scene_verdict(
+    *,
+    db_path: str,
+    scene_id: str,
+    state: dict[str, Any],
+    word_count: int,
+    verdict: str,
+) -> None:
+    """Write the scene's verdict to scene_history.
+
+    Called once after the commit node's verdict is computed, so readers
+    of `scene_history` (accept_rate telemetry, dashboard seed-from-db,
+    learning loop) see the real decision. `INSERT OR REPLACE` keyed on
+    scene_id means a second_draft re-commit overwrites the prior row.
+    """
+    try:
+        init_db(db_path)
+        with connect(db_path) as conn:
+            record_scene(
+                conn,
+                scene_id=scene_id,
+                universe_id=state.get("universe_id", ""),
+                book_number=state.get("book_number", 1),
+                chapter_number=state.get("chapter_number", 1),
+                scene_number=state.get("scene_number", 1),
+                word_count=word_count,
+                verdict=verdict,
+            )
+    except Exception as e:
+        logger.warning(
+            "Failed to record scene verdict for %s: %s", scene_id, e,
+        )
 
 
 # Pattern to extract capitalized names from fact text.
@@ -678,7 +743,7 @@ def _upsert_characters_from_facts(
 
 def _assemble_memory(state: dict[str, Any], phase: str) -> dict:
     """Call MemoryManager.assemble_context if available."""
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is None:
@@ -692,7 +757,7 @@ def _assemble_memory(state: dict[str, Any], phase: str) -> dict:
 
 def _store_to_memory(state: dict[str, Any], extracted_facts: list) -> None:
     """Store scene results to MemoryManager if available."""
-    from fantasy_author import runtime
+    from workflow import runtime
 
     mgr = runtime.memory_manager
     if mgr is None:
@@ -712,7 +777,7 @@ def _save_to_version_store(
     quality_score: float,
 ) -> None:
     """Save draft to OutputVersionStore if available."""
-    from fantasy_author import runtime
+    from workflow import runtime
 
     store = runtime.version_store
     if store is None:
@@ -923,6 +988,143 @@ def _export_prose(state: dict[str, Any], prose: str) -> None:
         logger.warning("Failed to export prose: %s", e)
 
 
+def _emit_scene_packet(
+    state: dict[str, Any],
+    scene_id: str,
+    facts_list: list,
+    promises: list,
+    structural: "StructuralResult",
+    editorial: EditorialNotes | None,
+    verdict: str,
+    word_count: int,
+    is_revision: bool,
+    worldbuild_signals: list,
+) -> None:
+    """Write a structured ScenePacket JSON alongside the prose file.
+
+    The packet captures everything the commit pipeline extracted for this
+    scene in machine-readable form.  Persisted at the same path as the
+    prose file but with a ``.packet.json`` extension.
+    """
+    from workflow.packets import (
+        EditorialVerdict,
+        FactRef,
+        PromiseRef,
+        ScenePacket,
+    )
+
+    universe_path = state.get("_universe_path")
+    if not universe_path:
+        return
+
+    orient_result = state.get("orient_result") or {}
+
+    # Build fact refs from extracted facts
+    fact_refs = []
+    for f in facts_list:
+        if hasattr(f, "fact_id"):
+            raw_st = getattr(f, "source_type", "unknown")
+            fact_refs.append(FactRef(
+                fact_id=f.fact_id,
+                text=f.text,
+                source_type=raw_st.value if hasattr(raw_st, "value") else str(raw_st),
+                confidence=getattr(f, "confidence", 0.5),
+                importance=getattr(f, "importance", 0.5),
+            ))
+        elif isinstance(f, dict):
+            raw_st = f.get("source_type", "unknown")
+            fact_refs.append(FactRef(
+                fact_id=f.get("fact_id", ""),
+                text=f.get("text", ""),
+                source_type=raw_st.value if hasattr(raw_st, "value") else str(raw_st),
+                confidence=f.get("confidence", 0.5),
+                importance=f.get("importance", 0.5),
+            ))
+
+    # Build promise refs
+    promise_refs = []
+    for p in promises:
+        if isinstance(p, dict):
+            promise_refs.append(PromiseRef(
+                promise_type=p.get("promise_type", ""),
+                trigger_text=p.get("trigger_text", ""),
+                context=p.get("context", ""),
+                scene_id=scene_id,
+                chapter_number=state.get("chapter_number", 1),
+                importance=p.get("importance", 0.5),
+            ))
+
+    # Build editorial verdict
+    editorial_verdict = None
+    if editorial is not None or structural is not None:
+        concerns = []
+        protect: list[str] = []
+        if editorial is not None:
+            for c in getattr(editorial, "concerns", []):
+                concerns.append({
+                    "text": getattr(c, "text", str(c)),
+                    "clearly_wrong": getattr(c, "clearly_wrong", False),
+                })
+            protect = list(getattr(editorial, "protect", []))
+
+        editorial_verdict = EditorialVerdict(
+            verdict=verdict,
+            structural_pass=not structural.hard_failure,
+            structural_score=structural.aggregate_score,
+            hard_failure=structural.hard_failure,
+            concerns=concerns,
+            protect=protect,
+        )
+
+    # Extract participants as plain strings from orient character dicts
+    raw_characters = orient_result.get("characters", [])
+    participants = []
+    for c in raw_characters:
+        if isinstance(c, dict):
+            name = c.get("name") or c.get("character_id") or c.get("id", "")
+            if name:
+                participants.append(str(name))
+        elif isinstance(c, str) and c:
+            participants.append(c)
+
+    packet = ScenePacket(
+        scene_id=scene_id,
+        universe_id=state.get("universe_id", ""),
+        book_number=state.get("book_number", 1),
+        chapter_number=state.get("chapter_number", 1),
+        scene_number=state.get("scene_number", 1),
+        pov_character=orient_result.get("pov_character"),
+        location=orient_result.get("location"),
+        time_marker=orient_result.get("time_marker"),
+        participants=participants,
+        facts_introduced=fact_refs,
+        promises_opened=promise_refs,
+        editorial=editorial_verdict,
+        word_count=word_count,
+        is_revision=is_revision,
+        worldbuild_signals=worldbuild_signals,
+    )
+
+    # Write packet JSON next to the prose file
+    book = state.get("book_number", 1)
+    chapter = state.get("chapter_number", 1)
+    scene = state.get("scene_number", 1)
+    try:
+        chapter_dir = (
+            Path(universe_path) / "output"
+            / f"book-{book}" / f"chapter-{chapter:02d}"
+        )
+        chapter_dir.mkdir(parents=True, exist_ok=True)
+        packet_file = chapter_dir / f"scene-{scene:02d}.packet.json"
+        packet_file.write_text(
+            json.dumps(packet.to_dict(), indent=2, default=str) + "\n",
+            encoding="utf-8",
+        )
+        logger.info("Emitted scene packet to %s", packet_file)
+    except OSError as e:
+        logger.warning("Failed to emit scene packet: %s", e)
+
+
 def _index_prose_entities(
     prose: str,
     scene_id: str,
@@ -934,7 +1136,7 @@ def _index_prose_entities(
     registry) and the indexer module. Non-blocking -- failures are
     logged but don't affect the commit verdict.
     """
-    from fantasy_author import runtime
+    from workflow import runtime
 
     kg = runtime.knowledge_graph
     vs = runtime.vector_store

@@ -127,7 +127,7 @@ class TestResearchGraphTopology:
     def test_graph_topology_differs_from_fantasy_author(self) -> None:
         """Research graph should be fundamentally different from fantasy hierarchy.
 
-        Fantasy Author uses 4-level hierarchy (scene/chapter/book/universe).
+        The fantasy domain uses 4-level hierarchy (scene/chapter/book/universe).
         Research probe uses flat loop with revision (gather→analyze→...→review→loop).
         """
         from domains.fantasy_author.graphs import build_universe_graph

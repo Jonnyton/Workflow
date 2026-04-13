@@ -45,7 +45,7 @@ def test_discover_domains_empty_nonexistent() -> None:
 
 
 def test_fantasy_author_skill_loadable() -> None:
-    """Test that fantasy_author.skill.FantasyAuthorDomain can be imported."""
+    """Test that workflow.skill.FantasyAuthorDomain can be imported."""
     from domains.fantasy_author.skill import FantasyAuthorDomain
 
     domain = FantasyAuthorDomain()

@@ -74,8 +74,9 @@ class OutputVersionStore:
     ) -> None:
         self._db_path = str(db_path)
         self._universe_id = universe_id
-        self._conn = sqlite3.connect(self._db_path)
+        self._conn = sqlite3.connect(self._db_path, timeout=30)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(_SCHEMA)
 
     def close(self) -> None:
@@ -94,8 +95,46 @@ class OutputVersionStore:
         verdict: str = "",
         quality_score: float = 0.0,
         metadata: dict[str, Any] | None = None,
+        *,
+        _max_retries: int = 3,
     ) -> int:
-        """Save a new draft version.  Returns the version number."""
+        """Save a new draft version.  Returns the version number.
+
+        Retries on ``OperationalError`` (database locked) up to
+        *_max_retries* times with exponential backoff.
+        """
+        import time as _time
+
+        last_exc: Exception | None = None
+        for attempt in range(_max_retries + 1):
+            try:
+                return self._save_draft_inner(
+                    book, chapter, scene, prose,
+                    verdict, quality_score, metadata,
+                )
+            except sqlite3.OperationalError as exc:
+                last_exc = exc
+                if "locked" not in str(exc).lower() or attempt >= _max_retries:
+                    raise
+                wait = 0.5 * (2 ** attempt)
+                logger.warning(
+                    "save_draft locked (attempt %d/%d), retrying in %.1fs",
+                    attempt + 1, _max_retries, wait,
+                )
+                _time.sleep(wait)
+        raise last_exc  # type: ignore[misc]  # unreachable but satisfies mypy
+
+    def _save_draft_inner(
+        self,
+        book: int,
+        chapter: int,
+        scene: int,
+        prose: str,
+        verdict: str,
+        quality_score: float,
+        metadata: dict[str, Any] | None,
+    ) -> int:
+        """Core save logic, wrapped by retry in save_draft."""
         # Find next version number.
         row = self._conn.execute(
             "SELECT COALESCE(MAX(version), 0) FROM draft_versions "

@@ -15,18 +15,18 @@ from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-import fantasy_author.nodes._provider_stub as _provider_stub  # noqa: E402
+import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E402
 
 _provider_stub._FORCE_MOCK = True
 
-from fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
-from fantasy_author.memory.promises import SeriesPromiseTracker  # noqa: E402
-from fantasy_author.memory.versioning import OutputVersionStore  # noqa: E402
-from fantasy_author.nodes.book_close import book_close  # noqa: E402
-from fantasy_author.nodes.commit import commit  # noqa: E402
-from fantasy_author.nodes.diagnose import diagnose  # noqa: E402
-from fantasy_author.nodes.select_task import select_task  # noqa: E402
-from fantasy_author.nodes.universe_cycle import universe_cycle  # noqa: E402
+from domains.fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
+from workflow.memory.promises import SeriesPromiseTracker  # noqa: E402
+from workflow.memory.versioning import OutputVersionStore  # noqa: E402
+from domains.fantasy_author.phases.book_close import book_close  # noqa: E402
+from domains.fantasy_author.phases.commit import commit  # noqa: E402
+from domains.fantasy_author.phases.diagnose import diagnose  # noqa: E402
+from domains.fantasy_author.phases.select_task import select_task  # noqa: E402
+from domains.fantasy_author.phases.universe_cycle import universe_cycle  # noqa: E402
 
 
 def _make_scene_state(
@@ -326,7 +326,7 @@ class TestCrossBookPromises:
 
     def test_book_close_wires_promise_promotion(self):
         """book_close node should call promote_from_book."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         tracker = SeriesPromiseTracker(":memory:", "test")
         runtime.promise_tracker = tracker
@@ -389,7 +389,7 @@ class TestOutputVersioning:
 
     def test_commit_node_saves_to_version_store(self, tmp_path):
         """Commit node should save draft to version store when wired."""
-        import fantasy_author.runtime as runtime
+        import workflow.runtime as runtime
 
         store = OutputVersionStore(":memory:", "test")
         db_path = str(tmp_path / "version_commit.db")

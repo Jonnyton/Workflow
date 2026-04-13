@@ -8,13 +8,13 @@ Validates:
 
 from __future__ import annotations
 
-from fantasy_author.constraints.constraint_surface import (
+from workflow.constraints.constraint_surface import (
     empty_constraint_surface,
     score_constraint_surface,
 )
-from fantasy_author.constraints.constraint_synthesis import ConstraintSynthesis
-from fantasy_author.planning.dome_expansion import DOMEExpander
-from fantasy_author.planning.htn_planner import HTNPlanner
+from workflow.constraints.constraint_synthesis import ConstraintSynthesis
+from workflow.planning.dome_expansion import DOMEExpander
+from workflow.planning.htn_planner import HTNPlanner
 
 # ------------------------------------------------------------------
 # HTN Planner
@@ -193,7 +193,7 @@ def test_constraint_synthesis_classify_short_docs():
 def test_constraint_synthesis_generate():
     """GENERATE mode produces a valid ConstraintSurface."""
     # Use base_rules_path="" to skip loading world_rules.lp
-    from fantasy_author.constraints.asp_engine import ASPEngine
+    from workflow.constraints.asp_engine import ASPEngine
 
     engine = ASPEngine(base_rules_path="")
     synth = ConstraintSynthesis(asp_engine=engine)
@@ -208,7 +208,7 @@ def test_constraint_synthesis_generate():
 
 def test_constraint_synthesis_extract():
     """EXTRACT mode processes rich source into a ConstraintSurface."""
-    from fantasy_author.constraints.asp_engine import ASPEngine
+    from workflow.constraints.asp_engine import ASPEngine
 
     engine = ASPEngine(base_rules_path="")
     synth = ConstraintSynthesis(asp_engine=engine)
@@ -256,7 +256,7 @@ def test_constraint_surface_scoring_incremental():
 
 def test_constraint_synthesis_never_blocks():
     """Synthesis always returns (never-block rule), even with max iterations."""
-    from fantasy_author.constraints.asp_engine import ASPEngine
+    from workflow.constraints.asp_engine import ASPEngine
 
     engine = ASPEngine(base_rules_path="")
     synth = ConstraintSynthesis(asp_engine=engine)
@@ -274,7 +274,7 @@ def test_constraint_synthesis_never_blocks():
 
 def test_plan_node_uses_htn_dome_when_goal_present():
     """Plan node runs HTN/DOME when a book-level goal is in orient_result."""
-    from fantasy_author.nodes.plan import plan
+    from domains.fantasy_author.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -312,7 +312,7 @@ def test_plan_node_uses_htn_dome_when_goal_present():
 
 def test_plan_node_skips_htn_dome_without_goal():
     """Plan node works normally when no book-level goal is available."""
-    from fantasy_author.nodes.plan import plan
+    from domains.fantasy_author.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -343,7 +343,7 @@ def test_plan_node_skips_htn_dome_without_goal():
 
 def test_plan_node_goal_from_workflow_instructions():
     """Plan node finds a goal in workflow_instructions if not in orient_result."""
-    from fantasy_author.nodes.plan import plan
+    from domains.fantasy_author.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -371,7 +371,7 @@ def test_plan_node_goal_from_workflow_instructions():
 
 def test_plan_node_goal_from_book_arc():
     """Plan node finds a goal in book_arc state."""
-    from fantasy_author.nodes.plan import plan
+    from domains.fantasy_author.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -397,7 +397,7 @@ def test_plan_node_goal_from_book_arc():
 
 def test_plan_node_structural_alignment_scoring():
     """Structural alignment bonus is applied when DOME beats exist."""
-    from fantasy_author.nodes.plan import _score_alternative, _structural_alignment_score
+    from domains.fantasy_author.phases.plan import _score_alternative, _structural_alignment_score
 
     # Plan beats that match DOME tension pattern
     plan_beats = [
@@ -441,7 +441,7 @@ def test_plan_node_structural_alignment_scoring():
 
 def test_plan_node_constraint_validation_in_output():
     """Plan output includes constraint validation results when available."""
-    from fantasy_author.nodes.plan import plan
+    from domains.fantasy_author.phases.plan import plan
 
     state = {
         "orient_result": {

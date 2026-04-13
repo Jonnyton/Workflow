@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implemented Phase 3.5 (explicit scope handling for multiplayer memory) and Phase 3.6 (agent-controlled memory tools for LangGraph) as part of the Fantasy Author workflow extraction project.
+Implemented Phase 3.5 (explicit scope handling for multiplayer memory) and Phase 3.6 (agent-controlled memory tools for LangGraph) as part of the Workflow extraction project.
 
 **Implementation Date:** 2026-04-06
 **Modules Created:** 2

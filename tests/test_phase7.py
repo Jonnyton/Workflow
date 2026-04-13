@@ -7,12 +7,12 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fantasy_author.memory.ingestion import (
+from workflow.memory.ingestion import (
     IngestionPriority,
     ProgressiveIngestor,
 )
-from fantasy_author.memory.promises import SeriesPromiseTracker
-from fantasy_author.memory.versioning import OutputVersionStore
+from workflow.memory.promises import SeriesPromiseTracker
+from workflow.memory.versioning import OutputVersionStore
 
 # =====================================================================
 # ProgressiveIngestor
@@ -271,8 +271,8 @@ class TestCommitVersionStoreWiring:
     """Test that commit node saves drafts to version store."""
 
     def test_save_to_version_store_called(self):
-        from fantasy_author import runtime
-        from fantasy_author.nodes.commit import _save_to_version_store
+        from workflow import runtime
+        from domains.fantasy_author.phases.commit import _save_to_version_store
 
         store = OutputVersionStore(":memory:", "test")
         state = {
@@ -294,16 +294,16 @@ class TestCommitVersionStoreWiring:
 
     def test_save_to_version_store_absent(self):
         """No crash when version_store is not set."""
-        from fantasy_author import runtime
-        from fantasy_author.nodes.commit import _save_to_version_store
+        from workflow import runtime
+        from domains.fantasy_author.phases.commit import _save_to_version_store
 
         runtime.version_store = None
         _save_to_version_store({}, "prose", "accept", 0.8)  # should not raise
 
     def test_save_to_version_store_error_handled(self):
         """Errors in version store are caught gracefully."""
-        from fantasy_author import runtime
-        from fantasy_author.nodes.commit import _save_to_version_store
+        from workflow import runtime
+        from domains.fantasy_author.phases.commit import _save_to_version_store
 
         broken_store = MagicMock()
         broken_store.save_draft.side_effect = RuntimeError("DB error")
@@ -318,8 +318,8 @@ class TestBookClosePromiseWiring:
     """Test that book_close promotes promises to series level."""
 
     def test_promote_promises_on_close(self):
-        from fantasy_author import runtime
-        from fantasy_author.nodes.book_close import book_close
+        from workflow import runtime
+        from domains.fantasy_author.phases.book_close import book_close
 
         tracker = SeriesPromiseTracker(":memory:", "test")
         state = {
@@ -342,8 +342,8 @@ class TestBookClosePromiseWiring:
 
     def test_book_close_no_tracker(self):
         """No crash when promise_tracker is not set."""
-        from fantasy_author import runtime
-        from fantasy_author.nodes.book_close import book_close
+        from workflow import runtime
+        from domains.fantasy_author.phases.book_close import book_close
 
         runtime.promise_tracker = None
         result = book_close({
@@ -354,8 +354,8 @@ class TestBookClosePromiseWiring:
 
     def test_book_close_empty_promises(self):
         """Graceful handling when no promises to promote."""
-        from fantasy_author import runtime
-        from fantasy_author.nodes.book_close import book_close
+        from workflow import runtime
+        from domains.fantasy_author.phases.book_close import book_close
 
         tracker = SeriesPromiseTracker(":memory:", "test")
         runtime.promise_tracker = tracker
@@ -375,7 +375,7 @@ class TestDaemonControllerIngestion:
     """Test progressive ingestion wiring in DaemonController."""
 
     def test_ingestion_with_canon_dir(self, tmp_path: Path):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         # Create canon directory with a file
         universe_dir = tmp_path / "universe"
@@ -399,7 +399,7 @@ class TestDaemonControllerIngestion:
 
     def test_ingestion_no_canon_dir(self, tmp_path: Path):
         """No crash when canon directory doesn't exist."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         controller = DaemonController(
             universe_path=str(tmp_path / "nonexistent"),
@@ -411,7 +411,7 @@ class TestDaemonControllerIngestion:
     def test_bootstrap_runtime_files_creates_registry_artifacts(
         self, tmp_path: Path,
     ):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -439,8 +439,8 @@ class TestDaemonControllerIngestion:
     def test_bootstrap_retrieval_indices_indexes_bootstrap_documents(
         self, tmp_path: Path,
     ):
-        from fantasy_author import runtime
-        from fantasy_author.__main__ import DaemonController
+        from workflow import runtime
+        from workflow.__main__ import DaemonController
 
         universe_dir = tmp_path / "universe"
         canon_dir = universe_dir / "canon"
@@ -466,7 +466,7 @@ class TestDaemonControllerIngestion:
         runtime.embed_fn = None
 
         with patch(
-            "fantasy_author.ingestion.indexer.index_text",
+            "workflow.ingestion.indexer.index_text",
             return_value={
                 "entities": 1,
                 "edges": 2,
@@ -488,8 +488,8 @@ class TestDaemonControllerIngestion:
     def test_bootstrap_retrieval_indices_skips_when_kg_has_content(
         self, tmp_path: Path,
     ):
-        from fantasy_author import runtime
-        from fantasy_author.__main__ import DaemonController
+        from workflow import runtime
+        from workflow.__main__ import DaemonController
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -506,7 +506,7 @@ class TestDaemonControllerIngestion:
         )
         runtime.knowledge_graph = MagicMock()
 
-        with patch("fantasy_author.ingestion.indexer.index_text") as mock_index:
+        with patch("workflow.ingestion.indexer.index_text") as mock_index:
             controller._bootstrap_retrieval_indices()
 
         mock_index.assert_not_called()

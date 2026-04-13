@@ -122,7 +122,7 @@ class UniverseState(TypedDict):
     """Compatibility queue mirrored from current_task during the migration."""
 
     # ==================================================================
-    # DOMAIN: Fantasy Author (narrative-specific)
+    # DOMAIN: Workflow (narrative-specific)
     # ==================================================================
 
     # ------------------------------------------------------------------

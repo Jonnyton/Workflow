@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_author.nodes._paths import resolve_db_path, resolve_kg_path
+from domains.fantasy_author.phases._paths import resolve_db_path, resolve_kg_path
 
 
 class TestDBPathDefaults:
     """Verify DaemonController defaults DB paths to <universe>/story.db."""
 
     def test_empty_db_path_defaults_to_universe(self, tmp_path):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -27,7 +27,7 @@ class TestDBPathDefaults:
         assert Path(ctrl._db_path).resolve() == (uni / "story.db").resolve()
 
     def test_none_db_path_defaults_to_universe(self, tmp_path):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -35,7 +35,7 @@ class TestDBPathDefaults:
         assert Path(ctrl._db_path).resolve() == (uni / "story.db").resolve()
 
     def test_explicit_universe_relative_path_accepted(self, tmp_path):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -48,7 +48,7 @@ class TestDBPathIsolationGuard:
     """Verify DaemonController warns and falls back for CWD-relative paths."""
 
     def test_cwd_relative_db_path_corrected(self, tmp_path, caplog):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -65,7 +65,7 @@ class TestDBPathIsolationGuard:
         assert "outside universe" in caplog.text
 
     def test_checkpoint_path_corrected(self, tmp_path, caplog):
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -88,7 +88,7 @@ class TestKGPathDerivation:
 
     def test_kg_path_in_state_uses_universe_path(self, tmp_path):
         """The _kg_path in initial state should point inside universe dir."""
-        from fantasy_author.__main__ import DaemonController
+        from workflow.__main__ import DaemonController
 
         uni = tmp_path / "my-universe"
         uni.mkdir()
@@ -154,13 +154,13 @@ class TestKnowledgeGraphRequiresPath:
     """KnowledgeGraph must reject empty db_path."""
 
     def test_no_default_path(self) -> None:
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
         with pytest.raises(ValueError, match="explicit db_path"):
             KnowledgeGraph()
 
     def test_explicit_path_accepted(self, tmp_path) -> None:
-        from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+        from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
         db_file = str(tmp_path / "test_kg.db")
         kg = KnowledgeGraph(db_path=db_file)
@@ -172,25 +172,25 @@ class TestWorldStateDbRequiresPath:
     """init_db and connect must reject empty db_path."""
 
     def test_init_db_rejects_empty(self) -> None:
-        from fantasy_author.nodes.world_state_db import init_db
+        from domains.fantasy_author.phases.world_state_db import init_db
 
         with pytest.raises(ValueError, match="explicit db_path"):
             init_db()
 
     def test_connect_rejects_empty(self) -> None:
-        from fantasy_author.nodes.world_state_db import connect
+        from domains.fantasy_author.phases.world_state_db import connect
 
         with pytest.raises(ValueError, match="explicit db_path"):
             with connect():
                 pass
 
     def test_init_db_with_memory(self) -> None:
-        from fantasy_author.nodes.world_state_db import init_db
+        from domains.fantasy_author.phases.world_state_db import init_db
 
         init_db(":memory:")
 
     def test_connect_with_memory(self) -> None:
-        from fantasy_author.nodes.world_state_db import connect
+        from domains.fantasy_author.phases.world_state_db import connect
 
         with connect(":memory:") as conn:
             assert conn is not None

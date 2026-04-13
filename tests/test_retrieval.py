@@ -7,8 +7,8 @@ import json
 import numpy as np
 import pytest
 
-from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
-from fantasy_author.knowledge.models import (
+from workflow.knowledge.knowledge_graph import KnowledgeGraph
+from workflow.knowledge.models import (
     FactWithContext,
     GraphEdge,
     GraphEntity,
@@ -16,21 +16,21 @@ from fantasy_author.knowledge.models import (
     RetrievalResult,
     SourceType,
 )
-from fantasy_author.retrieval.agentic_search import (
+from workflow.retrieval.agentic_search import (
     assemble_phase_search_context,
     build_phase_query,
 )
-from fantasy_author.retrieval.phase_context import (
+from workflow.retrieval.phase_context import (
     get_phase_config,
     get_token_budget,
     should_use_backend,
 )
-from fantasy_author.retrieval.router import (
+from workflow.retrieval.router import (
     RetrievalRouter,
     _parse_decomposition,
     _simple_decompose,
 )
-from fantasy_author.retrieval.vector_store import VectorStore, reset_db
+from workflow.retrieval.vector_store import VectorStore, reset_db
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -103,11 +103,25 @@ def tmp_vs(tmp_path):
 
 class TestVectorStore:
     def test_singleton_connection(self, tmp_path):
-        from fantasy_author.retrieval.vector_store import get_db
+        from workflow.retrieval.vector_store import get_db
 
         db1 = get_db(str(tmp_path / "lance"))
         db2 = get_db(str(tmp_path / "lance"))
         assert db1 is db2
+
+    def test_get_db_rejects_empty_path(self):
+        import pytest
+
+        from workflow.retrieval.vector_store import get_db
+
+        with pytest.raises(ValueError, match="cross-universe contamination"):
+            get_db("")
+
+    def test_vectorstore_rejects_empty_db_path(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="cross-universe contamination"):
+            VectorStore(db_path="")
 
     def test_index_and_search(self, tmp_vs):
         chunks = [
@@ -417,11 +431,11 @@ class TestAgenticSearchPolicy:
         }
 
         monkeypatch.setattr(
-            "fantasy_author.retrieval.agentic_search.assemble_memory_context",
+            "workflow.retrieval.agentic_search.assemble_memory_context",
             lambda state, phase: {"style_rules": [{"rule": "Stay intimate."}]},
         )
         monkeypatch.setattr(
-            "fantasy_author.retrieval.agentic_search.run_phase_retrieval",
+            "workflow.retrieval.agentic_search.run_phase_retrieval",
             lambda state, phase, memory_context=None: {
                 "facts": [],
                 "canon_facts": [],

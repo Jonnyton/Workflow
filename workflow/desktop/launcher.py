@@ -1,4 +1,4 @@
-"""Tkinter launcher GUI for Fantasy Author.
+"""Tkinter launcher GUI for Workflow.
 
 Provides a startup window where the user selects a universe directory,
 configures settings, and launches the writing daemon. Wires to
@@ -48,11 +48,11 @@ START_HOVER = "#3a8c3b"
 def _default_universe_path() -> str:
     """Return the default universe directory path."""
     home = Path.home()
-    return str(home / "Documents" / "Fantasy Author" / "default-universe")
+    return str(home / "Documents" / "Workflow" / "default-universe")
 
 
 class LauncherApp:
-    """Fantasy Author launcher GUI -- daemon controller.
+    """Workflow launcher GUI -- daemon controller.
 
     Parameters
     ----------
@@ -79,7 +79,7 @@ class LauncherApp:
         self._dashboard_handler: Any = None
         self._stats_polling = False
 
-        self.root.title("Fantasy Author")
+        self.root.title("Workflow")
         self.root.geometry("420x620")
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
@@ -162,7 +162,7 @@ class LauncherApp:
         container.pack(fill=tk.BOTH, expand=True)
 
         # --- Title ---
-        ttk.Label(container, text="Fantasy Author", style="Header.TLabel").pack(pady=(0, 15))
+        ttk.Label(container, text="Workflow", style="Header.TLabel").pack(pady=(0, 15))
 
         # --- Universe section ---
         ttk.Label(container, text="Universe", style="Section.TLabel").pack(anchor=tk.W)
@@ -523,11 +523,8 @@ class LauncherApp:
     # ------------------------------------------------------------------
 
     # Modules to reimport when code changes are detected.
-    # NOTE: These reference the actual source locations (fantasy_author.* for now),
-    # even though this launcher is imported from workflow.desktop. As extraction
-    # continues, reload targets will migrate to workflow.* as infrastructure
-    # packages stabilize, and domains.fantasy_author.* for domain-specific code.
     _RELOAD_PACKAGES = (
+        "domains.fantasy_author.phases",
         "workflow.providers",
         "workflow.evaluation",
         "workflow.judges",
@@ -536,11 +533,10 @@ class LauncherApp:
         "workflow.knowledge",
         "workflow.retrieval",
         "workflow.memory",
-        "workflow.checkpointing",
-        "workflow.learning",
         "domains.fantasy_author.graphs",
+        "workflow.checkpointing",
         "domains.fantasy_author.state",
-        "domains.fantasy_author.phases",
+        "workflow.learning",
     )
 
     def _handle_reload(self) -> None:
@@ -611,13 +607,7 @@ class LauncherApp:
         if not changed:
             return "none"
 
-        # UI paths are checked relative to git root. These are the files that
-        # require a full restart if changed, not just a module reload.
-        ui_paths = (
-            "workflow/desktop/launcher.py",
-            "workflow/desktop/tray.py",
-            "workflow/desktop/dashboard.py",
-        )
+        ui_paths = ("workflow/desktop/launcher.py", "workflow/desktop/tray.py")
 
         has_code = False
         has_ui = False
@@ -650,7 +640,7 @@ class LauncherApp:
                 pass
 
     def _reimport_modules(self) -> None:
-        """Reimport fantasy_author submodules to pick up code changes."""
+        """Reimport workflow submodules to pick up code changes."""
         reloaded = []
         for mod_name in sorted(sys.modules):
             if not any(mod_name.startswith(pkg) for pkg in self._RELOAD_PACKAGES):

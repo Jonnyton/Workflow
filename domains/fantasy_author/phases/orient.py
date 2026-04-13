@@ -13,9 +13,11 @@ Output: Partial SceneState with ``orient_result`` and ``quality_trace``.
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from domains.fantasy_author.phases._paths import resolve_db_path as _resolve_db_path
 from domains.fantasy_author.phases.world_state_db import (
     compute_pacing_flags,
     connect,
@@ -31,9 +33,314 @@ from domains.fantasy_author.phases.world_state_db import (
 
 logger = logging.getLogger(__name__)
 
-# Default path for the world state database.
-# Can be overridden via state['_db_path'] for testing.
-_DEFAULT_DB_PATH = "story.db"
+# Default path removed: CWD-relative "story.db" caused cross-universe
+# contamination.  Now derived from state["_universe_path"] at runtime.
+
+# Maximum retrieval re-query passes when gaps are detected during orient.
+# This is a local retrieval-reflection bound, NOT a phase-level loop guardrail.
+# Phase-level loop guardrails (e.g., worldbuild no-op streak) live with the
+# relevant phase node; see STATUS.md 2026-04-10 and CLAUDE.md naming note.
+_MAX_RETRIEVAL_REFLECTION_PASSES = 2
+_MAX_REFLECTION_PASSES = _MAX_RETRIEVAL_REFLECTION_PASSES
+
+# Minimum number of facts about named entities before we consider context
+# adequate.  Below this, a targeted re-query is warranted.
+_MIN_ENTITY_FACT_COUNT = 2
+
+
+@dataclass
+class RetrievalGap:
+    """A typed, machine-readable gap detected during orient reflection.
+
+    Each gap carries enough information for downstream consumers (plan,
+    draft, quality trace) to understand what is missing and whether a
+    re-query resolved it.
+    """
+
+    kind: str
+    """One of: ``'missing_pov'``, ``'no_prior_scene'``,
+    ``'low_entity_facts'``, ``'premise_mismatch'``,
+    ``'continuity_gap'``, ``'promise_context_gap'``."""
+
+    detail: str
+    """Human-readable description of the gap."""
+
+    query_terms: list[str] = field(default_factory=list)
+    """Targeted search terms for a follow-up retrieval pass."""
+
+    resolved: bool = False
+    """Set to True after a re-query pass fills the gap."""
+
+    def __str__(self) -> str:
+        status = "resolved" if self.resolved else "open"
+        return f"{self.kind}({status}): {self.detail}"
+
+
+def _detect_retrieval_gaps(
+    retrieved_context: dict[str, Any],
+    characters: list[dict[str, Any]],
+    pov_character: str | None,
+    character_gaps: list[dict[str, Any]],
+    *,
+    state: dict[str, Any] | None = None,
+) -> list[RetrievalGap]:
+    """Check retrieved context for critical gaps worth a re-query.
+
+    Returns a list of typed ``RetrievalGap`` objects.  An empty list
+    means the context is adequate.  All checks are deterministic --
+    no LLM calls.
+    """
+    gaps: list[RetrievalGap] = []
+    facts = retrieved_context.get("facts", [])
+    prose_chunks = retrieved_context.get("prose_chunks", [])
+
+    # 1. POV character must appear in retrieved facts or prose
+    if pov_character:
+        pov_lower = pov_character.lower()
+        pov_in_facts = any(
+            pov_lower in str(f.get("text", "")).lower()
+            or pov_lower in str(f.get("entity", "")).lower()
+            for f in facts
+            if isinstance(f, dict)
+        )
+        pov_in_prose = any(
+            pov_lower in chunk.lower()
+            for chunk in prose_chunks
+            if isinstance(chunk, str)
+        )
+        if not pov_in_facts and not pov_in_prose:
+            gaps.append(RetrievalGap(
+                kind="missing_pov",
+                detail=f"POV character '{pov_character}' absent from "
+                       f"retrieved context ({len(facts)} facts, "
+                       f"{len(prose_chunks)} prose chunks).",
+                query_terms=[pov_character],
+            ))
+
+    # 2. Prior scene continuity: at least one prose chunk should exist
+    #    to anchor the next scene in what just happened.
+    if not prose_chunks:
+        gaps.append(RetrievalGap(
+            kind="no_prior_scene",
+            detail="No prose chunks retrieved -- prior scene continuity "
+                   "context is missing.",
+            query_terms=["previous scene", "last scene continuity"],
+        ))
+
+    # 3. Minimum fact count for named entities.  If we know characters
+    #    but have almost no facts, the context is too thin.
+    named_entities: set[str] = set()
+    for char in characters:
+        name = char.get("name") or char.get("character_id")
+        if name:
+            named_entities.add(name.lower())
+    for gap_entry in character_gaps:
+        name = gap_entry.get("name") or gap_entry.get("character_id")
+        if name:
+            named_entities.add(name.lower())
+
+    if named_entities and len(facts) < _MIN_ENTITY_FACT_COUNT:
+        missing_names = sorted(named_entities)[:5]
+        gaps.append(RetrievalGap(
+            kind="low_entity_facts",
+            detail=f"Only {len(facts)} facts retrieved for "
+                   f"{len(named_entities)} known entities "
+                   f"(minimum {_MIN_ENTITY_FACT_COUNT}).",
+            query_terms=missing_names,
+        ))
+
+    # Extended checks (require state)
+    if state is not None:
+        gaps.extend(_detect_premise_mismatch(retrieved_context, state))
+        gaps.extend(_detect_continuity_gap(retrieved_context, state))
+        gaps.extend(_detect_promise_context_gap(retrieved_context, state))
+
+    return gaps
+
+
+def _detect_premise_mismatch(
+    retrieved_context: dict[str, Any],
+    state: dict[str, Any],
+) -> list[RetrievalGap]:
+    """Check if retrieved context contains premise-foreign terms.
+
+    Extracts key terms from the universe premise and checks whether
+    the retrieved facts and prose contain premise-relevant terms vs
+    foreign terms from other universes.  Deterministic, no LLM calls.
+    """
+    from workflow.evaluation.structural import _extract_premise_terms
+
+    premise = ""
+    wf = state.get("workflow_instructions") or {}
+    if isinstance(wf, dict):
+        premise = wf.get("premise", "")
+    if not premise:
+        premise = state.get("premise_kernel", "")
+    if not premise:
+        return []
+
+    _, world_terms = _extract_premise_terms(premise)
+    if not world_terms:
+        return []
+
+    # Check how many premise terms appear in retrieved context
+    all_text = " ".join(
+        str(f.get("text", "")) if isinstance(f, dict) else str(f)
+        for f in retrieved_context.get("facts", [])
+    ) + " " + " ".join(
+        chunk if isinstance(chunk, str) else ""
+        for chunk in retrieved_context.get("prose_chunks", [])
+    )
+    all_text_lower = all_text.lower()
+
+    found = sum(1 for t in world_terms if t.lower() in all_text_lower)
+    ratio = found / len(world_terms) if world_terms else 1.0
+
+    if ratio == 0 and all_text.strip():
+        # Retrieved context has content but zero premise terms — mismatch
+        return [RetrievalGap(
+            kind="premise_mismatch",
+            detail=f"Retrieved context contains zero premise terms "
+                   f"(checked {len(world_terms)} terms). "
+                   f"Context may be from wrong universe.",
+            query_terms=world_terms[:5],
+        )]
+    return []
+
+
+def _detect_continuity_gap(
+    retrieved_context: dict[str, Any],
+    state: dict[str, Any],
+) -> list[RetrievalGap]:
+    """Check that retrieved prose includes the immediately prior scene.
+
+    For scene N > 1, the retrieved prose should reference the prior scene.
+    This catches cases where retrieval returns random scenes instead of
+    sequential context.
+    """
+    scene_number = state.get("scene_number", 1)
+    if scene_number <= 1:
+        return []
+
+    # Check if prior scene reference appears in recent prose or context
+    recent_prose = state.get("recent_prose", "")
+    last_scene_prose = state.get("_last_scene_prose", "")
+
+    if recent_prose or last_scene_prose:
+        # Prior scene content is available — no gap
+        return []
+
+    prose_chunks = retrieved_context.get("prose_chunks", [])
+    if not prose_chunks:
+        return [RetrievalGap(
+            kind="continuity_gap",
+            detail=f"Scene {scene_number}: no prior scene prose in context. "
+                   f"Sequential continuity may break.",
+            query_terms=[
+                f"scene {scene_number - 1}",
+                "previous scene",
+                "last scene",
+            ],
+        )]
+    return []
+
+
+def _detect_promise_context_gap(
+    retrieved_context: dict[str, Any],
+    state: dict[str, Any],
+) -> list[RetrievalGap]:
+    """Check that active promises from world state appear in context.
+
+    If there are overdue or active promises that don't appear in the
+    retrieved facts/prose, the writer may not address them.
+    """
+    orient_result = state.get("orient_result") or {}
+    overdue_promises = orient_result.get("overdue_promises", [])
+    active_promises = orient_result.get("active_promises", [])
+
+    # Combine all promise texts to check
+    promise_texts: list[str] = []
+    for p in overdue_promises:
+        text = (p.get("text", "") or p.get("trigger_text", "")) if isinstance(p, dict) else str(p)
+        if text:
+            promise_texts.append(text)
+    for p in active_promises:
+        text = (p.get("text", "") or p.get("trigger_text", "")) if isinstance(p, dict) else str(p)
+        if text:
+            promise_texts.append(text)
+
+    if not promise_texts:
+        return []
+
+    # Check how many promise triggers appear in retrieved context
+    all_text = " ".join(
+        str(f.get("text", "")) if isinstance(f, dict) else str(f)
+        for f in retrieved_context.get("facts", [])
+    ) + " " + " ".join(
+        chunk if isinstance(chunk, str) else ""
+        for chunk in retrieved_context.get("prose_chunks", [])
+    )
+    all_text_lower = all_text.lower()
+
+    missing = [t for t in promise_texts if t.lower() not in all_text_lower]
+
+    if missing and len(missing) >= len(promise_texts):
+        return [RetrievalGap(
+            kind="promise_context_gap",
+            detail=f"{len(missing)} active/overdue promise(s) absent from "
+                   f"retrieved context: {', '.join(missing[:3])}.",
+            query_terms=missing[:5],
+        )]
+    return []
+
+
+def _merge_contexts(
+    base: dict[str, Any],
+    addition: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge a follow-up retrieval result into the base context.
+
+    List fields are extended (deduplicated by string value for simple
+    lists, by ``text`` key for fact dicts).  Scalar fields prefer the
+    base value.  Token counts are summed.
+    """
+    merged = dict(base)
+
+    # Merge list fields
+    for key in ("facts", "canon_facts", "relationships",
+                "prose_chunks", "community_summaries",
+                "warnings", "sources"):
+        base_list = base.get(key, []) or []
+        add_list = addition.get(key, []) or []
+        if not add_list:
+            continue
+        if key in ("facts", "canon_facts"):
+            # Deduplicate by fact text
+            seen = {
+                f.get("text", "") for f in base_list if isinstance(f, dict)
+            }
+            for item in add_list:
+                text = item.get("text", "") if isinstance(item, dict) else ""
+                if text and text not in seen:
+                    base_list.append(item)
+                    seen.add(text)
+        elif key in ("prose_chunks", "community_summaries", "sources"):
+            seen = set(base_list)
+            for item in add_list:
+                if item not in seen:
+                    base_list.append(item)
+                    seen.add(item)
+        else:
+            base_list.extend(add_list)
+        merged[key] = base_list
+
+    # Sum token counts
+    merged["token_count"] = (
+        (base.get("token_count", 0) or 0)
+        + (addition.get("token_count", 0) or 0)
+    )
+
+    return merged
 
 
 def orient(state: dict[str, Any]) -> dict[str, Any]:
@@ -69,10 +376,7 @@ def orient(state: dict[str, Any]) -> dict[str, Any]:
     activity_log(state, f"Orient: analyzing context for {scene_id}")
     update_phase(state, "orient")
 
-    db_path = state.get("_db_path", _DEFAULT_DB_PATH)
-
-    # Ensure the database is initialized
-    init_db(db_path)
+    db_path = _resolve_db_path(state)
 
     overdue_promises: list[dict[str, Any]] = []
     active_promises: list[dict[str, Any]] = []
@@ -84,6 +388,10 @@ def orient(state: dict[str, Any]) -> dict[str, Any]:
     chapter_avg_words: int | None = None
 
     try:
+        if not db_path:
+            raise ValueError("No DB path available")
+        # Ensure the database is initialized
+        init_db(db_path)
         with connect(db_path) as conn:
             # Query overdue promises
             overdue_promises = get_overdue_promises(conn, state["chapter_number"])
@@ -178,13 +486,65 @@ def orient(state: dict[str, Any]) -> dict[str, Any]:
         + len(character_gaps) + len(continuity_warnings)
     )
 
-    # --- Unified search policy ---
+    # --- Unified search policy with bounded reflection ---
     state_with_orient = dict(state)
     state_with_orient["orient_result"] = orient_result
     state_with_orient["_pov_character"] = pov_character
     search_context = _assemble_search_context(state_with_orient, "orient")
     retrieved_context = search_context.get("retrieved_context", {})
     memory_context = search_context.get("memory_context", {})
+
+    # Retrieval reflection: re-query up to _MAX_RETRIEVAL_REFLECTION_PASSES
+    # times if critical gaps are detected in the initial retrieval. This is
+    # orient-local; it does not guard phase-level loops.
+    all_gaps: list[RetrievalGap] = []
+    reflection_passes = 0
+    while reflection_passes < _MAX_RETRIEVAL_REFLECTION_PASSES:
+        gaps = _detect_retrieval_gaps(
+            retrieved_context, characters, pov_character, character_gaps,
+            state=state_with_orient,
+        )
+        if not gaps:
+            break
+        reflection_passes += 1
+        logger.info(
+            "Orient reflection pass %d for %s: %s",
+            reflection_passes, scene_id,
+            ", ".join(str(g) for g in gaps),
+        )
+
+        # Collect targeted query terms from all open gaps
+        extra_terms = []
+        for g in gaps:
+            extra_terms.extend(g.query_terms)
+
+        # Build a targeted follow-up query from the detected gaps
+        followup_state = dict(state_with_orient)
+        followup_state["_orient_reflection_terms"] = extra_terms
+        followup_context = _assemble_search_context(followup_state, "orient")
+        followup_retrieved = followup_context.get("retrieved_context", {})
+
+        # Merge follow-up results into the main context
+        retrieved_context = _merge_contexts(retrieved_context, followup_retrieved)
+        search_context["retrieved_context"] = retrieved_context
+        search_context["facts"] = retrieved_context.get("facts", [])
+        search_context["token_count"] = (
+            search_context.get("token_count", 0)
+            + followup_context.get("token_count", 0)
+        )
+
+        # Re-check which gaps are now resolved
+        remaining = _detect_retrieval_gaps(
+            retrieved_context, characters, pov_character, character_gaps,
+            state=state_with_orient,
+        )
+        remaining_kinds = {g.kind for g in remaining}
+        for g in gaps:
+            g.resolved = g.kind not in remaining_kinds
+        all_gaps.extend(gaps)
+
+    # Surface typed gaps in orient_result for downstream consumers
+    orient_result["gaps"] = [asdict(g) for g in all_gaps]
 
     result: dict[str, Any] = {
         "orient_result": orient_result,
@@ -204,6 +564,8 @@ def orient(state: dict[str, Any]) -> dict[str, Any]:
                 "search_sources": search_context.get("sources", []),
                 "search_token_count": search_context.get("token_count", 0),
                 "search_fact_count": len(retrieved_context.get("facts", [])),
+                "reflection_passes": reflection_passes,
+                "reflection_gaps": [asdict(g) for g in all_gaps],
             }
         ],
     }
@@ -358,7 +720,7 @@ def _extract_pov_and_tier(
     # 2. Look up access_tier from the KG entity table
     if pov_character:
         try:
-            from fantasy_author import runtime
+            from workflow import runtime
 
             kg = runtime.knowledge_graph
             if kg is not None:
@@ -441,3 +803,5 @@ def _read_canon_context(state: dict[str, Any]) -> str:
     result = "\n\n".join(parts)
     logger.info("Loaded canon context: %d files, %d chars", len(parts), len(result))
     return result
+
+
