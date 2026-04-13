@@ -16,7 +16,9 @@ graph_nodes:
 - id: analyze
   node_def_id: analyze
   position: 0
-edges: []
+edges:
+- from: START
+  to: analyze
 conditional_edges: []
 published: false
 stats:
@@ -24,4 +26,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:25:30.407957+00:00'
-updated_at: 1776093930.4234498
+updated_at: 1776093930.575115
