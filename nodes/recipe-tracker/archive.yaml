@@ -1,7 +1,9 @@
 id: archive
-display_name: Archive to library
+display_name: Archive
 phase: custom
-prompt_template: '...'
+prompt_template: 'Archive: {categorize_output}'
+output_keys:
+- archive_output
 timeout_seconds: 300.0
 approved: false
 enabled: true
