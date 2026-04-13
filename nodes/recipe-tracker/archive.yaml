@@ -1,7 +1,7 @@
 id: archive
 display_name: Archive to library
 phase: custom
-prompt_template: Format as a wiki entry.
+prompt_template: '...'
 timeout_seconds: 300.0
 approved: false
 enabled: true
