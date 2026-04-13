@@ -1,0 +1,10 @@
+id: weird
+display_name: 'Node with "quotes" and
+
+  newline'
+phase: custom
+prompt_template: '...'
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: tester
