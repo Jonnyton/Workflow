@@ -754,58 +754,43 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Primary tool for the Workflow / Universe Server platform. Also called
-    the "workflow builder", "custom AI builder", "universe builder", or
-    "workflow connector" — if a user names any of those, use this tool.
+    Primary tool for the Workflow / Universe Server platform — also the
+    "workflow builder", "custom AI builder", "universe builder", and
+    "workflow connector". Each universe is a self-contained workspace
+    (premise, canon, notes, daemons) for any multi-step agentic work:
+    research papers, recipe trackers, screenplays, news summarizers,
+    wedding planners, journalism, fantasy novels. Fantasy authoring is
+    one benchmark, not the exclusive use case. New workflows live in
+    the `extensions` tool. Start with `action="inspect"`.
 
-    Each universe is a self-contained workspace (premise, canon, notes,
-    daemons). Domains include research papers, recipe trackers,
-    screenplays, news summarizers, wedding planners, fantasy novels —
-    any multi-step agentic work. Fantasy authoring is one benchmark,
-    not the exclusive use case. Design new workflows via the
-    `extensions` tool.
-
-    Start here: `action="inspect"` for the current state of a universe.
-
-    Universe isolation: every universe-scoped response leads with a
-    `text: "Universe: <id>"` header AND a `universe_id` field as the
-    first JSON key. Always name the universe when reporting content to
-    the user. Never transfer facts between universes in reasoning — if
-    a universe has no canon, it has no canon; do not fill gaps from
-    another universe you saw earlier in the conversation. If you are
-    uncertain which universe a fact came from in this chat, call
-    `inspect` again with the explicit `universe_id` to re-ground. Tool
-    output is ground truth; your memory of earlier turns is not.
-
-    Read actions: list, inspect, read_output, query_world, get_activity,
-    list_branches, get_ledger, read_premise, list_canon, read_canon.
-    Every read response is scoped to exactly one universe — results
-    never mix universes.
-
-    Write actions: submit_request, give_direction, set_premise,
-    add_canon, control_daemon, switch_universe, create_universe.
-    Writes land only in the named universe; there is no cross-universe
-    write path.
+    Universe isolation: every response leads with `text: "Universe:
+    <id>"` and a first-key `universe_id`. Never transfer facts between
+    universes in reasoning. If uncertain which universe a fact came
+    from, call `inspect` with the explicit `universe_id` to re-ground —
+    tool output is ground truth, chat memory is not.
 
     Args:
-        action: Action name from the lists above.
+        action: One of — reads: list, inspect, read_output, query_world,
+            get_activity, list_branches, get_ledger, read_premise,
+            list_canon, read_canon; writes: submit_request,
+            give_direction, set_premise, add_canon, control_daemon,
+            switch_universe, create_universe.
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
             canon body, or daemon command: pause | resume | status).
-        path: File path for read_output, relative to universe output/
-            (e.g. "book-1/chapter-01.md").
-        category: Note category for give_direction. One of:
-            direction, protect, concern, observation, error.
+        path: Relative path for read_output (e.g. "book-1/ch-01.md").
+        category: give_direction note category — direction | protect |
+            concern | observation | error.
         target: Optional file/scene reference for give_direction.
-        query_type: World-state query type for query_world. One of:
-            facts, characters, promises, timeline.
+        query_type: query_world type — facts | characters | promises |
+            timeline.
         filter_text: Text filter for query_world results.
-        request_type: Type for submit_request. One of: scene_direction,
-            revision, canon_change, branch_proposal, general.
+        request_type: submit_request type — scene_direction | revision |
+            canon_change | branch_proposal | general.
         branch_id: Target branch for submit_request.
         filename: Filename for add_canon / read_canon.
-        provenance_tag: Source tag for add_canon
-            (e.g. "published novel", "rough notes").
+        provenance_tag: Source tag for add_canon (e.g. "published
+            novel", "rough notes").
         limit: Max results for get_activity / get_ledger / query_world
             (default 30).
     """
@@ -6732,48 +6717,33 @@ def wiki(
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
-    Persistent knowledge base shared across all AI sessions. New content
-    lands in drafts/ first, promoted to pages/ after quality checks
-    (the draft gate). Not a "save anything" surface.
-
-    Scope — wiki is for prose knowledge: how-tos, definitions, research
-    notes, references, recipes, personal notes, plans.
-
-    NOT for workflow structure, graph topology, or node definitions —
-    those belong in `extensions` (branch authoring). NOT for workflow
-    state or run outputs — those belong in the universe/run surfaces.
-    NOT for task lists or structured-query artifacts.
-
-    Routing guidance:
-    - "build / design / create a workflow" → `extensions`, not wiki.
-    - "track my recipes / tasks / guests / subscriptions" → `extensions`
-      (workflow with typed state), not wiki.
-    - "save this note / how-to / reference" → wiki.
-    - "what is X / how do I Y / remind me about Z" → wiki.
-
-    Start here: `action="list"` for all pages, or `action="read"` with
-    `page="index"` for the categorized index.
-
-    Read actions: read, search, list, lint.
-
-    Write actions: write, consolidate, promote, ingest, supersede,
-    sync_projects.
+    Persistent prose knowledge shared across sessions: how-tos,
+    definitions, research notes, references, recipes, plans. New
+    content lands in drafts/ and is promoted to pages/ after quality
+    checks. Not a "save anything" sink — NOT for workflow structure,
+    node definitions, state, or run outputs (those route to
+    `extensions` or the universe surfaces). Intent routing: use
+    `extensions` for "build / design / create a workflow" or
+    "track recipes / tasks / guests"; use wiki for "save this
+    how-to / ref / note" or "what is X". Start with `action="list"`
+    or `action="read" page="index"`.
 
     Args:
-        action: Action name from the lists above.
-        page: Page name for read action (also: index, log, schema).
-        query: Search keywords for search action.
-        category: Page category for write / promote. One of: projects,
-            concepts, people, research, recipes, workflows, notes,
-            references, plans. Match the CONTENT, not the request
-            source — do not default to `research`. `research` is for
-            LLM-generated research pages and paper drafts only.
+        action: One of — reads: read, search, list, lint; writes:
+            write, consolidate, promote, ingest, supersede,
+            sync_projects.
+        page: Page name for read (also: index, log, schema).
+        query: Search keywords for search.
+        category: write / promote category — projects, concepts,
+            people, research, recipes, workflows, notes, references,
+            plans. Match the CONTENT; `research` is reserved for
+            LLM-generated research pages and paper drafts.
         filename: Filename for write / promote / ingest / supersede.
         content: Page or source body for write / ingest.
         log_entry: Optional log message for write.
         source_url: Optional URL for ingest.
-        old_page: Page to supersede (supersede action).
-        new_draft: Replacement draft (supersede action).
+        old_page: Page to supersede.
+        new_draft: Replacement draft for supersede.
         reason: Why the old page is being superseded.
         similarity_threshold: Merge threshold for consolidate
             (0-1, default 0.25).
