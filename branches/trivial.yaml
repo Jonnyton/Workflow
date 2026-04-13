@@ -1,9 +1,9 @@
-id: 9e7fa64113d1
+id: 6f8ab5aba198
 name: Trivial
 description: ''
 author: tester
 domain_id: workflow
-goal_id: e1ae41439f17
+goal_id: deed18da7c09
 tags: []
 version: 1
 parent_def_id: null
@@ -30,5 +30,5 @@ stats:
   avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:22:32.640629+00:00'
-updated_at: 1776093752.7252264
+created_at: '2026-04-13T15:22:33.447068+00:00'
+updated_at: 1776093753.489022
