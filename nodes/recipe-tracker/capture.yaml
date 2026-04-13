@@ -1,0 +1,8 @@
+id: capture
+display_name: Capture raw recipe
+phase: custom
+prompt_template: Read the user's message and extract recipe.
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: tester
