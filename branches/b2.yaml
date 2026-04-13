@@ -1,9 +1,9 @@
-id: ad3e0f4a3090
+id: 81eb3d70bb22
 name: B2
 description: ''
 author: tester
 domain_id: workflow
-goal_id: bd7d029e9de4
+goal_id: 4f72a1202499
 tags: []
 version: 1
 parent_def_id: null
@@ -30,5 +30,5 @@ stats:
   avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:20:51.739975+00:00'
-updated_at: 1776093651.9840913
+created_at: '2026-04-13T15:20:54.300500+00:00'
+updated_at: 1776093654.5093746
