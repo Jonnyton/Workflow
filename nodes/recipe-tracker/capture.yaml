@@ -1,7 +1,9 @@
 id: capture
-display_name: Capture raw recipe
+display_name: Capture recipe
 phase: custom
-prompt_template: '...'
+prompt_template: 'Extract recipe: {raw_recipe}'
+output_keys:
+- capture_output
 timeout_seconds: 300.0
 approved: false
 enabled: true
