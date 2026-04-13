@@ -1,0 +1,10 @@
+id: analyze
+display_name: Analyze
+phase: custom
+prompt_template: 'Summarize: {topic}'
+output_keys:
+- summary
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: tester
