@@ -185,18 +185,27 @@ def stage(path: Path, *, repo_path: Path | None = None) -> bool:
 
 def commit(
     message: str,
-    author: str,
+    author: str | None = None,
     *,
     paths: list[Path] | None = None,
     repo_path: Path | None = None,
 ) -> CommitResult:
     """Stage ``paths`` (if given) and commit with ``message`` and ``author``.
 
-    ``author`` is passed opaquely to ``git commit --author=…`` — caller
-    decides the format (§7.4 identity work will own the format later).
+    ``author`` is passed opaquely to ``git commit --author=…``. When
+    ``None``, :func:`workflow.identity.git_author` resolves it from the
+    current process env (``WORKFLOW_GIT_AUTHOR`` or
+    ``UNIVERSE_SERVER_USER``). Explicit string callers keep their
+    existing behavior.
+
     If there is nothing to commit, returns ``ok=False`` with a distinctive
     message rather than emitting an empty commit.
     """
+    if author is None:
+        # Lazy import dodges any future circular edge if identity.py
+        # grows dependencies on storage-adjacent modules.
+        from workflow.identity import git_author
+        author = git_author()
     if not is_enabled(repo_path):
         return CommitResult(ok=False, error="git not enabled")
     cwd = str(repo_path) if repo_path is not None else None
