@@ -288,3 +288,210 @@ def test_goal_new_with_no_prior_slug_skips_dirty_check(base_path, tmp_path):
         "author": "tester",
     })
     assert saved["goal_id"]
+
+
+# ─── G3: composite save_and_commit ───────────────────────────────────────
+
+
+AUTHOR_LINE = "Test Dev <dev@example.invalid>"
+
+
+def _last_commit_files(repo: Path) -> list[str]:
+    out = _run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"], repo,
+    ).stdout
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _commit_count(repo: Path) -> int:
+    return int(
+        _run(["git", "rev-list", "--count", "HEAD"], repo).stdout.strip()
+    )
+
+
+def test_save_branch_and_commit_single_commit_covers_branch_and_nodes(
+    base_path, tmp_path,
+):
+    """Core G3 invariant: one MCP action = one commit, even with N nodes.
+
+    Failure mode we're preventing: branch.yaml + node1.yaml + node2.yaml
+    landing in separate commits, breaking ledger-equivalence.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+
+    before_count = _commit_count(repo)
+
+    branch = _make_branch()
+    branch.node_defs.append(
+        NodeDefinition(
+            node_id="n2", display_name="Node two",
+            prompt_template="also: {y}", input_keys=["y"], output_keys=["z"],
+        ),
+    )
+
+    saved, result = backend.save_branch_and_commit(
+        branch, author=AUTHOR_LINE, message="build: Git-probe branch",
+    )
+    assert saved["branch_def_id"]
+    assert result is not None
+    assert result.ok, result.error
+    assert len(result.sha) == 40
+
+    after_count = _commit_count(repo)
+    assert after_count - before_count == 1, (
+        f"expected exactly 1 new commit, got {after_count - before_count}"
+    )
+
+    files = _last_commit_files(repo)
+    assert any("branches/git-probe-branch.yaml" in f for f in files), files
+    assert any("nodes/git-probe-branch/n1.yaml" in f for f in files), files
+    assert any("nodes/git-probe-branch/n2.yaml" in f for f in files), files
+    assert all(not f.endswith("README.md") for f in files)
+
+    subject = _run(
+        ["git", "log", "-1", "--format=%s"], repo,
+    ).stdout.strip()
+    assert subject == "build: Git-probe branch"
+    author_line = _run(
+        ["git", "log", "-1", "--format=%an <%ae>"], repo,
+    ).stdout.strip()
+    assert author_line == AUTHOR_LINE
+
+
+def test_save_branch_and_commit_with_extra_paths(base_path, tmp_path):
+    """extra_paths must land in the same commit as the branch/nodes."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+
+    sidecar = repo / "branches" / "git-probe-branch.meta.yaml"
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text("tag: research\n", encoding="utf-8")
+
+    before = _commit_count(repo)
+    saved, result = backend.save_branch_and_commit(
+        _make_branch(),
+        author=AUTHOR_LINE,
+        message="build: with sidecar",
+        extra_paths=[sidecar],
+    )
+    assert result is not None and result.ok
+    assert _commit_count(repo) - before == 1
+
+    files = _last_commit_files(repo)
+    assert any("git-probe-branch.meta.yaml" in f for f in files), files
+
+
+def test_save_branch_and_commit_dirty_lists_all_and_skips_write(
+    base_path, tmp_path, monkeypatch,
+):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+
+    backend.save_branch_and_commit(
+        _make_branch(), author=AUTHOR_LINE, message="seed",
+    )
+
+    layout = YamlRepoLayout(repo)
+    branch_path = layout.branch_path("git-probe-branch")
+    node_path = layout.node_path("git-probe-branch", "n1")
+    branch_path.write_text(
+        branch_path.read_text(encoding="utf-8") + "# edit\n",
+        encoding="utf-8",
+    )
+    node_path.write_text(
+        node_path.read_text(encoding="utf-8") + "# edit\n",
+        encoding="utf-8",
+    )
+
+    before = _commit_count(repo)
+    sqlite_calls: list[dict] = []
+
+    def _track(*args, **kwargs):
+        sqlite_calls.append({"args": args, "kwargs": kwargs})
+        raise AssertionError("save_branch_definition should not run on refused save")
+
+    monkeypatch.setattr(
+        "workflow.author_server.save_branch_definition", _track,
+    )
+
+    with pytest.raises(DirtyFileError) as exc:
+        backend.save_branch_and_commit(
+            _make_branch(), author=AUTHOR_LINE, message="retry",
+        )
+
+    assert branch_path in exc.value.paths
+    assert node_path in exc.value.paths
+    assert _commit_count(repo) == before
+    assert sqlite_calls == []
+
+
+def test_save_branch_and_commit_force_overrides_dirty(base_path, tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+
+    backend.save_branch_and_commit(
+        _make_branch(), author=AUTHOR_LINE, message="seed",
+    )
+
+    layout = YamlRepoLayout(repo)
+    branch_path = layout.branch_path("git-probe-branch")
+    branch_path.write_text("# edit\n", encoding="utf-8")
+    assert git_bridge.has_uncommitted_changes(branch_path, repo_path=repo)
+
+    b = _make_branch()
+    b.description = "forced"
+    _, result = backend.save_branch_and_commit(
+        b, author=AUTHOR_LINE, message="forced update", force=True,
+    )
+    assert result is not None and result.ok
+    assert _run(
+        ["git", "log", "-1", "--format=%s"], repo,
+    ).stdout.strip() == "forced update"
+
+
+def test_save_branch_and_commit_git_disabled_returns_none(
+    base_path, tmp_path,
+):
+    repo = tmp_path / "not_a_repo"  # no git init
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+    assert backend._git_enabled is False
+
+    saved, result = backend.save_branch_and_commit(
+        _make_branch(), author=AUTHOR_LINE, message="no-git",
+    )
+    assert result is None
+    assert saved["branch_def_id"]
+    assert YamlRepoLayout(repo).branch_path("git-probe-branch").exists()
+
+
+def test_save_goal_and_commit_single_commit(base_path, tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+
+    before = _commit_count(repo)
+    saved, result = backend.save_goal_and_commit(
+        {"name": "Goal composite", "author": "tester"},
+        author=AUTHOR_LINE, message="propose_goal: composite",
+    )
+    assert saved["goal_id"]
+    assert result is not None and result.ok
+    assert _commit_count(repo) - before == 1
+    files = _last_commit_files(repo)
+    assert any("goals/goal-composite.yaml" in f for f in files), files
+
+
+def test_save_goal_and_commit_git_disabled_returns_none(base_path, tmp_path):
+    repo = tmp_path / "not_a_repo"
+    backend = SqliteCachedBackend(base_path, repo_root=repo)
+    saved, result = backend.save_goal_and_commit(
+        {"name": "no-git goal", "author": "tester"},
+        author=AUTHOR_LINE, message="x",
+    )
+    assert saved["goal_id"]
+    assert result is None

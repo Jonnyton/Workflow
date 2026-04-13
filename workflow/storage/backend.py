@@ -211,6 +211,68 @@ class SqliteCachedBackend:
 
         return saved
 
+    def save_branch_and_commit(
+        self,
+        branch: BranchDefinition,
+        *,
+        author: str,
+        message: str,
+        extra_paths: list[Path] | None = None,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """Write branch + nodes + optional extras as ONE git commit.
+
+        Composite semantics matter for ledger-equivalence: one public
+        MCP action (``build_branch``, ``patch_branch``) produces exactly
+        one commit, even when it writes N+1 YAML files. Splitting the
+        commit would violate Phase 4's "one commit per public mutation"
+        intent.
+
+        Dirty-checks ALL target paths (branch + node files + extras) up
+        front. If any path is dirty and ``force=False``, raises
+        :class:`DirtyFileError` with every dirty path listed; nothing
+        is written to SQLite or disk.
+
+        When git is disabled, the YAML writes still happen via
+        ``save_branch`` and the returned ``CommitResult`` is ``None``.
+        """
+        branch_slug = slugify(branch.name or branch.branch_def_id)
+        _, node_payloads = branch_to_yaml_payload(
+            branch, branch_slug=branch_slug,
+        )
+        branch_path = self.layout.branch_path(branch_slug)
+        node_paths = [
+            self.layout.node_path(branch_slug, np["id"])
+            for np in node_payloads
+        ]
+        extras = list(extra_paths or [])
+        all_paths = [branch_path, *node_paths, *extras]
+
+        # Up-front dirty-check over the full payload so any refusal
+        # leaves SQLite, YAML, and git index untouched.
+        self._check_dirty(all_paths, force=force)
+
+        # save_branch already runs its own dirty-check; pass force=True
+        # so it doesn't re-check (we just cleared the whole payload).
+        saved = self.save_branch(branch, force=True)
+
+        # Extras: stage them. Callers are expected to have written them
+        # to disk already (they're extra beyond the Branch/Node files
+        # the backend owns).
+        for p in extras:
+            self._stage_hook(p)
+
+        if not self._git_enabled:
+            return saved, None
+
+        # Commit with an explicit paths list. Defense-in-depth against a
+        # concurrent writer staging unrelated files between our stage
+        # calls and this commit.
+        result = git_bridge.commit(
+            message, author, paths=all_paths, repo_path=self._repo_root,
+        )
+        return saved, result
+
     # ── Goal ──────────────────────────────────────────────────────
 
     def save_goal(
@@ -235,6 +297,33 @@ class SqliteCachedBackend:
         self._stage_hook(goal_path)
 
         return saved
+
+    def save_goal_and_commit(
+        self,
+        goal: dict[str, Any],
+        *,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """Save a Goal and commit in one shot. See :meth:`save_branch_and_commit`."""
+        # Pre-save dirty check on the provisional slug path.
+        provisional_slug = slugify(goal.get("name") or goal.get("goal_id") or "")
+        if provisional_slug:
+            goal_path_pre = self.layout.goal_path(provisional_slug)
+            self._check_dirty([goal_path_pre], force=force)
+
+        saved = self.save_goal(goal, force=True)
+
+        if not self._git_enabled:
+            return saved, None
+
+        goal_slug = slugify(saved.get("name") or saved.get("goal_id"))
+        goal_path = self.layout.goal_path(goal_slug)
+        result = git_bridge.commit(
+            message, author, paths=[goal_path], repo_path=self._repo_root,
+        )
+        return saved, result
 
 
 # ─────────────────────────────────────────────────────────────────────
