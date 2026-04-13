@@ -71,11 +71,36 @@ class StorageBackend(Protocol):
     whichever cache/file shape the backend populated.
     """
 
-    def save_branch(self, branch: BranchDefinition) -> dict[str, Any]:
+    def save_branch(
+        self, branch: BranchDefinition, *, force: bool = False,
+    ) -> dict[str, Any]:
         """Persist a Branch; return the stored dict shape."""
 
-    def save_goal(self, goal: dict[str, Any]) -> dict[str, Any]:
+    def save_goal(
+        self, goal: dict[str, Any], *, force: bool = False,
+    ) -> dict[str, Any]:
         """Persist a Goal; return the stored dict shape."""
+
+    def save_branch_and_commit(
+        self,
+        branch: BranchDefinition,
+        *,
+        author: str,
+        message: str,
+        extra_paths: list[Path] | None = None,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], "git_bridge.CommitResult | None"]:
+        """Persist a Branch + optional extras as ONE commit."""
+
+    def save_goal_and_commit(
+        self,
+        goal: dict[str, Any],
+        *,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], "git_bridge.CommitResult | None"]:
+        """Persist a Goal and commit in one call."""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -95,17 +120,44 @@ class SqliteOnlyBackend:
     def __init__(self, base_path: str | Path) -> None:
         self.base_path = Path(base_path)
 
-    def save_branch(self, branch: BranchDefinition) -> dict[str, Any]:
+    def save_branch(
+        self, branch: BranchDefinition, *, force: bool = False,  # noqa: ARG002
+    ) -> dict[str, Any]:
         from workflow.author_server import save_branch_definition
 
         return save_branch_definition(
             self.base_path, branch_def=branch.to_dict(),
         )
 
-    def save_goal(self, goal: dict[str, Any]) -> dict[str, Any]:
+    def save_goal(
+        self, goal: dict[str, Any], *, force: bool = False,  # noqa: ARG002
+    ) -> dict[str, Any]:
         from workflow.author_server import save_goal as _save_goal
 
         return _save_goal(self.base_path, goal=goal)
+
+    def save_branch_and_commit(
+        self,
+        branch: BranchDefinition,
+        *,
+        author: str,  # noqa: ARG002
+        message: str,  # noqa: ARG002
+        extra_paths: list[Path] | None = None,  # noqa: ARG002
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """SQLite-only backend has no git seam; commit slot is always None."""
+        return self.save_branch(branch, force=force), None
+
+    def save_goal_and_commit(
+        self,
+        goal: dict[str, Any],
+        *,
+        author: str,  # noqa: ARG002
+        message: str,  # noqa: ARG002
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """SQLite-only backend has no git seam; commit slot is always None."""
+        return self.save_goal(goal, force=force), None
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -363,7 +415,7 @@ def _noop_stage(_path: Path) -> None:
 # Backend factory (Phase 7.3 H1)
 # ─────────────────────────────────────────────────────────────────────
 
-_BACKEND_CACHE: "StorageBackend | None" = None
+_BACKEND_CACHE: dict[tuple[str, str], StorageBackend] = {}
 
 _BACKEND_SQLITE_ONLY = "sqlite_only"
 _BACKEND_SQLITE_CACHED = "sqlite_cached"
@@ -374,7 +426,7 @@ def get_backend(
     *,
     repo_root: str | Path | None = None,
 ) -> StorageBackend:
-    """Return the process-singleton :class:`StorageBackend`.
+    """Return the memoized :class:`StorageBackend` for this (base, repo).
 
     Selection:
 
@@ -384,37 +436,37 @@ def get_backend(
        ``repo_root`` (falls back to the process CWD). Git enabled →
        :class:`SqliteCachedBackend`; git disabled → :class:`SqliteOnlyBackend`.
 
-    The first call materializes the backend; subsequent calls return
-    the same instance. Tests that need to re-probe must call
-    :func:`invalidate_backend_cache` first.
-
-    ``repo_root`` is required for the cached backend and defaults to
-    ``Path.cwd()`` when not provided — matches the common case where
-    the Universe Server runs from the repo root.
+    Cache key is ``(base_path, repo_root)`` — tests that relocate the
+    universe directory between cases get a fresh backend automatically
+    without having to explicitly invalidate. :func:`invalidate_backend_cache`
+    still clears everything for re-probe scenarios.
     """
-    global _BACKEND_CACHE
-    if _BACKEND_CACHE is not None:
-        return _BACKEND_CACHE
-
+    resolved_base = Path(base_path).resolve()
     resolved_repo = Path(repo_root) if repo_root is not None else Path.cwd()
+    resolved_repo = resolved_repo.resolve()
+    key = (str(resolved_base), str(resolved_repo))
+    cached = _BACKEND_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     choice = os.environ.get("WORKFLOW_STORAGE_BACKEND", "").strip().lower()
     if choice == _BACKEND_SQLITE_ONLY:
-        _BACKEND_CACHE = SqliteOnlyBackend(base_path)
+        backend: StorageBackend = SqliteOnlyBackend(resolved_base)
     elif choice == _BACKEND_SQLITE_CACHED:
-        _BACKEND_CACHE = SqliteCachedBackend(base_path, repo_root=resolved_repo)
+        backend = SqliteCachedBackend(resolved_base, repo_root=resolved_repo)
     elif git_bridge.is_enabled(resolved_repo):
-        _BACKEND_CACHE = SqliteCachedBackend(base_path, repo_root=resolved_repo)
+        backend = SqliteCachedBackend(resolved_base, repo_root=resolved_repo)
     else:
-        _BACKEND_CACHE = SqliteOnlyBackend(base_path)
-    return _BACKEND_CACHE
+        backend = SqliteOnlyBackend(resolved_base)
+    _BACKEND_CACHE[key] = backend
+    return backend
 
 
 def invalidate_backend_cache() -> None:
-    """Drop the cached backend. Test helper.
+    """Drop all cached backends. Test helper.
 
     Also invalidates the git_bridge cache so a subsequent ``get_backend``
     call re-probes the current environment.
     """
-    global _BACKEND_CACHE
-    _BACKEND_CACHE = None
+    _BACKEND_CACHE.clear()
     git_bridge.invalidate_cache()

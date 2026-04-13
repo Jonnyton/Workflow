@@ -41,7 +41,7 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from workflow.storage import DirtyFileError
+from workflow.storage import DirtyFileError, get_backend
 
 logger = logging.getLogger("universe_server")
 
@@ -324,6 +324,22 @@ WRITE_ACTIONS: dict[str, Any] = {
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
 }
+
+
+def _storage_backend():
+    """Resolve the memoized :class:`StorageBackend` for catalog writes.
+
+    Goals + Branches live at repo root per spec §phase7_github_as_catalog
+    (`goals/<slug>.yaml`, `branches/<slug>.yaml`). The repo root is
+    derived from ``_base_path().parent`` — production points
+    ``output/`` at the project root, so its parent IS the git repo
+    root. Tests using ``UNIVERSE_SERVER_BASE=<tmp_path>/output`` get
+    ``<tmp_path>`` as the repo root, which isn't a git repo, so
+    ``get_backend`` auto-probes to :class:`SqliteOnlyBackend` and
+    leaves the host project repo untouched.
+    """
+    base = _base_path()
+    return get_backend(base, repo_root=base.parent)
 
 
 def _format_dirty_file_conflict(exc: DirtyFileError) -> dict[str, Any]:
@@ -2622,7 +2638,13 @@ def _dispatch_branch_action(
     handler can silently skip attribution.
     """
     _ensure_author_server_db()
-    result_str = handler(kwargs)
+    try:
+        result_str = handler(kwargs)
+    except DirtyFileError as exc:
+        # Phase 7.3: surface local-edit conflicts as a structured MCP
+        # response so the client can render actionable options. Ledger
+        # is intentionally skipped — no write landed.
+        return json.dumps(_format_dirty_file_conflict(exc))
 
     if action not in _BRANCH_WRITE_ACTIONS:
         return result_str
@@ -2674,8 +2696,8 @@ def _dispatch_branch_action(
 
 
 def _ext_branch_create(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import save_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
 
     name = kwargs.get("name", "").strip()
     if not name:
@@ -2687,7 +2709,12 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
         domain_id=kwargs.get("domain_id") or "workflow",
         author=kwargs.get("author") or _current_actor(),
     )
-    saved = save_branch_definition(_base_path(), branch_def=branch.to_dict())
+    saved, _commit = _storage_backend().save_branch_and_commit(
+        branch,
+        author=git_author(_current_actor()),
+        message=f"branches.create_branch: {name}",
+        force=bool(kwargs.get("force", False)),
+    )
     return json.dumps({
         "branch_def_id": saved["branch_def_id"],
         "name": saved["name"],
@@ -2746,11 +2773,9 @@ def _ext_branch_delete(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
-        get_branch_definition,
-        update_branch_definition,
-    )
+    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
 
     bid = kwargs.get("branch_def_id", "").strip()
     nid = kwargs.get("node_id", "").strip()
@@ -2788,17 +2813,15 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
     if err:
         return json.dumps({"error": err})
 
-    update_branch_definition(
-        _base_path(),
-        branch_def_id=bid,
-        updates={
-            "node_defs": [n.to_dict() for n in branch.node_defs],
-            "graph_nodes": [g.to_dict() for g in branch.graph_nodes],
-        },
-    )
-    # The resolved node may have been renamed; the final node_id is
-    # whatever the resolver stored on the branch (last entry).
+    # The resolved node may have been renamed; capture the final id
+    # from the mutated branch BEFORE persisting.
     final_nid = branch.node_defs[-1].node_id
+    _storage_backend().save_branch_and_commit(
+        branch,
+        author=git_author(_current_actor()),
+        message=f"branches.add_node: {bid}.{final_nid}",
+        force=bool(kwargs.get("force", False)),
+    )
     return json.dumps({
         "branch_def_id": bid,
         "node_id": final_nid,
@@ -2807,11 +2830,9 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
-        get_branch_definition,
-        update_branch_definition,
-    )
+    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition, EdgeDefinition
+    from workflow.identity import git_author
 
     bid = kwargs.get("branch_def_id", "").strip()
     src = kwargs.get("from_node", "").strip()
@@ -2829,10 +2850,11 @@ def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
     branch = BranchDefinition.from_dict(source_dict)
     branch.edges.append(EdgeDefinition(from_node=src, to_node=dst))
 
-    update_branch_definition(
-        _base_path(),
-        branch_def_id=bid,
-        updates={"edges": [e.to_dict() for e in branch.edges]},
+    _storage_backend().save_branch_and_commit(
+        branch,
+        author=git_author(_current_actor()),
+        message=f"branches.connect_nodes: {bid} {src}->{dst}",
+        force=bool(kwargs.get("force", False)),
     )
     return json.dumps({
         "branch_def_id": bid,
@@ -2843,10 +2865,9 @@ def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
-        get_branch_definition,
-        update_branch_definition,
-    )
+    from workflow.author_server import get_branch_definition
+    from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
 
     bid = kwargs.get("branch_def_id", "").strip()
     nid = kwargs.get("node_id", "").strip()
@@ -2856,12 +2877,18 @@ def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
         })
 
     try:
-        get_branch_definition(_base_path(), branch_def_id=bid)
+        source_dict = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
         return json.dumps({"error": f"Branch '{bid}' not found."})
 
-    update_branch_definition(
-        _base_path(), branch_def_id=bid, updates={"entry_point": nid},
+    branch = BranchDefinition.from_dict(source_dict)
+    branch.entry_point = nid
+
+    _storage_backend().save_branch_and_commit(
+        branch,
+        author=git_author(_current_actor()),
+        message=f"branches.set_entry_point: {bid}.{nid}",
+        force=bool(kwargs.get("force", False)),
     )
     return json.dumps({
         "branch_def_id": bid,
@@ -2871,10 +2898,9 @@ def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
-        get_branch_definition,
-        update_branch_definition,
-    )
+    from workflow.author_server import get_branch_definition
+    from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
 
     bid = kwargs.get("branch_def_id", "").strip()
     fname = kwargs.get("field_name", "").strip()
@@ -2889,8 +2915,8 @@ def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
     except KeyError:
         return json.dumps({"error": f"Branch '{bid}' not found."})
 
-    state_schema = list(source_dict.get("state_schema", []) or [])
-    if any(f.get("name") == fname for f in state_schema):
+    branch = BranchDefinition.from_dict(source_dict)
+    if any(f.get("name") == fname for f in branch.state_schema):
         return json.dumps({
             "error": f"State field '{fname}' already exists on this branch.",
         })
@@ -2907,11 +2933,12 @@ def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
     if default != "":
         field_entry["default"] = default
 
-    state_schema.append(field_entry)
-    update_branch_definition(
-        _base_path(),
-        branch_def_id=bid,
-        updates={"state_schema": state_schema},
+    branch.state_schema.append(field_entry)
+    _storage_backend().save_branch_and_commit(
+        branch,
+        author=git_author(_current_actor()),
+        message=f"branches.add_state_field: {bid}.{fname}",
+        force=bool(kwargs.get("force", False)),
     )
     return json.dumps({
         "branch_def_id": bid,
@@ -5837,7 +5864,7 @@ def _format_goal_catalog_line(g: dict[str, Any]) -> str:
 
 
 def _action_goal_propose(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import save_goal
+    from workflow.identity import git_author
 
     name = (kwargs.get("name") or "").strip()
     if not name:
@@ -5856,13 +5883,19 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
                 "time. Use the `delete_goal` action to soft-delete."
             ),
         })
-    saved = save_goal(_base_path(), goal={
+    goal_dict = {
         "name": name,
         "description": kwargs.get("description", ""),
         "author": _current_actor_or_anon(),
         "tags": tags,
         "visibility": visibility,
-    })
+    }
+    saved, _commit = _storage_backend().save_goal_and_commit(
+        goal_dict,
+        author=git_author(_current_actor()),
+        message=f"goals.propose: {name}",
+        force=bool(kwargs.get("force", False)),
+    )
     text = (
         f"**Proposed Goal: {saved['name']}.**\n\n"
         "Bind existing workflows to this Goal with the `goals` action "
@@ -5879,6 +5912,7 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
 def _action_goal_update(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import get_goal
     from workflow.author_server import update_goal as _update
+    from workflow.identity import git_author
 
     gid = (kwargs.get("goal_id") or "").strip()
     if not gid:
@@ -5934,7 +5968,16 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
             ),
         })
 
-    saved = _update(_base_path(), goal_id=gid, updates=updates)
+    # Apply the SQLite update (owns column-level merging + validation).
+    # Then route the resulting full goal dict through the cached backend
+    # so the YAML mirror refreshes + single commit lands.
+    updated = _update(_base_path(), goal_id=gid, updates=updates)
+    saved, _commit = _storage_backend().save_goal_and_commit(
+        updated,
+        author=git_author(_current_actor()),
+        message=f"goals.update: {gid}",
+        force=bool(kwargs.get("force", False)),
+    )
     changed = sorted(updates.keys())
     text = (
         f"**Updated Goal '{saved['name']}'.** Fields changed: "
@@ -5990,9 +6033,27 @@ def _action_goal_bind(kwargs: dict[str, Any]) -> str:
     else:
         goal = None
 
+    from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
+
     update_branch_definition(
         _base_path(), branch_def_id=bid,
         updates={"goal_id": gid or None},
+    )
+    # Re-read post-update and route through cached backend so the YAML
+    # mirror + single commit capture the cross-table edit. Commit targets
+    # the branch path only (goal row isn't mutated by bind).
+    updated_branch = get_branch_definition(_base_path(), branch_def_id=bid)
+    branch_obj = BranchDefinition.from_dict(updated_branch)
+    if gid and goal is not None:
+        commit_msg = f"goals.bind: {branch['name']} → {goal['name']}"
+    else:
+        commit_msg = f"goals.bind: {branch['name']} ∅ (unbind)"
+    _storage_backend().save_branch_and_commit(
+        branch_obj,
+        author=git_author(_current_actor()),
+        message=commit_msg,
+        force=bool(kwargs.get("force", False)),
     )
     if gid:
         text = (
@@ -6376,8 +6437,16 @@ _GOAL_WRITE_ACTIONS: frozenset[str] = frozenset({
 def _dispatch_goal_action(
     action: str, handler: Any, kwargs: dict[str, Any],
 ) -> str:
-    """Run a Goal action; ledger write actions for public attribution."""
-    result_str = handler(kwargs)
+    """Run a Goal action; ledger write actions for public attribution.
+
+    Catches :class:`DirtyFileError` from cached-backend writes (per H2)
+    and formats it as the structured ``local_edit_conflict`` payload so
+    chat clients render actionable options rather than a raw traceback.
+    """
+    try:
+        result_str = handler(kwargs)
+    except DirtyFileError as exc:
+        return json.dumps(_format_dirty_file_conflict(exc))
     if action not in _GOAL_WRITE_ACTIONS:
         return result_str
     try:
@@ -6438,6 +6507,7 @@ def goals(
     author: str = "",
     limit: int = 50,
     scope: str = "",
+    force: bool = False,
 ) -> str:
     """Goals — first-class shared primitives above workflow Branches.
 
@@ -6484,6 +6554,10 @@ def goals(
         to one Goal; 'all' aggregates cross-Goal.
       author: list filter.
       limit: cap on returned rows.
+      force: override `local_edit_conflict` refusal on propose/update/bind
+        when the target YAML has uncommitted local edits. Default False —
+        the conflict surfaces as a structured response so the caller can
+        commit / stash / discard first.
     """
     _ensure_author_server_db()
     goal_kwargs: dict[str, Any] = {
@@ -6499,6 +6573,7 @@ def goals(
         "author": author,
         "limit": limit,
         "scope": scope,
+        "force": force,
     }
     handler = _GOAL_ACTIONS.get(action)
     if handler is None:
