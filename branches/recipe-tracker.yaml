@@ -26,6 +26,8 @@ edges:
   to: capture
 - from: capture
   to: archive
+- from: archive
+  to: END
 conditional_edges: []
 published: false
 stats:
@@ -33,4 +35,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:21:17.946726+00:00'
-updated_at: 1776093678.5597472
+updated_at: 1776093678.7831688
