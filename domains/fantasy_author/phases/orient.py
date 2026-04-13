@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 # Phase-level loop guardrails (e.g., worldbuild no-op streak) live with the
 # relevant phase node; see STATUS.md 2026-04-10 and CLAUDE.md naming note.
 _MAX_RETRIEVAL_REFLECTION_PASSES = 2
-_MAX_REFLECTION_PASSES = _MAX_RETRIEVAL_REFLECTION_PASSES
 
 # Minimum number of facts about named entities before we consider context
 # adequate.  Below this, a targeted re-query is warranted.

@@ -7,7 +7,7 @@ re-query capping added by the orient reflection feature.
 from __future__ import annotations
 
 from domains.fantasy_author.phases.orient import (
-    _MAX_REFLECTION_PASSES,
+    _MAX_RETRIEVAL_REFLECTION_PASSES,
     _MIN_ENTITY_FACT_COUNT,
     RetrievalGap,
     _detect_continuity_gap,
@@ -221,7 +221,7 @@ class TestMergeContexts:
 
 class TestReflectionConstants:
     def test_max_passes_is_bounded(self):
-        assert _MAX_REFLECTION_PASSES == 2
+        assert _MAX_RETRIEVAL_REFLECTION_PASSES == 2
 
     def test_min_entity_facts_is_reasonable(self):
         assert _MIN_ENTITY_FACT_COUNT >= 1
