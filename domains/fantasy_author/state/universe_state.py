@@ -116,6 +116,22 @@ class UniverseState(TypedDict):
     """Path to the knowledge graph SQLite database (knowledge.db)."""
 
     # ------------------------------------------------------------------
+    # Cycle-level no-op guardrail (see phases/universe_cycle.py)
+    # ------------------------------------------------------------------
+    cycle_noop_streak: int
+    """Consecutive universe cycles with no forward progress. Resets on
+    any signal of progress. Self-pauses the daemon when it trips
+    ``_MAX_CYCLE_NOOP_STREAK`` — catches no-op loops that the
+    worldbuild-local guardrail misses (e.g. review→idle→cycle where
+    worldbuild never even runs)."""
+
+    _prev_cycle_totals: dict
+    """Snapshot of progress signals captured at the start of the current
+    universe cycle. Compared against end-of-cycle values to decide
+    whether the cycle made forward progress. Underscore-prefixed like
+    other internal propagation fields."""
+
+    # ------------------------------------------------------------------
     # Compatibility queue (transitional, used during migration)
     # ------------------------------------------------------------------
     task_queue: list
