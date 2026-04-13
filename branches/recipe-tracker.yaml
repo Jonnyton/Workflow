@@ -1,55 +1,22 @@
-id: 08580fdd63ca
+id: a80b5c73451d
 name: Recipe tracker
-description: Capture, categorize, archive recipes
+description: Capture recipes
 author: tester
 domain_id: workflow
-goal_id: null
+goal_id: ''
 tags: []
 version: 1
 parent_def_id: null
-entry_point: capture
-state_schema:
-- description: ''
-  name: raw_recipe
-  type: str
-- description: ''
-  name: category
-  type: str
-- name: archived
-  type: bool
-  description: ''
-  default: 'false'
-nodes:
-- id: capture
-  path: nodes/recipe-tracker/capture.yaml
-- id: categorize
-  path: nodes/recipe-tracker/categorize.yaml
-- id: archive
-  path: nodes/recipe-tracker/archive.yaml
-graph_nodes:
-- id: capture
-  node_def_id: capture
-  position: 0
-- id: categorize
-  node_def_id: categorize
-  position: 1
-- id: archive
-  node_def_id: archive
-  position: 2
-edges:
-- from: START
-  to: capture
-- from: capture
-  to: categorize
-- from: categorize
-  to: archive
-- from: archive
-  to: END
+entry_point: ''
+state_schema: []
+nodes: []
+graph_nodes: []
+edges: []
 conditional_edges: []
 published: false
 stats:
-  avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:23:48.566221+00:00'
-updated_at: 1776093831.2125819
+  avg_quality_score: 0.0
+created_at: '2026-04-13T15:23:58.548377+00:00'
+updated_at: '2026-04-13T15:23:58.548391+00:00'
