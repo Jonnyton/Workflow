@@ -8,7 +8,10 @@ tags: []
 version: 1
 parent_def_id: null
 entry_point: analyze
-state_schema: []
+state_schema:
+- name: topic
+  type: str
+  description: ''
 nodes:
 - id: analyze
   path: nodes/research/analyze.yaml
@@ -28,4 +31,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:21:52.846118+00:00'
-updated_at: 1776093713.404879
+updated_at: 1776093713.578927
