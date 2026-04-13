@@ -108,8 +108,8 @@ def run_phase_retrieval(
 
         kg = runtime.knowledge_graph
         if kg is None:
-            from workflow.knowledge.knowledge_graph import KnowledgeGraph
             from domains.fantasy_author.phases._paths import resolve_kg_path
+            from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
             kg_path = resolve_kg_path(state)
             if kg_path:

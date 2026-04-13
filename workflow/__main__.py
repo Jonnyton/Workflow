@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 import threading  # noqa: E402, F401  — tests patch workflow.__main__.threading
 
+import fantasy_author.__main__ as _fa_main  # noqa: E402
 from fantasy_author.__main__ import (  # noqa: E402, F401
     DaemonController,
     _build_provider_router,
@@ -46,7 +47,6 @@ from fantasy_author.__main__ import (  # noqa: E402, F401
     _tunnel_url_ready,
     _update_gpt_schema_url,
 )
-import fantasy_author.__main__ as _fa_main  # noqa: E402
 
 # Module-level mutable that tests poke via ``main_mod._tunnel_url_value``
 _tunnel_url_value: str = getattr(_fa_main, "_tunnel_url_value", "")

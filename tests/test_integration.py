@@ -2438,7 +2438,7 @@ class TestTrayMode:
     def test_drain_tunnel_sets_shared_event(self):
         """_drain_tunnel_stderr sets _tunnel_url_ready and _tunnel_url_value."""
         import io
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         import fantasy_author.__main__ as main_mod
         from workflow.__main__ import (

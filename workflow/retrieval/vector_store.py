@@ -11,9 +11,8 @@ import threading
 from pathlib import Path
 from typing import Any, Sequence
 
-import numpy as np
-
 import lancedb
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Singleton connection
