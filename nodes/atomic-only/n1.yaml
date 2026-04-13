@@ -1,0 +1,8 @@
+id: n1
+display_name: N1
+phase: custom
+prompt_template: hello {x}
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: tester
