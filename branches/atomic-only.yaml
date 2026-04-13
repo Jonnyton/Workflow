@@ -8,7 +8,10 @@ tags: []
 version: 1
 parent_def_id: null
 entry_point: n1
-state_schema: []
+state_schema:
+- name: x
+  type: str
+  description: ''
 nodes:
 - id: n1
   path: nodes/atomic-only/n1.yaml
@@ -28,4 +31,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:22:42.660676+00:00'
-updated_at: 1776093763.2035701
+updated_at: 1776093763.3898413
