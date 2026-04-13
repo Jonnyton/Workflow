@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -36,6 +37,7 @@ from typing import Any, Callable
 from workflow.branches import BranchDefinition
 from workflow.graph_compiler import (
     CompilerError,
+    NodeTimeoutError,
     UnapprovedNodeError,
     compile_branch,
 )
@@ -393,6 +395,64 @@ def list_events(
             (run_id, int(since_step)),
         ).fetchall()
     return [_row_to_event(r) for r in rows]
+
+
+# Terminal run statuses end a long-poll immediately regardless of
+# whether new events have landed. Callers don't need to wait the full
+# max_wait_s once the run has resolved.
+_TERMINAL_STATUSES = frozenset({
+    "completed", "failed", "cancelled",
+})
+
+
+def await_run_events(
+    base_path: str | Path,
+    run_id: str,
+    *,
+    since_step: int = -1,
+    max_wait_s: float = 60.0,
+    poll_interval_s: float = 0.25,
+) -> dict[str, Any]:
+    """Long-poll for new run events. Block up to ``max_wait_s`` (#65).
+
+    Returns as soon as any of:
+    - a new event lands with ``step_index > since_step``
+    - the run reaches a terminal status (completed/failed/cancelled)
+    - the deadline elapses
+
+    Returns ``{"events": [...], "status": "...", "next_cursor": N,
+    "waited_s": float, "reason": "events|terminal|timeout"}``. The
+    caller uses ``next_cursor`` as the next ``since_step``.
+    """
+    deadline = time.monotonic() + max(0.0, float(max_wait_s))
+    poll_interval = max(0.05, float(poll_interval_s))
+    started = time.monotonic()
+    while True:
+        events = list_events(base_path, run_id, since_step=since_step)
+        record = get_run(base_path, run_id)
+        status = (record or {}).get("status", "unknown")
+        if events:
+            reason = "events"
+            break
+        if status in _TERMINAL_STATUSES:
+            reason = "terminal"
+            break
+        if time.monotonic() >= deadline:
+            reason = "timeout"
+            break
+        time.sleep(poll_interval)
+
+    next_cursor = max(
+        (e.get("step_index", since_step) for e in events),
+        default=since_step,
+    )
+    return {
+        "events": events,
+        "status": status,
+        "next_cursor": next_cursor,
+        "waited_s": round(time.monotonic() - started, 3),
+        "reason": reason,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -928,14 +988,31 @@ def _invoke_graph(
     execution_cursor = {"step": 0}
 
     def _on_node(node_id: str, **detail: Any) -> None:
-        # Cooperative cancel: this sink fires after each node executes,
-        # so raising here terminates the graph at the node boundary
-        # BEFORE the next node starts. That's exactly the spec's
-        # "interrupts between node invocations" guarantee.
-        if is_cancel_requested(base_path, run_id):
-            raise RunCancelledError(f"Run {run_id} cancelled between nodes.")
+        # #60: the compiler emits TWO events per node — phase="starting"
+        # before the provider call and phase="ran" after. Each event gets
+        # its own step_index so polling clients see node status transition
+        # pending -> running -> ran, no more "frozen for 4 minutes" gaps.
+        #
+        # Cooperative cancel fires only on "ran" (between nodes).
+        # Cancelling mid-provider-call would orphan the LLM call; the
+        # node boundary is the right checkpoint.
+        phase = detail.pop("phase", "ran")
         step = execution_cursor["step"]
         execution_cursor["step"] += 1
+
+        if phase == "starting":
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=node_id,
+                status=NODE_STATUS_RUNNING,
+                started_at=_now(),
+                detail=detail,
+            ))
+            return
+
+        if is_cancel_requested(base_path, run_id):
+            raise RunCancelledError(f"Run {run_id} cancelled between nodes.")
         record_event(base_path, RunStepEvent(
             run_id=run_id,
             step_index=step + _PENDING_OFFSET,
@@ -1015,6 +1092,34 @@ def _invoke_graph(
                 run_id=run_id, status=RUN_STATUS_CANCELLED,
                 output={}, error=msg,
             )
+        # #61: surface node timeouts with a distinct reason so the user
+        # can tell "your evidence-intake node hit the 300s cap" from a
+        # generic crash. The NodeTimeoutError message carries the
+        # node_id and timeout value.
+        timeout_exc = _find_timeout_exception(exc)
+        if timeout_exc is not None:
+            msg = f"Node timeout: {timeout_exc}"
+            step = execution_cursor["step"]
+            execution_cursor["step"] += 1
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=_node_id_from_timeout_exc(timeout_exc),
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
+                detail={"reason": "timeout", "message": str(timeout_exc)},
+            ))
+            update_run_status(
+                base_path, run_id,
+                status=RUN_STATUS_FAILED,
+                error=msg,
+                finished_at=_now(),
+            )
+            return RunOutcome(
+                run_id=run_id, status=RUN_STATUS_FAILED,
+                output={}, error=msg,
+            )
         logger.exception("Run %s failed at invoke", run_id)
         update_run_status(
             base_path, run_id,
@@ -1050,6 +1155,51 @@ def _is_cancel_exception(exc: BaseException) -> bool:
         seen.add(id(cur))
         cur = cur.__cause__ or cur.__context__
     return False
+
+
+def _find_timeout_exception(exc: BaseException) -> NodeTimeoutError | None:
+    """Walk the exception chain for a NodeTimeoutError (#61).
+
+    LangGraph wraps node errors in its own exception types; the
+    underlying timeout sits on ``__cause__`` / ``__context__``.
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        if isinstance(cur, NodeTimeoutError):
+            return cur
+        seen.add(id(cur))
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+_TIMEOUT_NODE_RE = re.compile(r"Node '([^']+)'")
+
+
+def _node_id_from_timeout_exc(exc: NodeTimeoutError) -> str:
+    """Return the node_id for a NodeTimeoutError.
+
+    Prefers the ``node_id`` attribute set by the raiser (stable contract).
+    Falls back to parsing the human-readable message for older callers
+    that constructed the exception without the keyword — keeps backward
+    compatibility with test fixtures and third-party code.
+    """
+    node_id = getattr(exc, "node_id", "") or ""
+    if node_id:
+        return node_id
+    return _node_id_from_timeout_message(str(exc))
+
+
+def _node_id_from_timeout_message(message: str) -> str:
+    """Extract the node_id from a NodeTimeoutError message (legacy fallback).
+
+    Fallback to ``"(timeout)"`` when the message doesn't match. The
+    node_id drives which row in the run_events timeline surfaces the
+    failure. Prefer :func:`_node_id_from_timeout_exc` when the exception
+    object is in hand.
+    """
+    m = _TIMEOUT_NODE_RE.search(message)
+    return m.group(1) if m else "(timeout)"
 
 
 def execute_branch(

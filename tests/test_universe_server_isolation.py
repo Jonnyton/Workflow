@@ -131,3 +131,105 @@ class TestUniverseIdInResponses:
         _make_universe(universe_base, "alpha")
         out = json.loads(us._action_inspect_universe(universe_id="alpha"))
         assert out["universe_id"] == "alpha"
+
+
+class TestScopeHeader:
+    """#15: the dispatcher wraps every universe-scoped response with a
+    phone-legible `Universe: <id>` `text` lead-in, puts `universe_id`
+    first, and leaves everything else structurally intact.
+    """
+
+    def test_dispatch_injects_text_header_on_read(self, universe_base):
+        _make_universe(universe_base, "alpha")
+        (universe_base / "alpha" / "PROGRAM.md").write_text(
+            "An alpha premise.", encoding="utf-8",
+        )
+        out = json.loads(us._dispatch_with_ledger(
+            "read_premise",
+            us._action_read_premise,
+            {"universe_id": "alpha"},
+        ))
+        assert "text" in out
+        assert out["text"].startswith("Universe: alpha")
+        assert out["premise"] == "An alpha premise."
+
+    def test_universe_id_is_first_key(self, universe_base):
+        _make_universe(universe_base, "alpha")
+        out_str = us._dispatch_with_ledger(
+            "read_premise",
+            us._action_read_premise,
+            {"universe_id": "alpha"},
+        )
+        out = json.loads(out_str)
+        first_key = next(iter(out.keys()))
+        assert first_key == "universe_id"
+
+    def test_text_header_on_write_path(self, universe_base):
+        _make_universe(universe_base, "alpha")
+        out = json.loads(us._dispatch_with_ledger(
+            "set_premise",
+            us._action_set_premise,
+            {"universe_id": "alpha", "text": "Fresh premise."},
+        ))
+        assert out["universe_id"] == "alpha"
+        assert "text" in out
+        assert out["text"].startswith("Universe: alpha")
+        assert out["status"] == "updated"
+
+    def test_error_without_universe_id_is_unchanged(self, universe_base):
+        # An error response with no universe_id must NOT get a fake scope
+        # header — we don't want to falsely claim a universe.
+        out = json.loads(us._dispatch_with_ledger(
+            "set_premise",
+            us._action_set_premise,
+            {"universe_id": "alpha", "text": ""},  # empty → error
+        ))
+        assert "error" in out
+        if "text" in out:
+            assert not out["text"].startswith("Universe: ")
+
+    def test_multi_universe_list_not_scoped(self, universe_base):
+        # list_universes returns a multi-universe response with no
+        # single universe_id — must not get a scope header.
+        _make_universe(universe_base, "alpha")
+        _make_universe(universe_base, "beta")
+        out = json.loads(us._dispatch_with_ledger(
+            "list",
+            us._action_list_universes,
+            {},
+        ))
+        assert "universes" in out
+        if "text" in out:
+            assert not out["text"].startswith("Universe: ")
+
+    def test_existing_text_field_preserved_under_header(self):
+        # If a handler already emits a `text` field, the helper prepends
+        # the header rather than clobbering it.
+        fake = json.dumps({"universe_id": "alpha", "text": "Prior prose."})
+        wrapped = json.loads(us._scope_universe_response(fake))
+        assert wrapped["text"].startswith("Universe: alpha")
+        assert "Prior prose." in wrapped["text"]
+
+    def test_preserves_all_other_fields(self, universe_base):
+        udir = _make_universe(universe_base, "alpha")
+        (udir / "canon").mkdir()
+        (udir / "canon" / "a.md").write_text("x", encoding="utf-8")
+        out = json.loads(us._dispatch_with_ledger(
+            "list_canon",
+            us._action_list_canon,
+            {"universe_id": "alpha"},
+        ))
+        assert out["universe_id"] == "alpha"
+        assert out["count"] == 1
+        assert out["canon_files"][0]["filename"] == "a.md"
+
+    def test_non_universe_scoped_response_unchanged(self):
+        # `_scope_universe_response` should leave dicts without
+        # universe_id alone.
+        payload = json.dumps({"branches": [], "count": 0})
+        out = us._scope_universe_response(payload)
+        assert json.loads(out) == {"branches": [], "count": 0}
+
+    def test_non_json_response_unchanged(self):
+        out = us._scope_universe_response("not json at all")
+        assert out == "not json at all"

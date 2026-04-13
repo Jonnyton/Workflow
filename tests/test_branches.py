@@ -89,7 +89,9 @@ class TestNodeDefinition:
         assert n.model_hint == ""
         assert n.tools_allowed == []
         assert n.dependencies == []
-        assert n.timeout_seconds == 30.0
+        # #61: default raised from 30s → 300s so dense LLM calls
+        # (90s+ on local models) don't trip the scaffold.
+        assert n.timeout_seconds == 300.0
         assert n.retry_policy == {"max_retries": 0, "backoff_seconds": 1.0}
         assert n.evaluation_criteria == []
         assert n.author == "anonymous"
@@ -350,7 +352,9 @@ class TestBranchDefinition:
         assert len(b.branch_def_id) == 12
         assert b.name == ""
         assert b.author == "anonymous"
-        assert b.domain_id == "fantasy_author"
+        # Project identity migrated fantasy_author → workflow; the
+        # default domain_id follows.
+        assert b.domain_id == "workflow"
         assert b.version == 1
         assert b.parent_def_id is None
         assert b.graph_nodes == []

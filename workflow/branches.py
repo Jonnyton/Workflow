@@ -130,7 +130,11 @@ class NodeDefinition:
     model_hint: str = ""
     tools_allowed: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
-    timeout_seconds: float = 30.0
+    # #61: dense LLM calls (legal research, long summaries) regularly
+    # take 90s+ on local models. 300s default matches
+    # workflow.providers.base.ProviderConfig.timeout so a node timeout
+    # only fires after the provider's own subprocess/HTTP limit.
+    timeout_seconds: float = 300.0
     retry_policy: dict[str, Any] = field(default_factory=lambda: {
         "max_retries": 0,
         "backoff_seconds": 1.0,

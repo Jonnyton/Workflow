@@ -237,6 +237,39 @@ def test_build_branch_requires_affirmative_consent() -> None:
     assert "never build speculatively" in text or "do not write state" in text
 
 
+def test_universe_tool_docstring_carries_cross_universe_rule() -> None:
+    """#15: the universe tool docstring must reinforce the cross-universe
+    transfer rule. Not just the server-level instructions; the per-tool
+    docstring is what a client reads when inspecting the tool directly.
+    """
+    tool = next(t for t in _list_tools() if t.name == "universe")
+    text = (tool.description or "").lower()
+    # Core rule text must be present.
+    assert "never transfer" in text or "do not transfer" in text
+    # Mention of the Universe: <id> header shape so the bot knows the
+    # contract, not just the prohibition.
+    assert "universe:" in text or "universe_id" in text
+    # Re-grounding guidance.
+    assert "inspect" in text and "re-ground" in text
+
+
+def test_control_station_prompt_has_cross_universe_section() -> None:
+    """#15: control_station must teach the bot NOT to transfer facts
+    across universes. Named section so a future reword can't silently
+    drop the whole block.
+    """
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # Named section header.
+    assert "cross-universe" in text
+    # The load-bearing header shape the bot must recognize.
+    assert "universe: <id>" in text or "universe:" in text
+    # Transfer prohibition.
+    assert "never carry facts" in text or "never transfer" in text
+    # Ground-truth guidance — tool output over chat memory.
+    assert "ground truth" in text
+
+
 def test_control_station_prompt_has_intent_disambiguation() -> None:
     """#46: control_station must teach the bot to classify intent BEFORE
     picking a tool. Query / Build / Run must each have a clear routing

@@ -185,26 +185,74 @@ _AUTO_DISMISS_SCRIPT = r"""
 (() => {
   if (window.__workflowAutoDismissInstalled) return;
   window.__workflowAutoDismissInstalled = true;
-  const ALLOW_RE = /\b(always\s+allow|allow\s+always|allow\s+for\s+this\s+chat|allow\s+this\s+tool|allow)\b/i;
-  const CONFIRM_RE = /\b(confirm|continue)\b/i;
+  // Broadened 2026-04-13 (#73) to cover Extensions/Goals permission
+  // gates that use "Use this connector?", "Connect", "Approve",
+  // "Enable", "Trust", "Grant access" phrasing instead of the
+  // legacy "Allow" / "Always allow".
+  const ALLOW_RE = /\b(always\s+allow|allow\s+always|allow\s+for\s+this\s+chat|allow\s+this\s+tool|allow\s+access|grant\s+access|use\s+this\s+connector|enable\s+connector|enable\s+(this\s+)?tool|trust\s+(this\s+)?(connector|server|tool)|approve|connect|enable|allow)\b/i;
+  const CONFIRM_RE = /\b(confirm|continue|proceed|accept|got\s+it|ok(?:ay)?)\b/i;
+  const REJECT_RE = /\b(cancel|deny|reject|not\s+now|maybe\s+later|don.?t\s+allow|disallow|decline)\b/i;
+  // Probable permission-dialog container hints. Extensions/Goals
+  // gates have been observed rendering as plain <div> overlays with
+  // no role=dialog, so we also accept aria-modal="true" and fixed
+  // overlays with high z-index.
+  const CONTAINER_SELECTORS = [
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '[aria-modal="true"]',
+    '[class*="dialog" i]',
+    '[class*="modal" i]',
+    '[class*="popover" i]',
+    '[class*="permission" i]',
+    '[class*="connector" i]',
+    '[data-state="open"]',
+  ].join(',');
+  const isInModalishOverlay = (el) => {
+    // Walk up the tree; accept the first ancestor that looks like a
+    // modal container OR that is position:fixed with a high z-index.
+    let cur = el;
+    while (cur && cur !== document.body) {
+      if (cur.matches && cur.matches(CONTAINER_SELECTORS)) return true;
+      const style = window.getComputedStyle ? window.getComputedStyle(cur) : null;
+      if (style && style.position === 'fixed') {
+        const z = parseInt(style.zIndex || '0', 10);
+        if (z >= 10) return true;
+      }
+      cur = cur.parentElement;
+    }
+    return false;
+  };
   const tryClick = (btn) => {
     const txt = (btn.innerText || btn.textContent || '').trim();
     if (!txt) return false;
+    // Skip reject-style buttons even when the container matches, so we
+    // never silently cancel a permission the user actually wanted.
+    if (REJECT_RE.test(txt) && !(ALLOW_RE.test(txt) || CONFIRM_RE.test(txt))) return false;
     if (!(ALLOW_RE.test(txt) || CONFIRM_RE.test(txt))) return false;
-    // Only click if inside a dialog-like container (role=dialog/alertdialog, or class hints).
-    const container = btn.closest('[role="dialog"], [role="alertdialog"], [class*="dialog" i], [class*="modal" i], [class*="popover" i], [data-state="open"]');
-    if (!container) return false;
-    try { btn.click(); window.__workflowAutoDismissCount = (window.__workflowAutoDismissCount || 0) + 1; return true; } catch (e) { return false; }
+    if (!isInModalishOverlay(btn)) return false;
+    try {
+      btn.click();
+      window.__workflowAutoDismissCount = (window.__workflowAutoDismissCount || 0) + 1;
+      window.__workflowAutoDismissLast = {text: txt, at: Date.now()};
+      return true;
+    } catch (e) { return false; }
   };
   const scan = () => {
-    document.querySelectorAll('button').forEach(tryClick);
+    // Cover both <button> and role="button" elements — some gates use
+    // custom clickable divs with a role attribute instead of real buttons.
+    document.querySelectorAll('button, [role="button"]').forEach(tryClick);
   };
   const obs = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const n of m.addedNodes || []) {
         if (!(n instanceof Element)) continue;
-        if (n.matches && n.matches('button')) { tryClick(n); continue; }
-        if (n.querySelectorAll) n.querySelectorAll('button').forEach(tryClick);
+        if (n.matches && (n.matches('button') || n.matches('[role="button"]'))) {
+          tryClick(n);
+          continue;
+        }
+        if (n.querySelectorAll) {
+          n.querySelectorAll('button, [role="button"]').forEach(tryClick);
+        }
       }
     }
   });
@@ -259,6 +307,7 @@ def _ensure_claude_page(browser):
 
 
 DIALOG_DISMISS_SELECTORS = [
+    # Legacy permission dialogs (role=dialog / alertdialog containers).
     '[role="dialog"] button:has-text("Always allow")',
     '[role="dialog"] button:has-text("Allow always")',
     '[role="dialog"] button:has-text("Allow for this chat")',
@@ -266,6 +315,23 @@ DIALOG_DISMISS_SELECTORS = [
     '[role="dialog"] button:has-text("Confirm")',
     '[role="dialog"] button:has-text("Continue")',
     '[role="alertdialog"] button:has-text("Allow")',
+    # Extensions/Goals permission gates (#73) — observed to use
+    # different DOM shapes and different button copy. We broaden the
+    # container match to aria-modal containers and include the newer
+    # action words. The observer (above) already handles most of these
+    # at mutation time; these selectors are the poll-cadence fallback.
+    '[aria-modal="true"] button:has-text("Use this connector")',
+    '[aria-modal="true"] button:has-text("Connect")',
+    '[aria-modal="true"] button:has-text("Approve")',
+    '[aria-modal="true"] button:has-text("Enable")',
+    '[aria-modal="true"] button:has-text("Trust")',
+    '[aria-modal="true"] button:has-text("Grant access")',
+    '[aria-modal="true"] button:has-text("Allow")',
+    # Same button copy, no aria-modal — the riskiest fallback, so we
+    # still require "connector" / "permission" hint in the ancestor.
+    '[class*="connector" i] button:has-text("Use this connector")',
+    '[class*="permission" i] button:has-text("Approve")',
+    '[class*="permission" i] button:has-text("Allow")',
 ]
 
 _dismiss_cooldown_until = 0.0
@@ -274,9 +340,11 @@ _dismiss_cooldown_until = 0.0
 def _dismiss_dialogs(page) -> int:
     """Click any permission/allow dialog Claude.ai has put up.
 
-    Scoped to role=dialog / alertdialog only — never clicks arbitrary buttons.
-    Returns how many dialogs were dismissed. Cheap no-op when no dialog exists,
-    so safe to call before every ask and before every response wait.
+    Scoped to dialog-like containers (role=dialog, aria-modal=true, or
+    class-hinted overlays) — never clicks arbitrary buttons. Returns
+    how many dialogs were dismissed. Cheap no-op when no dialog
+    exists, so safe to call before every ask and before every response
+    wait.
     """
     global _dismiss_cooldown_until
     if time.monotonic() < _dismiss_cooldown_until:
@@ -305,6 +373,91 @@ def _dismiss_dialogs(page) -> int:
     return clicked
 
 
+_SUSPECTED_DIALOG_PROBE = r"""
+(() => {
+  // Scan for buttons whose text smells like a permission/connector
+  // gate. Return the button text + a compact outer-HTML snippet of
+  // the nearest plausible container so we can iterate on selectors
+  // without a full page dump.
+  const PROBE_RE = /\b(use\s+this\s+connector|connect\b|approve\b|enable\b|trust\b|grant\s+access|allow\b|always\s+allow)\b/i;
+  const hits = [];
+  const nodes = document.querySelectorAll('button, [role="button"]');
+  for (const btn of nodes) {
+    const txt = (btn.innerText || btn.textContent || '').trim();
+    if (!txt || txt.length > 60) continue;
+    if (!PROBE_RE.test(txt)) continue;
+    let visible = true;
+    try {
+      const rect = btn.getBoundingClientRect();
+      visible = rect.width > 0 && rect.height > 0;
+    } catch (e) { /* ignore */ }
+    if (!visible) continue;
+    // Walk up a few ancestors to get a container snippet.
+    let anc = btn;
+    for (let i = 0; i < 4 && anc.parentElement; i++) anc = anc.parentElement;
+    const snippet = (anc.outerHTML || '').slice(0, 1200);
+    hits.push({
+      text: txt,
+      tag: btn.tagName.toLowerCase(),
+      role: btn.getAttribute('role') || '',
+      aria_modal_ancestor: !!btn.closest('[aria-modal="true"]'),
+      role_dialog_ancestor: !!btn.closest('[role="dialog"], [role="alertdialog"]'),
+      container_snippet: snippet,
+    });
+  }
+  return hits;
+})();
+"""
+
+
+_suspected_dump_cooldown_until = 0.0
+
+
+def _dump_suspected_dialog(page, reason: str = "suspected_dialog") -> str:
+    """Dump DOM + screenshot when we suspect a permission gate exists
+    but our selectors didn't fire.
+
+    The auto-dismiss observer and `_dismiss_dialogs` both rely on
+    substring matches against live Claude.ai copy. When they drift
+    (as they did between the legacy MCP allow dialog and the newer
+    Extensions/Goals gates), we want real samples the next session
+    can use to widen the selectors. This helper probes the DOM for
+    permission-ish buttons and, if any are visible, falls through to
+    `_capture_failure_dump` to write a full artifact triple. Returns
+    the dump basename on success, empty string if nothing suspicious.
+    """
+    global _suspected_dump_cooldown_until
+    if time.monotonic() < _suspected_dump_cooldown_until:
+        return ""
+    try:
+        hits = page.evaluate(_SUSPECTED_DIALOG_PROBE) or []
+    except Exception:
+        return ""
+    if not hits:
+        return ""
+    _suspected_dump_cooldown_until = time.monotonic() + 30.0
+    note_lines = [
+        "Suspected permission-gate buttons (not auto-dismissed):",
+        "",
+    ]
+    for h in hits[:8]:
+        note_lines.append(
+            f"- text={h.get('text')!r} tag={h.get('tag')} "
+            f"role={h.get('role') or '-'} "
+            f"aria_modal_anc={h.get('aria_modal_ancestor')} "
+            f"role_dialog_anc={h.get('role_dialog_ancestor')}"
+        )
+        snippet = h.get("container_snippet") or ""
+        if snippet:
+            note_lines.append(
+                "  container: "
+                + snippet.replace("\n", " ")[:400]
+            )
+    return _capture_failure_dump(
+        page, reason, note="\n".join(note_lines),
+    )
+
+
 def _first_visible(page, selectors):
     for sel in selectors:
         loc = page.locator(sel)
@@ -313,6 +466,37 @@ def _first_visible(page, selectors):
             try:
                 if loc.nth(i).is_visible():
                     return loc.nth(i)
+            except Exception:
+                continue
+    return None
+
+
+def _first_usable_input(page):
+    """Like `_first_visible(INPUT_SELECTORS)` but skips locked inputs.
+
+    Claude.ai sometimes leaves a contenteditable/textarea in the DOM while
+    the previous response is still streaming or while a gate is active —
+    the node is visible but aria-disabled or contenteditable="false". Typing
+    into such an input silently drops the keystrokes. Detecting this here
+    lets the caller invoke the recovery ladder instead.
+    """
+    for sel in INPUT_SELECTORS:
+        loc = page.locator(sel)
+        count = loc.count()
+        for i in range(count):
+            cand = loc.nth(i)
+            try:
+                if not cand.is_visible():
+                    continue
+                aria_disabled = (cand.get_attribute("aria-disabled") or "").lower()
+                if aria_disabled == "true":
+                    continue
+                contenteditable = (cand.get_attribute("contenteditable") or "").lower()
+                if contenteditable == "false":
+                    continue
+                if cand.evaluate("el => el.tagName.toLowerCase() === 'textarea' && el.disabled"):
+                    continue
+                return cand
             except Exception:
                 continue
     return None
@@ -370,7 +554,7 @@ def _try_recover_input(page, *, on_step=None):
 
     def _rescan():
         try:
-            return _first_visible(page, INPUT_SELECTORS)
+            return _first_usable_input(page)
         except Exception:
             return None
 
@@ -771,26 +955,39 @@ def cmd_ask(message: str) -> int:
         _dismiss_dialogs(page)
         prev = _read_last_assistant_text(page)
 
-        inp = _first_visible(page, INPUT_SELECTORS)
+        inp = _first_usable_input(page)
         if inp is None:
             # Recovery: try several automatic strategies before giving up.
             # The most common case (per failure dumps) is that claude.ai
             # replaced the input with an ask-user-option selection widget
             # — Escape usually restores the free-text input without new-chat
-            # ing, which would drop conversation context.
+            # ing, which would drop conversation context. A visible-but-
+            # locked input (aria-disabled, contenteditable=false, or a
+            # disabled <textarea>) also lands here so the ladder can try
+            # to unblock before we type into a dead node.
             recovery_steps: list[str] = []
             inp = _try_recover_input(
                 page, on_step=lambda name: recovery_steps.append(name),
             )
             if inp is None:
                 widget_active = _selection_widget_visible(page)
+                # When input is missing AND no selection widget is up,
+                # the most likely cause is an undetected permission
+                # gate (#73). Capture a separate probe dump so we can
+                # iterate selectors without needing user-sim to notice.
+                suspected_dump = ""
+                if not widget_active:
+                    suspected_dump = _dump_suspected_dialog(
+                        page, reason="suspected_permission_gate",
+                    )
                 dump = _capture_failure_dump(
                     page, "input_not_found",
                     note=(
                         f"prev_text_len={len(prev)}; "
                         f"message_preview={message[:80]!r}; "
                         f"recovery_attempted={recovery_steps or 'all_failed'}; "
-                        f"selection_widget={'visible' if widget_active else 'none'}"
+                        f"selection_widget={'visible' if widget_active else 'none'}; "
+                        f"suspected_dialog_dump={suspected_dump or 'none'}"
                     ),
                 )
                 print(

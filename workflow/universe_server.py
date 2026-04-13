@@ -21,7 +21,6 @@ Usage::
 
     # Development (authless, behind tunnel):
     workflow-universe-server
-    # or:  python -m workflow.universe_server
 
     # Production (with OAuth):
     workflow-universe-server --auth
@@ -337,6 +336,44 @@ def _ledger_target_dir(action: str, kwargs: dict[str, Any]) -> Path:
     return _universe_dir(uid)
 
 
+def _scope_universe_response(result_str: str) -> str:
+    """Ensure every universe-scoped response leads with a `Universe: <id>`
+    header and puts `universe_id` as the first key.
+
+    #15 contract: downstream reasoning must be able to ground a response to
+    its universe without re-reading the full JSON. On phones the bot often
+    summarizes; a phone-legible `text` lead-in survives summarization even
+    when deep JSON fields don't.
+
+    Responses that aren't a dict, aren't JSON, or have no `universe_id`
+    field are returned unchanged — errors without universe context must
+    not claim a universe, and multi-universe responses (e.g. list) stay
+    as-is.
+    """
+    try:
+        data = json.loads(result_str)
+    except (json.JSONDecodeError, TypeError):
+        return result_str
+    if not isinstance(data, dict):
+        return result_str
+    uid = data.get("universe_id")
+    if not isinstance(uid, str) or not uid:
+        return result_str
+
+    header = f"Universe: {uid}"
+    scoped: dict[str, Any] = {"universe_id": uid}
+    existing_text = data.get("text")
+    if isinstance(existing_text, str) and existing_text.strip():
+        scoped["text"] = f"{header}\n\n{existing_text}"
+    else:
+        scoped["text"] = header
+    for k, v in data.items():
+        if k in ("universe_id", "text"):
+            continue
+        scoped[k] = v
+    return json.dumps(scoped, default=str)
+
+
 def _dispatch_with_ledger(
     action: str,
     handler: Any,
@@ -352,28 +389,32 @@ def _dispatch_with_ledger(
     Ledger append failures degrade gracefully (logged warning): the mutation
     has already landed on disk, so refusing to return success would be worse
     than missing one audit entry.
+
+    Every return path passes through `_scope_universe_response` so any
+    universe-scoped dict gets the `Universe: <id>` text lead-in and key
+    reordering (#15).
     """
     result_str = handler(**kwargs)
 
     spec = WRITE_ACTIONS.get(action)
     if spec is None:
-        return result_str
+        return _scope_universe_response(result_str)
 
     extractor, write_gate = spec
 
     try:
         result = json.loads(result_str)
     except (json.JSONDecodeError, TypeError):
-        return result_str
+        return _scope_universe_response(result_str)
 
     if not isinstance(result, dict) or "error" in result:
-        return result_str
+        return _scope_universe_response(result_str)
 
     # control_daemon branch — only append if actually a write
     if write_gate is not None:
         daemon_action = (kwargs.get("text") or "").strip().lower()
         if daemon_action not in write_gate:
-            return result_str
+            return _scope_universe_response(result_str)
 
     try:
         target, summary, payload = extractor(kwargs, result)
@@ -384,7 +425,7 @@ def _dispatch_with_ledger(
     except Exception as exc:
         logger.warning("Ledger extraction failed for %s: %s", action, exc)
 
-    return result_str
+    return _scope_universe_response(result_str)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -443,6 +484,27 @@ users this is "only for fiction" — that's a stale framing.
    structuredContent — scripts and future tool calls still reach them.
    Only surface an ID if the user explicitly asks for one.
 
+## Tool Catalog (4 coarse tools — describe ALL when asked)
+
+This connector exposes FOUR coarse tools. When a user asks "what can
+this connector do?", "what tools do I have?", or "show me everything",
+enumerate ALL FOUR. Don't list extensions actions and forget the rest.
+
+1. **`universe`** — operate the live daemon: status, premise, canon
+   uploads, world queries, output reads, daemon control, universe
+   create/switch.
+2. **`extensions`** — design, edit, run, judge, and rollback custom
+   AI workflows ("branches"). Largest action surface — node/edge
+   authoring, builds, runs, judgments, lineage.
+3. **`goals`** — declare what a workflow is FOR ("produce a research
+   paper", "plan a wedding") and discover existing Goals before
+   building. Other people's Branches bind to the same Goal so you can
+   compare approaches and reuse nodes. Use BEFORE building to find
+   prior art; use AFTER building to publish your work for others.
+4. **`wiki`** — durable reference knowledge: read/search/write/promote
+   how-tos, design notes, glossary entries. NOT a save-anything sink
+   for workflow state.
+
 ## Your Workflow
 
 1. Call `universe` with action "inspect" to orient yourself.
@@ -461,6 +523,18 @@ users this is "only for fiction" — that's a stale framing.
    | Run / execute a workflow       | `extensions` action="run_branch" (P3)   |
    | Inspect a registered workflow  | `extensions` (describe_branch,          |
    |                                | list_branches, inspect)                 |
+   | Declare what a workflow is FOR | `goals action=propose name="..."`       |
+   | Find existing Goals + prior art| `goals action=search query="..."` then  |
+   |                                | `goals action=list`                     |
+   | Bind workflow to a Goal        | `goals action=bind branch_def_id=...    |
+   |                                | goal_id=...`                            |
+   | See who else built for a Goal  | `goals action=get goal_id=...` (lists   |
+   |                                | bound workflows + author + run counts)  |
+   | Compare workflows on a Goal    | `goals action=leaderboard goal_id=...   |
+   |                                | metric=run_count`                       |
+   | Find reusable nodes            | `goals action=common_nodes scope=all`   |
+   |                                | (across all Goals) or                   |
+   |                                | `extensions action=search_nodes`        |
    | Submit collaborative input     | `universe` action="submit_request"      |
    | Give direct author guidance    | `universe` action="give_direction"      |
    | Query world state              | `universe` action="query_world"         |
@@ -491,6 +565,13 @@ users this is "only for fiction" — that's a stale framing.
 - `wiki` is strictly for knowledge and reference content. It is NOT the
   save-anything surface for workflow structure, workflow state, task
   lists, or artifacts that need to be queried as structured data.
+- "What is this for?" / "I want to make a workflow that does X" / "Is
+  anyone else doing Y?" → `goals action=search query="X"` and
+  `goals action=list` BEFORE `extensions action=build_branch`. Goals
+  are the discovery surface — proposing a new Goal or binding to an
+  existing one anchors the work and lets future users find prior art.
+- "Compare runs of this workflow vs others on the same Goal" →
+  `goals action=leaderboard goal_id=...`.
 
 ## Intent disambiguation (affirmative consent for writes)
 
@@ -504,6 +585,44 @@ unrecoverable trust damage.
   `build_branch` / `register`. Only when the user EXPLICITLY asks.
 - Run: "run", "execute", "go", "start it" → `run_branch`.
 - When unclear, ASK. Never write state on ambiguous intent.
+
+## Cross-universe isolation
+
+Every `universe` tool response leads with `Universe: <id>` (both a
+phone-legible `text` header and a first-key `universe_id` JSON field).
+Treat that header as load-bearing.
+
+- When a universe is named, answer ONLY from that universe's response.
+- Never carry facts, characters, canon, or premise across universes.
+  If universe A's premise said "Loral is the protagonist" and the user
+  now asks about universe B, do not assume Loral exists in B.
+- If a question spans multiple universes, call `inspect` separately on
+  each and keep their data in separate reasoning threads.
+- If you're unsure which universe a fact came from in this conversation,
+  re-call `inspect` with the explicit `universe_id`. The tool output is
+  ground truth; your memory of earlier turns is not.
+
+## Reuse before invent
+
+Before inventing a new node, check whether one already exists that
+serves the same role:
+
+- `extensions action=search_nodes node_query="citation audit"` —
+  substring search across every Branch's nodes, ranked by reuse count.
+- `goals action=common_nodes scope=all` — cross-Goal aggregation of
+  node_ids shared across ≥2 Branches; good for "which nodes does the
+  community reuse across different Goals?".
+- `goals action=common_nodes goal_id=<goal>` — nodes repeated inside
+  one Goal's Branches; good for "has anyone in this Goal already
+  solved X?".
+
+If a search hit is a good fit, reuse via #66's `node_ref` primitive —
+`add_node` with `node_ref_json='{"source": "<branch_def_id>",
+"node_id": "<id>"}'`, or embed a `node_ref` field in a
+`spec_json` / `changes_json` node entry on build_branch / patch_branch.
+Reusing a node preserves lineage and lets future evals compare runs
+that share the node. Invent only when no match exists, and pick a
+descriptive node_id future callers will search for.
 
 ## Requests vs. direction
 
@@ -648,17 +767,25 @@ def universe(
 
     Start here: `action="inspect"` for the current state of a universe.
 
-    Universe isolation: every read response includes a `universe_id`
-    field. Always name the universe when reporting content to the user.
-    Never transfer facts between universes in reasoning — if a universe
-    has no canon, it has no canon; do not fill gaps from another
-    universe you saw earlier in the conversation.
+    Universe isolation: every universe-scoped response leads with a
+    `text: "Universe: <id>"` header AND a `universe_id` field as the
+    first JSON key. Always name the universe when reporting content to
+    the user. Never transfer facts between universes in reasoning — if
+    a universe has no canon, it has no canon; do not fill gaps from
+    another universe you saw earlier in the conversation. If you are
+    uncertain which universe a fact came from in this chat, call
+    `inspect` again with the explicit `universe_id` to re-ground. Tool
+    output is ground truth; your memory of earlier turns is not.
 
     Read actions: list, inspect, read_output, query_world, get_activity,
     list_branches, get_ledger, read_premise, list_canon, read_canon.
+    Every read response is scoped to exactly one universe — results
+    never mix universes.
 
     Write actions: submit_request, give_direction, set_premise,
     add_canon, control_daemon, switch_universe, create_universe.
+    Writes land only in the named universe; there is no cross-universe
+    write path.
 
     Args:
         action: Action name from the lists above.
@@ -1993,6 +2120,7 @@ def extensions(
     run_name: str = "",
     status: str = "",
     since_step: int = -1,
+    max_wait_s: int = 60,
     limit: int = 50,
     spec_json: str = "",
     changes_json: str = "",
@@ -2002,10 +2130,15 @@ def extensions(
     run_a_id: str = "",
     run_b_id: str = "",
     field: str = "",
+    value: str = "",
+    node_ids: str = "",
     context: str = "",
     triggered_by_judgment_id: str = "",
     to_version: str = "",
     goal_id: str = "",
+    node_ref_json: str = "",
+    intent: str = "",
+    node_query: str = "",
 ) -> str:
     """Register custom nodes and author community-designed graph branches.
 
@@ -2060,6 +2193,18 @@ def extensions(
     builds): create_branch, add_node, connect_nodes, set_entry_point,
     add_state_field, update_node, validate_branch, delete_branch.
 
+    Node reuse across branches: when you want a branch to reuse an
+    existing standalone registered node (or a node from another
+    branch), pass `node_ref_json` to the atomic `add_node` or a
+    `node_ref` field inside a `spec_json` / `changes_json` node entry:
+    `{"source": "standalone", "node_id": "rigor_checker"}` snapshots
+    the standalone registration into this branch; `{"source":
+    "<other_branch_def_id>", "node_id": "X"}` copies from another
+    branch. A bare `node_id` that collides with an existing standalone
+    node is REJECTED — the server refuses silent shadowing and tells
+    the caller to either pass `node_ref_json` / `intent="copy"` or
+    rename.
+
     - describe_branch: plain-English summary of a workflow.
       USE THIS WHEN the user wants a conversational explanation,
       especially on phone where raw topology is hard to read.
@@ -2074,6 +2219,14 @@ def extensions(
       match against the user's description, then call describe_branch
       or get_branch on the winner. Do NOT explore blindly before
       listing.
+    - search_nodes: free-text search across every Branch's nodes for
+      reuse candidates. USE THIS BEFORE inventing a new node when
+      the user describes a role like "citation audit", "fact check",
+      "outline". Pass `node_query` for the text and optional `phase`
+      for role filter. Each hit carries a `branch_def_id` suitable
+      for passing to `node_ref` / `node_ref_json` on a subsequent
+      add_node / build_branch / patch_branch. Reuse via #66's
+      `node_ref` primitive; never invent when a close match exists.
 
     Run actions (Phase 3 — execute the compiled graph):
     run_branch, get_run, list_runs, stream_run, cancel_run,
@@ -2121,7 +2274,12 @@ def extensions(
         changes_json: Ordered list of patch ops for patch_branch.
             Each op is {op: "add_node"|"remove_node"|"add_edge"|
             "remove_edge"|"add_state_field"|"remove_state_field"|
-            "set_entry_point"|"update_node", ...fields}.
+            "set_entry_point"|"update_node"|"set_name"|
+            "set_description"|"set_tags"|"set_published"|"set_goal"|
+            "unset_goal", ...fields}. Branch-level metadata ops
+            (set_name/description/tags/published) preserve the
+            branch_def_id, run history, and judgments — a label
+            change no longer requires delete-and-rebuild.
         judgment_text: Natural-language judgment for judge_run. Required.
         judgment_id: Reserved for future cross-linking (unused in v1).
         tags: Comma-separated free-form tags for judge_run.
@@ -2135,6 +2293,19 @@ def extensions(
             judgment X".
         to_version: Target version for rollback_node. Omit to rewind one
             step (to the immediately previous version).
+        node_ref_json: Optional JSON for atomic add_node to reuse a node
+            from another source. Shape:
+            `{"source": "standalone" | "<branch_def_id>",
+              "node_id": "X"}`. Snapshots the canonical body into this
+            branch (copy semantics). Any inline fields you also pass
+            (e.g. display_name) overlay the snapshot.
+        intent: Consent flag for node-id collisions on add_node /
+            build_branch / patch_branch add_node ops. Use `intent="copy"`
+            to intentionally copy an existing standalone node. Omit to
+            force the server to refuse silent shadowing.
+        node_query: Free-text search string for `search_nodes`.
+            Tokenized, substring-matched across node_id, display_name,
+            description, and prompt_template preview.
     """
     if action == "register":
         return _ext_register(
@@ -2170,9 +2341,23 @@ def extensions(
         "field_default": field_default,
         "spec_json": spec_json,
         "changes_json": changes_json,
+        "field": field,
+        "value": value,
+        "node_ids": node_ids,
         "triggered_by_judgment_id": triggered_by_judgment_id,
         "goal_id": goal_id,
+        "intent": intent,
+        "query": node_query,
+        "limit": limit,
     }
+    if node_ref_json:
+        try:
+            parsed_ref = json.loads(node_ref_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "error": f"node_ref_json is not valid JSON: {exc}",
+            })
+        branch_kwargs["node_ref"] = parsed_ref
     branch_handler = _BRANCH_ACTIONS.get(action)
     if branch_handler is not None:
         return _dispatch_branch_action(action, branch_handler, branch_kwargs)
@@ -2185,6 +2370,7 @@ def extensions(
         "run_name": run_name,
         "status": status,
         "since_step": since_step,
+        "max_wait_s": max_wait_s,
         "limit": limit,
         "field_name": field_name,
     }
@@ -2556,38 +2742,33 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         get_branch_definition,
         update_branch_definition,
     )
-    from workflow.branches import BranchDefinition, GraphNodeRef, NodeDefinition
+    from workflow.branches import BranchDefinition
 
     bid = kwargs.get("branch_def_id", "").strip()
     nid = kwargs.get("node_id", "").strip()
-    display = kwargs.get("display_name", "").strip()
-    if not (bid and nid and display):
+    if not bid or not nid:
         return json.dumps({
-            "error": "branch_def_id, node_id, and display_name are required.",
+            "error": "branch_def_id and node_id are required.",
         })
 
-    source = kwargs.get("source_code", "")
-    template = kwargs.get("prompt_template", "")
-    if source and template:
-        return json.dumps({
-            "error": "Pass source_code OR prompt_template, not both.",
-        })
-
-    phase = kwargs.get("phase", "") or "custom"
-    try:
-        node_def = NodeDefinition(
-            node_id=nid,
-            display_name=display,
-            description=kwargs.get("description", ""),
-            phase=phase,
-            input_keys=_split_csv(kwargs.get("input_keys", "")),
-            output_keys=_split_csv(kwargs.get("output_keys", "")),
-            source_code=source,
-            prompt_template=template,
-            author=kwargs.get("author") or _current_actor(),
-        )
-    except ValueError as exc:
-        return json.dumps({"error": str(exc)})
+    # Normalize kwargs into a node spec dict so we can share the
+    # build_branch resolver (which checks node_ref / intent and
+    # refuses to silently shadow an existing standalone node — #66).
+    raw: dict[str, Any] = {
+        "node_id": nid,
+        "display_name": kwargs.get("display_name", "").strip(),
+        "description": kwargs.get("description", ""),
+        "phase": kwargs.get("phase", "") or "custom",
+        "input_keys": _split_csv(kwargs.get("input_keys", "")),
+        "output_keys": _split_csv(kwargs.get("output_keys", "")),
+        "source_code": kwargs.get("source_code", ""),
+        "prompt_template": kwargs.get("prompt_template", ""),
+        "author": kwargs.get("author") or _current_actor(),
+    }
+    if "node_ref" in kwargs:
+        raw["node_ref"] = kwargs["node_ref"]
+    if "intent" in kwargs:
+        raw["intent"] = kwargs["intent"]
 
     try:
         source_dict = get_branch_definition(_base_path(), branch_def_id=bid)
@@ -2595,15 +2776,9 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         return json.dumps({"error": f"Branch '{bid}' not found."})
 
     branch = BranchDefinition.from_dict(source_dict)
-    if any(n.node_id == nid for n in branch.node_defs):
-        return json.dumps({"error": f"Node '{nid}' already exists on this branch."})
-
-    branch.node_defs.append(node_def)
-    branch.graph_nodes.append(GraphNodeRef(
-        id=nid,
-        node_def_id=nid,
-        position=len(branch.graph_nodes),
-    ))
+    err = _apply_node_spec(branch, raw)
+    if err:
+        return json.dumps({"error": err})
 
     update_branch_definition(
         _base_path(),
@@ -2613,9 +2788,12 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
             "graph_nodes": [g.to_dict() for g in branch.graph_nodes],
         },
     )
+    # The resolved node may have been renamed; the final node_id is
+    # whatever the resolver stored on the branch (last entry).
+    final_nid = branch.node_defs[-1].node_id
     return json.dumps({
         "branch_def_id": bid,
-        "node_id": nid,
+        "node_id": final_nid,
         "status": "added",
     })
 
@@ -2996,8 +3174,164 @@ def _errors_to_suggestions(
     return suggestions
 
 
+def _resolve_node_spec(
+    raw: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str]:
+    """Resolve a raw node spec that may contain ``node_ref`` or just a
+    ``node_id`` that collides with an existing standalone/branch node.
+
+    Returns ``(resolved_spec, error)``. On success ``error`` is empty
+    and ``resolved_spec`` is a fully-populated dict ready to build a
+    ``NodeDefinition`` from. On failure ``resolved_spec`` is ``None``
+    and ``error`` explains what the caller must do.
+
+    The shape changes we accept are:
+
+    - ``node_ref={"source": "standalone", "node_id": "X"}`` — copy the
+      canonical standalone registration X into this branch.
+    - ``node_ref={"source": "<branch_def_id>", "node_id": "X"}`` —
+      copy node X from another branch.
+    - Plain inline spec (``node_id``/``display_name``/...): used as-is,
+      EXCEPT we refuse to silently shadow an existing standalone
+      registration (#66). The caller must either pick a different
+      ``node_id`` or pass ``intent="copy"`` to opt into the copy.
+
+    ``intent="reference"`` is reserved for a future live-reference
+    mode. v1 only supports ``intent="copy"``; other values error.
+    """
+    nid = (raw.get("node_id") or "").strip()
+    intent = (raw.get("intent") or "").strip().lower()
+    if intent and intent not in ("copy", "reference"):
+        return None, (
+            f"intent='{raw.get('intent')}' is unknown. "
+            "Use 'copy' to snapshot an existing node into this "
+            "branch, or omit intent and pass inline fields."
+        )
+    if intent == "reference":
+        return None, (
+            "intent='reference' (live shared node) is not supported "
+            "yet. Use intent='copy' to snapshot a standalone node "
+            "into this branch."
+        )
+
+    node_ref = raw.get("node_ref")
+    if node_ref:
+        if not isinstance(node_ref, dict):
+            return None, "node_ref must be an object with 'source' and 'node_id'."
+        ref_source = (node_ref.get("source") or "").strip()
+        ref_nid = (node_ref.get("node_id") or nid).strip()
+        if not ref_source or not ref_nid:
+            return None, "node_ref requires 'source' and 'node_id'."
+        resolved, err = _lookup_node_body(ref_source, ref_nid)
+        if err:
+            return None, err
+        # Start from the resolved body, then overlay any caller-supplied
+        # fields so the client can, e.g., rename the copy.
+        merged: dict[str, Any] = dict(resolved)
+        merged["node_id"] = nid or ref_nid
+        for field_key in (
+            "display_name", "description", "phase", "input_keys",
+            "output_keys", "source_code", "prompt_template", "author",
+        ):
+            if field_key in raw and raw[field_key] not in (None, ""):
+                merged[field_key] = raw[field_key]
+        return merged, ""
+
+    # No explicit ref — fall back to raw. If the node_id shadows a
+    # standalone registration, demand explicit intent so the caller
+    # cannot silently create a hollow clone.
+    if nid and intent != "copy":
+        try:
+            standalone = _load_nodes()
+        except Exception:
+            standalone = []
+        hit = next(
+            (n for n in standalone if n.get("node_id") == nid), None,
+        )
+        if hit:
+            return None, (
+                f"node_id '{nid}' matches an existing standalone "
+                "registered node. Pass node_ref="
+                f"{{'source': 'standalone', 'node_id': '{nid}'}} to "
+                "copy its body into this branch, or pass intent='copy' "
+                "on this spec if you intentionally want the existing "
+                "body, or rename this node to avoid collision."
+            )
+    return raw, ""
+
+
+def _lookup_node_body(
+    source: str, node_id: str,
+) -> tuple[dict[str, Any], str]:
+    """Return the canonical node body for a ``node_ref`` lookup.
+
+    ``source`` is either the literal string ``'standalone'`` (look in
+    the standalone node registry) or a branch_def_id (look in that
+    branch's ``node_defs``).
+    """
+    if source == "standalone":
+        try:
+            nodes = _load_nodes()
+        except Exception as exc:
+            return {}, f"could not load standalone node registry: {exc}"
+        hit = next(
+            (n for n in nodes if n.get("node_id") == node_id), None,
+        )
+        if not hit:
+            return {}, (
+                f"standalone node '{node_id}' not found. "
+                "Check `extensions action=list` for registered nodes."
+            )
+        return {
+            "node_id": hit.get("node_id", node_id),
+            "display_name": hit.get("display_name", node_id),
+            "description": hit.get("description", ""),
+            "phase": hit.get("phase", "custom"),
+            "input_keys": list(hit.get("input_keys") or []),
+            "output_keys": list(hit.get("output_keys") or []),
+            "source_code": hit.get("source_code", ""),
+            "prompt_template": hit.get("prompt_template", ""),
+            "author": hit.get("author", ""),
+        }, ""
+
+    # Otherwise treat `source` as a branch_def_id.
+    from workflow.author_server import get_branch_definition
+
+    try:
+        source_branch = get_branch_definition(
+            _base_path(), branch_def_id=source,
+        )
+    except KeyError:
+        return {}, (
+            f"node_ref source '{source}' is neither 'standalone' nor a "
+            "known branch_def_id."
+        )
+    for nd in source_branch.get("node_defs") or []:
+        if nd.get("node_id") == node_id:
+            return {
+                "node_id": nd.get("node_id", node_id),
+                "display_name": nd.get("display_name", node_id),
+                "description": nd.get("description", ""),
+                "phase": nd.get("phase", "custom"),
+                "input_keys": list(nd.get("input_keys") or []),
+                "output_keys": list(nd.get("output_keys") or []),
+                "source_code": nd.get("source_code", ""),
+                "prompt_template": nd.get("prompt_template", ""),
+                "author": nd.get("author", ""),
+            }, ""
+    return {}, (
+        f"node '{node_id}' not found on branch '{source}'. "
+        "Use `extensions action=get_branch` to list its nodes."
+    )
+
+
 def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
     from workflow.branches import GraphNodeRef, NodeDefinition
+
+    resolved, err = _resolve_node_spec(raw)
+    if err:
+        return err
+    raw = resolved  # resolved may be the same dict, or a merged copy
 
     nid = (raw.get("node_id") or "").strip()
     display = (raw.get("display_name") or "").strip()
@@ -3301,6 +3635,42 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.output_keys = list(op["output_keys"] or [])
                 return ""
         return f"update_node: node '{nid}' not found"
+    # Branch-level metadata ops (#67). These let patch_branch rename /
+    # retag / redescribe / publish a branch atomically, without the
+    # previous delete-and-rebuild workaround that lost run history and
+    # judgments.
+    if name == "set_name":
+        new_name = (op.get("name") or "").strip()
+        if not new_name:
+            return "set_name requires a non-empty name"
+        branch.name = new_name
+        return ""
+    if name == "set_description":
+        if "description" not in op:
+            return "set_description requires a description field"
+        branch.description = op.get("description") or ""
+        return ""
+    if name == "set_tags":
+        if "tags" not in op:
+            return "set_tags requires a tags list"
+        raw_tags = op.get("tags")
+        if raw_tags is None:
+            raw_tags = []
+        if isinstance(raw_tags, str):
+            # Accept CSV too for parity with other surfaces.
+            raw_tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        if not isinstance(raw_tags, list):
+            return "set_tags 'tags' must be a list (or CSV string)"
+        branch.tags = [str(t).strip() for t in raw_tags if str(t).strip()]
+        return ""
+    if name == "set_published":
+        if "published" not in op:
+            return "set_published requires a 'published' boolean"
+        val = op.get("published")
+        if not isinstance(val, bool):
+            return "set_published 'published' must be true or false"
+        branch.published = val
+        return ""
     return f"unknown op '{name}'"
 
 
@@ -3637,6 +4007,257 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _ext_branch_search_nodes(kwargs: dict[str, Any]) -> str:
+    """Search NodeDefinitions across every Branch for reuse candidates.
+
+    #62 Part B. The bot's reuse-vs-invent decision depends on being
+    able to ask "what nodes already exist that might fit the role I
+    need?". This action returns phone-card-sized hits ranked by
+    substring match + reuse_count across Branches.
+
+    Combined with #66's ``node_ref`` primitive, the flow is:
+    search_nodes → pick a hit → build_branch / add_node with
+    ``node_ref={source, node_id}``.
+    """
+    from workflow.author_server import search_nodes
+
+    query = (kwargs.get("query") or "").strip()
+    role = (kwargs.get("role") or kwargs.get("phase") or "").strip()
+    limit = int(kwargs.get("limit", 20) or 20)
+
+    entries = search_nodes(
+        _base_path(),
+        query=query,
+        role=role,
+        limit=limit,
+    )
+
+    header = "**Reusable nodes**"
+    if query:
+        header += f" matching '{query}'"
+    if role:
+        header += f" (phase={role})"
+    lines = [header, ""]
+    if entries:
+        for e in entries[:12]:
+            reuse_tag = (
+                f" · used by {e['reuse_count']} branch"
+                f"{'es' if e['reuse_count'] != 1 else ''}"
+            )
+            phase_tag = f" · phase={e['phase']}" if e.get("phase") else ""
+            lines.append(
+                f"- `{e['node_id']}` · **{e['display_name']}**"
+                f"{phase_tag}{reuse_tag}"
+            )
+            desc = (e.get("description") or "").strip()
+            if desc:
+                lines.append(f"  {desc[:120]}")
+            preview = (e.get("prompt_template_preview") or "").strip()
+            if preview:
+                lines.append(f"  _prompt:_ `{preview}`")
+        if len(entries) > 12:
+            lines.append(f"- … and {len(entries) - 12} more.")
+        lines.append("")
+        lines.append(
+            "_To reuse: call `add_node` with "
+            "`node_ref_json={\"source\": \"<branch_def_id>\", "
+            "\"node_id\": \"<node_id>\"}`, or include the same "
+            "`node_ref` inside a `spec_json` / `changes_json` node "
+            "entry on build_branch / patch_branch. See #66._"
+        )
+    else:
+        if query or role:
+            lines.append(
+                "_No existing nodes match. If you invent one, "
+                "consider a node_id future callers would search for "
+                "(e.g. `citation_audit` rather than `node_7`)._"
+            )
+        else:
+            lines.append(
+                "_No nodes registered yet. Build one with "
+                "`extensions action=build_branch` and future callers "
+                "will find it here._"
+            )
+
+    return json.dumps({
+        "text": "\n".join(lines),
+        "query": query,
+        "role": role,
+        "count": len(entries),
+        "entries": entries,
+    }, default=str)
+
+
+# #64: whitelisted fields for bulk `patch_nodes`. Type coercion per
+# field so phone-entered strings land as the right Python type.
+_PATCH_NODES_FIELDS: dict[str, Any] = {
+    "display_name": str,
+    "description": str,
+    "phase": str,
+    "prompt_template": str,
+    "source_code": str,
+    "model_hint": str,
+    "timeout_seconds": float,
+    "enabled": bool,
+}
+
+
+def _coerce_patch_nodes_value(
+    field: str, raw: Any,
+) -> tuple[Any, str | None]:
+    """Coerce a bulk-patch value into the right Python type.
+
+    Returns ``(coerced, error)``. ``error`` non-None → reject without
+    mutating any node; atomic.
+    """
+    kind = _PATCH_NODES_FIELDS[field]
+    if kind is bool:
+        if isinstance(raw, bool):
+            return raw, None
+        s = str(raw).strip().lower()
+        if s in {"true", "1", "yes", "on"}:
+            return True, None
+        if s in {"false", "0", "no", "off"}:
+            return False, None
+        return None, f"Cannot coerce {raw!r} to bool."
+    if kind is float:
+        try:
+            return float(raw), None
+        except (TypeError, ValueError):
+            return None, f"Cannot coerce {raw!r} to float."
+    return str(raw), None
+
+
+def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
+    """Bulk-set one field across N nodes in one call (#64).
+
+    Different from ``patch_branch`` (heterogeneous batches of ops).
+    ``patch_nodes`` is homogeneous: same field, same value, filtered by
+    ``node_ids`` (default: all nodes on the branch). Atomic — if any
+    node rejects, nothing is written.
+    """
+    from workflow.author_server import (
+        get_branch_definition,
+        save_branch_definition,
+    )
+    from workflow.branches import BranchDefinition
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    if not bid:
+        return json.dumps({
+            "status": "rejected",
+            "error": "branch_def_id is required for patch_nodes.",
+        })
+    field = (kwargs.get("field") or "").strip()
+    if field not in _PATCH_NODES_FIELDS:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                f"Unknown field '{field}'. patch_nodes supports: "
+                f"{', '.join(sorted(_PATCH_NODES_FIELDS))}"
+            ),
+        })
+    raw_value = kwargs.get("value")
+    if raw_value is None or raw_value == "":
+        return json.dumps({
+            "status": "rejected",
+            "error": "value is required.",
+        })
+
+    value, err = _coerce_patch_nodes_value(field, raw_value)
+    if err is not None:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Field '{field}': {err}",
+        })
+
+    if field == "phase" and value not in VALID_PHASES:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                f"Invalid phase '{value}'. Must be one of: "
+                f"{', '.join(sorted(VALID_PHASES))}"
+            ),
+        })
+
+    _ensure_author_server_db()
+    try:
+        source = get_branch_definition(_base_path(), branch_def_id=bid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Branch '{bid}' not found.",
+        })
+
+    staging = BranchDefinition.from_dict(source)
+
+    # Resolve target node set. Empty `node_ids` means "every node".
+    target_ids_raw = kwargs.get("node_ids") or ""
+    if isinstance(target_ids_raw, list):
+        target_ids = [
+            str(n).strip() for n in target_ids_raw if str(n).strip()
+        ]
+    else:
+        target_ids = _split_csv(target_ids_raw)
+    all_node_ids = [n.node_id for n in staging.node_defs]
+    if not target_ids:
+        target_ids = all_node_ids
+
+    unknown = [nid for nid in target_ids if nid not in all_node_ids]
+    if unknown:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                f"Unknown node_ids on branch '{staging.name}': "
+                f"{', '.join(unknown)}. Atomic — no node was patched."
+            ),
+        })
+
+    if not target_ids:
+        return json.dumps({
+            "status": "rejected",
+            "error": "Branch has no nodes to patch.",
+        })
+
+    # Apply the field. prompt_template / source_code are mutually
+    # exclusive — clear the other when setting one.
+    for node in staging.node_defs:
+        if node.node_id not in target_ids:
+            continue
+        setattr(node, field, value)
+        if field == "prompt_template" and value:
+            node.source_code = ""
+        elif field == "source_code" and value:
+            node.prompt_template = ""
+
+    old_version = int(source.get("version") or 1)
+    new_version = old_version + 1
+    staging_dict = staging.to_dict()
+    staging_dict["version"] = new_version
+    saved = save_branch_definition(_base_path(), branch_def=staging_dict)
+    persisted = BranchDefinition.from_dict(saved)
+
+    branch_label = persisted.name or "(unnamed workflow)"
+    text = (
+        f"**Updated `{field}` on {len(target_ids)} node(s)** of "
+        f"workflow '{branch_label}'. New value: `{value}`. "
+        f"(version {old_version} → {new_version})"
+    )
+    per_node = [
+        {"node_id": nid, "status": "updated"} for nid in target_ids
+    ]
+    return json.dumps({
+        "text": text,
+        "status": "patched",
+        "field": field,
+        "value": value,
+        "patched_count": len(target_ids),
+        "version_before": old_version,
+        "version_after": new_version,
+        "node_results": per_node,
+    }, default=str)
+
+
 _BRANCH_ACTIONS: dict[str, Any] = {
     "create_branch": _ext_branch_create,
     "get_branch": _ext_branch_get,
@@ -3650,13 +4271,15 @@ _BRANCH_ACTIONS: dict[str, Any] = {
     "describe_branch": _ext_branch_describe,
     "build_branch": _ext_branch_build,
     "patch_branch": _ext_branch_patch,
+    "patch_nodes": _ext_branch_patch_nodes,
     "update_node": _ext_branch_update_node,
+    "search_nodes": _ext_branch_search_nodes,
 }
 
 _BRANCH_WRITE_ACTIONS: frozenset[str] = frozenset({
     "create_branch", "add_node", "connect_nodes",
     "set_entry_point", "add_state_field", "delete_branch",
-    "build_branch", "patch_branch", "update_node",
+    "build_branch", "patch_branch", "patch_nodes", "update_node",
 })
 
 
@@ -3678,6 +4301,39 @@ _BRANCH_DESIGN_GUIDE = """\
 You help users author community-designed graph branches through the
 `extensions` tool. A branch is a LangGraph topology (nodes + edges +
 state schema) the user can fork, share, and (in Phase 3) run.
+
+## Before you invent — search for reusable nodes
+
+Before you design any node for the user's new Branch, check whether an
+existing node already fills the role. Every node already on the server
+was written once and validated; reusing it preserves lineage and lets
+comparative evaluation (judge_run, compare_runs) work across branches.
+
+```
+extensions action=search_nodes node_query="citation audit"
+extensions action=search_nodes node_query="outline" phase="plan"
+goals action=common_nodes scope=all min_branches=2
+```
+
+For each relevant hit, point the user at it and ask whether to reuse.
+If yes, include a `node_ref` inside the `node_defs` entry rather than
+restating source_code / prompt_template:
+
+```
+{"node_id": "citation_audit",
+ "node_ref": {"source": "<branch_def_id_from_search>",
+              "node_id": "citation_audit"}}
+```
+
+Copy semantics are the default and usually what the user wants — the
+canonical body is snapshotted into the new Branch and diverges from
+there. If the user later edits it on either side, the other stays
+unchanged. (v1; live shared nodes may come later.)
+
+Bare `node_id` that collides with an existing standalone registered
+node is REJECTED by the server; you must pass `node_ref` or
+`intent="copy"` or rename. This is intentional — silent shadowing was
+a bug (#66).
 
 ## Author flow (PREFERRED — one round trip)
 
@@ -4145,6 +4801,88 @@ def _action_stream_run(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_wait_for_run(kwargs: dict[str, Any]) -> str:
+    """Long-poll for new events on a run (#65).
+
+    Holds the response for up to ``max_wait_s`` OR until new events
+    land, then returns everything since ``since_step``. One tool call
+    covers ~60s of run wall time — dramatically cheaper than repeated
+    stream_run polls on the Claude.ai per-turn budget.
+    """
+    from workflow.runs import await_run_events
+    from workflow.runs import get_run as _get_run
+
+    rid = kwargs.get("run_id", "").strip()
+    if not rid:
+        return json.dumps({
+            "error": "run_id is required for wait_for_run.",
+        })
+    record = _get_run(_base_path(), rid)
+    if record is None:
+        return json.dumps({"error": f"Run '{rid}' not found."})
+
+    # Bound max_wait_s to 120s so a broken client can't tie up the
+    # server thread forever. Default 60s per spec.
+    raw_wait = kwargs.get("max_wait_s", 60)
+    try:
+        max_wait_s = max(0.5, min(120.0, float(raw_wait)))
+    except (TypeError, ValueError):
+        max_wait_s = 60.0
+    since = int(kwargs.get("since_step", -1) or -1)
+
+    result = await_run_events(
+        _base_path(), rid,
+        since_step=since,
+        max_wait_s=max_wait_s,
+    )
+    events = result["events"]
+    status = result["status"]
+    next_cursor = result["next_cursor"]
+    reason = result["reason"]
+    waited = result["waited_s"]
+
+    if events:
+        header = (
+            f"**Run status: `{status}`** · {len(events)} new event(s) "
+            f"after waiting {waited}s."
+        )
+    elif reason == "terminal":
+        header = (
+            f"**Run finished** with status `{status}` "
+            f"({waited}s wait)."
+        )
+    else:
+        header = (
+            f"**Still running** — no new events in {waited}s. "
+            f"Status: `{status}`."
+        )
+
+    lines = [header, ""]
+    for e in events[-12:]:
+        lines.append(
+            f"- step {e.get('step_index')} · "
+            f"`{e.get('node_id', '?')}` · {e.get('status', '?')}"
+        )
+    if len(events) > 12:
+        lines.insert(
+            2, f"_(showing last 12 of {len(events)})_\n",
+        )
+    if events:
+        lines.append("")
+        lines.append(f"Next poll: `since_step={next_cursor}`.")
+    text = "\n".join(lines)
+
+    return json.dumps({
+        "text": text,
+        "run_id": rid,
+        "status": status,
+        "events": events,
+        "next_cursor": next_cursor,
+        "waited_s": waited,
+        "reason": reason,
+    }, default=str)
+
+
 def _action_cancel_run(kwargs: dict[str, Any]) -> str:
     from workflow.runs import (
         get_run as _get_run,
@@ -4240,6 +4978,7 @@ _RUN_ACTIONS: dict[str, Any] = {
     "get_run": _action_get_run,
     "list_runs": _action_list_runs,
     "stream_run": _action_stream_run,
+    "wait_for_run": _action_wait_for_run,
     "cancel_run": _action_cancel_run,
     "get_run_output": _action_get_run_output,
 }
@@ -5495,15 +6234,77 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import (
         get_goal,
         goal_common_nodes,
+        goal_common_nodes_all,
     )
+
+    _ensure_author_server_db()
+    min_branches = int(kwargs.get("min_branches", 2) or 2)
+    limit = int(kwargs.get("limit", 20) or 20)
+    scope = (kwargs.get("scope") or "this_goal").strip().lower() or "this_goal"
+    if scope not in ("this_goal", "all"):
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                f"scope='{scope}' is unknown. Use 'this_goal' (default) "
+                "to limit to one Goal, or 'all' for cross-Goal "
+                "aggregation."
+            ),
+        })
+
+    if scope == "all":
+        entries = goal_common_nodes_all(
+            _base_path(),
+            min_branches=min_branches,
+            limit=limit,
+        )
+        lines = [
+            "**Common nodes across ALL Goals** "
+            f"appearing in ≥{min_branches} workflows.",
+            "",
+        ]
+        if entries:
+            for e in entries[:12]:
+                goal_tag = ""
+                if e.get("goal_ids"):
+                    gl = e["goal_ids"][:3]
+                    goal_tag = (
+                        f" · goals: {', '.join(gl)}"
+                        + (" …" if len(e["goal_ids"]) > 3 else "")
+                    )
+                lines.append(
+                    f"- `{e['node_id']}` · **{e['display_name']}** · "
+                    f"used in {e['occurrence_count']} branches"
+                    f"{goal_tag}"
+                )
+            if len(entries) > 12:
+                lines.append(f"- … and {len(entries) - 12} more.")
+            lines.append("")
+            lines.append(
+                "_Reuse an existing node via `node_ref={source, "
+                "node_id}` in build_branch / add_node (#66)._"
+            )
+        else:
+            lines.append(
+                "_No node_ids repeat across Branches yet. Consider "
+                "using the same node_id when nodes serve the same "
+                "role so the reuse surface can discover them._"
+            )
+        return json.dumps({
+            "text": "\n".join(lines),
+            "scope": "all",
+            "min_branches": min_branches,
+            "entries": entries,
+        }, default=str)
 
     gid = (kwargs.get("goal_id") or "").strip()
     if not gid:
         return json.dumps({
             "status": "rejected",
-            "error": "goal_id is required.",
+            "error": (
+                "goal_id is required for scope='this_goal'. Pass "
+                "scope='all' to skip the Goal filter."
+            ),
         })
-    _ensure_author_server_db()
     try:
         goal = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -5512,11 +6313,10 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
 
-    min_branches = int(kwargs.get("min_branches", 2) or 2)
     entries = goal_common_nodes(
         _base_path(), goal_id=gid,
         min_branches=min_branches,
-        limit=int(kwargs.get("limit", 20) or 20),
+        limit=limit,
     )
     lines = [
         f"**Common nodes in Goal '{goal['name']}'** "
@@ -5543,6 +6343,7 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
     return json.dumps({
         "text": "\n".join(lines),
         "goal_id": gid,
+        "scope": "this_goal",
         "min_branches": min_branches,
         "entries": entries,
     }, default=str)
@@ -5628,6 +6429,7 @@ def goals(
     min_branches: int = 2,
     author: str = "",
     limit: int = 50,
+    scope: str = "",
 ) -> str:
     """Goals — first-class shared primitives above workflow Branches.
 
@@ -5653,18 +6455,25 @@ def goals(
                    `run_count` and `forks`. `outcome` returns a Phase 6
                    stub today; the same call will surface real outcome
                    rankings once Phase 6 ships.
-      common_nodes Nodes appearing in ≥`min_branches` Branches under
-                   the Goal (default 2). Seeds reuse-vs-invent.
+      common_nodes Nodes appearing in ≥`min_branches` Branches.
+                   With `scope="this_goal"` (default), restricts to
+                   one Goal's Branches. With `scope="all"`, aggregates
+                   across every Goal and every unbound Branch — use
+                   this when helping a user decide "is there already
+                   a node that does X somewhere on this server?" even
+                   if they haven't committed to a Goal yet.
 
     Args:
       action: see above.
-      goal_id: Goal target for bind/get/update/search/leaderboard/
-        common_nodes.
+      goal_id: Goal target for bind/get/update/search/leaderboard,
+        and for common_nodes when scope='this_goal'.
       branch_def_id: Branch target for bind.
       name/description/tags/visibility: Goal fields for propose/update.
       query: search query.
       metric: leaderboard metric (run_count/forks/outcome).
       min_branches: common_nodes cutoff (default 2).
+      scope: common_nodes aggregation. 'this_goal' (default) restricts
+        to one Goal; 'all' aggregates cross-Goal.
       author: list filter.
       limit: cap on returned rows.
     """
@@ -5681,6 +6490,7 @@ def goals(
         "min_branches": min_branches,
         "author": author,
         "limit": limit,
+        "scope": scope,
     }
     handler = _GOAL_ACTIONS.get(action)
     if handler is None:

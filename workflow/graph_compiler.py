@@ -20,6 +20,7 @@ Design rules (from `docs/specs/community_branches_phase3.md`):
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import operator
 import re
@@ -39,6 +40,64 @@ class CompilerError(Exception):
 
 class UnapprovedNodeError(CompilerError):
     """Raised when a source_code node lacks host approval."""
+
+
+class NodeTimeoutError(CompilerError):
+    """Raised when a node's provider/source_code exceeds its timeout_seconds.
+
+    Distinct from a generic CompilerError so the runner can emit a clean
+    ``timeout`` event and set run status to ``failed`` with a specific
+    reason, instead of the user seeing a silent stall (#61).
+
+    ``node_id`` is exposed as an attribute so callers don't have to parse
+    it out of the human-readable message.
+    """
+
+    def __init__(self, message: str, *, node_id: str = "") -> None:
+        super().__init__(message)
+        self.node_id = node_id
+
+
+# Shared executor so every timeout-wrapped call doesn't spin up a
+# fresh thread. Bounded worker count keeps a runaway graph from
+# spawning unbounded threads on a slow provider.
+_TIMEOUT_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_timeout_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _TIMEOUT_EXECUTOR
+    if _TIMEOUT_EXECUTOR is None:
+        _TIMEOUT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+            max_workers=8, thread_name_prefix="node-timeout",
+        )
+    return _TIMEOUT_EXECUTOR
+
+
+def _run_with_timeout(
+    fn: Callable[[], Any],
+    *,
+    timeout_s: float,
+    node_id: str,
+) -> Any:
+    """Call ``fn()`` on a worker thread, raise NodeTimeoutError on overrun.
+
+    When a timeout fires, the worker thread is NOT killed — Python has
+    no safe way to do that. The provider call keeps running in the
+    background (the provider's own subprocess/HTTP timeout is the
+    backstop). We return to the graph so the overall run can fail-fast
+    instead of hanging the executor.
+    """
+    executor = _get_timeout_executor()
+    future = executor.submit(fn)
+    try:
+        return future.result(timeout=timeout_s)
+    except concurrent.futures.TimeoutError as exc:
+        raise NodeTimeoutError(
+            f"Node '{node_id}' exceeded {timeout_s:.0f}s timeout. "
+            "The provider call may still be running in the background; "
+            "its own subprocess/HTTP timeout is the backstop.",
+            node_id=node_id,
+        ) from exc
 
 
 _DANGEROUS_PATTERNS = (
@@ -183,6 +242,7 @@ def _build_prompt_template_node(
     )
     role = (node.model_hint or "writer").strip().lower() or "writer"
     template = node.prompt_template or ""
+    timeout_s = float(node.timeout_seconds or 300.0)
 
     def _fn(state: dict[str, Any]) -> dict[str, Any]:
         # Normalize Jinja-style ``{{var}}`` into Python's ``{var}``.
@@ -204,11 +264,34 @@ def _build_prompt_template_node(
                 f"missing state key {exc}"
             ) from exc
 
+        # Emit a "starting" event BEFORE the provider call so long-running
+        # LLM nodes don't look frozen to a polling client (#60). The
+        # matching "ran" event fires after the call completes.
+        if event_sink is not None:
+            try:
+                event_sink(
+                    node_id=node.node_id,
+                    phase="starting", role=role,
+                    prompt_preview=prompt[:200],
+                )
+            except Exception as exc:
+                if _is_cancel_exception(exc):
+                    raise
+                logger.exception(
+                    "event_sink raised in %s (starting)", node.node_id,
+                )
+
         if provider_call is None:
             response = f"[Mock response for {node.node_id}]"
         else:
             try:
-                response = provider_call(prompt, "", role=role)
+                response = _run_with_timeout(
+                    lambda: provider_call(prompt, "", role=role),
+                    timeout_s=timeout_s,
+                    node_id=node.node_id,
+                )
+            except NodeTimeoutError:
+                raise
             except Exception as exc:
                 logger.exception("Provider call failed in %s", node.node_id)
                 raise CompilerError(
@@ -219,6 +302,7 @@ def _build_prompt_template_node(
             try:
                 event_sink(
                     node_id=node.node_id,
+                    phase="ran",
                     prompt=prompt, response=response, role=role,
                 )
             except Exception as exc:
@@ -262,6 +346,7 @@ def _build_source_code_node(
     """
     _validate_source_code(node)
     src = node.source_code
+    timeout_s = float(node.timeout_seconds or 300.0)
 
     local_scope: dict[str, Any] = {}
     try:
@@ -277,8 +362,28 @@ def _build_source_code_node(
         )
 
     def _fn(state: dict[str, Any]) -> dict[str, Any]:
+        # #60: emit a starting event so long-running source_code nodes
+        # don't look frozen to polling clients.
+        if event_sink is not None:
+            try:
+                event_sink(
+                    node_id=node.node_id,
+                    phase="starting", source_code=True,
+                )
+            except Exception as exc:
+                if _is_cancel_exception(exc):
+                    raise
+                logger.exception(
+                    "event_sink raised in %s (starting)", node.node_id,
+                )
         try:
-            result = runner(state)
+            result = _run_with_timeout(
+                lambda: runner(state),
+                timeout_s=timeout_s,
+                node_id=node.node_id,
+            )
+        except NodeTimeoutError:
+            raise
         except Exception as exc:
             logger.exception("source_code node %s raised", node.node_id)
             raise CompilerError(
@@ -293,6 +398,7 @@ def _build_source_code_node(
             try:
                 event_sink(
                     node_id=node.node_id,
+                    phase="ran",
                     source_code=True, output=result,
                 )
             except Exception as exc:
