@@ -24,6 +24,7 @@ writer; 7.2 ships the reader-rehydration path).
 """
 
 from workflow.storage.backend import (
+    DirtyFileError,
     SqliteCachedBackend,
     SqliteOnlyBackend,
     StorageBackend,
@@ -37,6 +38,7 @@ from workflow.storage.serializer import (
 )
 
 __all__ = [
+    "DirtyFileError",
     "SqliteCachedBackend",
     "SqliteOnlyBackend",
     "StorageBackend",
