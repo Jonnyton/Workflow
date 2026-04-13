@@ -61,6 +61,11 @@ class NodeTimeoutError(CompilerError):
 # Shared executor so every timeout-wrapped call doesn't spin up a
 # fresh thread. Bounded worker count keeps a runaway graph from
 # spawning unbounded threads on a slow provider.
+#
+# NOTE: when all 8 workers are busy, the 9th submit queues and its
+# timeout is measured from submit(), not from worker-allocated-start —
+# queued calls can exceed nominal timeout_seconds by the queue wait.
+# Fine for single-run today; revisit if multi-run concurrency saturates.
 _TIMEOUT_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
 
 

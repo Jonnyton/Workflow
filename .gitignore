@@ -44,6 +44,22 @@ output/
 universes/
 logs/
 
+# Phase 7.2: the on-disk catalog (branches/, goals/, nodes/) is
+# intentionally NOT ignored. Those YAML files are the canonical
+# shared state per PLAN.md "GitHub as the canonical shared state";
+# each user clones + pulls + PRs contributions through those dirs.
+# The SqliteCached backend mirrors to SQLite alongside the YAML
+# write, but the .db file is excluded via `*.db` above — only the
+# YAML is committed.
+
+# Python virtualenvs (additional common names)
+venv/
+env/
+
+# Editor / IDE
+.idea/
+.vscode/
+
 # Personal docs (not part of the engine)
 BettaFish_Deep_Dive_Research.docx
 Community_Branches_Plan.docx

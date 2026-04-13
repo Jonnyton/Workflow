@@ -384,6 +384,14 @@ def list_events(
     *,
     since_step: int = -1,
 ) -> list[dict[str, Any]]:
+    """Return events with ``step_index > since_step``, ascending.
+
+    ``step_index`` is an opaque, monotonically-increasing cursor — NOT
+    a node-count ordinal. One node can emit multiple events (started,
+    ran, timeout, etc.) each with its own step_index, so cursor
+    arithmetic ("I have N events, skip to step N") is incorrect.
+    Always pass the last-seen step_index back as ``since_step``.
+    """
     initialize_runs_db(base_path)
     with _connect(base_path) as conn:
         rows = conn.execute(
@@ -423,6 +431,11 @@ def await_run_events(
     Returns ``{"events": [...], "status": "...", "next_cursor": N,
     "waited_s": float, "reason": "events|terminal|timeout"}``. The
     caller uses ``next_cursor`` as the next ``since_step``.
+
+    ``step_index`` (and therefore ``next_cursor``) is an opaque,
+    monotonically-increasing cursor — NOT a node-count ordinal. A
+    single node may emit several events, each with its own
+    step_index, so do not treat it as "number of nodes completed".
     """
     deadline = time.monotonic() + max(0.0, float(max_wait_s))
     poll_interval = max(0.05, float(poll_interval_s))

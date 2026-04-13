@@ -1,0 +1,34 @@
+# Line-ending policy. Phase 7.2 (G4).
+#
+# The storage layer writes YAML under `branches/`, `goals/`, `nodes/`
+# as the canonical on-disk catalog. Windows checkouts default to
+# CRLF and every commit surfaces noise warnings ("LF will be replaced
+# by CRLF"). Pin LF for text formats that the engine round-trips.
+
+# Source + infrastructure — always LF.
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.sh   text eol=lf
+
+# Scripts + config files commonly touched on Windows.
+*.cfg  text eol=lf
+*.ini  text eol=lf
+*.txt  text eol=lf
+
+# Binary / generated — never munge.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.pdf  binary
+*.docx binary
+*.xlsx binary
+*.zip  binary
+*.mcpb binary
+*.db   binary
+*.sqlite binary
