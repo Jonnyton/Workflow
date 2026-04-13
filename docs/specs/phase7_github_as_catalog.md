@@ -13,7 +13,7 @@ Goals, Branches, Nodes, notes, canon, prose, scene packets become git-tracked YA
 
 Per dev-2's per-table audit. Summary:
 
-**Migrate to git-tracked files** (~12 mutation handlers in `author_server.py` need a YAML-emit + git-stage seam):
+**Migrate to git-tracked files** (13 mutation handlers in `universe_server.py` need a YAML-emit + git-stage seam — 3 goals-cluster, 5 single-entity branch, 5 composite branch per `docs/planning/phase7_3_cutover_scope.md`. Note: `goals.bind` is a goals action that mutates a branch file — dirty-check targets the branch path):
 - `branch_definitions` → `branches/<slug>.yaml`
 - `goals` → `goals/<slug>.yaml`
 - `node_defs` (currently embedded JSON) → `nodes/<branch_slug>/<node_id>.yaml` — **per-file, not inlined**, because per-Goal node reuse (#62) is a Phase 5 design goal that requires node-level diffability.
@@ -33,6 +33,12 @@ Per dev-2's per-table audit. Summary:
 - `branches` / `branch_heads` / `universe_snapshots` (Phase 4 multiplayer tables) → git refs and tags do this natively.
 - `node_edit_audit` → git history per node file.
 - `vote_windows` / `vote_ballots` / `user_requests` → GitHub Issues + Discussions (Phase 7.5).
+
+## Commit granularity: one MCP action = one git commit
+
+**Load-bearing invariant.** Every MCP write action produces exactly one git commit, regardless of how many files it writes. A `build_branch` call that creates a branch plus N node files lands as one commit covering N+1 YAMLs. A `goals.bind` call that rewrites `branches/<slug>.yaml` lands as one commit. This preserves Phase 4 ledger-equivalence (one ledger row per public mutation maps cleanly onto one git log entry).
+
+Implementation: backend composite helpers (`save_branch_and_commit(branch, extra_paths=[...])`) stage all target paths up-front, dirty-check across the full set, then call `git_bridge.commit(paths=[...])` once. Never `commit()` per `stage()`.
 
 ## Architecture: dual-write Storage protocol
 
