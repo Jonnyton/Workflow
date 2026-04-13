@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from workflow.memory.ingestion import (
     IngestionPriority,
@@ -371,142 +369,12 @@ class TestBookClosePromiseWiring:
         assert len(tracker.get_all_promises()) == 0
 
 
-class TestDaemonControllerIngestion:
-    """Test progressive ingestion wiring in DaemonController."""
-
-    def test_ingestion_with_canon_dir(self, tmp_path: Path):
-        from workflow.__main__ import DaemonController
-
-        # Create canon directory with a file
-        universe_dir = tmp_path / "universe"
-        canon_dir = universe_dir / "canon"
-        canon_dir.mkdir(parents=True)
-        (canon_dir / "lore.md").write_text(
-            "# Characters\n\nRyn is brave.\n\n"
-            "# Magic\n\nThe Web connects all.\n",
-            encoding="utf-8",
-        )
-
-        controller = DaemonController(
-            universe_path=str(universe_dir),
-            db_path=":memory:",
-            no_tray=True,
-        )
-        # Call _run_progressive_ingestion directly (start() would
-        # try to build the full graph which needs too many deps).
-        controller._run_progressive_ingestion("test-universe")
-        # Should complete without error -- ingestion is fire-and-forget.
-
-    def test_ingestion_no_canon_dir(self, tmp_path: Path):
-        """No crash when canon directory doesn't exist."""
-        from workflow.__main__ import DaemonController
-
-        controller = DaemonController(
-            universe_path=str(tmp_path / "nonexistent"),
-            db_path=":memory:",
-            no_tray=True,
-        )
-        controller._run_progressive_ingestion("test-universe")
-
-    def test_bootstrap_runtime_files_creates_registry_artifacts(
-        self, tmp_path: Path,
-    ):
-        from workflow.__main__ import DaemonController
-
-        universe_dir = tmp_path / "universe"
-        universe_dir.mkdir()
-
-        controller = DaemonController(
-            universe_path=str(universe_dir),
-            db_path=str(universe_dir / "story.db"),
-            no_tray=True,
-        )
-        controller._bootstrap_universe_runtime_files("Ashwater rises.")
-
-        work_targets_path = universe_dir / "work_targets.json"
-        hard_priorities_path = universe_dir / "hard_priorities.json"
-
-        assert work_targets_path.exists()
-        assert hard_priorities_path.exists()
-
-        targets = json.loads(work_targets_path.read_text(encoding="utf-8"))
-        assert {target["target_id"] for target in targets} >= {
-            "universe-notes",
-            "book-1",
-        }
-        assert json.loads(hard_priorities_path.read_text(encoding="utf-8")) == []
-
-    def test_bootstrap_retrieval_indices_indexes_bootstrap_documents(
-        self, tmp_path: Path,
-    ):
-        from workflow import runtime
-        from workflow.__main__ import DaemonController
-
-        universe_dir = tmp_path / "universe"
-        canon_dir = universe_dir / "canon"
-        chapter_dir = universe_dir / "output" / "book-1" / "chapter-07"
-        chapter_dir.mkdir(parents=True)
-        canon_dir.mkdir(parents=True)
-        (canon_dir / "world.md").write_text(
-            "# Lore\n\nThe river remembers names.\n",
-            encoding="utf-8",
-        )
-        (chapter_dir / "scene-02.md").write_text(
-            "Kael crossed the bridge at dusk.\n",
-            encoding="utf-8",
-        )
-
-        controller = DaemonController(
-            universe_path=str(universe_dir),
-            db_path=str(universe_dir / "story.db"),
-            no_tray=True,
-        )
-        runtime.knowledge_graph = MagicMock()
-        runtime.vector_store = None
-        runtime.embed_fn = None
-
-        with patch(
-            "workflow.ingestion.indexer.index_text",
-            return_value={
-                "entities": 1,
-                "edges": 2,
-                "facts": 3,
-                "chunks_indexed": 0,
-            },
-        ) as mock_index:
-            controller._bootstrap_retrieval_indices()
-
-        assert mock_index.call_count == 2
-        first_call = mock_index.call_args_list[0]
-        second_call = mock_index.call_args_list[1]
-
-        assert first_call.args[1] == "canon/world.md"
-        assert first_call.kwargs["chapter_number"] == 0
-        assert second_call.args[1] == "output/book-1/chapter-07/scene-02.md"
-        assert second_call.kwargs["chapter_number"] == 7
-
-    def test_bootstrap_retrieval_indices_skips_when_kg_has_content(
-        self, tmp_path: Path,
-    ):
-        from workflow import runtime
-        from workflow.__main__ import DaemonController
-
-        universe_dir = tmp_path / "universe"
-        universe_dir.mkdir()
-        kg_path = universe_dir / "knowledge.db"
-        with sqlite3.connect(kg_path) as conn:
-            conn.execute("CREATE TABLE entities (entity_id TEXT)")
-            conn.execute("INSERT INTO entities VALUES ('ryn')")
-            conn.commit()
-
-        controller = DaemonController(
-            universe_path=str(universe_dir),
-            db_path=str(universe_dir / "story.db"),
-            no_tray=True,
-        )
-        runtime.knowledge_graph = MagicMock()
-
-        with patch("workflow.ingestion.indexer.index_text") as mock_index:
-            controller._bootstrap_retrieval_indices()
-
-        mock_index.assert_not_called()
+# Removed 2026-04-13: TestDaemonControllerIngestion referenced methods
+# that never existed on `DaemonController`:
+#   - `_bootstrap_universe_runtime_files`
+#   - `_bootstrap_retrieval_indices`
+#   - `_run_progressive_ingestion`
+# `git log --all -S` for each of those names returns nothing. These are
+# not accidentally removed production methods — they were never in
+# version control. Deleted per planner decision memo
+# `docs/planning/orphaned_test_phase7_decision.md`. Do not resurrect.
