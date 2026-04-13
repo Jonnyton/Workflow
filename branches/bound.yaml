@@ -1,9 +1,9 @@
-id: 79faa98f4edc
+id: cee2336e1ca6
 name: Bound
 description: ''
 author: tester
 domain_id: workflow
-goal_id: 43c0ca8faa89
+goal_id: 544387471bb2
 tags: []
 version: 1
 parent_def_id: null
@@ -30,5 +30,5 @@ stats:
   avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:20:52.580482+00:00'
-updated_at: 1776093652.6127863
+created_at: '2026-04-13T15:22:34.435136+00:00'
+updated_at: 1776093754.4755874
