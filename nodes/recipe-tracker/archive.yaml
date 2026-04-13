@@ -1,9 +1,7 @@
 id: archive
-display_name: Archive
+display_name: Archive to library
 phase: custom
-prompt_template: 'Archive: {categorize_output}'
-output_keys:
-- archive_output
+prompt_template: Format as a wiki entry.
 timeout_seconds: 300.0
 approved: false
 enabled: true
