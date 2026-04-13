@@ -26,7 +26,9 @@ graph_nodes:
 - id: archive
   node_def_id: archive
   position: 2
-edges: []
+edges:
+- from: capture
+  to: categorize
 conditional_edges: []
 published: false
 stats:
@@ -34,4 +36,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:24:01.462026+00:00'
-updated_at: 1776093841.84848
+updated_at: 1776093842.1205056

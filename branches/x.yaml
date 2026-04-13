@@ -1,25 +1,22 @@
-id: dc4263293095
+id: ce013f8b7e0a
 name: X
 description: ''
 author: tester
 domain_id: workflow
-goal_id: null
+goal_id: ''
 tags: []
 version: 1
 parent_def_id: null
 entry_point: ''
-state_schema:
-- name: raw
-  type: str
-  description: ''
+state_schema: []
 nodes: []
 graph_nodes: []
 edges: []
 conditional_edges: []
 published: false
 stats:
-  avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:24:00.705569+00:00'
-updated_at: 1776093840.7213626
+  avg_quality_score: 0.0
+created_at: '2026-04-13T15:24:02.457058+00:00'
+updated_at: '2026-04-13T15:24:02.457069+00:00'
