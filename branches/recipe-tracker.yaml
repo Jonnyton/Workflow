@@ -1,38 +1,22 @@
-id: 951ad8970519
+id: 706ed9b607cc
 name: Recipe tracker
 description: ''
 author: tester
 domain_id: workflow
-goal_id: null
+goal_id: ''
 tags: []
 version: 1
 parent_def_id: null
-entry_point: capture
+entry_point: ''
 state_schema: []
-nodes:
-- id: capture
-  path: nodes/recipe-tracker/capture.yaml
-- id: archive
-  path: nodes/recipe-tracker/archive.yaml
-graph_nodes:
-- id: capture
-  node_def_id: capture
-  position: 0
-- id: archive
-  node_def_id: archive
-  position: 1
-edges:
-- from: START
-  to: capture
-- from: capture
-  to: archive
-- from: archive
-  to: END
+nodes: []
+graph_nodes: []
+edges: []
 conditional_edges: []
 published: false
 stats:
-  avg_quality_score: 0.0
   fork_count: 0
   run_count: 0
-created_at: '2026-04-13T15:21:17.946726+00:00'
-updated_at: 1776093679.0097857
+  avg_quality_score: 0.0
+created_at: '2026-04-13T15:21:20.353943+00:00'
+updated_at: '2026-04-13T15:21:20.353953+00:00'
