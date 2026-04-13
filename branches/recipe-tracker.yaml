@@ -12,10 +12,15 @@ state_schema: []
 nodes:
 - id: capture
   path: nodes/recipe-tracker/capture.yaml
+- id: categorize
+  path: nodes/recipe-tracker/categorize.yaml
 graph_nodes:
 - id: capture
   node_def_id: capture
   position: 0
+- id: categorize
+  node_def_id: categorize
+  position: 1
 edges: []
 conditional_edges: []
 published: false
@@ -24,4 +29,4 @@ stats:
   fork_count: 0
   run_count: 0
 created_at: '2026-04-13T15:24:57.543619+00:00'
-updated_at: 1776093897.5594137
+updated_at: 1776093897.716029
