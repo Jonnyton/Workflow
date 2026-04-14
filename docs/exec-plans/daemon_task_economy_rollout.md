@@ -26,12 +26,14 @@ A and B run in parallel (disjoint files). Everything else is sequential.
 
 ## Phase A — Kill dead stubs + disambiguation naming
 
-**Goal:** clear the semantic fog so §3's three-axes model is not papered-over in names.
+**Goal:** clear the semantic fog so §3's three-axes model is not papered-over in names. Explorer's §1 identified **three** disjoint "branch" concepts in the repo — rename the non-user-facing ones.
 
 **Scope:**
-- Delete `universe.branches.json` dead-stub code paths (explorer's §1 flagged this exists but is never read).
-- Rename: the existing "universe branch" concept (Phase 4 multiplayer universe forks) → `universe_fork`. The registered-workflow concept (`BranchDefinition`) → stays `branch_def` / "Branch" (it's the public-facing primitive). Propagate the rename across MCP tool param names, docstrings, error messages, tests.
-- `workflow/universe_server.py` surface — `list_branches` becomes ambiguous; split into `list_universe_forks` (if still needed) vs `list_branch_defs`.
+- Delete `universe.branches.json` dead-stub code paths. `_action_list_branches` at `workflow/universe_server.py:1873` returns a hardcoded `[{"id":"main"}]` from a stub file nothing writes; retire the path.
+- **Rename concept #2 (SQL `branches` table at `author_server.py:195 / :829` — git-style in-universe fork)** → `universe_fork` across SQL schema (backward-compatible migration), MCP tool params, docstrings, error messages, tests.
+- **Concept #1 (`BranchDefinition`)** keeps the public-facing "Branch" name — it's the user-primitive in PLAN.md and the Multi-User Evolutionary Design section.
+- **Concept #3 (LangGraph internal conditional edges)** — out of scope. That's LangGraph's term, not ours.
+- `workflow/universe_server.py` surface: `list_branches` becomes ambiguous; split into `list_universe_forks` (concept #2) vs `list_branch_defs` (concept #1).
 
 **Files:** `workflow/author_server.py`, `workflow/universe_server.py`, relevant `tests/test_community_branches_*.py`, any domain references.
 
@@ -103,12 +105,12 @@ A and B run in parallel (disjoint files). Everything else is sequential.
 **Goal:** the fantasy daemon's autonomous graph becomes a regular Branch. Unifies the two execution paths (autonomous vs user-registered) through the same compiler + executor.
 
 **Scope:**
-- Audit fantasy phases against `graph_compiler.compile_branch` sandbox rules. Each phase module either (a) compiles cleanly under sandbox, OR (b) gets an explicit trusted-domain carve-out (new `@trusted_domain("fantasy_author")` decorator on BranchDefinition).
-- Express `build_universe_graph()` as a `BranchDefinition(domain_id="fantasy_author", name="universe-cycle", state_schema=UniverseState, ...)`. The existing hand-wired StateGraph code becomes the node-def bodies.
-- `DaemonController` still invokes via a "run this Branch forever" loop, but now that's a named Branch anyone can inspect.
-- **Risk:** breaking the autonomous loop is high-blast-radius. Feature-flag it: `WORKFLOW_UNIFIED_EXECUTION=off` by default. When off, fantasy uses the old `StateGraph` path. When on, it runs through `execute_branch`. Tests must pass under both.
+- **Primary path: opaque-node wrapping (memo §3.4 option b).** Express the fantasy universe-cycle as a single-node `BranchDefinition(domain_id="fantasy_author", name="universe-cycle", ...)` whose one node invokes the existing `build_universe_graph()` StateGraph unchanged. No per-phase sandbox audit needed. Unification lands at the queue + inspection layer; per-phase legibility stays what it is today. Lower migration cost, ships the UX win sooner.
+- **Deferred to future phase: trusted-domain carve-out (memo §3.4 option a).** A `trusted_domain` attribute on `BranchDefinition` that exempts domain-registered graphs from sandbox approval when `domain_id` matches a host's trusted-domain list. Unlocks per-phase inspection and per-phase user extensions. Revisit when a second domain lands OR when users actively want to extend fantasy at the phase level.
+- `DaemonController` invokes via the unified executor path; the outer loop becomes "run this Branch forever" where "this Branch" is the registered single-node fantasy-cycle.
+- **Risk:** breaking the autonomous loop is high-blast-radius. Feature-flag it: `WORKFLOW_UNIFIED_EXECUTION=off` by default. When off, fantasy uses the old `StateGraph` path directly. When on, it runs via the registered single-node Branch through `execute_branch`. Tests must pass under both settings; live-run at least one full user-sim mission on ON before flipping the default.
 
-**Files:** `domains/fantasy_author/graphs/universe.py`, new `domains/fantasy_author/branches/universe_cycle.yaml` (registered Branch def), `domains/fantasy_author/__main__.py` (DaemonController wiring), `workflow/branches.py` (add `trusted_domain` attribute if carve-out path chosen), tests.
+**Files:** `domains/fantasy_author/graphs/universe.py` (unchanged — just invoked by the wrapping node), new `domains/fantasy_author/branches/universe_cycle.yaml` (single-node Branch def), `domains/fantasy_author/__main__.py` (DaemonController wiring to invoke via registered Branch when flag on), tests. `workflow/branches.py` is NOT touched in Phase D — the `trusted_domain` attribute lands with option (a) when future demand materializes.
 
 **Depends on:** C (producer interface — Phase D's universe-cycle Branch reads Tasks via producers, not via direct `choose_authorial_targets`).
 
@@ -119,7 +121,7 @@ A and B run in parallel (disjoint files). Everything else is sequential.
 **Work table row:**
 | Task | Files | Depends | Status | Notes |
 |---|---|---|---|---|
-| **Phase D:** fantasy universe-cycle as registered Branch | `domains/fantasy_author/graphs/universe.py`, `domains/fantasy_author/__main__.py`, new `domains/fantasy_author/branches/`, `workflow/branches.py` (carve-out), tests | C | pending | Feature flag `WORKFLOW_UNIFIED_EXECUTION` (default off). Audit phases for sandbox compatibility vs `trusted_domain` carve-out. High blast radius — live-test under both settings before flipping default. |
+| **Phase D:** fantasy universe-cycle as registered Branch (opaque-node wrap) | `domains/fantasy_author/__main__.py`, new `domains/fantasy_author/branches/universe_cycle.yaml`, tests | C | pending | Feature flag `WORKFLOW_UNIFIED_EXECUTION` (default off). Single-node Branch wraps existing StateGraph unchanged — no per-phase sandbox audit. Trusted-domain carve-out deferred to future phase. High blast radius — live-test under both settings before flipping default. |
 
 ---
 
