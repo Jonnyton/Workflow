@@ -27,6 +27,7 @@ import argparse
 import datetime as dt
 import io
 import os
+import re
 import subprocess
 import sys
 import time
@@ -222,6 +223,41 @@ _AUTO_DISMISS_SCRIPT = r"""
     }
     return false;
   };
+  // Before clicking a confirm button, walk up to the dialog container and
+  // look for an "always allow" / "don't ask again" checkbox or toggle.
+  // Claude.ai's per-tool permission dialogs may render this as a checkbox
+  // alongside the "Allow" button — checking it makes the approval persistent
+  // so the dialog doesn't re-fire on the next call to the same tool.
+  const ALWAYS_ALLOW_TOGGLE_RE = /\b(always\s+allow|don.?t\s+ask|remember|for\s+this\s+chat|for\s+all|every\s+time|persist|don.?t\s+show\s+again)\b/i;
+  const checkAlwaysAllowToggle = (btn) => {
+    // Walk up from the button to find the nearest dialog-like container.
+    let container = btn.parentElement;
+    while (container && container !== document.body) {
+      if (container.matches && container.matches(CONTAINER_SELECTORS)) break;
+      const s = window.getComputedStyle ? window.getComputedStyle(container) : null;
+      if (s && s.position === 'fixed' && parseInt(s.zIndex || '0', 10) >= 10) break;
+      container = container.parentElement;
+    }
+    if (!container || container === document.body) return;
+    // Find checkboxes, radio buttons, or toggle elements in the container.
+    const toggleCandidates = container.querySelectorAll(
+      'input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="switch"]'
+    );
+    toggleCandidates.forEach(t => {
+      // Get associated label text from various sources.
+      const labelText = (
+        (t.labels && t.labels[0] ? t.labels[0].textContent : '') ||
+        t.getAttribute('aria-label') ||
+        (t.closest('label') ? t.closest('label').textContent : '') ||
+        (t.id ? (document.querySelector('[for="' + t.id + '"]') || {textContent: ''}).textContent : '')
+      );
+      if (!ALWAYS_ALLOW_TOGGLE_RE.test(labelText)) return;
+      const isChecked = t.checked || t.getAttribute('aria-checked') === 'true';
+      if (!isChecked) {
+        try { t.click(); } catch(e) {}
+      }
+    });
+  };
   const tryClick = (btn) => {
     const txt = (btn.innerText || btn.textContent || '').trim();
     if (!txt) return false;
@@ -230,6 +266,9 @@ _AUTO_DISMISS_SCRIPT = r"""
     if (REJECT_RE.test(txt) && !(ALLOW_RE.test(txt) || CONFIRM_RE.test(txt))) return false;
     if (!(ALLOW_RE.test(txt) || CONFIRM_RE.test(txt))) return false;
     if (!isInModalishOverlay(btn)) return false;
+    // Before confirming, try to check any "always allow" toggle so the
+    // permission persists and the dialog doesn't re-fire on the next call.
+    checkAlwaysAllowToggle(btn);
     try {
       btn.click();
       window.__workflowAutoDismissCount = (window.__workflowAutoDismissCount || 0) + 1;
@@ -337,8 +376,91 @@ DIALOG_DISMISS_SELECTORS = [
 _dismiss_cooldown_until = 0.0
 
 
+_ALWAYS_ALLOW_TOGGLE_SELECTORS = [
+    # Checkboxes and toggles labeled "always allow" / "don't ask again"
+    # that may live inside a per-tool permission dialog alongside the
+    # main "Allow" / "Approve" button.  Checking one of these before
+    # clicking the confirm button makes the approval persistent so the
+    # dialog doesn't re-fire on the next call to the same tool.
+    '[role="dialog"] input[type="checkbox"]:near(:text("Always allow"))',
+    '[role="dialog"] [role="checkbox"]:near(:text("Always allow"))',
+    '[role="dialog"] [role="switch"]:near(:text("Always allow"))',
+    '[aria-modal="true"] input[type="checkbox"]:near(:text("Always allow"))',
+    '[aria-modal="true"] [role="checkbox"]:near(:text("Always allow"))',
+    '[aria-modal="true"] [role="switch"]:near(:text("Always allow"))',
+    # Fallback: any unchecked toggle in an open dialog — checked last so
+    # we only use it if the label-specific selectors all miss.
+    '[role="dialog"] input[type="checkbox"]',
+    '[role="dialog"] [role="checkbox"]',
+    '[aria-modal="true"] input[type="checkbox"]',
+]
+
+_ALWAYS_ALLOW_LABEL_RE = re.compile(
+    r'\b(always\s+allow|don.?t\s+ask|remember|for\s+this\s+chat|'
+    r'for\s+all|every\s+time|persist|don.?t\s+show\s+again)\b',
+    re.IGNORECASE,
+)
+
+
+def _try_check_always_allow(page) -> bool:
+    """Attempt to check an 'always allow' toggle in an open dialog.
+
+    Returns True if a toggle was checked. Safe no-op when no matching
+    toggle is visible — never raises.
+    """
+    # First try selectors with explicit text-proximity (more precise).
+    for sel in _ALWAYS_ALLOW_TOGGLE_SELECTORS[:6]:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                # Check if it's already active before clicking.
+                checked = loc.first.evaluate(
+                    "el => el.checked || el.getAttribute('aria-checked') === 'true'"
+                )
+                if not checked:
+                    loc.first.click(force=True)
+                    time.sleep(0.1)
+                    return True
+        except Exception:
+            continue
+    # Fallback: any unchecked toggle in a dialog — only use if text
+    # label matches the always-allow pattern.
+    for sel in _ALWAYS_ALLOW_TOGGLE_SELECTORS[6:]:
+        try:
+            loc = page.locator(sel)
+            count = loc.count()
+            for i in range(count):
+                toggle = loc.nth(i)
+                if not toggle.is_visible():
+                    continue
+                # Verify label text matches before clicking.
+                label = toggle.evaluate(
+                    """el => {
+                        const lbl = el.labels && el.labels[0];
+                        return (lbl ? lbl.textContent : '') ||
+                               el.getAttribute('aria-label') || '';
+                    }"""
+                )
+                if _ALWAYS_ALLOW_LABEL_RE.search(label or ""):
+                    checked = toggle.evaluate(
+                        "el => el.checked || el.getAttribute('aria-checked') === 'true'"
+                    )
+                    if not checked:
+                        toggle.click(force=True)
+                        time.sleep(0.1)
+                        return True
+        except Exception:
+            continue
+    return False
+
+
 def _dismiss_dialogs(page) -> int:
     """Click any permission/allow dialog Claude.ai has put up.
+
+    Before clicking the main confirm button, attempts to check any
+    "always allow" / "don't ask again" toggle so the permission persists
+    across future calls to the same tool (avoids re-prompt loops that
+    stall user-sim missions).
 
     Scoped to dialog-like containers (role=dialog, aria-modal=true, or
     class-hinted overlays) — never clicks arbitrary buttons. Returns
@@ -349,6 +471,9 @@ def _dismiss_dialogs(page) -> int:
     global _dismiss_cooldown_until
     if time.monotonic() < _dismiss_cooldown_until:
         return 0
+    # Before clicking the confirm button, try to toggle "always allow"
+    # so this approval persists for the tool across future calls.
+    _try_check_always_allow(page)
     clicked = 0
     for sel in DIALOG_DISMISS_SELECTORS:
         try:
