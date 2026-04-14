@@ -20,11 +20,20 @@ Today landed: Phase 6.1 outcome gates (`b6722bd`), Task D telemetry (`b75e134`+`
 
 User-sim Mission 7 ran on the live MCP, confirmed #18 + #22 work end-to-end on the write side; surfaced two real bugs (sporemarch oscillation, dispatch_execution mis-routing on metadata.request_type).
 
-**In-flight at session close (uncommitted in worktrees, may need redo next session):**
-- **Phase C.5** — dev-2 was wiring `domains/fantasy_author/graphs/universe.py` call site through producer dispatcher. Spec ready at `docs/specs/taskproducer_phase_c.md` §8 C.5. Concrete code block in spec.
-- **Sporemarch fix (a)** — dev-1 had completed investigation, was about to implement ~3-line dispatch-side file-existence bump in `domains/fantasy_author/graphs/universe.py:157`.
+**In-flight at session close — WIP in working tree, NOT committed:**
 
-Both unclaimed below; next dev claims fresh.
+`git status` will show:
+- `domains/fantasy_author/graphs/universe.py` (M, ~23 lines) — likely contains both dev-2's Phase C.5 wiring AND dev-1's Sporemarch fix (a). Same-file collision.
+- `domains/fantasy_author/phases/authorial_priority_review.py` (M, ~24 lines) — possibly part of dev-1's #33 work.
+- `tests/test_task_producers.py` (M, +88 lines) — likely dev-2's identity-test extension for C.5.
+- `tests/test_scene_dispatch_advance.py` (??, new) — dev-1's WIP test for Sporemarch fix (a).
+
+**Next session: BEFORE editing any of these files, `git diff` them and decide:**
+1. If the WIP is good → finish + commit + audit + ship.
+2. If unclear → discard and re-do from clean (per Work board specs).
+3. Both Phase C.5 and Sporemarch fix (a) Work rows below describe the intended scope; the WIP may or may not match.
+
+Both rows below are marked `pending` (unclaimed). Next dev claims fresh.
 
 ---
 
