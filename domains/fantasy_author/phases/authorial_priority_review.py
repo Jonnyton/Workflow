@@ -9,6 +9,7 @@ from workflow.work_targets import (
     choose_authorial_targets,
     ensure_seed_targets,
     hard_priorities_path,
+    materialize_pending_requests,
     work_targets_path,
     write_review_artifact,
 )
@@ -37,6 +38,10 @@ def authorial_priority_review(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     ensure_seed_targets(universe_path, premise=premise)
+    # Promote pending submit_request entries into WorkTargets so the
+    # daemon actually sees them. Before this wiring they sat dead in
+    # requests.json forever (STATUS.md #18).
+    materialized_requests = materialize_pending_requests(universe_path)
     ranked = choose_authorial_targets(universe_path, premise=premise)
     workflow_next = str(instructions.get("next_task", "") or "").strip().lower()
 
@@ -76,6 +81,7 @@ def authorial_priority_review(state: dict[str, Any]) -> dict[str, Any]:
             "selected_intent": selected_intent,
             "alternate_target_ids": alternates,
             "review_artifact_ref": artifact_ref,
+            "materialized_request_count": len(materialized_requests),
         }],
     }
 

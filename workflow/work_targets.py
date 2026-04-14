@@ -372,6 +372,83 @@ def ensure_seed_targets(
     return created
 
 
+REQUESTS_FILENAME = "requests.json"
+
+
+def requests_path(universe_path: str | Path) -> Path:
+    return Path(universe_path) / REQUESTS_FILENAME
+
+
+def materialize_pending_requests(
+    universe_path: str | Path,
+) -> list[WorkTarget]:
+    """Convert pending ``requests.json`` entries into WorkTargets.
+
+    MCP ``submit_request`` writes user requests to ``requests.json``
+    with ``status="pending"``. Before this helper landed, nothing in
+    the daemon read that file — every request was silently discarded
+    (STATUS.md #18 / explorer finding). This function:
+
+    1. Reads each pending request.
+    2. Creates (or upserts) a ROLE_NOTES WorkTarget tagged
+       ``user-request`` with the request text as the intent so the
+       authorial scheduler picks it up.
+    3. Flips the request's ``status`` to ``seen`` and stamps
+       ``seen_at`` so the same request doesn't materialize twice.
+
+    Returns the list of WorkTargets created/updated. Safe to call every
+    cycle — idempotent on request_id.
+    """
+    path = requests_path(universe_path)
+    requests = _read_json(path, [])
+    if not isinstance(requests, list) or not requests:
+        return []
+
+    created: list[WorkTarget] = []
+    dirty = False
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    for req in requests:
+        if not isinstance(req, dict):
+            continue
+        if req.get("status") != "pending":
+            continue
+        req_id = str(req.get("id") or "").strip()
+        if not req_id:
+            continue
+        text = str(req.get("text") or "").strip()
+        req_type = str(req.get("type") or "general").strip()
+        source = str(req.get("source") or "anonymous").strip()
+        title_stub = text.splitlines()[0][:70] if text else req_type
+        target_id = _slugify(f"request-{req_id}", fallback=f"request-{req_id}")
+        target = WorkTarget(
+            target_id=target_id,
+            title=f"Request: {title_stub or req_type}",
+            role=ROLE_NOTES,
+            publish_stage=PUBLISH_STAGE_NONE,
+            lifecycle=LIFECYCLE_ACTIVE,
+            current_intent=text or f"address user {req_type} request",
+            tags=["user-request", req_type],
+            selection_reason=f"user_request:{source}",
+            metadata={
+                "request_id": req_id,
+                "request_type": req_type,
+                "request_source": source,
+                "request_timestamp": req.get("timestamp"),
+                "branch_id": req.get("branch_id"),
+            },
+        )
+        upsert_work_target(universe_path, target)
+        created.append(target)
+        req["status"] = "seen"
+        req["seen_at"] = now_iso
+        req["work_target_id"] = target_id
+        dirty = True
+
+    if dirty:
+        _write_json(path, requests)
+    return created
+
+
 def create_target(
     universe_path: str | Path,
     *,
