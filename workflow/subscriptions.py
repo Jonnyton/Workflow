@@ -120,7 +120,8 @@ def _write_raw(universe_path: Path, goals: list[str]) -> None:
 
 
 def list_subscriptions(universe_path: Path) -> list[str]:
-    """File-locked read. Returns sorted-deduped goal list.
+    """File-locked read. Returns the deduped goal list preserving
+    insertion order (first occurrence wins).
 
     Missing file → ``["maintenance"]`` default (fresh-install behavior).
     """

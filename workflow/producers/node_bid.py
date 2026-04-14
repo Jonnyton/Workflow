@@ -204,13 +204,25 @@ class NodeBidProducer:
         return out
 
 
-def register_if_enabled() -> bool:
-    """Register the NodeBidProducer if the flag is on. Idempotent."""
+def register_if_enabled(node_lookup_fn=None) -> bool:
+    """Register the NodeBidProducer if the flag is on. Idempotent.
+
+    Phase H: ``node_lookup_fn`` closes G.1 follow-up #1 — the
+    producer-side sandbox layers 1+2 (approved-node check +
+    dangerous-pattern scan) become load-bearing when a real lookup
+    is wired. Import-time call keeps the default ``None`` so tests
+    and fresh installs without a registry continue to work;
+    ``DaemonController`` re-registers with the real lookup at
+    daemon-start per preflight §4.1 #5.
+    """
     if paid_market_enabled():
-        register_branch_task_producer(NodeBidProducer())
+        register_branch_task_producer(
+            NodeBidProducer(node_lookup_fn=node_lookup_fn),
+        )
         return True
     return False
 
 
-# Side-effect import: register when the module loads.
+# Side-effect import: register when the module loads (no lookup yet —
+# DaemonController re-registers with the real lookup at startup).
 register_if_enabled()

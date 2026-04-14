@@ -373,6 +373,22 @@ def _extract_submit_node_bid(
     )
 
 
+def _extract_set_tier_config(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    tier_name = str(kwargs.get("tier", ""))
+    en = bool(kwargs.get("enabled", False))
+    return (
+        f"tier/{tier_name}",
+        _truncate(f"set_tier_config {tier_name}={en}"),
+        {
+            "tier": tier_name,
+            "enabled": en,
+            "status": result.get("status", ""),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -386,6 +402,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "unsubscribe_goal": (_extract_unsubscribe_goal, None),
     "post_to_goal_pool": (_extract_post_to_goal_pool, None),
     "submit_node_bid": (_extract_submit_node_bid, None),
+    "set_tier_config": (_extract_set_tier_config, None),
 }
 
 
@@ -861,6 +878,8 @@ def universe(
     node_def_id: str = "",
     required_llm_type: str = "",
     bid: float = 0.0,
+    tier: str = "",
+    enabled: bool = False,
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -928,6 +947,8 @@ def universe(
         "list_subscriptions": _action_list_subscriptions,
         "post_to_goal_pool": _action_post_to_goal_pool,
         "submit_node_bid": _action_submit_node_bid,
+        "daemon_overview": _action_daemon_overview,
+        "set_tier_config": _action_set_tier_config,
     }
 
     handler = dispatch.get(action)
@@ -959,6 +980,8 @@ def universe(
         "node_def_id": node_def_id,
         "required_llm_type": required_llm_type,
         "bid": bid,
+        "tier": tier,
+        "enabled": enabled,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
@@ -1568,6 +1591,388 @@ def _action_queue_list(
         "pending_count": sum(1 for r in rows if r.get("status") == "pending"),
         "running_count": sum(1 for r in rows if r.get("status") == "running"),
         "tier_status": cfg.tier_status_map(),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Phase H — daemon_overview + set_tier_config (aggregated MCP surface)
+# ---------------------------------------------------------------------------
+
+# 1-second TTL cache per universe for daemon_overview (R1 invariant 1).
+_OVERVIEW_CACHE: dict[str, tuple[float, str, str]] = {}
+_OVERVIEW_TTL_SECONDS = 1.0
+
+# Per-caller reasonable limits (R14 response-size). Overridable via `limit`.
+_OVERVIEW_DEFAULT_LIMITS = {
+    "queue_top": 20,
+    "bids_top": 20,
+    "settlements_recent": 10,
+    "gates_recent": 10,
+    "activity_tail": 30,
+}
+# Absolute cap even when `limit=full` — prevents pathological responses.
+_OVERVIEW_ABSOLUTE_CAP = {
+    "queue_top": 500,
+    "bids_top": 500,
+    "settlements_recent": 500,
+    "gates_recent": 200,
+    "activity_tail": 1000,
+}
+
+
+def _overview_limits(limit_param: Any) -> dict[str, int]:
+    """Resolve per-field limits from the `limit` param.
+
+    `limit` int → applies that value to all top-N lists (bounded by
+    absolute cap). `limit="full"` → absolute cap (not truly unbounded).
+    Default / invalid → documented defaults.
+    """
+    if isinstance(limit_param, str) and limit_param.strip().lower() == "full":
+        return dict(_OVERVIEW_ABSOLUTE_CAP)
+    try:
+        n = int(limit_param)
+    except (TypeError, ValueError):
+        return dict(_OVERVIEW_DEFAULT_LIMITS)
+    if n <= 0:
+        return dict(_OVERVIEW_DEFAULT_LIMITS)
+    return {
+        key: min(n, _OVERVIEW_ABSOLUTE_CAP[key])
+        for key in _OVERVIEW_DEFAULT_LIMITS
+    }
+
+
+def _tail_file_lines(path: Path, n: int) -> list[str]:
+    """Return the last `n` lines of `path`, or empty list on missing/error."""
+    if not path.exists() or n <= 0:
+        return []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            # Naive tail — OK up to 1000 lines for activity.log sized files.
+            lines = fh.readlines()
+        return [ln.rstrip("\n") for ln in lines[-n:]]
+    except OSError:
+        return []
+
+
+def _action_daemon_overview(
+    universe_id: str = "",
+    limit: Any = None,
+    **_kwargs: Any,
+) -> str:
+    """Aggregated read-through per preflight §4.1 #1 (Phase H).
+
+    Composes queue + subscriptions + bids + settlements + gates +
+    activity tail + run state into one response. 1s TTL cache keyed
+    on (universe_id, limit) keeps hot-path cost bounded (R1).
+
+    Read-only: no mutations. Absent features gracefully degrade
+    (empty lists / zero counts) rather than error.
+    """
+    import time as _time
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    limit_key = (
+        "full" if isinstance(limit, str)
+        and limit.strip().lower() == "full" else str(limit)
+    )
+    cache_key = f"{uid}::{limit_key}"
+    now_s = _time.time()
+    cached = _OVERVIEW_CACHE.get(cache_key)
+    if cached and (now_s - cached[0]) < _OVERVIEW_TTL_SECONDS:
+        return cached[2]
+
+    limits = _overview_limits(limit)
+    response: dict[str, Any] = {"universe_id": uid}
+
+    # Dispatcher config + tier_status_map.
+    try:
+        from workflow.dispatcher import load_dispatcher_config
+        cfg = load_dispatcher_config(udir)
+        response["dispatcher"] = {
+            "tier_status_map": cfg.tier_status_map(),
+            "config": {
+                "accept_external_requests": cfg.accept_external_requests,
+                "accept_goal_pool": cfg.accept_goal_pool,
+                "accept_paid_bids": cfg.accept_paid_bids,
+                "allow_opportunistic": cfg.allow_opportunistic,
+                "bid_coefficient": cfg.bid_coefficient,
+                "bid_term_cap": cfg.bid_term_cap,
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daemon_overview: dispatcher read failed: %s", exc)
+        response["dispatcher"] = {}
+
+    # Queue top-N.
+    try:
+        from workflow.branch_tasks import read_queue
+        from workflow.dispatcher import score_task
+        queue = read_queue(udir)
+        q_cfg = load_dispatcher_config(udir)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        scored: list[tuple[float, dict]] = []
+        pending = 0
+        for task in queue:
+            if task.status == "pending":
+                pending += 1
+                row = task.to_dict()
+                row["score"] = score_task(
+                    task, now_iso=now_iso, config=q_cfg,
+                )
+                scored.append((row["score"], row))
+        scored.sort(key=lambda p: -p[0])
+        response["queue"] = {
+            "pending_count": pending,
+            "top": [row for _, row in scored[: limits["queue_top"]]],
+            "archived_recent_count": 0,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daemon_overview: queue read failed: %s", exc)
+        response["queue"] = {"pending_count": 0, "top": [],
+                             "archived_recent_count": 0}
+
+    # Subscriptions + drift.
+    try:
+        from workflow.producers.goal_pool import (
+            POOL_DIRNAME,
+            goal_pool_enabled,
+            repo_root_path,
+        )
+        from workflow.subscriptions import list_subscriptions
+        goals = list_subscriptions(udir)
+        counts: dict[str, int] = {g: 0 for g in goals}
+        try:
+            repo_root = repo_root_path(udir)
+            pool_root = repo_root / POOL_DIRNAME
+            for g in goals:
+                gdir = pool_root / g
+                if gdir.is_dir():
+                    counts[g] = sum(1 for _ in gdir.glob("*.yaml"))
+        except RuntimeError:
+            pass
+        if cfg.accept_goal_pool and not goals:
+            drift = "pool_enabled_no_subs"
+        elif goals and not cfg.accept_goal_pool:
+            drift = "subs_but_pool_disabled"
+        else:
+            drift = "ok"
+        response["subscriptions"] = {
+            "goals": goals,
+            "drift_flag": drift,
+            "pool_status_per_goal": counts,
+            "pool_flag_enabled": goal_pool_enabled(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daemon_overview: subscriptions read failed: %s", exc)
+        response["subscriptions"] = {"goals": [], "drift_flag": "ok",
+                                     "pool_status_per_goal": {}}
+
+    # Bids + daemon capabilities.
+    try:
+        from workflow.node_bid import read_node_bids
+        from workflow.producers.goal_pool import repo_root_path
+        from workflow.producers.node_bid import paid_market_enabled
+        try:
+            bid_repo_root = repo_root_path(udir)
+            bids = read_node_bids(bid_repo_root)
+        except RuntimeError:
+            bids = []
+        open_bids = [b.to_dict() for b in bids if b.status == "open"]
+        claimed = sum(1 for b in bids if b.status.startswith("claimed:"))
+        response["bids"] = {
+            "open_count": len(open_bids),
+            "claimed_count": claimed,
+            "top_open": open_bids[: limits["bids_top"]],
+            "daemon_capabilities": {
+                "serves_llm_types": sorted(
+                    os.environ.get("FANTASY_DAEMON_LLM_TYPES", "").split(",")
+                    if os.environ.get("FANTASY_DAEMON_LLM_TYPES")
+                    else [],
+                ),
+                "paid_market_enabled": paid_market_enabled(),
+                "bid_coefficient": cfg.bid_coefficient,
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daemon_overview: bids read failed: %s", exc)
+        response["bids"] = {"open_count": 0, "claimed_count": 0,
+                            "top_open": []}
+
+    # Settlements.
+    try:
+        import yaml as _yaml
+
+        from workflow.producers.goal_pool import repo_root_path
+        from workflow.settlements import settlements_dir
+        try:
+            sroot = settlements_dir(repo_root_path(udir))
+        except RuntimeError:
+            sroot = None
+        s_entries: list[dict] = []
+        s_total = 0
+        s_unsettled = 0
+        if sroot and sroot.is_dir():
+            for p in sorted(sroot.glob("*.yaml")):
+                s_total += 1
+                try:
+                    raw = _yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+                except Exception:  # noqa: BLE001
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                if not raw.get("settled"):
+                    s_unsettled += 1
+                s_entries.append(raw)
+        s_entries.sort(
+            key=lambda r: str(r.get("completed_at", "")), reverse=True,
+        )
+        response["settlements"] = {
+            "count_total": s_total,
+            "count_unsettled": s_unsettled,
+            "recent": s_entries[: limits["settlements_recent"]],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "daemon_overview: settlements read failed: %s", exc,
+        )
+        response["settlements"] = {
+            "count_total": 0, "count_unsettled": 0, "recent": [],
+        }
+
+    # Gates — best-effort; counts only (full gates data is expensive).
+    try:
+        from workflow.author_server import list_gate_claims
+        claims = list_gate_claims(_base_path()) or []
+        # Filter to claims whose branch lives in this universe — for v1
+        # we report all claims and let the caller filter; universe-
+        # scoping needs the branch-to-universe mapping which isn't
+        # always populated.
+        response["gates"] = {
+            "ladder_count_on_bound_goal": 0,
+            "claims_on_this_universe": 0,
+            "total_claims": len(claims),
+            "recent_claims": (claims or [])[: limits["gates_recent"]],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("daemon_overview: gates read failed: %s", exc)
+        response["gates"] = {"total_claims": 0, "recent_claims": []}
+
+    # Activity tail (raw file, not a parse).
+    response["activity_tail"] = _tail_file_lines(
+        udir / "activity.log", limits["activity_tail"],
+    )
+
+    # Run state (status.json — best-effort).
+    try:
+        status = _read_json(udir / "status.json") or {}
+        if isinstance(status, dict):
+            response["run_state"] = {
+                "current_phase": status.get("current_phase", ""),
+                "status": status.get("daemon_state", ""),
+                "last_verdict": status.get("last_verdict", ""),
+                "total_words": status.get("total_words", 0),
+                "total_chapters": status.get("total_chapters", 0),
+                "last_updated": status.get("last_updated", ""),
+            }
+        else:
+            response["run_state"] = {}
+    except Exception:  # noqa: BLE001
+        response["run_state"] = {}
+
+    serialized = json.dumps(response, default=str)
+    _OVERVIEW_CACHE[cache_key] = (now_s, cache_key, serialized)
+    # Cap cache size — prune to last 8 universes worth of keys.
+    if len(_OVERVIEW_CACHE) > 16:
+        oldest = sorted(_OVERVIEW_CACHE.items(), key=lambda kv: kv[1][0])[:8]
+        for k, _ in oldest:
+            _OVERVIEW_CACHE.pop(k, None)
+    return serialized
+
+
+_VALID_TIER_KEYS = frozenset({
+    "external_requests", "goal_pool", "paid_bids", "opportunistic",
+})
+_TIER_KEY_TO_CONFIG_FIELD = {
+    "external_requests": "accept_external_requests",
+    "goal_pool": "accept_goal_pool",
+    "paid_bids": "accept_paid_bids",
+    "opportunistic": "allow_opportunistic",
+}
+
+
+def _action_set_tier_config(
+    universe_id: str = "",
+    tier: str = "",
+    enabled: bool = False,
+    **_kwargs: Any,
+) -> str:
+    """Phase H: persist a tier toggle into ``dispatcher_config.yaml``.
+
+    Takes effect at the next dispatcher cycle (R2 invariant 3);
+    in-flight tasks complete normally. Round-trips YAML so other
+    config fields are preserved.
+    """
+    import yaml as _yaml
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    tier_name = (tier or "").strip().lower()
+    if tier_name not in _VALID_TIER_KEYS:
+        return json.dumps({
+            "status": "rejected",
+            "error": "unknown_tier",
+            "available_tiers": sorted(_VALID_TIER_KEYS),
+        })
+
+    field_name = _TIER_KEY_TO_CONFIG_FIELD[tier_name]
+    cfg_path = udir / "dispatcher_config.yaml"
+    existing: dict[str, Any] = {}
+    if cfg_path.exists():
+        try:
+            loaded = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({
+                "status": "rejected",
+                "error": f"config_corrupt: {exc}",
+            })
+
+    existing[field_name] = bool(enabled)
+
+    try:
+        udir.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            _yaml.safe_dump(existing, sort_keys=True,
+                            default_flow_style=False),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"config_write_failed: {exc}",
+        })
+
+    # Invalidate the overview cache for this universe so the next
+    # `daemon_overview` reflects the change immediately (tests rely
+    # on this; production clients also benefit).
+    for key in list(_OVERVIEW_CACHE.keys()):
+        if key.startswith(f"{uid}::"):
+            _OVERVIEW_CACHE.pop(key, None)
+
+    return json.dumps({
+        "universe_id": uid,
+        "status": "ok",
+        "tier": tier_name,
+        "enabled": bool(enabled),
+        "takes_effect": "next_dispatcher_cycle",
     })
 
 

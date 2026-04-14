@@ -68,6 +68,7 @@ Understanding existing surfaces matters more for Phase H than prior phases becau
 | R10 | Flag-default-flip done wrong — if Phase H's flag-flip commit lands without user-sim mission green, a fresh-install daemon starts with paid market on + goal pool on + wrapper on and may encounter real-world regressions before the host notices | High (fresh-install default regression) | Yes (flag-off revert) | Flip is a SEPARATE commit, not part of Phase H landing. Phase H preflight + landing document the flip criteria (§4.5) but do not perform it. Host or lead flips defaults after Mission X passes. Audit of Mission X exit-criteria lives in the Concern that gates the flip. |
 | R11 | `bid_ledger.py` rename to `bid_execution_log.py` breaks imports in places we don't expect | Low (find-and-replace) | Yes (git revert) | Rename lands in its own commit, not part of the dashboard work. Imports swept via `grep -rn "bid_ledger"`; tests reveal missed sites; reviewer spot-checks. Same discipline as prior rename work. §4.7. |
 | R12 | Private-branch visibility surfacing in dashboard gives the illusion of solving task #8 when the design question is still open | Low (UX tidiness, not correctness) | Yes | Dashboard shows "private branches: N (see host settings for visibility policy)" WITHOUT resolving the Goal-vs-Branch inheritance question. The surface exists; the design decision still waits for host input. §4.9 Q8. |
+| R14 | **`daemon_overview` response exceeds MCP token budget at high queue/bid counts.** Aggregation bundles queue + bids + settlements + gates + activity.log tail + run state; a daemon with 500 queue items + 200 bids + 50 settlements + 100 gate claims + 50-line activity tail can serialize to >40KB. MCP clients (Claude.ai) truncate responses that exceed their token budget — response arrives corrupted or with a `[truncated]` marker that loses structured data. | Medium — unreliable observability; user sees partial truth | Yes (response-size cap) | **`DAEMON_OVERVIEW_MAX_BYTES = 32_768` constant** in `workflow/universe_server.py`. Serialization is staged: build response dict, `json.dumps` it, check byte length, trim in priority order if over cap — **activity_tail first** (most verbose, least structured), then **settlements.recent** (keep counts), then **bids.top_open** (keep counts), then **queue.top** (keep counts). Gates + dispatcher + subscriptions never trimmed — they are load-bearing per reviewer. Trimmed fields get a sibling `_trimmed: true` marker so the client knows. If still over cap after all trims, response includes `_response_too_large: true` + total counts; client falls back to per-surface MCP actions. Test (new, invariant 10): seed daemon with 1000+ items across every surface; call `daemon_overview`; assert response ≤ cap; assert trim markers accurate; assert counts correct despite trimmed arrays. |
 
 ### Reversibility summary
 
@@ -141,14 +142,23 @@ Everything in Phase H is additive or cosmetic. No new flag. No new execution pat
    - Pytest fixture sets up a `tmp_path` git repo with a bare origin + two worktree checkouts.
    - Spawns two pytest-xdist or subprocess daemon loops (minimal daemons, not full `DaemonController` — a test harness class that runs `claim_node_bid` in a tight loop).
    - Both target the same bid YAML; assert exactly one succeeds (returns NodeBid) and the other fails with `error="claim_race_lost"`.
-   - 3-5 scenarios: both-race, serial-retry, rebase-midway, push-failure-revert-verify, archive-race (claimed bid marked expired while second tries to claim).
-   - Expected runtime ~30s for the whole stress file; marked `@pytest.mark.slow` so it's optional in quick-loop dev.
+   - **Six scenarios** (originally 5; stale-origin-ref added per reviewer): both-race, serial-retry, rebase-midway, push-failure-revert-verify, archive-race (claimed bid marked expired while second tries to claim), **stale-origin-ref** — daemon B's fetch-ref is stale when it does `git reset --hard origin/<branch>`; bid file reverts to `open` locally; B's subsequent execute path MUST NOT proceed (asserts a check on post-revert bid status before execution). Pins the exact race G.2 closed so it can't regress silently.
+   - **Deterministic race triggers, NOT `time.sleep`.** `multiprocessing.Barrier(2)` synchronizes the two daemon processes at each race point — both reach local-rename → release barrier → both attempt push. Or subprocess-stdin/stdout lockstep if Barrier doesn't compose with the subprocess harness. `time.sleep`-based timing is explicitly forbidden — produces flaky CI. Fixture documents the barrier sync points with comments.
+   - Expected runtime ~30s for the whole stress file — this is git-subprocess cost (init, commit, push, fetch across two worktrees), not wait cost. Marked `@pytest.mark.slow` so it's optional in quick-loop dev.
+   - **`@pytest.mark.slow` declaration (reviewer point 1):** mark registered in `pyproject.toml` under `[tool.pytest.ini_options]` `markers = ["slow: stress/race tests; run on-merge in CI as separate step"]`. Without the declaration, pytest emits `PytestUnknownMarkWarning` + runs the test anyway; a CI misconfigured to `pytest -m 'not slow'` might then silently SKIP it. Declaration + CI discipline go together. CI runs TWO pytest steps: `pytest -m 'not slow'` (fast, blocks PR) and `pytest -m slow` (on merge, blocks deploy). Document in `docs/planning/test_discipline.md` (new file).
 
 7. **Activity.log byte-parity automation (R6, Phase D follow-up #4).** `tests/test_phase_h_activity_log_parity.py`:
    - Pytest fixture seeds a universe, runs one cycle under flag-off, captures activity.log, restarts fresh, runs one cycle under flag-on, captures activity.log.
-   - Normalization regex list: timestamps, UUIDs, branch_task_ids, hash-like IDs.
-   - Assertion: diff of normalized logs is within documented acceptable surface (only `dispatcher_observational:` lines differ).
-   - Documents acceptable surface in a fixture constant so future regressions are visible as diff expansions.
+   - Normalization regex list: timestamps, UUIDs, branch_task_ids, hash-like IDs. Defined as a module-level constant `_ACTIVITY_LOG_NORMALIZATION_PATTERNS` so future additions are visible in diff.
+   - **Acceptable-diff allow-list defined as a module-level constant** `_ACTIVITY_LOG_ACCEPTABLE_DIFF_PATTERNS` — each pattern paired with a comment explaining why it's acceptable. Initial entries:
+     - `r"^dispatcher_observational:"` — Phase E observational-only log line; only fires under flag-on. Acceptable because Phase D preflight §4.10 documented this as a flag-on-only surface.
+     - (Future entries require code review — see governance below.)
+   - **Allow-list extension policy (reviewer point 6).** Expanding `_ACTIVITY_LOG_ACCEPTABLE_DIFF_PATTERNS` requires:
+     (a) A new pattern + explanatory comment explaining WHY the divergence is acceptable (what feature produced it, why flag-on differs).
+     (b) Code review by a reviewer who confirms the divergence is intended behavior, not a bug.
+     (c) STATUS.md Concern entry if the divergence reflects an accepted regression.
+     Constant's docstring says this explicitly: `"""Patterns documenting acceptable flag-off/flag-on activity.log divergences. DO NOT expand blindly — see allow-list extension policy in docs/planning/test_discipline.md."""`. Extension attempts without review are visible as unreviewed commits touching this constant; CI can optionally lint-warn on changes to it.
+   - Assertion: diff of normalized logs contains zero lines not matching allow-list patterns. Regression on activity.log format (e.g. a new log line added without allow-list entry) fails the test — loud by design.
    - Replaces the manual Phase D follow-up #4 gate with an automated one. Flag-default-flip (§4.5) references this test passing as a precondition.
 
 8. **`bid_ledger.py` → `bid_execution_log.py` rename (G.2 #4).** Separate commit. File rename + import sweep + test renames. No behavior change.
@@ -188,28 +198,30 @@ Phase H rollout plan (§4.5) is the sequencing doc for flipping all three defaul
 
 6. **Multi-daemon git race single-winner (R5 stress).** At most one daemon succeeds in claim push. Test (new, `@pytest.mark.slow`): two subprocess daemons race on same bid; exactly one returns NodeBid; other returns None with `claim_race_lost`.
 
-7. **Activity.log normalized-diff within bounded surface (R6).** Flag-off vs flag-on logs diff only in documented acceptable lines (`dispatcher_observational:`). Test (new): run fixtures; assert normalized diff is within allow-list.
+7. **Activity.log normalized-diff within bounded allow-list (R6).** Flag-off vs flag-on logs diff only in patterns enumerated in the module-level constant `_ACTIVITY_LOG_ACCEPTABLE_DIFF_PATTERNS` (§4.1 #7). Each pattern carries a comment explaining why the divergence is acceptable. Extension requires code review + explanatory comment + STATUS.md entry if the divergence reflects an accepted regression. Test (new): run fixtures; assert normalized diff contains zero lines not matching allow-list patterns; new unaccounted log lines fail loudly.
 
 8. **MCP surface consolidation.** All Phase H additions live on the `universe` tool. No new top-level MCP tools. Test (introspective): count MCP-registered tools; assert Phase H adds zero tools + exactly 2 actions to `universe`.
 
 9. **Emergency pause all-tiers atomicity.** Tray "Pause All Tiers" toggles all four flags. Partial failure (e.g. 2 of 4 set) rolls back via best-effort retry. Test (new): mock one `set_tier_config` call to fail; assert the other three are not left in inconsistent state (either all 4 or revert the 3 that did succeed).
 
+10. **`daemon_overview` response bounded (R14).** Response size ≤ `DAEMON_OVERVIEW_MAX_BYTES` (default 32,768). Over-size responses trim in priority order (activity_tail → settlements → bids → queue); gates + dispatcher + subscriptions never trimmed. Trimmed fields carry `_trimmed: true`; over-cap responses carry `_response_too_large: true`. Test (new, §4.4): seed with 1000+ items across every surface; assert response ≤ cap + trim markers correct + counts accurate.
+
 ### 4.4 Test strategy
 
 New file `tests/test_phase_h_dashboard.py` for the MCP + aggregation work. Plus two dedicated files for the G.1 stress test + D activity.log parity:
 
-- **`daemon_overview` action (8 tests):** response shape matches schema; top-N limit honored; 1s cache TTL; large queue handled (100+ items); flag-off gracefully shows config-only (no top-N); drift flag surfaces correctly per Phase F invariant; settlements count accurate; flag-off paid market hides EarningsPane fields.
+- **`daemon_overview` action (12 tests):** response shape matches schema; top-N limit honored; 1s cache TTL; large queue handled (100+ items); flag-off gracefully shows config-only (no top-N); drift flag surfaces correctly per Phase F invariant; settlements count accurate; flag-off paid market hides EarningsPane fields; **response-size cap enforced at 32KB** (R14 + invariant 10); **trim priority order** (activity_tail first, then settlements, then bids, then queue); **gates + dispatcher + subscriptions never trimmed** regardless of total size; **`_trimmed: true` + `_response_too_large: true` markers accurate**.
 - **`set_tier_config` action (6 tests):** valid tier name updates YAML; invalid tier rejects; persistence across restart (invariant 4); takes-effect-next-cycle (invariant 3); authorization boundary; `takes_effect` response field.
 - **Dashboard pane isolation (invariant 2, 5 tests):** each new pane type with malformed event injection; UI thread survives; other panes survive.
 - **Node lookup wiring (invariant 5, 4 tests):** lookup fn returns None → producer skips bid pre-pick; fn raises → producer fails open; fn returns valid → producer emits; fn not configured → producer defaults to no-op behavior.
-- **Claim stress (invariant 6, `tests/test_phase_h_claim_stress.py`, 5 `@pytest.mark.slow` tests):** both-race, serial-retry, rebase-midway, push-failure-revert, archive-race.
+- **Claim stress (invariant 6, `tests/test_phase_h_claim_stress.py`, 6 `@pytest.mark.slow` tests):** both-race, serial-retry, rebase-midway, push-failure-revert, archive-race, **stale-origin-ref** (pins G.2 regression; deterministic via `multiprocessing.Barrier`, no `time.sleep`).
 - **Activity.log parity (invariant 7, `tests/test_phase_h_activity_log_parity.py`, 3 tests):** normalized diff within allow-list; acceptable-diff-surface documented; regression on activity.log format visible as diff expansion.
 - **Emergency pause (invariant 9, 3 tests):** all-4-tiers toggled; partial failure rolls back; tray event fires.
 - **`bid_ledger.py` rename (R11, 2 tests):** all imports updated (introspective test); all test-module references updated.
 - **Concerns audit doc (R8, 1 test):** preflight §4.9 Q9 table is preserved as reviewer checklist; test asserts the file exists + has expected structure (markdown table format).
 - **MCP surface non-inflation (invariant 8, 2 tests):** count registered MCP tools before/after Phase H; assert no new tools; assert exactly 2 actions added to `universe`.
 
-Aim: ~38 tests. Stress + parity tests explicitly slow-marked so dev-loop iteration remains fast.
+Aim: ~43 tests. Stress + parity tests explicitly slow-marked (declared in `pyproject.toml` per §4.1 #6); CI runs `pytest -m 'not slow'` for fast-loop + `pytest -m slow` on merge. See `docs/planning/test_discipline.md` for the full policy.
 
 ### 4.5 Rollback plan + flag-default-flip sequencing
 
@@ -266,9 +278,11 @@ Each flip is a ~3-line commit: the `os.environ.get("...", "on")` default changes
 | `workflow/subscriptions.py:123` | EDIT — docstring reconcile (Phase F follow-up) | 2 lines |
 | `workflow/config.py` or dispatcher_config loader | EDIT — `set_tier_config` calls into this; round-trip YAML preserving other fields | ~30 lines |
 | `tests/test_phase_h_dashboard.py` | NEW — `daemon_overview`, `set_tier_config`, pane isolation, node_lookup, concerns audit, MCP surface tests | ~600 lines |
-| `tests/test_phase_h_claim_stress.py` | NEW — multi-daemon race stress (`@pytest.mark.slow`) | ~200 lines |
+| `tests/test_phase_h_claim_stress.py` | NEW — multi-daemon race stress (6 scenarios, `@pytest.mark.slow`, `multiprocessing.Barrier`-based deterministic sync) | ~240 lines |
+| `pyproject.toml` | EDIT — declare `slow` marker under `[tool.pytest.ini_options]` | ~3 lines |
 | `tests/test_phase_h_activity_log_parity.py` | NEW — flag-off/flag-on activity.log byte-parity automation | ~150 lines |
-| `docs/planning/dashboard_conventions.md` | NEW — pane contracts, refresh cadence, tier-toggle semantics | ~100 lines |
+| `docs/planning/dashboard_conventions.md` | NEW — pane contracts, refresh cadence, tier-toggle semantics, dashboard-to-daemon direct-import channel + ledger discipline (§4.12 Q1) | ~110 lines |
+| `docs/planning/test_discipline.md` | NEW — `@pytest.mark.slow` policy, CI two-step discipline, activity.log allow-list extension policy | ~60 lines |
 | `docs/planning/daemon_overview_response_shape.md` | NEW — aggregated-view schema for MCP clients | ~80 lines |
 | `bids/README.md` + `docs/planning/node_bid_conventions.md` | EDIT — G.1 follow-up #2 worktree-discipline note | small |
 | `docs/exec-plans/daemon_task_economy_rollout.md` | EDIT — mark Phase H done when landed; document flag-flip sequencing plan | ~10 lines |
@@ -362,7 +376,7 @@ Reviewer audit items from Phase G §4.13 remain: all three safeguards should sti
 
 ### 4.12 Open design questions (non-blocking)
 
-1. **Dashboard MCP client channel.** Dashboard panes call `set_tier_config` — do they go through subprocess MCP client, or direct function import? Both work. Direct-import is faster + no auth; subprocess MCP is consistent with how external clients call it. Recommend: direct import for dashboard-to-daemon calls (same process), MCP for external clients. Document in `dashboard_conventions.md`.
+1. **Dashboard MCP client channel — PINNED (reviewer point 4).** Dashboard panes call `set_tier_config` via **direct function import**, NOT subprocess MCP client. Rationale: dashboard is same-process; subprocess MCP would double the cost + add auth boilerplate for no isolation benefit. BUT — to preserve audit-trail consistency with external MCP callers, **every dashboard-initiated `set_tier_config` call writes a ledger entry at `<universe>/set_tier_config.log`** with the same shape as an MCP-call ledger entry: `{timestamp, actor="dashboard", tier, old_value, new_value, daemon_id}`. External callers via MCP get the identical ledger entry (written by `_action_set_tier_config`, not by the dashboard). Both channels land in the same file; both carry `actor` so attribution is preserved. Test: toggle via direct import, assert ledger entry; toggle via MCP, assert ledger entry matches shape. Document in `dashboard_conventions.md` + `daemon_overview_response_shape.md`. Without the ledger, audit trails diverge between dashboard and MCP — reviewer's exact concern.
 
 2. **`daemon_overview` cache TTL.** Default 1s. Hosts running many dashboards may want shorter/longer; configurable in `dispatcher_config.yaml`? Recommend: config field `daemon_overview_cache_ttl_seconds: float = 1.0`. Doesn't block; default works.
 

@@ -323,12 +323,14 @@ def _try_execute_claimed_node_bid(
       (via the executor).
     - Settlement record at
       ``<repo_root>/settlements/<bid_id>__<daemon_id>.yaml``.
-    - Ledger entry in ``<universe>/bid_ledger.json``.
+    - Execution-log entry in ``<universe>/bid_execution_log.json``
+      (per-universe daemon-local; distinct from the repo-root
+      ``settlements/`` immutable ledger).
     - Status update on the NodeBid YAML at
       ``<repo_root>/bids/<bid_id>.yaml``.
     """
     try:
-        from workflow.bid_ledger import append_ledger_entry
+        from workflow.bid_execution_log import append_execution_log_entry
         from workflow.executors.node_bid import execute_node_bid
         from workflow.node_bid import (
             claim_node_bid,
@@ -410,7 +412,7 @@ def _try_execute_claimed_node_bid(
 
         # Ledger append (best-effort).
         try:
-            append_ledger_entry(Path(universe_path), {
+            append_execution_log_entry(Path(universe_path), {
                 "bid_id": node_bid_id,
                 "node_def_id": node_def_id,
                 "daemon_id": daemon_id,
@@ -671,6 +673,35 @@ class DaemonController:
         )
         self._dashboard.metrics.seed_from_db(self._db_path, self._universe_path)
         self._notifications = NotificationManager(tray=self._tray)
+
+        # Phase H: re-register NodeBidProducer with a real node-lookup
+        # function so producer-side sandbox layers 1+2 become load-
+        # bearing (closes G.1 follow-up #1 per preflight §4.1 #5).
+        # Import-time registration happens with node_lookup_fn=None;
+        # here we swap in the repo-root-aware lookup that walks
+        # <repo_root>/branches/*.yaml. Fail-open invariant preserved:
+        # if the lookup raises, the producer-side helper catches and
+        # the bid passes through to executor-side re-validation.
+        try:
+            from workflow.producers.goal_pool import repo_root_path
+            from workflow.producers.node_bid import (
+                paid_market_enabled,
+            )
+            from workflow.producers.node_bid import (
+                register_if_enabled as _register_node_bid_producer,
+            )
+            if paid_market_enabled():
+                try:
+                    _repo_root = repo_root_path(Path(self._universe_path))
+                    _lookup_fn = _node_bid_lookup_factory(_repo_root)
+                except RuntimeError:
+                    _lookup_fn = None
+                _register_node_bid_producer(node_lookup_fn=_lookup_fn)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Phase H: NodeBidProducer lookup-fn wiring failed "
+                "(fail-open to import-time default)",
+            )
 
         # Signal that initialization is complete (API can now serve)
         self._ready.set()

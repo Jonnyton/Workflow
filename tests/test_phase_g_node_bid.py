@@ -21,7 +21,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from workflow.bid_ledger import append_ledger_entry, read_ledger
+from workflow.bid_execution_log import (
+    append_execution_log_entry as append_ledger_entry,
+)
+from workflow.bid_execution_log import (
+    read_execution_log as read_ledger,
+)
 from workflow.branch_tasks import BranchTask
 from workflow.dispatcher import (
     DispatcherConfig,

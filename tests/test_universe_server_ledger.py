@@ -92,6 +92,7 @@ def test_write_actions_table_is_exhaustive() -> None:
         "queue_cancel",
         "subscribe_goal", "unsubscribe_goal", "post_to_goal_pool",
         "submit_node_bid",  # Phase G
+        "set_tier_config",  # Phase H
     }
     assert set(us.WRITE_ACTIONS.keys()) == expected
 

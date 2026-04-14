@@ -83,3 +83,6 @@ select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: stress/race tests; opt-in via `pytest -m slow`",
+]
