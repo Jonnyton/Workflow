@@ -51,15 +51,36 @@ from workflow.notes import add_note, update_note_status
 class TestWorldbuild:
     """Tests for the worldbuild node."""
 
-    def test_increments_version(self):
-        state = {"world_state_version": 5}
-        result = worldbuild(state)
+    def test_increments_version_on_real_progress(self):
+        """Phase 6 Task D: version bumps only when work actually happened.
+
+        Injects a MemoryManager that promotes a fact so ``promoted_count``
+        > 0, satisfying the made_progress guard.
+        """
+        mgr = MagicMock()
+        promotion_result = MagicMock()
+        promotion_result.promoted_facts = [{"id": "f1"}]
+        promotion_result.promoted_style_rules = []
+        promotion_result.asp_rule_candidates = []
+        mgr.run_promotion_gates.return_value = promotion_result
+
+        with patch("workflow.runtime.memory_manager", mgr):
+            state = {"world_state_version": 5}
+            result = worldbuild(state)
         assert result["world_state_version"] == 6
 
-    def test_increments_version_from_zero(self):
+    def test_version_stays_on_no_op_cycle(self):
+        """Phase 6 Task D: no signals, no generated files, no promoted
+        facts → version must NOT bump. Unconditional bumping previously
+        inflated telemetry and masked stuck state (STATUS 2026-04-14)."""
+        state = {"world_state_version": 5}
+        result = worldbuild(state)
+        assert result["world_state_version"] == 5
+
+    def test_version_stays_from_zero_on_no_op(self):
         state = {}
         result = worldbuild(state)
-        assert result["world_state_version"] == 1
+        assert result["world_state_version"] == 0
 
     def test_returns_quality_trace(self):
         state = {"world_state_version": 0}
@@ -120,8 +141,9 @@ class TestWorldbuild:
             result = worldbuild(state)
         finally:
             runtime.memory_manager = None
-        # Should not crash
-        assert result["world_state_version"] == 1
+        # Should not crash. No progress happened (mgr failed, no signals,
+        # no generated files), so version stays (Phase 6 Task D).
+        assert result["world_state_version"] == 0
         assert result["quality_trace"][0]["promoted_facts"] == 0
 
     def test_read_direction_notes_returns_active_user_notes(self, tmp_path):

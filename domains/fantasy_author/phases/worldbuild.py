@@ -175,8 +175,6 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
     # --- 9. Rebuild RAPTOR tree from updated canon ---
     _rebuild_raptor(state)
 
-    new_version = state.get("world_state_version", 0) + 1
-
     # --- Phase-level loop guardrail: no-op streak tracking ---
     # A cycle counts as "no-op" when it acted on zero signals AND generated
     # zero new canon files. Unbounded no-op cycles starved default-universe
@@ -189,6 +187,16 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
     else:
         streak = 0
     health["worldbuild_noop_streak"] = streak
+
+    # Phase 6 Task D: only bump world_state_version on real progress.
+    # Unconditional bumping made telemetry climb on no-op cycles and masked
+    # stuck state (STATUS 2026-04-14). Progress = acted on a signal,
+    # generated a file, or promoted a fact via memory gates.
+    prev_version = state.get("world_state_version", 0)
+    made_progress = (
+        signals_acted > 0 or bool(generated_files) or promoted_count > 0
+    )
+    new_version = prev_version + 1 if made_progress else prev_version
 
     stuck = noop_this_cycle and streak >= _MAX_WORLDBUILD_NOOP_STREAK
     if stuck:
