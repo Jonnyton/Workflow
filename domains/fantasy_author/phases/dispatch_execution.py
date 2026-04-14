@@ -5,10 +5,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from domains.fantasy_author.work_kinds import infer_fantasy_execution_scope
 from workflow.work_targets import (
     ROLE_NOTES,
     get_target,
-    infer_execution_scope,
     write_execution_artifact,
 )
 
@@ -23,7 +23,7 @@ def dispatch_execution(state: dict[str, Any]) -> dict[str, Any]:
         get_target(universe_path, selected_target_id)
         if universe_path and selected_target_id else None
     )
-    execution_scope = infer_execution_scope(target)
+    execution_scope = infer_fantasy_execution_scope(target)
     task = _determine_task(target, selected_intent)
     execution_id = f"exec-{uuid.uuid4().hex[:12]}"
 

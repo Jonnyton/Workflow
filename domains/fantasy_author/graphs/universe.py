@@ -25,7 +25,8 @@ from domains.fantasy_author.phases.reflect import reflect
 from domains.fantasy_author.phases.universe_cycle import universe_cycle
 from domains.fantasy_author.phases.worldbuild import worldbuild
 from domains.fantasy_author.state.universe_state import UniverseState
-from workflow.work_targets import get_target, infer_execution_scope
+from domains.fantasy_author.work_kinds import infer_fantasy_execution_scope
+from workflow.work_targets import get_target
 
 
 def _get_config_chapters_target() -> int:
@@ -123,7 +124,7 @@ def _build_book_execution_seed(
         if universe_path and state.get("selected_target_id")
         else None
     )
-    execution_scope = infer_execution_scope(target)
+    execution_scope = infer_fantasy_execution_scope(target)
 
     book_number = int(execution_scope.get("book_number", 1) or 1)
     chapters_target_default = _get_config_chapters_target()

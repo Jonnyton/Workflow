@@ -49,36 +49,17 @@ DISCARD_REVIEW_DELAY = 20
 DISCARD_RETENTION_DAYS = 30
 
 EXECUTION_KIND_NOTES = "notes"
-EXECUTION_KIND_BOOK = "book"
-EXECUTION_KIND_CHAPTER = "chapter"
-EXECUTION_KIND_SCENE = "scene"
+# Phase C.2: BOOK/CHAPTER/SCENE moved to
+# domains/fantasy_author/work_kinds.py. Only NOTES stays here because
+# every domain has notes-class work; the fantasy-specific kinds are no
+# longer engine concerns.
 
 _SAFE_ID_RE = re.compile(r"[^a-z0-9]+")
-_BOOK_NUMBER_RE = re.compile(r"\bbook[-\s]*(\d+)\b", re.IGNORECASE)
-_CHAPTER_NUMBER_RE = re.compile(r"\bchapter[-\s]*(\d+)\b", re.IGNORECASE)
-_SCENE_NUMBER_RE = re.compile(r"\bscene[-\s]*(\d+)\b", re.IGNORECASE)
 
 
 def _slugify(text: str, fallback: str = "target") -> str:
     slug = _SAFE_ID_RE.sub("-", text.lower()).strip("-")
     return slug or fallback
-
-
-def _coerce_int(value: Any, default: int | None = None) -> int | None:
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _match_number(pattern: re.Pattern[str], *values: str) -> int | None:
-    for value in values:
-        match = pattern.search(value)
-        if match:
-            return _coerce_int(match.group(1))
-    return None
 
 
 def _now() -> float:
@@ -384,7 +365,12 @@ def ensure_seed_targets(
             metadata={
                 "auto_created": True,
                 "premise_seed": premise.strip(),
-                "execution_kind": EXECUTION_KIND_BOOK,
+                # Phase C.2: fantasy-specific execution_kind literal
+                # kept in the engine path here because
+                # ensure_seed_targets is slated for replacement by
+                # `SeedProducer` in Phase C.4 — the producer will carry
+                # its own fantasy-domain imports. Temporary inversion.
+                "execution_kind": "book",
                 "book_number": 1,
             },
         )
@@ -794,85 +780,6 @@ def choose_authorial_targets(
 
     ranked = sorted(candidates, key=score, reverse=True)
     return ranked or targets
-
-
-def infer_execution_scope(target: WorkTarget | None) -> dict[str, Any]:
-    """Infer runtime execution coordinates from a work target."""
-    if target is None:
-        return {}
-
-    metadata = dict(target.metadata)
-    tags = {
-        str(tag).strip().lower().replace("-", "_")
-        for tag in target.tags
-        if str(tag).strip()
-    }
-    title = target.title
-    target_id = target.target_id
-
-    execution_kind = str(metadata.get("execution_kind") or "").strip().lower()
-    if execution_kind not in {
-        EXECUTION_KIND_NOTES,
-        EXECUTION_KIND_BOOK,
-        EXECUTION_KIND_CHAPTER,
-        EXECUTION_KIND_SCENE,
-    }:
-        if target.role == ROLE_NOTES:
-            execution_kind = EXECUTION_KIND_NOTES
-        elif (
-            "scene" in tags
-            or metadata.get("scene_number") is not None
-            or _match_number(_SCENE_NUMBER_RE, title, target_id) is not None
-        ):
-            execution_kind = EXECUTION_KIND_SCENE
-        elif (
-            "chapter" in tags
-            or metadata.get("chapter_number") is not None
-            or _match_number(_CHAPTER_NUMBER_RE, title, target_id) is not None
-        ):
-            execution_kind = EXECUTION_KIND_CHAPTER
-        else:
-            execution_kind = EXECUTION_KIND_BOOK
-
-    scope: dict[str, Any] = {
-        "execution_kind": execution_kind,
-        "target_id": target.target_id,
-    }
-
-    if execution_kind == EXECUTION_KIND_NOTES:
-        return scope
-
-    book_number = _coerce_int(
-        metadata.get("book_number"),
-        _match_number(_BOOK_NUMBER_RE, title, target_id) or 1,
-    ) or 1
-    scope["book_number"] = book_number
-
-    if execution_kind in {EXECUTION_KIND_CHAPTER, EXECUTION_KIND_SCENE}:
-        chapter_number = _coerce_int(
-            metadata.get("chapter_number"),
-            _match_number(_CHAPTER_NUMBER_RE, title, target_id),
-        )
-        if chapter_number is not None:
-            scope["chapter_number"] = chapter_number
-
-    if execution_kind == EXECUTION_KIND_SCENE:
-        scene_number = _coerce_int(
-            metadata.get("scene_number"),
-            _match_number(_SCENE_NUMBER_RE, title, target_id),
-        )
-        if scene_number is not None:
-            scope["scene_number"] = scene_number
-
-    chapters_target = _coerce_int(metadata.get("chapters_target"))
-    if chapters_target is not None:
-        scope["chapters_target"] = chapters_target
-
-    scenes_target = _coerce_int(metadata.get("scenes_target"))
-    if scenes_target is not None:
-        scope["scenes_target"] = scenes_target
-
-    return scope
 
 
 def write_review_artifact(
