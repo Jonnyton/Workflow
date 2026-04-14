@@ -2933,6 +2933,68 @@ def gates_leaderboard(
     return ranked[:max(1, int(limit))]
 
 
+def goal_gate_summary(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+) -> dict[str, Any]:
+    """Aggregate gate-claim stats for a Goal.
+
+    Phase 6.4. Returns ``{ladder_length, claims_total,
+    branches_with_claims, highest_rung_reached}``. Non-retracted,
+    non-orphaned claims only — mirrors the leaderboard invariants
+    Phase 6.2 ships.
+
+    ``highest_rung_reached`` is the ``rung_key`` with the maximum
+    ladder index reached by any Branch on this Goal. Empty string
+    when no qualifying claims exist.
+
+    Raises KeyError if the Goal doesn't exist.
+    """
+    initialize_author_server(base_path)
+    ladder = get_goal_ladder(base_path, goal_id=goal_id)
+    rung_index = {
+        (r.get("rung_key") or ""): idx
+        for idx, r in enumerate(ladder)
+        if r.get("rung_key")
+    }
+    ladder_length = len(rung_index)
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT branch_def_id, rung_key
+            FROM gate_claims
+            WHERE goal_id = ? AND retracted_at IS NULL
+            """,
+            (goal_id,),
+        ).fetchall()
+    # Filter orphaned (rung no longer in ladder).
+    active = [
+        (r["branch_def_id"], r["rung_key"])
+        for r in rows
+        if r["rung_key"] in rung_index
+    ]
+    claims_total = len(active)
+    branches_with_claims = len({bid for bid, _ in active})
+    if active:
+        highest_idx = max(rung_index[rk] for _, rk in active)
+        # Resolve idx → rung_key via the ladder order. Multiple rungs
+        # can share an index only if ladder is malformed; guard with
+        # first-match semantics.
+        highest_rung_reached = next(
+            (rk for rk, idx in rung_index.items() if idx == highest_idx),
+            "",
+        )
+    else:
+        highest_rung_reached = ""
+    return {
+        "ladder_length": ladder_length,
+        "claims_total": claims_total,
+        "branches_with_claims": branches_with_claims,
+        "highest_rung_reached": highest_rung_reached,
+    }
+
+
 def goal_leaderboard(
     base_path: str | Path,
     *,

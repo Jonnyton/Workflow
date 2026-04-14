@@ -2747,7 +2747,7 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_get(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
+    from workflow.author_server import get_branch_definition, list_gate_claims
 
     bid = kwargs.get("branch_def_id", "").strip()
     if not bid:
@@ -2756,6 +2756,18 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
         branch = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
         return json.dumps({"error": f"Branch '{bid}' not found."})
+    # Phase 6.4: non-retracted claims for this Branch across all
+    # Goals. Flag-gated placeholder when GATES_ENABLED=0 so UIs
+    # render "gates off" distinct from "no claims yet."
+    if _gates_enabled():
+        branch["gate_claims"] = list_gate_claims(
+            _base_path(),
+            branch_def_id=bid,
+            include_retracted=False,
+        )
+    else:
+        branch["gate_claims"] = []
+        branch["gate_status"] = "gates_disabled"
     return json.dumps(branch, default=str)
 
 
@@ -6133,6 +6145,7 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import (
         branches_for_goal,
         get_goal,
+        goal_gate_summary,
     )
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -6152,6 +6165,14 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
 
     branches = branches_for_goal(_base_path(), goal_id=gid)
     is_deleted = goal.get("visibility") == "deleted"
+
+    # Phase 6.4: gate_summary rides alongside branches/is_deleted.
+    # When GATES_ENABLED=0, return a flag-gated placeholder so the
+    # UI can render "gates off" without mistaking it for "no claims".
+    if _gates_enabled():
+        gate_summary = goal_gate_summary(_base_path(), goal_id=gid)
+    else:
+        gate_summary = {"status": "gates_disabled"}
 
     lines = [
         f"**Goal: {goal['name']}**",
@@ -6196,6 +6217,7 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
         "is_deleted": is_deleted,
         "branches": branches,
         "branch_count": len(branches),
+        "gate_summary": gate_summary,
     }, default=str)
 
 
