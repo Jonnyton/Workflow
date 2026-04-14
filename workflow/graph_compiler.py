@@ -415,13 +415,84 @@ def _build_source_code_node(
     return _fn
 
 
+def _build_opaque_node(
+    node: NodeDefinition,
+    fn: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    event_sink: Callable[..., None] | None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Wrap a domain-registered opaque callable as a graph node.
+
+    Opaque nodes bypass ``_validate_source_code`` — the domain
+    registry is host-controlled at registration time, not
+    per-invocation, so the per-node ``approved`` flag is irrelevant.
+    Emits ``phase="starting"`` and ``phase="ran"`` events so outer
+    stream loops observe entry/exit at wrapper-boundary granularity
+    (Phase D §4.10).
+    """
+
+    def _fn(state: dict[str, Any]) -> dict[str, Any]:
+        if event_sink is not None:
+            try:
+                event_sink(
+                    node_id=node.node_id,
+                    phase="starting",
+                    opaque=True,
+                )
+            except Exception as exc:
+                if _is_cancel_exception(exc):
+                    raise
+                logger.exception(
+                    "event_sink raised in %s (starting)", node.node_id,
+                )
+        try:
+            result = fn(state)
+        except Exception as exc:
+            if _is_cancel_exception(exc):
+                raise
+            logger.exception("opaque node %s raised", node.node_id)
+            raise CompilerError(
+                f"Opaque node '{node.node_id}' raised at runtime: {exc}"
+            ) from exc
+        if not isinstance(result, dict):
+            raise CompilerError(
+                f"Opaque node '{node.node_id}' must return a dict, "
+                f"got {type(result).__name__}."
+            )
+        if event_sink is not None:
+            try:
+                event_sink(
+                    node_id=node.node_id,
+                    phase="ran",
+                    opaque=True,
+                    output=result,
+                )
+            except Exception as exc:
+                if _is_cancel_exception(exc):
+                    raise
+                logger.exception("event_sink raised in %s", node.node_id)
+        return result
+
+    return _fn
+
+
 def _build_node(
     node: NodeDefinition,
     *,
     provider_call: Callable[..., str] | None,
     event_sink: Callable[..., None] | None,
+    domain_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Dispatch a NodeDefinition to the right adapter."""
+    """Dispatch a NodeDefinition to the right adapter.
+
+    ``domain_id`` is threaded from ``compile_branch`` (Phase D
+    Option B). NodeDefinition has no ``domain_id`` field; domain is
+    a Branch-level attribute. When ``domain_id`` is non-empty and
+    ``(domain_id, node.node_id)`` resolves in the domain registry,
+    the opaque-node branch is taken.
+    """
+    from workflow.domain_registry import resolve_domain_callable
+
     has_template = bool((node.prompt_template or "").strip())
     has_source = bool((node.source_code or "").strip())
     if has_template and has_source:
@@ -435,17 +506,21 @@ def _build_node(
         return _build_prompt_template_node(
             node, provider_call=provider_call, event_sink=event_sink,
         )
-    # No body means a pass-through node (e.g. START/END placeholder).
-    def _passthrough(state: dict[str, Any]) -> dict[str, Any]:
-        if event_sink is not None:
-            try:
-                event_sink(node_id=node.node_id, passthrough=True)
-            except Exception as exc:
-                if _is_cancel_exception(exc):
-                    raise
-                logger.exception("event_sink raised in %s", node.node_id)
-        return {}
-    return _passthrough
+    if domain_id:
+        opaque = resolve_domain_callable(domain_id, node.node_id)
+        if opaque is not None:
+            return _build_opaque_node(node, opaque, event_sink=event_sink)
+    # Fallback: a genuine body-less node in a non-domain-trusted
+    # context is a malformed Branch. Preserve the CompilerError
+    # contract so user Branches that omit both template and source
+    # (and don't resolve via a domain registry) fail loudly at
+    # compile time rather than silently running as pass-throughs.
+    # Phase D §4.1 #2.
+    raise CompilerError(
+        f"Node '{node.node_id}' must have either prompt_template or "
+        f"source_code (or resolve via the domain-trusted opaque "
+        f"registry when domain_id is set)."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -557,7 +632,10 @@ def compile_branch(
                 f"'{def_id}'."
             )
         fn = _build_node(
-            node_def, provider_call=provider_call, event_sink=event_sink,
+            node_def,
+            provider_call=provider_call,
+            event_sink=event_sink,
+            domain_id=branch.domain_id,
         )
         graph.add_node(gn.id, fn)
 

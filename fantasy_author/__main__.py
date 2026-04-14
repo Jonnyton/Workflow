@@ -38,6 +38,11 @@ warnings.filterwarnings(
 # active. noqa: E402 acknowledges the ordering.
 from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: E402
 
+# Phase D: importing `branch_registrations` registers
+# ("fantasy_author", "universe_cycle_wrapper") in the workflow domain
+# registry. Must happen before _run_graph under
+# WORKFLOW_UNIFIED_EXECUTION=1 can compile its Branch.
+import fantasy_author.branch_registrations  # noqa: E402, F401
 import fantasy_author.runtime as runtime  # noqa: E402
 from fantasy_author.desktop.dashboard import DashboardHandler  # noqa: E402
 from fantasy_author.desktop.notifications import NotificationManager  # noqa: E402
@@ -108,6 +113,54 @@ def _build_provider_router() -> ProviderRouter:
 
     logger.info("Registered providers: %s", router.available_providers)
     return router
+
+
+# ---------------------------------------------------------------------------
+# Phase D — WORKFLOW_UNIFIED_EXECUTION flag and unified graph builder
+# ---------------------------------------------------------------------------
+
+
+def _workflow_unified_execution_enabled() -> bool:
+    """Read the Phase D flag. Mirrors `_gates_enabled()` from
+    `workflow/universe_server.py`.
+    """
+    return os.environ.get(
+        "WORKFLOW_UNIFIED_EXECUTION", "",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_unified_graph_builder() -> Any:
+    """Load the fantasy universe-cycle Branch seed and compile it.
+
+    Returns an uncompiled ``StateGraph`` (``CompiledBranch.graph``)
+    compatible with the direct-path ``build_universe_graph()`` return
+    so the caller can attach its own SqliteSaver checkpointer. Under
+    flag-on the outer graph has ONE node, the opaque
+    ``universe_cycle_wrapper`` that runs the full inner graph per
+    invocation.
+
+    R11 hard-fail contract (preflight §4.8): if the Branch can't be
+    loaded OR the domain registry is missing the wrapper callable,
+    the exception propagates out. No silent fallthrough to the
+    direct path.
+    """
+    import yaml
+
+    from workflow.branches import BranchDefinition
+    from workflow.graph_compiler import compile_branch
+
+    seed_path = (
+        Path(__file__).parent / "branches" / "universe_cycle.yaml"
+    )
+    if not seed_path.exists():
+        raise FileNotFoundError(
+            f"Phase D seed Branch not found at {seed_path}. "
+            "Cannot compile unified graph."
+        )
+    raw = yaml.safe_load(seed_path.read_text(encoding="utf-8"))
+    branch = BranchDefinition.from_dict(raw)
+    compiled_branch = compile_branch(branch)
+    return compiled_branch.graph
 
 
 # ---------------------------------------------------------------------------
@@ -400,8 +453,28 @@ class DaemonController:
                 logger.debug("Heartbeat status write failed", exc_info=True)
 
     def _run_graph(self, universe_id: str) -> None:
-        """Build and execute the universe graph."""
-        graph_builder = build_universe_graph()
+        """Build and execute the universe graph.
+
+        Under ``WORKFLOW_UNIFIED_EXECUTION=1`` (Phase D) the graph is
+        built via the standard Branch compile path: load the seed
+        ``fantasy_author/branches/universe_cycle.yaml``, call
+        ``compile_branch(branch)``, and use its ``graph`` where the
+        direct path uses ``build_universe_graph()`` today. Everything
+        after (SqliteSaver compile, initial_state, stream loop,
+        pause/stop, heartbeat, dashboard events) is identical.
+
+        Pause/stop regression under flag-on: wrapper-boundary
+        granularity only (preflight §4.10). Checkpoint regression
+        under flag-on: only the six boundary fields persist across
+        wrapper invocations; mid-cycle state is rebuilt on resume
+        via the normal dispatch path (preflight §4.11). Both
+        regressions are accepted for v1 by lead direction; flag is
+        off by default, opt-in only.
+        """
+        if _workflow_unified_execution_enabled():
+            graph_builder = _build_unified_graph_builder()
+        else:
+            graph_builder = build_universe_graph()
 
         output_dir = Path(self._universe_path)
         output_dir.mkdir(parents=True, exist_ok=True)
