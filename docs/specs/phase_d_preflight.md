@@ -29,6 +29,7 @@ This is the load-bearing phase of the daemon-task-economy rollout. It unifies th
 | R8 | Feature flag `WORKFLOW_UNIFIED_EXECUTION` does not exist yet. Naming / placement matters for cross-session legibility | Low, but will frustrate future sessions if inconsistent | Yes | Contract §4: define the flag in a single location (`workflow/config.py` or `fantasy_author/__main__.py` module-level), read via `os.environ.get(...)`, document in STATUS.md when flag is referenced. |
 | R9 | Live-toggle of the flag (user sets `WORKFLOW_UNIFIED_EXECUTION=1` on a running universe) — the daemon is already in `_run_graph`; flag read must be at graph-construction time, not per-node | Unclear UX — user may expect instant toggle | Yes (restart required) | Document: flag takes effect on next `_run_graph` call (i.e., next daemon restart or universe switch). No mid-run toggle. Matches how other flags behave. |
 | R10 | Phase C.5 `authorial_priority_review` producer wiring is live. Phase D does not change producer semantics, but if the wrapped graph re-imports Phase C machinery through a different path, producer-registration singletons could double-register | Runtime RuntimeError or silent duplicate producer output | Yes (flag off) | Hard rule: wrapped graph imports from the SAME module paths as the direct graph. No copy-paste import aliases. One source of truth for `build_universe_graph`. |
+| R11 | `compile_branch(branch)` raises under flag-on (registry miss, malformed seed YAML, state_schema validation error, etc.). If the error is caught and the daemon silently falls through to the direct path, flag-on becomes a no-op that masks broken config. Next user-sim mission passes "with flag on" while actually running flag-off | Silent regression — looks correct but isn't; subsequent tests pass on a lie | Yes (flag off) | Hard-fail. Any exception from `compile_branch` OR from the registry resolution re-raises out of `_run_graph` with a clear error message. The daemon stops (not degrades). Host sees the error, fixes the config or flips the flag off, and restarts. See §4.8 success criterion. Do NOT try/except around the wrapped path. |
 
 ### Reversibility summary
 
@@ -75,7 +76,15 @@ Scope boundaries, signatures, invariants, and non-goals. Dev fills in HOW.
 
 1. **New module `fantasy_author/branch_registrations.py`** — a registry mapping `(domain_id, node_id) → Callable[[StateGraph-like], StateGraph]` for domain-trusted opaque nodes. Fantasy registers `("fantasy_author", "universe_cycle_wrapper")` here, pointing to a thin wrapper that invokes `build_universe_graph()` and returns its compiled result.
 
-2. **Compiler extension in `workflow/graph_compiler.py`** — `_build_node` gains a third branch (after `has_template` and `has_source`): if `node.domain_id` resolves to a registered opaque callable, use it. The callable receives the node's inputs as `state: dict` and returns `dict`. No approval gate (domain-trusted registry is host-controlled at registration time, not per-invocation).
+2. **Compiler extension in `workflow/graph_compiler.py`** — `_build_node` gains a third branch (after `has_template` and `has_source`): if `(domain_id, node.node_id)` resolves to a registered opaque callable, use it. The callable receives the node's inputs as `state: dict` and returns `dict`. No approval gate (domain-trusted registry is host-controlled at registration time, not per-invocation).
+
+   **Threading contract (Option B, reviewer-confirmed).** `NodeDefinition` does NOT have a `domain_id` field — `domain_id` lives on `BranchDefinition` (`workflow/branches.py:360`). Do not read `node.domain_id`; it will `AttributeError` at compile time. Instead, thread `domain_id` as an explicit parameter:
+   - `_build_node(node, *, domain_id: str = "", provider_call, event_sink)` — new kwarg, default empty string.
+   - `compile_branch(branch, ...)` passes `domain_id=branch.domain_id` into every `_build_node` call (one site, `workflow/graph_compiler.py:559-561`).
+   - Opaque-node resolution: `if not has_template and not has_source and domain_id: lookup = resolve_domain_callable(domain_id, node.node_id); if lookup: return _build_opaque_node(lookup, node, event_sink=event_sink)`.
+   - Empty `domain_id` OR unregistered `(domain_id, node_id)` with no source/template → existing `CompilerError("Node must have either prompt_template or source_code")`. Preserves the current error shape for user Branches that omit both.
+
+   Option A (pass the full `BranchDefinition` into `_build_node`) was rejected — it creates new coupling between node-level build and branch-level shape when only one field is needed. Option C (add `domain_id` to `NodeDefinition`) is explicitly forbidden by §4.6 (no `BranchDefinition` or `NodeDefinition` dataclass field changes).
 
 3. **New `BranchDefinition` seed at `fantasy_author/branches/universe_cycle.yaml`** — single node `universe_cycle_wrapper`, entry_point = that node, single edge to END. `domain_id = "fantasy_author"`. `published = False` (internal, not a user-facing template). State schema minimal — just the fields the wrapper reads/writes at the boundary (`universe_id`, `universe_path`, `premise_kernel`, `health`, counters for dashboard; the real `UniverseState` lives INSIDE the wrapped graph, not at the Branch layer).
 
@@ -94,22 +103,26 @@ Scope boundaries, signatures, invariants, and non-goals. Dev fills in HOW.
 
 1. **Checkpoint resume works.** Daemon restart recovers `total_words`, `total_chapters`, `world_state_version`, `canon_facts_count`, `active_series`, `series_completed` from SqliteSaver. Test: simulate a restart with a populated checkpoint and assert counters carry over.
 2. **Dashboard events fire.** Every phase entry produces a `phase_start` event visible to `_handle_node_output`. Test: run one cycle, assert the dashboard received events for foundation_priority_review, dispatch_execution, and universe_cycle.
-3. **Pause/stop/universe-switch controls respond.** Setting `_stop_event` within one node execution shuts the daemon down cleanly. `.pause` file halts the stream loop. Cross-universe switch triggers in `finally` block. Test: each control path, both flag states.
-4. **Producer-registration singletons are not double-registered.** No duplicate task output from any Phase C producer. Test: run one cycle, count TaskProducer outputs, assert no duplicates.
-5. **No hidden state field drops.** Every field written by a node inside the wrapped graph is readable by the next node inside the wrapped graph. The OUTER Branch's state_schema only covers the boundary. Test: drive one scene through, assert `workflow_instructions.selected_target_id` survives dispatch → run_book.
+3. **Pause/stop/universe-switch controls respond at wrapper-call granularity under flag-on.** Setting `_stop_event` during inner-graph execution is observed by `_run_graph` when the wrapper returns — NOT during inner-phase execution. `.pause` file is checked at the outer stream-loop level (which under flag-on iterates once per wrapper invocation, not once per inner phase). Cross-universe switch triggers in `finally` block as before. Response latency is bounded by the slowest inner phase (typically `run_book` = minutes, not seconds). See §4.10 for the full acceptance rationale. Test (new, wrapped-path only): `_stop_event.set()` between two wrapper invocations → daemon exits at next iteration. Test (new, both paths): pause file halts the outer stream loop under both flag states.
+4. **Producer-registration singletons are not double-registered.** No duplicate producer instance in the Phase C registry after the wrapped graph is built. Test (new, both paths): after `_run_graph` setup, introspect the producer registry and assert `len({id(p) for p in registry}) == len(registry)` — i.e., count distinct producer function objects by `id()`, not by tag or display name (identical re-registrations share a tag but have different `id()`, which would hide duplicates the other way around; `id()` catches true double-registration).
+5. **No hidden state field drops across the wrapper boundary.** Every field written by a node inside the wrapped graph is readable by the next node inside the wrapped graph. The OUTER Branch's state_schema only covers the boundary. Test (new, wrapped-path only, new file `tests/test_phase_d_unified_execution.py`): drive one full universe cycle with flag on, assert `workflow_instructions.selected_target_id` set by `dispatch_execution` is readable by `run_book`, AND the boundary-returned state (what the wrapper returns to the outer Branch layer) contains the expected counters (`total_words`, `total_chapters`, `health`). Not an extension of an existing test — the wrapped-path boundary doesn't exist under flag-off, so this is new coverage.
 6. **Activity log matches flag-off.** `.agents/activity.log` entries for a single cycle are byte-identical (modulo timestamps and random IDs) across both flag states. Test: diff log output.
 
 ### 4.4 Test strategy
 
 New file `tests/test_phase_d_unified_execution.py`. Structure:
 
-- **Compiler-extension tests (4):** domain-trusted opaque node resolves via registry; unregistered `(domain_id, node_id)` raises clear `CompilerError`; opaque node bypasses `_validate_source_code`; `approved` flag is ignored for opaque nodes.
+- **Compiler-extension tests (5):** domain-trusted opaque node resolves via registry; unregistered `(domain_id, node_id)` with no source/template raises clear `CompilerError`; opaque node bypasses `_validate_source_code`; `approved` flag is ignored for opaque nodes; empty `domain_id` on a node with no source/template raises `CompilerError` (preserves existing error for user Branches that omit both).
 - **Wrapper-registration tests (2):** `universe_cycle_wrapper` is registered under `("fantasy_author", "universe_cycle_wrapper")`; the wrapper callable returns a dict with expected boundary fields.
 - **Flag-gated dispatch tests (3):** flag-off path calls `build_universe_graph()` directly; flag-on path calls `compile_branch(...)` then uses its `graph`; flag parsing accepts `"1"`, `"true"`, `"yes"`, `"on"` (mirrors `_gates_enabled`).
-- **End-to-end parity tests (6, parameterized over flag states → 12 actual tests):** checkpoint resume, dashboard events, pause/stop, universe switch, producer no-double-register, state-field survival across nodes. Each asserts identical behavior under both flag values.
+- **Flag-on compile-failure test (1, R11):** monkey-patch the domain registry to return `None` for the wrapper lookup; flag-on `_run_graph` raises (does not silently fall through to direct path).
+- **Pause/stop latency tests (2, per §4.3 invariant 3 and §4.10):** under flag-on, `_stop_event` set during wrapper execution is observed at next wrapper boundary (NOT mid-inner-phase); `.pause` file halts the outer stream loop under both flag states.
+- **Producer no-double-register test (1, per §4.3 invariant 4):** after `_run_graph` setup under each flag state, assert `len({id(p) for p in registry}) == len(registry)`.
+- **State-field boundary test (1, per §4.3 invariant 5, wrapped-path only):** drive one universe cycle with flag on; assert `workflow_instructions.selected_target_id` survives `dispatch_execution` → `run_book` inside the wrapper, and the returned boundary state contains expected counters.
+- **Other parity tests (4, parameterized over flag states → 8 actual tests):** checkpoint resume, dashboard events, universe switch, activity.log byte-parity.
 - **Regression safety (2):** with flag off, full existing `test_universe_graph.py` suite still green; with flag on, same suite green when opted in via env in the test runner.
 
-Aim: ~20 new tests. If dev hits a test that's ambiguous about what "identical behavior" means, raise it — the invariant list in §4.3 is the bar.
+Aim: ~24 new tests. If dev hits a test that's ambiguous about what "identical behavior" means, raise it — the invariant list in §4.3 is the bar. Notable asymmetry: §4.3 invariant 3 is explicitly NOT parity-asserted (see §4.10); flag-on responds at wrapper-boundary granularity, flag-off at inner-node granularity. Tests must respect that split.
 
 ### 4.5 Rollback plan
 
@@ -137,6 +150,8 @@ The SqliteSaver database format is unchanged by Phase D, so downgrade safety is 
 - Exposing the wrapped universe_cycle Branch to user-registered fork paths. The seed YAML is `published=False`. If users accidentally fork it, they get an opaque-node-with-no-registry entry — a clean error, not a silent failure.
 - NodeBid path (§3.2). That's Phase G.
 - DaemonController tier-aware dispatch (that's Phase E).
+- **Adding `domain_id` (or any other field) to `NodeDefinition`.** Option C from reviewer's three-way ranking. Forbidden here. `domain_id` is threaded as a `_build_node` kwarg (Option B), not as a new dataclass field. Dev: if you find yourself wanting to stash `domain_id` on the node, stop — the threading-through-`compile_branch` path in §4.1 #2 is the agreed contract.
+- Adding `trusted_domain` (or any other field) to `BranchDefinition`. That's option (a), future work per §3.
 
 ### 4.7 Files touched
 
@@ -144,7 +159,7 @@ The SqliteSaver database format is unchanged by Phase D, so downgrade safety is 
 |------|--------|---------------|
 | `fantasy_author/branch_registrations.py` | NEW — registry + wrapper callable | ~60 lines |
 | `fantasy_author/branches/universe_cycle.yaml` | NEW — single-node Branch seed | ~30 lines |
-| `workflow/graph_compiler.py` | EDIT `_build_node` — add domain-trusted opaque-node branch | ~40 lines added |
+| `workflow/graph_compiler.py` | EDIT `_build_node` signature (`domain_id` kwarg) + add opaque-node branch + pass `domain_id=branch.domain_id` at the single `_build_node` call site in `compile_branch` (~line 559) | ~45 lines added / 2 edited |
 | `fantasy_author/__main__.py` | EDIT `_run_graph` — flag gate on graph construction | ~20 lines changed |
 | `tests/test_phase_d_unified_execution.py` | NEW — ~20 tests | ~400 lines |
 | `docs/exec-plans/daemon_task_economy_rollout.md` | EDIT — mark Phase D done when landed, note the revised option-(b) shape | ~10 lines |
@@ -158,7 +173,8 @@ No new subsystems, no new schemas, no new MCP tools. ~550 lines net, most of whi
 - Existing full suite green on default flag off (the landing is a no-op at rest).
 - Compiler extension is strictly additive — no existing compile_branch test regresses.
 - One user-sim mission runs cleanly end-to-end with flag on: premise set, at least one scene written, daemon restarted mid-mission, dashboard events observed, no double-produced tasks, activity.log byte-identical to flag-off reference run (modulo timestamps).
-- Reviewer sees no change to `UniverseState`, `BranchDefinition`, or storage schemas.
+- Reviewer sees no change to `UniverseState`, `BranchDefinition`, `NodeDefinition`, or storage schemas.
+- **Compile failure on the wrapped Branch is observable** (R11). `compile_branch` exceptions or registry misses under flag-on propagate up out of `_run_graph` with a clear error, rather than silently falling through to the direct-graph path. Test (new): monkey-patch the registry to return `None` for the wrapper lookup under flag-on, assert `_run_graph` raises and the daemon stops (does not degrade to direct path).
 
 ### 4.9 Open design questions (non-blocking, flag up as they surface)
 
@@ -167,6 +183,26 @@ No new subsystems, no new schemas, no new MCP tools. ~550 lines net, most of whi
 3. **Does the seed YAML go under VCS, or is it generated at startup?** Recommend: VCS. It's a tiny static file; keeping it in-repo makes the "fantasy universe-cycle is a registered Branch" claim inspectable in the tree.
 
 None block implementation; defaults are safe.
+
+### 4.10 Pause/stop latency regression under flag-on (accepted for v1)
+
+Reviewer flagged this on the first audit pass; confirming acceptance here so dev doesn't treat it as a defect.
+
+**What changes.** Under flag-off, `_run_graph` calls `compiled.stream(initial_state, ...)` against the real universe-cycle StateGraph and iterates per inner phase. `_stop_event` and the `.pause` file are checked between each node output (every few seconds during normal operation, up to minutes during `run_book`). Under flag-on, the graph the outer loop sees has one node — the opaque wrapper. The wrapper internally builds and runs the full fantasy graph to a stopping point, then returns. The outer stream loop checks `_stop_event` / `.pause` only at wrapper boundaries (once per universe cycle), so response latency is bounded by the slowest inner phase.
+
+**Practical impact.** Existing latency characteristics:
+- Stop signal: currently a few seconds (handled between any two inner node outputs). Under flag-on, matches the slowest inner phase — minutes for `run_book`, seconds for `reflect` / `worldbuild` / `idle`.
+- Pause: same story. A `.pause` file dropped mid-`run_book` is not honored until `run_book` returns.
+- Cross-universe switch: unchanged — still handled in the outer `finally` block after the stream loop exits.
+
+**Why accept it for v1.** Fixing this properly means making the opaque wrapper stream-iterate the inner graph and re-check `_stop_event` / `.pause` between inner steps — which requires either (a) passing the outer controls down into the wrapper, breaking the opacity that makes the wrap small and testable, OR (b) giving the wrapper its own `stream` iterator that the outer loop consumes, which roughly doubles the wrapper size and reintroduces the `execute_branch_async` concerns listed in R1/R7. Neither is worth the complexity when the flag is off-by-default and the flag-on path is opted into knowingly by the host.
+
+**What dev owes.**
+- §4.3 invariant 3 tests pause/stop at wrapper-boundary granularity under flag-on, not per-inner-phase. Do not write a test that asserts stop responds within one inner phase under flag-on; that test would pin a promise we're not making.
+- Document the regression in the commit message so future sessions can find it.
+- If a future user complaint surfaces (e.g., "stop takes too long under flag-on during long book writes"), the fix is the stream-iterating wrapper. File it as a follow-up at that point; don't preemptively build it.
+
+This acceptance is scoped to v1. Option (a) from §3 (per-phase inspection) would supersede it — per-phase becomes per-node at the outer stream layer, and the regression resolves naturally.
 
 ## 5. Handoff
 
