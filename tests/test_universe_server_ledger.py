@@ -89,6 +89,7 @@ def test_write_actions_table_is_exhaustive() -> None:
     expected = {
         "submit_request", "give_direction", "set_premise", "add_canon",
         "control_daemon", "switch_universe", "create_universe",
+        "queue_cancel",
     }
     assert set(us.WRITE_ACTIONS.keys()) == expected
 

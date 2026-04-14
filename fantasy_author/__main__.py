@@ -129,6 +129,62 @@ def _workflow_unified_execution_enabled() -> bool:
     ).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _dispatcher_startup(universe_path: Path) -> None:
+    """Phase E startup hook: recover claimed tasks + run GC.
+
+    Invariant §4.3 #7 (claimed→pending recovery) and §4.3 #10
+    (terminal-task archive). One-shot at ``_run_graph`` entry. Safe
+    regardless of dispatcher flag: recovery and GC keep the queue
+    file healthy even when the dispatcher is off.
+    """
+    try:
+        from workflow.branch_tasks import (
+            garbage_collect,
+            recover_claimed_tasks,
+        )
+
+        recover_claimed_tasks(universe_path)
+        garbage_collect(universe_path)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Phase E dispatcher_startup failed for %s", universe_path,
+        )
+
+
+def _dispatcher_observe(universe_path: Path) -> None:
+    """Phase E cycle-boundary observation.
+
+    Logs the dispatcher's "would-have-picked" task to activity.log.
+    Observational only — never alters graph invocation under the
+    default flag matrix (Phase D off OR Phase E off). Preflight
+    §4.1 #4 flag matrix.
+    """
+    try:
+        from workflow.dispatcher import (
+            dispatcher_enabled,
+            load_dispatcher_config,
+            select_next_task,
+        )
+
+        if not dispatcher_enabled():
+            return
+        cfg = load_dispatcher_config(universe_path)
+        picked = select_next_task(universe_path, config=cfg)
+        if picked is None:
+            logger.info(
+                "dispatcher_observational: no eligible BranchTask"
+            )
+        else:
+            logger.info(
+                "dispatcher_observational: would pick %s tier=%s score-tier=%s",
+                picked.branch_task_id,
+                picked.trigger_source,
+                cfg.tier_weights.get(picked.trigger_source, 0.0),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("dispatcher_observe failed")
+
+
 def _build_unified_graph_builder() -> Any:
     """Load the fantasy universe-cycle Branch seed and compile it.
 
@@ -479,6 +535,12 @@ class DaemonController:
         output_dir = Path(self._universe_path)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Phase E: startup recovery + GC + observational dispatcher read.
+        # Runs regardless of dispatcher flag so the queue file stays
+        # healthy across daemon lifecycles (preflight §4.3 #7 + #10).
+        _dispatcher_startup(output_dir)
+        _dispatcher_observe(output_dir)
+
         with SqliteSaver.from_conn_string(self._checkpoint_path) as checkpointer:
             compiled = graph_builder.compile(checkpointer=checkpointer)
 
@@ -593,6 +655,17 @@ class DaemonController:
                     if self._dashboard and isinstance(event, dict):
                         for node_name, node_output in event.items():
                             self._handle_node_output(node_name, node_output)
+
+                    # Phase E: at each cycle boundary (marked by the
+                    # `universe_cycle` node in the direct graph, or
+                    # the `universe_cycle_wrapper` in the unified
+                    # path), observe the dispatcher's top pick so
+                    # users see the decision in activity.log.
+                    if isinstance(event, dict) and (
+                        "universe_cycle" in event
+                        or "universe_cycle_wrapper" in event
+                    ):
+                        _dispatcher_observe(output_dir)
 
             except KeyboardInterrupt:
                 logger.info("KeyboardInterrupt received")

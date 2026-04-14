@@ -315,6 +315,16 @@ def _extract_create_universe(
 # action name -> (extractor, control_daemon_gate)
 # control_daemon_gate: if set, the wrapper only logs when the daemon action
 # was an actual write (pause/resume), not a read (status).
+def _extract_queue_cancel(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    return (
+        str(kwargs.get("branch_task_id", "")),
+        _truncate(f"cancel {kwargs.get('branch_task_id', '')}"),
+        {"status": result.get("status", "")},
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -323,6 +333,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "control_daemon": (_extract_control_daemon, {"pause", "resume"}),
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
+    "queue_cancel": (_extract_queue_cancel, None),
 }
 
 
@@ -790,6 +801,8 @@ def universe(
     filename: str = "",
     provenance_tag: str = "",
     limit: int = 30,
+    priority_weight: float = 0.0,
+    branch_task_id: str = "",
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -850,6 +863,8 @@ def universe(
         "control_daemon": _action_control_daemon,
         "switch_universe": _action_switch_universe,
         "create_universe": _action_create_universe,
+        "queue_list": _action_queue_list,
+        "queue_cancel": _action_queue_cancel,
     }
 
     handler = dispatch.get(action)
@@ -873,6 +888,8 @@ def universe(
         "filename": filename,
         "provenance_tag": provenance_tag,
         "limit": limit,
+        "priority_weight": priority_weight,
+        "branch_task_id": branch_task_id,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
@@ -1305,8 +1322,10 @@ def _action_submit_request(
     text: str = "",
     request_type: str = "scene_direction",
     branch_id: str = "",
+    priority_weight: float = 0.0,
     **_kwargs: Any,
 ) -> str:
+    from workflow.branch_tasks import BranchTask, append_task, new_task_id
     from workflow.work_targets import REQUESTS_FILENAME
 
     uid = universe_id or _default_universe()
@@ -1335,6 +1354,22 @@ def _action_submit_request(
     if request_type not in valid_types:
         request_type = "general"
 
+    # Invariant 9: priority_weight cap. Negative values reject for all
+    # actors. Non-host clamped to 0 silently (preflight §4.3 #9).
+    try:
+        pw = float(priority_weight)
+    except (TypeError, ValueError):
+        pw = 0.0
+    if pw < 0:
+        return json.dumps({
+            "error": "priority_weight must be >= 0.",
+        })
+    source = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+    is_host = source == host_id
+    if not is_host:
+        pw = 0.0
+
     request_id = f"req_{int(time.time())}_{os.urandom(4).hex()}"
     request_obj = {
         "id": request_id,
@@ -1343,7 +1378,7 @@ def _action_submit_request(
         "branch_id": branch_id or None,
         "status": "pending",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "source": os.environ.get("UNIVERSE_SERVER_USER", "anonymous"),
+        "source": source,
     }
 
     requests_path = udir / REQUESTS_FILENAME
@@ -1361,6 +1396,31 @@ def _action_submit_request(
     except OSError as exc:
         return json.dumps({"error": f"Failed to write request: {exc}"})
 
+    # Phase E: also queue a BranchTask so the dispatcher can score +
+    # schedule. host submissions land as host_request tier; anyone
+    # else lands as user_request. The WorkTarget still gets
+    # materialized by UserRequestProducer from requests.json on the
+    # next producer cycle — BranchTask wraps the execution intent.
+    branch_task_id = ""
+    try:
+        task = BranchTask(
+            branch_task_id=new_task_id(),
+            branch_def_id="fantasy_author:universe_cycle_wrapper",
+            universe_id=uid,
+            inputs={
+                "work_target_ref": None,
+                "request_id": request_id,
+                "request_type": request_type,
+                "branch_id": branch_id or "",
+            },
+            trigger_source="host_request" if is_host else "user_request",
+            priority_weight=pw,
+        )
+        append_task(udir, task)
+        branch_task_id = task.branch_task_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to queue BranchTask for %s: %s", request_id, exc)
+
     pending_count = sum(
         1 for r in existing
         if isinstance(r, dict) and r.get("status") == "pending"
@@ -1376,7 +1436,9 @@ def _action_submit_request(
     return json.dumps({
         "universe_id": uid,
         "request_id": request_id,
+        "branch_task_id": branch_task_id,
         "status": "pending",
+        "priority_weight": pw,
         "queue_position": pending_count,
         "ahead_of_yours": ahead,
         "what_happens_next": (
@@ -1384,6 +1446,120 @@ def _action_submit_request(
             f"{position_note}. Use `universe action=inspect universe_id={uid}` "
             "to watch the queue or check whether your request is now active work."
         ),
+    })
+
+
+def _action_queue_list(
+    universe_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Read ``branch_tasks.json`` fresh (no in-memory cache) and
+    return sorted+scored queue. Includes ``tier_status`` per R11.
+    """
+    from workflow.branch_tasks import read_queue
+    from workflow.dispatcher import (
+        load_dispatcher_config,
+        score_task,
+    )
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    try:
+        queue = read_queue(udir)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({
+            "universe_id": uid,
+            "error": f"Failed to read queue: {exc}",
+        })
+
+    cfg = load_dispatcher_config(udir)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rows: list[dict[str, Any]] = []
+    for task in queue:
+        row = task.to_dict()
+        row["score"] = score_task(task, now_iso=now_iso, config=cfg)
+        row["tier_enabled"] = cfg.tier_enabled(task.trigger_source)
+        rows.append(row)
+    # Primary: status pending first, then score desc. Non-pending
+    # sorted by queued_at desc.
+    rows.sort(
+        key=lambda r: (
+            0 if r.get("status") == "pending" else 1,
+            -float(r.get("score", 0.0)),
+            r.get("queued_at", ""),
+        ),
+    )
+
+    return json.dumps({
+        "universe_id": uid,
+        "queue": rows,
+        "pending_count": sum(1 for r in rows if r.get("status") == "pending"),
+        "running_count": sum(1 for r in rows if r.get("status") == "running"),
+        "tier_status": cfg.tier_status_map(),
+    })
+
+
+def _action_queue_cancel(
+    universe_id: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Cancel a pending BranchTask.
+
+    Running tasks require host override (not implemented in Phase E
+    — returns ``running_tasks_require_host_override``).
+    """
+    from workflow.branch_tasks import mark_status, read_queue
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    if not branch_task_id:
+        return json.dumps({"error": "branch_task_id required."})
+
+    try:
+        queue = read_queue(udir)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"Failed to read queue: {exc}"})
+
+    target = next(
+        (t for t in queue if t.branch_task_id == branch_task_id),
+        None,
+    )
+    if target is None:
+        return json.dumps({
+            "universe_id": uid,
+            "status": "not_found",
+            "branch_task_id": branch_task_id,
+        })
+    if target.status == "running":
+        return json.dumps({
+            "universe_id": uid,
+            "status": "rejected",
+            "error": "running_tasks_require_host_override",
+            "branch_task_id": branch_task_id,
+        })
+    if target.status != "pending":
+        return json.dumps({
+            "universe_id": uid,
+            "status": target.status,
+            "branch_task_id": branch_task_id,
+            "note": "task is already in a terminal state",
+        })
+
+    try:
+        mark_status(udir, branch_task_id, status="cancelled")
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"Failed to cancel: {exc}"})
+
+    return json.dumps({
+        "universe_id": uid,
+        "status": "cancelled",
+        "branch_task_id": branch_task_id,
     })
 
 
