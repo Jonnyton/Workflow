@@ -43,10 +43,18 @@ def universe_dir(tmp_path):
 @pytest.fixture(autouse=True)
 def _clean_registry():
     """Each test starts with a clean registry (domain init may have
-    registered producers at import time)."""
+    registered producers at import time).
+
+    Teardown re-registers the fantasy producers so subsequent test
+    files (e.g. test_submit_request_wiring) that rely on the default
+    producer-on path see the domain's normal registry state. Phase
+    C.5 made the authorial phase read the live registry, so leaking
+    an empty registry regresses downstream suites.
+    """
     reset_registry()
     yield
     reset_registry()
+    _reload_fantasy_init()
 
 
 def _reload_fantasy_init() -> None:
@@ -332,3 +340,81 @@ def test_fantasy_universe_cycle_produces_identical_targets_with_flag_on_vs_off(
         "flag-on vs flag-off yield different WorkTarget selections — "
         "producer refactor changed observable behavior"
     )
+
+
+# ─── C.5 — call site wiring ────────────────────────────────────────────
+
+
+def test_authorial_review_dispatches_through_producers_when_flag_on(
+    universe_dir, monkeypatch,
+):
+    """Phase C.5: flag-on → authorial_priority_review runs the registered
+    producer list and feeds merged output to choose_authorial_targets.
+
+    Pins the branch by registering a single sentinel producer and
+    verifying its target is the one selected.
+    """
+    from domains.fantasy_author.phases.authorial_priority_review import (
+        authorial_priority_review,
+    )
+    from workflow.producers import register
+
+    monkeypatch.setenv("WORKFLOW_PRODUCER_INTERFACE", "on")
+    (universe_dir / "PROGRAM.md").write_text(
+        "Ignored in producer path.", encoding="utf-8",
+    )
+
+    class SentinelProducer:
+        name = "sentinel"
+        origin = "seed"
+
+        def produce(self, universe_path, *, config=None):
+            return [WorkTarget(
+                target_id="sentinel-only",
+                title="Only target the phase should see",
+                role=ROLE_NOTES,
+            )]
+
+    register(SentinelProducer())
+
+    result = authorial_priority_review({
+        "_universe_path": str(universe_dir),
+        "workflow_instructions": {"premise": "Glass kingdom."},
+    })
+
+    assert result["selected_target_id"] == "sentinel-only"
+
+
+def test_authorial_review_skips_producers_when_flag_off(
+    universe_dir, monkeypatch,
+):
+    """Phase C.5: flag-off → producer list ignored; direct-call path
+    still reads from work_targets.json via choose_authorial_targets."""
+    from domains.fantasy_author.phases.authorial_priority_review import (
+        authorial_priority_review,
+    )
+    from workflow.producers import register
+
+    monkeypatch.setenv("WORKFLOW_PRODUCER_INTERFACE", "off")
+
+    class SentinelProducer:
+        name = "sentinel"
+        origin = "seed"
+
+        def produce(self, universe_path, *, config=None):
+            return [WorkTarget(
+                target_id="sentinel-only",
+                title="Should be ignored in flag-off path",
+                role=ROLE_NOTES,
+            )]
+
+    register(SentinelProducer())
+
+    result = authorial_priority_review({
+        "_universe_path": str(universe_dir),
+        "workflow_instructions": {"premise": "Glass kingdom."},
+    })
+
+    # Flag-off path seeds universe-notes + book-1, ignoring the sentinel.
+    assert result["selected_target_id"] != "sentinel-only"
+    assert result["selected_target_id"] is not None
