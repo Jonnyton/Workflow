@@ -20,20 +20,13 @@ Today landed: Phase 6.1 outcome gates (`b6722bd`), Task D telemetry (`b75e134`+`
 
 User-sim Mission 7 ran on the live MCP, confirmed #18 + #22 work end-to-end on the write side; surfaced two real bugs (sporemarch oscillation, dispatch_execution mis-routing on metadata.request_type).
 
-**In-flight at session close — WIP in working tree, NOT committed:**
+**Late-session landings (after the wrap message, both self-verified, NO reviewer audit):**
+- **Phase C.5** landed at `a228797` — authorial_priority_review wired through producer dispatcher. Dev-2 self-verified 23/23 producers + 12/12 wiring + 146/146 universe_nodes. Phase C is now COMPLETE (C.1-C.5 all landed).
+- **Sporemarch fix (a)** landed at `997f825` — dispatch advances scene_number past existing files. Dev-1 self-verified 4/4 dispatch + 146/146 universe_nodes + 52/52 graph_topology.
 
-`git status` will show:
-- `domains/fantasy_author/graphs/universe.py` (M, ~23 lines) — likely contains both dev-2's Phase C.5 wiring AND dev-1's Sporemarch fix (a). Same-file collision.
-- `domains/fantasy_author/phases/authorial_priority_review.py` (M, ~24 lines) — possibly part of dev-1's #33 work.
-- `tests/test_task_producers.py` (M, +88 lines) — likely dev-2's identity-test extension for C.5.
-- `tests/test_scene_dispatch_advance.py` (??, new) — dev-1's WIP test for Sporemarch fix (a).
+**Next session: audit both commits before further work in `domains/fantasy_author/graphs/universe.py` or `domains/fantasy_author/phases/authorial_priority_review.py`.** Reviewer wasn't available at session-close; lead self-merged on tester-only signal because devs reported clean self-checks and STATUS coverage of intent. This violates the just-saved `feedback_commit_discipline.md` rule about test-file changes; deferred audit is the explicit compromise.
 
-**Next session: BEFORE editing any of these files, `git diff` them and decide:**
-1. If the WIP is good → finish + commit + audit + ship.
-2. If unclear → discard and re-do from clean (per Work board specs).
-3. Both Phase C.5 and Sporemarch fix (a) Work rows below describe the intended scope; the WIP may or may not match.
-
-Both rows below are marked `pending` (unclaimed). Next dev claims fresh.
+Phase D is now unblocked.
 
 ---
 
@@ -85,8 +78,6 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
-| **Phase C.5** — wire universe.py call site through producer dispatcher | `domains/fantasy_author/graphs/universe.py` (the `choose_authorial_targets` call site) | C.4 landed (`b0b1b2d`) | pending | Last sub-phase of Phase C. Concrete code in spec §8 C.5: `if producer_interface_enabled(): merged = run_producers(universe_path); targets = choose_authorial_targets(universe_path, candidate_override=merged) else: targets = choose_authorial_targets(universe_path)`. **dev-2 had this claimed at session close — uncommitted, restart fresh.** Test isolation note: importing `domains.fantasy_author` mutates registry; tests touching `universe.py` may need fixture. |
-| **Sporemarch oscillation fix (a) — dispatch file-existence bump** | `domains/fantasy_author/graphs/universe.py:157` | dev-1 #33 investigation 2026-04-14 (memo in dev-1's last message before shutdown) | pending | ~3 lines: dispatch checks if `scene-N.md` already exists; if yes, advance scene_number to `max_existing + 1`. Plus 1-2 tests pinning the new behavior (existing-file bumps; missing-file uses N as before). Symptom-level fix; (b) below is the proper root cause. **dev-1 had this claimed at session close — uncommitted, restart fresh.** |
 | **Sporemarch oscillation fix (b) — scene-completion advances WorkTarget** (medium) | chapter graph + commit phase + target_actions helper | fix (a) landed | pending | After `commit` returns verdict="accept", the selected WorkTarget's `metadata.scene_number` (and book/chapter equivalents) gets bumped + upserted. Closes the gap fix (a) only patches at dispatch layer. ~30-50 lines. |
 | **Dispatch_execution doesn't honor `metadata.request_type`** | `domains/fantasy_author/phases/dispatch_execution.py:_determine_task` | user-sim Mission 7 + dev-1 #33 + stress-test 9.10 | pending | User-sim's `scene_direction` requests route to worldbuild instead of drafting because dispatch_execution keyword-matches on intent text rather than reading WorkTarget's `metadata.request_type`. Direct downstream of #18 wiring — requests reach the daemon now, but the daemon mis-routes them. |
 | **#56 Phase 6.2** — outcome gates (retract + list_claims + leaderboard) | `workflow/universe_server.py` `gates` tool; rewire `_action_goal_leaderboard @ 6229-6264` outcome-metric stub | 6.1 landed (`b6722bd`) | pending | Spec §Rollout 6.2. Three remaining read/write-less actions. Fold in: reviewer-flagged host-override inconsistency on `define_ladder` (missing `actor == "host"` path per `goals update @ 5943`) + rebind-between-claims edge in idempotent claim UPDATE. Both minor. |
