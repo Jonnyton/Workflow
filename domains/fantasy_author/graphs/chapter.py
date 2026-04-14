@@ -138,6 +138,35 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
     # Store last scene prose for the next scene's recent_prose field
     if scene_prose:
         updates["_last_scene_prose"] = scene_prose
+
+    # Sporemarch oscillation fix (b): on accept, advance the originating
+    # WorkTarget's positional metadata so the next universe cycle doesn't
+    # re-request the just-completed scene. Complement to fix (a) which
+    # only patches at dispatch time.
+    if verdict == "accept":
+        from domains.fantasy_author.phases.target_actions import (
+            advance_work_target_on_accept,
+        )
+        instructions = state.get("workflow_instructions", {}) or {}
+        target_id = instructions.get("selected_target_id")
+        execution_scope = instructions.get("execution_scope") or {}
+        universe_path = state.get(
+            "_universe_path", state.get("universe_path", ""),
+        )
+        if universe_path and target_id:
+            try:
+                advance_work_target_on_accept(
+                    universe_path,
+                    target_id,
+                    verdict=verdict,
+                    execution_scope=execution_scope,
+                )
+            except Exception:
+                _log.warning(
+                    "run_scene: advance_work_target_on_accept failed",
+                    exc_info=True,
+                )
+
     return updates
 
 
