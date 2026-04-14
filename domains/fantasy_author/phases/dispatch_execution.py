@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -11,6 +12,8 @@ from workflow.work_targets import (
     get_target,
     write_execution_artifact,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def dispatch_execution(state: dict[str, Any]) -> dict[str, Any]:
@@ -67,10 +70,29 @@ def dispatch_execution(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_REQUEST_TYPE_TASK = {
+    "scene_direction": "run_book",
+    "revision": "run_book",
+    "canon_change": "worldbuild",
+    "branch_proposal": "worldbuild",
+}
+
+
 def _determine_task(target: Any | None, selected_intent: str) -> str:
+    # Precedence: explicit metadata.request_type > intent keywords > role default.
+    # A client-declared request_type wins over heuristic intent matching.
     lowered = selected_intent.lower()
     if not selected_intent and target is None:
         return "idle"
+    if target is not None:
+        req_type = str(target.metadata.get("request_type") or "").strip()
+        mapped = _REQUEST_TYPE_TASK.get(req_type)
+        if mapped is not None:
+            logger.info(
+                "dispatch: request_type=%s -> task=%s (target=%s)",
+                req_type, mapped, target.target_id,
+            )
+            return mapped
     if "reflect" in lowered:
         return "reflect"
     if any(token in lowered for token in ("synth", "worldbuild", "reconcile", "compare")):
