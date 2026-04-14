@@ -528,8 +528,9 @@ class TestWorldbuildCanonGeneration:
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
-        # Node should still complete without crashing
-        assert result["world_state_version"] == 1
+        # Node should still complete without crashing.
+        # Provider failure = no signals acted, no files, no promotions → version stays (Task D).
+        assert result["world_state_version"] == 0
         generated = result["quality_trace"][0]["generated_files"]
         assert generated == []
 
@@ -1995,8 +1996,9 @@ class TestWorldbuildSignalDriven:
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
-        # Should complete without crashing
-        assert result["world_state_version"] == 2
+        # Should complete without crashing.
+        # Signal-handler failure = 0 work done → version stays at the pre-cycle value (Task D).
+        assert result["world_state_version"] == 1
 
     def test_max_signals_per_cycle(self, tmp_path):
         """Should not act on more than _MAX_DOCS_PER_CYCLE signals."""
