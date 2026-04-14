@@ -1244,7 +1244,8 @@ def _action_inspect_universe(universe_id: str = "", **_kwargs: Any) -> str:
         result["recent_activity"] = lines[-10:]
 
     # Pending requests
-    requests = _read_json(udir / "requests.json")
+    from workflow.work_targets import REQUESTS_FILENAME
+    requests = _read_json(udir / REQUESTS_FILENAME)
     if requests and isinstance(requests, list):
         pending = [r for r in requests if r.get("status") == "pending"]
         if pending:
@@ -1296,6 +1297,9 @@ def _action_read_output(universe_id: str = "", path: str = "", **_kwargs: Any) -
     })
 
 
+_SUBMIT_REQUEST_MAX_BYTES = 8192
+
+
 def _action_submit_request(
     universe_id: str = "",
     text: str = "",
@@ -1303,10 +1307,26 @@ def _action_submit_request(
     branch_id: str = "",
     **_kwargs: Any,
 ) -> str:
+    from workflow.work_targets import REQUESTS_FILENAME
+
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
     if not udir.is_dir():
         return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    # 8 KiB cap keeps requests.json bounded and discourages pasting
+    # entire drafts into the request channel (add_canon is the right
+    # tool for that). UTF-8 byte length, not char count.
+    text_bytes = len(text.encode("utf-8"))
+    if text_bytes > _SUBMIT_REQUEST_MAX_BYTES:
+        return json.dumps({
+            "error": (
+                f"Request text exceeds {_SUBMIT_REQUEST_MAX_BYTES} bytes "
+                f"({text_bytes} submitted). Summarize or split into "
+                "multiple requests. For long prose, use `add_canon` "
+                "instead."
+            ),
+        })
 
     valid_types = {
         "scene_direction", "revision", "canon_change",
@@ -1326,7 +1346,7 @@ def _action_submit_request(
         "source": os.environ.get("UNIVERSE_SERVER_USER", "anonymous"),
     }
 
-    requests_path = udir / "requests.json"
+    requests_path = udir / REQUESTS_FILENAME
     existing = _read_json(requests_path)
     if not isinstance(existing, list):
         existing = []

@@ -8,6 +8,7 @@ the v1 registry in inspectable JSON files inside the universe directory.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -17,6 +18,8 @@ from typing import Any
 
 from workflow import author_server
 from workflow.notes import add_note
+
+logger = logging.getLogger(__name__)
 
 WORK_TARGETS_FILENAME = "work_targets.json"
 HARD_PRIORITIES_FILENAME = "hard_priorities.json"
@@ -83,11 +86,24 @@ def _now() -> float:
 
 
 def _read_json(path: Path, default: Any) -> Any:
+    """Read a JSON file or return ``default``. Logs a warning on corruption.
+
+    Silent fallback loses signal: a corrupted ``requests.json`` must not
+    look identical to "no file" to callers. The warning surfaces in the
+    Universe Server log so host/oncall can spot drop-on-the-floor cases.
+    Callers that need to hard-fail on corruption can distinguish by
+    checking the file exists + has bytes themselves — keep this helper
+    permissive so inspect/health reads don't crash on one bad file.
+    """
     if not path.exists():
         return default
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning(
+            "Failed to read JSON at %s (%s: %s); returning default",
+            path, type(exc).__name__, exc,
+        )
         return default
     return value
 

@@ -170,3 +170,108 @@ def test_authorial_review_no_requests_still_works(universe_dir):
     })
     trace = result["quality_trace"][0]
     assert trace["materialized_request_count"] == 0
+
+
+# ─── Hardening cluster (#22) ───────────────────────────────────────────
+
+
+def test_corrupt_requests_json_warns_and_returns_empty(
+    universe_dir, caplog,
+):
+    """Task #22.1: fail-loud on corrupt requests.json.
+
+    Silent fallback made a scrambled file indistinguishable from no
+    file — user requests vanished without trace. The read helper now
+    emits a WARN so the host log surfaces the drop.
+    """
+    import logging
+
+    requests_path(universe_dir).write_text(
+        "not valid json {{{", encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING, logger="workflow.work_targets"):
+        created = materialize_pending_requests(universe_dir)
+    assert created == []
+    assert any(
+        "Failed to read JSON" in rec.message
+        and str(requests_path(universe_dir)) in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_submit_request_rejects_oversize_text(tmp_path, monkeypatch):
+    """Task #22.2: 8 KiB cap on submit_request.text.
+
+    Prevents pasting full drafts into the request channel (add_canon is
+    the right tool for long prose). Cap is UTF-8 byte length.
+    """
+    import importlib
+
+    base = tmp_path / "output"
+    base.mkdir()
+    (base / "test-universe").mkdir()
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
+    from workflow import universe_server as us
+    importlib.reload(us)
+    try:
+        oversize = "x" * (us._SUBMIT_REQUEST_MAX_BYTES + 1)
+        result = json.loads(us._action_submit_request(
+            universe_id="test-universe",
+            text=oversize,
+            request_type="general",
+        ))
+        assert "error" in result
+        assert "exceeds" in result["error"]
+        assert "add_canon" in result["error"]
+        # No file should be created on rejection.
+        assert not (base / "test-universe" / "requests.json").exists()
+    finally:
+        importlib.reload(us)
+
+
+def test_submit_request_accepts_text_at_cap(tmp_path, monkeypatch):
+    """Exactly _SUBMIT_REQUEST_MAX_BYTES bytes must still land."""
+    import importlib
+
+    base = tmp_path / "output"
+    base.mkdir()
+    (base / "test-universe").mkdir()
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
+    from workflow import universe_server as us
+    importlib.reload(us)
+    try:
+        at_cap = "x" * us._SUBMIT_REQUEST_MAX_BYTES
+        result = json.loads(us._action_submit_request(
+            universe_id="test-universe",
+            text=at_cap,
+            request_type="general",
+        ))
+        assert "error" not in result
+        assert result["status"] == "pending"
+    finally:
+        importlib.reload(us)
+
+
+def test_submit_request_write_uses_centralized_filename_constant():
+    """Task #22.3: write site imports REQUESTS_FILENAME, doesn't hardcode.
+
+    Source-level check — ensures the two previously duplicated string
+    literals now share the work_targets constant.
+    """
+    from pathlib import Path as _Path
+
+    src = _Path("workflow/universe_server.py").read_text(encoding="utf-8")
+    # _action_submit_request and _action_inspect_universe should both
+    # import REQUESTS_FILENAME rather than hardcoding "requests.json".
+    # Two imports expected (one per action). Zero bare literals of the
+    # filename allowed outside import statements.
+    import_hits = src.count("from workflow.work_targets import REQUESTS_FILENAME")
+    assert import_hits >= 2, (
+        f"expected >=2 REQUESTS_FILENAME imports, found {import_hits}"
+    )
+    # No remaining bare "requests.json" strings in the module.
+    assert "\"requests.json\"" not in src, (
+        "still a hardcoded 'requests.json' literal after centralization"
+    )
