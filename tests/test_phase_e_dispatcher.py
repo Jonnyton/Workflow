@@ -741,7 +741,9 @@ def test_tier_status_map_reflects_stubbed_vs_live():
     assert tm["owner_queued"] == "live"
     assert tm["user_request"] == "live"  # default accept_external=True
     assert "stubbed" in tm["goal_pool"]
-    assert "stubbed" in tm["paid_bid"]
+    # Phase G: paid_bid moved from "stubbed (Phase G)" to "disabled"
+    # (until accept_paid_bids is True).
+    assert tm["paid_bid"] == "disabled"
     assert "stubbed" in tm["opportunistic"]
 
     cfg2 = DispatcherConfig(accept_external_requests=False,

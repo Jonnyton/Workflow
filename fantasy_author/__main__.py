@@ -157,6 +157,12 @@ def _phase_f_enabled() -> bool:
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
+def _paid_market_enabled() -> bool:
+    """Read ``WORKFLOW_PAID_MARKET``. Default OFF. Phase G flag."""
+    value = os.environ.get("WORKFLOW_PAID_MARKET", "off")
+    return value.strip().lower() in {"on", "1", "true", "yes"}
+
+
 def _run_branch_task_producers_if_enabled(universe_path: Path) -> int:
     """Phase F: call registered BranchTaskProducers at cycle boundary.
 
@@ -259,6 +265,178 @@ def _finalize_claimed_task(
         )
     except Exception:  # noqa: BLE001
         logger.exception("_finalize_claimed_task failed")
+
+
+def _node_bid_lookup_factory(repo_root: Path):
+    """Build a ``(node_def_id) -> NodeDefinition | None`` lookup.
+
+    Walks ``<repo_root>/branches/*.yaml`` and returns the first node
+    whose ``node_id`` matches. Best-effort: malformed YAMLs and
+    missing directories → no match. Safe to call with any repo_root.
+    """
+    from workflow.branches import BranchDefinition, NodeDefinition
+
+    def _lookup(node_def_id: str):
+        branches_dir = Path(repo_root) / "branches"
+        if not branches_dir.is_dir():
+            return None
+        try:
+            import yaml
+        except ImportError:
+            return None
+        for p in branches_dir.glob("*.yaml"):
+            try:
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(data, dict):
+                continue
+            for node_data in data.get("node_defs", []) or []:
+                if not isinstance(node_data, dict):
+                    continue
+                if node_data.get("node_id") == node_def_id:
+                    try:
+                        return NodeDefinition.from_dict(node_data)
+                    except Exception:  # noqa: BLE001
+                        return None
+            # Also let get_node_def search compiled BranchDefinition
+            try:
+                branch = BranchDefinition.from_dict(data)
+                node = branch.get_node_def(node_def_id)
+                if node is not None:
+                    return node
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    return _lookup
+
+
+def _try_execute_claimed_node_bid(
+    universe_path: Path, claimed_task: Any, daemon_id: str,
+) -> tuple[bool, str]:
+    """Phase G: execute a NodeBid BranchTask (sentinel-prefixed).
+
+    Never raises — all paths return ``(success, error)``. Writes:
+
+    - Output JSON at ``<universe>/bid_outputs/<bid_id>/output.json``
+      (via the executor).
+    - Settlement record at
+      ``<repo_root>/settlements/<bid_id>__<daemon_id>.yaml``.
+    - Ledger entry in ``<universe>/bid_ledger.json``.
+    - Status update on the NodeBid YAML at
+      ``<repo_root>/bids/<bid_id>.yaml``.
+    """
+    try:
+        from workflow.bid_ledger import append_ledger_entry
+        from workflow.executors.node_bid import execute_node_bid
+        from workflow.node_bid import (
+            NodeBid,
+            read_node_bid,
+            update_node_bid_status,
+        )
+        from workflow.producers.goal_pool import repo_root_path
+
+        inputs = dict(claimed_task.inputs or {})
+        node_bid_id = str(inputs.get("__node_bid_id", ""))
+        node_def_id = str(inputs.get("__node_def_id", ""))
+        if not node_bid_id or not node_def_id:
+            return False, "node_bid_missing_internal_keys"
+
+        try:
+            repo_root = repo_root_path(Path(universe_path))
+        except RuntimeError as exc:
+            return False, f"repo_root_not_resolvable: {exc}"
+
+        bid = read_node_bid(repo_root, node_bid_id)
+        if bid is None:
+            # Bid YAML was deleted between producer emit and claim.
+            # Synthesize a minimal record from the BranchTask.
+            bid = NodeBid(
+                node_bid_id=node_bid_id,
+                node_def_id=node_def_id,
+                inputs={
+                    k: v for k, v in inputs.items()
+                    if not str(k).startswith("__")
+                },
+                bid=float(getattr(claimed_task, "bid", 0.0) or 0.0),
+                required_llm_type=str(
+                    getattr(claimed_task, "required_llm_type", "") or "",
+                ),
+                status="open",
+            )
+
+        result = execute_node_bid(
+            bid,
+            node_lookup_fn=_node_bid_lookup_factory(repo_root),
+            output_dir=Path(universe_path),
+        )
+        success = result.status == "succeeded"
+
+        # Settlement record (always written — succeeded or failed).
+        from datetime import datetime, timezone
+        completed_at = datetime.now(timezone.utc).isoformat()
+        try:
+            import yaml
+            settlements_dir = repo_root / "settlements"
+            settlements_dir.mkdir(parents=True, exist_ok=True)
+            settlement_path = (
+                settlements_dir
+                / f"{node_bid_id}__{daemon_id}.yaml"
+            )
+            settlement_payload = {
+                "schema_version": "1",
+                "bid_id": node_bid_id,
+                "daemon_id": daemon_id,
+                "bid_amount": float(bid.bid or 0.0),
+                "evidence_url": result.evidence_url,
+                "completed_at": completed_at,
+                "success": success,
+                "settled": False,
+            }
+            settlement_path.write_text(
+                yaml.safe_dump(
+                    settlement_payload,
+                    sort_keys=False, default_flow_style=False,
+                ),
+                encoding="utf-8",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("node_bid: settlement write failed")
+
+        # Ledger append (best-effort).
+        try:
+            append_ledger_entry(Path(universe_path), {
+                "bid_id": node_bid_id,
+                "node_def_id": node_def_id,
+                "daemon_id": daemon_id,
+                "success": success,
+                "bid_amount": float(bid.bid or 0.0),
+                "evidence_url": result.evidence_url,
+                "completed_at": completed_at,
+                "error": result.error,
+            })
+        except Exception:  # noqa: BLE001
+            logger.exception("node_bid: ledger append failed")
+
+        # NodeBid YAML status update (best-effort).
+        try:
+            update_node_bid_status(
+                repo_root, node_bid_id,
+                status="succeeded" if success else "failed",
+                evidence_url=result.evidence_url,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("node_bid: status update failed")
+
+        logger.info(
+            "node_bid: executed %s status=%s evidence=%s",
+            node_bid_id, result.status, result.evidence_url,
+        )
+        return success, result.error
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("_try_execute_claimed_node_bid failed")
+        return False, f"node_bid_execution_exception: {exc}"
 
 
 def _dispatcher_observe(universe_path: Path) -> None:
@@ -768,6 +946,24 @@ class DaemonController:
                     "from task %s",
                     len(claimed_inputs), claimed_task.branch_task_id,
                 )
+
+            # Phase G: NodeBid tasks route to execute_node_bid instead
+            # of the Branch wrapper stream. Sentinel prefix on
+            # branch_def_id is set by the NodeBidProducer.
+            if (
+                claimed_task is not None
+                and claimed_task.branch_def_id.startswith("<node_bid>")
+            ):
+                nb_success, nb_error = _try_execute_claimed_node_bid(
+                    output_dir, claimed_task, daemon_id,
+                )
+                _finalize_claimed_task(
+                    output_dir, claimed_task,
+                    success=nb_success, error=nb_error,
+                )
+                claimed_task = None  # prevent double-finalization
+                self._cleanup()
+                return
 
             try:
                 for event in compiled.stream(initial_state, config=config):

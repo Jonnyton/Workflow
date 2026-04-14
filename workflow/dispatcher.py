@@ -56,8 +56,10 @@ class DispatcherConfig:
     )
     recency_half_life_seconds: float = 86400.0
     bid_coefficient: float = 0.0
+    bid_term_cap: float = 30.0
     goal_affinity_coefficient: float = 0.0
     cost_penalty_coefficient: float = 0.0
+    served_llm_type: str = ""
 
     def tier_enabled(self, trigger_source: str) -> bool:
         if trigger_source in {"host_request", "owner_queued"}:
@@ -84,7 +86,7 @@ class DispatcherConfig:
                 "live" if self.accept_goal_pool else "stubbed (Phase F)"
             ),
             "paid_bid": (
-                "live" if self.accept_paid_bids else "stubbed (Phase G)"
+                "live" if self.accept_paid_bids else "disabled"
             ),
             "opportunistic": (
                 "live" if self.allow_opportunistic else "stubbed"
@@ -96,6 +98,12 @@ def dispatcher_enabled() -> bool:
     """Read ``WORKFLOW_DISPATCHER_ENABLED``. Default on."""
     value = os.environ.get("WORKFLOW_DISPATCHER_ENABLED", "on")
     return value.strip().lower() not in {"off", "0", "false", "no"}
+
+
+def paid_market_enabled() -> bool:
+    """Read ``WORKFLOW_PAID_MARKET``. Default OFF. Phase G flag."""
+    value = os.environ.get("WORKFLOW_PAID_MARKET", "off")
+    return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
 def _parse_iso(value: str) -> datetime | None:
@@ -133,8 +141,10 @@ def score_task(
 
     boost = max(0.0, float(task.priority_weight))
 
-    # Reserved terms (Phase F/G).
-    bid_term = config.bid_coefficient * float(task.bid)
+    # Phase G: paid-bid term, capped to prevent a high bid from
+    # swamping the host_request tier (preflight R4).
+    raw_bid_term = config.bid_coefficient * float(task.bid)
+    bid_term = min(raw_bid_term, config.bid_term_cap)
     goal_term = config.goal_affinity_coefficient  # coefficient only; no signal
     cost_term = -config.cost_penalty_coefficient
 
@@ -217,6 +227,15 @@ def select_next_task(
             continue
         if not config.tier_enabled(task.trigger_source):
             continue
+        # Phase G LLM-type filter. Both sides non-empty and non-matching
+        # → skip. Empty ``served_llm_type`` means "serve all types";
+        # empty ``task.required_llm_type`` means "any daemon welcome".
+        if (
+            task.required_llm_type
+            and config.served_llm_type
+            and task.required_llm_type != config.served_llm_type
+        ):
+            continue
         s = score_task(task, now_iso=now, config=config)
         eligible.append((s, task))
     if not eligible:
@@ -237,6 +256,11 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
     """
     cfg_path = Path(universe_path) / "dispatcher_config.yaml"
     if not cfg_path.exists():
+        # Phase G: flag-on + no config → paid market defaults enabled.
+        if paid_market_enabled():
+            return DispatcherConfig(
+                bid_coefficient=1.0, accept_paid_bids=True,
+            )
         return DispatcherConfig()
     try:
         import yaml  # local import: dispatcher is hot-path-adjacent
@@ -261,7 +285,9 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
         "accept_external_requests", "accept_goal_pool",
         "accept_paid_bids", "allow_opportunistic",
         "recency_half_life_seconds", "bid_coefficient",
+        "bid_term_cap",
         "goal_affinity_coefficient", "cost_penalty_coefficient",
+        "served_llm_type",
     ):
         if key in data:
             kwargs[key] = data[key]
@@ -273,5 +299,15 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
             except (TypeError, ValueError):
                 continue
         kwargs["tier_weights"] = weights
+
+    # Phase G: if the paid-market flag is on and the YAML didn't pin
+    # values, default ``bid_coefficient`` to 1.0 and enable paid_bid
+    # acceptance. Explicit YAML values win — allows ``bid_coefficient: 0.0``
+    # to keep paid scoring neutral even under flag-on.
+    if paid_market_enabled():
+        if "bid_coefficient" not in data:
+            kwargs["bid_coefficient"] = 1.0
+        if "accept_paid_bids" not in data:
+            kwargs["accept_paid_bids"] = True
 
     return DispatcherConfig(**kwargs)

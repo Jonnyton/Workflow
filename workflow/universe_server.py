@@ -355,6 +355,24 @@ def _extract_post_to_goal_pool(
     )
 
 
+def _extract_submit_node_bid(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    nb = str(result.get("node_bid_id", ""))
+    nd = str(kwargs.get("node_def_id", ""))
+    bid = kwargs.get("bid", 0.0)
+    return (
+        str(result.get("path", f"bids/{nb}.yaml")),
+        _truncate(f"bid {bid} for node {nd}"),
+        {
+            "node_bid_id": nb,
+            "node_def_id": nd,
+            "bid": bid,
+            "status": result.get("status", ""),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -367,6 +385,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "subscribe_goal": (_extract_subscribe_goal, None),
     "unsubscribe_goal": (_extract_unsubscribe_goal, None),
     "post_to_goal_pool": (_extract_post_to_goal_pool, None),
+    "submit_node_bid": (_extract_submit_node_bid, None),
 }
 
 
@@ -839,6 +858,9 @@ def universe(
     goal_id: str = "",
     branch_def_id: str = "",
     inputs_json: str = "",
+    node_def_id: str = "",
+    required_llm_type: str = "",
+    bid: float = 0.0,
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -905,6 +927,7 @@ def universe(
         "unsubscribe_goal": _action_unsubscribe_goal,
         "list_subscriptions": _action_list_subscriptions,
         "post_to_goal_pool": _action_post_to_goal_pool,
+        "submit_node_bid": _action_submit_node_bid,
     }
 
     handler = dispatch.get(action)
@@ -933,6 +956,9 @@ def universe(
         "goal_id": goal_id,
         "branch_def_id": branch_def_id,
         "inputs_json": inputs_json,
+        "node_def_id": node_def_id,
+        "required_llm_type": required_llm_type,
+        "bid": bid,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
@@ -1827,6 +1853,122 @@ def _action_post_to_goal_pool(
         "priority_weight": pw,
         "next_step": (
             f"To make this post visible to cross-host subscribers, run: "
+            f"git add {rel_path} && git commit && git push"
+        ),
+    })
+
+
+def _paid_market_not_available() -> str:
+    return json.dumps({
+        "status": "not_available",
+        "hint": "WORKFLOW_PAID_MARKET=on required",
+    })
+
+
+def _action_submit_node_bid(
+    universe_id: str = "",
+    node_def_id: str = "",
+    required_llm_type: str = "",
+    inputs_json: str = "",
+    bid: float = 0.0,
+    **_kwargs: Any,
+) -> str:
+    """Phase G: write a NodeBid YAML to ``<repo_root>/bids/<id>.yaml``.
+
+    Flag-gated on ``WORKFLOW_PAID_MARKET=on``. Flat-dict inputs only.
+    Response includes a ``next_step`` git push hint, mirroring
+    ``post_to_goal_pool``.
+    """
+    from workflow.node_bid import (
+        new_node_bid_id,
+        validate_node_bid_inputs,
+        write_node_bid_post,
+    )
+    from workflow.producers.goal_pool import repo_root_path
+    from workflow.producers.node_bid import paid_market_enabled
+
+    if not paid_market_enabled():
+        return _paid_market_not_available()
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    if not node_def_id:
+        return json.dumps({"error": "node_def_id required."})
+
+    if inputs_json.strip():
+        try:
+            inputs = json.loads(inputs_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": f"inputs_json invalid JSON: {exc}"})
+    else:
+        inputs = {}
+    ok, reason = validate_node_bid_inputs(inputs)
+    if not ok:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"invalid_inputs: {reason}",
+        })
+
+    try:
+        bid_value = float(bid)
+    except (TypeError, ValueError):
+        return json.dumps({
+            "status": "rejected",
+            "error": "bid must be numeric",
+        })
+    if bid_value < 0:
+        return json.dumps({
+            "status": "rejected",
+            "error": "bid must be >= 0",
+        })
+
+    try:
+        repo_root = repo_root_path(udir)
+    except RuntimeError as exc:
+        return json.dumps({
+            "status": "rejected",
+            "error": "repo_root_not_resolvable",
+            "hint": (
+                "Set WORKFLOW_REPO_ROOT or run the daemon from inside "
+                "a git checkout. Detail: " + str(exc)
+            ),
+        })
+
+    from datetime import datetime, timezone
+    source = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    node_bid_id = new_node_bid_id()
+    payload = {
+        "node_bid_id": node_bid_id,
+        "node_def_id": node_def_id,
+        "required_llm_type": required_llm_type or "",
+        "inputs": dict(inputs),
+        "bid": bid_value,
+        "submitted_by": source,
+        "status": "open",
+        "evidence_url": "",
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        out_path = write_node_bid_post(repo_root, payload)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"post failed: {exc}"})
+
+    rel_path = (
+        out_path.relative_to(repo_root)
+        if out_path.is_relative_to(repo_root)
+        else out_path
+    )
+    return json.dumps({
+        "universe_id": uid,
+        "status": "posted",
+        "node_bid_id": node_bid_id,
+        "node_def_id": node_def_id,
+        "path": str(out_path),
+        "bid": bid_value,
+        "required_llm_type": required_llm_type or "",
+        "next_step": (
+            f"To make this bid visible to cross-host daemons, run: "
             f"git add {rel_path} && git commit && git push"
         ),
     })
