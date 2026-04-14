@@ -6654,7 +6654,9 @@ def _validate_evidence_url(url: str) -> str:
 
 
 def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_goal, set_goal_ladder
+    from workflow.author_server import get_goal
+    from workflow.identity import git_author
+    from workflow.storage.layout import slugify
 
     gid = (kwargs.get("goal_id") or "").strip()
     if not gid:
@@ -6716,7 +6718,21 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
                 f"Owner: {goal['author']}."
             ),
         })
-    saved = set_goal_ladder(_base_path(), goal_id=gid, ladder=ladder)
+    # Ride the ladder through `save_goal_and_commit` — spec §Migration
+    # 5: ladder is a dict key on the goal, no backend protocol change
+    # beyond the existing save_goal_and_commit. Commit namespace is
+    # `goals.define_ladder` because the file written is
+    # `goals/<slug>.yaml`, not `gates/...`.
+    updated_goal = dict(goal)
+    updated_goal["gate_ladder"] = ladder
+    force = bool(kwargs.get("force", False))
+    goal_slug = slugify(goal.get("name") or gid)
+    saved, _commit = _storage_backend().save_goal_and_commit(
+        updated_goal,
+        author=git_author(_current_actor()),
+        message=f"goals.define_ladder: {goal_slug}",
+        force=force,
+    )
     return json.dumps({
         "status": "defined",
         "goal_id": gid,
@@ -6750,15 +6766,18 @@ def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
 
 def _action_gates_claim(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import (
-        claim_gate,
         get_branch_definition,
         get_gate_claim,
+        get_goal,
         get_goal_ladder,
     )
+    from workflow.identity import git_author
+    from workflow.storage.layout import slugify
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     rung_key = (kwargs.get("rung_key") or "").strip()
     evidence_url = (kwargs.get("evidence_url") or "").strip()
+    force = bool(kwargs.get("force", False))
     if not (bid and rung_key and evidence_url):
         return json.dumps({
             "status": "rejected",
@@ -6785,6 +6804,13 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
                 "Branch is not bound to a Goal. "
                 "Bind it via `goals action=bind` before claiming."
             ),
+        })
+    try:
+        goal = get_goal(_base_path(), goal_id=goal_id)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Goal '{goal_id}' not found.",
         })
     # Rebind guard: if an ACTIVE (non-retracted) claim exists for
     # (branch, rung) under a different Goal, the Branch was rebound
@@ -6819,15 +6845,22 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
             "available_rungs": available,
         })
     from workflow.author_server import BranchRebindError
+
+    goal_slug = slugify(goal.get("name") or goal_id)
+    branch_slug = slugify(branch.get("name") or bid)
     try:
-        saved = claim_gate(
-            _base_path(),
+        saved, _commit = _storage_backend().save_gate_claim_and_commit(
             branch_def_id=bid,
             goal_id=goal_id,
             rung_key=rung_key,
             evidence_url=evidence_url,
             evidence_note=kwargs.get("evidence_note", ""),
             claimed_by=_current_actor_or_anon(),
+            goal_slug=goal_slug,
+            branch_slug=branch_slug,
+            author=git_author(_current_actor()),
+            message=f"gates.claim: {goal_slug}/{branch_slug}@{rung_key}",
+            force=force,
         )
     except BranchRebindError as exc:
         # Storage-layer guard fired — means another caller rebound the
@@ -6854,12 +6887,14 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
         get_branch_definition,
         get_gate_claim,
         get_goal,
-        retract_gate_claim,
     )
+    from workflow.identity import git_author
+    from workflow.storage.layout import slugify
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     rung_key = (kwargs.get("rung_key") or "").strip()
     reason = (kwargs.get("reason") or "").strip()
+    force = bool(kwargs.get("force", False))
     if not (bid and rung_key):
         return json.dumps({
             "status": "rejected",
@@ -6886,7 +6921,7 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
     if existing.get("retracted_at"):
         # Idempotent: a second retract on an already-retracted claim is
         # a no-op return, not a fresh write. Keeps owners from churning
-        # retracted_at timestamps.
+        # retracted_at timestamps. No YAML rewrite either.
         return json.dumps({
             "status": "already_retracted",
             "claim": existing,
@@ -6896,10 +6931,12 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
     claimed_by = existing.get("claimed_by") or ""
     goal_author = ""
     goal_id = existing.get("goal_id") or ""
+    goal_name = ""
     if goal_id:
         try:
             goal = get_goal(_base_path(), goal_id=goal_id)
             goal_author = goal.get("author") or ""
+            goal_name = goal.get("name") or ""
         except KeyError:
             pass
     allowed = {actor_id for actor_id in (claimed_by, goal_author) if actor_id}
@@ -6914,17 +6951,23 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
         })
     # Verify branch still exists (defensive; claim-time check is in claim).
     try:
-        get_branch_definition(_base_path(), branch_def_id=bid)
+        branch = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
         return json.dumps({
             "status": "rejected",
             "error": f"Branch '{bid}' not found.",
         })
-    saved = retract_gate_claim(
-        _base_path(),
+    goal_slug = slugify(goal_name or goal_id)
+    branch_slug = slugify(branch.get("name") or bid)
+    saved, _commit = _storage_backend().retract_gate_claim_and_commit(
         branch_def_id=bid,
         rung_key=rung_key,
         reason=reason,
+        goal_slug=goal_slug,
+        branch_slug=branch_slug,
+        author=git_author(_current_actor()),
+        message=f"gates.retract: {goal_slug}/{branch_slug}@{rung_key}",
+        force=force,
     )
     return json.dumps({
         "status": "retracted",
@@ -7066,8 +7109,12 @@ def gates(
 
     Each Goal declares a ladder of rungs (draft → peer-reviewed → published
     → cited → breakthrough). Branches self-report which rungs they've
-    reached, with an evidence URL. Phase 6.2 ships the full read/write
-    surface against SQLite; git-commit integration ships in 6.3.
+    reached, with an evidence URL. Phase 6.3 lands git-commit
+    integration: every mutation writes a YAML under
+    `goals/<slug>.yaml` (ladder) or `gates/<goal_slug>/<branch_slug>__<rung>.yaml`
+    (claim/retract) and lands as one commit. `force=True` bypasses
+    the dirty-file guard; otherwise uncommitted local edits surface
+    as a `local_edit_conflict` envelope.
 
     Actions:
       define_ladder Owner sets the rung list on a Goal. Needs goal_id
@@ -7101,7 +7148,9 @@ def gates(
       reason: retract reason (required for retract, non-empty).
       include_retracted: list_claims filter (default False).
       limit: cap for leaderboard / list_claims.
-      force: reserved for Phase 6.3 git-commit dirty-file override.
+      force: bypass the dirty-file guard on the target YAML when a
+             user has uncommitted local edits. Same ergonomics as
+             `goals propose/update/bind` and `branch` mutations.
     """
     if not _gates_enabled():
         return json.dumps({
@@ -7131,7 +7180,14 @@ def gates(
         "limit": limit,
         "force": force,
     }
-    return handler(kwargs)
+    try:
+        return handler(kwargs)
+    except DirtyFileError as exc:
+        # Phase 6.3: dirty-file guard surfaces as the structured
+        # local_edit_conflict payload (same shape as `goals` and
+        # `branch` handlers). Chat-side renders the options;
+        # force=True retries through.
+        return json.dumps(_format_dirty_file_conflict(exc))
 
 
 # ═══════════════════════════════════════════════════════════════════════════

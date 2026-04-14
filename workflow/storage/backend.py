@@ -102,6 +102,48 @@ class StorageBackend(Protocol):
     ) -> tuple[dict[str, Any], "git_bridge.CommitResult | None"]:
         """Persist a Goal and commit in one call."""
 
+    def save_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        goal_id: str,
+        rung_key: str,
+        evidence_url: str,
+        evidence_note: str,
+        claimed_by: str,
+        goal_slug: str,
+        branch_slug: str,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], "git_bridge.CommitResult | None"]:
+        """Claim a rung — SQLite + YAML + commit in one call.
+
+        Raises :class:`BranchRebindError` (from the storage layer) when
+        an active claim exists under a different Goal. Raises
+        :class:`DirtyFileError` when the target YAML has local edits
+        and ``force`` is False.
+        """
+
+    def retract_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        rung_key: str,
+        reason: str,
+        goal_slug: str,
+        branch_slug: str,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], "git_bridge.CommitResult | None"]:
+        """Retract a claim — SQLite soft-delete + YAML rewrite +
+        commit in one call.
+
+        Raises :class:`KeyError` if no claim exists for
+        ``(branch_def_id, rung_key)``.
+        """
+
 
 # ─────────────────────────────────────────────────────────────────────
 # SqliteOnlyBackend
@@ -158,6 +200,58 @@ class SqliteOnlyBackend:
     ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
         """SQLite-only backend has no git seam; commit slot is always None."""
         return self.save_goal(goal, force=force), None
+
+    def save_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        goal_id: str,
+        rung_key: str,
+        evidence_url: str,
+        evidence_note: str,
+        claimed_by: str,
+        goal_slug: str,  # noqa: ARG002
+        branch_slug: str,  # noqa: ARG002
+        author: str,  # noqa: ARG002
+        message: str,  # noqa: ARG002
+        force: bool = False,  # noqa: ARG002
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """SQLite-only path for a gate claim. No git seam."""
+        from workflow.author_server import claim_gate
+
+        saved = claim_gate(
+            self.base_path,
+            branch_def_id=branch_def_id,
+            goal_id=goal_id,
+            rung_key=rung_key,
+            evidence_url=evidence_url,
+            evidence_note=evidence_note,
+            claimed_by=claimed_by,
+        )
+        return saved, None
+
+    def retract_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        rung_key: str,
+        reason: str,
+        goal_slug: str,  # noqa: ARG002
+        branch_slug: str,  # noqa: ARG002
+        author: str,  # noqa: ARG002
+        message: str,  # noqa: ARG002
+        force: bool = False,  # noqa: ARG002
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """SQLite-only path for a retract. No git seam."""
+        from workflow.author_server import retract_gate_claim
+
+        saved = retract_gate_claim(
+            self.base_path,
+            branch_def_id=branch_def_id,
+            rung_key=rung_key,
+            reason=reason,
+        )
+        return saved, None
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -377,6 +471,111 @@ class SqliteCachedBackend:
         goal_path = self.layout.goal_path(goal_slug)
         result = git_bridge.commit(
             message, author, paths=[goal_path], repo_path=self._repo_root,
+        )
+        return saved, result
+
+    # ── Gate claims (Phase 6.3) ───────────────────────────────────
+
+    def _write_gate_claim_yaml(
+        self, saved: dict[str, Any], *, goal_slug: str, branch_slug: str,
+    ) -> Path:
+        """Serialize + write a claim YAML, stage it, return the path."""
+        from workflow.storage.serializer import gate_claim_to_yaml_payload
+
+        payload = gate_claim_to_yaml_payload(saved)
+        claim_path = self.layout.gate_claim_path(
+            goal_slug, branch_slug, saved.get("rung_key", ""),
+        )
+        _write_yaml(claim_path, payload)
+        self._stage_hook(claim_path)
+        return claim_path
+
+    def save_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        goal_id: str,
+        rung_key: str,
+        evidence_url: str,
+        evidence_note: str,
+        claimed_by: str,
+        goal_slug: str,
+        branch_slug: str,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """Claim + YAML emit + git commit, ONE atomic action.
+
+        Dirty-check fires BEFORE the SQLite write so a refusal leaves
+        the system exactly as it was. Storage-layer
+        :class:`BranchRebindError` propagates unchanged — handler
+        catches it; the rebind guard is not a local-edit-conflict.
+        """
+        from workflow.author_server import claim_gate
+
+        claim_path = self.layout.gate_claim_path(
+            goal_slug, branch_slug, rung_key,
+        )
+        self._check_dirty([claim_path], force=force)
+
+        saved = claim_gate(
+            self.base_path,
+            branch_def_id=branch_def_id,
+            goal_id=goal_id,
+            rung_key=rung_key,
+            evidence_url=evidence_url,
+            evidence_note=evidence_note,
+            claimed_by=claimed_by,
+        )
+        self._write_gate_claim_yaml(
+            saved, goal_slug=goal_slug, branch_slug=branch_slug,
+        )
+        if not self._git_enabled:
+            return saved, None
+        result = git_bridge.commit(
+            message, author, paths=[claim_path], repo_path=self._repo_root,
+        )
+        return saved, result
+
+    def retract_gate_claim_and_commit(
+        self,
+        *,
+        branch_def_id: str,
+        rung_key: str,
+        reason: str,
+        goal_slug: str,
+        branch_slug: str,
+        author: str,
+        message: str,
+        force: bool = False,
+    ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
+        """Soft-delete a claim + rewrite YAML + commit.
+
+        Same on-disk path as :meth:`save_gate_claim_and_commit`; the
+        YAML is rewritten with ``retracted_at`` populated rather than
+        being deleted so git history keeps the retraction reason.
+        """
+        from workflow.author_server import retract_gate_claim
+
+        claim_path = self.layout.gate_claim_path(
+            goal_slug, branch_slug, rung_key,
+        )
+        self._check_dirty([claim_path], force=force)
+
+        saved = retract_gate_claim(
+            self.base_path,
+            branch_def_id=branch_def_id,
+            rung_key=rung_key,
+            reason=reason,
+        )
+        self._write_gate_claim_yaml(
+            saved, goal_slug=goal_slug, branch_slug=branch_slug,
+        )
+        if not self._git_enabled:
+            return saved, None
+        result = git_bridge.commit(
+            message, author, paths=[claim_path], repo_path=self._repo_root,
         )
         return saved, result
 

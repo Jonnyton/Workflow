@@ -267,8 +267,13 @@ def node_from_yaml_payload(payload: dict[str, Any]) -> NodeDefinition:
 
 
 def goal_to_yaml_payload(goal: dict[str, Any]) -> dict[str, Any]:
-    """Serialize a Goal dict (flat, no dataclass) to the YAML shape."""
-    return {
+    """Serialize a Goal dict (flat, no dataclass) to the YAML shape.
+
+    Phase 6.3: ``gate_ladder`` rides through as a list-of-dicts under
+    ``goals/<slug>.yaml#/gate_ladder``. Empty list omitted so goals
+    without a ladder keep a minimal YAML diff.
+    """
+    payload: dict[str, Any] = {
         "id": goal.get("goal_id", ""),
         "name": goal.get("name", ""),
         "description": goal.get("description", ""),
@@ -278,6 +283,10 @@ def goal_to_yaml_payload(goal: dict[str, Any]) -> dict[str, Any]:
         "created_at": goal.get("created_at", 0.0),
         "updated_at": goal.get("updated_at", 0.0),
     }
+    ladder = list(goal.get("gate_ladder", []) or [])
+    if ladder:
+        payload["gate_ladder"] = ladder
+    return payload
 
 
 def goal_from_yaml_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -294,6 +303,58 @@ def goal_from_yaml_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "visibility": payload.get("visibility", "public"),
         "created_at": payload.get("created_at", 0.0),
         "updated_at": payload.get("updated_at", 0.0),
+        "gate_ladder": list(payload.get("gate_ladder", []) or []),
+    }
+
+
+def gate_claim_to_yaml_payload(claim: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a gate_claim row to the YAML shape.
+
+    Phase 6.3 format:
+
+    ```yaml
+    claim_id: 01HY...
+    branch_def_id: loral-v3
+    goal_id: fantasy-novel
+    rung_key: draft_complete
+    evidence_url: https://example.com/drafts/loral
+    evidence_note: Full draft at 82k words
+    claimed_by: jonathan
+    claimed_at: '2026-05-01T14:22:03Z'
+    retracted_at: null
+    retracted_reason: ''
+    ```
+
+    Retracted claims rewrite the same file with ``retracted_at``
+    populated so git history preserves the retraction reason.
+    """
+    return {
+        "claim_id": claim.get("claim_id", ""),
+        "branch_def_id": claim.get("branch_def_id", ""),
+        "goal_id": claim.get("goal_id", ""),
+        "rung_key": claim.get("rung_key", ""),
+        "evidence_url": claim.get("evidence_url", ""),
+        "evidence_note": claim.get("evidence_note", ""),
+        "claimed_by": claim.get("claimed_by", ""),
+        "claimed_at": claim.get("claimed_at", ""),
+        "retracted_at": claim.get("retracted_at"),
+        "retracted_reason": claim.get("retracted_reason", ""),
+    }
+
+
+def gate_claim_from_yaml_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Round-trip counterpart to ``gate_claim_to_yaml_payload``."""
+    return {
+        "claim_id": payload.get("claim_id", ""),
+        "branch_def_id": payload.get("branch_def_id", ""),
+        "goal_id": payload.get("goal_id", ""),
+        "rung_key": payload.get("rung_key", ""),
+        "evidence_url": payload.get("evidence_url", ""),
+        "evidence_note": payload.get("evidence_note", ""),
+        "claimed_by": payload.get("claimed_by", ""),
+        "claimed_at": payload.get("claimed_at", ""),
+        "retracted_at": payload.get("retracted_at"),
+        "retracted_reason": payload.get("retracted_reason", ""),
     }
 
 

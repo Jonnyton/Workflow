@@ -85,6 +85,23 @@ class YamlRepoLayout:
     def author_path(self, author_slug: str) -> Path:
         return self.repo_root / "authors" / f"{author_slug}.yaml"
 
+    # ── Outcome gates (Phase 6.3) ────────────────────────────────────
+
+    def gates_dir(self, goal_slug: str) -> Path:
+        """Directory holding a Goal's gate-claim YAMLs."""
+        return self.repo_root / "gates" / goal_slug
+
+    def gate_claim_path(
+        self, goal_slug: str, branch_slug: str, rung_key: str,
+    ) -> Path:
+        """Path to one claim YAML. One file per ``(branch, rung)``.
+
+        Retractions rewrite the same file with ``retracted_at``
+        populated rather than deleting, so git history preserves the
+        retraction reason.
+        """
+        return self.gates_dir(goal_slug) / f"{branch_slug}__{rung_key}.yaml"
+
     # ── Universe-scoped artifacts ─────────────────────────────────────
 
     def universe_dir(self, universe_slug: str) -> Path:
