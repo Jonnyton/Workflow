@@ -667,7 +667,7 @@ descriptive node_id future callers will search for.
 
 - **submit_request** — default for collaborative input; queues through a
   review gate. Safe for any user.
-- **give_direction** — writes a note directly to the author/daemon.
+- **give_direction** — writes a note directly to the daemon.
   Host- or admin-level. Use only when the user explicitly wants to steer.
 
 ## Multiplayer model
@@ -1419,7 +1419,7 @@ def _action_give_direction(
             "note_id": note.id,
             "category": category,
             "status": "written",
-            "note": "Direction delivered. The Author reads notes at scene boundaries.",
+            "note": "Direction delivered. The daemon reads notes at scene boundaries.",
         })
     except Exception as exc:
         return json.dumps({"error": f"Failed to add note: {exc}"})
@@ -1673,7 +1673,7 @@ def _action_set_premise(universe_id: str = "", text: str = "", **_kwargs: Any) -
         return json.dumps({
             "universe_id": uid,
             "status": "updated",
-            "note": "Premise saved. The Author will read it at next startup.",
+            "note": "Premise saved. The daemon will read it at next startup.",
         })
     except OSError as exc:
         return json.dumps({"error": f"Failed to write premise: {exc}"})
@@ -1713,7 +1713,7 @@ def _action_add_canon(
             "filename": safe_name,
             "status": "written",
             "provenance": provenance_tag or "untagged",
-            "note": "Canon file added. The Author will ingest it.",
+            "note": "Canon file added. The daemon will ingest it.",
         })
     except OSError as exc:
         return json.dumps({"error": f"Failed to write canon file: {exc}"})

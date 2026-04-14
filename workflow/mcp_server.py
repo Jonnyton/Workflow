@@ -83,7 +83,7 @@ def add_note(text: str, category: str = "direction") -> str:
     protect elements you like, flag concerns, or record observations.
 
     Args:
-        text: The note text (what you want the Author to know).
+        text: The note text (what you want the daemon to know).
         category: One of 'direction' (steer the story), 'protect' (preserve
             something), 'concern' (flag a problem), 'observation' (neutral
             note), or 'error' (report a mistake).
@@ -285,7 +285,7 @@ def add_canon(filename: str, content: str) -> str:
     """Add a reference document to the canon/ directory for the daemon to ingest.
 
     Canon files provide worldbuilding context — character sheets, maps, lore
-    documents, timelines, style guides, or any reference material the Author
+    documents, timelines, style guides, or any reference material the daemon
     should know about.
 
     Args:

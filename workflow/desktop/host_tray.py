@@ -257,12 +257,12 @@ class HostTrayService:
                         ),
                         MenuItem("Show Dashboard", self._show_cb(entry.on_show_window)),
                         MenuItem(
-                            "Pause Author",
+                            "Pause Daemon",
                             self._call_cb(entry.on_pause),
                             visible=not entry.paused,
                         ),
                         MenuItem(
-                            "Resume Author",
+                            "Resume Daemon",
                             self._call_cb(entry.on_resume),
                             visible=entry.paused,
                         ),
@@ -270,7 +270,7 @@ class HostTrayService:
                             "Open Output Folder",
                             self._open_output_cb(entry.output_dir),
                         ),
-                        MenuItem("Stop Author", self._call_cb(entry.on_quit)),
+                        MenuItem("Stop Daemon", self._call_cb(entry.on_quit)),
                     ),
                 ),
             )
