@@ -157,6 +157,11 @@ class WorkTarget:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=_now)
     updated_at: float = field(default_factory=_now)
+    # Phase C.1: which TaskProducer emitted this target in its current
+    # form. Legacy rows load with "unknown"; C.4 wires producers to
+    # stamp authoritative values (seed, user_request, fantasy_authorial,
+    # etc.). Not immutable — last-writer wins with a log warning.
+    origin: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -190,6 +195,7 @@ class WorkTarget:
             if isinstance(data.get("metadata"), dict) else {},
             created_at=float(data.get("created_at", _now())),
             updated_at=float(data.get("updated_at", _now())),
+            origin=str(data.get("origin", "unknown")),
         )
 
 
