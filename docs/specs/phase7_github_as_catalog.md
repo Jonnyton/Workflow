@@ -92,7 +92,9 @@ Per dev-2 audit §1: `_current_actor()` reads env var today; auth provider is im
 - **Smoke-run** deferred — needs runner with provider key + budget guard. Track for 7.6.
 
 **7.6 Outcome gates as committed YAML** (forward-compat seam for #56).
-Phase 6 outcome gates land as `gates/<branch_slug>/<gate_id>.yaml` per Branch. Diff-able, fork-friendly, queryable via the same YAML cache. GitHub Issues stay for human discussion of gate progress.
+Phase 6 outcome gate claims land as `gates/<goal_slug>/<branch_slug>__<rung_key>.yaml` — filed by Goal first, then Branch, with the ladder rung as the leaf. Goal-first path because the ladder itself lives on the Goal (`goals/<slug>.yaml#/gate_ladder`), so all claims against one Goal stay colocated for diff-ability and per-Goal leaderboard rebuilds — one directory listing IS the leaderboard data. Diff-able, fork-friendly, queryable via the same YAML cache. GitHub Issues stay for human discussion of gate progress. See `docs/specs/outcome_gates_phase6.md` for the full Phase 6 spec.
+
+> **Host decision 2026-04-14** — goal-first layout (this shape) over branch-first (`gates/<branch_slug>/<gate_id>.yaml`). Reasoning: leaderboard is the hot query path, and goal-first matches the user-browse mental model (browse a Goal → see all contending workflows).
 
 **7.7 Privacy / draft workflow.**
 - Convention: `draft/` directory at repo root + a corresponding `.gitignore` line. Drafts never auto-commit.

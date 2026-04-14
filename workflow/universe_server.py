@@ -6593,6 +6593,284 @@ def goals(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# TOOL 3b — Outcome Gates (Phase 6.1)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Flag-gated by GATES_ENABLED=1. Phase 6.1 ships schema + three actions
+# (define_ladder / get_ladder / claim) write-through SQLite only. Git
+# commit integration + remaining actions (retract / list_claims /
+# leaderboard) ship in 6.2 / 6.3.
+
+
+def _gates_enabled() -> bool:
+    import os
+    return os.environ.get("GATES_ENABLED", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _validate_evidence_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url or "")
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return ""
+    return (
+        "evidence_url must be an http(s) URL with a host "
+        "(e.g. https://example.com/path)."
+    )
+
+
+def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import get_goal, set_goal_ladder
+
+    gid = (kwargs.get("goal_id") or "").strip()
+    if not gid:
+        return json.dumps({
+            "status": "rejected",
+            "error": "goal_id is required for define_ladder.",
+        })
+    ladder_raw = (kwargs.get("ladder") or "").strip()
+    if not ladder_raw:
+        return json.dumps({
+            "status": "rejected",
+            "error": "ladder JSON is required for define_ladder.",
+        })
+    try:
+        ladder = json.loads(ladder_raw)
+    except json.JSONDecodeError as exc:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"ladder must be a JSON list. {exc}",
+        })
+    if not isinstance(ladder, list):
+        return json.dumps({
+            "status": "rejected",
+            "error": "ladder must be a JSON list of rung objects.",
+        })
+    seen: set[str] = set()
+    for idx, rung in enumerate(ladder):
+        if not isinstance(rung, dict):
+            return json.dumps({
+                "status": "rejected",
+                "error": f"ladder[{idx}] must be an object.",
+            })
+        key = (rung.get("rung_key") or "").strip()
+        if not key:
+            return json.dumps({
+                "status": "rejected",
+                "error": f"ladder[{idx}].rung_key is required.",
+            })
+        if key in seen:
+            return json.dumps({
+                "status": "rejected",
+                "error": f"duplicate rung_key '{key}' in ladder.",
+            })
+        seen.add(key)
+    _ensure_author_server_db()
+    try:
+        goal = get_goal(_base_path(), goal_id=gid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Goal '{gid}' not found.",
+        })
+    actor = _current_actor_or_anon()
+    if goal.get("author") and goal["author"] != actor:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "Only the Goal author can define its ladder. "
+                f"Owner: {goal['author']}."
+            ),
+        })
+    saved = set_goal_ladder(_base_path(), goal_id=gid, ladder=ladder)
+    return json.dumps({
+        "status": "defined",
+        "goal_id": gid,
+        "gate_ladder": saved.get("gate_ladder", []),
+    }, default=str)
+
+
+def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import get_goal_ladder
+
+    gid = (kwargs.get("goal_id") or "").strip()
+    if not gid:
+        return json.dumps({
+            "status": "rejected",
+            "error": "goal_id is required for get_ladder.",
+        })
+    _ensure_author_server_db()
+    try:
+        ladder = get_goal_ladder(_base_path(), goal_id=gid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Goal '{gid}' not found.",
+        })
+    return json.dumps({
+        "status": "ok",
+        "goal_id": gid,
+        "gate_ladder": ladder,
+    }, default=str)
+
+
+def _action_gates_claim(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import (
+        claim_gate,
+        get_branch_definition,
+        get_goal_ladder,
+    )
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    rung_key = (kwargs.get("rung_key") or "").strip()
+    evidence_url = (kwargs.get("evidence_url") or "").strip()
+    if not (bid and rung_key and evidence_url):
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "branch_def_id, rung_key, evidence_url are required."
+            ),
+        })
+    url_err = _validate_evidence_url(evidence_url)
+    if url_err:
+        return json.dumps({"status": "rejected", "error": url_err})
+    _ensure_author_server_db()
+    try:
+        branch = get_branch_definition(_base_path(), branch_def_id=bid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Branch '{bid}' not found.",
+        })
+    goal_id = branch.get("goal_id") or ""
+    if not goal_id:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "Branch is not bound to a Goal. "
+                "Bind it via `goals action=bind` before claiming."
+            ),
+        })
+    ladder = get_goal_ladder(_base_path(), goal_id=goal_id)
+    available = [r.get("rung_key") for r in ladder if r.get("rung_key")]
+    if rung_key not in available:
+        return json.dumps({
+            "status": "rejected",
+            "error": "unknown_rung",
+            "available_rungs": available,
+        })
+    saved = claim_gate(
+        _base_path(),
+        branch_def_id=bid,
+        goal_id=goal_id,
+        rung_key=rung_key,
+        evidence_url=evidence_url,
+        evidence_note=kwargs.get("evidence_note", ""),
+        claimed_by=_current_actor_or_anon(),
+    )
+    return json.dumps({
+        "status": "claimed",
+        "claim": saved,
+    }, default=str)
+
+
+_GATES_ACTIONS: dict[str, Any] = {
+    "define_ladder": _action_gates_define_ladder,
+    "get_ladder": _action_gates_get_ladder,
+    "claim": _action_gates_claim,
+}
+
+
+@mcp.tool(
+    title="Outcome Gates",
+    tags={"gates", "outcomes", "impact", "leaderboard", "community"},
+    annotations=ToolAnnotations(
+        title="Outcome Gates",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
+    ),
+)
+def gates(
+    action: str,
+    goal_id: str = "",
+    branch_def_id: str = "",
+    rung_key: str = "",
+    ladder: str = "",
+    evidence_url: str = "",
+    evidence_note: str = "",
+    reason: str = "",
+    include_retracted: bool = False,
+    limit: int = 50,
+    force: bool = False,
+) -> str:
+    """Outcome Gates — real-world impact claims per Branch.
+
+    Each Goal declares a ladder of rungs (draft → peer-reviewed → published
+    → cited → breakthrough). Branches self-report which rungs they've
+    reached, with an evidence URL. Phase 6.1 ships the schema + three
+    actions write-through SQLite; remaining actions (retract,
+    list_claims, leaderboard) and git-commit integration ship in 6.2/6.3.
+
+    Actions:
+      define_ladder Owner sets the rung list on a Goal. Needs goal_id
+                    and `ladder` (JSON list of {rung_key, name,
+                    description}).
+      get_ladder    Read a Goal's ladder. Needs goal_id.
+      claim         Report a rung reached. Needs branch_def_id,
+                    rung_key, evidence_url. Idempotent on (branch, rung).
+
+    Evidence URL must be http(s) with a host; content is not fetched
+    (local-first). Social accountability handles fraud in v1.
+
+    Args:
+      action: see above.
+      goal_id: Goal target for ladder actions.
+      branch_def_id: Branch that's claiming a rung.
+      rung_key: matches a ladder entry's rung_key.
+      ladder: JSON list string for define_ladder.
+      evidence_url: http(s) URL pointing at the claim's evidence.
+      evidence_note: optional human summary.
+      reason: retract reason (Phase 6.2).
+      include_retracted: list_claims filter (Phase 6.2).
+      limit: cap for leaderboard / list_claims (Phase 6.2).
+      force: reserved for Phase 6.3 git-commit dirty-file override.
+    """
+    if not _gates_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": (
+                "Outcome gates are gated by the GATES_ENABLED flag "
+                "(Phase 6.1). Set GATES_ENABLED=1 on the Universe Server "
+                "to opt in."
+            ),
+        })
+    handler = _GATES_ACTIONS.get(action)
+    if handler is None:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Unknown action '{action}'.",
+            "available_actions": sorted(_GATES_ACTIONS.keys()),
+        })
+    kwargs: dict[str, Any] = {
+        "goal_id": goal_id,
+        "branch_def_id": branch_def_id,
+        "rung_key": rung_key,
+        "ladder": ladder,
+        "evidence_url": evidence_url,
+        "evidence_note": evidence_note,
+        "reason": reason,
+        "include_retracted": include_retracted,
+        "limit": limit,
+        "force": force,
+    }
+    return handler(kwargs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # TOOL 4 — Wiki (global knowledge base)
 # ═══════════════════════════════════════════════════════════════════════════
 

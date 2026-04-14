@@ -351,6 +351,25 @@ def initialize_author_server(base_path: str | Path) -> Path:
 
     CREATE INDEX IF NOT EXISTS idx_goals_author ON goals(author);
     CREATE INDEX IF NOT EXISTS idx_goals_visibility ON goals(visibility);
+
+    CREATE TABLE IF NOT EXISTS gate_claims (
+        claim_id          TEXT PRIMARY KEY,
+        branch_def_id     TEXT NOT NULL,
+        goal_id           TEXT NOT NULL,
+        rung_key          TEXT NOT NULL,
+        evidence_url      TEXT NOT NULL,
+        evidence_note     TEXT NOT NULL DEFAULT '',
+        claimed_by        TEXT NOT NULL,
+        claimed_at        TEXT NOT NULL,
+        retracted_at      TEXT,
+        retracted_reason  TEXT NOT NULL DEFAULT '',
+        UNIQUE (branch_def_id, rung_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gate_claims_goal
+        ON gate_claims(goal_id);
+    CREATE INDEX IF NOT EXISTS idx_gate_claims_branch
+        ON gate_claims(branch_def_id);
     """
     with _connect(base_path) as conn:
         conn.executescript(schema)
@@ -370,6 +389,16 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "CREATE INDEX IF NOT EXISTS idx_branch_defs_goal "
             "ON branch_definitions(goal_id)"
         )
+        # Phase 6 migration: goals.gate_ladder_json inline ladder column.
+        goal_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(goals)")
+        }
+        if "gate_ladder_json" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN gate_ladder_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            )
     ensure_default_author(base_path)
     return author_server_db_path(base_path)
 
@@ -2372,6 +2401,11 @@ def fork_branch_definition(
 
 
 def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    ladder_raw = ""
+    try:
+        ladder_raw = row["gate_ladder_json"]
+    except (IndexError, KeyError):
+        ladder_raw = "[]"
     return {
         "goal_id": row["goal_id"],
         "name": row["name"],
@@ -2381,6 +2415,7 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "visibility": row["visibility"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "gate_ladder": _json_loads(ladder_raw or "[]", []),
     }
 
 
@@ -2398,8 +2433,8 @@ def save_goal(
             """
             INSERT OR REPLACE INTO goals (
                 goal_id, name, description, author, tags_json,
-                visibility, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                visibility, created_at, updated_at, gate_ladder_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 goal_id,
@@ -2410,6 +2445,7 @@ def save_goal(
                 goal.get("visibility", "public"),
                 goal.get("created_at", now),
                 now,
+                _json_dumps(list(goal.get("gate_ladder", []) or [])),
             ),
         )
     return get_goal(base_path, goal_id=goal_id)
@@ -2555,6 +2591,125 @@ def branches_for_goal(
     return list_branch_definitions(
         base_path, goal_id=goal_id,
     )[:max(1, int(limit))]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 6: Outcome gates — ladder on goals, claims per branch
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _gate_claim_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "claim_id": row["claim_id"],
+        "branch_def_id": row["branch_def_id"],
+        "goal_id": row["goal_id"],
+        "rung_key": row["rung_key"],
+        "evidence_url": row["evidence_url"],
+        "evidence_note": row["evidence_note"],
+        "claimed_by": row["claimed_by"],
+        "claimed_at": row["claimed_at"],
+        "retracted_at": row["retracted_at"],
+        "retracted_reason": row["retracted_reason"],
+    }
+
+
+def set_goal_ladder(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    ladder: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Replace a Goal's gate ladder. Returns the updated Goal row.
+
+    Raises KeyError if the Goal doesn't exist.
+    """
+    initialize_author_server(base_path)
+    # Ensure goal exists.
+    get_goal(base_path, goal_id=goal_id)
+    now = _now()
+    with _connect(base_path) as conn:
+        conn.execute(
+            "UPDATE goals SET gate_ladder_json = ?, updated_at = ? "
+            "WHERE goal_id = ?",
+            (_json_dumps(list(ladder or [])), now, goal_id),
+        )
+    return get_goal(base_path, goal_id=goal_id)
+
+
+def get_goal_ladder(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+) -> list[dict[str, Any]]:
+    """Return the ladder attached to a Goal (may be empty)."""
+    goal = get_goal(base_path, goal_id=goal_id)
+    return list(goal.get("gate_ladder") or [])
+
+
+def claim_gate(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+    goal_id: str,
+    rung_key: str,
+    evidence_url: str,
+    evidence_note: str = "",
+    claimed_by: str,
+) -> dict[str, Any]:
+    """Self-report a rung reached. Idempotent on (branch, rung).
+
+    If an active claim exists for this (branch, rung), update evidence
+    and claimed_at and return the row. If a retracted claim exists,
+    clear the retraction and reactivate.
+    """
+    initialize_author_server(base_path)
+    now_iso = _utc_iso_now()
+    with _connect(base_path) as conn:
+        existing = conn.execute(
+            "SELECT * FROM gate_claims WHERE branch_def_id = ? "
+            "AND rung_key = ?",
+            (branch_def_id, rung_key),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                """
+                UPDATE gate_claims
+                SET evidence_url = ?, evidence_note = ?, claimed_at = ?,
+                    claimed_by = ?, goal_id = ?,
+                    retracted_at = NULL, retracted_reason = ''
+                WHERE claim_id = ?
+                """,
+                (
+                    evidence_url, evidence_note, now_iso, claimed_by,
+                    goal_id, existing["claim_id"],
+                ),
+            )
+            claim_id = existing["claim_id"]
+        else:
+            claim_id = uuid.uuid4().hex[:16]
+            conn.execute(
+                """
+                INSERT INTO gate_claims (
+                    claim_id, branch_def_id, goal_id, rung_key,
+                    evidence_url, evidence_note, claimed_by, claimed_at,
+                    retracted_at, retracted_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '')
+                """,
+                (
+                    claim_id, branch_def_id, goal_id, rung_key,
+                    evidence_url, evidence_note, claimed_by, now_iso,
+                ),
+            )
+        row = conn.execute(
+            "SELECT * FROM gate_claims WHERE claim_id = ?",
+            (claim_id,),
+        ).fetchone()
+    return _gate_claim_from_row(row)
+
+
+def _utc_iso_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def goal_leaderboard(
