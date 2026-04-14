@@ -2723,6 +2723,180 @@ def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def get_gate_claim(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+    rung_key: str,
+) -> dict[str, Any] | None:
+    """Return the single claim row for (branch, rung), or None."""
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM gate_claims WHERE branch_def_id = ? "
+            "AND rung_key = ?",
+            (branch_def_id, rung_key),
+        ).fetchone()
+    if row is None:
+        return None
+    return _gate_claim_from_row(row)
+
+
+def retract_gate_claim(
+    base_path: str | Path,
+    *,
+    branch_def_id: str,
+    rung_key: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Soft-delete a gate claim. Row stays with retracted_at populated.
+
+    Raises KeyError if no matching claim exists.
+    """
+    initialize_author_server(base_path)
+    now_iso = _utc_iso_now()
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM gate_claims WHERE branch_def_id = ? "
+            "AND rung_key = ?",
+            (branch_def_id, rung_key),
+        ).fetchone()
+        if row is None:
+            raise KeyError((branch_def_id, rung_key))
+        conn.execute(
+            "UPDATE gate_claims SET retracted_at = ?, "
+            "retracted_reason = ? WHERE claim_id = ?",
+            (now_iso, reason, row["claim_id"]),
+        )
+        updated = conn.execute(
+            "SELECT * FROM gate_claims WHERE claim_id = ?",
+            (row["claim_id"],),
+        ).fetchone()
+    return _gate_claim_from_row(updated)
+
+
+def list_gate_claims(
+    base_path: str | Path,
+    *,
+    branch_def_id: str = "",
+    goal_id: str = "",
+    include_retracted: bool = False,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """List gate claims filtered by branch OR goal.
+
+    Exactly one of ``branch_def_id`` / ``goal_id`` must be provided.
+    Claims whose ``rung_key`` is no longer present in the Goal's ladder
+    are tagged ``orphaned=True`` in the response.
+    """
+    if not branch_def_id and not goal_id:
+        raise ValueError(
+            "list_gate_claims requires branch_def_id or goal_id."
+        )
+    initialize_author_server(base_path)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if branch_def_id:
+        clauses.append("branch_def_id = ?")
+        params.append(branch_def_id)
+    if goal_id:
+        clauses.append("goal_id = ?")
+        params.append(goal_id)
+    if not include_retracted:
+        clauses.append("retracted_at IS NULL")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM gate_claims {where}
+            ORDER BY claimed_at DESC LIMIT ?
+            """,
+            (*params, max(1, int(limit))),
+        ).fetchall()
+    claims = [_gate_claim_from_row(r) for r in rows]
+    # Tag orphaned claims (rung no longer in its Goal's ladder).
+    ladders: dict[str, set[str]] = {}
+    for claim in claims:
+        gid = claim.get("goal_id") or ""
+        if not gid:
+            continue
+        if gid not in ladders:
+            try:
+                ladder = get_goal_ladder(base_path, goal_id=gid)
+            except KeyError:
+                ladder = []
+            ladders[gid] = {
+                (r.get("rung_key") or "") for r in ladder
+            }
+        claim["orphaned"] = claim["rung_key"] not in ladders[gid]
+    return claims
+
+
+def gates_leaderboard(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Rank Branches under a Goal by highest rung reached.
+
+    - Non-retracted claims only.
+    - Claims whose rung is no longer in the Goal's ladder are ignored.
+    - Tiebreak: earliest ``claimed_at`` wins among equal-rung Branches.
+    - Output entries carry rung index so callers can sort / display.
+
+    Returns an empty list if the Goal has no ladder or no claims.
+    """
+    initialize_author_server(base_path)
+    try:
+        ladder = get_goal_ladder(base_path, goal_id=goal_id)
+    except KeyError:
+        return []
+    rung_index = {
+        (r.get("rung_key") or ""): idx
+        for idx, r in enumerate(ladder)
+        if r.get("rung_key")
+    }
+    if not rung_index:
+        return []
+    branches = branches_for_goal(base_path, goal_id=goal_id)
+    branch_by_id = {b["branch_def_id"]: b for b in branches}
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM gate_claims
+            WHERE goal_id = ? AND retracted_at IS NULL
+            """,
+            (goal_id,),
+        ).fetchall()
+    best: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        bid = row["branch_def_id"]
+        rung = row["rung_key"]
+        if rung not in rung_index:
+            continue
+        idx = rung_index[rung]
+        claimed_at = row["claimed_at"] or ""
+        current = best.get(bid)
+        if current is None or idx > current["highest_rung_index"] or (
+            idx == current["highest_rung_index"]
+            and claimed_at < current["claimed_at"]
+        ):
+            best[bid] = {
+                "branch_def_id": bid,
+                "branch_name": branch_by_id.get(bid, {}).get("name", ""),
+                "highest_rung_key": rung,
+                "highest_rung_index": idx,
+                "claimed_at": claimed_at,
+                "evidence_url": row["evidence_url"],
+            }
+    ranked = sorted(
+        best.values(),
+        key=lambda e: (-e["highest_rung_index"], e["claimed_at"]),
+    )
+    return ranked[:max(1, int(limit))]
+
+
 def goal_leaderboard(
     base_path: str | Path,
     *,
@@ -2814,8 +2988,11 @@ def goal_leaderboard(
             for b in ranked[:limit]
         ]
     if metric == "outcome":
-        # Phase 6 stub — handler formats the "not available yet" payload.
-        return []
+        entries = gates_leaderboard(
+            base_path, goal_id=goal_id, limit=limit,
+        )
+        return [{**e, "metric": metric, "value": e["highest_rung_index"]}
+                for e in entries]
     raise ValueError(f"Unknown metric '{metric}'")
 
 

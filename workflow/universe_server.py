@@ -6235,11 +6235,8 @@ def _action_goal_search(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
-_V1_LEADERBOARD_METRICS = ("run_count", "forks")
-_STUB_LEADERBOARD_METRICS = ("outcome",)
-_ALL_LEADERBOARD_METRICS = (
-    _V1_LEADERBOARD_METRICS + _STUB_LEADERBOARD_METRICS
-)
+_V1_LEADERBOARD_METRICS = ("run_count", "forks", "outcome")
+_ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS
 
 
 def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
@@ -6264,20 +6261,6 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
 
-    if metric in _STUB_LEADERBOARD_METRICS:
-        return json.dumps({
-            "text": (
-                f"**Leaderboard metric `{metric}`** is reserved for "
-                "Phase 6 outcome gates — not yet available.\n\n"
-                "Use `metric=run_count` or `metric=forks` today. The "
-                "`outcome` metric will start returning real rankings "
-                "once outcome gates ship."
-            ),
-            "status": "not_available_until_phase_6",
-            "goal_id": gid,
-            "metric": metric,
-            "entries": [],
-        }, default=str)
     if metric not in _V1_LEADERBOARD_METRICS:
         return json.dumps({
             "status": "rejected",
@@ -6305,10 +6288,24 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
     if entries:
         for rank, entry in enumerate(entries, 1):
             value = entry.get("value", 0)
-            lines.append(
-                f"{rank}. **{entry['name']}** · {entry['author']} · "
-                f"{metric}={value}"
-            )
+            if metric == "outcome":
+                name = entry.get("branch_name") or entry.get("name", "")
+                rung = entry.get("highest_rung_key", "")
+                lines.append(
+                    f"{rank}. **{name}** · rung `{rung}` "
+                    f"(index {value}) · {entry.get('claimed_at', '')}"
+                )
+            else:
+                lines.append(
+                    f"{rank}. **{entry['name']}** · {entry['author']} · "
+                    f"{metric}={value}"
+                )
+    elif metric == "outcome":
+        lines.append(
+            "_No gate claims yet. Define a ladder with "
+            "`gates action=define_ladder` and have Branches submit "
+            "`gates action=claim`._"
+        )
     else:
         lines.append(
             "_No workflows bound to this Goal yet. Use "
@@ -6692,7 +6689,7 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
     actor = _current_actor_or_anon()
-    if goal.get("author") and goal["author"] != actor:
+    if goal.get("author") and goal["author"] != actor and actor != "host":
         return json.dumps({
             "status": "rejected",
             "error": (
@@ -6736,6 +6733,7 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import (
         claim_gate,
         get_branch_definition,
+        get_gate_claim,
         get_goal_ladder,
     )
 
@@ -6769,6 +6767,24 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
                 "Bind it via `goals action=bind` before claiming."
             ),
         })
+    # Rebind guard: if a prior claim exists for (branch, rung) under a
+    # different Goal, the Branch was rebound between claims. Reject so
+    # the original Goal's leaderboard keeps its history; caller must
+    # retract the stale claim before re-claiming under the new Goal.
+    existing = get_gate_claim(
+        _base_path(), branch_def_id=bid, rung_key=rung_key,
+    )
+    if existing is not None and (existing.get("goal_id") or "") != goal_id:
+        return json.dumps({
+            "status": "rejected",
+            "error": "branch_rebound",
+            "original_goal_id": existing.get("goal_id") or "",
+            "current_goal_id": goal_id,
+            "hint": (
+                "Retract the existing claim under the original Goal "
+                "first, then re-claim under the new Goal."
+            ),
+        })
     ladder = get_goal_ladder(_base_path(), goal_id=goal_id)
     available = [r.get("rung_key") for r in ladder if r.get("rung_key")]
     if rung_key not in available:
@@ -6792,10 +6808,192 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_gates_retract(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import (
+        get_branch_definition,
+        get_gate_claim,
+        get_goal,
+        retract_gate_claim,
+    )
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    rung_key = (kwargs.get("rung_key") or "").strip()
+    reason = (kwargs.get("reason") or "").strip()
+    if not (bid and rung_key):
+        return json.dumps({
+            "status": "rejected",
+            "error": "branch_def_id and rung_key are required for retract.",
+        })
+    if not reason:
+        return json.dumps({
+            "status": "rejected",
+            "error": "reason is required for retract (non-empty).",
+        })
+    _ensure_author_server_db()
+    existing = get_gate_claim(
+        _base_path(), branch_def_id=bid, rung_key=rung_key,
+    )
+    if existing is None:
+        return json.dumps({
+            "status": "rejected",
+            "error": "claim_not_found",
+            "message": (
+                f"No claim exists for branch '{bid}' at rung "
+                f"'{rung_key}'."
+            ),
+        })
+    if existing.get("retracted_at"):
+        # Idempotent: a second retract on an already-retracted claim is
+        # a no-op return, not a fresh write. Keeps owners from churning
+        # retracted_at timestamps.
+        return json.dumps({
+            "status": "already_retracted",
+            "claim": existing,
+        }, default=str)
+    actor = _current_actor_or_anon()
+    # Owner-retract: original claimant, Goal author, or ambient host.
+    claimed_by = existing.get("claimed_by") or ""
+    goal_author = ""
+    goal_id = existing.get("goal_id") or ""
+    if goal_id:
+        try:
+            goal = get_goal(_base_path(), goal_id=goal_id)
+            goal_author = goal.get("author") or ""
+        except KeyError:
+            pass
+    allowed = {actor_id for actor_id in (claimed_by, goal_author) if actor_id}
+    if actor not in allowed and actor != "host":
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "Only the claim author or Goal owner can retract "
+                f"(claimant: '{claimed_by}', goal owner: "
+                f"'{goal_author}')."
+            ),
+        })
+    # Verify branch still exists (defensive; claim-time check is in claim).
+    try:
+        get_branch_definition(_base_path(), branch_def_id=bid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Branch '{bid}' not found.",
+        })
+    saved = retract_gate_claim(
+        _base_path(),
+        branch_def_id=bid,
+        rung_key=rung_key,
+        reason=reason,
+    )
+    return json.dumps({
+        "status": "retracted",
+        "claim": saved,
+    }, default=str)
+
+
+_LIST_CLAIMS_LIMIT_CAP = 500
+
+
+def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import get_goal, list_gate_claims
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    gid = (kwargs.get("goal_id") or "").strip()
+    if bool(bid) == bool(gid):
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "list_claims requires exactly one of branch_def_id "
+                "or goal_id."
+            ),
+            "available_filters": ["branch_def_id", "goal_id"],
+        })
+    include_retracted = bool(kwargs.get("include_retracted", False))
+    limit = int(kwargs.get("limit", 50) or 50)
+    limit = max(1, min(limit, _LIST_CLAIMS_LIMIT_CAP))
+    _ensure_author_server_db()
+    # Unknown goal_id is a hard reject (caller asked about a specific
+    # ID). Unknown branch_def_id falls through to an empty result set,
+    # matching `branch list` ergonomics.
+    if gid:
+        try:
+            get_goal(_base_path(), goal_id=gid)
+        except KeyError:
+            return json.dumps({
+                "status": "rejected",
+                "error": f"Goal '{gid}' not found.",
+            })
+    try:
+        claims = list_gate_claims(
+            _base_path(),
+            branch_def_id=bid,
+            goal_id=gid,
+            include_retracted=include_retracted,
+            limit=limit,
+        )
+    except ValueError as exc:
+        return json.dumps({"status": "rejected", "error": str(exc)})
+    return json.dumps({
+        "status": "ok",
+        "filter": {
+            "branch_def_id": bid,
+            "goal_id": gid,
+            "include_retracted": include_retracted,
+        },
+        "claims": claims,
+        "count": len(claims),
+    }, default=str)
+
+
+def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
+    from workflow.author_server import (
+        gates_leaderboard,
+        get_goal,
+        get_goal_ladder,
+    )
+
+    gid = (kwargs.get("goal_id") or "").strip()
+    if not gid:
+        return json.dumps({
+            "status": "rejected",
+            "error": "goal_id is required for leaderboard.",
+        })
+    _ensure_author_server_db()
+    try:
+        goal = get_goal(_base_path(), goal_id=gid)
+    except KeyError:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Goal '{gid}' not found.",
+        })
+    ladder = get_goal_ladder(_base_path(), goal_id=gid)
+    if not ladder:
+        return json.dumps({
+            "status": "ok",
+            "goal_id": gid,
+            "goal_name": goal.get("name", ""),
+            "entries": [],
+            "count": 0,
+            "note": "Goal has no ladder defined.",
+        }, default=str)
+    limit = int(kwargs.get("limit", 50) or 50)
+    entries = gates_leaderboard(_base_path(), goal_id=gid, limit=limit)
+    return json.dumps({
+        "status": "ok",
+        "goal_id": gid,
+        "goal_name": goal.get("name", ""),
+        "entries": entries,
+        "count": len(entries),
+    }, default=str)
+
+
 _GATES_ACTIONS: dict[str, Any] = {
     "define_ladder": _action_gates_define_ladder,
     "get_ladder": _action_gates_get_ladder,
     "claim": _action_gates_claim,
+    "retract": _action_gates_retract,
+    "list_claims": _action_gates_list_claims,
+    "leaderboard": _action_gates_leaderboard,
 }
 
 
@@ -6827,9 +7025,8 @@ def gates(
 
     Each Goal declares a ladder of rungs (draft → peer-reviewed → published
     → cited → breakthrough). Branches self-report which rungs they've
-    reached, with an evidence URL. Phase 6.1 ships the schema + three
-    actions write-through SQLite; remaining actions (retract,
-    list_claims, leaderboard) and git-commit integration ship in 6.2/6.3.
+    reached, with an evidence URL. Phase 6.2 ships the full read/write
+    surface against SQLite; git-commit integration ships in 6.3.
 
     Actions:
       define_ladder Owner sets the rung list on a Goal. Needs goal_id
@@ -6838,21 +7035,31 @@ def gates(
       get_ladder    Read a Goal's ladder. Needs goal_id.
       claim         Report a rung reached. Needs branch_def_id,
                     rung_key, evidence_url. Idempotent on (branch, rung).
+      retract       Soft-delete a claim. Needs branch_def_id, rung_key,
+                    reason. Claim author, Goal owner, or host can
+                    retract.
+      list_claims   Browse claims. Provide exactly one of branch_def_id
+                    or goal_id. `include_retracted` optional; claims
+                    whose rung no longer exists in the Goal's ladder
+                    are tagged `orphaned`.
+      leaderboard   Rank Branches bound to a Goal by highest rung
+                    reached. Tiebreak: earliest claim wins. Also
+                    callable as `goals leaderboard metric=outcome`.
 
     Evidence URL must be http(s) with a host; content is not fetched
     (local-first). Social accountability handles fraud in v1.
 
     Args:
       action: see above.
-      goal_id: Goal target for ladder actions.
-      branch_def_id: Branch that's claiming a rung.
+      goal_id: Goal target for ladder / leaderboard / list_claims.
+      branch_def_id: Branch that's claiming / retracting / listing.
       rung_key: matches a ladder entry's rung_key.
       ladder: JSON list string for define_ladder.
       evidence_url: http(s) URL pointing at the claim's evidence.
       evidence_note: optional human summary.
-      reason: retract reason (Phase 6.2).
-      include_retracted: list_claims filter (Phase 6.2).
-      limit: cap for leaderboard / list_claims (Phase 6.2).
+      reason: retract reason (required for retract, non-empty).
+      include_retracted: list_claims filter (default False).
+      limit: cap for leaderboard / list_claims.
       force: reserved for Phase 6.3 git-commit dirty-file override.
     """
     if not _gates_enabled():

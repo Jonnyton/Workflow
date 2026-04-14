@@ -324,14 +324,16 @@ def test_leaderboard_run_count(p5_env):
     assert result["entries"][0]["value"] == 2
 
 
-def test_leaderboard_outcome_stub(p5_env):
+def test_leaderboard_outcome_empty_without_claims(p5_env):
     us, _ = p5_env
     gid = _call(us, "goals", "propose", name="G")["goal"]["goal_id"]
     result = _call(us, "goals", "leaderboard",
                    goal_id=gid, metric="outcome")
-    assert result["status"] == "not_available_until_phase_6"
+    # Phase 6.2 rewired: outcome is a real metric now. With no ladder
+    # + no claims, entries are empty and the text points users at `gates`.
+    assert result["metric"] == "outcome"
     assert result["entries"] == []
-    assert "phase 6" in result["text"].lower()
+    assert "gate claims" in result["text"].lower()
 
 
 def test_leaderboard_rejects_unknown_metric(p5_env):

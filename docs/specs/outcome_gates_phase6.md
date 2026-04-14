@@ -338,6 +338,101 @@ Existing tests that need extension:
 
 Ships behind a feature flag `GATES_ENABLED=false` by default through 6.1–6.2 so schema exists without exposing half-wired tool. Flag flips in 6.3.
 
+### 6.2 implementation notes (planner, 2026-04-14)
+
+Phase 6.2 adds three read/write-less actions to the existing `gates` tool and rewires one leaderboard stub. No schema change, no git-commit path (that's 6.3). The intent is: finish the tool-surface contract 6.1 half-shipped, fix two reviewer-flagged 6.1 debts, and land the outcome-metric integration `goals leaderboard metric=outcome` has been promising since Phase 5.
+
+#### Scope (one-paragraph)
+
+Three handlers (`_action_gates_retract`, `_action_gates_list_claims`, `_action_gates_leaderboard`) registered in `_GATES_ACTIONS` at `workflow/universe_server.py`. One helper in `workflow/author_server.py` per new action (`retract_gate_claim`, `list_gate_claims`, `gate_leaderboard`). `_action_goal_leaderboard` at ~line 6245 becomes a thin forwarder to `_action_gates_leaderboard` for `metric=outcome`. Two 6.1 debts fixed inline. Flag remains `GATES_ENABLED=0` default through 6.2 per existing rollout.
+
+#### Action signatures
+
+All three return JSON strings (tool-surface convention). `status` on the envelope tracks outcomes (`retracted`, `reactivated`, `ok`, `rejected`, `not_available`). Claims are returned as plain dicts matching what `claim_gate` already returns; no new row shape is invented.
+
+- **`retract`** — `branch_def_id`, `rung_key`, `reason` (required, non-empty). Authorization: `claimed_by == actor` OR `goal.author == actor` OR `actor == "host"`. Evidence URL and note are retained; only `retracted_at` + `retracted_reason` are set. Returns `{"status": "retracted", "claim": {...}}`. Double-retract returns `{"status": "already_retracted", ...}` — idempotent so repeated owner calls don't churn. If the claim doesn't exist, `{"status": "rejected", "error": "claim_not_found"}`.
+- **`list_claims`** — `branch_def_id?` XOR `goal_id?`, `include_retracted=false`, `limit=50` (capped at e.g. 500 to keep responses bounded). Exactly one filter required; both-or-neither returns rejected. Returns `{"status": "ok", "claims": [...], "count": N, "filter": {...}}`. Sort: `claimed_at` descending. Each claim includes `orphaned: bool` computed by comparing `rung_key` against the current ladder on the Goal (see behavior-contracts `define_ladder`).
+- **`leaderboard`** — `goal_id` (required), `limit=50`. Returns `{"status": "ok", "goal_id": str, "goal_name": str, "entries": [...], "count": N}`. Entry shape per spec §Behavior: `branch_def_id`, `branch_name`, `highest_rung_key`, `highest_rung_index`, `claimed_at` (earliest claim at that rung), `evidence_url`. Sort: `highest_rung_index` desc, `claimed_at` asc (earliest reacher wins ties). Orphaned claims excluded; retracted claims excluded. Respects Branch visibility — see §Integration.
+
+#### Validation & error modes
+
+- Goal-existence and branch-existence checks mirror 6.1 handlers: `KeyError` from `get_goal` / `get_branch_definition` maps to `{"status": "rejected", "error": "Goal '...' not found."}`. Don't leak internal exception text.
+- `retract.reason` must be non-empty after strip. The spec text says retraction reasons live in git history; they still land on the SQLite row in 6.2, git wiring in 6.3 will pick them up.
+- `list_claims` dual-filter rule: reject with a clear message if both `branch_def_id` and `goal_id` are set, or if neither is. Keep the envelope consistent (`available_filters: ["branch_def_id", "goal_id"]`).
+- `leaderboard` with an empty ladder returns `{"status": "ok", "entries": [], "count": 0, "note": "Goal has no ladder defined."}` — no error; empty is a real answer.
+- Unknown branch in `list_claims branch_def_id=...`: treat as empty result set, not an error. Consistent with how `branch list` handles unknown filters. Unknown goal in `list_claims goal_id=...` OR `leaderboard goal_id=...` is a hard reject (the caller asked about a specific ID).
+- URL validation stays in claim path (6.1); retract does not re-validate evidence URL.
+
+#### Authorization model
+
+Four authority patterns across the three actions. Keep them explicit in handler code, not buried in helper-level checks:
+
+| Action | Authorized if … |
+|---|---|
+| `retract` | `actor == claim.claimed_by` OR `actor == goal.author` OR `actor == "host"` |
+| `list_claims` | Anyone (read). Private-Branch filtering handled at row level (see Integration). |
+| `leaderboard` | Anyone (read). Private entries filtered at row level. |
+
+Pattern matches `goals update` at line 5936-5967 for the host fallback. Use `_current_actor_or_anon()` consistently (already used in 6.1).
+
+#### 6.1 debts folded in
+
+**Debt 1: host-override missing on `define_ladder`.** Current code at `workflow/universe_server.py:6694-6702` only checks `goal["author"] != actor` and rejects. Fix: mirror `goals update` at 5958-5959 — allow if `actor == "host"`. One-line change, no new tests needed beyond a host-actor case added to the 6.2 `retract` auth tests (same pattern).
+
+**Debt 2: rebind-between-claims edge.** `claim_gate` at `workflow/author_server.py:2685-2697` UPDATE overwrites the denormalized `goal_id` with whatever the Branch is currently bound to. If a Branch rebinds from Goal A to Goal B between two claims on the same rung_key, the first claim is silently relocated to Goal B when the second `claim` call fires. Leaderboard math for Goal A quietly changes.
+
+Fix options, rank-ordered:
+1. **Preferred: reject re-claim if existing claim's `goal_id` != current branch `goal_id`.** Add a guard in `claim_gate` (or earlier in `_action_gates_claim`) that detects the mismatch and returns `{"status": "rejected", "error": "branch_rebound", "original_goal_id": "...", "current_goal_id": "...", "hint": "Retract the existing claim first, then re-claim under the new Goal."}`. Makes the rebind visible to the user and preserves Goal A's leaderboard integrity.
+2. Not preferred: auto-retract under the old Goal + new claim under new Goal. Two state transitions inside one tool call hides data movement; leaderboard shifts silently.
+3. Not preferred: lock Branch re-bind when any active claim exists. Pushes the tension into `goals bind`, wrong surface.
+
+Option 1 is the smallest, clearest fix and composes with 6.3 (rebind shows up as an explicit retract+claim pair in git history). Test: create Goal A, Goal B, Branch, claim rung under A, rebind Branch to B, re-claim — assert rejected with `branch_rebound`.
+
+#### Integration with existing systems
+
+- **`_action_goal_leaderboard`** at `workflow/universe_server.py:6245` currently stubs `metric=outcome`. Replace the stub branch (lines 6267-6280) with: call `_action_gates_leaderboard` with `goal_id` + `limit` from kwargs, then massage the response shape back into the `goals leaderboard` envelope (it uses `lines` + `text` formatting; entries still land in `entries`). Keep `_V1_LEADERBOARD_METRICS` and move `"outcome"` out of `_STUB_LEADERBOARD_METRICS` into `_V1_LEADERBOARD_METRICS`. `_ALL_LEADERBOARD_METRICS` stays the union.
+- **Branch visibility.** `list_claims` and `leaderboard` must filter entries whose Branch has `visibility="private"` unless the caller is the Branch owner or host. Equivalent logic already exists for `branch list`; reuse or parallel-implement minimally.
+- **`GATES_ENABLED` gating stays in place.** Same flag guard as 6.1. Rewired `goals leaderboard metric=outcome` must *also* respect the flag — if the flag is off, fall back to the existing "not_available" stub response but with message "outcome metric is gated by GATES_ENABLED (Phase 6.2)." This is important: we don't want the outcome-metric rewire to make `goals leaderboard` fail when gates are disabled.
+
+#### Test strategy
+
+Existing 6.1 tests live in `tests/test_universe_server_gates.py` (or nearest match). Extend the same file; don't spawn a new one. Aim for ~15-20 new tests, all in one file. Structure by action, then by concern:
+
+- **`retract` (6 tests)**: success path, `reason` empty rejected, auth — owner of claim, auth — Goal author, auth — host override, auth — unrelated user rejected, already-retracted is idempotent, claim-not-found rejected.
+- **`list_claims` (5 tests)**: by `branch_def_id`, by `goal_id`, both filters rejected, neither filter rejected, `include_retracted=true` surfaces retracted rows, orphaned claims get `orphaned=true` when ladder dropped the rung, private-Branch filtering hides rows from non-owner/non-host.
+- **`leaderboard` (5 tests)**: ranking correct by rung index, tiebreak by `claimed_at` asc, retracted claims excluded, orphaned claims excluded, private branches filtered.
+- **6.1 debts (3 tests)**: `define_ladder` host-override succeeds for non-author host, `claim` rejects with `branch_rebound` when Branch's `goal_id` changed since first claim, `goals leaderboard metric=outcome` forwards correctly (returns real entries not stub message).
+- **`GATES_ENABLED=0` behavior (2 tests)**: `gates retract` returns `not_available`, `goals leaderboard metric=outcome` falls back to gate-disabled message not stale stub.
+
+Every test uses the existing 6.1 fixtures (base_path tmp, `initialize_author_server`, actor-identity monkeypatch). No new fixture scaffolding should be needed. If dev finds they need one, that's a signal something has drifted and worth raising.
+
+#### Deliverables & file list
+
+- `workflow/universe_server.py` — three handlers + registration + leaderboard rewire + `define_ladder` auth fix.
+- `workflow/author_server.py` — `retract_gate_claim`, `list_gate_claims`, `gate_leaderboard`; optional helper `_get_current_goal_id_for_branch` if the rebind guard lives at that layer.
+- `tests/test_universe_server_gates.py` (or nearest) — ~20 new tests.
+- `docs/specs/outcome_gates_phase6.md` — mark 6.2 done in §Rollout when landed.
+
+No PLAN.md changes. No STATUS.md changes beyond the row-delete on land.
+
+#### Explicit non-goals in 6.2
+
+- Git commit path. That's 6.3. Don't touch `workflow/storage/backend.py`.
+- YAML emitters. 6.3.
+- `goals get` gate_summary field. 6.4.
+- `branch` tool gate_claims field. 6.4.
+- Ladder versioning / rung reuse / evidence archival / adversarial validation. 6.5+.
+
+If dev notices the 6.3 YAML layout could be shape-changed by 6.2 decisions (e.g. how orphaned claims serialize), raise it — I'd rather adjust now than cement a shape that forces 6.3 migrations.
+
+#### Success criteria (for reviewer)
+
+- All six 6.2 action/debt items landed with test coverage.
+- `goals leaderboard metric=outcome` returns real ranked entries when gates are enabled, falls back gracefully when disabled.
+- No regressions in 6.1 tests; all new tests green.
+- Authorization matrix matches the table above; no silent broadening of write paths.
+- Rebind guard visible in the failing-test output as an explicit `branch_rebound` error, not a silent data move.
+
 ---
 
 ## Open questions (escalate)
