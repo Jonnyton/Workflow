@@ -74,7 +74,13 @@ Scope boundaries, signatures, invariants, and non-goals. Dev fills in HOW.
 
 ### 4.1 Deliverables
 
-1. **New module `fantasy_author/branch_registrations.py`** — a registry mapping `(domain_id, node_id) → Callable[[StateGraph-like], StateGraph]` for domain-trusted opaque nodes. Fantasy registers `("fantasy_author", "universe_cycle_wrapper")` here, pointing to a thin wrapper that invokes `build_universe_graph()` and returns its compiled result.
+1. **Two-module registry pattern — engine-agnostic dict + domain-local entries.** Decoupled to preserve PLAN.md's engine/domain separation. Engine side never imports domain side.
+
+   - **New `workflow/domain_registry.py`** — domain-agnostic infrastructure. Holds the `(domain_id, node_id) → Callable[[dict], dict]` dict plus `register_domain_callable(domain_id, node_id, fn)` and `resolve_domain_callable(domain_id, node_id) -> Callable | None` helpers. Imported by `workflow/graph_compiler.py`. Knows nothing about fantasy.
+   - **New `fantasy_author/branch_registrations.py`** — domain-side. On import, calls `register_domain_callable("fantasy_author", "universe_cycle_wrapper", _wrapper_fn)` with a thin wrapper that invokes `build_universe_graph()` and returns its compiled result. No classes, no registry state of its own — module-level side-effect registration.
+   - **Side-effect import in `fantasy_author/__main__.py`** — `import fantasy_author.branch_registrations  # noqa: F401  # registers domain callables` near the other domain imports. Must run before the first `compile_branch` call under flag-on. `noqa: F401` to silence unused-import warnings; the import *is* the registration.
+
+   This pattern resolves dev's correct concern that the original wording ("registry lives in `fantasy_author/branch_registrations.py`") would force `workflow/graph_compiler.py` to import from `fantasy_author/`, violating the engine/domain decoupling. Under this pattern, the dict + helpers are engine-agnostic; only the entries (the `(domain_id, node_id, callable)` triples) are domain-local.
 
 2. **Compiler extension in `workflow/graph_compiler.py`** — `_build_node` gains a third branch (after `has_template` and `has_source`): if `(domain_id, node.node_id)` resolves to a registered opaque callable, use it. The callable receives the node's inputs as `state: dict` and returns `dict`. No approval gate (domain-trusted registry is host-controlled at registration time, not per-invocation).
 
@@ -101,7 +107,7 @@ Scope boundaries, signatures, invariants, and non-goals. Dev fills in HOW.
 
 ### 4.3 Invariants (must hold across both flag states)
 
-1. **Checkpoint resume works.** Daemon restart recovers `total_words`, `total_chapters`, `world_state_version`, `canon_facts_count`, `active_series`, `series_completed` from SqliteSaver. Test: simulate a restart with a populated checkpoint and assert counters carry over.
+1. **Checkpoint resume recovers boundary state + disk-persisted artifacts.** Daemon restart recovers `total_words`, `total_chapters`, `world_state_version`, `canon_facts_count`, `active_series`, `series_completed` from SqliteSaver, AND `_build_book_execution_seed` correctly re-derives work-target position from disk-persisted scenes/notes/canon. This applies under BOTH flag states at cycle boundaries. Under flag-on, mid-cycle TypedDict reducer contents (`workflow_instructions`, `quality_trace`, in-flight dispatch state) are explicitly NOT part of the resume guarantee — see §4.11. Test: simulate a restart with a populated checkpoint at a cycle boundary and assert counters + on-disk-derived position carry over under both flag states.
 2. **Dashboard events fire.** Every phase entry produces a `phase_start` event visible to `_handle_node_output`. Test: run one cycle, assert the dashboard received events for foundation_priority_review, dispatch_execution, and universe_cycle.
 3. **Pause/stop/universe-switch controls respond at wrapper-call granularity under flag-on.** Setting `_stop_event` during inner-graph execution is observed by `_run_graph` when the wrapper returns — NOT during inner-phase execution. `.pause` file is checked at the outer stream-loop level (which under flag-on iterates once per wrapper invocation, not once per inner phase). Cross-universe switch triggers in `finally` block as before. Response latency is bounded by the slowest inner phase (typically `run_book` = minutes, not seconds). See §4.10 for the full acceptance rationale. Test (new, wrapped-path only): `_stop_event.set()` between two wrapper invocations → daemon exits at next iteration. Test (new, both paths): pause file halts the outer stream loop under both flag states.
 4. **Producer-registration singletons are not double-registered.** No duplicate producer instance in the Phase C registry after the wrapped graph is built. Test (new, both paths): after `_run_graph` setup, introspect the producer registry and assert `len({id(p) for p in registry}) == len(registry)` — i.e., count distinct producer function objects by `id()`, not by tag or display name (identical re-registrations share a tag but have different `id()`, which would hide duplicates the other way around; `id()` catches true double-registration).
@@ -135,7 +141,7 @@ Aim: ~24 new tests. If dev hits a test that's ambiguous about what "identical be
 2. **Short-term:** git revert of the `fantasy_author/__main__.py` flag-gate edit if the flag itself is not holding. Wrapper module + compiler extension stay in place — they're inert without the caller.
 3. **Full rollback:** revert the Phase D landing commit entirely. Reverts wrapper, compiler extension, seed YAML, tests. Flag stays defined but unreferenced — no harm.
 
-The SqliteSaver database format is unchanged by Phase D, so downgrade safety is automatic: a daemon running the old code reads a checkpoint written by the new code just fine (the checkpoint is the UniverseState payload, and UniverseState itself is unchanged).
+The SqliteSaver database format is unchanged by Phase D, so downgrade safety is automatic **under flag-off**: a daemon running the old code reads a flag-off checkpoint written by the new code just fine (the checkpoint is the UniverseState payload, and UniverseState itself is unchanged). **Under flag-on**, the checkpoint payload is different in shape — see §4.11 for the implication. A cross-flag downgrade on a checkpoint written under flag-on is not a supported path; the clean-resume story is "flip the flag off, restart, daemon rebuilds from current files + notes."
 
 **Do NOT:** schema-migrate anything, rewrite any existing checkpoint, touch `workflow/branches.py`'s `BranchDefinition` dataclass fields, or change any storage-layer shape. If dev finds they need any of those, the scope has drifted — raise it before implementing.
 
@@ -157,10 +163,11 @@ The SqliteSaver database format is unchanged by Phase D, so downgrade safety is 
 
 | File | Change | Size estimate |
 |------|--------|---------------|
-| `fantasy_author/branch_registrations.py` | NEW — registry + wrapper callable | ~60 lines |
+| `workflow/domain_registry.py` | NEW — engine-agnostic dict + `register_domain_callable` + `resolve_domain_callable` helpers. Knows nothing about fantasy. | ~40 lines |
+| `fantasy_author/branch_registrations.py` | NEW — module-level side-effect registration: imports `register_domain_callable` + the fantasy wrapper callable, calls register at import time | ~40 lines |
 | `fantasy_author/branches/universe_cycle.yaml` | NEW — single-node Branch seed | ~30 lines |
-| `workflow/graph_compiler.py` | EDIT `_build_node` signature (`domain_id` kwarg) + add opaque-node branch + pass `domain_id=branch.domain_id` at the single `_build_node` call site in `compile_branch` (~line 559) | ~45 lines added / 2 edited |
-| `fantasy_author/__main__.py` | EDIT `_run_graph` — flag gate on graph construction | ~20 lines changed |
+| `workflow/graph_compiler.py` | EDIT `_build_node` signature (`domain_id` kwarg) + add opaque-node branch via `resolve_domain_callable` + pass `domain_id=branch.domain_id` at the single `_build_node` call site in `compile_branch` (~line 559) | ~45 lines added / 2 edited |
+| `fantasy_author/__main__.py` | EDIT `_run_graph` — flag gate on graph construction + side-effect import of `fantasy_author.branch_registrations` | ~22 lines changed |
 | `tests/test_phase_d_unified_execution.py` | NEW — ~20 tests | ~400 lines |
 | `docs/exec-plans/daemon_task_economy_rollout.md` | EDIT — mark Phase D done when landed, note the revised option-(b) shape | ~10 lines |
 | `STATUS.md` | EDIT — delete Phase D row, add "Phase D landed; user-sim gate pending flag flip" concern | 2 lines |
@@ -178,7 +185,7 @@ No new subsystems, no new schemas, no new MCP tools. ~550 lines net, most of whi
 
 ### 4.9 Open design questions (non-blocking, flag up as they surface)
 
-1. **Where does the domain-trusted registry live — in `fantasy_author/branch_registrations.py` or in `workflow/` as a generic primitive?** Recommend: start domain-local. Promote to `workflow/` when a second domain arrives. Matches the engine-vs-domain discipline (PLAN.md: "Extract infrastructure first, prove topology second").
+1. **Registry location — resolved.** Engine-agnostic dict + helpers live in `workflow/domain_registry.py`; domain-local entries live in `fantasy_author/branch_registrations.py` via module-level side-effect registration. This preserves PLAN.md's engine/domain decoupling: `workflow/graph_compiler.py` imports `resolve_domain_callable` from `workflow/domain_registry.py`, never from any domain. See §4.1 #1 for the full pattern.
 2. **Should the wrapper callable emit per-node events into the Branch layer's `event_sink` so the Branch inspection surface sees "universe_cycle is running"?** Recommend: v1 emit a single `running` event at wrapper start and a single `completed` event at wrapper end. Richer per-phase event surfacing is option (a) territory — don't overreach here.
 3. **Does the seed YAML go under VCS, or is it generated at startup?** Recommend: VCS. It's a tiny static file; keeping it in-repo makes the "fantasy universe-cycle is a registered Branch" claim inspectable in the tree.
 
@@ -203,6 +210,29 @@ Reviewer flagged this on the first audit pass; confirming acceptance here so dev
 - If a future user complaint surfaces (e.g., "stop takes too long under flag-on during long book writes"), the fix is the stream-iterating wrapper. File it as a follow-up at that point; don't preemptively build it.
 
 This acceptance is scoped to v1. Option (a) from §3 (per-phase inspection) would supersede it — per-phase becomes per-node at the outer stream layer, and the regression resolves naturally.
+
+### 4.11 Checkpoint-state asymmetry under flag-on (accepted for v1)
+
+Surfaced by dev mid-implementation. Documenting the accepted resolution so future sessions don't re-litigate.
+
+**What's different.** Under flag-off, SqliteSaver checkpoints the full `UniverseState` TypedDict — ~20 fields including `workflow_instructions`, `quality_trace`, `health`, `cross_series_facts`, inner counters, and the transient work-target state. A mid-cycle crash restores the daemon to within one node of where it was. Under flag-on, the outer `StateGraph` checkpointer only sees the outer Branch's state_schema — the 6 minimal boundary fields (`universe_id`, `universe_path`, `premise_kernel`, `health`, `total_words`, `total_chapters`). The inner `build_universe_graph()` StateGraph, compiled freshly inside the opaque wrapper for each invocation, has its own ephemeral in-memory state that is discarded when the wrapper returns. A mid-cycle crash under flag-on restores boundary state only — `workflow_instructions.selected_target_id`, `quality_trace`, in-flight dispatch state, and any partial subgraph progress are gone.
+
+**Practical impact.** Clean-completion semantics are identical across flag states — the wrapper returns the counters that matter, the outer checkpoint stores them, next `_run_graph` resumes from those. Mid-cycle crash recovery diverges:
+- Flag-off mid-cycle crash: resume mid-node (within one `compiled.stream(...)` step of the failure point).
+- Flag-on mid-cycle crash: resume at the start of a universe cycle — work-target selection re-runs, dispatch re-decides, any partial scene/chapter/book in flight is restarted from its last disk-persisted state (scene files, notes, knowledge graph).
+
+**Why accept it for v1.** Three alternatives were considered and rejected:
+1. **(Chosen) Accept the regression.** Disk-persisted artifacts (scene files, notes.json, knowledge graph, work_targets) ARE the durable truth. The in-memory `UniverseState` reducer blob is transient metadata — losing it costs one re-dispatched cycle, not hours of work. The existing `_build_book_execution_seed` at `fantasy_author/graphs/universe.py:117-255` already re-reads from disk to seed each cycle, precisely so restarts are robust. The daemon is designed to treat disk as authoritative.
+2. **Inflate the outer state_schema to carry the full UniverseState.** Breaks the opacity that makes the wrap small and testable. Forces round-tripping the ~20 fields + custom reducers through `state_schema` JSON (R3 concern). Defeats the rationale for option (b).
+3. **Nest the inner StateGraph's compiled checkpointer under the outer SqliteSaver.** LangGraph doesn't cleanly support nested checkpointers with shared SqliteSaver thread_ids — doable with significant machinery, but reintroduces the `execute_branch_async` complexity from R1/R7 and multiplies the surface area of the wrap.
+
+**What dev owes.**
+- Test (new, flag-on): crash-simulation between wrapper invocations → assert boundary state (counters, universe_id) recovers correctly, disk-persisted scenes/notes/canon survive the crash and feed the next `_build_book_execution_seed`.
+- Test (new, flag-on, negative): do NOT assert mid-cycle `workflow_instructions.selected_target_id` survives a crash under flag-on. A test that does so pins a promise we're not making; explicitly note in §4.3 invariant 1 that checkpoint-resume parity applies to boundary state and disk artifacts, not to mid-cycle TypedDict reducer contents.
+- Document the asymmetry in the commit message.
+- Mention `_build_book_execution_seed` in the commit message as the reason the crash is recoverable — future sessions should understand why this works.
+
+**Follow-up pointer.** Option (a) resolves this too: per-phase inspection means the outer StateGraph has all the fantasy phases as first-class nodes, and the full UniverseState becomes the outer state_schema. Checkpoint asymmetry disappears when per-phase asymmetry does. Don't preemptively build the workaround.
 
 ## 5. Handoff
 
