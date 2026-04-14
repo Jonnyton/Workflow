@@ -1,88 +1,210 @@
 # Goal Pool Conventions
 
-Phase F public-facing reference. Who can post, where it lands, how subscribers see it, how cross-host visibility works.
+Public-facing reference for the cross-universe goal pool introduced in Phase F.
+Covers directory layout, YAML shape, inputs constraint, repo-root resolution,
+git push workflow, subscription management, and race semantics.
 
-## Directory layout
+---
+
+## Directory Layout
 
 ```
 <repo_root>/
   goal_pool/
-    <goal_slug>/
-      <branch_task_id>.yaml
-      <branch_task_id>.yaml
-      ...
-    <another_goal>/
-      ...
+    maintenance/
+      README.md          # Explains maintenance pool (ships with Phase F)
+      <task-id>.yaml     # Each file = one BranchTask post
+    research-paper/
+      <task-id>.yaml
+    fantasy-novel/
+      <task-id>.yaml
 ```
 
-One directory per Goal. `<goal_slug>` is lowercase-hyphenated (e.g. `research-paper`, `maintenance`, `fantasy-novel`). Posts are YAML files whose stem IS the `branch_task_id` — the producer enforces stem/ID consistency.
+`<repo_root>` is the git repo the Universe Server runs inside.
+Each directory under `goal_pool/` is a **Goal slug** (kebab-case). Slugs should
+match the `goal_id` in the Goals table where applicable.
 
-## Repo root resolution
+---
 
-`workflow.producers.goal_pool.repo_root_path(universe_path)` resolves in this order:
+## YAML Shape
 
-1. `WORKFLOW_REPO_ROOT` env var — explicit host control, wins over everything.
-2. Walk parents of `<universe_path>` looking for `.git`. Matches the "local-first, git-native" PLAN.md model.
-3. `RuntimeError` with actionable hint if neither resolves. The pool producer treats this as "pool not available, empty result"; the `post_to_goal_pool` MCP action returns `{status: rejected, error: repo_root_not_resolvable, hint: ...}`.
+Each post file is a YAML document:
 
-Fallbacks intentionally do NOT include "cwd" or "parent of universe" — the env var covers exotic layouts; git-detect covers clones; nothing else is reliable.
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `branch_task_id` | string | yes | Must match filename stem (without `.yaml`). |
+| `branch_def_id` | string | yes | Branch slug to execute, e.g. `fantasy_author/universe-cycle`. Must resolve at subscriber. |
+| `goal_id` | string | recommended | Should match containing directory slug. Directory wins on mismatch. |
+| `inputs` | flat dict | yes (can be `{}`) | Primitive values only — see [Inputs Constraint](#inputs-constraint). |
+| `priority_weight` | float | no | Default `0.0`. Only host actors may set > 0 (non-host clamped at post time). |
+| `posted_by` | string | no | Attribution. Stamped by `post_to_goal_pool` from `UNIVERSE_SERVER_USER`. |
 
-## Post YAML shape
+Example:
 
 ```yaml
-branch_task_id: bt_1712876543210_abc123    # required; must match filename stem
-branch_def_id: fantasy_author:universe_cycle_wrapper   # required; must resolve at subscriber
-goal_id: maintenance                       # optional; directory wins on mismatch
-inputs:                                    # required; flat dict of primitives
+branch_task_id: bt_1712876543210_abc123
+branch_def_id: fantasy_author/universe-cycle
+goal_id: maintenance
+inputs:
   active_series: my-series
   chapter_target: 5
-priority_weight: 0.0                       # optional; clamped to 0 for non-host posters
-posted_by: alice                           # optional attribution; stamped by server
+priority_weight: 0.0
+posted_by: host
 ```
 
-### Flat-dict invariant (hard rule)
+---
 
-`inputs` MUST be a flat dict with primitive values only: `str`, `int`, `float`, `bool`, `None`. The following are rejected at BOTH post and read:
+## Filename Rules
 
-- Nested dicts or lists as values (e.g. `inputs: {outer: {inner: x}}`)
-- Keys starting with `_` (e.g. `_universe_path`, `_db_path`)
-- Keys in `{_universe_path, _db_path, _kg_path, work_target_ref}`
+- Filename = `<branch_task_id>.yaml`.
+- Stems must be unique within a goal directory.
+- If `branch_task_id` in the YAML differs from the filename stem, the
+  **filename wins** (mismatch logged as a warning).
+- Use the `post_to_goal_pool` MCP action to generate IDs automatically.
+- Manual names: use `<slug>-<date>-<random>` or UUID4 to avoid collisions.
 
-Rationale: these keys would smuggle universe-specific state across the isolation boundary (R4). A flat-only invariant is trivially correct; recursive strip is error-prone.
+---
 
-If a poster needs structured inputs, serialize them into a single string field and let the downstream Branch parse it.
+## Inputs Constraint
 
-## Posting
+`inputs` must be a **flat dict** of primitives:
 
-### Via MCP (preferred)
+- Allowed value types: `str`, `int`, `float`, `bool`, `null`.
+- Nested dicts and nested lists are **rejected** at both post time and producer-read time.
+- Keys starting with `_` (e.g. `_universe_path`, `_db_path`) are rejected.
+- The key `work_target_ref` is rejected.
+
+**Rationale (R4):** Cross-universe isolation. A flat-only invariant is trivially
+correct; a recursive strip is error-prone and could smuggle path-references across
+the isolation boundary. Pool task `inputs` carry execution-intent scalars, not
+structured data.
+
+If a Branch needs structured inputs, serialize them into a single string field
+and parse inside the Branch.
+
+---
+
+## Repo-Root Resolution
+
+The pool directory lives at `<repo_root>/goal_pool/`. Resolution order:
+
+1. **`WORKFLOW_REPO_ROOT` env var** — explicit override. Takes precedence.
+2. **Git-detect upward** — walk parent directories from `<universe_path>` until
+   `.git/` is found. Matches the "local-first, git-native" PLAN.md model.
+3. **RuntimeError** — if neither resolves. Pool producer returns `[]` and logs
+   at INFO; `post_to_goal_pool` MCP action returns:
+   ```json
+   {
+     "status": "rejected",
+     "error": "repo_root_not_resolvable",
+     "hint": "Set WORKFLOW_REPO_ROOT or run the daemon from inside a git checkout."
+   }
+   ```
+
+**Pytest fixtures:** pin `WORKFLOW_REPO_ROOT` to a `tmp_path`. No fake `.git`
+scaffold required. See `tests/test_phase_f_goal_pool.py` for examples.
+
+---
+
+## Posting via MCP
 
 ```
-universe action=post_to_goal_pool
-  goal_id=maintenance
-  branch_def_id=fantasy_author:universe_cycle_wrapper
-  inputs_json={"active_series": "x"}
+tool: universe
+action: post_to_goal_pool
+goal_id: maintenance
+branch_def_id: fantasy_author/universe-cycle
+inputs_json: '{"active_series": "my-series", "chapter_target": 5}'
+priority_weight: 0.0   # optional; non-host posters have this clamped to 0
 ```
 
-Returns the absolute YAML path AND a `next_step` hint with the git commands needed for cross-host visibility.
+Response:
 
-### By hand
+```json
+{
+  "status": "posted",
+  "goal_id": "maintenance",
+  "branch_def_id": "fantasy_author/universe-cycle",
+  "path": "/path/to/goal_pool/maintenance/<task-id>.yaml",
+  "priority_weight": 0.0,
+  "next_step": "To make this post visible to cross-host subscribers, run: git add goal_pool/maintenance/<task-id>.yaml && git commit && git push"
+}
+```
 
-Drop the YAML into `<repo_root>/goal_pool/<goal>/<id>.yaml`. Post is live locally immediately; cross-host subscribers see it after `git push`.
+---
 
-## Subscribing
+## Git Push Workflow
+
+`post_to_goal_pool` writes the YAML locally. To make it visible to subscribers
+on other hosts:
+
+```bash
+git add goal_pool/<goal>/<task-id>.yaml
+git commit -m "<goal>: describe the task"
+git push
+```
+
+Subscribers on other hosts run `git fetch` or `git pull` to pick up new pool
+posts. The GoalPoolProducer reads local files only — no remote fetch. Hosts
+manage their own pull cadence.
+
+---
+
+## Subscription Management
+
+Daemons subscribe via the `universe` tool:
 
 ```
-universe action=subscribe_goal goal_id=research-paper
-universe action=unsubscribe_goal goal_id=research-paper
-universe action=list_subscriptions
+action: subscribe_goal    goal_id: maintenance
+action: unsubscribe_goal  goal_id: maintenance
+action: list_subscriptions
 ```
 
-Each universe maintains its own `<universe>/subscriptions.json`. Fresh installs subscribe to `maintenance` by default. The list_subscriptions response includes a `config_vs_subscriptions_drift` flag to catch "I subscribed but pool isn't enabled" UX confusion.
+`list_subscriptions` returns:
+- `goals` — current subscription list (sorted, deduped).
+- `pool_status_per_goal` — count of pending YAMLs per subscribed goal.
+- `config_vs_subscriptions_drift` — one of:
+  - `"ok"` — configuration and subscriptions consistent.
+  - `"pool_enabled_no_subs"` — `accept_goal_pool=true` in dispatcher config but
+    zero subscriptions. Add subscriptions or disable the flag.
+  - `"subs_but_pool_disabled"` — subscriptions exist but `accept_goal_pool=false`.
+    Daemon won't receive pool tasks. Set `accept_goal_pool: true` to activate.
 
-## Non-host priority clamp
+---
 
-Phase E invariant 9 extends to pool posts. Non-host posters have `priority_weight` clamped to 0 at submission. Negative values rejected for all actors.
+## Dispatcher Config
 
-## Double-execution (accepted v1)
+Enable pool acceptance in `<universe>/dispatcher_config.yaml`:
 
-Two subscribers racing on the same pool YAML enqueue it in both queues and may both execute (R13). Accepted as a correctness cost, not a bug, for v1. Phase G's bid market reshapes this with claim semantics.
+```yaml
+accept_goal_pool: true
+max_pool_tasks_per_cycle: 5      # cap pool tasks emitted per cycle (default 5)
+goal_affinity_coefficient: 1.0  # bumps goal_pool tier scoring
+```
+
+Also set the environment flag: `WORKFLOW_GOAL_POOL=on`.
+
+---
+
+## Fresh-Install Default
+
+Daemons subscribe to `maintenance` by default on first boot (when
+`subscriptions.json` doesn't exist). This turns idle capacity into useful
+background work automatically.
+
+To opt out:
+
+```
+action: unsubscribe_goal
+goal_id: maintenance
+```
+
+---
+
+## Race Semantics (v1)
+
+Multiple subscribers may pick the same pool YAML simultaneously. Phase F
+accepts double-execution as an acceptable risk for low-volume pools (R13).
+Pool tasks **should be idempotent**.
+
+Phase G will introduce advisory claim semantics for pools where double-execution
+is unacceptable.
