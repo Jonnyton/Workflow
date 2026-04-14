@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 from workflow.branch_tasks import BranchTask
+from workflow.graph_compiler import _BID_DANGEROUS_PATTERNS
 from workflow.node_bid import read_node_bids, validate_node_bid_inputs
 from workflow.producers.branch_task import register_branch_task_producer
 from workflow.producers.goal_pool import repo_root_path
@@ -40,19 +41,64 @@ def paid_market_enabled() -> bool:
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
+def _producer_sandbox_reject(
+    bid_node_def_id: str,
+    node_lookup_fn,
+) -> str:
+    """Producer-side layers 1+2 of the three-layer sandbox.
+
+    Returns an empty string on pass, or a short reason code on
+    rejection. Preflight §4.3 invariant 1 requires ALL THREE layers
+    at BOTH producer side (pre-pick rejection) AND executor side
+    (defense-in-depth). This is the producer side of layers 1 + 2.
+
+    Layer 1: node must resolve in the registry with ``approved=True``.
+    Layer 2: the resolved node's ``source_code`` must NOT contain
+    any pattern in ``_BID_DANGEROUS_PATTERNS`` (wider than the
+    wrapper-node list used by Phase D).
+
+    ``node_lookup_fn`` is ``None`` or a callable
+    ``(node_def_id) -> NodeDefinition | None``. If ``None``, the
+    producer relies on the executor side to enforce these layers —
+    acceptable as a fallback when no registry is wired, but the
+    preferred path is to pass a real lookup function so adversarial
+    bids never enter the queue.
+    """
+    if node_lookup_fn is None:
+        return ""
+    try:
+        node = node_lookup_fn(bid_node_def_id)
+    except Exception:  # noqa: BLE001
+        return "node_lookup_error"
+    if node is None:
+        return "unknown_node_def_id"
+    if not getattr(node, "approved", False):
+        return "unapproved_node"
+    source = getattr(node, "source_code", "") or ""
+    for pattern in _BID_DANGEROUS_PATTERNS:
+        if pattern in source:
+            return f"dangerous_pattern:{pattern}"
+    return ""
+
+
 class NodeBidProducer:
     """BranchTaskProducer reading ``<repo_root>/bids/*.yaml``."""
 
     name = NODE_BID_PRODUCER_NAME
     origin = NODE_BID_ORIGIN
 
-    def __init__(self) -> None:
+    def __init__(self, node_lookup_fn=None) -> None:
         # mtime cache on the bids/ directory: if unchanged, reuse prior
         # result without re-parsing every YAML.
         self._mtime: float | None = None
         self._cache: list[BranchTask] = []
         self._cache_repo_root: Path | None = None
         self._cache_served_llm: str = ""
+        # node_lookup_fn supplies producer-side layers 1+2. None is
+        # acceptable for unit tests + fresh installs without a
+        # registry wired yet; executor-side checks still catch
+        # adversarial bids.
+        self._node_lookup_fn = node_lookup_fn
 
     def produce(
         self,
@@ -110,6 +156,19 @@ class NodeBidProducer:
                 logger.warning(
                     "node_bid: %s missing node_def_id; skipping",
                     bid.node_bid_id,
+                )
+                continue
+
+            # Preflight §4.3 invariant 1 layers 1+2, producer side:
+            # unapproved node and dangerous-source-pattern bids
+            # never enter the queue when a registry lookup is wired.
+            reject_reason = _producer_sandbox_reject(
+                bid.node_def_id, self._node_lookup_fn,
+            )
+            if reject_reason:
+                logger.warning(
+                    "node_bid: %s sandbox-rejected at producer: %s",
+                    bid.node_bid_id, reject_reason,
                 )
                 continue
 

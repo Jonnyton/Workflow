@@ -331,11 +331,15 @@ def _try_execute_claimed_node_bid(
         from workflow.bid_ledger import append_ledger_entry
         from workflow.executors.node_bid import execute_node_bid
         from workflow.node_bid import (
-            NodeBid,
+            claim_node_bid,
             read_node_bid,
             update_node_bid_status,
         )
         from workflow.producers.goal_pool import repo_root_path
+        from workflow.settlements import (
+            SettlementExistsError,
+            record_settlement_event,
+        )
 
         inputs = dict(claimed_task.inputs or {})
         node_bid_id = str(inputs.get("__node_bid_id", ""))
@@ -348,23 +352,25 @@ def _try_execute_claimed_node_bid(
         except RuntimeError as exc:
             return False, f"repo_root_not_resolvable: {exc}"
 
-        bid = read_node_bid(repo_root, node_bid_id)
-        if bid is None:
-            # Bid YAML was deleted between producer emit and claim.
-            # Synthesize a minimal record from the BranchTask.
-            bid = NodeBid(
-                node_bid_id=node_bid_id,
-                node_def_id=node_def_id,
-                inputs={
-                    k: v for k, v in inputs.items()
-                    if not str(k).startswith("__")
-                },
-                bid=float(getattr(claimed_task, "bid", 0.0) or 0.0),
-                required_llm_type=str(
-                    getattr(claimed_task, "required_llm_type", "") or "",
-                ),
-                status="open",
-            )
+        # Preflight §4.1 #1: atomic claim via git-rename + push BEFORE
+        # execution. claim_node_bid returns None on race loss; we
+        # fall through to "claim_race_lost" so the BranchTask is
+        # marked failed and the next cycle proceeds.
+        claimed_bid = claim_node_bid(repo_root, node_bid_id, daemon_id)
+        if claimed_bid is None:
+            # Bid YAML may have been deleted between producer emit
+            # and claim attempt (or race was lost, or status != open).
+            # Attempt a read-only fallback so we still execute when
+            # running local-only tests that pre-populated the YAML
+            # outside the claim flow. When the YAML is present and
+            # still marked "open" (e.g. test harness that bypasses
+            # claim), synthesize a NodeBid from it.
+            existing = read_node_bid(repo_root, node_bid_id)
+            if existing is None or existing.status != "open":
+                return False, "claim_race_lost"
+            bid = existing
+        else:
+            bid = claimed_bid
 
         result = execute_node_bid(
             bid,
@@ -373,33 +379,25 @@ def _try_execute_claimed_node_bid(
         )
         success = result.status == "succeeded"
 
-        # Settlement record (always written — succeeded or failed).
+        # Preflight §4.1 #5b + invariant 8: immutable settlement
+        # record via workflow/settlements.py. `outcome_status` is the
+        # authoritative field ("succeeded" | "failed"); v1 records
+        # refuse overwrites so the audit trail stays byte-stable
+        # across token-launch migrations.
         from datetime import datetime, timezone
         completed_at = datetime.now(timezone.utc).isoformat()
         try:
-            import yaml
-            settlements_dir = repo_root / "settlements"
-            settlements_dir.mkdir(parents=True, exist_ok=True)
-            settlement_path = (
-                settlements_dir
-                / f"{node_bid_id}__{daemon_id}.yaml"
+            record_settlement_event(
+                repo_root, bid, result, daemon_id,
             )
-            settlement_payload = {
-                "schema_version": "1",
-                "bid_id": node_bid_id,
-                "daemon_id": daemon_id,
-                "bid_amount": float(bid.bid or 0.0),
-                "evidence_url": result.evidence_url,
-                "completed_at": completed_at,
-                "success": success,
-                "settled": False,
-            }
-            settlement_path.write_text(
-                yaml.safe_dump(
-                    settlement_payload,
-                    sort_keys=False, default_flow_style=False,
-                ),
-                encoding="utf-8",
+        except SettlementExistsError:
+            # Already recorded — idempotent finalize path (e.g.
+            # restart-recovery claiming a running bid). Preserve
+            # the original record.
+            logger.info(
+                "node_bid: settlement already exists for %s__%s; "
+                "keeping original (immutable v1)",
+                node_bid_id, daemon_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("node_bid: settlement write failed")

@@ -109,6 +109,20 @@ _DANGEROUS_PATTERNS = (
     "os.system", "subprocess", "eval(", "exec(", "__import__",
 )
 
+# Phase G preflight §4.1 #5d: stricter list for NodeBid executor.
+# Wrapper nodes (Phase D) trust the narrower list — they're
+# domain-trusted-callables registered by the host at import time.
+# Bid-referenced nodes are adversarially-accessible (anyone can
+# post a bid), so the sandbox catches a wider surface. Network-call
+# patterns (urllib, requests, socket, http.client) are intentionally
+# EXCLUDED — approved nodes may legitimately call LLM APIs.
+# Single source of truth: both producer-side + executor-side sandbox
+# layers (invariant 1) import from here so the bid-market posture
+# can't drift from the wrapper's.
+_BID_DANGEROUS_PATTERNS = _DANGEROUS_PATTERNS + (
+    "compile(", "open(", "importlib", "pickle", "marshal",
+)
+
 
 def _is_cancel_exception(exc: BaseException) -> bool:
     """Duck-type check for the runner's cancel exception.

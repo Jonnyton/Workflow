@@ -16,6 +16,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -183,38 +185,160 @@ def read_node_bid(repo_root: Path, node_bid_id: str) -> NodeBid | None:
         return None
 
 
+def _git_has_remote(repo_root: Path) -> bool:
+    """True if the repo has at least one configured remote.
+
+    Local-only installs (no `git remote`) skip the pull/push steps
+    of the claim dance — single-daemon, no race.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote"],
+            cwd=str(repo_root),
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        return bool(result.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _git_current_branch(repo_root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo_root),
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        return result.stdout.strip() or "main"
+    except (OSError, subprocess.SubprocessError):
+        return "main"
+
+
+def _revert_claim(
+    repo_root: Path, branch: str, node_bid_id: str, daemon_id: str,
+) -> None:
+    """Clean up after a failed claim-push.
+
+    Hard-resets the working tree to ``origin/<branch>`` and deletes
+    any bid_outputs directory the executor may have populated before
+    the push-failure was detected (preflight §4.1 #1 step 5 + the
+    reviewer-polish cleanup requirement).
+    """
+    if branch:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                ["git", "reset", "--hard", f"origin/{branch}"],
+                cwd=str(repo_root),
+                check=False, timeout=10, capture_output=True,
+            )
+    outputs_dir = Path(repo_root) / "bid_outputs" / node_bid_id
+    if outputs_dir.exists():
+        with contextlib.suppress(OSError):
+            shutil.rmtree(outputs_dir)
+    logger.info(
+        "claim_node_bid: reverted claim for %s (daemon %s)",
+        node_bid_id, daemon_id,
+    )
+
+
 def claim_node_bid(
     repo_root: Path, node_bid_id: str, daemon_id: str,
-) -> bool:
-    """Advisory first-wins claim. Returns True if we became the
-    claim-holder, False if the bid was already claimed / terminal /
-    missing.
+) -> "NodeBid | None":
+    """Atomic claim via git-rename + push (preflight §4.1 #1).
 
-    Concurrency note: the accompanying BranchTask claim (via
-    ``claim_task``) is the atomic serialization point for the
-    dispatcher. This advisory YAML update is for cross-host visibility
-    only. See preflight R13 (accepted double-execution for v1).
+    Sequence:
+      1. `git pull --rebase` (remote-only).
+      2. File-lock; read YAML; assert status == "open".
+      3. Rename `bids/<id>.yaml` → `bids/<id>.yaml.claimed_by_<daemon>`
+         with status updated to `claimed:<daemon_id>`.
+      4. `git add + commit + push` (remote-only).
+      5. Push-fail → `git reset --hard origin/<branch>` + delete
+         `bid_outputs/<id>/`; return None.
+      6. Push succeeds → return the claimed NodeBid.
+
+    Returns ``NodeBid | None``. ``None`` means: bid missing, already
+    claimed, terminal state, or remote race lost. Never raises.
     """
     import yaml
 
+    p = bid_path(repo_root, node_bid_id)
+    has_remote = _git_has_remote(repo_root)
+    branch = _git_current_branch(repo_root) if has_remote else ""
+
+    # Step 1: pull (remote-only).
+    if has_remote:
+        try:
+            subprocess.run(
+                ["git", "pull", "--rebase"],
+                cwd=str(repo_root),
+                check=False, timeout=30, capture_output=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning("claim_node_bid: git pull failed: %s", exc)
+
+    # Step 2 + 3: file-lock, read, rename.
+    claimed_path = p.with_suffix(f"{p.suffix}.claimed_by_{daemon_id}")
+    data: dict = {}
     with _bid_file_lock(repo_root, node_bid_id):
-        p = bid_path(repo_root, node_bid_id)
         if not p.exists():
-            return False
+            return None
         try:
             data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         except Exception:  # noqa: BLE001
-            return False
-        if not isinstance(data, dict):
-            return False
-        if data.get("status") != "open":
-            return False
+            return None
+        if not isinstance(data, dict) or data.get("status") != "open":
+            return None
+        data["node_bid_id"] = p.stem
         data["status"] = f"claimed:{daemon_id}"
-        p.write_text(
-            yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
-            encoding="utf-8",
-        )
-        return True
+        try:
+            claimed_path.write_text(
+                yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
+                encoding="utf-8",
+            )
+            os.remove(p)
+        except OSError:
+            with contextlib.suppress(OSError):
+                if claimed_path.exists():
+                    os.remove(claimed_path)
+            return None
+
+    # Step 4 + 5: commit + push + revert-on-fail.
+    if has_remote:
+        try:
+            subprocess.run(
+                ["git", "add", str(p), str(claimed_path)],
+                cwd=str(repo_root),
+                check=False, timeout=10, capture_output=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m",
+                 f"bid: {node_bid_id} claimed by {daemon_id}"],
+                cwd=str(repo_root),
+                check=False, timeout=10, capture_output=True,
+            )
+            push = subprocess.run(
+                ["git", "push", "origin", branch],
+                cwd=str(repo_root),
+                check=False, timeout=30, capture_output=True, text=True,
+            )
+            if push.returncode != 0:
+                logger.warning(
+                    "claim_node_bid: push failed (%s); reverting",
+                    (push.stderr or "").strip()[:200],
+                )
+                _revert_claim(repo_root, branch, node_bid_id, daemon_id)
+                return None
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning(
+                "claim_node_bid: git op raised (%s); reverting", exc,
+            )
+            _revert_claim(repo_root, branch, node_bid_id, daemon_id)
+            return None
+
+    try:
+        return NodeBid.from_dict(data)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def update_node_bid_status(

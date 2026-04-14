@@ -219,15 +219,21 @@ def test_validate_rejects_list_values():
 
 
 def test_claim_node_bid_first_wins(repo_root):
+    """Phase G.1: ``claim_node_bid`` returns ``NodeBid | None`` per
+    preflight §4.1 #1, not ``bool``. First claim renames the YAML
+    to the ``.claimed_by_<daemon>`` suffix; subsequent claims find
+    no open bid → return None.
+    """
     _write_bid_yaml(repo_root, "nb_claim")
-    assert claim_node_bid(repo_root, "nb_claim", "daemon-A") is True
-    assert claim_node_bid(repo_root, "nb_claim", "daemon-B") is False
-    bid = read_node_bid(repo_root, "nb_claim")
-    assert bid.status == "claimed:daemon-A"
+    first = claim_node_bid(repo_root, "nb_claim", "daemon-A")
+    assert first is not None
+    assert first.status == "claimed:daemon-A"
+    second = claim_node_bid(repo_root, "nb_claim", "daemon-B")
+    assert second is None
 
 
-def test_claim_missing_bid_returns_false(repo_root):
-    assert claim_node_bid(repo_root, "nb_missing", "daemon-A") is False
+def test_claim_missing_bid_returns_none(repo_root):
+    assert claim_node_bid(repo_root, "nb_missing", "daemon-A") is None
 
 
 def test_update_node_bid_status(repo_root):
@@ -726,3 +732,282 @@ def test_new_node_bid_id_unique():
 
 def test_bid_path_shape(tmp_path):
     assert bid_path(tmp_path, "nb_x") == tmp_path / "bids" / "nb_x.yaml"
+
+
+# Phase G.1 additions — shared fixtures.
+_VALID_SOURCE = "def run(state):\n    return {'ok': True}\n"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Phase G.1 — settlement records (workflow/settlements.py)
+# ───────────────────────────────────────────────────────────────────────
+
+
+def test_settlement_emitted_on_succeeded_bid(repo_root):
+    from workflow.executors.node_bid import NodeBidResult
+    from workflow.settlements import (
+        SCHEMA_VERSION,
+        record_settlement_event,
+        settlements_dir,
+    )
+
+    bid = NodeBid(
+        node_bid_id="nb_ok", node_def_id="n/x",
+        submitted_by="alice", bid=5.0,
+    )
+    result = NodeBidResult(
+        node_bid_id="nb_ok", status="succeeded",
+        evidence_url="file:///tmp/e",
+    )
+    path = record_settlement_event(repo_root, bid, result, "daemon-1")
+    assert path.parent == settlements_dir(repo_root)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["schema_version"] == SCHEMA_VERSION
+    assert data["outcome_status"] == "succeeded"
+    assert data["settled"] is False
+    assert data["bid_amount"] == 5.0
+    assert data["requester_id"] == "alice"
+    # Preflight §4.1 #5b: v1 schema uses outcome_status, NOT success.
+    assert "success" not in data
+
+
+def test_settlement_emitted_on_failed_bid(repo_root):
+    from workflow.executors.node_bid import NodeBidResult
+    from workflow.settlements import record_settlement_event
+
+    bid = NodeBid(node_bid_id="nb_fail", node_def_id="n/x")
+    result = NodeBidResult(
+        node_bid_id="nb_fail", status="failed",
+        evidence_url="", error="boom",
+    )
+    path = record_settlement_event(repo_root, bid, result, "daemon-2")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["outcome_status"] == "failed"
+    assert data["evidence_url"] == ""
+    assert data["settled"] is False
+
+
+def test_settlement_refuses_overwrite(repo_root):
+    """Preflight §4.1 #5b: v1 records are IMMUTABLE. A second call
+    with the same (bid_id, daemon_id) raises SettlementExistsError.
+    """
+    from workflow.executors.node_bid import NodeBidResult
+    from workflow.settlements import (
+        SettlementExistsError,
+        record_settlement_event,
+    )
+
+    bid = NodeBid(node_bid_id="nb_dup", node_def_id="n/x")
+    result = NodeBidResult(
+        node_bid_id="nb_dup", status="succeeded",
+        evidence_url="file:///a",
+    )
+    record_settlement_event(repo_root, bid, result, "daemon-d")
+    with pytest.raises(SettlementExistsError):
+        record_settlement_event(repo_root, bid, result, "daemon-d")
+
+
+def test_settlement_schema_version_locked():
+    from workflow.settlements import SCHEMA_VERSION
+    assert SCHEMA_VERSION == "1"
+
+
+def test_settlement_rejects_invalid_outcome_status(repo_root):
+    from workflow.executors.node_bid import NodeBidResult
+    from workflow.settlements import record_settlement_event
+
+    bid = NodeBid(node_bid_id="nb_bad_outcome", node_def_id="n/x")
+    # A result with status="running" shouldn't be able to settle.
+    result = NodeBidResult(
+        node_bid_id="nb_bad_outcome", status="running",
+    )
+    with pytest.raises(ValueError, match="outcome_status"):
+        record_settlement_event(repo_root, bid, result, "d")
+
+
+def test_settlement_path_daemon_id_sanitized(tmp_path):
+    from workflow.settlements import settlement_path
+    # daemon_id with slashes must not break the filename.
+    path = settlement_path(tmp_path, "nb_1", "daemon/with/slashes")
+    # Only the daemon-id suffix part is sanitized; the path itself
+    # includes the directory separator on disk.
+    assert "/" not in path.name
+    assert path.name == "nb_1__daemon_with_slashes.yaml"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Phase G.1 — claim_node_bid git-rename + push-fail revert (preflight §4.1 #1)
+# ───────────────────────────────────────────────────────────────────────
+
+
+def _init_git(repo_root: Path) -> None:
+    import subprocess
+    for args in (
+        ["git", "init"],
+        ["git", "config", "user.email", "t@t"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(args, cwd=str(repo_root), check=False,
+                       capture_output=True)
+
+
+def test_claim_local_only_renames_yaml(repo_root):
+    """Local-only install (no remote): file renames to .claimed_by
+    suffix; original YAML gone; returned NodeBid has claimed status."""
+    from workflow.node_bid import bids_dir
+    _init_git(repo_root)
+    _write_bid_yaml(repo_root, "nb_rename")
+    claimed = claim_node_bid(repo_root, "nb_rename", "daemon-local")
+    assert claimed is not None
+    assert claimed.status == "claimed:daemon-local"
+    assert not bid_path(repo_root, "nb_rename").exists()
+    suffix_found = any(
+        p.name.startswith("nb_rename.yaml.claimed_by_")
+        for p in bids_dir(repo_root).iterdir()
+    )
+    assert suffix_found
+
+
+def test_claim_revert_on_push_failure(tmp_path, monkeypatch):
+    """Preflight §4.1 #1 step 5: push-fail triggers hard-reset AND
+    bid_outputs/<id>/ cleanup.
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "bids").mkdir()
+    monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
+    _init_git(repo)
+    _write_bid_yaml(repo, "nb_push_fail")
+
+    # Pre-populate bid_outputs to assert cleanup fires on revert.
+    outputs_dir = repo / "bid_outputs" / "nb_push_fail"
+    outputs_dir.mkdir(parents=True)
+    (outputs_dir / "leftover.json").write_text("{}", encoding="utf-8")
+
+    import workflow.node_bid as nb_mod
+    monkeypatch.setattr(nb_mod, "_git_has_remote", lambda _root: True)
+    monkeypatch.setattr(nb_mod, "_git_current_branch", lambda _root: "main")
+
+    real_run = subprocess.run
+
+    def fake_run(args, **kwargs):
+        if len(args) >= 2 and args[0] == "git" and args[1] == "push":
+            class R:
+                returncode = 1
+                stdout = ""
+                stderr = "non-fast-forward"
+            return R()
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(nb_mod.subprocess, "run", fake_run)
+
+    claimed = claim_node_bid(repo, "nb_push_fail", "daemon-revert")
+    assert claimed is None
+    # bid_outputs/<id>/ cleaned on revert.
+    assert not outputs_dir.exists()
+
+
+def test_claim_returns_none_when_already_claimed(repo_root):
+    """Bid with non-open status → claim returns None without rename."""
+    _init_git(repo_root)
+    _write_bid_yaml(
+        repo_root, "nb_pre_claimed", status="claimed:other",
+    )
+    result = claim_node_bid(repo_root, "nb_pre_claimed", "daemon-self")
+    assert result is None
+    # Original YAML untouched (status still claimed:other).
+    from workflow.node_bid import read_node_bid
+    bid = read_node_bid(repo_root, "nb_pre_claimed")
+    assert bid is not None
+    assert bid.status == "claimed:other"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Phase G.1 — producer-side sandbox (invariant 1 both-boundaries)
+# ───────────────────────────────────────────────────────────────────────
+
+
+def test_producer_rejects_unapproved_node(repo_root):
+    """Layer 1 at the producer boundary: unapproved node skipped
+    before BranchTask emission.
+    """
+    from workflow.producers.node_bid import NodeBidProducer
+
+    _write_bid_yaml(repo_root, "nb_unapproved")
+
+    class _UnapprovedNode:
+        approved = False
+        source_code = _VALID_SOURCE
+
+    prod = NodeBidProducer(
+        node_lookup_fn=lambda _slug: _UnapprovedNode(),
+    )
+    out = prod.produce(
+        repo_root / "uni", subscribed_goals=[],
+    )
+    assert out == []
+
+
+def test_producer_rejects_dangerous_source_pattern(repo_root):
+    """Layer 2 at the producer boundary: dangerous source pattern
+    skipped before BranchTask emission.
+    """
+    from workflow.producers.node_bid import NodeBidProducer
+
+    _write_bid_yaml(repo_root, "nb_dangerous_src")
+
+    class _EvilApprovedNode:
+        approved = True
+        source_code = "import pickle\ndef run(s): return {}\n"
+
+    prod = NodeBidProducer(
+        node_lookup_fn=lambda _slug: _EvilApprovedNode(),
+    )
+    out = prod.produce(
+        repo_root / "uni", subscribed_goals=[],
+    )
+    assert out == []
+
+
+def test_producer_accepts_approved_clean_node(repo_root):
+    """Happy path: layer 1+2 pass → bid enters the queue."""
+    from workflow.producers.node_bid import NodeBidProducer
+
+    _write_bid_yaml(repo_root, "nb_clean")
+
+    class _CleanNode:
+        approved = True
+        source_code = _VALID_SOURCE
+
+    prod = NodeBidProducer(
+        node_lookup_fn=lambda _slug: _CleanNode(),
+    )
+    out = prod.produce(
+        repo_root / "uni", subscribed_goals=[],
+    )
+    assert len(out) == 1
+
+
+def test_bid_dangerous_patterns_strict_superset_of_wrapper():
+    """Preflight §4.1 #5d + invariant 1: the bid list is a strict
+    superset of the wrapper list, and both live at a single source
+    of truth in workflow.graph_compiler.
+    """
+    from workflow.graph_compiler import (
+        _BID_DANGEROUS_PATTERNS,
+        _DANGEROUS_PATTERNS,
+    )
+    assert set(_BID_DANGEROUS_PATTERNS) > set(_DANGEROUS_PATTERNS)
+    for added in ("compile(", "open(", "importlib", "pickle", "marshal"):
+        assert added in _BID_DANGEROUS_PATTERNS
+
+
+def test_bid_dangerous_patterns_excludes_network_patterns():
+    """Network-call patterns intentionally NOT in the bid list —
+    approved nodes may legitimately call LLM APIs via urllib/requests.
+    """
+    from workflow.graph_compiler import _BID_DANGEROUS_PATTERNS
+    for network in ("urllib", "requests", "socket", "http.client"):
+        assert network not in _BID_DANGEROUS_PATTERNS

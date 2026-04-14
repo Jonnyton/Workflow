@@ -32,12 +32,12 @@ from workflow.node_bid import NodeBid
 logger = logging.getLogger(__name__)
 
 
-# Union of graph_compiler._DANGEROUS_PATTERNS + extra patterns that
-# are OK in a fuller sandbox but NOT here where we run against raw
-# user inputs with no universe state guard.
-_DANGEROUS_PATTERNS = (
-    "os.system", "subprocess", "eval(", "exec(", "__import__",
-    "compile", "open(", "importlib", "pickle", "marshal",
+# Preflight §4.1 #5d single source of truth: the stricter bid-market
+# pattern list lives at ``workflow.graph_compiler._BID_DANGEROUS_PATTERNS``.
+# Both the producer and the executor re-validate against it (invariant 1
+# requires both boundaries).
+from workflow.graph_compiler import (  # noqa: E402
+    _BID_DANGEROUS_PATTERNS as _DANGEROUS_PATTERNS,
 )
 
 
