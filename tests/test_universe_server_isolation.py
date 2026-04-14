@@ -96,11 +96,6 @@ class TestUniverseIdInResponses:
         out = json.loads(us._action_get_activity(universe_id="alpha"))
         assert out["universe_id"] == "alpha"
 
-    def test_list_branches_default_includes_universe_id(self, universe_base):
-        _make_universe(universe_base, "alpha")
-        out = json.loads(us._action_list_branches(universe_id="alpha"))
-        assert out["universe_id"] == "alpha"
-
     def test_get_ledger_empty_includes_universe_id(self, universe_base):
         _make_universe(universe_base, "alpha")
         out = json.loads(us._action_get_ledger(universe_id="alpha"))

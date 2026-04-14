@@ -810,7 +810,7 @@ def universe(
 
     Args:
         action: One of — reads: list, inspect, read_output, query_world,
-            get_activity, list_branches, get_ledger, read_premise,
+            get_activity, get_ledger, read_premise,
             list_canon, read_canon; writes: submit_request,
             give_direction, set_premise, add_canon, control_daemon,
             switch_universe, create_universe.
@@ -839,7 +839,6 @@ def universe(
         "read_output": _action_read_output,
         "query_world": _action_query_world,
         "get_activity": _action_get_activity,
-        "list_branches": _action_list_branches,
         "get_ledger": _action_get_ledger,
         "submit_request": _action_submit_request,
         "give_direction": _action_give_direction,
@@ -1243,11 +1242,6 @@ def _action_inspect_universe(universe_id: str = "", **_kwargs: Any) -> str:
     if activity:
         lines = activity.strip().splitlines()
         result["recent_activity"] = lines[-10:]
-
-    # Branches
-    branches = _read_json(udir / "branches.json")
-    if branches:
-        result["branches"] = branches
 
     # Pending requests
     requests = _read_json(udir / "requests.json")
@@ -1864,22 +1858,6 @@ def _action_get_activity(
         "count": len(tail),
         "total": len(all_lines),
     })
-
-
-def _action_list_branches(universe_id: str = "", **_kwargs: Any) -> str:
-    uid = universe_id or _default_universe()
-    udir = _universe_dir(uid)
-
-    branches_path = udir / "branches.json"
-    data = _read_json(branches_path)
-    if not data:
-        return json.dumps({
-            "universe_id": uid,
-            "branches": [{"id": "main", "name": "main", "status": "active"}],
-            "note": "Default branch only.",
-        })
-
-    return json.dumps({"universe_id": uid, "branches": data})
 
 
 def _action_get_ledger(universe_id: str = "", limit: int = 50, **_kwargs: Any) -> str:

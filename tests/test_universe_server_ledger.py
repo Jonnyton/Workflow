@@ -46,7 +46,6 @@ def _call(action: str, **kwargs) -> dict:
         "read_output": us._action_read_output,
         "query_world": us._action_query_world,
         "get_activity": us._action_get_activity,
-        "list_branches": us._action_list_branches,
         "get_ledger": us._action_get_ledger,
         "submit_request": us._action_submit_request,
         "give_direction": us._action_give_direction,
@@ -245,7 +244,6 @@ def test_read_actions_do_not_touch_ledger(universe: str) -> None:
     _call("inspect")
     _call("read_premise")
     _call("list_canon")
-    _call("list_branches")
     _call("query_world")
     _call("get_activity")
     _call("get_ledger")

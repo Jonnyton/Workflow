@@ -2216,7 +2216,9 @@ def list_branches(
 
     try:
         base = _base()
-        branches = author_server.list_branches(base, universe_id=universe_id)
+        branches = author_server.list_universe_forks(
+            base, universe_id=universe_id,
+        )
         return {"branches": branches}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")

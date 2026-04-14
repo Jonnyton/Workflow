@@ -15,6 +15,11 @@ CRITICAL: When you receive a task, START IMMEDIATELY. Read the code, implement, 
 
 Read AGENTS.md for hard rules and design principles. Before changing a module, read its PLAN.md section — ground yourself on the goal, principle, and assumptions. If the task approach conflicts with the module's principle, do not implement the conflicting approach — add the conflict to STATUS.md Concerns and work on something else or propose an alternative. Read the code before changing it. Run pytest and ruff before you're done. Every change gets tests. Match existing patterns. Graceful fallbacks — nodes never crash.
 
+**Test-discipline rules (hard-earned 2026-04-14):**
+- When you touch a test file, run the FULL file with pytest (no `-k`, no class selector) and report the full-file pass/fail count in your completion message. "Broader sweep passed" summaries hide sibling failures and will be rejected.
+- When you DELETE a public-ish function (even `_action_*` internals), run the WHOLE test suite (`pytest tests/`) before claiming green. Deletion breaks callers you didn't know existed. This has bit Task D and Phase A.
+- When tests assert `== N` on a value you're changing the contract of, grep for other tests asserting the same symbol with the same pattern BEFORE committing — sibling tests often encode the same old contract in different files.
+
 When assigned a bug/debug task: reproduce first, form hypotheses, gather evidence, fix the root cause not the symptom. Common patterns: state shape mismatches between nodes and TypedDicts, async/sync bridge issues, missing graceful fallbacks, SQLite locking, `_FORCE_MOCK = True` leaking from test config.
 
 A feature is NOT done until it works end-to-end. Wiring infrastructure without populating data is not done. If a feature needs 3 steps and you finish 2, create a task for step 3 immediately.

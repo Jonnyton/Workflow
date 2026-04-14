@@ -28,7 +28,7 @@ Four primitives exist in the code. They are each real and each load-bearing, but
 The word "branch" refers to three disjoint concepts in this repo:
 
 1. **`BranchDefinition`** — a portable workflow topology (above). `branches/<slug>.yaml`.
-2. **Git-style per-universe fork branches** — SQL table `branches` in the author-server DB (`workflow/author_server.py:195` table schema, `:829` `ensure_default_branch`, `:900` `list_branches`). Every universe gets a `free-roam` branch auto-created; `branch_heads` points to a snapshot. Intended for future universe-internal variant history. Referenced by the `universe` tool's `list_branches` action (`workflow/universe_server.py:1869`), which additionally reads `output/<uid>/branches.json` (a stub file nothing currently writes).
+2. **Git-style per-universe fork branches** — SQL table `branches` in the author-server DB (`workflow/author_server.py:195` table schema, `:829` `ensure_default_branch`, `:900` `list_universe_forks`). Every universe gets a `free-roam` branch auto-created; `branch_heads` points to a snapshot. Intended for future universe-internal variant history. The former `universe action=list_branches` MCP action + `output/<uid>/branches.json` stub were killed in Phase A (2026-04-14) — the `list_branches` name now belongs exclusively to `extensions` (BranchDefinition catalog).
 3. **LangGraph conditional edges** — the internal graph-library term for routing. Not user-visible.
 
 `#1` and `#2` share the name and nothing else. `#2` is universe-scoped SQL state; `#1` is a repo-global YAML file. `list_branches` over MCP returns `#2` (or the default stub); `run_branch` over MCP executes `#1`. The name collision is an active UX hazard.

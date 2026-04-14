@@ -897,7 +897,18 @@ def create_branch(
     return get_branch(base_path, branch_id=branch_id)
 
 
-def list_branches(base_path: str | Path, *, universe_id: str) -> list[dict[str, Any]]:
+def list_universe_forks(
+    base_path: str | Path, *, universe_id: str,
+) -> list[dict[str, Any]]:
+    """List all git-style forks of a universe (the `branches` SQL table).
+
+    Distinct from `list_branch_definitions` — BranchDefinition is the
+    community-workflow concept; a universe "branch" here is a snapshot
+    lineage with `branch_heads` + `snapshot_id`. Phase A rename
+    (2026-04-14) disambiguated the two — the old name `list_branches`
+    collided with `_ext_branch_list` / `extensions action=list_branches`
+    which operate on BranchDefinitions.
+    """
     with _connect(base_path) as conn:
         rows = conn.execute(
             """
