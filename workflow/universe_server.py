@@ -1361,11 +1361,29 @@ def _action_submit_request(
     except OSError as exc:
         return json.dumps({"error": f"Failed to write request: {exc}"})
 
+    pending_count = sum(
+        1 for r in existing
+        if isinstance(r, dict) and r.get("status") == "pending"
+    )
+    ahead = max(0, pending_count - 1)
+    if ahead == 0:
+        position_note = "yours is next in the author's queue"
+    elif ahead == 1:
+        position_note = "1 other request is ahead of yours"
+    else:
+        position_note = f"{ahead} other requests are ahead of yours"
+
     return json.dumps({
         "universe_id": uid,
         "request_id": request_id,
         "status": "pending",
-        "note": "Request submitted. The Author will consider it at the next review gate.",
+        "queue_position": pending_count,
+        "ahead_of_yours": ahead,
+        "what_happens_next": (
+            f"The author will see your request on its next review cycle; "
+            f"{position_note}. Use `universe action=inspect universe_id={uid}` "
+            "to watch the queue or check whether your request is now active work."
+        ),
     })
 
 

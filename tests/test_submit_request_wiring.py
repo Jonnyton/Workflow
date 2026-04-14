@@ -254,6 +254,38 @@ def test_submit_request_accepts_text_at_cap(tmp_path, monkeypatch):
         importlib.reload(us)
 
 
+def test_submit_request_response_includes_queue_position(monkeypatch, tmp_path):
+    """Response shape: queue_position + ahead_of_yours + what_happens_next.
+
+    Replaces the opaque request_id-only response with information a user
+    can act on: where they are in the queue and what to do next.
+    """
+    import importlib
+
+    base = tmp_path / "uni"
+    universe_dir = base / "test-universe"
+    universe_dir.mkdir(parents=True)
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    from workflow import universe_server as us
+    importlib.reload(us)
+    try:
+        first = json.loads(us._action_submit_request(
+            universe_id="test-universe", text="first", request_type="general"))
+        assert first["queue_position"] == 1
+        assert first["ahead_of_yours"] == 0
+        assert "next in the author's queue" in first["what_happens_next"]
+        assert "inspect" in first["what_happens_next"]
+
+        second = json.loads(us._action_submit_request(
+            universe_id="test-universe", text="second", request_type="general"))
+        assert second["queue_position"] == 2
+        assert second["ahead_of_yours"] == 1
+        assert "1 other request is ahead" in second["what_happens_next"]
+    finally:
+        importlib.reload(us)
+
+
 def test_submit_request_write_uses_centralized_filename_constant():
     """Task #22.3: write site imports REQUESTS_FILENAME, doesn't hardcode.
 
