@@ -764,9 +764,26 @@ def choose_authorial_targets(
     universe_path: str | Path,
     *,
     premise: str = "",
+    candidate_override: list[WorkTarget] | None = None,
 ) -> list[WorkTarget]:
-    targets = ensure_seed_targets(universe_path, premise=premise)
-    candidates = list_selectable_targets(universe_path)
+    """Score and rank authorial candidates for the next cycle.
+
+    Phase C.4: when ``candidate_override`` is passed, skip the built-in
+    seed + list_selectable_targets step and score the provided list.
+    Callers wiring through the producer interface pass the merged
+    producer output here. Legacy flag-off path keeps the old behavior
+    by leaving ``candidate_override=None``.
+    """
+    if candidate_override is None:
+        targets = ensure_seed_targets(universe_path, premise=premise)
+        candidates = list_selectable_targets(universe_path)
+    else:
+        # Producer path has already run seed + list_selectable_targets;
+        # just score the merged set. ``targets`` fallback for the
+        # "no candidates" edge case is the seed list to keep current
+        # behavior — best-effort read from disk.
+        candidates = list(candidate_override)
+        targets = list(candidate_override)
 
     def score(target: WorkTarget) -> tuple[int, int, float]:
         role_score = 2 if target.role == ROLE_PUBLISHABLE else 1

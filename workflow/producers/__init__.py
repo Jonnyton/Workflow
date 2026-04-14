@@ -106,3 +106,61 @@ def reset_registry() -> None:
     """Clear all registered producers. Test-only hook."""
     global _REGISTRY
     _REGISTRY = []
+
+
+# Phase C.4 — feature flag + dispatcher helper ----------------------
+
+def producer_interface_enabled() -> bool:
+    """Return True if the producer interface is active.
+
+    Default ``on``. Flip via ``WORKFLOW_PRODUCER_INTERFACE=off`` to
+    bypass the producer list entirely. Off is the revert lever; C.5
+    call sites branch on this flag.
+    """
+    import os
+    value = os.environ.get("WORKFLOW_PRODUCER_INTERFACE", "on")
+    return value.strip().lower() not in {"off", "0", "false", "no"}
+
+
+def run_producers(
+    universe_path,
+    *,
+    producer_config: dict | None = None,
+) -> list[WorkTarget]:
+    """Invoke every registered producer, merge results with last-write-
+    wins on ``target_id``.
+
+    Each emitted target has its ``origin`` overwritten by the emitting
+    producer's ``origin`` value (enforced stamp per spec §1.2). A
+    producer that raises is logged and skipped — other producers still
+    run.
+
+    Returns a list of WorkTargets in registration order, deduped by
+    target_id. Safe to pass to ``choose_authorial_targets`` via
+    ``candidate_override``.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    cfg = producer_config or {}
+    merged: dict[str, WorkTarget] = {}
+    for producer in registered_producers():
+        try:
+            produced = producer.produce(
+                universe_path,
+                config=cfg.get(producer.name),
+            )
+        except Exception as exc:
+            logger.warning(
+                "producer %s failed: %s", producer.name, exc,
+            )
+            continue
+        for target in produced:
+            if target.target_id in merged:
+                logger.warning(
+                    "producer %s upserted target %s already emitted "
+                    "earlier this cycle; last-write-wins",
+                    producer.name, target.target_id,
+                )
+            target.origin = producer.origin
+            merged[target.target_id] = target
+    return list(merged.values())
