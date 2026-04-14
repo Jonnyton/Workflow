@@ -1011,3 +1011,161 @@ def test_bid_dangerous_patterns_excludes_network_patterns():
     from workflow.graph_compiler import _BID_DANGEROUS_PATTERNS
     for network in ("urllib", "requests", "socket", "http.client"):
         assert network not in _BID_DANGEROUS_PATTERNS
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Phase G.2 — call-site fallback race-bypass guard
+# ───────────────────────────────────────────────────────────────────────
+
+
+def _init_repo_with_remote(repo_root: Path) -> None:
+    """Init a git repo at ``repo_root`` with a fake remote configured
+    so ``git_has_remote`` returns True. The remote URL doesn't need
+    to be reachable — we only probe whether one exists.
+    """
+    import subprocess
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo_root, check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://example.invalid/x.git"],
+        cwd=repo_root, check=True, capture_output=True,
+    )
+
+
+def test_race_bypass_rejected_when_remote_configured(
+    repo_root, universe_dir, monkeypatch,
+):
+    """Phase G.2: multi-daemon race — A wins the push, B loses. B's
+    local `git reset --hard origin/<branch>` restores a stale view
+    where B's local clone of the bid YAML still says `status=open`
+    (A's claim hasn't propagated to B's local tracking ref yet).
+
+    Pre-fix, B's fallback read-only path would see `existing.status ==
+    "open"` and execute anyway, double-spending the bid. Post-fix:
+    the fallback is gated on `git_has_remote == False`; in prod
+    repos (remote configured), B returns `(False, "claim_race_lost")`
+    instead.
+
+    Simulated by: configure a remote, write a YAML that still reads
+    `open` locally, monkeypatch `claim_node_bid` to return None
+    (simulates race loss). The function under test MUST return
+    `claim_race_lost` — not execute.
+    """
+    _init_repo_with_remote(repo_root)
+    _write_bid_yaml(repo_root, "nb_race_bypass", status="open")
+
+    # Re-import the fantasy_author module with the monkeypatched
+    # claim_node_bid. We patch at `workflow.node_bid` so the
+    # function-local import in _try_execute_claimed_node_bid picks
+    # up the patched callable.
+    import workflow.node_bid as nb_mod
+
+    def _patched_claim(repo, bid_id, daemon_id):
+        return None  # always "race lost"
+    monkeypatch.setattr(nb_mod, "claim_node_bid", _patched_claim)
+
+    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from workflow.branch_tasks import BranchTask
+
+    task = BranchTask(
+        branch_task_id="t_race_1",
+        branch_def_id="universe-cycle",
+        universe_id="uni-a",
+        inputs={
+            "__node_bid_id": "nb_race_bypass",
+            "__node_def_id": "extract_entities",
+        },
+    )
+    success, error = _try_execute_claimed_node_bid(
+        universe_dir, task, daemon_id="daemon-b",
+    )
+    assert success is False
+    assert error == "claim_race_lost"
+
+
+def test_fallback_still_works_without_remote(
+    repo_root, universe_dir, monkeypatch,
+):
+    """Phase G.2: without a remote, the read-only fallback is still
+    legitimate — single-process, no race is physically possible.
+    Local test harnesses that pre-populate the bid YAML outside the
+    claim flow keep working.
+
+    To assert the fallback fires we'd need a full executor run, which
+    is tested elsewhere. Here we just confirm the function does NOT
+    short-circuit on `claim_race_lost` when the claim returns None
+    AND the YAML is still `open` AND no remote is configured. The
+    legitimate fallback path proceeds past the race-gate; any
+    subsequent error (node_lookup_error, execution failure) is a
+    different failure class that proves the fallback took the
+    non-race-lost branch.
+    """
+    import subprocess
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo_root, check=True,
+        capture_output=True,
+    )
+    # NO `git remote add` — single-daemon local repo.
+    _write_bid_yaml(repo_root, "nb_local_fb", status="open")
+
+    import workflow.node_bid as nb_mod
+
+    def _patched_claim(repo, bid_id, daemon_id):
+        return None
+    monkeypatch.setattr(nb_mod, "claim_node_bid", _patched_claim)
+
+    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from workflow.branch_tasks import BranchTask
+
+    task = BranchTask(
+        branch_task_id="t_local_1",
+        branch_def_id="universe-cycle",
+        universe_id="uni-a",
+        inputs={
+            "__node_bid_id": "nb_local_fb",
+            "__node_def_id": "nonexistent_node",
+        },
+    )
+    success, error = _try_execute_claimed_node_bid(
+        universe_dir, task, daemon_id="daemon-local",
+    )
+    # Execution will fail (unknown node), but NOT with claim_race_lost
+    # — that means the fallback path took the non-race-gated branch.
+    assert error != "claim_race_lost"
+
+
+def test_fallback_rejected_when_remote_and_yaml_missing(
+    repo_root, universe_dir, monkeypatch,
+):
+    """Edge case: remote configured, YAML missing — the fallback's
+    ``existing is None`` check would also return ``claim_race_lost``,
+    but this test pins that outcome independently of the remote-gate
+    so a future refactor doesn't collapse them.
+    """
+    _init_repo_with_remote(repo_root)
+    # Note: NO call to _write_bid_yaml — the file is missing.
+
+    import workflow.node_bid as nb_mod
+    monkeypatch.setattr(
+        nb_mod, "claim_node_bid", lambda r, b, d: None,
+    )
+
+    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from workflow.branch_tasks import BranchTask
+
+    task = BranchTask(
+        branch_task_id="t_missing_1",
+        branch_def_id="universe-cycle",
+        universe_id="uni-a",
+        inputs={
+            "__node_bid_id": "nb_does_not_exist",
+            "__node_def_id": "extract_entities",
+        },
+    )
+    success, error = _try_execute_claimed_node_bid(
+        universe_dir, task, daemon_id="daemon-c",
+    )
+    assert success is False
+    assert error == "claim_race_lost"

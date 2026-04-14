@@ -332,6 +332,7 @@ def _try_execute_claimed_node_bid(
         from workflow.executors.node_bid import execute_node_bid
         from workflow.node_bid import (
             claim_node_bid,
+            git_has_remote,
             read_node_bid,
             update_node_bid_status,
         )
@@ -360,11 +361,16 @@ def _try_execute_claimed_node_bid(
         if claimed_bid is None:
             # Bid YAML may have been deleted between producer emit
             # and claim attempt (or race was lost, or status != open).
-            # Attempt a read-only fallback so we still execute when
-            # running local-only tests that pre-populated the YAML
-            # outside the claim flow. When the YAML is present and
-            # still marked "open" (e.g. test harness that bypasses
-            # claim), synthesize a NodeBid from it.
+            # Read-only fallback is ONLY safe when no remote is
+            # configured (single-process / local-test repo). In
+            # multi-daemon prod with a remote, a lost push followed by
+            # `git reset --hard origin/<branch>` can restore a stale
+            # view where the winning daemon's claim hasn't propagated
+            # locally yet — so a local "status == open" check would
+            # bypass the race and cause B to execute what A already
+            # claimed. Reviewer-flagged race-bypass fix (option c).
+            if git_has_remote(repo_root):
+                return False, "claim_race_lost"
             existing = read_node_bid(repo_root, node_bid_id)
             if existing is None or existing.status != "open":
                 return False, "claim_race_lost"

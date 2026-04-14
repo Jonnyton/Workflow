@@ -7,8 +7,8 @@ an ``evidence_url`` pointing at that file.
 
 Safety model:
 - Node must be ``approved=True`` (host-reviewed).
-- Source is scanned for an expanded ``_DANGEROUS_PATTERNS`` list on
-  top of the compile-time check in ``graph_compiler``.
+- Source is scanned for an expanded ``_BID_DANGEROUS_PATTERNS`` list
+  on top of the compile-time check in ``graph_compiler``.
 - The ``node_lookup_fn`` is injected by the caller — this module has
   no dependency on the universe_server or branch registry.
 
@@ -35,10 +35,10 @@ logger = logging.getLogger(__name__)
 # Preflight §4.1 #5d single source of truth: the stricter bid-market
 # pattern list lives at ``workflow.graph_compiler._BID_DANGEROUS_PATTERNS``.
 # Both the producer and the executor re-validate against it (invariant 1
-# requires both boundaries).
-from workflow.graph_compiler import (  # noqa: E402
-    _BID_DANGEROUS_PATTERNS as _DANGEROUS_PATTERNS,
-)
+# requires both boundaries). Use the full name throughout this module so
+# readers don't mistake the reference for the narrower
+# ``_DANGEROUS_PATTERNS`` used by ``_build_source_code_node``.
+from workflow.graph_compiler import _BID_DANGEROUS_PATTERNS  # noqa: E402
 
 
 @dataclass
@@ -58,7 +58,7 @@ def _strip_producer_keys(inputs: dict) -> dict:
 
 def _scan_dangerous_patterns(source: str) -> str:
     """Return the offending pattern or empty string."""
-    for pattern in _DANGEROUS_PATTERNS:
+    for pattern in _BID_DANGEROUS_PATTERNS:
         if pattern in source:
             return pattern
     return ""

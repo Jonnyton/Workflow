@@ -185,11 +185,14 @@ def read_node_bid(repo_root: Path, node_bid_id: str) -> NodeBid | None:
         return None
 
 
-def _git_has_remote(repo_root: Path) -> bool:
+def git_has_remote(repo_root: Path) -> bool:
     """True if the repo has at least one configured remote.
 
     Local-only installs (no `git remote`) skip the pull/push steps
-    of the claim dance — single-daemon, no race.
+    of the claim dance — single-daemon, no race. Exposed publicly
+    so callers (e.g. the node-bid execution fallback in
+    ``fantasy_author/__main__.py``) can gate behaviour on whether a
+    remote race is even possible.
     """
     try:
         result = subprocess.run(
@@ -200,6 +203,11 @@ def _git_has_remote(repo_root: Path) -> bool:
         return bool(result.stdout.strip())
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+# Phase G.1 compatibility alias — internal call sites use the
+# underscore name. Keep until the rename is mechanically swept.
+_git_has_remote = git_has_remote
 
 
 def _git_current_branch(repo_root: Path) -> str:
