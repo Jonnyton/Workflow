@@ -950,9 +950,10 @@ class DaemonController:
             # Phase G: NodeBid tasks route to execute_node_bid instead
             # of the Branch wrapper stream. Sentinel prefix on
             # branch_def_id is set by the NodeBidProducer.
+            from workflow.producers.node_bid import NODE_BID_SENTINEL_PREFIX
             if (
                 claimed_task is not None
-                and claimed_task.branch_def_id.startswith("<node_bid>")
+                and claimed_task.branch_def_id.startswith(NODE_BID_SENTINEL_PREFIX)
             ):
                 nb_success, nb_error = _try_execute_claimed_node_bid(
                     output_dir, claimed_task, daemon_id,

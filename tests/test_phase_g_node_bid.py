@@ -646,6 +646,18 @@ def test_load_dispatcher_config_flag_on_defaults_bid_coefficient(
     assert cfg.accept_paid_bids is True
 
 
+def test_load_dispatcher_config_flag_off_bid_coefficient_stays_zero(
+    tmp_path, monkeypatch,
+):
+    """Invariant: flag-off → bid_coefficient=0.0, Phase E/F scores unchanged."""
+    monkeypatch.setenv("WORKFLOW_PAID_MARKET", "off")
+    u = tmp_path / "u"
+    u.mkdir()
+    cfg = load_dispatcher_config(u)
+    assert cfg.bid_coefficient == 0.0
+    assert cfg.accept_paid_bids is False
+
+
 def test_load_dispatcher_config_yaml_override_wins(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKFLOW_PAID_MARKET", "on")
     u = tmp_path / "u"
