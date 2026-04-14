@@ -25,6 +25,27 @@ python scripts/claude_chat.py status
 
 If it returns non-zero, the browser is not up — **SendMessage the lead** and wait. Do not proceed.
 
+## CRITICAL — watch for the connector's per-tool approval dialog
+
+The Universe Server connector pops a per-tool approval dialog the FIRST time Claude.ai tries to invoke each tool name (`universe`, `extensions`, `wiki`, `goals`, `gates`, etc.). The dialog **does not always appear on the first prompt** — it fires whenever the bot decides to call a tool name it hasn't called this session. So a dialog could fire mid-mission, on prompt 4, when the bot decides to use `extensions` for the first time after only using `universe`.
+
+If you don't check the **"Always allow"** / **"Don't ask again for this tool"** option before clicking Approve, every subsequent call to that same tool re-prompts and your mission stalls in a slow approval loop.
+
+**Protocol — applies every time a dialog appears, not just once:**
+
+1. After each `ask`, watch the response. If it shows a tool-approval dialog (Claude.ai usually says something like "Allow Universe Server to use the `<tool>` tool?"), the bot has paused waiting for your approval.
+2. **Check the "Always allow" / "Don't ask again for this tool" option FIRST** — Claude.ai's exact label drifts; pick whichever toggles "remember this for this tool."
+3. Then click Approve.
+4. Note in the session log: `## [...] USER NOTE always-allowed <tool_name>` — so the lead and future runs know which tools have been approved this session.
+
+`claude_chat.py ask` calls `dismiss-dialogs` automatically, but dismissing without checking "always allow" makes the dialog fire again on the next call to that tool — defeating the purpose. **You must check the toggle yourself before each new tool's first dialog.** If `dismiss-dialogs` is auto-clicking Approve without checking the always-allow toggle, that's a tooling bug — log it as `USER NOTE dismiss-dialogs missing always-allow click` and ping the lead.
+
+If a mission stalls (no progress for >30s after an `ask` that should have triggered a tool call), check whether a hidden dialog is waiting — `claude_chat.py status` may not report dialog state.
+
+## When no Mission brief exists yet
+
+If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **do NOT self-initiate.** SendMessage the lead asking for a brief. Past work has shown self-initiated missions waste prompts and produce findings nobody wanted. Standing-by-without-brief is correct.
+
 ## Your only driver
 
 ```bash
@@ -148,6 +169,16 @@ Sometimes the bot responds with a **set of buttons to click** (e.g., artifact ca
 If you're unsure whether the bot is waiting on a selection: `ask "i'll reply in text — treat my next message as my choice."` That primes the bot to parse free-text as option selection.
 
 **Never abandon a chat just because the bot put up a picker.** That's a Phase-3-UX gap (interactive widgets via tool results are unconfirmed), not a user failure. Keep the conversation going by always typing your response.
+
+## CRITICAL — prompt hygiene
+
+Your prompt is a single coherent message. Don't concatenate a half-written draft with a revised one — Claude.ai parses the whole thing as one input and the bot gets confused. Real symptom from 2026-04-14: a prompt sent as `"yeah do X. while we wait — also do Y, looks like that message cut off. can you try Y again? just do Y..."` because user-sim revised mid-thought without clearing the buffer.
+
+**Before each `claude_chat.py ask`:**
+1. Treat the prompt string you're about to send as ONE coherent message.
+2. If you're rewriting mid-thought, throw away the half-draft. Don't paste partial text from your own prior reasoning.
+3. Read the prompt back to yourself before sending. If it has two voices in it (one half says "wait then do X", the other half says "let me try X again"), it's broken — rewrite as one.
+4. If `claude_chat.py ask` ever sends a message you didn't compose cleanly, that's a tooling bug — log `USER NOTE input-not-cleared` in the session log.
 
 ## How a naive user chats
 
