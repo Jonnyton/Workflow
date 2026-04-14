@@ -608,6 +608,65 @@ def test_invariant_3_dispatcher_does_not_call_producers(
         prod_mod._REGISTRY.extend(saved)
 
 
+def test_invariant_3_producer_boundary_each_called_exactly_once(
+    universe_dir,
+):
+    """R9 / Invariant §4.3 #3 complementary axis: the producer-running
+    path (``run_producers``) invokes every registered producer exactly
+    once per cycle, with distinct ``id(self)`` per producer.
+
+    Patch ``.produce`` at the registry boundary — iterate
+    ``registered_producers()`` and wrap each instance's method. Same
+    care as Phase D invariant 4's ``id()``-based check: a
+    registration reshuffle that replaces a producer with a different
+    instance of the same name must show as a new id, and the counting
+    wrapper must catch a double-call regardless.
+    """
+    from workflow import producers as prod_mod
+    from workflow.producers import run_producers
+
+    class _Producer:
+        def __init__(self, name: str):
+            self.name = name
+            self.origin = "seed"
+
+        def produce(self, universe_path, *, config=None):
+            return []
+
+    saved = list(prod_mod._REGISTRY)
+    prod_mod._REGISTRY.clear()
+    p1 = _Producer("alpha")
+    p2 = _Producer("beta")
+    p3 = _Producer("gamma")
+    prod_mod._REGISTRY.extend([p1, p2, p3])
+    try:
+        # Patch each registered producer's `.produce` with a
+        # counting wrapper that records `id(self)` on entry.
+        call_ids: list[int] = []
+        for producer in prod_mod.registered_producers():
+            original = producer.produce
+
+            def _wrap(orig, pid):
+                def _counted(universe_path, *, config=None):
+                    call_ids.append(pid)
+                    return orig(universe_path, config=config)
+                return _counted
+            producer.produce = _wrap(original, id(producer))
+
+        # One observational cycle.
+        run_producers(universe_dir)
+
+        registered_ids = {id(p) for p in prod_mod.registered_producers()}
+        # Each registered producer ran exactly once, all distinct by id.
+        assert len(call_ids) == len(registered_ids)
+        assert set(call_ids) == registered_ids
+        # No id appears twice (catches a double-invocation regression).
+        assert len(call_ids) == len(set(call_ids))
+    finally:
+        prod_mod._REGISTRY.clear()
+        prod_mod._REGISTRY.extend(saved)
+
+
 def test_invariant_9_priority_weight_clamp_at_submission(
     server_base, monkeypatch,
 ):

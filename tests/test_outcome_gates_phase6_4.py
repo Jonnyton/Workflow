@@ -262,6 +262,41 @@ def test_get_branch_gated_off(gates_off_env):
     assert result["gate_status"] == "gates_disabled"
 
 
+def test_goal_gate_summary_hides_existing_claims(tmp_path, monkeypatch):
+    """Symmetric to the branch-get flip test: seeding claims under
+    GATES_ENABLED=1 and then flipping to 0 must make goals-get
+    surface the `gates_disabled` placeholder, hiding stored counters.
+    """
+    base = tmp_path / "output"
+    base.mkdir()
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    monkeypatch.setenv("GATES_ENABLED", "1")
+    from workflow import universe_server as us
+    importlib.reload(us)
+    try:
+        gid, bid = _seed_goal_with_ladder(us)
+        _call(us, "gates", "claim",
+              branch_def_id=bid, rung_key="draft_complete",
+              evidence_url="https://example.com/x")
+        _call(us, "gates", "claim",
+              branch_def_id=bid, rung_key="peer_reviewed",
+              evidence_url="https://example.com/y")
+        # Sanity: on-state surfaces populated counters.
+        on_result = json.loads(us.goals(action="get", goal_id=gid))
+        assert on_result["gate_summary"]["claims_total"] == 2
+        assert on_result["gate_summary"]["highest_rung_reached"] == "peer_reviewed"
+        # Flip to off; reload so the env-check re-reads.
+        monkeypatch.delenv("GATES_ENABLED", raising=False)
+        importlib.reload(us)
+        off_result = json.loads(us.goals(action="get", goal_id=gid))
+        assert off_result["gate_summary"] == {"status": "gates_disabled"}
+        # Stored claims are NOT leaked through any other response key.
+        assert "claims_total" not in json.dumps(off_result["gate_summary"])
+    finally:
+        importlib.reload(us)
+
+
 def test_get_branch_gates_off_hides_existing_claims(tmp_path, monkeypatch):
     """A daemon flipping GATES_ENABLED from 1 to 0 must hide previously
     stored claims — the fallback is not a cache of the last on-state.
