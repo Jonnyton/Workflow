@@ -2163,6 +2163,7 @@ def extensions(
     node_ref_json: str = "",
     intent: str = "",
     node_query: str = "",
+    force: bool = False,
 ) -> str:
     """Register custom nodes and author community-designed graph branches.
 
@@ -2330,6 +2331,12 @@ def extensions(
         node_query: Free-text search string for `search_nodes`.
             Tokenized, substring-matched across node_id, display_name,
             description, and prompt_template preview.
+        force: override `local_edit_conflict` refusal on branch write
+            actions (create_branch / add_node / connect_nodes /
+            set_entry_point / add_state_field) when the target YAML has
+            uncommitted local edits. Default False — the conflict surfaces
+            as a structured response so the caller can commit / stash /
+            discard first.
     """
     if action == "register":
         return _ext_register(
@@ -2373,6 +2380,7 @@ def extensions(
         "intent": intent,
         "query": node_query,
         "limit": limit,
+        "force": force,
     }
     if node_ref_json:
         try:

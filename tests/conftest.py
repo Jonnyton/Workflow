@@ -33,6 +33,31 @@ def _reset_runtime():
     runtime.reset()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_storage_backend(monkeypatch):
+    """Pin the storage backend to ``sqlite_only`` by default for every test.
+
+    Phase 7 Rationale: the module-global :class:`SqliteCachedBackend`
+    anchors to ``Path.cwd()`` on first use and, once cached, keeps
+    writing to the real repo ``branches/`` / ``goals/`` / ``nodes/``
+    directories even when later tests point ``UNIVERSE_SERVER_BASE``
+    at a tmp dir. That causes (a) pollution of the working tree and
+    (b) spurious ``DirtyFileError`` as tests fight over the same
+    slug paths.
+
+    Tests that explicitly exercise the cached backend (git-enabled
+    path, YAML serialization, commit granularity) override this by
+    re-setting the env var via their own ``monkeypatch``. See
+    ``tests/test_storage_phase7_backend.py`` and future ``test_phase7_h3_*``.
+    """
+    monkeypatch.setenv("WORKFLOW_STORAGE_BACKEND", "sqlite_only")
+    from workflow import storage as _storage
+
+    _storage.invalidate_backend_cache()
+    yield
+    _storage.invalidate_backend_cache()
+
+
 @pytest.fixture
 def checkpointer():
     """Yield an in-memory SqliteSaver for testing.
