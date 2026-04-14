@@ -1367,7 +1367,7 @@ def _action_submit_request(
     )
     ahead = max(0, pending_count - 1)
     if ahead == 0:
-        position_note = "yours is next in the author's queue"
+        position_note = "yours is next in the daemon's queue"
     elif ahead == 1:
         position_note = "1 other request is ahead of yours"
     else:
@@ -1380,7 +1380,7 @@ def _action_submit_request(
         "queue_position": pending_count,
         "ahead_of_yours": ahead,
         "what_happens_next": (
-            f"The author will see your request on its next review cycle; "
+            f"The daemon will see your request on its next review cycle; "
             f"{position_note}. Use `universe action=inspect universe_id={uid}` "
             "to watch the queue or check whether your request is now active work."
         ),

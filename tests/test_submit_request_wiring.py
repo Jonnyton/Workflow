@@ -274,7 +274,7 @@ def test_submit_request_response_includes_queue_position(monkeypatch, tmp_path):
             universe_id="test-universe", text="first", request_type="general"))
         assert first["queue_position"] == 1
         assert first["ahead_of_yours"] == 0
-        assert "next in the author's queue" in first["what_happens_next"]
+        assert "next in the daemon's queue" in first["what_happens_next"]
         assert "inspect" in first["what_happens_next"]
 
         second = json.loads(us._action_submit_request(
