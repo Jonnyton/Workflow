@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.branch_tasks import BranchTask, read_queue
+from workflow.branch_tasks import BranchTask, append_task, read_queue
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,61 @@ def score_task(
     cost_term = -config.cost_penalty_coefficient
 
     return tier + recency + boost + bid_term + goal_term + cost_term
+
+
+def run_branch_task_producers_into_queue(
+    universe_path: Path,
+    *,
+    subscribed_goals: list[str],
+    producer_config: dict | None = None,
+) -> int:
+    """Phase F: invoke every registered ``BranchTaskProducer`` and
+    append emitted tasks into ``branch_tasks.json``.
+
+    Called at the dispatcher boundary (cycle boundary), BEFORE
+    ``select_next_task``. Idempotency is enforced at the queue
+    level: a task whose ``branch_task_id`` is already present is
+    NOT appended again (dedupe-on-append semantics preserve Phase F
+    invariant 4).
+
+    Returns the count appended.
+    """
+    from workflow.producers.branch_task import (
+        registered_branch_task_producers,
+        run_branch_task_producers,
+    )
+
+    producers = registered_branch_task_producers()
+    if not producers:
+        return 0
+    emitted = run_branch_task_producers(
+        Path(universe_path),
+        subscribed_goals=subscribed_goals,
+        producer_config=producer_config,
+    )
+    if not emitted:
+        return 0
+    existing = read_queue(Path(universe_path))
+    existing_ids = {t.branch_task_id for t in existing}
+    appended = 0
+    for task in emitted:
+        if task.branch_task_id in existing_ids:
+            continue
+        if not task.universe_id:
+            # Pool producers don't know the subscriber's universe
+            # at read time; stamp it from the dispatch context
+            # (the directory name is the canonical universe_id).
+            task.universe_id = Path(universe_path).name
+        try:
+            append_task(Path(universe_path), task)
+            appended += 1
+            existing_ids.add(task.branch_task_id)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "dispatcher: failed to append task %s from producer",
+                task.branch_task_id,
+            )
+    return appended
 
 
 def select_next_task(

@@ -325,6 +325,36 @@ def _extract_queue_cancel(
     )
 
 
+def _extract_subscribe_goal(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    g = str(kwargs.get("goal_id", ""))
+    return (g, _truncate(f"subscribe {g}"), {"status": result.get("status", "")})
+
+
+def _extract_unsubscribe_goal(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    g = str(kwargs.get("goal_id", ""))
+    return (g, _truncate(f"unsubscribe {g}"), {"status": result.get("status", "")})
+
+
+def _extract_post_to_goal_pool(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    g = str(kwargs.get("goal_id", ""))
+    bd = str(kwargs.get("branch_def_id", ""))
+    return (
+        str(result.get("path", f"goal_pool/{g}")),
+        _truncate(f"post {bd} to {g}"),
+        {
+            "goal_id": g,
+            "branch_def_id": bd,
+            "status": result.get("status", ""),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -334,6 +364,9 @@ WRITE_ACTIONS: dict[str, Any] = {
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
     "queue_cancel": (_extract_queue_cancel, None),
+    "subscribe_goal": (_extract_subscribe_goal, None),
+    "unsubscribe_goal": (_extract_unsubscribe_goal, None),
+    "post_to_goal_pool": (_extract_post_to_goal_pool, None),
 }
 
 
@@ -803,6 +836,9 @@ def universe(
     limit: int = 30,
     priority_weight: float = 0.0,
     branch_task_id: str = "",
+    goal_id: str = "",
+    branch_def_id: str = "",
+    inputs_json: str = "",
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -865,6 +901,10 @@ def universe(
         "create_universe": _action_create_universe,
         "queue_list": _action_queue_list,
         "queue_cancel": _action_queue_cancel,
+        "subscribe_goal": _action_subscribe_goal,
+        "unsubscribe_goal": _action_unsubscribe_goal,
+        "list_subscriptions": _action_list_subscriptions,
+        "post_to_goal_pool": _action_post_to_goal_pool,
     }
 
     handler = dispatch.get(action)
@@ -890,6 +930,9 @@ def universe(
         "limit": limit,
         "priority_weight": priority_weight,
         "branch_task_id": branch_task_id,
+        "goal_id": goal_id,
+        "branch_def_id": branch_def_id,
+        "inputs_json": inputs_json,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
@@ -1560,6 +1603,232 @@ def _action_queue_cancel(
         "universe_id": uid,
         "status": "cancelled",
         "branch_task_id": branch_task_id,
+    })
+
+
+def _goal_pool_not_available() -> str:
+    return json.dumps({
+        "status": "not_available",
+        "hint": "WORKFLOW_GOAL_POOL=on required",
+    })
+
+
+def _action_subscribe_goal(
+    universe_id: str = "",
+    goal_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.producers.goal_pool import goal_pool_enabled
+    from workflow.subscriptions import subscribe
+
+    if not goal_pool_enabled():
+        return _goal_pool_not_available()
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    if not goal_id:
+        return json.dumps({"error": "goal_id required."})
+    try:
+        goals = subscribe(udir, goal_id)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"subscribe failed: {exc}"})
+    return json.dumps({
+        "universe_id": uid,
+        "goal_id": goal_id,
+        "status": "subscribed",
+        "goals": goals,
+    })
+
+
+def _action_unsubscribe_goal(
+    universe_id: str = "",
+    goal_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.producers.goal_pool import goal_pool_enabled
+    from workflow.subscriptions import unsubscribe
+
+    if not goal_pool_enabled():
+        return _goal_pool_not_available()
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    if not goal_id:
+        return json.dumps({"error": "goal_id required."})
+    try:
+        goals = unsubscribe(udir, goal_id)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"unsubscribe failed: {exc}"})
+    return json.dumps({
+        "universe_id": uid,
+        "goal_id": goal_id,
+        "status": "unsubscribed",
+        "goals": goals,
+    })
+
+
+def _action_list_subscriptions(
+    universe_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    """List subscriptions + drift detection + per-goal pool counts.
+
+    Preflight §4.1 #4 drift flag values:
+      - "ok"
+      - "pool_enabled_no_subs"  (F on + accept_goal_pool=true + zero subs)
+      - "subs_but_pool_disabled" (subs exist + accept_goal_pool=false)
+    """
+    from workflow.dispatcher import load_dispatcher_config
+    from workflow.producers.goal_pool import (
+        POOL_DIRNAME,
+        goal_pool_enabled,
+        repo_root_path,
+    )
+    from workflow.subscriptions import list_subscriptions as _list
+
+    if not goal_pool_enabled():
+        return _goal_pool_not_available()
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    try:
+        goals = _list(udir)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"list_subscriptions failed: {exc}"})
+
+    # Per-goal pool counts.
+    counts: dict[str, int] = {g: 0 for g in goals}
+    try:
+        repo_root = repo_root_path(udir)
+        pool_root = repo_root / POOL_DIRNAME
+        for g in goals:
+            gdir = pool_root / g
+            if gdir.is_dir():
+                counts[g] = sum(1 for _ in gdir.glob("*.yaml"))
+    except RuntimeError:
+        # repo_root unresolvable — counts stay zero
+        pass
+
+    cfg = load_dispatcher_config(udir)
+    if cfg.accept_goal_pool and not goals:
+        drift = "pool_enabled_no_subs"
+    elif goals and not cfg.accept_goal_pool:
+        drift = "subs_but_pool_disabled"
+    else:
+        drift = "ok"
+
+    return json.dumps({
+        "universe_id": uid,
+        "goals": goals,
+        "pool_status_per_goal": counts,
+        "config_vs_subscriptions_drift": drift,
+    })
+
+
+def _action_post_to_goal_pool(
+    universe_id: str = "",
+    goal_id: str = "",
+    branch_def_id: str = "",
+    inputs_json: str = "",
+    priority_weight: float = 0.0,
+    **_kwargs: Any,
+) -> str:
+    """Write a pool YAML to ``<repo_root>/goal_pool/<goal_id>/<id>.yaml``.
+
+    Response includes a ``next_step`` hint for cross-host visibility
+    (git add/commit/push).
+    """
+    from workflow.producers.goal_pool import (
+        goal_pool_enabled,
+        repo_root_path,
+        validate_pool_task_inputs,
+        write_pool_post,
+    )
+
+    if not goal_pool_enabled():
+        return _goal_pool_not_available()
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    if not goal_id:
+        return json.dumps({"error": "goal_id required."})
+    if not branch_def_id:
+        return json.dumps({"error": "branch_def_id required."})
+
+    # Parse inputs_json. Empty string → {}.
+    if inputs_json.strip():
+        try:
+            inputs = json.loads(inputs_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": f"inputs_json invalid JSON: {exc}"})
+    else:
+        inputs = {}
+    ok, reason = validate_pool_task_inputs(inputs)
+    if not ok:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"invalid_inputs: {reason}",
+        })
+
+    # priority_weight clamp per Phase E invariant 9 (extended to pool posts).
+    try:
+        pw = float(priority_weight)
+    except (TypeError, ValueError):
+        pw = 0.0
+    if pw < 0:
+        return json.dumps({
+            "status": "rejected",
+            "error": "priority_weight must be >= 0.",
+        })
+    source = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+    is_host = source == host_id
+    if not is_host:
+        pw = 0.0
+
+    try:
+        repo_root = repo_root_path(udir)
+    except RuntimeError as exc:
+        return json.dumps({
+            "status": "rejected",
+            "error": "repo_root_not_resolvable",
+            "hint": (
+                "Set WORKFLOW_REPO_ROOT or run the daemon from inside "
+                "a git checkout. Detail: " + str(exc)
+            ),
+        })
+
+    try:
+        out_path = write_pool_post(
+            repo_root,
+            goal_id,
+            branch_def_id=branch_def_id,
+            inputs=inputs,
+            priority_weight=pw,
+            posted_by=source,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": f"post failed: {exc}"})
+
+    rel_path = out_path.relative_to(repo_root) if out_path.is_relative_to(
+        repo_root,
+    ) else out_path
+    return json.dumps({
+        "universe_id": uid,
+        "status": "posted",
+        "goal_id": goal_id,
+        "branch_def_id": branch_def_id,
+        "path": str(out_path),
+        "priority_weight": pw,
+        "next_step": (
+            f"To make this post visible to cross-host subscribers, run: "
+            f"git add {rel_path} && git commit && git push"
+        ),
     })
 
 

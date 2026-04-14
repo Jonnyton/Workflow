@@ -151,6 +151,116 @@ def _dispatcher_startup(universe_path: Path) -> None:
         )
 
 
+def _phase_f_enabled() -> bool:
+    """Read ``WORKFLOW_GOAL_POOL``. Default OFF."""
+    value = os.environ.get("WORKFLOW_GOAL_POOL", "off")
+    return value.strip().lower() in {"on", "1", "true", "yes"}
+
+
+def _run_branch_task_producers_if_enabled(universe_path: Path) -> int:
+    """Phase F: call registered BranchTaskProducers at cycle boundary.
+
+    Under flag-off, no-op. Under flag-on, reads the universe's
+    subscriptions and invokes ``run_branch_task_producers_into_queue``.
+    """
+    if not _phase_f_enabled():
+        return 0
+    try:
+        from workflow.dispatcher import run_branch_task_producers_into_queue
+        from workflow.subscriptions import list_subscriptions
+
+        goals = list_subscriptions(universe_path)
+        return run_branch_task_producers_into_queue(
+            universe_path, subscribed_goals=goals,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("run_branch_task_producers failed")
+        return 0
+
+
+def _try_dispatcher_pick(
+    universe_path: Path, daemon_id: str,
+) -> tuple[Any | None, dict[str, Any]]:
+    """Phase F wire-up (preflight §4.10). Call the dispatcher, claim
+    the picked task, return ``(claimed_task, inputs_merge)``.
+
+    Uses ``claim_task`` (returns None on not-pending) rather than
+    ``mark_status(running)`` — handles cancel-during-claim race cleanly
+    per invariant 8. On race loss, returns ``(None, {})`` and logs
+    ``claim_lost_to_cancel``.
+
+    Callers should merge ``inputs_merge`` into the initial graph state
+    with ``inputs`` winning on overlapping keys. Unknown keys are
+    tolerated by LangGraph's initial_state.
+    """
+    try:
+        from workflow.branch_tasks import claim_task
+        from workflow.dispatcher import (
+            dispatcher_enabled,
+            load_dispatcher_config,
+            select_next_task,
+        )
+
+        if not dispatcher_enabled():
+            return None, {}
+        if not _workflow_unified_execution_enabled():
+            return None, {}
+        cfg = load_dispatcher_config(universe_path)
+        picked = select_next_task(universe_path, config=cfg)
+        if picked is None:
+            return None, {}
+        claimed = claim_task(universe_path, picked.branch_task_id, daemon_id)
+        if claimed is None:
+            logger.info(
+                "dispatcher_pick: claim_lost_to_cancel %s",
+                picked.branch_task_id,
+            )
+            return None, {}
+        logger.info(
+            "dispatcher_pick: claimed %s tier=%s branch=%s",
+            claimed.branch_task_id, claimed.trigger_source,
+            claimed.branch_def_id,
+        )
+        return claimed, dict(claimed.inputs or {})
+    except Exception:  # noqa: BLE001
+        logger.exception("dispatcher_pick failed")
+        return None, {}
+
+
+def _finalize_claimed_task(
+    universe_path: Path,
+    claimed: Any,
+    *,
+    success: bool,
+    error: str = "",
+) -> None:
+    """Mark a claimed BranchTask ``succeeded`` or ``failed``.
+
+    Invoked after the graph stream completes (or errors out). A crash
+    during invocation that prevents this call leaves the task in
+    ``running``; restart-recovery (Phase E invariant 7) resets it to
+    pending on next daemon boot.
+    """
+    if claimed is None:
+        return
+    try:
+        from workflow.branch_tasks import mark_status
+
+        mark_status(
+            universe_path,
+            claimed.branch_task_id,
+            status="succeeded" if success else "failed",
+            error=error,
+        )
+        logger.info(
+            "dispatcher_pick: finalized %s -> %s",
+            claimed.branch_task_id,
+            "succeeded" if success else "failed",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("_finalize_claimed_task failed")
+
+
 def _dispatcher_observe(universe_path: Path) -> None:
     """Phase E cycle-boundary observation.
 
@@ -539,6 +649,9 @@ class DaemonController:
         # Runs regardless of dispatcher flag so the queue file stays
         # healthy across daemon lifecycles (preflight §4.3 #7 + #10).
         _dispatcher_startup(output_dir)
+        # Phase F: run BranchTaskProducers at boundary so pool posts
+        # land in the queue before we observe/pick.
+        _run_branch_task_producers_if_enabled(output_dir)
         _dispatcher_observe(output_dir)
 
         with SqliteSaver.from_conn_string(self._checkpoint_path) as checkpointer:
@@ -637,6 +750,25 @@ class DaemonController:
             )
             self._runtime_status_thread.start()
 
+            # Phase F wire-up (preflight §4.10): attempt dispatcher
+            # pick BEFORE the stream. If a task is claimed, merge its
+            # inputs into initial_state (inputs win on overlap).
+            # Unclaimed picks fall through to default graph behavior.
+            daemon_id = f"daemon-{universe_id}"
+            claimed_task, claimed_inputs = _try_dispatcher_pick(
+                output_dir, daemon_id,
+            )
+            claimed_failed_reason = ""
+            if claimed_task is not None and claimed_inputs:
+                # inputs win on overlap; unknown keys tolerated by
+                # LangGraph initial_state.
+                initial_state.update(claimed_inputs)
+                logger.info(
+                    "dispatcher_pick: seeded initial_state with %d keys "
+                    "from task %s",
+                    len(claimed_inputs), claimed_task.branch_task_id,
+                )
+
             try:
                 for event in compiled.stream(initial_state, config=config):
                     if self._stop_event.is_set():
@@ -669,21 +801,34 @@ class DaemonController:
 
             except KeyboardInterrupt:
                 logger.info("KeyboardInterrupt received")
+                claimed_failed_reason = "keyboard_interrupt"
             except RuntimeError as e:
                 # LangGraph's internal ThreadPoolExecutor raises this when
                 # the interpreter is shutting down and the executor rejects
                 # new checkpoint writes.  Not actionable — log and exit.
                 if "cannot schedule new futures" in str(e):
                     logger.info("Executor shutdown during graph stream (expected on exit)")
+                    claimed_failed_reason = "executor_shutdown"
                 else:
                     logger.exception("Graph execution failed")
                     if self._notifications:
                         self._notifications.error(f"Graph execution failed: {e}")
-            except Exception:
+                    claimed_failed_reason = f"runtime_error: {e}"
+            except Exception as exc:
                 logger.exception("Graph execution failed")
                 if self._notifications:
                     self._notifications.error("Graph execution failed")
+                claimed_failed_reason = f"exception: {exc}"
             finally:
+                # Phase F wire-up: finalize the claimed task status
+                # based on whether the stream completed cleanly.
+                if claimed_task is not None:
+                    _finalize_claimed_task(
+                        output_dir,
+                        claimed_task,
+                        success=not claimed_failed_reason,
+                        error=claimed_failed_reason,
+                    )
                 self._cleanup()
 
                 # Handle cross-universe synthesis switch
