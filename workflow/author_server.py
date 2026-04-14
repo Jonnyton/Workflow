@@ -2657,6 +2657,24 @@ def get_goal_ladder(
     return list(goal.get("gate_ladder") or [])
 
 
+class BranchRebindError(Exception):
+    """Raised when claim_gate would silently rewrite a claim's goal_id.
+
+    Indicates the caller's passed-in goal_id differs from the existing
+    claim's denormalized goal_id — i.e. the Branch was rebound to a
+    different Goal since the claim landed. Callers must retract the
+    stale claim and re-claim under the new Goal, so the old Goal's
+    leaderboard keeps its history. Spec §6.2 Debt #2 Option 1.
+    """
+
+    def __init__(self, *, original_goal_id: str, current_goal_id: str):
+        self.original_goal_id = original_goal_id
+        self.current_goal_id = current_goal_id
+        super().__init__(
+            "claim exists under a different Goal; retract first"
+        )
+
+
 def claim_gate(
     base_path: str | Path,
     *,
@@ -2672,6 +2690,10 @@ def claim_gate(
     If an active claim exists for this (branch, rung), update evidence
     and claimed_at and return the row. If a retracted claim exists,
     clear the retraction and reactivate.
+
+    Raises ``BranchRebindError`` when an ACTIVE claim exists under a
+    different ``goal_id`` than the caller passed in. Retracted claims
+    are resolved intent; re-claim reactivates them under the new Goal.
     """
     initialize_author_server(base_path)
     now_iso = _utc_iso_now()
@@ -2682,6 +2704,20 @@ def claim_gate(
             (branch_def_id, rung_key),
         ).fetchone()
         if existing is not None:
+            existing_goal = existing["goal_id"] or ""
+            existing_retracted = existing["retracted_at"]
+            # Defense-in-depth rebind guard: reject rather than
+            # silently rewriting goal_id on an ACTIVE claim. Handler
+            # layer guards too, but the storage layer is the
+            # authoritative check so direct callers don't bypass it.
+            if (
+                not existing_retracted
+                and existing_goal != goal_id
+            ):
+                raise BranchRebindError(
+                    original_goal_id=existing_goal,
+                    current_goal_id=goal_id,
+                )
             conn.execute(
                 """
                 UPDATE gate_claims

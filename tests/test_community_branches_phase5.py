@@ -324,16 +324,19 @@ def test_leaderboard_run_count(p5_env):
     assert result["entries"][0]["value"] == 2
 
 
-def test_leaderboard_outcome_empty_without_claims(p5_env):
+def test_leaderboard_outcome_gated_off_when_flag_unset(p5_env):
+    # Phase 6.2.1: GATES_ENABLED gates the outcome metric. The p5_env
+    # fixture doesn't set the flag, so outcome falls back to a
+    # friendly gated-off envelope — not a stub, not a live empty
+    # leaderboard.
     us, _ = p5_env
     gid = _call(us, "goals", "propose", name="G")["goal"]["goal_id"]
     result = _call(us, "goals", "leaderboard",
                    goal_id=gid, metric="outcome")
-    # Phase 6.2 rewired: outcome is a real metric now. With no ladder
-    # + no claims, entries are empty and the text points users at `gates`.
     assert result["metric"] == "outcome"
     assert result["entries"] == []
-    assert "gate claims" in result["text"].lower()
+    assert result["status"] == "gates_disabled"
+    assert "GATES_ENABLED" in result["text"]
 
 
 def test_leaderboard_rejects_unknown_metric(p5_env):

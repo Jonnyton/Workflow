@@ -6268,6 +6268,25 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
             "available_metrics": list(_ALL_LEADERBOARD_METRICS),
         })
 
+    # GATES_ENABLED gates the outcome metric. When the flag is off,
+    # return a friendly flag-gated envelope rather than letting the
+    # live leaderboard path run against an empty ladder (which would
+    # confuse the UI into thinking the Goal simply has no claims).
+    # Flag flips in 6.3 per spec.
+    if metric == "outcome" and not _gates_enabled():
+        return json.dumps({
+            "text": (
+                "**Leaderboard metric `outcome`** is gated by the "
+                "`GATES_ENABLED` flag (Phase 6.2). Set "
+                "`GATES_ENABLED=1` on the Universe Server to opt in, "
+                "or use `metric=run_count` / `metric=forks` today."
+            ),
+            "status": "gates_disabled",
+            "goal_id": gid,
+            "metric": metric,
+            "entries": [],
+        }, default=str)
+
     try:
         entries = goal_leaderboard(
             _base_path(), goal_id=gid, metric=metric,
@@ -6767,14 +6786,20 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
                 "Bind it via `goals action=bind` before claiming."
             ),
         })
-    # Rebind guard: if a prior claim exists for (branch, rung) under a
-    # different Goal, the Branch was rebound between claims. Reject so
-    # the original Goal's leaderboard keeps its history; caller must
-    # retract the stale claim before re-claiming under the new Goal.
+    # Rebind guard: if an ACTIVE (non-retracted) claim exists for
+    # (branch, rung) under a different Goal, the Branch was rebound
+    # between claims. Reject so the original Goal's leaderboard keeps
+    # its history; caller must retract the stale claim before
+    # re-claiming under the new Goal. Retracted prior claims are
+    # resolved intent — re-claim reactivates under the new Goal.
     existing = get_gate_claim(
         _base_path(), branch_def_id=bid, rung_key=rung_key,
     )
-    if existing is not None and (existing.get("goal_id") or "") != goal_id:
+    if (
+        existing is not None
+        and not existing.get("retracted_at")
+        and (existing.get("goal_id") or "") != goal_id
+    ):
         return json.dumps({
             "status": "rejected",
             "error": "branch_rebound",
@@ -6793,15 +6818,31 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
             "error": "unknown_rung",
             "available_rungs": available,
         })
-    saved = claim_gate(
-        _base_path(),
-        branch_def_id=bid,
-        goal_id=goal_id,
-        rung_key=rung_key,
-        evidence_url=evidence_url,
-        evidence_note=kwargs.get("evidence_note", ""),
-        claimed_by=_current_actor_or_anon(),
-    )
+    from workflow.author_server import BranchRebindError
+    try:
+        saved = claim_gate(
+            _base_path(),
+            branch_def_id=bid,
+            goal_id=goal_id,
+            rung_key=rung_key,
+            evidence_url=evidence_url,
+            evidence_note=kwargs.get("evidence_note", ""),
+            claimed_by=_current_actor_or_anon(),
+        )
+    except BranchRebindError as exc:
+        # Storage-layer guard fired — means another caller rebound the
+        # Branch between this handler's pre-check and the storage
+        # write. Surface the same envelope as the handler pre-check.
+        return json.dumps({
+            "status": "rejected",
+            "error": "branch_rebound",
+            "original_goal_id": exc.original_goal_id,
+            "current_goal_id": exc.current_goal_id,
+            "hint": (
+                "Retract the existing claim under the original Goal "
+                "first, then re-claim under the new Goal."
+            ),
+        })
     return json.dumps({
         "status": "claimed",
         "claim": saved,
