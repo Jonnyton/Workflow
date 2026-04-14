@@ -93,7 +93,7 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
 | **#56 Phase 6.2.2** — private-Branch visibility filter | `workflow/author_server.py`, `workflow/universe_server.py`, possibly new migration | 6.2.1 landed (`a657a92`) + host direction | blocked:host | Three design paths (schema migration add visibility column / Goal-gated inheritance / other) — pick one before claiming. Code shape trivial once direction chosen. |
-| **Phase G** — NodeBid executor + paid priority weights | per rollout plan §Phase G | Phase F landed | pending | Priority slot; wallet integration deferred. Per-host-memory `project_paid_requests_model.md`: own crypto, requester sets node+LLM+price, daemons prefer higher bids matching their LLM, no floor. |
+| **Phase G** — NodeBid executor + paid priority weights | `workflow/node_bid.py`, `workflow/executors/node_bid.py`, `workflow/producers/node_bid.py`, `workflow/dispatcher.py`, `workflow/universe_server.py`, `fantasy_author/__main__.py`, `bids/` dir, tests | Phase F landed (`1d02903`) | pending | Preflight at `docs/specs/phase_g_preflight.md`. All stubs confirmed live in dispatcher + branch_tasks. Flag `WORKFLOW_PAID_MARKET=off` default. No wallet integration — priority slot only. |
 | **Phase H** — host dashboard + MCP inspect surfaces | per rollout plan §Phase H | Phase G landed | pending | UX-primary delivery vehicle. Where the user actually feels all the prior phases. |
 | **Memory-scope defense-in-depth** (medium) | `workflow/memory/scoping.py`, `workflow/retrieval/agentic_search.py`, `workflow/retrieval/phase_context.py` | design pass | pending | Tag KG/vector rows with `universe_id` at write-time; filter at read-time. Defense-in-depth under existing file-path guards. |
 | **Author → Daemon mass-rename** (large, deferred) | `fantasy_author/` module + `author_server.py` + `Author` class + identifier-tied "author" strings | host decision 2026-04-14 (memory `project_terminology_daemon.md`); after Phase C-H rollout settles | pending | Drive-by string fixes happening as code is touched (`619725e`, `90c3d3b` were first). Module rename is mass find-replace + import-rewrite + test sweep. Don't claim until C-H lands. |
@@ -105,7 +105,7 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 
 1. **User-sim Mission 8** — re-test Sporemarch queue drainage (fix a+b: `997f825`, `0db181c`) + dispatch_execution routing fix (`68400bc`). Validate multi-scene overshoot concern (fix b, live). Gate Phase D default flip (`WORKFLOW_UNIFIED_EXECUTION=1`). Phase D follow-up items 1-3 docs-pass should land before this flip.
 2. **User-sim Mission 9** — end-to-end pool post-and-pick with all three flags on (D+E+F). Two test universes sharing a repo_root; subscribe uni-B to a test Goal, post from uni-A, assert uni-B's daemon picks up and executes. Gates `WORKFLOW_GOAL_POOL` default flip.
-3. **Phase G** — NodeBid executor + paid priority weights. Unblocked: Phase F landed. Priority slot; wallet integration deferred.
+3. **Phase G** — NodeBid executor + paid priority weights. Unblocked: Phase F landed (`1d02903`). Preflight written at `docs/specs/phase_g_preflight.md`. Claim and build.
 
 ---
 
@@ -114,6 +114,7 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 - Memo + rollout: `docs/planning/daemon_task_economy.md`, `docs/exec-plans/daemon_task_economy_rollout.md` (`52b3031` + `6616db0` + `c3d13af`)
 - Stress-test scenarios: `docs/planning/stress_test_scenarios.md` (`194ffcd`) — 28 scenarios across 10 subsystems, 14 P0 floor
 - Phase C spec: `docs/specs/taskproducer_phase_c.md` (passed reviewer audit)
+- Phase G preflight: `docs/specs/phase_g_preflight.md` (planner draft 2026-04-14)
 - Outcome gates spec: `docs/specs/outcome_gates_phase6.md` (passed reviewer audit, 6.1 landed)
 - User-sim Mission 7 transcript: `output/user_sim_session.md` tail
 - Memory updates this session: `project_paid_requests_model.md`, `project_terminology_daemon.md`, `feedback_testing_philosophy.md` (UX is the benchmark), `feedback_commit_discipline.md` (tester-only green is not enough), `feedback_restart_daemon.md` (restart authorized via tray)
