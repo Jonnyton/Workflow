@@ -154,17 +154,24 @@ def _build_book_execution_seed(
         chapter_number = int(
             execution_scope.get("chapter_number") or latest_chapter or 1
         )
+        max_existing_scene = max(
+            _existing_scene_numbers(
+                universe_path, book_number, chapter_number,
+            ),
+            default=0,
+        )
         scene_number = int(
             execution_scope.get("scene_number")
-            or (
-                max(
-                    _existing_scene_numbers(
-                        universe_path, book_number, chapter_number,
-                    ),
-                    default=0,
-                ) + 1
-            )
+            or (max_existing_scene + 1)
         )
+        # Sporemarch oscillation fix (#33): if the explicit scene_number
+        # already exists on disk, advance past it. Without this, a
+        # WorkTarget pinned at an existing scene_number makes each
+        # universe cycle rewrite the same scene — revision loop resets,
+        # word count stalls, queue never drains. Proper root-cause fix
+        # (WorkTarget metadata advance on accept) lands in a follow-up.
+        if scene_number <= max_existing_scene:
+            scene_number = max_existing_scene + 1
         scoped = {
             **execution_scope,
             "chapter_number": chapter_number,
