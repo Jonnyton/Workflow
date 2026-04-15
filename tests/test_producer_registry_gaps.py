@@ -19,7 +19,11 @@ from pathlib import Path
 
 import pytest
 
+from workflow import producers as in_univ_mod
 from workflow.branch_tasks import BranchTask, new_task_id
+from workflow.producers import (
+    branch_task as bt_producer_mod,
+)
 from workflow.producers import (
     producer_interface_enabled,
     register,
@@ -46,11 +50,20 @@ def universe_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def _clean_both_registries():
+    """Save-and-restore pattern (precedent: tests/test_phase_f_goal_pool.py
+    _clean_branch_task_registry). A plain reset+reset across yield leaks
+    empty registries to downstream test files — many production suites
+    depend on import-time registrations (goal_pool, node_bid, domain
+    producers) still being present when they run."""
+    saved_iu = list(in_univ_mod._REGISTRY)
+    saved_bt = list(bt_producer_mod._REGISTRY)
     reset_registry()
     reset_branch_task_registry()
     yield
     reset_registry()
     reset_branch_task_registry()
+    in_univ_mod._REGISTRY.extend(saved_iu)
+    bt_producer_mod._REGISTRY.extend(saved_bt)
 
 
 # ─── TaskProducer (in-universe) gaps ───────────────────────────────────
