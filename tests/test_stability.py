@@ -20,13 +20,13 @@ import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E
 _provider_stub._FORCE_MOCK = True
 
 from domains.fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
-from workflow.memory.promises import SeriesPromiseTracker  # noqa: E402
-from workflow.memory.versioning import OutputVersionStore  # noqa: E402
 from domains.fantasy_author.phases.book_close import book_close  # noqa: E402
 from domains.fantasy_author.phases.commit import commit  # noqa: E402
 from domains.fantasy_author.phases.diagnose import diagnose  # noqa: E402
 from domains.fantasy_author.phases.select_task import select_task  # noqa: E402
 from domains.fantasy_author.phases.universe_cycle import universe_cycle  # noqa: E402
+from workflow.memory.promises import SeriesPromiseTracker  # noqa: E402
+from workflow.memory.versioning import OutputVersionStore  # noqa: E402
 
 
 def _make_scene_state(

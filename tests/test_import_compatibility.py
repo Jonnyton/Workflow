@@ -18,11 +18,11 @@ from __future__ import annotations
 def test_fantasy_author_imports_still_work():
     """Test that existing code importing from fantasy_author.* still works."""
     # These are the import paths used by existing tests and __main__.py
+    from domains.fantasy_author.state import SceneState, UniverseState
     from workflow.exceptions import CheckpointError, ProviderError
     from workflow.memory.manager import MemoryManager
     from workflow.providers.base import BaseProvider, ModelConfig
     from workflow.providers.router import ProviderRouter
-    from domains.fantasy_author.state import SceneState, UniverseState
 
     assert CheckpointError is not None
     assert ProviderError is not None
@@ -69,8 +69,8 @@ def test_domain_imports_work():
 def test_both_import_paths_coexist():
     """Test that old and new import paths can coexist in the same process."""
     # Import the same class from both old and new locations
-    from workflow.exceptions import CheckpointError as OldCheckpointError
     from workflow.exceptions import CheckpointError as NewCheckpointError
+    from workflow.exceptions import CheckpointError as OldCheckpointError
 
     # They should be the same class (pointing to workflow.exceptions)
     # or at least equivalent behavior
@@ -88,12 +88,12 @@ def test_both_import_paths_coexist():
 def test_providers_import_paths():
     """Test provider imports from both old and new locations."""
     # Old path (backward compatibility)
-    from workflow.providers.router import FALLBACK_CHAINS as old_chains
-    from workflow.providers.router import ProviderRouter as OldRouter
     from workflow.providers.router import FALLBACK_CHAINS as new_chains
+    from workflow.providers.router import FALLBACK_CHAINS as old_chains
 
     # New path (canonical)
     from workflow.providers.router import ProviderRouter as NewRouter
+    from workflow.providers.router import ProviderRouter as OldRouter
 
     assert OldRouter is not None
     assert NewRouter is not None

@@ -12,8 +12,6 @@ Tray: update_tier_states, _handle_tier_toggle, _handle_pause_all_tiers,
 
 from __future__ import annotations
 
-import pytest
-
 from workflow.desktop.dashboard import (
     DashboardHandler,
     DispatcherPane,
@@ -21,7 +19,6 @@ from workflow.desktop.dashboard import (
     QueuePane,
 )
 from workflow.desktop.tray import TrayApp
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -227,7 +224,6 @@ class TestDashboardHandlerOverviewFanOut:
         handler = DashboardHandler()
         broken = _BrokenPane()
         # Patch one pane with a broken one.
-        original_queue = handler.queue_pane
         handler.queue_pane = broken  # type: ignore[assignment]
         handler.refresh_from_overview(_VALID_OVERVIEW)
         # dispatcher_pane must still have been refreshed.

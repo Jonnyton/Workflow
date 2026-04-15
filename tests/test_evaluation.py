@@ -772,9 +772,9 @@ class TestEditorialReaderEnrichedContext:
 
 class TestConsistencyAuditNotes:
     def test_builds_notes_from_structural_and_process_failures(self):
+        from domains.fantasy_author.phases.commit import _build_consistency_audit_notes
         from workflow.evaluation.process import ProcessCheck, ProcessEvaluation
         from workflow.evaluation.structural import CheckResult, StructuralResult
-        from domains.fantasy_author.phases.commit import _build_consistency_audit_notes
 
         structural = StructuralResult(
             checks=[

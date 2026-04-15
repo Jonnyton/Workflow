@@ -77,9 +77,16 @@ packages = ["fantasy_author", "workflow", "domains"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["fantasy_author_original"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embeds JavaScript DOM-scanning strings (regexes, selectors) that can't
+# be reflowed without breaking the JS. Plus a PowerShell one-liner in the
+# module docstring that users copy-paste verbatim.
+"scripts/claude_chat.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -269,8 +269,8 @@ class TestCommitVersionStoreWiring:
     """Test that commit node saves drafts to version store."""
 
     def test_save_to_version_store_called(self):
-        from workflow import runtime
         from domains.fantasy_author.phases.commit import _save_to_version_store
+        from workflow import runtime
 
         store = OutputVersionStore(":memory:", "test")
         state = {
@@ -292,16 +292,16 @@ class TestCommitVersionStoreWiring:
 
     def test_save_to_version_store_absent(self):
         """No crash when version_store is not set."""
-        from workflow import runtime
         from domains.fantasy_author.phases.commit import _save_to_version_store
+        from workflow import runtime
 
         runtime.version_store = None
         _save_to_version_store({}, "prose", "accept", 0.8)  # should not raise
 
     def test_save_to_version_store_error_handled(self):
         """Errors in version store are caught gracefully."""
-        from workflow import runtime
         from domains.fantasy_author.phases.commit import _save_to_version_store
+        from workflow import runtime
 
         broken_store = MagicMock()
         broken_store.save_draft.side_effect = RuntimeError("DB error")
@@ -316,8 +316,8 @@ class TestBookClosePromiseWiring:
     """Test that book_close promotes promises to series level."""
 
     def test_promote_promises_on_close(self):
-        from workflow import runtime
         from domains.fantasy_author.phases.book_close import book_close
+        from workflow import runtime
 
         tracker = SeriesPromiseTracker(":memory:", "test")
         state = {
@@ -340,8 +340,8 @@ class TestBookClosePromiseWiring:
 
     def test_book_close_no_tracker(self):
         """No crash when promise_tracker is not set."""
-        from workflow import runtime
         from domains.fantasy_author.phases.book_close import book_close
+        from workflow import runtime
 
         runtime.promise_tracker = None
         result = book_close({
@@ -352,8 +352,8 @@ class TestBookClosePromiseWiring:
 
     def test_book_close_empty_promises(self):
         """Graceful handling when no promises to promote."""
-        from workflow import runtime
         from domains.fantasy_author.phases.book_close import book_close
+        from workflow import runtime
 
         tracker = SeriesPromiseTracker(":memory:", "test")
         runtime.promise_tracker = tracker

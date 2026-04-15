@@ -2,7 +2,6 @@
 import re
 from pathlib import Path
 
-
 ROOT = Path('.')
 ORIG = ROOT / 'fantasy_author_original'
 WORKFLOW = ROOT / 'workflow'

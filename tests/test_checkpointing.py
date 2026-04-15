@@ -19,6 +19,7 @@ import tempfile
 
 import pytest
 
+from domains.fantasy_author.graphs.scene import build_scene_graph
 from workflow.checkpointing import (
     CheckpointRetentionPolicy,
     compile_all_graphs,
@@ -29,7 +30,6 @@ from workflow.checkpointing.sqlite_saver import (
     make_resume_config,
     verify_wal_mode,
 )
-from domains.fantasy_author.graphs.scene import build_scene_graph
 
 # -----------------------------------------------------------------------
 # Fixtures

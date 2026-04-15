@@ -28,13 +28,13 @@ import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E
 # Force mock provider responses
 _provider_stub._FORCE_MOCK = True
 
-from workflow.desktop.dashboard import DashboardHandler  # noqa: E402
-from workflow.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
 from domains.fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
 from domains.fantasy_author.phases.commit import commit  # noqa: E402
 from domains.fantasy_author.phases.draft import draft  # noqa: E402
 from domains.fantasy_author.phases.orient import orient  # noqa: E402
 from domains.fantasy_author.phases.plan import plan  # noqa: E402
+from workflow.desktop.dashboard import DashboardHandler  # noqa: E402
+from workflow.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -199,13 +199,13 @@ class TestOrientRetrievalIntegration:
         """orient retrieval must not close the daemon-owned KG singleton."""
         from unittest.mock import patch
 
+        from domains.fantasy_author.phases.orient import _run_retrieval
         from workflow import runtime
         from workflow.knowledge.models import (
             FactWithContext,
             RetrievalResult,
             SourceType,
         )
-        from domains.fantasy_author.phases.orient import _run_retrieval
 
         class FakeKG:
             def __init__(self):
@@ -2040,8 +2040,8 @@ class TestEditorialReader:
 
     def test_editorial_skips_on_hard_failure(self):
         """Editorial reader should be skipped on structural hard failure."""
-        from workflow.evaluation.structural import StructuralResult
         from domains.fantasy_author.phases.commit import _run_editorial
+        from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.0,
@@ -2113,8 +2113,8 @@ class TestEditorialVerdict:
 
     def test_accept_without_editorial(self):
         """No editorial -> accept."""
-        from workflow.evaluation.structural import StructuralResult
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+        from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2125,9 +2125,9 @@ class TestEditorialVerdict:
 
     def test_revert_on_hard_failure(self):
         """Structural hard failure -> revert."""
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import EditorialNotes
         from workflow.evaluation.structural import StructuralResult
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.0,
@@ -2139,12 +2139,12 @@ class TestEditorialVerdict:
 
     def test_second_draft_on_clearly_wrong(self):
         """Clearly wrong concern -> second_draft (first attempt)."""
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
         from workflow.evaluation.structural import StructuralResult
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2162,12 +2162,12 @@ class TestEditorialVerdict:
 
     def test_accept_on_second_draft_even_with_clearly_wrong(self):
         """Clearly wrong on second draft -> accept (never block)."""
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
         from workflow.evaluation.structural import StructuralResult
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
@@ -2183,12 +2183,12 @@ class TestEditorialVerdict:
 
     def test_accept_with_non_wrong_concerns(self):
         """Concerns that aren't clearly_wrong -> accept."""
+        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
         )
         from workflow.evaluation.structural import StructuralResult
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.8,
