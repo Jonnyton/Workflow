@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -64,7 +63,7 @@ def _make_branch_row(**overrides) -> dict:
 
 
 def test_default_visibility_is_public(base_path):
-    from workflow.author_server import save_branch_definition, get_branch_definition
+    from workflow.author_server import get_branch_definition, save_branch_definition
 
     saved = save_branch_definition(
         base_path, branch_def=_make_branch_row(branch_def_id="b1"),
@@ -76,7 +75,7 @@ def test_default_visibility_is_public(base_path):
 
 
 def test_explicit_private_round_trips(base_path):
-    from workflow.author_server import save_branch_definition, get_branch_definition
+    from workflow.author_server import get_branch_definition, save_branch_definition
 
     saved = save_branch_definition(
         base_path,
@@ -121,8 +120,8 @@ def test_update_visibility_public_to_private(base_path):
 
 def test_list_branch_definitions_hides_others_private(base_path):
     from workflow.author_server import (
-        save_branch_definition,
         list_branch_definitions,
+        save_branch_definition,
     )
 
     save_branch_definition(
@@ -171,7 +170,7 @@ def test_list_branch_definitions_hides_others_private(base_path):
 def _seed_claims_for_filter_tests(base_path: Path):
     """Seed a Goal + 2 Branches (1 public, 1 private-bob) + 1 claim
     each on the same rung. Returns (goal_id, bids, rung_key)."""
-    from workflow.author_server import save_branch_definition, save_goal, claim_gate
+    from workflow.author_server import claim_gate, save_branch_definition, save_goal
 
     goal_saved = save_goal(base_path, goal={
         "goal_id": "g-vis",
@@ -281,7 +280,10 @@ def test_private_branch_on_public_goal_is_visible_to_owner(
     """The collision case planner flagged: a private Branch bound to
     a public Goal. Owner sees their own claim; other users don't."""
     from workflow.author_server import (
-        save_branch_definition, save_goal, claim_gate, get_goal,
+        claim_gate,
+        get_goal,
+        save_branch_definition,
+        save_goal,
     )
 
     goal_saved = save_goal(base_path, goal={
@@ -367,3 +369,143 @@ def test_branch_get_hides_private_from_non_owner(base_path, monkeypatch):
     result = json.loads(us._ext_branch_get({"branch_def_id": "b-hidden"}))
     assert result.get("branch_def_id") == "b-hidden"
     assert result.get("visibility") == "private"
+
+
+# ─── leak coverage: goals.get + goals.common_nodes ────────────────────
+
+
+def test_goal_get_hides_private_branch_from_non_owner(
+    base_path, monkeypatch,
+):
+    """Verifier-flagged leak: `goals action=get` was returning the full
+    Branch list including private rows. After Path A's viewer-aware
+    `branches_for_goal`, non-owners must not see another user's
+    private Branch on a shared public Goal.
+    """
+    from workflow.author_server import save_branch_definition, save_goal
+
+    goal_saved = save_goal(base_path, goal={
+        "goal_id": "g-leak",
+        "name": "Leak test goal",
+        "description": "",
+        "author": "alice",
+        "visibility": "public",
+        "tags": [],
+        "gate_ladder": [],
+    })
+    save_branch_definition(
+        base_path,
+        branch_def=_make_branch_row(
+            branch_def_id="b-public-on-public",
+            author="alice",
+            visibility="public",
+            goal_id=goal_saved["goal_id"],
+        ),
+    )
+    save_branch_definition(
+        base_path,
+        branch_def=_make_branch_row(
+            branch_def_id="b-private-on-public",
+            author="bob",
+            visibility="private",
+            goal_id=goal_saved["goal_id"],
+        ),
+    )
+
+    # Alice (non-owner of the private branch) hits goals.get.
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    from workflow import universe_server as us
+    importlib.reload(us)
+
+    result = json.loads(us._action_goal_get({"goal_id": goal_saved["goal_id"]}))
+    branch_ids = {b["branch_def_id"] for b in result.get("branches", [])}
+    assert branch_ids == {"b-public-on-public"}, (
+        "Alice must not see Bob's private branch on a public goal"
+    )
+
+    # Bob (owner of the private branch) hits goals.get — sees both.
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
+    importlib.reload(us)
+    result = json.loads(us._action_goal_get({"goal_id": goal_saved["goal_id"]}))
+    branch_ids = {b["branch_def_id"] for b in result.get("branches", [])}
+    assert branch_ids == {"b-public-on-public", "b-private-on-public"}
+
+
+def test_goal_common_nodes_hides_private_branch_from_non_owner(
+    base_path, monkeypatch,
+):
+    """Verifier-flagged leak: `goals action=common_nodes` aggregates
+    node_ids across all Branches under a Goal. Without filtering,
+    `first_seen_in` and `branch_ids` would leak private Branch IDs.
+    """
+    from workflow.author_server import save_branch_definition, save_goal
+
+    goal_saved = save_goal(base_path, goal={
+        "goal_id": "g-cn",
+        "name": "Common-nodes leak test",
+        "description": "",
+        "author": "alice",
+        "visibility": "public",
+        "tags": [],
+        "gate_ladder": [],
+    })
+    # Both branches share a node_id 'shared_node'. Alice's is public,
+    # Bob's is private. Common-nodes aggregation must omit Bob's
+    # contribution from Alice's view.
+    shared_node = {
+        "node_id": "shared_node",
+        "display_name": "Shared node",
+    }
+    save_branch_definition(
+        base_path,
+        branch_def=_make_branch_row(
+            branch_def_id="b-cn-public",
+            author="alice",
+            visibility="public",
+            goal_id=goal_saved["goal_id"],
+            node_defs=[shared_node],
+        ),
+    )
+    save_branch_definition(
+        base_path,
+        branch_def=_make_branch_row(
+            branch_def_id="b-cn-private",
+            author="bob",
+            visibility="private",
+            goal_id=goal_saved["goal_id"],
+            node_defs=[shared_node],
+        ),
+    )
+
+    # Alice asks. min_branches=1 so a single contributor surfaces.
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    from workflow import universe_server as us
+    importlib.reload(us)
+    result = json.loads(us._action_goal_common_nodes({
+        "goal_id": goal_saved["goal_id"],
+        "min_branches": 1,
+        "scope": "this_goal",
+    }))
+    entries = result.get("entries", [])
+    shared = next((e for e in entries if e["node_id"] == "shared_node"), None)
+    assert shared is not None
+    assert "b-cn-private" not in shared["branch_ids"], (
+        "Alice's view must not leak Bob's private branch_def_id "
+        "via common-nodes branch_ids"
+    )
+    assert shared["first_seen_in"] != "b-cn-private", (
+        "first_seen_in must not point at a hidden private branch"
+    )
+
+    # Bob sees both contributions.
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
+    importlib.reload(us)
+    result = json.loads(us._action_goal_common_nodes({
+        "goal_id": goal_saved["goal_id"],
+        "min_branches": 1,
+        "scope": "this_goal",
+    }))
+    entries = result.get("entries", [])
+    shared = next((e for e in entries if e["node_id"] == "shared_node"), None)
+    assert shared is not None
+    assert set(shared["branch_ids"]) == {"b-cn-public", "b-cn-private"}

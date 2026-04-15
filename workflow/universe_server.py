@@ -7384,7 +7384,11 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
 
-    branches = branches_for_goal(_base_path(), goal_id=gid)
+    # Phase 6.2.2 — viewer-aware. Private Branches owned by other
+    # actors are excluded from this Goal's published Branch list.
+    branches = branches_for_goal(
+        _base_path(), goal_id=gid, viewer=_current_actor(),
+    )
     is_deleted = goal.get("visibility") == "deleted"
 
     # Phase 6.4: gate_summary rides alongside branches/is_deleted.
@@ -7534,6 +7538,7 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
         entries = goal_leaderboard(
             _base_path(), goal_id=gid, metric=metric,
             limit=int(kwargs.get("limit", 20) or 20),
+            viewer=_current_actor(),
         )
     except ValueError as exc:
         return json.dumps({
@@ -7604,10 +7609,13 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
         })
 
     if scope == "all":
+        # Phase 6.2.2 — viewer-aware cross-Goal aggregation; private
+        # Branches owned by other actors don't contribute.
         entries = goal_common_nodes_all(
             _base_path(),
             min_branches=min_branches,
             limit=limit,
+            viewer=_current_actor(),
         )
         lines = [
             "**Common nodes across ALL Goals** "
@@ -7665,10 +7673,13 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
 
+    # Phase 6.2.2 — viewer-aware aggregation; private Branches
+    # owned by other actors don't contribute their node inventory.
     entries = goal_common_nodes(
         _base_path(), goal_id=gid,
         min_branches=min_branches,
         limit=limit,
+        viewer=_current_actor(),
     )
     lines = [
         f"**Common nodes in Goal '{goal['name']}'** "

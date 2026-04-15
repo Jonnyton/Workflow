@@ -2659,17 +2659,29 @@ def branches_for_goal(
     *,
     goal_id: str,
     limit: int = 100,
+    viewer: str = "",
+    include_private: bool = False,
 ) -> list[dict[str, Any]]:
     """Return Branches bound to a Goal (full branch-def dicts).
 
-    Phase 6.2.2: returns ALL visibility states. The visibility filter
-    belongs at the presentation boundary (leaderboard + list_claims
-    handlers), not here — otherwise internal stats that need the full
-    population break. Callers that surface this to a user must filter
-    by visibility themselves.
+    Phase 6.2.2: visibility-aware by default. With no ``viewer`` and
+    ``include_private=False`` the result is public-only — the safe
+    default for any caller that surfaces results to an end user.
+    Internal stats that need the full Branch population (e.g.
+    leaderboard) must opt in explicitly with ``include_private=True``
+    and re-filter at the presentation boundary.
+
+    Args:
+        viewer: Actor doing the listing. With ``include_private=False``,
+            adds the viewer's own private Branches to the public set.
+        include_private: When True, returns ALL visibility states
+            (internal aggregation callers only).
     """
     return list_branch_definitions(
-        base_path, goal_id=goal_id, include_private=True,
+        base_path,
+        goal_id=goal_id,
+        viewer=viewer,
+        include_private=include_private,
     )[:max(1, int(limit))]
 
 
@@ -2964,7 +2976,12 @@ def gates_leaderboard(
     }
     if not rung_index:
         return []
-    branches = branches_for_goal(base_path, goal_id=goal_id)
+    # Internal aggregation — include private branches so the
+    # branch_name lookup is complete; the MCP handler filters
+    # private rows from non-owners at the presentation boundary.
+    branches = branches_for_goal(
+        base_path, goal_id=goal_id, include_private=True,
+    )
     branch_by_id = {b["branch_def_id"]: b for b in branches}
     with _connect(base_path) as conn:
         rows = conn.execute(
@@ -3070,6 +3087,7 @@ def goal_leaderboard(
     goal_id: str,
     metric: str = "run_count",
     limit: int = 20,
+    viewer: str = "",
 ) -> list[dict[str, Any]]:
     """Rank Branches under a Goal by the requested metric.
 
@@ -3079,6 +3097,10 @@ def goal_leaderboard(
     - ``outcome`` — Phase 6 stub. Returns empty list (the handler turns
       this into a spec-compliant forward-compat response).
 
+    Phase 6.2.2: visibility-aware. ``viewer`` (the actor) is threaded
+    to ``branches_for_goal`` so private Branches owned by other actors
+    are excluded from the ranked list.
+
     Unknown metric raises ValueError so the handler can translate it
     into a ``{error, available_metrics}`` response.
     """
@@ -3087,14 +3109,18 @@ def goal_leaderboard(
     if metric == "run_count":
         runs_db = Path(base_path) / ".runs.db"
         if not runs_db.exists():
-            branches = branches_for_goal(base_path, goal_id=goal_id)
+            branches = branches_for_goal(
+                base_path, goal_id=goal_id, viewer=viewer,
+            )
             return [
                 {**b, "metric": metric, "value": 0}
                 for b in branches[:limit]
             ]
         # Join requires attaching the runs DB. Use a fresh connection
         # with ATTACH for the scope of this query.
-        branches = branches_for_goal(base_path, goal_id=goal_id)
+        branches = branches_for_goal(
+            base_path, goal_id=goal_id, viewer=viewer,
+        )
         branch_ids = [b["branch_def_id"] for b in branches]
         if not branch_ids:
             return []
@@ -3126,7 +3152,9 @@ def goal_leaderboard(
             for b in ranked[:limit]
         ]
     if metric == "forks":
-        branches = branches_for_goal(base_path, goal_id=goal_id)
+        branches = branches_for_goal(
+            base_path, goal_id=goal_id, viewer=viewer,
+        )
         branch_ids = {b["branch_def_id"] for b in branches}
         # Count Branches anywhere in the DB whose parent_def_id is in
         # our goal's Branch set.
@@ -3169,14 +3197,22 @@ def goal_common_nodes(
     goal_id: str,
     min_branches: int = 2,
     limit: int = 20,
+    viewer: str = "",
 ) -> list[dict[str, Any]]:
     """Return NodeDefinitions that appear in at least ``min_branches``
     Branches under this Goal. Compares on ``node_id`` equality.
 
     Shape: ``[{node_id, display_name, occurrence_count, branch_ids,
     first_seen_in}]`` ordered by occurrence_count desc.
+
+    Phase 6.2.2: ``viewer`` filters private Branches owned by other
+    actors out of the aggregation. Without this filter, the
+    ``branch_ids`` / ``first_seen_in`` fields would leak the
+    existence of private Branches on shared Goals.
     """
-    branches = branches_for_goal(base_path, goal_id=goal_id)
+    branches = branches_for_goal(
+        base_path, goal_id=goal_id, viewer=viewer,
+    )
     counters: dict[str, dict[str, Any]] = {}
     for branch in branches:
         seen_this_branch: set[str] = set()
@@ -3207,6 +3243,7 @@ def goal_common_nodes_all(
     *,
     min_branches: int = 2,
     limit: int = 20,
+    viewer: str = "",
 ) -> list[dict[str, Any]]:
     """Return NodeDefinitions that appear in at least ``min_branches``
     Branches across ALL Goals (cross-Goal aggregation).
@@ -3218,8 +3255,11 @@ def goal_common_nodes_all(
     still surface. See #62 — bot failed to reuse ``rigor_checker`` across
     research-paper-pipeline and prosecutorial-brief because the per-Goal
     ``goal_common_nodes`` didn't see both.
+
+    Phase 6.2.2: ``viewer`` filters private Branches owned by other
+    actors out of the aggregation.
     """
-    branches = list_branch_definitions(base_path)
+    branches = list_branch_definitions(base_path, viewer=viewer)
     counters: dict[str, dict[str, Any]] = {}
     for branch in branches:
         seen_this_branch: set[str] = set()
