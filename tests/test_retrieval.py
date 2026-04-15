@@ -415,7 +415,6 @@ class TestScopeAssertion:
         """Rows that declare a mismatched universe_id are dropped loudly."""
         import logging
 
-        router = RetrievalRouter(kg=tmp_kg)
         scope = MemoryScope(universe_id="universe-A")
 
         good_fact = FactWithContext(
