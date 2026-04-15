@@ -344,13 +344,19 @@ Each sub-phase independently shippable. Stop-points:
 
 Today it's `str` — deliberately loose to allow new producer types without a schema change. Once the producer set stabilizes (Phase G/H), should it tighten to an Enum? Recommend: **stay string indefinitely.** Enums create migration pain disproportionate to the type-safety win at this scale. The allowed-values list in §3.2 is authoritative; producer declarations self-document.
 
+**Resolved by implementation:** followed recommended default — `origin` stayed `str` through Phase C.1 (`ebbafa1`) and all downstream phases (D/E/F/G). No migration surfaced.
+
 ### Q2. Producer config — single daemon-wide config file or per-producer?
 
 The dispatcher passes `config=producer_config.get(producer.name)`. Source of truth can be (a) a single `daemon_config.yaml` with per-producer keys, or (b) per-producer config files under `workflow/producers/*.yaml`. Recommend: **(a) single file** — one place for host to edit all producer settings; simpler mental model; less file sprawl.
 
+**Resolved by implementation:** followed recommended default in Phase C.3-C.4 (`ba83254`, `b0b1b2d`) — producer config stayed minimal (no per-producer YAML files landed); single-daemon-config assumption preserved.
+
 ### Q3. What happens when a producer emits a target with `origin` mismatching `producer.origin`?
 
 Spec says dispatcher overrides. Alternative: reject the target with a loud error. Recommend: **override + warn log.** Forgiving at runtime, loud in logs so the bug surfaces. Rejecting is too harsh — a producer that mis-stamps one target shouldn't kill the cycle.
+
+**Resolved by implementation:** followed recommended default — override + warn shipped in Phase C.4 dispatcher (`b0b1b2d`). No runtime mismatch bugs observed in C.5 or downstream phases.
 
 ### Q4. Should `ensure_seed_targets` be converted to a producer?
 
@@ -358,9 +364,13 @@ Arguments yes: consistency — every WorkTarget-creator becomes a producer, no s
 Arguments no: seeding only runs on first-ever boot; wrapping it as a cycle-time producer either re-runs the check every cycle (cheap but wasteful) or adds a `first_run` flag (ugly).
 Recommend: **yes, wrap it — idempotent by construction. The "check if already seeded" cost is trivial.** Makes the producer list uniform. If cycle overhead is observed, optimize later.
 
+**Resolved by implementation:** followed recommended default in Phase C.4 (`b0b1b2d`) — seed targets registered as a producer; no cycle-overhead complaint.
+
 ### Q5. Do we need a way for producers to signal "I produced nothing because universe is idle, consider opportunistic tier"?
 
 Today a producer returning `[]` looks the same as a producer erroring silently. Future Phase F/H opportunistic tier needs to distinguish "local producers are empty" from "all producers failed." Recommend: **defer to Phase F.** Protocol can grow an `IDLE` sentinel return value later without breaking v1 shape.
+
+**Resolved by implementation:** followed recommended default — deferral held through Phase F (`1d02903`); no IDLE sentinel needed yet since F's tier cascade distinguishes empty-tier from producer-error upstream. Revisit if Phase H opportunistic tier requires the distinction.
 
 ### Q6. Should `candidate_override` be a hard requirement or an optional? — **RESOLVED**
 

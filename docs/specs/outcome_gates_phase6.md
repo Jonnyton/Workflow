@@ -438,11 +438,15 @@ If dev notices the 6.3 YAML layout could be shape-changed by 6.2 decisions (e.g.
 ## Open questions (escalate)
 
 1. **Ladder author authority.** Current spec: only Goal owner defines the ladder. Alternative: any user can propose rung additions that the owner approves (lighter-weight, more multiplayer). Recommend: v1 = owner-only; revisit if users bikeshed ladders.
+   **Resolved:** accepted default — owner-only landed in Phase 6.2; no user complaints surfaced.
 2. **Evidence URL hosting.** Self-reported URLs will rot. Should Phase 6 archive a snapshot (web.archive.org submit) at claim time? Recommend: NO in v1 — keep the data model clean, revisit after abuse emerges.
+   **Resolved:** accepted default — no archival snapshot shipped; abuse hasn't surfaced.
 3. **Private claims.** Should Branches with `visibility=private` support private gate claims? Recommend: YES, inherit Branch visibility. Leaderboard respects visibility. Zero new UI surface for v1.
+   **Resolved:** accepted default — blocked only by absence of `visibility` column on `branch_definitions` (tracked as task #56 Phase 6.2.2, separate from this question).
 4. **Cross-Goal rung reuse.** A "peer-reviewed" rung means the same thing for 100 different Goals. Should rungs be shared primitives? Recommend: NO in v1 — let string-matching happen organically first, formalize if patterns emerge.
+   **Resolved:** accepted default — rungs stayed per-Goal strings through 6.2/6.3/6.4; no cross-Goal sharing demand yet.
 
-These are the four questions I'd surface to host before dev coding begins. Default answers above are conservative; dev can proceed without host input if host accepts defaults.
+These were the four questions surfaced to host before dev coding began. All four accepted the recommended default; the spec is self-closing on §Open questions as of Phase 6.2-6.4 landing.
 
 ---
 

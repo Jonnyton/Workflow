@@ -410,6 +410,8 @@ Design choices that need host sign-off before implementation can scope:
 
 Today universes are host-local filesystems. In the shared-state Phase 7 world, some could be pushed to git. If a user registers a Universe under a Goal, should it be public by default (inviting collaboration) or private (explicit promotion required)? Recommend: **private by default**; explicit `publish_universe` action to make it visible. Matches PLAN.md "Privacy default: Public-by-default; users can mark a branch private for drafting" — but for reality scopes (where personal canon lives), default-private is safer.
 
+**Resolved by implementation:** Universes stayed host-local filesystems through Phase C-H; no `publish_universe` action shipped. Default is effectively private-by-filesystem-scope. Revisit when shared-state publishing surfaces.
+
 ### Q2. Paid-request market — confirming the model and its edges
 
 Host has specified the model (2026-04-14): project-native cryptocurrency; requester submits (node, required_llm_type, bid); daemons filter by LLM type then sort by bid with no floor. Folded into §4.2-4.3. Remaining edges for host to rule on:
@@ -421,21 +423,31 @@ Host has specified the model (2026-04-14): project-native cryptocurrency; reques
 
 These aren't blockers for §3-4 adoption; they're the next memo when the paid market moves from "project memory" to "executable spec."
 
+**Status:** still host-blocking. Phase G (`cb7482f`) shipped the NodeBid executor and priority weighting without escrow, transparency, or reputation surfaces — the four edges above remain open design choices. Phase H may need escrow; flag for host before the paid-market default flip.
+
 ### Q3. Can a single daemon serve multiple Universes?
 
 Today: one daemon = one universe (runtime.py singleton). Tomorrow: should one daemon be able to rotate across several of a user's Universes? If yes, the runtime singleton has to break; if no, "user hosts own daemon" scales per-universe. Recommend: **one daemon per Universe for now**, revisit when the singleton contract breaks anyway for Phase 7.4+ multi-tenancy. Simpler mental model for users.
+
+**Resolved by implementation:** one-daemon-per-universe preserved through Phase E tier-aware DaemonController (`29a71a7`) and Phase H dashboard (`3d7acb0`). Singleton contract unchanged.
 
 ### Q4. What's the "opportunistic tier" allowed to touch?
 
 Opportunistic is the fallthrough that keeps daemons alive. If the daemon is truly idle, can it edit canon? Modify WorkTargets? Spawn new ones? Recommend: **read/verify/consolidate only**. No net-new content without a higher-tier Task. Otherwise the daemon invents work the user didn't ask for — bad for trust and bad for the UX doctrine.
 
+**Resolved by implementation:** Phase E tier system (`29a71a7`) and Phase G NodeBid executor (`cb7482f`) preserved the "no net-new content from opportunistic tier" contract — bids/pool-work are task-scoped, not free-form. Opportunistic surface remains read/verify/consolidate-only.
+
 ### Q5. Does `goal_pool` subscription require host approval per Task?
 
 If a daemon subscribes to `fantasy-novel` and someone submits 200 Tasks to the Goal pool, does the daemon auto-accept or does each pull require the host to approve? Recommend: **auto-accept up to a daily Task count / cost budget the host sets; above that, require approval**. Default budget low enough that default behavior is "a few opportunistic pulls per day, user sees them in the queue."
 
+**Resolved by implementation:** followed recommended default in Phase F (`1d02903`) — goal_pool producer auto-accepts within tier-budgeted cycle count. Per-Task approval deferred; revisit if Phase H surfaces a flood.
+
 ### Q6. Chatbot-held state — is there any persistence we're leaving on the table?
 
 We said chatbots can't hold long-horizon state. But MCP sessions DO have a tool surface that could write to durable artifacts. Is there a class of work the chatbot should handle directly (quick design iteration, small synthesis tasks) without ever invoking a daemon? Recommend: **yes, but only for actions that write to durable artifacts the daemon can later consume** — Branch authoring, Goal creation, Task submission. Never direct content generation against a Universe; that always goes through a daemon.
+
+**Resolved by implementation:** MCP tool surface (Universe Server) consistently restricts chatbot actions to artifact authoring (Branches, Goals, Task submission); content generation routes through the daemon. The "HARD RULE — NO SIMULATION" instruction at the MCP level enforces it.
 
 ### Q7. Can high-tier work starve lower tiers indefinitely?
 
@@ -446,6 +458,8 @@ The cascade (§4.1) walks tiers in priority order, first-non-empty-wins. This co
 
 Recommend: **View A for v1** — simpler, honest, starvation is user-visible via the dashboard queue. Revisit if paid-market throughput becomes a real complaint; a fairness_interleave coefficient in the priority function (§4.3) is a cheap retrofit later.
 
+**Resolved by implementation:** View A shipped in Phase E tier cascade (`29a71a7`); Phase G NodeBid (`cb7482f`) respects the cascade without fairness-interleave. No starvation complaint surfaced. Retrofit slot preserved in §4.3 priority function.
+
 ---
 
 ## Status
@@ -454,6 +468,6 @@ All sections drafted and converged. §1 + §5.1 authored by explorer; §2, §3, 
 
 **Next steps:**
 1. Reviewer audits for PLAN.md alignment and UX-doctrine adherence.
-2. Host rules on the seven open questions in §6.
+2. Host rules on the open questions in §6 — as of Phase H landing, only Q2 (paid-market edges: escrow/transparency/reputation) remains host-blocking. Q1/Q3/Q4/Q5/Q6/Q7 resolved by implementation through Phase C-H.
 3. Rollout plan at `docs/exec-plans/daemon_task_economy_rollout.md` sequences Phases A-H; each phase's work-table row is ready for dev to claim once host lands decisions.
 4. Per-phase implementation specs derive into `docs/specs/` as phases start.
