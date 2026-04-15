@@ -12,7 +12,27 @@ import logging
 from dataclasses import asdict
 from typing import Any, Callable
 
+from workflow.memory.scoping import MemoryScope
+
 logger = logging.getLogger(__name__)
+
+
+def _scope_from_state(state: dict[str, Any]) -> MemoryScope | None:
+    """Derive a ``MemoryScope`` from graph state.
+
+    Priority: ``state["scope"]`` if it's a ``MemoryScope``, else build
+    one from ``state["universe_id"]``. Returns ``None`` when neither is
+    present — the caller must decide whether to skip retrieval or fall
+    back (Stage 1 chooses to skip + log, not raise, so nodes stay
+    crash-free).
+    """
+    maybe_scope = state.get("scope")
+    if isinstance(maybe_scope, MemoryScope):
+        return maybe_scope
+    universe_id = state.get("universe_id") or state.get("_universe_id")
+    if universe_id:
+        return MemoryScope(universe_id=str(universe_id))
+    return None
 
 
 def assemble_phase_search_context(
@@ -100,6 +120,15 @@ def run_phase_retrieval(
     if not query:
         return {}
 
+    scope = _scope_from_state(state)
+    if scope is None:
+        logger.warning(
+            "run_phase_retrieval: no scope in state "
+            "(missing universe_id / scope); skipping retrieval for phase %s",
+            phase,
+        )
+        return {}
+
     kg = None
     owns_kg = False
     try:
@@ -133,6 +162,7 @@ def run_phase_retrieval(
         coro = router.query(
             query=query,
             phase=phase,
+            scope=scope,
             access_tier=int(orient_result.get("access_tier", 0) or 0),
             pov_character=orient_result.get("pov_character"),
             chapter_number=state.get("chapter_number"),

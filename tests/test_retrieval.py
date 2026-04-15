@@ -16,6 +16,7 @@ from workflow.knowledge.models import (
     RetrievalResult,
     SourceType,
 )
+from workflow.memory.scoping import MemoryScope
 from workflow.retrieval.agentic_search import (
     assemble_phase_search_context,
     build_phase_query,
@@ -31,6 +32,8 @@ from workflow.retrieval.router import (
     _simple_decompose,
 )
 from workflow.retrieval.vector_store import VectorStore, reset_db
+
+_SCOPE = MemoryScope(universe_id="test-universe")
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -300,6 +303,7 @@ class TestRetrievalRouter:
         result = await router.query(
             "What are Ryn's relationships?",
             phase="orient",
+            scope=_SCOPE,
             access_tier=0,
             chapter_number=1,
         )
@@ -327,6 +331,7 @@ class TestRetrievalRouter:
         result = await router.query(
             "Find prose with cold atmosphere",
             phase="draft",
+            scope=_SCOPE,
         )
         assert "vector" in result.sources
         assert len(result.prose_chunks) >= 1
@@ -337,6 +342,7 @@ class TestRetrievalRouter:
         result = await router.query(
             "What does Ryn know?",
             phase="draft",
+            scope=_SCOPE,
         )
         # Draft phase excludes KG relationships
         assert "hipporag" not in result.sources
@@ -358,6 +364,7 @@ class TestRetrievalRouter:
         result = await router.query(
             "Tell me about Ryn's alliances",
             phase="orient",
+            scope=_SCOPE,
             chapter_number=1,
         )
         assert "hipporag" in result.sources
@@ -369,6 +376,7 @@ class TestRetrievalRouter:
         result = await router.query(
             "What relationships exist?",
             phase="orient",
+            scope=_SCOPE,
             chapter_number=1,
         )
         assert result.token_count >= 0
@@ -376,13 +384,85 @@ class TestRetrievalRouter:
     @pytest.mark.asyncio
     async def test_result_structure(self, tmp_kg):
         router = RetrievalRouter(kg=tmp_kg)
-        result = await router.query("test", phase="orient")
+        result = await router.query("test", phase="orient", scope=_SCOPE)
         assert isinstance(result, RetrievalResult)
         assert isinstance(result.facts, list)
         assert isinstance(result.relationships, list)
         assert isinstance(result.prose_chunks, list)
         assert isinstance(result.community_summaries, list)
         assert isinstance(result.sources, list)
+
+
+class TestScopeAssertion:
+    """Stage 1 defense-in-depth: post-query universe_id check."""
+
+    @pytest.mark.asyncio
+    async def test_rows_without_universe_id_pass_through(self, tmp_kg):
+        """KG rows don't carry universe_id today — they should all pass."""
+        router = RetrievalRouter(kg=tmp_kg)
+        result = await router.query(
+            "What relationships exist?",
+            phase="orient",
+            scope=MemoryScope(universe_id="universe-A"),
+            chapter_number=1,
+        )
+        # tmp_kg seeded one fact; it has no universe_id column, so the
+        # assertion must NOT drop it.
+        assert len(result.facts) >= 1
+
+    @pytest.mark.asyncio
+    async def test_cross_universe_dict_rows_dropped(self, tmp_kg, caplog):
+        """Rows that declare a mismatched universe_id are dropped loudly."""
+        import logging
+
+        router = RetrievalRouter(kg=tmp_kg)
+        scope = MemoryScope(universe_id="universe-A")
+
+        good_fact = FactWithContext(
+            fact_id="ok",
+            text="From universe A.",
+            source_type=SourceType.WORLD_TRUTH,
+        )
+        # Simulate a singleton-bleed: a row tagged with the wrong
+        # universe_id sneaks in. The router must drop it and warn.
+        bad_fact = FactWithContext(
+            fact_id="leak",
+            text="From universe B.",
+            source_type=SourceType.WORLD_TRUTH,
+        )
+        bad_fact.universe_id = "universe-B"  # row-level tag (future Stage 2)
+
+        from workflow.retrieval.router import _drop_cross_universe_rows
+
+        result = RetrievalResult(facts=[good_fact, bad_fact])
+        with caplog.at_level(logging.WARNING, logger="workflow.retrieval.router"):
+            filtered = _drop_cross_universe_rows(result, scope)
+
+        kept_ids = [f.fact_id for f in filtered.facts]
+        assert "ok" in kept_ids
+        assert "leak" not in kept_ids
+        assert any(
+            "scope_mismatch" in rec.message for rec in caplog.records
+        ), "expected scope_mismatch warning"
+
+    @pytest.mark.asyncio
+    async def test_cross_universe_relationships_dropped(self, tmp_kg):
+        """Dict-shaped relationship rows are also filtered by universe_id."""
+        from workflow.retrieval.router import _drop_cross_universe_rows
+
+        scope = MemoryScope(universe_id="universe-A")
+        result = RetrievalResult(
+            relationships=[
+                {"source": "ryn", "target": "kael", "universe_id": "universe-A"},
+                {"source": "mira", "target": "jorn", "universe_id": "universe-B"},
+                {"source": "loose", "target": "unknown"},  # no tag: passes
+            ],
+        )
+        filtered = _drop_cross_universe_rows(result, scope)
+        keys = [(r["source"], r["target"]) for r in filtered.relationships]
+        assert ("ryn", "kael") in keys
+        assert ("loose", "unknown") in keys
+        assert ("mira", "jorn") not in keys
 
 
 class TestAgenticSearchPolicy:
@@ -405,6 +485,75 @@ class TestAgenticSearchPolicy:
 
         assert "Overall theme" in plan_query
         assert "Voice, atmosphere" in draft_query
+
+    def test_run_phase_retrieval_skips_when_no_scope(self, monkeypatch, caplog):
+        """Missing universe_id + missing scope → skip retrieval, don't crash."""
+        import logging
+
+        from workflow.retrieval.agentic_search import run_phase_retrieval
+
+        state = {
+            "orient_result": {
+                "scene_id": "s1",
+                "characters": [{"name": "Ryn"}],
+            },
+        }
+        with caplog.at_level(
+            logging.WARNING, logger="workflow.retrieval.agentic_search",
+        ):
+            result = run_phase_retrieval(state, "orient")
+        assert result == {}
+        assert any(
+            "no scope in state" in rec.message for rec in caplog.records
+        )
+
+    def test_run_phase_retrieval_threads_scope_to_router(self, monkeypatch):
+        """State with universe_id → router.query receives a MemoryScope."""
+        from workflow.retrieval import agentic_search
+
+        captured: dict[str, object] = {}
+
+        class _FakeRouter:
+            def __init__(self, **_):
+                pass
+
+            def query(self, *, query, phase, scope, **_):
+                captured["scope"] = scope
+
+                async def _empty():
+                    return RetrievalResult()
+
+                return _empty()
+
+        monkeypatch.setattr(
+            "workflow.retrieval.router.RetrievalRouter", _FakeRouter,
+        )
+
+        class _FakeKG:
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            "workflow.knowledge.knowledge_graph.KnowledgeGraph",
+            lambda *a, **kw: _FakeKG(),
+        )
+        monkeypatch.setattr(
+            "domains.fantasy_author.phases._paths.resolve_kg_path",
+            lambda state: "/tmp/fake.db",
+        )
+        # Clear the runtime singletons so run_phase_retrieval falls
+        # through to construct a fresh KG/router.
+        from workflow import runtime
+        monkeypatch.setattr(runtime, "knowledge_graph", None)
+
+        state = {
+            "universe_id": "universe-A",
+            "orient_result": {"scene_id": "s1"},
+        }
+        agentic_search.run_phase_retrieval(state, "orient")
+        scope = captured.get("scope")
+        assert isinstance(scope, MemoryScope)
+        assert scope.universe_id == "universe-A"
 
     def test_assemble_phase_search_context_merges_prior_retrieval(self, monkeypatch):
         state = {

@@ -7,7 +7,8 @@ RAPTOR (thematic/global), or LanceDB vectors (tone/similarity).
 
 from __future__ import annotations
 
-from typing import Callable
+import logging
+from typing import Any, Callable
 
 import numpy as np
 
@@ -20,9 +21,12 @@ from workflow.knowledge.models import (
     SubQuery,
 )
 from workflow.knowledge.raptor import RaptorTree, query_raptor_tree
+from workflow.memory.scoping import MemoryScope
 from workflow.retrieval.phase_context import should_use_backend
 from workflow.retrieval.vector_store import VectorStore
 from workflow.utils.json_parsing import parse_llm_json
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Query decomposition
@@ -164,6 +168,8 @@ class RetrievalRouter:
         self,
         query: str,
         phase: str,
+        *,
+        scope: MemoryScope,
         access_tier: int = 0,
         pov_character: str | None = None,
         chapter_number: int | None = None,
@@ -177,6 +183,11 @@ class RetrievalRouter:
             The natural-language query.
         phase
             Current graph phase: orient|plan|draft|evaluate.
+        scope
+            Universe/branch/author scope. Required. Used by the
+            post-query assertion to drop any row whose ``universe_id``
+            metadata disagrees with ``scope.universe_id`` — a
+            defense-in-depth check for singleton-bleed bugs.
         access_tier
             Maximum access tier for epistemic filtering.
         pov_character
@@ -189,7 +200,8 @@ class RetrievalRouter:
         Returns
         -------
         RetrievalResult
-            Merged results from all relevant backends.
+            Merged results from all relevant backends, filtered to the
+            given scope.
         """
         # Decompose query into sub-queries
         sub_queries = await self._decompose(query, phase)
@@ -217,6 +229,12 @@ class RetrievalRouter:
                     continue
                 self._route_to_vector(sq, result)
                 result.sources.append("vector")
+
+        # Defense-in-depth: drop rows whose declared universe_id
+        # disagrees with the caller's scope. Rows without a universe_id
+        # attribute pass through (Stage 1 — interface only; KG/vector
+        # rows are path-tagged, not row-tagged, today).
+        result = _drop_cross_universe_rows(result, scope)
 
         # Cluster similar results to reduce redundancy
         result = self._cluster_results(result)
@@ -319,6 +337,83 @@ class RetrievalRouter:
         for summary in result.community_summaries:
             total_chars += len(summary)
         return total_chars // 4
+
+
+# ---------------------------------------------------------------------------
+# Scope defense-in-depth
+# ---------------------------------------------------------------------------
+
+
+def _row_universe_id(row: Any) -> str | None:
+    """Return the row's declared ``universe_id`` or None if absent.
+
+    Works for dataclass rows (``getattr``), dict rows (``get``), and any
+    string rows (returns None — strings carry no scope metadata in
+    Stage 1; KG/vector prose is path-tagged only).
+    """
+    if isinstance(row, str):
+        return None
+    if isinstance(row, dict):
+        value = row.get("universe_id")
+    else:
+        value = getattr(row, "universe_id", None)
+    if value is None:
+        return None
+    return str(value)
+
+
+def _drop_cross_universe_rows(
+    result: RetrievalResult, scope: MemoryScope,
+) -> RetrievalResult:
+    """Drop any row whose declared ``universe_id`` disagrees with scope.
+
+    Rows without a ``universe_id`` attribute (the common case in
+    Stage 1 — KG and vector storage is path-tagged, not row-tagged)
+    pass through unchanged.
+
+    When a mismatch is detected, a loud WARNING is logged with the
+    expected scope, the row's declared universe_id, and the row's
+    provenance field (``facts`` / ``relationships`` / ``prose_chunks``
+    / ``community_summaries``). A mismatch is a bug signal — most
+    likely a singleton-bleed in ``runtime.knowledge_graph`` where the
+    backend got swapped to another universe's DB without the caller
+    being aware.
+    """
+    expected = scope.universe_id
+    dropped_counts: dict[str, int] = {}
+
+    def _filter(rows: list, field: str) -> list:
+        kept: list = []
+        for row in rows:
+            declared = _row_universe_id(row)
+            if declared is None or declared == expected:
+                kept.append(row)
+                continue
+            dropped_counts[field] = dropped_counts.get(field, 0) + 1
+            logger.warning(
+                "retrieval.scope_mismatch: dropped %s row "
+                "(expected universe_id=%r, got %r)",
+                field, expected, declared,
+            )
+        return kept
+
+    result.facts = _filter(result.facts, "facts")
+    result.relationships = _filter(result.relationships, "relationships")
+    result.prose_chunks = _filter(result.prose_chunks, "prose_chunks")
+    result.community_summaries = _filter(
+        result.community_summaries, "community_summaries",
+    )
+
+    if dropped_counts:
+        logger.warning(
+            "retrieval.scope_mismatch: dropped %d rows across fields %s "
+            "(scope.universe_id=%r) — likely a backend singleton bleed",
+            sum(dropped_counts.values()),
+            sorted(dropped_counts.keys()),
+            expected,
+        )
+
+    return result
 
 
 # ---------------------------------------------------------------------------

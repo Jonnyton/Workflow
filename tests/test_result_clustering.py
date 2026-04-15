@@ -189,9 +189,12 @@ class TestRetrievalResultClustering:
         router = RetrievalRouter(kg=kg)
 
         import asyncio
+
+        from workflow.memory.scoping import MemoryScope
         result = asyncio.run(router.query(
             "What are Ryn's relationships?",
             phase="orient",
+            scope=MemoryScope(universe_id="test-universe"),
             chapter_number=1,
         ))
 
