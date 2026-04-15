@@ -53,6 +53,21 @@ jobs:
       - name: Stage claude-plugin runtime (with import probe)
         run: python packaging/claude-plugin/build_plugin.py
 
+      - name: Verify committed plugin runtime matches live workflow/
+        # The plugin runtime tree under
+        # packaging/claude-plugin/.../runtime/workflow/ is tracked so
+        # marketplace consumers can install from the cloned repo. If a
+        # commit modifies workflow/ but forgets to re-run
+        # build_plugin.py, the committed tree goes stale — CI would
+        # otherwise pass silently because the build script re-stages
+        # locally on each run. This diff check closes that seam.
+        run: |
+          if ! git diff --quiet packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow; then
+            echo "::error::Committed plugin runtime is stale. Run 'python packaging/claude-plugin/build_plugin.py' and commit the result."
+            git diff --stat packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow
+            exit 1
+          fi
+
       - name: Run packaging build tests
         run: |
           python -m pip install pytest

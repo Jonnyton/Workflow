@@ -18,13 +18,10 @@ These are smoke tests — actual ``--validate`` / ``--pack`` requires
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MCPB_BUILD = REPO_ROOT / "packaging" / "mcpb" / "build_bundle.py"
