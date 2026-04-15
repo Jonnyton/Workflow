@@ -125,6 +125,17 @@ Preflight §4.3 invariant 1 requires BOTH boundaries:
   to `bids/` can queue work. Approval happens per daemon, but a
   compromised approved node on one host becomes a vector for every
   cooperating daemon.
+- **Pick-waste on unapproved bids.** When the producer-side lookup
+  is unavailable (e.g. `repo_root_path` fails at daemon start),
+  unapproved bids can reach the dispatcher and be picked. The
+  executor-side approval gate (`workflow/executors/node_bid.py:108`)
+  fails them, but the daemon's per-cycle pick contract
+  (`fantasy_author/__main__.py:1000`) finalizes and exits rather
+  than re-picking. Result: one dispatcher cycle is consumed per
+  rejected unapproved bid. The bid's atomic claim still removes it
+  from the market, so this is bounded to one cycle per offending
+  bid, not a sustained drain. Accept as a known tradeoff of the
+  one-pick-per-cycle contract.
 
 ### Operator checklist before flipping the flag
 
