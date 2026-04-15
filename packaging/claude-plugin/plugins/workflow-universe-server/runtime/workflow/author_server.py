@@ -381,6 +381,24 @@ def initialize_author_server(base_path: str | Path) -> Path:
     );
     CREATE INDEX IF NOT EXISTS idx_unreconciled_writes_at
         ON unreconciled_writes(recorded_at);
+
+    -- Memory-scope Stage 2a: per-universe access control list.
+    -- A universe with zero rows is public; a universe with at least
+    -- one row is private and only listed actors can access it.
+    -- ``permission`` is one of {'read', 'write', 'admin'}.
+    -- ``actor_id`` = user login (host Q1 answer 2026-04-15).
+    -- Enforcement lands in Stage 2b; this table is infrastructure
+    -- only for the 2a landing.
+    CREATE TABLE IF NOT EXISTS universe_acl (
+        universe_id  TEXT NOT NULL,
+        actor_id     TEXT NOT NULL,
+        permission   TEXT NOT NULL,
+        granted_at   REAL NOT NULL,
+        granted_by   TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (universe_id, actor_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_universe_acl_actor
+        ON universe_acl(actor_id);
     """
     with _connect(base_path) as conn:
         conn.executescript(schema)
@@ -3396,3 +3414,162 @@ def _preview(text: str, max_len: int) -> str:
     if len(collapsed) <= max_len:
         return collapsed
     return collapsed[: max_len - 1] + "…"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Memory-scope Stage 2a — universe_acl CRUD
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# A universe with zero ACL rows is public; a universe with at least one
+# row is private and only the listed actors may access it. Enforcement
+# lands in Stage 2b (flag-gated ``WORKFLOW_TIERED_SCOPE``); these
+# helpers are infrastructure only for the 2a landing.
+
+
+_ALLOWED_PERMISSIONS = frozenset({"read", "write", "admin"})
+
+
+def grant_universe_access(
+    base_path: str | Path,
+    *,
+    universe_id: str,
+    actor_id: str,
+    permission: str,
+    granted_by: str = "",
+) -> dict[str, Any]:
+    """Grant an actor access to a universe.
+
+    ``permission`` must be one of 'read', 'write', 'admin'. Grants are
+    idempotent — regranting updates ``granted_at`` + ``granted_by``.
+    Raises ``ValueError`` on unknown permission or empty universe/actor.
+    """
+    if not universe_id or not actor_id:
+        raise ValueError(
+            "grant_universe_access requires universe_id and actor_id."
+        )
+    permission = (permission or "").strip().lower()
+    if permission not in _ALLOWED_PERMISSIONS:
+        raise ValueError(
+            f"Unknown permission {permission!r}; expected one of "
+            f"{sorted(_ALLOWED_PERMISSIONS)}."
+        )
+    now = _now()
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO universe_acl
+              (universe_id, actor_id, permission, granted_at, granted_by)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(universe_id, actor_id) DO UPDATE SET
+                permission = excluded.permission,
+                granted_at = excluded.granted_at,
+                granted_by = excluded.granted_by
+            """,
+            (universe_id, actor_id, permission, now, granted_by or ""),
+        )
+    return {
+        "universe_id": universe_id,
+        "actor_id": actor_id,
+        "permission": permission,
+        "granted_at": now,
+        "granted_by": granted_by or "",
+    }
+
+
+def revoke_universe_access(
+    base_path: str | Path,
+    *,
+    universe_id: str,
+    actor_id: str,
+) -> bool:
+    """Remove an actor's grant from a universe. Returns True if a row
+    was deleted, False if none existed.
+    """
+    if not universe_id or not actor_id:
+        return False
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        cursor = conn.execute(
+            "DELETE FROM universe_acl "
+            "WHERE universe_id = ? AND actor_id = ?",
+            (universe_id, actor_id),
+        )
+    return cursor.rowcount > 0
+
+
+def list_universe_acl(
+    base_path: str | Path,
+    *,
+    universe_id: str,
+) -> list[dict[str, Any]]:
+    """Return all grants on a universe, ordered by ``granted_at`` ASC."""
+    if not universe_id:
+        return []
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT universe_id, actor_id, permission, granted_at, granted_by
+            FROM universe_acl
+            WHERE universe_id = ?
+            ORDER BY granted_at ASC
+            """,
+            (universe_id,),
+        ).fetchall()
+    return [
+        {
+            "universe_id": r["universe_id"],
+            "actor_id": r["actor_id"],
+            "permission": r["permission"],
+            "granted_at": r["granted_at"],
+            "granted_by": r["granted_by"],
+        }
+        for r in rows
+    ]
+
+
+def universe_is_private(base_path: str | Path, *, universe_id: str) -> bool:
+    """True if the universe has any ACL rows (= private).
+
+    Public universes have zero rows. The Stage 2b enforcement path
+    short-circuits on public universes; this helper is the single
+    source of truth for that check.
+    """
+    if not universe_id:
+        return False
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM universe_acl WHERE universe_id = ? LIMIT 1",
+            (universe_id,),
+        ).fetchone()
+    return row is not None
+
+
+def universe_access_permission(
+    base_path: str | Path,
+    *,
+    universe_id: str,
+    actor_id: str,
+) -> str:
+    """Return the actor's permission on a universe, or '' if no grant.
+
+    Public universes (no ACL rows) return 'read' by convention so the
+    Stage 2b enforcement path can treat "public universe, any actor"
+    uniformly with "private universe, granted reader."
+    """
+    if not universe_id or not actor_id:
+        return ""
+    if not universe_is_private(base_path, universe_id=universe_id):
+        return "read"
+    initialize_author_server(base_path)
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT permission FROM universe_acl "
+            "WHERE universe_id = ? AND actor_id = ?",
+            (universe_id, actor_id),
+        ).fetchone()
+    if row is None:
+        return ""
+    return row["permission"] or ""

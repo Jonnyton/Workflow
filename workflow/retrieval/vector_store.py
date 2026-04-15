@@ -92,7 +92,15 @@ class VectorStore:
         self._table: Any = None
 
     def _ensure_table(self) -> Any:
-        """Create or open the table."""
+        """Create or open the table.
+
+        Memory-scope Stage 2a: new tables are seeded with the four
+        scope columns (``universe_id``, ``goal_id``, ``branch_id``,
+        ``user_id``) so the LanceDB side matches the KG schema shape.
+        Existing tables are opened as-is — LanceDB has its own
+        column-migration API that the Stage 2b write-site threading
+        will invoke when it starts tagging new rows with scope.
+        """
         if self._table is not None:
             return self._table
 
@@ -108,6 +116,10 @@ class VectorStore:
                 "chapter_number": 0,
                 "character": "",
                 "location": "",
+                "universe_id": "",
+                "goal_id": "",
+                "branch_id": "",
+                "user_id": "",
                 "embedding": np.zeros(self._embedding_dim, dtype=np.float32).tolist(),
             }]
             self._table = self._db.create_table(self._table_name, data=seed)
@@ -143,6 +155,14 @@ class VectorStore:
                 "chapter_number": chunk.get("chapter_number", 0),
                 "character": chunk.get("character", ""),
                 "location": chunk.get("location", ""),
+                # Memory-scope Stage 2a: scope fields pass through
+                # when the caller supplies them. Defaults to empty
+                # string for Stage-2a-era writes that haven't been
+                # threaded through a MemoryScope yet (Stage 2b work).
+                "universe_id": chunk.get("universe_id", ""),
+                "goal_id": chunk.get("goal_id", ""),
+                "branch_id": chunk.get("branch_id", ""),
+                "user_id": chunk.get("user_id", ""),
                 "embedding": emb,
             })
 

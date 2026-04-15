@@ -47,6 +47,21 @@ class KnowledgeGraph:
     # Schema
     # ------------------------------------------------------------------
 
+    # Memory-scope Stage 2a: the four scope columns added to every
+    # archival KG table. Migration is idempotent — existing rows
+    # inherit NULL (= broadest scope) except ``universe_id`` which
+    # gets backfilled from the parent directory name when the caller
+    # invokes :meth:`migrate_scope_columns`.
+    _SCOPE_COLUMNS: tuple[tuple[str, str], ...] = (
+        ("universe_id", "TEXT"),
+        ("goal_id", "TEXT"),
+        ("branch_id", "TEXT"),
+        ("user_id", "TEXT"),
+    )
+    _SCOPED_TABLES: tuple[str, ...] = (
+        "entities", "edges", "facts", "communities",
+    )
+
     def _init_schema(self) -> None:
         cur = self._conn.cursor()
         cur.executescript(
@@ -109,7 +124,60 @@ class KnowledgeGraph:
             );
             """
         )
+        # Memory-scope Stage 2a: add the 4 scope columns to every
+        # archival table if they don't already exist. SQLite has no
+        # ADD COLUMN IF NOT EXISTS, so probe table_info first. Columns
+        # are nullable on purpose — existing rows inherit NULL (=
+        # broadest scope, pre-migration semantics).
+        for table in self._SCOPED_TABLES:
+            existing = {
+                row["name"]
+                for row in self._conn.execute(
+                    f"PRAGMA table_info({table})"
+                )
+            }
+            for col_name, col_type in self._SCOPE_COLUMNS:
+                if col_name in existing:
+                    continue
+                self._conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                )
+        # Shared index over (universe_id, goal_id, branch_id) per
+        # design-note §4 — this is the hot read path.
+        for table in self._SCOPED_TABLES:
+            self._conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_scope "
+                f"ON {table}(universe_id, goal_id, branch_id)"
+            )
         self._conn.commit()
+
+    def migrate_scope_columns(self, universe_id: str) -> int:
+        """Backfill ``universe_id`` on existing rows that have NULL.
+
+        Stage 2a migration per design-note §4: existing databases
+        predate the scope columns. New installs get NULL on every
+        row; the caller (usually `fantasy_author/__main__.py` on
+        daemon boot) passes the universe_id derived from the parent
+        directory so pre-existing canon becomes universe-scoped.
+
+        Returns the total number of rows updated across all scoped
+        tables. Idempotent — rows whose ``universe_id`` already
+        matches are untouched.
+        """
+        if not universe_id:
+            raise ValueError(
+                "migrate_scope_columns requires a non-empty universe_id."
+            )
+        total = 0
+        for table in self._SCOPED_TABLES:
+            cursor = self._conn.execute(
+                f"UPDATE {table} SET universe_id = ? "
+                f"WHERE universe_id IS NULL",
+                (universe_id,),
+            )
+            total += cursor.rowcount
+        self._conn.commit()
+        return total
 
     # ------------------------------------------------------------------
     # Entity CRUD
