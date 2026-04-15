@@ -99,7 +99,6 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
 | **#56 Phase 6.2.2** — private-Branch visibility filter | `workflow/author_server.py`, `workflow/universe_server.py`, possibly new migration | 6.2.1 landed (`a657a92`) + host direction | blocked:host | Three design paths (schema migration add visibility column / Goal-gated inheritance / other) — pick one before claiming. Code shape trivial once direction chosen. |
-| **Phase H** — host dashboard + MCP inspect surfaces | per rollout plan §Phase H | Phase G landed (`cb7482f`) | claimed:claude-code | MCP surfaces + rename landed (`2572154`). Dashboard panes + tray extensions landed (`169632b` elastic-jennings; merge pending). R14 byte-cap + trim-order active in main. Remaining: claim-stress test (`tests/test_phase_h_claim_stress.py`) + activity-log parity test (`tests/test_phase_h_activity_log_parity.py`) + Concerns audit §4.9 Q9 doc pass. |
 | **Memory-scope defense-in-depth** (medium) | `workflow/memory/scoping.py`, `workflow/retrieval/agentic_search.py`, `workflow/retrieval/phase_context.py` | design pass | pending | Tag KG/vector rows with `universe_id` at write-time; filter at read-time. Defense-in-depth under existing file-path guards. |
 | **Author → Daemon mass-rename** (large, deferred) | `fantasy_author/` module + `author_server.py` + `Author` class + identifier-tied "author" strings | host decision 2026-04-14 (memory `project_terminology_daemon.md`); after Phase C-H rollout settles | pending | Drive-by string fixes happening as code is touched (`619725e`, `90c3d3b` were first). Module rename is mass find-replace + import-rewrite + test sweep. Don't claim until C-H lands. |
 
@@ -109,7 +108,7 @@ Claim by setting Status to `claimed:yourname`. Files column is the collision bou
 
 1. **User-sim Mission 8** — re-test Sporemarch queue drainage (fix a+b: `997f825`, `0db181c`) + dispatch_execution routing fix (`68400bc`). Validate multi-scene overshoot concern (fix b, live). Gate Phase D default flip (`WORKFLOW_UNIFIED_EXECUTION=1`). Phase D follow-up items 1-3 docs-pass should land before this flip.
 2. **User-sim Mission 9** — end-to-end pool post-and-pick + NodeBid with all flags on (D+E+F+G). Two temp universes sharing a repo_root; (a) subscribe uni-B to test Goal, post from uni-A, assert uni-B daemon picks up; (b) submit NodeBid, daemon with WORKFLOW_PAID_MARKET=on picks up, bid_ledger entry written. Gates `WORKFLOW_GOAL_POOL` + `WORKFLOW_PAID_MARKET` default flips.
-3. **Phase H** — host dashboard + MCP inspect surfaces. Unblocked: Phase G landed (`cb7482f`). First phase where all prior infrastructure becomes user-visible and steerable.
+3. **Phase H — LANDED** (`3d7acb0`, 2026-04-14) — MCP surfaces + rename (`2572154`), dashboard panes + tray tier-toggle menu (`169632b`), claim-race stress tests (`5e9579d`), activity-log parity test (`f6a4ae4`), Concerns audit §4.9 Q9 doc pass. All Phase H preflight checklist items resolved. Phase C-H infrastructure is now user-visible via host dashboard + MCP inspect.
 
 ---
 
