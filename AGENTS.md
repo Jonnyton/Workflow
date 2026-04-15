@@ -16,7 +16,7 @@ providers may be reading these concurrently. They are the shared state.
 |------|-------------------|--------------------------|
 | **AGENTS.md** | How to work on this project. Behavior, norms, hard rules. | Architecture, design decisions, principles (→ PLAN.md) |
 | **PLAN.md** | How the system works and why. Architecture, principles, design decisions, module specs. | Live state, task tracking (→ STATUS.md). Behavioral norms (→ AGENTS.md) |
-| **STATUS.md** | What's happening now. Task board, concerns, watch, archive. The only task board. | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md) |
+| **STATUS.md** | What's happening now. Task board, concerns, next actions. ≤4 KB / 60 lines. | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). |
 
 If it's about the project's architecture or design → PLAN.md.
 If it's about how to work on the project → AGENTS.md.
@@ -28,29 +28,48 @@ If it's about what's happening right now → STATUS.md.
 
 ### Orient
 
-1. Read `STATUS.md` (live state, task board, concerns).
-2. Read `PLAN.md` (architecture, principles, design decisions).
+1. Read `STATUS.md` (live state, task board, concerns). **Trim check:** if you see resolved concerns, landing records, or entries marked DONE — delete them now. STATUS.md has a 4 KB / 60-line budget; every reader is a janitor.
+2. `PLAN.md` is the design reference (18 KB). Load it based on task scope:
+   - **Full load** when: planning or scoping a new feature, making or evaluating
+     a design decision, checking alignment with project principles, working on
+     module architecture or cross-cutting concerns.
+   - **Section load** when: fixing a bug in a specific module, making a small
+     scoped change. Use `python scripts/docview.py headings PLAN.md` to find
+     the relevant section, then read only that section.
+   - **Skip** when: routine test fixes, documentation, skill edits, or
+     non-architectural code changes.
 3. If the idea inbox is non-empty, scan `ideas/PIPELINE.md` and `ideas/INBOX.md`.
-4. If changing a module, read its PLAN.md section first.
-5. If your approach conflicts with a PLAN.md principle, do NOT implement it. Add the conflict to STATUS.md Concerns. PLAN.md changes require user approval.
+4. If your approach conflicts with a PLAN.md principle, do NOT implement it. Add the conflict to STATUS.md Concerns. PLAN.md changes require user approval.
 
-### Updating the Three Files — EVERY CYCLE
+### Updating the Three Files
 
-**Before responding to ANY user message — even "hi" — check:**
-1. Does what the user said change anything on STATUS.md? (concerns, priorities, task state, reframings)
-2. Does what the user said change anything on PLAN.md? (design decisions, principles, module architecture)
-3. If yes to either, edit the file BEFORE you respond. This is not optional. This is not "when you remember." This is the first thing you do, every cycle, no exceptions.
+**Tiered sync — match effort to message type:**
 
-This habit must be automatic. The check happens before you think about your response. If the user closes the window after your next message, the files must already be current.
+| Message type | STATUS.md | PLAN.md |
+|---|---|---|
+| Decision, priority change, new concern, task state change, reframing | **Update immediately** before responding | **Update immediately** if design-relevant |
+| New idea that won't be executed now | Capture in `ideas/INBOX.md` or `ideas/PIPELINE.md` | — |
+| Code change request, bug fix, feedback on output, question | Check mentally; update only if state actually changed | — |
+| Greeting, clarification, small talk | — | — |
+
+**The rule:** If the user closes the window after your next message, the files must already reflect any state change from what they said. The check is automatic. But not every message changes state — the previous "check both files on every message including 'hi'" spent ~38 KB of re-reads on turns that changed nothing.
 
 - **Session task lists are ephemeral.** Other sessions can't see them. Use only for sub-steps.
 - **If the user raises a new idea that will not be fully executed now, capture it in `ideas/INBOX.md` or `ideas/PIPELINE.md` before the turn ends.**
+
+**STATUS.md deletion is as important as addition.** Every time you write to STATUS.md, also check for content that should leave:
+- Concern resolved? Delete the line (don't mark DONE — just delete).
+- Work row landed? Delete the row. The commit is the record.
+- A concern became a Work row? Delete the concern — the task IS the resolution.
+- Accepted design decision? Move to PLAN.md, delete from STATUS.md.
+- Session summary or landing narrative? Put it in `activity.log`, not STATUS.md.
+- Need detail on a concern? Link to the commit, spec, or `docs/concerns/` — STATUS.md entries stay ≤150 chars.
 
 ### Truth And Freshness
 
 - **Truth is typed, not singular.** `AGENTS.md` owns process truth, `PLAN.md` owns design truth, and `STATUS.md` owns live-state truth. Do not silently treat one file as global truth when evidence disagrees.
 - **Reality audits are diagnostic, not a fourth living source of truth.** Use them to reconstruct confidence when trust is damaged, then push stable conclusions back into `AGENTS.md`, `PLAN.md`, and `STATUS.md`.
-- **In `STATUS.md`, `done` means landed, not currently re-verified.** Current trust belongs in the `Verify` or `Trust` text using explicit labels such as `current:`, `historical:`, `contradicted:`, or `unknown:`.
+- **Landed items leave STATUS.md.** Don't mark concerns DONE — delete them. If trust in a claim matters, use labels `current:`, `historical:`, `contradicted:`, `unknown:` with date + environment.
 - **Verification claims must be freshness-stamped.** If a claim depends on tests, lint, runtime behavior, or environment state, include the date, environment, and evidence/command.
 - **Contradictions must be downgraded immediately.** If current code, runtime artifacts, or verification output contradict an older claim, rewrite the `STATUS.md` claim or add a Concern before responding. Do not leave stale certainty in place.
 - **Revalidate `PLAN.md` section by section when trust is damaged.** Treat the plan as candidate design intent until the relevant sections are confirmed against code and runtime evidence.
@@ -110,7 +129,7 @@ Three patterns keep agent output trustworthy:
 
 **Review is structural.** Reviewer is a core teammate, not on-demand. Every `TaskCompleted` event triggers reviewer notification. The lead only acts on code that reviewer has seen. If reviewer flags critical issues, the task goes back to dev — it is not marked complete.
 
-**Loop guardrails with forced reflection.** If a teammate is stuck retrying the same approach, it must pause and reflect before the next attempt: "What failed? What specific change would fix it? Am I repeating the same approach?" If stuck for 3+ iterations on the same error, message the lead for reassignment or a fresh perspective. Don't loop forever.
+**Agent team loop guardrails with forced reflection.** If a teammate is stuck retrying the same approach, it must pause and reflect before the next attempt: "What failed? What specific change would fix it? Am I repeating the same approach?" If stuck for 3+ iterations on the same error, message the lead for reassignment or a fresh perspective. Don't loop forever. (Note: this is about dev agent stuck-loops, not daemon-level bounded reflection — see STATUS.md #6 for the daemon concern.)
 
 **REFLECTION.md for compound learning.** After completing a significant task, the teammate writes a short reflection: what surprised me, one pattern worth capturing, one thing I'd do differently. Save to `REFLECTION.md` in the working directory. The lead reviews and merges approved learnings into AGENTS.md or the agent's memory. This is how sessions make future sessions better — systematically, not ad hoc.
 
@@ -205,6 +224,7 @@ useful concurrency, not waiting.
 | `scripts/capture_idea.py` | Any AI, any tool | Fast append helper for the idea inbox. |
 | `scripts/sync-skills.ps1` | Repo maintenance | Re-sync `.agents/skills/` into `.claude/skills/` and `.codex/skills/`. |
 | `CLAUDE.md` | Claude Code only | Thin routing layer. |
+| `CLAUDE_LEAD_OPS.md` | Claude Code lead | Situational: user-sim loops, dev team management, token efficiency. Not auto-loaded. |
 | `LAUNCH_PROMPT.md` | Claude Code lead | Team spawn, session protocol, lead norms. |
 | `.claude/agents/*.md` | Claude Code only | Individual agent definitions. |
 | `.claude/skills/*/SKILL.md` | Claude Code only | Reusable skill definitions. |

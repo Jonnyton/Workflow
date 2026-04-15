@@ -315,18 +315,27 @@ def test_node_lookup_unapproved_node_rejected():
     assert reason == "unapproved_node"
 
 
-def test_node_lookup_raise_fails_open():
-    """R4 + invariant 5: lookup raise → producer logs + lets bid through."""
+def test_node_lookup_raise_fails_closed():
+    """R4 + invariant 5 (updated 2026-04-14 after Phase H reviewer
+    audit): lookup raise → producer skips the bid (fail-CLOSED).
+
+    Spec was originally fail-OPEN (producer WARN-logs and lets the
+    bid through for the executor to catch). Reviewer + lead concur
+    the shipped fail-CLOSED behavior is correct: under disk-walk
+    lookup, transient failures are rare, and dropping the bid until
+    recovery is preferable to flooding the executor with unvalidated
+    bids during a transient outage.
+
+    Tight assertion on the exact reason so a future regression that
+    flips back to fail-OPEN ("" reason) surfaces immediately.
+    """
     from workflow.producers.node_bid import _producer_sandbox_reject
 
     def _raises(_slug):
         raise RuntimeError("boom")
 
     reason = _producer_sandbox_reject("anything", _raises)
-    # Implementation returns "node_lookup_error" which skips the bid
-    # producer-side; executor-side re-validates. Both behaviors are
-    # "fail-safe": either drop bid pre-pick OR let executor catch.
-    assert reason in ("", "node_lookup_error")
+    assert reason == "node_lookup_error"
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -412,3 +421,98 @@ def test_bid_execution_log_reads_legacy_filename(tmp_path):
     )
     entries = read_execution_log(tmp_path)
     assert entries == [{"k": "v"}]
+
+
+# ───────────────────────────────────────────────────────────────────────
+# R14 byte cap (DAEMON_OVERVIEW_MAX_BYTES)
+# ───────────────────────────────────────────────────────────────────────
+
+
+def test_trim_overview_under_cap_passes_through():
+    """Response under the byte cap is returned unchanged, no
+    `truncated` marker."""
+    from workflow.universe_server import _trim_overview_for_bytes
+
+    response = {"ok": True, "queue": {"top": [1, 2, 3]}}
+    out = _trim_overview_for_bytes(response, cap=10_000)
+    assert "truncated" not in response
+    assert json.loads(out) == {"ok": True, "queue": {"top": [1, 2, 3]}}
+
+
+def test_trim_overview_activity_tail_first():
+    """R14: `activity_tail` trims before queue/bids/settlements. The
+    gates + dispatcher + subscriptions fields are NEVER trimmed —
+    load-bearing per reviewer polish #5.
+    """
+    from workflow.universe_server import (
+        DAEMON_OVERVIEW_MAX_BYTES,
+        _trim_overview_for_bytes,
+    )
+
+    # Craft a response well over the cap dominated by activity_tail.
+    big_activity = ["x" * 200 for _ in range(500)]
+    response = {
+        "queue": {"top": [{"id": f"t{i}"} for i in range(10)], "count": 10},
+        "bids": {"recent": [{"id": f"b{i}"} for i in range(5)], "count": 5},
+        "settlements": {
+            "recent": [{"id": f"s{i}"} for i in range(5)], "count": 5,
+        },
+        "gates": {"recent_claims": [{"id": "g"}], "total_claims": 1},
+        "dispatcher": {"tier_config": {"accept_external_requests": True}},
+        "subscriptions": {"goal_ids": ["g1"]},
+        "activity_tail": list(big_activity),
+    }
+    out = _trim_overview_for_bytes(response)
+    assert len(out.encode("utf-8")) <= DAEMON_OVERVIEW_MAX_BYTES
+    assert response["truncated"] is True
+    # activity_tail shrank (trimmed first). Other lists still intact.
+    assert len(response["activity_tail"]) < len(big_activity)
+    # Load-bearing fields untouched.
+    assert response["gates"] == {
+        "recent_claims": [{"id": "g"}], "total_claims": 1,
+    }
+    assert response["dispatcher"] == {
+        "tier_config": {"accept_external_requests": True},
+    }
+    assert response["subscriptions"] == {"goal_ids": ["g1"]}
+
+
+def test_trim_overview_activity_keeps_tail_not_head():
+    """`activity_tail` is chronological (latest last). When halved,
+    the latest entries must survive so operators still see recent
+    events in the trimmed response.
+    """
+    from workflow.universe_server import _trim_overview_for_bytes
+
+    lines = [f"event-{i:04d}" + ("x" * 200) for i in range(500)]
+    response = {"activity_tail": list(lines)}
+    _trim_overview_for_bytes(response, cap=8_000)
+    tail = response["activity_tail"]
+    assert tail, "expected some entries to survive"
+    # The last original line must still be in the trimmed tail.
+    assert tail[-1] == lines[-1]
+
+
+def test_trim_overview_preserves_count_fields():
+    """After a trim, `*_count` fields remain authoritative. Consumers
+    learn the ACTUAL totals via counts, even when lists are halved.
+    """
+    from workflow.universe_server import _trim_overview_for_bytes
+
+    response = {
+        "queue": {
+            "top": [{"id": f"t{i}", "payload": "z" * 200} for i in range(200)],
+            "count": 200,
+        },
+        "bids": {"recent": [], "count": 0},
+        "settlements": {"recent": [], "count": 0},
+        "gates": {"total_claims": 0, "recent_claims": []},
+        "dispatcher": {"tier_config": {}},
+        "subscriptions": {"goal_ids": []},
+        "activity_tail": [],
+    }
+    _trim_overview_for_bytes(response, cap=8_000)
+    # queue.count still reports the real total.
+    assert response["queue"]["count"] == 200
+    assert len(response["queue"]["top"]) < 200
+    assert response["truncated"] is True

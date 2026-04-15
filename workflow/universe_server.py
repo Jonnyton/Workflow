@@ -1619,6 +1619,66 @@ _OVERVIEW_ABSOLUTE_CAP = {
     "activity_tail": 1000,
 }
 
+# R14 serialized-byte cap. Per-field caps above are necessary but not
+# sufficient: a dense queue + long activity_tail + many bids can still
+# blow past Claude.ai token limits even with each field individually
+# bounded. If the serialized response exceeds this threshold, trim in
+# priority order (see _OVERVIEW_TRIM_ORDER). Gates + dispatcher +
+# subscriptions are NEVER trimmed (load-bearing per reviewer polish
+# #5).
+DAEMON_OVERVIEW_MAX_BYTES = 32_768
+
+# Trim priority when the byte cap fires. Each entry is
+# ``(key, subkey, keep_side)``:
+# - ``key``: top-level response field.
+# - ``subkey``: nested key (e.g. ``response["bids"]["recent"]``) or
+#   None for top-level lists.
+# - ``keep_side``: "head" keeps the front of the list (sorted
+#   descending — top-N); "tail" keeps the back (chronological —
+#   latest entries).
+_OVERVIEW_TRIM_ORDER = (
+    ("activity_tail", None, "tail"),
+    ("settlements", "recent", "head"),
+    ("bids", "recent", "head"),
+    ("queue", "top", "head"),
+)
+
+
+def _trim_overview_for_bytes(
+    response: dict[str, Any], *, cap: int = DAEMON_OVERVIEW_MAX_BYTES,
+) -> str:
+    """Serialize ``response`` and trim until ``<= cap`` bytes.
+
+    Mutates ``response`` in place as fields shrink. When any trim
+    lands, sets ``response["truncated"] = True`` so consumers know
+    counters (``*_count`` fields) are authoritative over the trimmed
+    lists. Gates + dispatcher + subscriptions are never in the trim
+    order (load-bearing). Returns the final serialized JSON.
+    """
+    serialized = json.dumps(response, default=str)
+    if len(serialized.encode("utf-8")) <= cap:
+        return serialized
+    response["truncated"] = True
+    for key, subkey, keep_side in _OVERVIEW_TRIM_ORDER:
+        container: Any = response.get(key)
+        if subkey is not None:
+            container = container.get(subkey) if isinstance(container, dict) else None
+        if not isinstance(container, list):
+            continue
+        while container:
+            if len(container) <= 1:
+                container.clear()
+            elif keep_side == "tail":
+                # Halve from the front, keep the latest entries.
+                del container[: len(container) // 2]
+            else:
+                # Halve from the back, keep top-ranked entries.
+                del container[len(container) // 2:]
+            serialized = json.dumps(response, default=str)
+            if len(serialized.encode("utf-8")) <= cap:
+                return serialized
+    return serialized
+
 
 def _overview_limits(limit_param: Any) -> dict[str, int]:
     """Resolve per-field limits from the `limit` param.
@@ -1883,7 +1943,7 @@ def _action_daemon_overview(
     except Exception:  # noqa: BLE001
         response["run_state"] = {}
 
-    serialized = json.dumps(response, default=str)
+    serialized = _trim_overview_for_bytes(response)
     _OVERVIEW_CACHE[cache_key] = (now_s, cache_key, serialized)
     # Cap cache size — prune to last 8 universes worth of keys.
     if len(_OVERVIEW_CACHE) > 16:
