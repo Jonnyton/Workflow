@@ -2,11 +2,22 @@
 
 Translates LangGraph custom stream events into status updates,
 notifications, and metrics for the tray and optional web dashboard.
+
+Phase H additions
+-----------------
+``DispatcherPane``, ``QueuePane``, and ``EarningsPane`` are data panes
+populated from a ``daemon_overview`` response.  Each pane wraps its
+``refresh()`` method in exception isolation so a malformed payload
+cannot crash the UI thread (preflight §4.3 invariant 2 / R3).
+
+``DashboardHandler.refresh_from_overview(data)`` fans out to all three
+panes, also under per-pane exception isolation.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -120,6 +131,133 @@ class DashboardMetrics:
             logger.debug("Failed to seed metrics from output dir", exc_info=True)
 
 
+# ---------------------------------------------------------------------------
+# Phase H: daemon_overview panes
+# ---------------------------------------------------------------------------
+
+class DispatcherPane:
+    """Tier status + config display pane.
+
+    Refreshed from the ``daemon_overview`` response body.  Provides
+    ``tier_status`` and ``config`` for tray menu + dashboard window
+    consumers.  Exception-isolated per preflight §4.3 invariant 2.
+    """
+
+    def __init__(self) -> None:
+        self.tier_status: dict[str, str] = {}
+        self.config: dict[str, Any] = {}
+        self.last_error: str | None = None
+
+    def refresh(self, overview_data: dict[str, Any]) -> None:
+        """Update from a ``daemon_overview`` response dict."""
+        try:
+            dispatcher = overview_data.get("dispatcher", {})
+            self.tier_status = dict(dispatcher.get("tier_status_map", {}))
+            self.config = dict(dispatcher.get("config", {}))
+            self.last_error = None
+        except Exception as exc:
+            logger.warning("DispatcherPane.refresh failed: %s", exc)
+            self.last_error = str(exc)
+
+    def summary(self) -> dict[str, Any]:
+        """Snapshot of tier state for tray / dashboard display."""
+        return {
+            "tier_status": dict(self.tier_status),
+            "config": dict(self.config),
+            "last_error": self.last_error,
+        }
+
+
+class QueuePane:
+    """Top-N pending BranchTask display pane.
+
+    Refreshed from the ``daemon_overview`` response body.  The tray menu
+    and dashboard window read ``pending_count`` and ``top_tasks``.
+    Exception-isolated per preflight §4.3 invariant 2.
+    """
+
+    def __init__(self) -> None:
+        self.pending_count: int = 0
+        self.top_tasks: list[dict[str, Any]] = []
+        self.idle_reason: str | None = None
+        self.last_error: str | None = None
+
+    def refresh(self, overview_data: dict[str, Any]) -> None:
+        """Update from a ``daemon_overview`` response dict."""
+        try:
+            queue = overview_data.get("queue", {})
+            self.pending_count = int(queue.get("pending_count", 0))
+            self.top_tasks = list(queue.get("top", []))
+            # Surface daemon idle_reason so QueuePane can expose §4.9 Q9 item #2.
+            run_state = overview_data.get("run_state", {})
+            self.idle_reason = run_state.get("idle_reason")
+            self.last_error = None
+        except Exception as exc:
+            logger.warning("QueuePane.refresh failed: %s", exc)
+            self.last_error = str(exc)
+
+    def summary(self) -> dict[str, Any]:
+        """Snapshot of queue state for tray / dashboard display."""
+        return {
+            "pending_count": self.pending_count,
+            "top_tasks": list(self.top_tasks),
+            "idle_reason": self.idle_reason,
+            "last_error": self.last_error,
+        }
+
+
+class EarningsPane:
+    """Settlements + bid earnings pane.
+
+    Active only when ``WORKFLOW_PAID_MARKET=on``.  Refreshed from the
+    ``daemon_overview`` response body.
+    Exception-isolated per preflight §4.3 invariant 2.
+    """
+
+    _PAID_MARKET_ENV: str = "WORKFLOW_PAID_MARKET"
+
+    def __init__(self) -> None:
+        flag = os.environ.get(self._PAID_MARKET_ENV, "off").lower()
+        self.enabled: bool = flag in ("1", "on", "true")
+        self.settlements_total: int = 0
+        self.settlements_unsettled: int = 0
+        self.open_bids_count: int = 0
+        self.recent_settlements: list[dict[str, Any]] = []
+        self.last_error: str | None = None
+
+    def refresh(self, overview_data: dict[str, Any]) -> None:
+        """Update from a ``daemon_overview`` response dict.
+
+        No-op when the paid-market flag is off so the pane stays hidden.
+        """
+        if not self.enabled:
+            return
+        try:
+            settlements = overview_data.get("settlements", {})
+            bids = overview_data.get("bids", {})
+            self.settlements_total = int(settlements.get("count_total", 0))
+            self.settlements_unsettled = int(settlements.get("count_unsettled", 0))
+            self.open_bids_count = int(bids.get("open_count", 0))
+            self.recent_settlements = list(settlements.get("recent", []))
+            self.last_error = None
+        except Exception as exc:
+            logger.warning("EarningsPane.refresh failed: %s", exc)
+            self.last_error = str(exc)
+
+    def summary(self) -> dict[str, Any]:
+        """Snapshot of earnings state for tray / dashboard display."""
+        if not self.enabled:
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "settlements_total": self.settlements_total,
+            "settlements_unsettled": self.settlements_unsettled,
+            "open_bids_count": self.open_bids_count,
+            "recent_count": len(self.recent_settlements),
+            "last_error": self.last_error,
+        }
+
+
 class DashboardHandler:
     """Processes graph stream events and updates tray/metrics.
 
@@ -141,6 +279,10 @@ class DashboardHandler:
         self._tray = tray
         self._log_callback = log_callback
         self.metrics = DashboardMetrics()
+        # Phase H: dispatcher-economy panes
+        self.dispatcher_pane = DispatcherPane()
+        self.queue_pane = QueuePane()
+        self.earnings_pane = EarningsPane()
 
     def handle_event(self, event: dict[str, Any]) -> None:
         """Dispatch a custom stream event from the graph."""
@@ -256,6 +398,29 @@ class DashboardHandler:
                 logger.debug("Tray notify failed", exc_info=True)
 
     # ------------------------------------------------------------------
+    # Phase H: daemon_overview refresh
+    # ------------------------------------------------------------------
+
+    def refresh_from_overview(self, overview_data: dict[str, Any]) -> None:
+        """Fan out a ``daemon_overview`` response to all data panes.
+
+        Each pane is refreshed under its own try/except so a malformed
+        payload in one pane cannot crash the others or the UI thread
+        (preflight §4.3 invariant 2 / R3).
+        """
+        for pane in (self.dispatcher_pane, self.queue_pane, self.earnings_pane):
+            try:
+                pane.refresh(overview_data)
+            except Exception as exc:
+                # Belt-and-suspenders: each pane already isolates
+                # internally, but wrap again at fan-out level.
+                logger.warning(
+                    "refresh_from_overview: %s.refresh raised: %s",
+                    pane.__class__.__name__,
+                    exc,
+                )
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
 
@@ -269,4 +434,7 @@ class DashboardHandler:
             "accept_rate": round(m.accept_rate, 3),
             "current_phase": m.current_phase,
             "words_per_hour": round(m.words_per_hour, 1),
+            "dispatcher": self.dispatcher_pane.summary(),
+            "queue": self.queue_pane.summary(),
+            "earnings": self.earnings_pane.summary(),
         }
