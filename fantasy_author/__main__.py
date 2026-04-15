@@ -972,6 +972,7 @@ class DaemonController:
                 output_dir, daemon_id,
             )
             claimed_failed_reason = ""
+            cancel_requested_during_run = False
             if claimed_task is not None and claimed_inputs:
                 # inputs win on overlap; unknown keys tolerated by
                 # LangGraph initial_state.
@@ -1006,6 +1007,26 @@ class DaemonController:
                     if self._stop_event.is_set():
                         logger.info("Stop signal received, shutting down")
                         break
+
+                    # Cooperative cancel: a MCP queue_cancel on a
+                    # running task sets cancel_requested on the row;
+                    # observed at next inter-node event, same shape as
+                    # _stop_event. Finalized as "cancelled" (not
+                    # "failed") via the claimed_failed_reason=""
+                    # branch in the finally block.
+                    if claimed_task is not None:
+                        from workflow.branch_tasks import (
+                            is_task_cancel_requested,
+                        )
+                        if is_task_cancel_requested(
+                            output_dir, claimed_task.branch_task_id,
+                        ):
+                            logger.info(
+                                "queue_cancel observed on running task %s",
+                                claimed_task.branch_task_id,
+                            )
+                            cancel_requested_during_run = True
+                            break
 
                     # Pause support (thread event or .pause flag file)
                     pause_file = Path(self._universe_path) / ".pause"
@@ -1054,13 +1075,38 @@ class DaemonController:
             finally:
                 # Phase F wire-up: finalize the claimed task status
                 # based on whether the stream completed cleanly.
+                # Phase E cooperative-cancel: a cancel observed in the
+                # stream loop finalizes as "cancelled", not "failed".
                 if claimed_task is not None:
-                    _finalize_claimed_task(
-                        output_dir,
-                        claimed_task,
-                        success=not claimed_failed_reason,
-                        error=claimed_failed_reason,
-                    )
+                    if cancel_requested_during_run:
+                        try:
+                            from workflow.branch_tasks import mark_status
+                            mark_status(
+                                output_dir,
+                                claimed_task.branch_task_id,
+                                status="cancelled",
+                            )
+                            logger.info(
+                                "dispatcher_pick: finalized %s -> cancelled",
+                                claimed_task.branch_task_id,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "cooperative-cancel finalize failed; "
+                                "falling back to failed",
+                            )
+                            _finalize_claimed_task(
+                                output_dir, claimed_task,
+                                success=False,
+                                error="cancel_finalize_failed",
+                            )
+                    else:
+                        _finalize_claimed_task(
+                            output_dir,
+                            claimed_task,
+                            success=not claimed_failed_reason,
+                            error=claimed_failed_reason,
+                        )
                 self._cleanup()
 
                 # Handle cross-universe synthesis switch

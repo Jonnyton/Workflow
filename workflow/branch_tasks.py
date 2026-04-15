@@ -88,6 +88,7 @@ class BranchTask:
     required_llm_type: str = ""
     evidence_url: str = ""
     error: str = ""
+    cancel_requested: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -280,6 +281,59 @@ def mark_status(
             _write_raw(qp, raw)
             return
         raise KeyError(f"Task {task_id} not found")
+
+
+def request_task_cancel(universe_path: Path, task_id: str) -> bool:
+    """Set ``cancel_requested=True`` on a task row.
+
+    Cooperative-cancel flag paralleling ``runs.request_cancel``. The
+    graph's stream loop polls ``is_task_cancel_requested`` and breaks
+    at the next inter-node event; the daemon then finalizes the
+    claimed task as ``cancelled`` rather than ``failed``.
+
+    Returns True if the row was updated, False if the task is not
+    present or is already in a terminal state (setting the flag on
+    a terminal task is a no-op so stale MCP calls can't resurrect
+    it).
+    """
+    qp = queue_path(universe_path)
+    if not qp.exists():
+        return False
+    with _file_lock(universe_path):
+        raw = _read_raw(qp)
+        for row in raw:
+            if not isinstance(row, dict):
+                continue
+            if row.get("branch_task_id") != task_id:
+                continue
+            if row.get("status") in TERMINAL_STATUSES:
+                return False
+            if row.get("cancel_requested"):
+                return True  # idempotent
+            row["cancel_requested"] = True
+            _write_raw(qp, raw)
+            return True
+    return False
+
+
+def is_task_cancel_requested(universe_path: Path, task_id: str) -> bool:
+    """Return True if a cooperative-cancel has been requested.
+
+    Read-only helper — does not mutate the queue. Safe to call in a
+    hot stream loop. Missing task or missing flag → False.
+    """
+    qp = queue_path(universe_path)
+    if not qp.exists():
+        return False
+    with _file_lock(universe_path):
+        raw = _read_raw(qp)
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        if row.get("branch_task_id") != task_id:
+            continue
+        return bool(row.get("cancel_requested", False))
+    return False
 
 
 def recover_claimed_tasks(universe_path: Path) -> int:

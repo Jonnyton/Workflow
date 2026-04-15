@@ -2150,12 +2150,20 @@ def _action_queue_cancel(
     branch_task_id: str = "",
     **_kwargs: Any,
 ) -> str:
-    """Cancel a pending BranchTask.
+    """Cancel a BranchTask.
 
-    Running tasks require host override (not implemented in Phase E
-    — returns ``running_tasks_require_host_override``).
+    Pending: hard-marks ``cancelled`` via ``mark_status``.
+    Running: cooperative cancel — sets ``cancel_requested=True`` so
+    the daemon's stream loop observes the flag at the next
+    inter-node event and finalizes as ``cancelled``. Authorization:
+    the task's ``claimed_by`` daemon (self-cancel) OR host identity.
+    Other actors get ``cancel_not_authorized``.
     """
-    from workflow.branch_tasks import mark_status, read_queue
+    from workflow.branch_tasks import (
+        mark_status,
+        read_queue,
+        request_task_cancel,
+    )
 
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
@@ -2180,11 +2188,42 @@ def _action_queue_cancel(
             "branch_task_id": branch_task_id,
         })
     if target.status == "running":
+        source = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+        host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+        is_host = source == host_id
+        is_owner = bool(target.claimed_by) and source == target.claimed_by
+        if not (is_host or is_owner):
+            return json.dumps({
+                "universe_id": uid,
+                "status": "rejected",
+                "error": "cancel_not_authorized",
+                "branch_task_id": branch_task_id,
+                "hint": (
+                    "Running-task cancel requires the host or the "
+                    "claiming daemon. Set UNIVERSE_SERVER_USER to the "
+                    "task owner or the host identity."
+                ),
+            })
+        try:
+            ok = request_task_cancel(udir, branch_task_id)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": f"Failed to request cancel: {exc}"})
+        if not ok:
+            # Race: task reached terminal between read_queue and now.
+            return json.dumps({
+                "universe_id": uid,
+                "status": "rejected",
+                "error": "task_already_terminal",
+                "branch_task_id": branch_task_id,
+            })
         return json.dumps({
             "universe_id": uid,
-            "status": "rejected",
-            "error": "running_tasks_require_host_override",
+            "status": "cancel_requested",
             "branch_task_id": branch_task_id,
+            "note": (
+                "cooperative cancel — observed at next inter-node "
+                "event; daemon finalizes as cancelled"
+            ),
         })
     if target.status != "pending":
         return json.dumps({

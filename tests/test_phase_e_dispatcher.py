@@ -708,7 +708,17 @@ def test_queue_list_returns_sorted_scored_queue(server_base, monkeypatch):
     assert "stubbed" in resp["tier_status"]["goal_pool"]
 
 
-def test_queue_cancel_on_running_task_rejects(server_base, monkeypatch):
+def test_queue_cancel_on_running_task_as_host_requests_cancel(
+    server_base, monkeypatch,
+):
+    """Task #21: host cancelling a running task triggers cooperative
+    cancel (sets cancel_requested) rather than rejecting.
+
+    Prior contract ``running_tasks_require_host_override`` retired;
+    host identity is now one of two authorized actors (the other is
+    the claiming daemon). See test_queue_cancel_on_running_task_unauthorized
+    for the rejection path."""
+    from workflow.branch_tasks import is_task_cancel_requested
     from workflow.universe_server import _action_queue_cancel
 
     _, uid = server_base
@@ -723,8 +733,62 @@ def test_queue_cancel_on_running_task_rejects(server_base, monkeypatch):
     resp = json.loads(
         _action_queue_cancel(universe_id=uid, branch_task_id=btid),
     )
+    assert resp["status"] == "cancel_requested"
+    assert resp["branch_task_id"] == btid
+    # Flag is set; status stays "running" — daemon flips it on next event.
+    assert is_task_cancel_requested(udir, btid) is True
+    final = next(t for t in read_queue(udir) if t.branch_task_id == btid)
+    assert final.status == "running"
+    assert final.cancel_requested is True
+
+
+def test_queue_cancel_on_running_task_as_owner_requests_cancel(
+    server_base, monkeypatch,
+):
+    """Task #21: the claiming daemon can self-cancel its running task."""
+    from workflow.branch_tasks import is_task_cancel_requested
+    from workflow.universe_server import _action_queue_cancel
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "daemon-1")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+    _call_submit(universe_id=uid, text="A")
+    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    q = read_queue(udir)
+    btid = q[0].branch_task_id
+    claim_task(udir, btid, "daemon-1")
+
+    resp = json.loads(
+        _action_queue_cancel(universe_id=uid, branch_task_id=btid),
+    )
+    assert resp["status"] == "cancel_requested"
+    assert is_task_cancel_requested(udir, btid) is True
+
+
+def test_queue_cancel_on_running_task_unauthorized(
+    server_base, monkeypatch,
+):
+    """Task #21: actors that are neither host nor owner get rejected.
+
+    Carries forward the original test's intent — running tasks require
+    authorization — but narrows it to the actually-unauthorized case
+    instead of the now-always-host case."""
+    from workflow.universe_server import _action_queue_cancel
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "random-guest")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+    _call_submit(universe_id=uid, text="A")
+    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    q = read_queue(udir)
+    btid = q[0].branch_task_id
+    claim_task(udir, btid, "daemon-1")
+
+    resp = json.loads(
+        _action_queue_cancel(universe_id=uid, branch_task_id=btid),
+    )
     assert resp["status"] == "rejected"
-    assert resp["error"] == "running_tasks_require_host_override"
+    assert resp["error"] == "cancel_not_authorized"
 
 
 def test_queue_cancel_missing_id_rejects():
