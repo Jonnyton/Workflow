@@ -1,29 +1,15 @@
+"""Bundle entry point — boots the Workflow Universe Server MCP.
+
+The build script stages the live ``workflow/`` package next to this
+file. ``uv run`` (configured by ``manifest.json``) then runs us with
+the bundle root on ``sys.path``, so a normal ``import workflow.universe_server``
+resolves to the bundled package — no shim, no importlib magic.
+"""
 from __future__ import annotations
 
-import importlib.util
 import os
+import sys
 from pathlib import Path
-
-
-def _load_universe_server_module():
-    bundle_root = Path(__file__).resolve().parent
-    source_path = bundle_root / "fantasy_author" / "universe_server.py"
-
-    if not source_path.is_file():
-        raise FileNotFoundError(
-            f"Bundled Universe Server source not found: {source_path}"
-        )
-
-    spec = importlib.util.spec_from_file_location(
-        "workflow_mcpb_universe_server",
-        source_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load module spec for {source_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def main() -> None:
@@ -46,8 +32,13 @@ def main() -> None:
 
     os.environ["UNIVERSE_SERVER_BASE"] = str(base_path)
 
-    module = _load_universe_server_module()
-    module.main(transport="stdio")
+    # Ensure the bundled `workflow/` package wins over any system copy.
+    bundle_root = Path(__file__).resolve().parent
+    if str(bundle_root) not in sys.path:
+        sys.path.insert(0, str(bundle_root))
+
+    from workflow import universe_server
+    universe_server.main(transport="stdio")
 
 
 if __name__ == "__main__":

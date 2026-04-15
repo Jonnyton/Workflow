@@ -1,0 +1,101 @@
+name: Build packaging artifacts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "workflow/**"
+      - "packaging/**"
+      - ".github/workflows/build-bundle.yml"
+  pull_request:
+    paths:
+      - "workflow/**"
+      - "packaging/**"
+      - ".github/workflows/build-bundle.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  stage-and-probe:
+    name: Stage + import-probe both bundle and plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install bundle deps for import probe
+        run: |
+          python -m pip install --upgrade pip
+          # Install the same dep set as packaging/mcpb/pyproject.toml so
+          # the subprocess import probe can resolve workflow.universe_server.
+          python -m pip install \
+            "fastmcp>=3.2,<4" \
+            "mcp>=1.0" \
+            "langgraph>=0.4,<0.5" \
+            "langgraph-checkpoint-sqlite>=3.0,<4.0" \
+            "langchain-core>=0.3,<0.4" \
+            "pyyaml>=6.0" \
+            "aiofiles>=24.1" \
+            "json-repair>=0.30" \
+            "tenacity>=9.0,<10.0"
+
+      - name: Stage MCPB bundle (with import probe)
+        run: python packaging/mcpb/build_bundle.py
+
+      - name: Stage claude-plugin runtime (with import probe)
+        run: python packaging/claude-plugin/build_plugin.py
+
+      - name: Run packaging build tests
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_packaging_build.py -v
+
+  pack-mcpb:
+    name: Pack .mcpb on tagged release
+    needs: stage-and-probe
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node (for @anthropic-ai/mcpb)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install bundle deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "fastmcp>=3.2,<4" \
+            "mcp>=1.0" \
+            "langgraph>=0.4,<0.5" \
+            "langgraph-checkpoint-sqlite>=3.0,<4.0" \
+            "langchain-core>=0.3,<0.4" \
+            "pyyaml>=6.0" \
+            "aiofiles>=24.1" \
+            "json-repair>=0.30" \
+            "tenacity>=9.0,<10.0"
+
+      - name: Build + pack MCPB bundle
+        run: python packaging/mcpb/build_bundle.py --validate --pack
+
+      - name: Upload .mcpb as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/workflow-universe-server.mcpb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

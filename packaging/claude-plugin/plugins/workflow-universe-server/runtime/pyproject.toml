@@ -3,10 +3,20 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "workflow-universe-server-mcpb"
+name = "workflow-universe-server-plugin"
 version = "0.1.0"
-description = "Minimal uv runtime for the Workflow Universe Server MCP bundle"
+description = "Plugin runtime for the Workflow Universe Server (auto-built from workflow/)."
 requires-python = ">=3.11"
+# Dep set mirrors packaging/mcpb/pyproject.toml. See its comment for
+# the rationale behind the MCP-control-plane subset.
 dependencies = [
     "fastmcp>=3.2,<4",
+    "mcp>=1.0",
+    "langgraph>=0.4,<0.5",
+    "langgraph-checkpoint-sqlite>=3.0,<4.0",
+    "langchain-core>=0.3,<0.4",
+    "pyyaml>=6.0",
+    "aiofiles>=24.1",
+    "json-repair>=0.30",
+    "tenacity>=9.0,<10.0",
 ]

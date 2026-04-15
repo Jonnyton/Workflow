@@ -5,8 +5,22 @@ build-backend = "hatchling.build"
 [project]
 name = "workflow-universe-server-mcpb"
 version = "0.1.0"
-description = "Minimal uv runtime for the Workflow Universe Server MCP bundle"
+description = "Bundled runtime for the Workflow Universe Server MCP bundle (auto-built from workflow/)."
 requires-python = ">=3.11"
+# Dep set is the MCP control-plane subset of workflow/'s pyproject.toml.
+# Heavy domain-execution deps (lancedb, igraph, clingo, spacy, pystray,
+# pillow) are intentionally omitted: the MCP bundle exposes branch /
+# goal / gates / universe-status surfaces, not the per-domain daemon
+# execution path. Handlers that touch those deps lazy-import them and
+# raise a clear error if the dep is missing.
 dependencies = [
     "fastmcp>=3.2,<4",
+    "mcp>=1.0",
+    "langgraph>=0.4,<0.5",
+    "langgraph-checkpoint-sqlite>=3.0,<4.0",
+    "langchain-core>=0.3,<0.4",
+    "pyyaml>=6.0",
+    "aiofiles>=24.1",
+    "json-repair>=0.30",
+    "tenacity>=9.0,<10.0",
 ]

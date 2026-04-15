@@ -13,11 +13,19 @@ custom repo-specific assumptions.
 claude plugin validate packaging/claude-plugin
 ```
 
-The plugin bundles a Python bootstrapper plus a staged copy of
-`fantasy_author/universe_server.py` so the MCP server can run from Claude's
-plugin cache using `${CLAUDE_PLUGIN_ROOT}`. On first launch, the bootstrapper
-creates a local virtual environment under the plugin runtime and installs
-`fastmcp` from `requirements.txt`.
+The plugin bundles a Python bootstrapper plus the live `workflow/` package
+(staged into the plugin runtime by `packaging/claude-plugin/build_plugin.py`)
+so the MCP server can run from Claude's plugin cache using
+`${CLAUDE_PLUGIN_ROOT}`. On first launch, the bootstrapper creates a local
+virtual environment under the plugin runtime and installs the dep set declared
+in `requirements.txt` (the MCP-control-plane subset of `workflow/`'s deps —
+see `docs/mcpb_packaging.md`).
+
+Re-stage the plugin runtime after touching `workflow/`:
+
+```powershell
+python packaging/claude-plugin/build_plugin.py
+```
 
 ## MCP Registry
 
