@@ -197,10 +197,12 @@ response — `config_vs_subscriptions_drift` will read `"ok"` or
 `"pool_enabled_no_subs"` when the producer registered; pool MCP actions return
 `{"status": "not_available"}` when it did not.
 
-The three behavior-gate flags in the Phase F matrix
+The two behavior-gate flags in the Phase F matrix
 (`WORKFLOW_UNIFIED_EXECUTION`, `WORKFLOW_DISPATCHER_ENABLED`) are read on every
 cycle and take effect without restart. Only `WORKFLOW_GOAL_POOL` is
-restart-gated in this phase.
+restart-gated in this phase. See `docs/exec-plans/daemon_task_economy_rollout.md`
+"Cross-phase notes → Flag lifecycle" for the full registration-gate vs
+behavior-gate breakdown across all workflow flags.
 
 ### Troubleshooting `repo_root_not_resolvable`
 

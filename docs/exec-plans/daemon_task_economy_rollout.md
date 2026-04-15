@@ -234,6 +234,15 @@ A and B run in parallel (disjoint files). Everything else is sequential.
 
 - **Every phase must leave `tests/` strictly greener** — no test skips, no xfails added. If a phase requires test-shape changes, reviewer does whole-file pass before commit (per 2026-04-14 feedback memory).
 - **Every feature flag defaults OFF except where explicitly noted** (Phase C's producer interface defaults on because it's the smallest-risk refactor and subsequent phases depend on it).
+- **Flag lifecycle — when a restart is required.** Not every flag behaves the same at flip-time. Two classes:
+  - **Registration-gate flags** are read once at module import in a `register_if_enabled()` side-effect. Flipping the env var on a live daemon has no effect until the process restarts. These are the flags that add producers/nodes to a registry at startup.
+    - `WORKFLOW_GOAL_POOL` — `workflow/producers/goal_pool.py:334-355` (`register_if_enabled()` + module-level call). **Restart required.**
+    - `WORKFLOW_PAID_MARKET` — `workflow/producers/node_bid.py:38-41, 207-228` (`paid_market_enabled()` + `register_if_enabled()` + module-level call). **Restart required.**
+  - **Behavior-gate flags** are read at call time inside a helper. Flipping the env var takes effect on the next cycle — no restart.
+    - `WORKFLOW_UNIFIED_EXECUTION` — `fantasy_author/__main__.py:126-129` (`_workflow_unified_execution_enabled()`, called from `_run_graph`). **No restart needed.** The `universe_cycle_wrapper` is registered unconditionally at `fantasy_author/branch_registrations.py:111`; the flag only routes between Branch-compile and direct paths.
+    - `WORKFLOW_DISPATCHER_ENABLED` (Phase E) — read at call time. **No restart needed.**
+
+  Operators flipping a default should know which class applies. Tests that `monkeypatch.setenv` a registration-gate flag must call `register_if_enabled()` explicitly or re-import the module — setting the env alone won't change the live registry.
 - **No phase merges without user-sim validation** on at least one clean universe. Sporemarch / ashwater stress-tests follow.
 - **#56 outcome gates** interacts with Phase G's NodeBid sybil-prevention. Track coordination in STATUS concerns.
 - **Execution_kind genericization** (the BOOK/CHAPTER/SCENE leak) lives in Phase C; verify no STATUS concern or PLAN.md assumption contradicts.
