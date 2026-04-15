@@ -183,6 +183,39 @@ goal_affinity_coefficient: 1.0  # bumps goal_pool tier scoring
 
 Also set the environment flag: `WORKFLOW_GOAL_POOL=on`.
 
+### Flag lifecycle — restart required
+
+`WORKFLOW_GOAL_POOL` is a **registration-gate** flag: it is read once at module
+import time by the `register_if_enabled()` side-effect at the bottom of
+`workflow/producers/goal_pool.py`. Flipping the env var on a live Universe
+Server has no effect until the process restarts — the producer was either
+registered at startup or it wasn't.
+
+Operators: after changing `WORKFLOW_GOAL_POOL`, restart the Universe Server
+(tray → "Restart All" or equivalent). Verify via the MCP `list_subscriptions`
+response — `config_vs_subscriptions_drift` will read `"ok"` or
+`"pool_enabled_no_subs"` when the producer registered; pool MCP actions return
+`{"status": "not_available"}` when it did not.
+
+The three behavior-gate flags in the Phase F matrix
+(`WORKFLOW_UNIFIED_EXECUTION`, `WORKFLOW_DISPATCHER_ENABLED`) are read on every
+cycle and take effect without restart. Only `WORKFLOW_GOAL_POOL` is
+restart-gated in this phase.
+
+### Troubleshooting `repo_root_not_resolvable`
+
+If `post_to_goal_pool` returns `repo_root_not_resolvable`, or the producer logs
+`repo_root_not_resolvable` at INFO and emits no tasks, the git-parent walk from
+`<universe_path>` did not find a `.git/` directory — this happens when the
+universe lives outside the repo checkout, or the `.git/` directory is elsewhere
+(e.g. worktrees, submodules, or a detached layout). The walk may also settle on
+the wrong `.git` if your universe is nested under an unrelated repo.
+
+Fix: set `WORKFLOW_REPO_ROOT` in the Universe Server environment to the
+absolute path of the repo that owns `goal_pool/`. This takes precedence over
+the walk. `WORKFLOW_REPO_ROOT` is read on every resolution call, so it takes
+effect on the next producer cycle without restart.
+
 ---
 
 ## Fresh-Install Default
