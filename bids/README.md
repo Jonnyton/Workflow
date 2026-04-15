@@ -159,6 +159,53 @@ coverage in `tests/test_phase_h_claim_stress.py`. Local-only
 installs (no configured remote) skip pull/push — single-daemon, no
 race.
 
+### Revert-on-push-fail is destructive
+
+**Read this before enabling `WORKFLOW_PAID_MARKET=on` as default.**
+
+When a claim push fails (remote race lost, auth failure, network
+hiccup), the claim is rolled back by `_revert_claim` in
+`workflow/node_bid.py:225`. The revert runs:
+
+```
+git reset --hard origin/<branch>
+```
+
+against the daemon's `repo_root`, then deletes
+`bid_outputs/<node_bid_id>/`.
+
+**What this can destroy.** `git reset --hard` discards every
+uncommitted change in the working tree and index — not just the
+claim-rename commit that failed to push. If the daemon's
+`repo_root` has unrelated uncommitted edits (host-owned WIP, other
+tool state, in-flight dev work, another process mid-write), those
+edits are gone. There is no stash, no backup, no prompt.
+
+**Why the daemon does this.** The only way to preserve git's
+invariant "working tree matches remote HEAD after a failed claim"
+is a hard reset. A soft reset would leave the failed-commit's
+rename on disk and confuse the next cycle.
+
+**Operational implication.** The daemon's `repo_root` must be a
+**dedicated checkout owned by the daemon**, not a shared developer
+clone. Running the daemon in your main dev worktree is safe only if
+you never have uncommitted work there while the flag is on — which
+in practice means: don't.
+
+**Mitigations before flipping the default:**
+
+- [ ] `repo_root` is a dedicated clone used by the daemon only
+      (separate from any human working tree).
+- [ ] No other process (editor save-on-exit, file sync tool,
+      another daemon, another provider's worktree) writes into
+      `repo_root/`.
+- [ ] Host is comfortable that a rare push-fail can wipe any
+      surprise uncommitted state in that tree.
+
+Local-only installs (no remote configured) skip the push step and
+therefore never hit this revert path. The risk only applies when a
+remote is configured AND claim-push can fail.
+
 ## evidence_url
 
 Always a `file://` URL pointing at the output artifact on the
