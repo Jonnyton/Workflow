@@ -531,6 +531,68 @@ def _try_check_always_allow(page) -> bool:
     return False
 
 
+_INLINE_ALWAYS_ALLOW_PROBE = r"""
+(() => {
+  // Claude.ai's newer permission UX renders inline in the chat
+  // transcript (not a role=dialog modal). Strict gating to avoid
+  // random clicks: require both distinctive phrases on the page
+  // AND an exact-prefix "Always allow" button.
+  const allText = document.body ? (document.body.innerText || '') : '';
+  if (!/Claude wants to use/i.test(allText)) {
+    return {found: false, reason: 'no permission card text'};
+  }
+  if (!/Universe Server/i.test(allText)) {
+    return {found: false, reason: 'not Universe Server card'};
+  }
+  const buttons = Array.from(document.querySelectorAll('button'));
+  const btn = buttons.find(b => {
+    const t = (b.innerText || '').trim();
+    return /^always allow\b/i.test(t) && b.offsetParent !== null;
+  });
+  if (!btn) {
+    return {found: false, reason: 'no visible Always-allow button'};
+  }
+  try {
+    btn.scrollIntoView({block: 'center'});
+    btn.click();
+    return {found: true, clicked: true, label: (btn.innerText||'').trim()};
+  } catch (e) {
+    return {found: true, clicked: false, label: (btn.innerText||'').trim(),
+            error: String(e)};
+  }
+})();
+"""
+
+
+def _dismiss_inline_permission_card(page) -> int:
+    """Click Claude.ai's inline "Always allow" permission card.
+
+    The newer UX is NOT a modal (no role=dialog / aria-modal). It's an
+    inline card in the chat transcript — which the dialog-scoped
+    selectors miss. Scoped to Universe-Server cards only to avoid
+    random clicks. Returns 1 on click, 0 on no-op / miss.
+    """
+    try:
+        result = page.evaluate(_INLINE_ALWAYS_ALLOW_PROBE) or {}
+    except Exception:
+        return 0
+    if not result.get("found"):
+        return 0
+    label = str(result.get("label", "") or "Always allow")
+    if result.get("clicked"):
+        _log_dialog_to_notepad(
+            label, outcome="ok",
+            tool_name="_dismiss_inline_permission_card",
+        )
+        return 1
+    # Detected but click failed — notepad log so host can manually click.
+    _log_dialog_to_notepad(
+        label, outcome="failed",
+        tool_name="_dismiss_inline_permission_card",
+    )
+    return 0
+
+
 def _dismiss_dialogs(page) -> int:
     """Click any permission/allow dialog Claude.ai has put up.
 
@@ -552,6 +614,13 @@ def _dismiss_dialogs(page) -> int:
     # captured between polls — the host sees them in the notepad
     # even though we didn't click them ourselves.
     _drain_auto_dismiss_log(page)
+    # Inline permission card (Claude.ai's newer non-modal UX) first —
+    # the dialog-scoped selectors below can't see it. Strictly gated
+    # to Universe-Server cards so we never click arbitrary buttons.
+    inline_clicked = _dismiss_inline_permission_card(page)
+    if inline_clicked:
+        _dismiss_cooldown_until = time.monotonic() + 3.0
+        return inline_clicked
     # Before clicking the confirm button, try to toggle "always allow"
     # so this approval persists for the tool across future calls.
     _try_check_always_allow(page)
@@ -1235,6 +1304,33 @@ def cmd_ask(message: str) -> int:
                 file=sys.stderr,
             )
         inp.click()
+        # Clear any stale text (user-sim mid-type changes, stream abort
+        # remnants, prior-send leftover). Without this, Mission 8 hit
+        # "show me the list of universes and a one-sentencplease submit
+        # a scene direction request..." — new text interleaved with old.
+        try:
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Delete")
+        except Exception:
+            pass
+        # Defensive: if the keystroke path didn't actually clear (some
+        # contenteditable shells swallow Ctrl+A), fall back to a DOM
+        # clear with an 'input' event so the framework state updates.
+        try:
+            current = (inp.inner_text() or "").strip()
+        except Exception:
+            current = ""
+        if current:
+            try:
+                inp.evaluate(
+                    "(el) => { "
+                    "if ('value' in el) { el.value = ''; } "
+                    "else { el.textContent = ''; } "
+                    "el.dispatchEvent(new Event('input', {bubbles: true})); "
+                    "}"
+                )
+            except Exception:
+                pass
         page.keyboard.type(message, delay=15)
         # Prefer the send button if visible; fall back to Enter.
         send = _first_visible(page, SEND_BUTTON_SELECTORS)
