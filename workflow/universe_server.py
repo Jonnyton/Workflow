@@ -448,6 +448,87 @@ def _format_dirty_file_conflict(exc: DirtyFileError) -> dict[str, Any]:
     }
 
 
+def _filter_claims_by_branch_visibility(
+    claims: list[dict[str, Any]],
+    *,
+    viewer: str,
+) -> list[dict[str, Any]]:
+    """Phase 6.2.2 — hide gate claims whose Branch is private.
+
+    A private Branch's claim is visible only to its author. Public
+    Branches are visible to everyone. The Goal's visibility is NOT
+    consulted here; private Branch on public Goal is a supported
+    product state.
+
+    Branches that have been deleted (no row) are treated as "orphan
+    claims" and left in the list — the caller's orphan tagging
+    handles that surface separately.
+    """
+    if not claims:
+        return claims
+    from workflow.author_server import get_branch_definition
+
+    visibility_cache: dict[str, tuple[str, str]] = {}
+    filtered: list[dict[str, Any]] = []
+    for claim in claims:
+        bid = claim.get("branch_def_id", "")
+        if not bid:
+            filtered.append(claim)
+            continue
+        if bid not in visibility_cache:
+            try:
+                branch = get_branch_definition(
+                    _base_path(), branch_def_id=bid,
+                )
+                visibility_cache[bid] = (
+                    branch.get("visibility", "public") or "public",
+                    branch.get("author", "") or "",
+                )
+            except KeyError:
+                # Orphan claim — branch row gone. Keep the claim.
+                visibility_cache[bid] = ("public", "")
+        branch_visibility, branch_author = visibility_cache[bid]
+        if branch_visibility == "private" and branch_author != viewer:
+            continue
+        filtered.append(claim)
+    return filtered
+
+
+def _filter_leaderboard_by_branch_visibility(
+    entries: list[dict[str, Any]],
+    *,
+    viewer: str,
+) -> list[dict[str, Any]]:
+    """Phase 6.2.2 — hide leaderboard entries whose Branch is private.
+
+    Same contract as :func:`_filter_claims_by_branch_visibility` but
+    operates on leaderboard shape (``branch_def_id`` key present).
+    """
+    if not entries:
+        return entries
+    from workflow.author_server import get_branch_definition
+
+    filtered: list[dict[str, Any]] = []
+    for entry in entries:
+        bid = entry.get("branch_def_id", "")
+        if not bid:
+            filtered.append(entry)
+            continue
+        try:
+            branch = get_branch_definition(
+                _base_path(), branch_def_id=bid,
+            )
+        except KeyError:
+            filtered.append(entry)
+            continue
+        visibility = branch.get("visibility", "public") or "public"
+        author = branch.get("author", "") or ""
+        if visibility == "private" and author != viewer:
+            continue
+        filtered.append(entry)
+    return filtered
+
+
 def _format_commit_failed(exc: CommitFailedError) -> dict[str, Any]:
     """Shape a :class:`CommitFailedError` for MCP clients.
 
@@ -3815,11 +3896,14 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
     if not name:
         return json.dumps({"error": "name is required for create_branch."})
 
+    visibility_in = (kwargs.get("visibility") or "public").strip().lower()
+    visibility = "private" if visibility_in == "private" else "public"
     branch = BranchDefinition(
         name=name,
         description=kwargs.get("description", ""),
         domain_id=kwargs.get("domain_id") or "workflow",
         author=kwargs.get("author") or _current_actor(),
+        visibility=visibility,
     )
     try:
         saved, _commit = _storage_backend().save_branch_and_commit(
@@ -3833,6 +3917,7 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
     return json.dumps({
         "branch_def_id": saved["branch_def_id"],
         "name": saved["name"],
+        "visibility": saved.get("visibility", "public"),
         "status": "created",
     })
 
@@ -3846,6 +3931,11 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
     try:
         branch = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
+        return json.dumps({"error": f"Branch '{bid}' not found."})
+    # Phase 6.2.2 — private Branches are not discoverable by non-owners.
+    # Match the "not found" envelope so existence isn't leaked.
+    visibility = branch.get("visibility", "public") or "public"
+    if visibility == "private" and branch.get("author", "") != _current_actor():
         return json.dumps({"error": f"Branch '{bid}' not found."})
     # Phase 6.4: non-retracted claims for this Branch across all
     # Goals. Flag-gated placeholder when GATES_ENABLED=0 so UIs
@@ -3865,11 +3955,14 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
 def _ext_branch_list(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import list_branch_definitions
 
+    # Phase 6.2.2 — visibility-aware listing. Viewer sees public
+    # Branches and any private Branches they authored.
     rows = list_branch_definitions(
         _base_path(),
         domain_id=kwargs.get("domain_id", ""),
         author=kwargs.get("author", ""),
         goal_id=kwargs.get("goal_id", ""),
+        viewer=_current_actor(),
     )
     summaries = []
     for r in rows:
@@ -3883,6 +3976,7 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
             "goal_id": r.get("goal_id"),
             "node_count": node_count,
             "published": r.get("published", False),
+            "visibility": r.get("visibility", "public"),
         })
     return json.dumps({"branches": summaries, "count": len(summaries)})
 
@@ -4844,6 +4938,21 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
         if not isinstance(val, bool):
             return "set_published 'published' must be true or false"
         branch.published = val
+        return ""
+    if name == "set_visibility":
+        # Phase 6.2.2 — private hides Branch + its gate claims from
+        # non-owner callers.
+        if "visibility" not in op:
+            return "set_visibility requires a 'visibility' string"
+        raw = op.get("visibility")
+        if not isinstance(raw, str):
+            return "set_visibility 'visibility' must be 'public' or 'private'"
+        normalized = raw.strip().lower()
+        if normalized not in ("public", "private"):
+            return (
+                "set_visibility 'visibility' must be 'public' or 'private'"
+            )
+        branch.visibility = normalized
         return ""
     return f"unknown op '{name}'"
 
@@ -8159,6 +8268,10 @@ def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
         )
     except ValueError as exc:
         return json.dumps({"status": "rejected", "error": str(exc)})
+    # Phase 6.2.2 — hide private-Branch claims from non-owners.
+    claims = _filter_claims_by_branch_visibility(
+        claims, viewer=_current_actor(),
+    )
     return json.dumps({
         "status": "ok",
         "filter": {
@@ -8204,6 +8317,10 @@ def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
         }, default=str)
     limit = int(kwargs.get("limit", 50) or 50)
     entries = gates_leaderboard(_base_path(), goal_id=gid, limit=limit)
+    # Phase 6.2.2 — hide private-Branch entries from non-owners.
+    entries = _filter_leaderboard_by_branch_visibility(
+        entries, viewer=_current_actor(),
+    )
     return json.dumps({
         "status": "ok",
         "goal_id": gid,

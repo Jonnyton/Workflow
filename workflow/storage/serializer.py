@@ -122,6 +122,7 @@ def branch_to_yaml_payload(
             c.to_dict() for c in branch.conditional_edges
         ],
         "published": branch.published,
+        "visibility": getattr(branch, "visibility", "public") or "public",
         "stats": dict(branch.stats),
         "created_at": branch.created_at,
         "updated_at": branch.updated_at,
@@ -189,6 +190,7 @@ def branch_from_yaml_payload(
         conditional_edges=cond_edges,
         node_defs=node_defs,
         published=bool(payload.get("published", False)),
+        visibility=(payload.get("visibility") or "public"),
         stats=dict(payload.get("stats", {}) or {}),
         created_at=payload.get("created_at") or "",
         updated_at=payload.get("updated_at") or "",

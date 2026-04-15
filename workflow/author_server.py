@@ -400,6 +400,19 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "CREATE INDEX IF NOT EXISTS idx_branch_defs_goal "
             "ON branch_definitions(goal_id)"
         )
+        # Phase 6.2.2 migration: branch_definitions.visibility column.
+        # Mirrors the Goals visibility pattern at :347. Default 'public'
+        # so existing rows stay behaviorally unchanged; users opt into
+        # private explicitly. Index for the filter helpers.
+        if "visibility" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE branch_definitions ADD COLUMN visibility "
+                "TEXT NOT NULL DEFAULT 'public'"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_branch_defs_visibility "
+            "ON branch_definitions(visibility)"
+        )
         # Phase 6 migration: goals.gate_ladder_json inline ladder column.
         goal_cols = {
             row["name"]
@@ -2119,12 +2132,16 @@ def _request_from_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
-    # goal_id is Phase 5; older rows created before the ADD COLUMN
-    # migration may surface the column but with NULL. Accessing
-    # sqlite3.Row by key raises IndexError when the column is absent
-    # from the SELECT, so guard via `.keys()`.
+    # goal_id is Phase 5; visibility is Phase 6.2.2. Older rows
+    # created before the ADD COLUMN migration may surface the column
+    # but with NULL. Accessing sqlite3.Row by key raises IndexError
+    # when the column is absent from the SELECT, so guard via
+    # ``.keys()``.
     row_keys = row.keys() if hasattr(row, "keys") else []
     goal_id = row["goal_id"] if "goal_id" in row_keys else None
+    visibility = (
+        row["visibility"] if "visibility" in row_keys else "public"
+    ) or "public"
     return {
         "branch_def_id": row["branch_def_id"],
         "name": row["name"],
@@ -2143,6 +2160,7 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "goal_id": goal_id,
+        "visibility": visibility,
     }
 
 
@@ -2185,6 +2203,12 @@ def save_branch_definition(
     # Node definitions — separate from graph topology
     node_defs = branch_def.get("node_defs", [])
 
+    # Phase 6.2.2: visibility defaults to 'public' when absent or
+    # falsy. Anything other than 'private' normalizes to 'public' so
+    # new values don't sneak in without a deliberate schema change.
+    visibility_in = (branch_def.get("visibility") or "public").strip().lower()
+    visibility = "private" if visibility_in == "private" else "public"
+
     with _connect(base_path) as conn:
         conn.execute(
             """
@@ -2192,8 +2216,9 @@ def save_branch_definition(
                 branch_def_id, name, description, author, domain_id,
                 tags_json, version, parent_def_id, entry_point,
                 graph_json, node_defs_json, state_schema_json,
-                published, stats_json, created_at, updated_at, goal_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                published, stats_json, created_at, updated_at, goal_id,
+                visibility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 branch_def_id,
@@ -2213,6 +2238,7 @@ def save_branch_definition(
                 branch_def.get("created_at", now),
                 now,
                 branch_def.get("goal_id") or None,
+                visibility,
             ),
         )
     return get_branch_definition(base_path, branch_def_id=branch_def_id)
@@ -2243,6 +2269,8 @@ def list_branch_definitions(
     tag: str = "",
     name_contains: str = "",
     goal_id: str = "",
+    viewer: str = "",
+    include_private: bool = False,
 ) -> list[dict[str, Any]]:
     """List branch definitions with optional filters.
 
@@ -2253,6 +2281,12 @@ def list_branch_definitions(
         tag: Filter by tag (substring match in JSON array).
         name_contains: Filter by name (case-insensitive substring).
         goal_id: Filter by bound Goal (exact match). Phase 5.
+        viewer: Actor doing the listing. Phase 6.2.2. When given,
+            private Branches whose ``author != viewer`` are hidden.
+            Empty string means "no viewer context" — returns only
+            public Branches unless ``include_private`` is set.
+        include_private: Phase 6.2.2. If True, return all rows
+            regardless of visibility (host / internal callers only).
     """
     clauses: list[str] = []
     params: list[Any] = []
@@ -2274,6 +2308,15 @@ def list_branch_definitions(
     if goal_id:
         clauses.append("goal_id = ?")
         params.append(goal_id)
+    if not include_private:
+        # Public rows OR rows authored by the viewer. No viewer =
+        # strictly public. Mirrors the filter semantics used by the
+        # Phase 6.2 gate-claim helpers.
+        if viewer:
+            clauses.append("(visibility = 'public' OR author = ?)")
+            params.append(viewer)
+        else:
+            clauses.append("visibility = 'public'")
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
@@ -2323,6 +2366,14 @@ def update_branch_definition(
                 value = None
             sets.append(f"{col} = ?")
             params.append(value)
+
+    if "visibility" in updates:
+        # Phase 6.2.2. Default to public for any unrecognized string
+        # so the column never holds an unknown state.
+        incoming = (updates["visibility"] or "public").strip().lower()
+        normalized = "private" if incoming == "private" else "public"
+        sets.append("visibility = ?")
+        params.append(normalized)
 
     json_fields = {
         "tags": "tags_json",
@@ -2609,9 +2660,16 @@ def branches_for_goal(
     goal_id: str,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Return Branches bound to a Goal (full branch-def dicts)."""
+    """Return Branches bound to a Goal (full branch-def dicts).
+
+    Phase 6.2.2: returns ALL visibility states. The visibility filter
+    belongs at the presentation boundary (leaderboard + list_claims
+    handlers), not here — otherwise internal stats that need the full
+    population break. Callers that surface this to a user must filter
+    by visibility themselves.
+    """
     return list_branch_definitions(
-        base_path, goal_id=goal_id,
+        base_path, goal_id=goal_id, include_private=True,
     )[:max(1, int(limit))]
 
 

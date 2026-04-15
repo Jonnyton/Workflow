@@ -382,6 +382,12 @@ class BranchDefinition:
 
     # Publication
     published: bool = False
+    # Phase 6.2.2 — visibility mirrors the Goals visibility pattern.
+    # Default is public; users opt into private explicitly. Private
+    # Branches are hidden from non-owner callers in gate-claim listings
+    # and leaderboards. Normalized to 'public'/'private' at the SQLite
+    # layer (see ``author_server.save_branch_definition``).
+    visibility: str = "public"
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
 
@@ -408,6 +414,7 @@ class BranchDefinition:
             "parent_def_id": self.parent_def_id,
             "entry_point": self.entry_point,
             "published": self.published,
+            "visibility": self.visibility,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "stats": self.stats,
