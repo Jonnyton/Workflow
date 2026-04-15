@@ -123,6 +123,10 @@ A and B run in parallel (disjoint files). Everything else is sequential.
 |---|---|---|---|---|
 | **Phase D:** fantasy universe-cycle as registered Branch (opaque-node wrap) | `domains/fantasy_author/__main__.py`, new `domains/fantasy_author/branches/universe_cycle.yaml`, tests | C | pending | Feature flag `WORKFLOW_UNIFIED_EXECUTION` (default off). Single-node Branch wraps existing StateGraph unchanged — no per-phase sandbox audit. Trusted-domain carve-out deferred to future phase. High blast radius — live-test under both settings before flipping default. |
 
+**Release notes (for the flag default flip):**
+
+- **Body-less nodes now hard-fail at compile.** Phase D tightened `_build_node` so any `NodeDefinition` with empty `prompt_template` AND empty `source_code` AND no matching `(domain_id, node_id)` in the domain-trusted registry raises `CompilerError` instead of silently returning `_passthrough`. Low-probability impact on live user data — but if any user-registered Branches in the prod SQLite `branch_definitions` registry were accidentally saved with body-less nodes, they will fail to compile on load after the flag flips. Mitigation: the error message names the offending `(domain_id, node_id)` pair so host can add a body or delete the node. See `workflow/graph_compiler.py:_build_node` for the new error path.
+
 ---
 
 ## Phase E — Tier-aware `DaemonController` dispatcher
