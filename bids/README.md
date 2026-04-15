@@ -47,21 +47,117 @@ Dispatcher-side: if a bid declares `required_llm_type` and the
 daemon sets `served_llm_type` in its dispatcher_config.yaml, only
 matching tasks are eligible. Empty on either side = no filter.
 
-## Node approval requirement
+## Security posture
 
-The NodeBid executor refuses to run any node with `approved=False`.
-Code nodes are scanned against an **expanded** dangerous-pattern
-list (`os.system`, `subprocess`, `eval(`, `exec(`, `__import__`,
-`compile`, `open(`, `importlib`, `pickle`, `marshal`) — stricter
-than the compile-time check because NodeBid execution has no
-universe-state guardrail.
+**Read this before enabling `WORKFLOW_PAID_MARKET=on`.**
 
-## Race note (v1 limitation)
+### What runs
 
-Two daemons running concurrently on the same `repo_root` may both
-claim the same bid via distinct BranchTask claims. v1 accepts this
-double-execution; first-push-wins on settlement. Bid atomicity is a
-Phase H concern.
+The NodeBid executor calls Python `exec()` on the `source_code` of
+an approved node. The call site is
+`workflow/executors/node_bid.py:149`:
+
+```python
+exec(source, {"__builtins__": __builtins__}, local_scope)
+```
+
+**This is Python `exec`, not a sandbox.** The source executes in the
+daemon process with full interpreter privileges (filesystem,
+network, subprocess via any module already imported into
+`__builtins__`). There is no OS-level isolation, no seccomp, no
+resource cap, no separate process. The pattern scan below is a
+defense-in-depth string filter, NOT a sandbox.
+
+### Trust boundary
+
+The node posting a bid (`node_bid_id`) is **adversarial input** —
+any user on any host with write access to the shared `bids/`
+directory can submit. The node being executed (`node_def_id`) is
+**trusted input** — it must already exist in the daemon's local node
+registry and be marked `approved=True` by the host operator.
+
+The whole model rests on that distinction: a bid points at an
+already-approved node in the daemon's own registry. Bids cannot
+ship new code. Only nodes the host has already accepted can run.
+
+### Three-layer defense
+
+Enforced at both producer side (pre-queue rejection, see
+`workflow/producers/node_bid.py:_producer_sandbox_reject`) and
+executor side (defense-in-depth, see `workflow/executors/node_bid.py:execute_node_bid`).
+Preflight §4.3 invariant 1 requires BOTH boundaries:
+
+1. **Registration + approval.** `node_def_id` must resolve in the
+   local node registry with `approved=True`. Unknown →
+   `node_not_found`. Unapproved → `unapproved_node`.
+2. **Source-pattern rejection.** The approved node's `source_code`
+   is scanned against `_BID_DANGEROUS_PATTERNS` in
+   `workflow/graph_compiler.py:122` — a **strict superset** of the
+   wrapper-node list: `os.system`, `subprocess`, `eval(`, `exec(`,
+   `__import__`, `compile(`, `open(`, `importlib`, `pickle`,
+   `marshal`. Match → `dangerous_pattern:<pattern>`. Network
+   patterns (`urllib`, `requests`, `socket`, `http.client`) are
+   intentionally NOT rejected — approved nodes may legitimately
+   call LLM APIs.
+3. **Inputs flat-dict validation (producer-only).** Producer rejects
+   non-flat / non-primitive inputs via `validate_node_bid_inputs`
+   before the bid is queued — only str/int/float/bool/None values
+   are accepted; nested structures fail at submit time. The executor
+   strips producer-internal `__`-prefixed keys (`__node_bid_id`,
+   `__node_def_id`) before `run(state)` but does NOT re-validate
+   input shapes. If this matters for your threat model, add an
+   executor-side recheck.
+
+### Residual risk
+
+- **String filter is bypassable.** Dangerous capability can be
+  reached without matching the literal patterns (e.g. `getattr`
+  chains, aliasing, attribute access on objects already in scope).
+  The filter catches obvious misuse; it is not a security boundary.
+  **The approval gate is the real boundary — treat every approval
+  as a code review.**
+- **`__builtins__` is the full module.** `open`, `__import__`, and
+  friends are reachable at runtime even after the source scan
+  rejects their literal tokens.
+- **No timeout, no memory cap.** v1 has neither. A hostile approved
+  node can wedge or OOM the daemon. Approve accordingly.
+- **Shared filesystem = shared trust surface.** Any host with write
+  to `bids/` can queue work. Approval happens per daemon, but a
+  compromised approved node on one host becomes a vector for every
+  cooperating daemon.
+
+### Operator checklist before flipping the flag
+
+- [ ] Every node marked `approved=True` has been code-reviewed by
+      a trusted operator — not just "it ran once."
+- [ ] `_BID_DANGEROUS_PATTERNS` is understood to be defense-in-depth,
+      not a sandbox.
+- [ ] Daemon process runs with least-privilege OS-level permissions
+      (no uncontrolled write paths, no long-lived secrets on disk
+      readable by the daemon user).
+- [ ] Host has read `docs/planning/node_bid_conventions.md` for the
+      full contract (claim atomicity, settlements, outcome-gate
+      coupling).
+
+### See also
+
+- `docs/planning/node_bid_conventions.md` — full Phase G contract
+  (commit `20c3dd9`).
+- `workflow/graph_compiler.py:_BID_DANGEROUS_PATTERNS` — single
+  source of truth for the pattern list.
+- `workflow/producers/node_bid.py:_producer_sandbox_reject` —
+  producer-side layers 1+2.
+- `workflow/executors/node_bid.py:execute_node_bid` — executor-side
+  layers 1+2+3.
+
+## Race note
+
+Two daemons on the same `repo_root` race on claim via git-rename
+plus push; the loser reverts on push-fail. G.2 (`20e8886`) closed
+the local-test race-bypass; Phase H added multi-process stress
+coverage in `tests/test_phase_h_claim_stress.py`. Local-only
+installs (no configured remote) skip pull/push — single-daemon, no
+race.
 
 ## evidence_url
 
