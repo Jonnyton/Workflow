@@ -55,6 +55,7 @@ NEW_CHAT_URL = "https://claude.ai/new"
 ROOT = Path(__file__).resolve().parent.parent
 TRACE = ROOT / "output" / "claude_chat_trace.md"
 FAILURE_DIR = ROOT / "output" / "claude_chat_failures"
+NOTEPAD = ROOT / "output" / "user_sim_session.md"
 
 CHROME_BIN = Path(
     os.environ.get(
@@ -277,6 +278,13 @@ _AUTO_DISMISS_SCRIPT = r"""
       btn.click();
       window.__workflowAutoDismissCount = (window.__workflowAutoDismissCount || 0) + 1;
       window.__workflowAutoDismissLast = {text: txt, at: Date.now()};
+      // Append to a drain queue so the Python side can mirror each
+      // successful auto-dismiss into output/user_sim_session.md.
+      // Python reads + clears this array; JS only appends.
+      if (!Array.isArray(window.__workflowAutoDismissLog)) {
+        window.__workflowAutoDismissLog = [];
+      }
+      window.__workflowAutoDismissLog.push({text: txt, at: Date.now()});
       return true;
     } catch (e) { return false; }
   };
@@ -306,6 +314,71 @@ _AUTO_DISMISS_SCRIPT = r"""
   setInterval(scan, 5000);
 })();
 """
+
+
+def _log_dialog_to_notepad(
+    text: str, outcome: str, tool_name: str = "",
+) -> None:
+    """Append one permission-dialog event to ``output/user_sim_session.md``.
+
+    One line per event so the host scanning the notepad sees every
+    gate Claude.ai surfaced — including auto-dismissed ones. Line
+    format:
+
+      ## [YYYY-MM-DD HH:MM] SYSTEM DIALOG <tool> — detected: "<first 80 chars>" auto-dismiss: <ok|failed>
+
+    Best-effort: never raises. Atomic append via ``os.O_APPEND`` so
+    concurrent user-sim + dismiss-poll writers don't interleave
+    mid-line.
+    """
+    try:
+        NOTEPAD.parent.mkdir(parents=True, exist_ok=True)
+        snippet = (text or "").strip().replace("\n", " ")
+        if len(snippet) > 80:
+            snippet = snippet[:80]
+        stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        tool = tool_name or "-"
+        line = (
+            f"## [{stamp}] SYSTEM DIALOG {tool} — "
+            f'detected: "{snippet}" auto-dismiss: {outcome}\n'
+        )
+        fd = os.open(
+            str(NOTEPAD),
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o644,
+        )
+        try:
+            os.write(fd, line.encode("utf-8"))
+        finally:
+            os.close(fd)
+    except Exception:
+        # Notepad logging is observability, never block the primary flow.
+        pass
+
+
+def _drain_auto_dismiss_log(page) -> int:
+    """Read + clear the browser-side auto-dismiss drain queue.
+
+    The MutationObserver in ``_AUTO_DISMISS_SCRIPT`` pushes
+    ``{text, at}`` onto ``window.__workflowAutoDismissLog`` on every
+    successful click. Python drains the queue here and logs each
+    entry via ``_log_dialog_to_notepad``. Returns the number of
+    entries drained. Safe no-op on error (never breaks the caller).
+    """
+    try:
+        drained = page.evaluate(
+            "(() => { "
+            "const a = window.__workflowAutoDismissLog || []; "
+            "window.__workflowAutoDismissLog = []; "
+            "return a; "
+            "})()"
+        ) or []
+    except Exception:
+        return 0
+    for entry in drained:
+        text = str((entry or {}).get("text", "") or "")
+        _log_dialog_to_notepad(text, outcome="ok", tool_name="auto-dismiss")
+    return len(drained)
 
 
 def _install_auto_dismiss(page) -> None:
@@ -475,6 +548,10 @@ def _dismiss_dialogs(page) -> int:
     global _dismiss_cooldown_until
     if time.monotonic() < _dismiss_cooldown_until:
         return 0
+    # Drain any MutationObserver auto-dismiss events the browser
+    # captured between polls — the host sees them in the notepad
+    # even though we didn't click them ourselves.
+    _drain_auto_dismiss_log(page)
     # Before clicking the confirm button, try to toggle "always allow"
     # so this approval persists for the tool across future calls.
     _try_check_always_allow(page)
@@ -490,8 +567,24 @@ def _dismiss_dialogs(page) -> int:
                 btn = loc.nth(i)
                 if not btn.is_visible():
                     continue
-                btn.click(force=True)
+                btn_text = ""
+                try:
+                    btn_text = (btn.inner_text() or "").strip()
+                except Exception:
+                    pass
+                try:
+                    btn.click(force=True)
+                except Exception:
+                    _log_dialog_to_notepad(
+                        btn_text or sel, outcome="failed",
+                        tool_name="_dismiss_dialogs",
+                    )
+                    continue
                 clicked += 1
+                _log_dialog_to_notepad(
+                    btn_text or sel, outcome="ok",
+                    tool_name="_dismiss_dialogs",
+                )
                 _dismiss_cooldown_until = time.monotonic() + 3.0
                 time.sleep(0.3)
                 break  # one per pass; re-evaluate on next call if more
@@ -565,6 +658,14 @@ def _dump_suspected_dialog(page, reason: str = "suspected_dialog") -> str:
     if not hits:
         return ""
     _suspected_dump_cooldown_until = time.monotonic() + 30.0
+    # Host-facing note: our selectors didn't match this gate, so log
+    # the first detected button into the notepad as "failed" so the
+    # host can manually click it and so we can widen selectors later.
+    first_text = str((hits[0] or {}).get("text", "") or "")
+    _log_dialog_to_notepad(
+        first_text, outcome="failed",
+        tool_name="_dump_suspected_dialog",
+    )
     note_lines = [
         "Suspected permission-gate buttons (not auto-dismissed):",
         "",
