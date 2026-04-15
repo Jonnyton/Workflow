@@ -5,6 +5,20 @@ notifications, and an open-output-folder action.
 
 IMPORTANT: Uses ``icon.run_detached()`` not ``icon.run()`` to avoid
 blocking the event loop.
+
+Phase H additions
+-----------------
+``on_tier_toggle(tier, enabled)`` — called when the user clicks a tier
+toggle in the "Toggle Tier" submenu.
+
+``on_pause_all_tiers()`` — called when the user clicks "Pause All Tiers"
+(emergency switch that disables all four tiers simultaneously).
+
+``on_show_dashboard()`` — called when the user clicks "Show Dashboard".
+Callers supply a function that opens the per-universe dashboard window.
+
+``update_tier_states(states)`` — refresh the tier enabled/disabled state
+shown in the Toggle Tier submenu without a full status update.
 """
 
 from __future__ import annotations
@@ -70,12 +84,30 @@ class TrayApp:
         Path to the output directory for "Open Output" action.
     icon_path : str or Path, optional
         Path to a .ico file. Falls back to generated icon.
+    on_tier_toggle : callable(tier: str, enabled: bool), optional
+        Phase H. Called when the user toggles a tier in the "Toggle Tier"
+        submenu. ``tier`` is one of the four canonical tier names (see
+        ``TIER_NAMES``); ``enabled`` is the new desired state.
+    on_pause_all_tiers : callable(), optional
+        Phase H. Called when the user clicks "Pause All Tiers".  Should
+        disable all four accept tiers via ``set_tier_config``.
+    on_show_dashboard : callable(), optional
+        Phase H. Called when the user clicks "Show Dashboard".  Should
+        open or raise the per-universe dashboard window.
     """
 
     # Minimum seconds between toast notifications to prevent OS spam.
     _NOTIFY_COOLDOWN = 30.0
     # Minimum seconds between menu rebuilds to prevent Win32 message pump flood.
     _MENU_COOLDOWN = 10.0
+
+    # Phase H: valid tier names in display order.
+    TIER_NAMES: tuple[str, ...] = (
+        "external_requests",
+        "goal_pool",
+        "paid_bids",
+        "opportunistic",
+    )
 
     def __init__(
         self,
@@ -90,6 +122,10 @@ class TrayApp:
         show_default_runtime_controls: bool = True,
         show_output_action: bool = True,
         show_window_action: bool = True,
+        # Phase H: tier-toggle + emergency-pause + dashboard callbacks.
+        on_tier_toggle: Callable[[str, bool], Any] | None = None,
+        on_pause_all_tiers: Callable[[], Any] | None = None,
+        on_show_dashboard: Callable[[], Any] | None = None,
     ) -> None:
         self._on_start = on_start or (lambda: None)
         self._on_pause = on_pause or (lambda: None)
@@ -102,8 +138,13 @@ class TrayApp:
         self._show_default_runtime_controls = show_default_runtime_controls
         self._show_output_action = show_output_action
         self._show_window_action = show_window_action
+        # Phase H callbacks — None means the submenu items are hidden.
+        self._on_tier_toggle = on_tier_toggle
+        self._on_pause_all_tiers = on_pause_all_tiers
+        self._on_show_dashboard = on_show_dashboard
         self._status = "Idle"
         self._paused = False
+        self._emergency_off: bool = False
         self._icon: Icon | None = None
         self._lock = threading.Lock()
         self._last_notify_time: float = 0.0
@@ -113,6 +154,8 @@ class TrayApp:
         self._universe_name: str = ""
         self._word_count: int = 0
         self._tunnel_url: str = ""
+        # Phase H: current tier enabled-states (refreshed via update_tier_states).
+        self._tier_states: dict[str, bool] = {t: True for t in self.TIER_NAMES}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -180,6 +223,26 @@ class TrayApp:
         self._update_tooltip()
         self._throttled_menu_refresh()
 
+    def update_tier_states(self, states: dict[str, bool]) -> None:
+        """Phase H: refresh the tier enabled/disabled state for the menu.
+
+        Call this whenever a ``daemon_overview`` response arrives so the
+        Toggle Tier submenu stays accurate without requiring a full status
+        update.
+
+        Parameters
+        ----------
+        states :
+            Mapping of tier name → enabled flag.  Unknown tier names are
+            ignored; known names not present in ``states`` keep their
+            current value.
+        """
+        with self._lock:
+            for tier in self.TIER_NAMES:
+                if tier in states:
+                    self._tier_states[tier] = bool(states[tier])
+        self._throttled_menu_refresh()
+
     def _update_tooltip(self) -> None:
         """Update the hover tooltip with current status summary."""
         if self._icon is None:
@@ -191,6 +254,8 @@ class TrayApp:
             parts.append(self._status)
             if self._word_count:
                 parts.append(f"{self._word_count:,} words")
+            if self._emergency_off:
+                parts.append("[EMERGENCY OFF]")
         try:
             self._icon.title = " | ".join(parts)
         except Exception:
@@ -232,6 +297,8 @@ class TrayApp:
             universe = self._universe_name
             words = self._word_count
             tunnel = self._tunnel_url
+            emergency_off = self._emergency_off
+            tier_states = dict(self._tier_states)
 
         items: list[MenuItem | Menu] = []
 
@@ -252,6 +319,32 @@ class TrayApp:
             if extra:
                 items.append(Menu.SEPARATOR)
                 items.extend(extra)
+
+        # Phase H: Show Dashboard action
+        if self._on_show_dashboard is not None:
+            items.append(Menu.SEPARATOR)
+            items.append(MenuItem("Show Dashboard", self._handle_show_dashboard))
+
+        # Phase H: Toggle Tier submenu
+        if self._on_tier_toggle is not None:
+            tier_items = []
+            for tier in self.TIER_NAMES:
+                enabled = tier_states.get(tier, True)
+                label = f"{'[ON] ' if enabled else '[OFF]'}{tier}"
+                # Capture loop variable with default argument.
+                def _make_toggle(t: str, e: bool) -> Callable[[Any, Any], None]:
+                    def _handler(_icon: Any = None, _item: Any = None) -> None:
+                        self._handle_tier_toggle(t, not e)
+                    return _handler
+                tier_items.append(MenuItem(label, _make_toggle(tier, enabled)))
+
+            items.append(Menu.SEPARATOR)
+            items.append(MenuItem("Toggle Tier", Menu(*tier_items)))
+
+        # Phase H: Pause All Tiers emergency switch
+        if self._on_pause_all_tiers is not None:
+            label = "▶ Resume All Tiers" if emergency_off else "⏸ Pause All Tiers"
+            items.append(MenuItem(label, self._handle_pause_all_tiers))
 
         # Default runtime controls (show window, pause/resume)
         if self._show_default_runtime_controls:
@@ -324,6 +417,50 @@ class TrayApp:
     def _handle_show_window(self, _icon: Any = None, _item: Any = None) -> None:
         logger.info("Tray: Show Window clicked")
         self._on_show_window()
+
+    def _handle_show_dashboard(self, _icon: Any = None, _item: Any = None) -> None:
+        """Phase H: open per-universe dashboard window."""
+        logger.info("Tray: Show Dashboard clicked")
+        if self._on_show_dashboard is not None:
+            try:
+                self._on_show_dashboard()
+            except Exception:
+                logger.warning("on_show_dashboard raised", exc_info=True)
+
+    def _handle_tier_toggle(self, tier: str, enabled: bool) -> None:
+        """Phase H: relay a tier toggle to the registered callback."""
+        logger.info("Tray: Toggle Tier %s → %s", tier, enabled)
+        if self._on_tier_toggle is not None:
+            try:
+                self._on_tier_toggle(tier, enabled)
+            except Exception:
+                logger.warning("on_tier_toggle raised for tier %s", tier, exc_info=True)
+            # Optimistically update local state so the menu reflects the
+            # new value immediately (caller's write propagates asynchronously).
+            with self._lock:
+                self._tier_states[tier] = enabled
+            self._throttled_menu_refresh()
+
+    def _handle_pause_all_tiers(
+        self, _icon: Any = None, _item: Any = None
+    ) -> None:
+        """Phase H: emergency pause — disable all four accept tiers."""
+        with self._lock:
+            currently_off = self._emergency_off
+        if currently_off:
+            # Second click: resume — caller must re-enable each tier.
+            logger.info("Tray: Resume All Tiers clicked")
+        else:
+            logger.info("Tray: Pause All Tiers clicked (EMERGENCY OFF)")
+        with self._lock:
+            self._emergency_off = not currently_off
+        if self._on_pause_all_tiers is not None:
+            try:
+                self._on_pause_all_tiers()
+            except Exception:
+                logger.warning("on_pause_all_tiers raised", exc_info=True)
+        self._update_tooltip()
+        self._throttled_menu_refresh()
 
     def _handle_start(self, _icon: Any = None, _item: Any = None) -> None:
         logger.info("Tray: Start clicked")
