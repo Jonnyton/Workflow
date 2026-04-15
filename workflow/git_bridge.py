@@ -183,6 +183,50 @@ def stage(path: Path, *, repo_path: Path | None = None) -> bool:
     return True
 
 
+def unstage(paths: list[Path], *, repo_path: Path | None = None) -> bool:
+    """Unstage ``paths`` via ``git reset HEAD -- <paths>``.
+
+    Used by the storage backend to roll back the index after a commit
+    fails mid-flight: without this, the next caller's commit would
+    sweep in our half-staged YAML. Returns True if every path was
+    unstaged (or the repo has no HEAD yet — unborn-branch case).
+    """
+    if not is_enabled(repo_path) or not paths:
+        return False
+    cwd = str(repo_path) if repo_path is not None else None
+    with _LOCK:
+        try:
+            result = subprocess.run(
+                ["git", "reset", "HEAD", "--", *[str(p) for p in paths]],
+                capture_output=True, text=True, check=False,
+                timeout=_TIMEOUT_LOCAL, cwd=cwd,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning("git unstage failed: %s", exc)
+            return False
+    if result.returncode != 0:
+        # Fresh repo without HEAD still benefits from `git rm --cached`
+        # to clear the index entry the add created.
+        combined = (result.stdout + result.stderr).lower()
+        if "ambiguous argument 'head'" in combined or "unknown revision" in combined:
+            with _LOCK:
+                try:
+                    rm_result = subprocess.run(
+                        ["git", "rm", "--cached", "--", *[str(p) for p in paths]],
+                        capture_output=True, text=True, check=False,
+                        timeout=_TIMEOUT_LOCAL, cwd=cwd,
+                    )
+                except (subprocess.TimeoutExpired, OSError) as exc:
+                    logger.warning("git unstage (rm --cached) failed: %s", exc)
+                    return False
+            return rm_result.returncode == 0
+        logger.warning(
+            "git unstage rc=%s: %s", result.returncode, result.stderr.strip(),
+        )
+        return False
+    return True
+
+
 def commit(
     message: str,
     author: str | None = None,

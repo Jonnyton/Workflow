@@ -41,7 +41,12 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from workflow.storage import DirtyFileError, get_backend
+from workflow.storage import (
+    CommitFailedError,
+    DirtyFileError,
+    get_backend,
+    list_unreconciled_writes,
+)
 
 logger = logging.getLogger("universe_server")
 
@@ -440,6 +445,29 @@ def _format_dirty_file_conflict(exc: DirtyFileError) -> dict[str, Any]:
             "pass force=True to overwrite",
             "commit or stash local edits first",
         ],
+    }
+
+
+def _format_commit_failed(exc: CommitFailedError) -> dict[str, Any]:
+    """Shape a :class:`CommitFailedError` for MCP clients.
+
+    SQLite row is retained (Path A — SQLite is the accepted-write
+    boundary); YAML is rolled back; the write is queued in
+    ``unreconciled_writes`` for a future ``sync_commit`` replay.
+    """
+    paths = [str(p) for p in getattr(exc, "paths", []) or []]
+    return {
+        "status": "git_commit_failed",
+        "error": "git_commit_failed",
+        "helper": exc.helper,
+        "git_error": exc.git_error,
+        "paths": paths,
+        "row_ref": exc.row_ref,
+        "note": (
+            "SQLite write accepted; git commit failed and was rolled "
+            "back. Entry queued in unreconciled_writes for later "
+            "sync_commit replay."
+        ),
     }
 
 
@@ -2899,6 +2927,13 @@ def _action_control_daemon(
         liveness = _daemon_liveness(
             udir, status if isinstance(status, dict) else None,
         )
+        # Count pending unreconciled writes so host sees drift when a
+        # git commit failed but SQLite accepted the write.
+        try:
+            pending = list_unreconciled_writes(_base_path(), limit=500)
+            pending_count = len(pending)
+        except Exception:
+            pending_count = 0
         return json.dumps({
             "universe_id": uid,
             "action": "status",
@@ -2913,6 +2948,7 @@ def _action_control_daemon(
             "word_count_sample": liveness["word_count_sample"],
             "accept_rate": liveness["accept_rate"],
             "accept_rate_sample": liveness["accept_rate_sample"],
+            "unreconciled_writes_count": pending_count,
         })
 
     else:
@@ -3785,12 +3821,15 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
         domain_id=kwargs.get("domain_id") or "workflow",
         author=kwargs.get("author") or _current_actor(),
     )
-    saved, _commit = _storage_backend().save_branch_and_commit(
-        branch,
-        author=git_author(_current_actor()),
-        message=f"branches.create_branch: {name}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        saved, _commit = _storage_backend().save_branch_and_commit(
+            branch,
+            author=git_author(_current_actor()),
+            message=f"branches.create_branch: {name}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "branch_def_id": saved["branch_def_id"],
         "name": saved["name"],
@@ -3904,12 +3943,15 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
     # The resolved node may have been renamed; capture the final id
     # from the mutated branch BEFORE persisting.
     final_nid = branch.node_defs[-1].node_id
-    _storage_backend().save_branch_and_commit(
-        branch,
-        author=git_author(_current_actor()),
-        message=f"branches.add_node: {bid}.{final_nid}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        _storage_backend().save_branch_and_commit(
+            branch,
+            author=git_author(_current_actor()),
+            message=f"branches.add_node: {bid}.{final_nid}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "branch_def_id": bid,
         "node_id": final_nid,
@@ -3938,12 +3980,15 @@ def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
     branch = BranchDefinition.from_dict(source_dict)
     branch.edges.append(EdgeDefinition(from_node=src, to_node=dst))
 
-    _storage_backend().save_branch_and_commit(
-        branch,
-        author=git_author(_current_actor()),
-        message=f"branches.connect_nodes: {bid} {src}->{dst}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        _storage_backend().save_branch_and_commit(
+            branch,
+            author=git_author(_current_actor()),
+            message=f"branches.connect_nodes: {bid} {src}->{dst}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "branch_def_id": bid,
         "from_node": src,
@@ -3972,12 +4017,15 @@ def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
     branch = BranchDefinition.from_dict(source_dict)
     branch.entry_point = nid
 
-    _storage_backend().save_branch_and_commit(
-        branch,
-        author=git_author(_current_actor()),
-        message=f"branches.set_entry_point: {bid}.{nid}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        _storage_backend().save_branch_and_commit(
+            branch,
+            author=git_author(_current_actor()),
+            message=f"branches.set_entry_point: {bid}.{nid}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "branch_def_id": bid,
         "entry_point": nid,
@@ -4022,12 +4070,15 @@ def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
         field_entry["default"] = default
 
     branch.state_schema.append(field_entry)
-    _storage_backend().save_branch_and_commit(
-        branch,
-        author=git_author(_current_actor()),
-        message=f"branches.add_state_field: {bid}.{fname}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        _storage_backend().save_branch_and_commit(
+            branch,
+            author=git_author(_current_actor()),
+            message=f"branches.add_state_field: {bid}.{fname}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "branch_def_id": bid,
         "field_name": fname,
@@ -6978,12 +7029,15 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
         "tags": tags,
         "visibility": visibility,
     }
-    saved, _commit = _storage_backend().save_goal_and_commit(
-        goal_dict,
-        author=git_author(_current_actor()),
-        message=f"goals.propose: {name}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        saved, _commit = _storage_backend().save_goal_and_commit(
+            goal_dict,
+            author=git_author(_current_actor()),
+            message=f"goals.propose: {name}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     text = (
         f"**Proposed Goal: {saved['name']}.**\n\n"
         "Bind existing workflows to this Goal with the `goals` action "
@@ -7060,12 +7114,15 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
     # Then route the resulting full goal dict through the cached backend
     # so the YAML mirror refreshes + single commit lands.
     updated = _update(_base_path(), goal_id=gid, updates=updates)
-    saved, _commit = _storage_backend().save_goal_and_commit(
-        updated,
-        author=git_author(_current_actor()),
-        message=f"goals.update: {gid}",
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        saved, _commit = _storage_backend().save_goal_and_commit(
+            updated,
+            author=git_author(_current_actor()),
+            message=f"goals.update: {gid}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     changed = sorted(updates.keys())
     text = (
         f"**Updated Goal '{saved['name']}'.** Fields changed: "
@@ -7137,12 +7194,15 @@ def _action_goal_bind(kwargs: dict[str, Any]) -> str:
         commit_msg = f"goals.bind: {branch['name']} → {goal['name']}"
     else:
         commit_msg = f"goals.bind: {branch['name']} ∅ (unbind)"
-    _storage_backend().save_branch_and_commit(
-        branch_obj,
-        author=git_author(_current_actor()),
-        message=commit_msg,
-        force=bool(kwargs.get("force", False)),
-    )
+    try:
+        _storage_backend().save_branch_and_commit(
+            branch_obj,
+            author=git_author(_current_actor()),
+            message=commit_msg,
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     if gid:
         text = (
             f"**Bound** workflow '{branch['name']}' to "
@@ -7801,12 +7861,15 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
     updated_goal["gate_ladder"] = ladder
     force = bool(kwargs.get("force", False))
     goal_slug = slugify(goal.get("name") or gid)
-    saved, _commit = _storage_backend().save_goal_and_commit(
-        updated_goal,
-        author=git_author(_current_actor()),
-        message=f"goals.define_ladder: {goal_slug}",
-        force=force,
-    )
+    try:
+        saved, _commit = _storage_backend().save_goal_and_commit(
+            updated_goal,
+            author=git_author(_current_actor()),
+            message=f"goals.define_ladder: {goal_slug}",
+            force=force,
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "status": "defined",
         "goal_id": gid,
@@ -7950,6 +8013,8 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
                 "first, then re-claim under the new Goal."
             ),
         })
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "status": "claimed",
         "claim": saved,
@@ -8033,16 +8098,19 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
         })
     goal_slug = slugify(goal_name or goal_id)
     branch_slug = slugify(branch.get("name") or bid)
-    saved, _commit = _storage_backend().retract_gate_claim_and_commit(
-        branch_def_id=bid,
-        rung_key=rung_key,
-        reason=reason,
-        goal_slug=goal_slug,
-        branch_slug=branch_slug,
-        author=git_author(_current_actor()),
-        message=f"gates.retract: {goal_slug}/{branch_slug}@{rung_key}",
-        force=force,
-    )
+    try:
+        saved, _commit = _storage_backend().retract_gate_claim_and_commit(
+            branch_def_id=bid,
+            rung_key=rung_key,
+            reason=reason,
+            goal_slug=goal_slug,
+            branch_slug=branch_slug,
+            author=git_author(_current_actor()),
+            message=f"gates.retract: {goal_slug}/{branch_slug}@{rung_key}",
+            force=force,
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
     return json.dumps({
         "status": "retracted",
         "claim": saved,

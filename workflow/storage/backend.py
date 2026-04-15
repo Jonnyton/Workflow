@@ -19,8 +19,10 @@ Reads stay through SQLite for query performance in both backends.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -35,12 +37,14 @@ from workflow.storage.serializer import (
 )
 
 __all__ = [
+    "CommitFailedError",
     "DirtyFileError",
     "SqliteCachedBackend",
     "SqliteOnlyBackend",
     "StorageBackend",
     "get_backend",
     "invalidate_backend_cache",
+    "list_unreconciled_writes",
 ]
 
 
@@ -59,6 +63,40 @@ class DirtyFileError(RuntimeError):
         super().__init__(
             f"Local edit conflict: {joined} has uncommitted changes. "
             "Commit, stash, or discard — or retry with force=True."
+        )
+
+
+class CommitFailedError(RuntimeError):
+    """Raised when a ``*_and_commit`` helper's git commit fails.
+
+    The SQLite write is kept (Path A — SQLite is the accepted-write
+    boundary) and recorded in ``unreconciled_writes`` so a future
+    ``sync_commit`` can replay it against git. The YAML working tree
+    is rolled back to its pre-call state and the index is unstaged,
+    so the repo looks untouched from git's perspective.
+
+    Callers should catch this and return a structured error to the
+    MCP client. The ``paths`` list carries the YAML files that were
+    attempted so clients can display them.
+    """
+
+    def __init__(
+        self,
+        paths: list[Path],
+        *,
+        helper: str,
+        git_error: str,
+        row_ref: str = "",
+    ) -> None:
+        self.paths = list(paths)
+        self.helper = helper
+        self.git_error = git_error
+        self.row_ref = row_ref
+        joined = ", ".join(str(p) for p in self.paths) or "(unknown)"
+        super().__init__(
+            f"git commit failed in {helper} ({git_error}); "
+            f"YAML at {joined} rolled back, SQLite row retained "
+            "(see unreconciled_writes)."
         )
 
 
@@ -324,6 +362,96 @@ class SqliteCachedBackend:
         if dirty:
             raise DirtyFileError(dirty)
 
+    def _snapshot_paths(self, paths: list[Path]) -> dict[Path, bytes | None]:
+        """Capture pre-write YAML bytes for each path.
+
+        ``None`` means the file did not exist and should be deleted on
+        rollback. Called BEFORE the YAML write so the snapshot reflects
+        the pre-call working tree.
+        """
+        snapshot: dict[Path, bytes | None] = {}
+        for p in paths:
+            if p.exists():
+                try:
+                    snapshot[p] = p.read_bytes()
+                except OSError:
+                    # File vanished between stat and read — treat as
+                    # "didn't exist" for rollback purposes.
+                    snapshot[p] = None
+            else:
+                snapshot[p] = None
+        return snapshot
+
+    def _rollback_yaml(self, snapshot: dict[Path, bytes | None]) -> None:
+        """Restore YAML working-tree state from ``snapshot``."""
+        for path, prior in snapshot.items():
+            if prior is None:
+                # File did not exist pre-call; delete the new one.
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            else:
+                try:
+                    path.write_bytes(prior)
+                except OSError:
+                    pass
+
+    def _record_unreconciled(
+        self,
+        *,
+        helper: str,
+        paths: list[Path],
+        row_ref: str,
+        git_error: str,
+    ) -> None:
+        """Insert a row into ``unreconciled_writes`` so ``sync_commit``
+        can replay the SQLite-accepted write to git later.
+        """
+        from workflow.author_server import _connect
+
+        paths_json = json.dumps([str(p) for p in paths])
+        recorded_at = datetime.now(timezone.utc).isoformat()
+        with _connect(self.base_path) as conn:
+            conn.execute(
+                "INSERT INTO unreconciled_writes "
+                "(recorded_at, helper_name, paths_json, row_ref, git_error) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (recorded_at, helper, paths_json, row_ref, git_error),
+            )
+
+    def _commit_or_rollback(
+        self,
+        *,
+        helper: str,
+        paths: list[Path],
+        snapshot: dict[Path, bytes | None],
+        row_ref: str,
+        message: str,
+        author: str,
+    ) -> git_bridge.CommitResult:
+        """Commit ``paths``; on failure, roll back YAML + index and raise.
+
+        SQLite row stays put — it's the accepted-write boundary under
+        Path A. A row is appended to ``unreconciled_writes`` so the
+        future ``sync_commit`` MCP action can replay the YAML→git
+        half against a now-healthy git.
+        """
+        result = git_bridge.commit(
+            message, author, paths=paths, repo_path=self._repo_root,
+        )
+        if result.ok:
+            return result
+        git_bridge.unstage(paths, repo_path=self._repo_root)
+        self._rollback_yaml(snapshot)
+        self._record_unreconciled(
+            helper=helper, paths=paths, row_ref=row_ref,
+            git_error=result.error,
+        )
+        raise CommitFailedError(
+            paths, helper=helper, git_error=result.error, row_ref=row_ref,
+        )
+
     # ── Branch ────────────────────────────────────────────────────
 
     def save_branch(
@@ -401,6 +529,10 @@ class SqliteCachedBackend:
         # leaves SQLite, YAML, and git index untouched.
         self._check_dirty(all_paths, force=force)
 
+        # Snapshot BEFORE YAML writes so rollback can restore exactly
+        # what was on disk pre-call.
+        snapshot = self._snapshot_paths(all_paths) if self._git_enabled else {}
+
         # save_branch already runs its own dirty-check; pass force=True
         # so it doesn't re-check (we just cleared the whole payload).
         saved = self.save_branch(branch, force=True)
@@ -414,11 +546,16 @@ class SqliteCachedBackend:
         if not self._git_enabled:
             return saved, None
 
-        # Commit with an explicit paths list. Defense-in-depth against a
-        # concurrent writer staging unrelated files between our stage
-        # calls and this commit.
-        result = git_bridge.commit(
-            message, author, paths=all_paths, repo_path=self._repo_root,
+        # Commit with an explicit paths list. On failure: unstage,
+        # restore pre-call YAML, record the SQLite-accepted write in
+        # ``unreconciled_writes``, raise ``CommitFailedError``.
+        result = self._commit_or_rollback(
+            helper="save_branch_and_commit",
+            paths=all_paths,
+            snapshot=snapshot,
+            row_ref=str(saved.get("branch_def_id", "")),
+            message=message,
+            author=author,
         )
         return saved, result
 
@@ -462,15 +599,39 @@ class SqliteCachedBackend:
             goal_path_pre = self.layout.goal_path(provisional_slug)
             self._check_dirty([goal_path_pre], force=force)
 
+        # Predicted target path for snapshot. If the goal-name changes
+        # during save, snapshot won't cover the renamed file — but
+        # save_goal writes exactly one YAML (the final slug path), so
+        # snapshot of that path is sufficient.
+        pre_path = (
+            self.layout.goal_path(provisional_slug) if provisional_slug else None
+        )
+        snapshot: dict[Path, bytes | None] = {}
+        if self._git_enabled and pre_path is not None:
+            snapshot = self._snapshot_paths([pre_path])
+
         saved = self.save_goal(goal, force=True)
+
+        goal_slug = slugify(saved.get("name") or saved.get("goal_id"))
+        goal_path = self.layout.goal_path(goal_slug)
 
         if not self._git_enabled:
             return saved, None
 
-        goal_slug = slugify(saved.get("name") or saved.get("goal_id"))
-        goal_path = self.layout.goal_path(goal_slug)
-        result = git_bridge.commit(
-            message, author, paths=[goal_path], repo_path=self._repo_root,
+        if goal_path not in snapshot:
+            # Rename case: save_goal wrote to a different slug. Mark
+            # the final path as "didn't exist pre-call" so rollback
+            # deletes it. The pre-rename file (already snapshotted)
+            # remains untouched on rollback.
+            snapshot[goal_path] = None
+
+        result = self._commit_or_rollback(
+            helper="save_goal_and_commit",
+            paths=[goal_path],
+            snapshot=snapshot,
+            row_ref=str(saved.get("goal_id", "")),
+            message=message,
+            author=author,
         )
         return saved, result
 
@@ -519,6 +680,10 @@ class SqliteCachedBackend:
         )
         self._check_dirty([claim_path], force=force)
 
+        snapshot = (
+            self._snapshot_paths([claim_path]) if self._git_enabled else {}
+        )
+
         saved = claim_gate(
             self.base_path,
             branch_def_id=branch_def_id,
@@ -533,8 +698,13 @@ class SqliteCachedBackend:
         )
         if not self._git_enabled:
             return saved, None
-        result = git_bridge.commit(
-            message, author, paths=[claim_path], repo_path=self._repo_root,
+        result = self._commit_or_rollback(
+            helper="save_gate_claim_and_commit",
+            paths=[claim_path],
+            snapshot=snapshot,
+            row_ref=str(saved.get("claim_id", "")),
+            message=message,
+            author=author,
         )
         return saved, result
 
@@ -563,6 +733,10 @@ class SqliteCachedBackend:
         )
         self._check_dirty([claim_path], force=force)
 
+        snapshot = (
+            self._snapshot_paths([claim_path]) if self._git_enabled else {}
+        )
+
         saved = retract_gate_claim(
             self.base_path,
             branch_def_id=branch_def_id,
@@ -574,8 +748,13 @@ class SqliteCachedBackend:
         )
         if not self._git_enabled:
             return saved, None
-        result = git_bridge.commit(
-            message, author, paths=[claim_path], repo_path=self._repo_root,
+        result = self._commit_or_rollback(
+            helper="retract_gate_claim_and_commit",
+            paths=[claim_path],
+            snapshot=snapshot,
+            row_ref=str(saved.get("claim_id", "")),
+            message=message,
+            author=author,
         )
         return saved, result
 
@@ -608,6 +787,42 @@ def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
 def _noop_stage(_path: Path) -> None:
     """Phase 7.1 stub; Phase 7.2 replaces with git_bridge.stage."""
     return None
+
+
+def list_unreconciled_writes(
+    base_path: str | Path, *, limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return pending unreconciled writes for ``universe status`` and
+    future ``sync_commit`` consumers.
+
+    Most recent first. Each dict carries the id, recorded_at,
+    helper_name, paths (parsed from paths_json), row_ref, git_error.
+    """
+    from workflow.author_server import _connect
+
+    limit = max(1, min(limit, 500))
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            "SELECT id, recorded_at, helper_name, paths_json, row_ref, "
+            "git_error FROM unreconciled_writes "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    entries: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            paths = json.loads(row["paths_json"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            paths = []
+        entries.append({
+            "id": row["id"],
+            "recorded_at": row["recorded_at"],
+            "helper_name": row["helper_name"],
+            "paths": paths,
+            "row_ref": row["row_ref"],
+            "git_error": row["git_error"],
+        })
+    return entries
 
 
 # ─────────────────────────────────────────────────────────────────────

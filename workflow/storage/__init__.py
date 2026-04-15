@@ -24,12 +24,14 @@ writer; 7.2 ships the reader-rehydration path).
 """
 
 from workflow.storage.backend import (
+    CommitFailedError,
     DirtyFileError,
     SqliteCachedBackend,
     SqliteOnlyBackend,
     StorageBackend,
     get_backend,
     invalidate_backend_cache,
+    list_unreconciled_writes,
 )
 from workflow.storage.layout import YamlRepoLayout
 from workflow.storage.serializer import (
@@ -40,6 +42,7 @@ from workflow.storage.serializer import (
 )
 
 __all__ = [
+    "CommitFailedError",
     "DirtyFileError",
     "SqliteCachedBackend",
     "SqliteOnlyBackend",
@@ -51,4 +54,5 @@ __all__ = [
     "goal_from_yaml_payload",
     "goal_to_yaml_payload",
     "invalidate_backend_cache",
+    "list_unreconciled_writes",
 ]

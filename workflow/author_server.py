@@ -370,6 +370,17 @@ def initialize_author_server(base_path: str | Path) -> Path:
         ON gate_claims(goal_id);
     CREATE INDEX IF NOT EXISTS idx_gate_claims_branch
         ON gate_claims(branch_def_id);
+
+    CREATE TABLE IF NOT EXISTS unreconciled_writes (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        recorded_at  TEXT NOT NULL,
+        helper_name  TEXT NOT NULL,
+        paths_json   TEXT NOT NULL,
+        row_ref      TEXT NOT NULL DEFAULT '',
+        git_error    TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_unreconciled_writes_at
+        ON unreconciled_writes(recorded_at);
     """
     with _connect(base_path) as conn:
         conn.executescript(schema)
