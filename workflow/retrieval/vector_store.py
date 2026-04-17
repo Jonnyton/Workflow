@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 import lancedb
 import numpy as np
+
+if TYPE_CHECKING:
+    from workflow.memory.scoping import MemoryScope
 
 # ---------------------------------------------------------------------------
 # Singleton connection
@@ -125,7 +128,11 @@ class VectorStore:
             self._table = self._db.create_table(self._table_name, data=seed)
         return self._table
 
-    def index(self, chunks: Sequence[dict]) -> int:
+    def index(
+        self,
+        chunks: Sequence[dict],
+        scope: "MemoryScope | None" = None,
+    ) -> int:
         """Index prose chunks with pre-computed embeddings.
 
         Each chunk dict must have:
@@ -137,11 +144,34 @@ class VectorStore:
             - character: str (optional)
             - location: str (optional)
 
+        Memory-scope Stage 2b: an optional ``scope`` tags every chunk
+        with the caller's tier values. Per-chunk ``universe_id``/
+        ``goal_id``/``branch_id``/``user_id`` keys override ``scope``
+        when both are supplied (the chunk wins — some callers need
+        per-chunk overrides for migration tooling). When neither is
+        supplied, scope columns default to the empty string to match
+        the Stage 2a LanceDB seed semantic (NULL-equivalent for
+        LanceDB's string-typed columns).
+
         Returns the number of chunks indexed.
         """
         table = self._ensure_table()
         if not chunks:
             return 0
+
+        # Stage 2b: resolve the fallback scope values once, not per chunk.
+        if scope is not None:
+            scope_defaults = {
+                "universe_id": scope.universe_id,
+                "goal_id": scope.goal_id or "",
+                "branch_id": scope.branch_id or "",
+                "user_id": scope.user_id or "",
+            }
+        else:
+            scope_defaults = {
+                "universe_id": "", "goal_id": "",
+                "branch_id": "", "user_id": "",
+            }
 
         rows = []
         for chunk in chunks:
@@ -155,14 +185,13 @@ class VectorStore:
                 "chapter_number": chunk.get("chapter_number", 0),
                 "character": chunk.get("character", ""),
                 "location": chunk.get("location", ""),
-                # Memory-scope Stage 2a: scope fields pass through
-                # when the caller supplies them. Defaults to empty
-                # string for Stage-2a-era writes that haven't been
-                # threaded through a MemoryScope yet (Stage 2b work).
-                "universe_id": chunk.get("universe_id", ""),
-                "goal_id": chunk.get("goal_id", ""),
-                "branch_id": chunk.get("branch_id", ""),
-                "user_id": chunk.get("user_id", ""),
+                # Memory-scope Stage 2b: per-chunk overrides take
+                # precedence, then ``scope`` tier values, then empty
+                # string (Stage 2a seed default).
+                "universe_id": chunk.get("universe_id", scope_defaults["universe_id"]),
+                "goal_id": chunk.get("goal_id", scope_defaults["goal_id"]),
+                "branch_id": chunk.get("branch_id", scope_defaults["branch_id"]),
+                "user_id": chunk.get("user_id", scope_defaults["user_id"]),
                 "embedding": emb,
             })
 

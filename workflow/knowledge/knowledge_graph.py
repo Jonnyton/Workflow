@@ -19,6 +19,53 @@ from workflow.knowledge.models import (
     GraphEdge,
     GraphEntity,
 )
+from workflow.memory.scoping import MemoryScope
+
+# Memory-scope Stage 2b: shared helpers for injecting scope column
+# values into the INSERT/UPSERT fragments. The columns are identical
+# across every scoped table (entities, edges, facts, communities) and
+# the caller always supplies the same four tiers, so a single pair of
+# helpers keeps the three write sites in sync.
+_SCOPE_COL_NAMES: tuple[str, ...] = (
+    "universe_id", "goal_id", "branch_id", "user_id",
+)
+
+
+def _scope_insert_fragment(
+    scope: MemoryScope | None,
+) -> tuple[str, tuple[Any, ...]]:
+    """Return ``(", universe_id, goal_id, ...", (values...))`` or ``("", ())``.
+
+    Stage 2b threading: when ``scope`` is ``None`` we omit the scope
+    columns from the INSERT entirely — existing rows keep NULL, new
+    rows inherit NULL for any tiers the caller didn't set. When
+    ``scope`` is present, every tier is emitted (``None`` values land
+    as SQL NULL, matching the design §4 "broader than this tier"
+    semantic).
+    """
+    if scope is None:
+        return "", ()
+    cols = ", " + ", ".join(_SCOPE_COL_NAMES)
+    vals = (
+        scope.universe_id,
+        scope.goal_id,
+        scope.branch_id,
+        scope.user_id,
+    )
+    return cols, vals
+
+
+def _scope_upsert_fragment(scope: MemoryScope | None) -> str:
+    """Return the ``, <col>=excluded.<col>, ...`` fragment for UPSERT.
+
+    Skipped entirely when ``scope`` is ``None`` so pre-Stage-2b
+    callers produce byte-identical SQL to pre-2b.
+    """
+    if scope is None:
+        return ""
+    return "".join(
+        f", {col}=excluded.{col}" for col in _SCOPE_COL_NAMES
+    )
 
 
 class KnowledgeGraph:
@@ -183,21 +230,34 @@ class KnowledgeGraph:
     # Entity CRUD
     # ------------------------------------------------------------------
 
-    def add_entity(self, entity: GraphEntity) -> None:
-        """Insert or update an entity."""
+    def add_entity(
+        self,
+        entity: GraphEntity,
+        scope: MemoryScope | None = None,
+    ) -> None:
+        """Insert or update an entity.
+
+        Memory-scope Stage 2b: accepts an optional ``scope``. When set,
+        the entity row is tagged with the scope's tier values;
+        ``None`` leaves the four scope columns untouched (= NULL,
+        legacy/universe-public semantics per design §4). The write is
+        a no-op for reads until Stage 2c flips
+        ``WORKFLOW_TIERED_SCOPE`` on.
+        """
+        scope_cols, scope_vals = _scope_insert_fragment(scope)
         self._conn.execute(
-            """
+            f"""
             INSERT INTO entities (entity_id, entity_type, access_tier,
                                   public_description, hidden_description,
-                                  secret_description, aliases)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                  secret_description, aliases{scope_cols})
+            VALUES (?, ?, ?, ?, ?, ?, ?{', ?' * len(scope_vals)})
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type=excluded.entity_type,
                 access_tier=excluded.access_tier,
                 public_description=excluded.public_description,
                 hidden_description=excluded.hidden_description,
                 secret_description=excluded.secret_description,
-                aliases=excluded.aliases
+                aliases=excluded.aliases{_scope_upsert_fragment(scope)}
             """,
             (
                 entity["entity_id"],
@@ -207,6 +267,7 @@ class KnowledgeGraph:
                 entity["hidden_description"],
                 entity["secret_description"],
                 json.dumps(entity.get("aliases", [])),
+                *scope_vals,
             ),
         )
         self._conn.commit()
@@ -260,21 +321,30 @@ class KnowledgeGraph:
     # Edge CRUD
     # ------------------------------------------------------------------
 
-    def add_edge(self, edge: GraphEdge) -> None:
-        """Insert or update an edge."""
+    def add_edge(
+        self,
+        edge: GraphEdge,
+        scope: MemoryScope | None = None,
+    ) -> None:
+        """Insert or update an edge.
+
+        Memory-scope Stage 2b: see :meth:`add_entity` for the ``scope``
+        contract. Scope tagging is advisory until 2c.
+        """
+        scope_cols, scope_vals = _scope_insert_fragment(scope)
         self._conn.execute(
-            """
+            f"""
             INSERT INTO edges (source, target, relation_type, access_tier,
                                temporal_scope, pov_characters, weight,
-                               valid_from_chapter, valid_to_chapter)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               valid_from_chapter, valid_to_chapter{scope_cols})
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(scope_vals)})
             ON CONFLICT(source, target, relation_type) DO UPDATE SET
                 access_tier=excluded.access_tier,
                 temporal_scope=excluded.temporal_scope,
                 pov_characters=excluded.pov_characters,
                 weight=excluded.weight,
                 valid_from_chapter=excluded.valid_from_chapter,
-                valid_to_chapter=excluded.valid_to_chapter
+                valid_to_chapter=excluded.valid_to_chapter{_scope_upsert_fragment(scope)}
             """,
             (
                 edge["source"],
@@ -286,6 +356,7 @@ class KnowledgeGraph:
                 edge["weight"],
                 edge.get("valid_from_chapter"),
                 edge.get("valid_to_chapter"),
+                *scope_vals,
             ),
         )
         self._conn.commit()
@@ -335,18 +406,28 @@ class KnowledgeGraph:
     # Fact CRUD
     # ------------------------------------------------------------------
 
-    def add_facts(self, facts: Sequence[FactWithContext]) -> None:
-        """Insert or update a batch of facts."""
+    def add_facts(
+        self,
+        facts: Sequence[FactWithContext],
+        scope: MemoryScope | None = None,
+    ) -> None:
+        """Insert or update a batch of facts.
+
+        Memory-scope Stage 2b: see :meth:`add_entity` for the ``scope``
+        contract.
+        """
+        scope_cols, scope_vals = _scope_insert_fragment(scope)
+        placeholders = ",".join(["?"] * (21 + len(scope_vals)))
         for f in facts:
             self._conn.execute(
-                """
+                f"""
                 INSERT INTO facts (fact_id, text, source_type, narrator,
                     narrator_reliability, valid_from_chapter, valid_to_chapter,
                     truth_value_initial, truth_value_final, truth_value_revealed,
                     language_type, narrative_function, importance, weight,
                     hardness, horizon, provenance, confidence, seeded_scene,
-                    access_tier, pov_characters)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    access_tier, pov_characters{scope_cols})
+                VALUES ({placeholders})
                 ON CONFLICT(fact_id) DO UPDATE SET
                     text=excluded.text,
                     source_type=excluded.source_type,
@@ -367,7 +448,7 @@ class KnowledgeGraph:
                     confidence=excluded.confidence,
                     seeded_scene=excluded.seeded_scene,
                     access_tier=excluded.access_tier,
-                    pov_characters=excluded.pov_characters
+                    pov_characters=excluded.pov_characters{_scope_upsert_fragment(scope)}
                 """,
                 (
                     f.fact_id, f.text, f.source_type.value, f.narrator,
@@ -376,6 +457,7 @@ class KnowledgeGraph:
                     f.language_type.value, f.narrative_function.value, f.importance,
                     f.weight, f.hardness, f.horizon, f.provenance, f.confidence,
                     f.seeded_scene, f.access_tier, json.dumps(f.pov_characters),
+                    *scope_vals,
                 ),
             )
         self._conn.commit()

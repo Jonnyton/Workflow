@@ -1151,6 +1151,18 @@ def _index_prose_entities(
 
     try:
         from workflow.ingestion.indexer import index_text
+        from workflow.memory.scoping import MemoryScope
+
+        # Memory-scope Stage 2b: tag writes with the caller's universe
+        # tier. Sub-tiers (goal/branch/user) stay None on the commit
+        # path until the phase plumbs them through state — which is
+        # 2b.3 / task scope for later landings.
+        universe_id = (
+            state.get("universe_id")
+            or state.get("_universe_id")
+            or ""
+        )
+        scope = MemoryScope(universe_id=str(universe_id)) if universe_id else None
 
         result = index_text(
             prose,
@@ -1160,6 +1172,7 @@ def _index_prose_entities(
             embed_fn=embed_fn,
             provider_call=call_provider,
             chapter_number=state.get("chapter_number", 0),
+            scope=scope,
         )
         logger.info(
             "Entity indexing for %s: %d entities, %d edges, %d facts, %d chunks",

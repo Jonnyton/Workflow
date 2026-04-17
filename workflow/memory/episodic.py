@@ -13,9 +13,27 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from workflow.memory.scoping import MemoryScope
 
 logger = logging.getLogger(__name__)
+
+
+def _scope_tiers(
+    scope: "MemoryScope | None",
+) -> tuple[str | None, str | None, str | None]:
+    """Return ``(goal_id, branch_id, user_id)`` from ``scope`` or all-None.
+
+    Memory-scope Stage 2b: episodic tables bind ``universe_id`` at the
+    store level, so only the three sub-tiers come from the scope
+    argument. ``None`` scope → all-NULL tiers = "legacy, treat as
+    universe-public" per design §4.
+    """
+    if scope is None:
+        return (None, None, None)
+    return (scope.goal_id, scope.branch_id, scope.user_id)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scene_summaries (
@@ -101,9 +119,60 @@ class EpisodicMemory:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(_SCHEMA)
+        self._migrate_scope_columns()
+
+    # -----------------------------------------------------------------
+    # Memory-scope Stage 2b schema migration
+    # -----------------------------------------------------------------
+
+    _SCOPE_COLUMNS: tuple[tuple[str, str], ...] = (
+        ("goal_id", "TEXT"),
+        ("branch_id", "TEXT"),
+        ("user_id", "TEXT"),
+    )
+    _SCOPED_TABLES: tuple[str, ...] = (
+        "scene_summaries", "episodic_facts",
+        "style_observations", "reflections",
+    )
+
+    def _migrate_scope_columns(self) -> None:
+        """Add ``goal_id`` / ``branch_id`` / ``user_id`` columns if missing.
+
+        Non-destructive idempotent ALTER TABLE matching the KG Stage 2a
+        pattern. Existing rows (including the ~60K-word sporemarch
+        episodic state) keep NULL on the three new columns —
+        semantically "legacy, treat as universe-public" per design §4.
+        ``universe_id`` is already in the base schema, so it isn't
+        re-added here. Shared index over ``(universe_id, goal_id,
+        branch_id)`` is the hot read path for Stage 2c enforcement.
+        """
+        for table in self._SCOPED_TABLES:
+            existing = {
+                row[1]
+                for row in self._conn.execute(f"PRAGMA table_info({table})")
+            }
+            for col_name, col_type in self._SCOPE_COLUMNS:
+                if col_name in existing:
+                    continue
+                self._conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                )
+        for table in self._SCOPED_TABLES:
+            self._conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_scope "
+                f"ON {table}(universe_id, goal_id, branch_id)"
+            )
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
+
+    @staticmethod
+    def _scope_tiers(
+        scope: "MemoryScope | None",
+    ) -> tuple[str | None, str | None, str | None]:
+        """Resolve the optional scope into the three episodic sub-tiers."""
+        return _scope_tiers(scope)
 
     # ------------------------------------------------------------------
     # Scene summaries
@@ -116,20 +185,32 @@ class EpisodicMemory:
         scene_number: int,
         summary: str,
         word_count: int = 0,
+        scope: "MemoryScope | None" = None,
     ) -> None:
-        """Persist a scene summary (upsert)."""
+        """Persist a scene summary (upsert).
+
+        Memory-scope Stage 2b: ``scope`` tags the row with
+        ``goal_id`` / ``branch_id`` / ``user_id`` when supplied.
+        ``universe_id`` still comes from the store's own binding (the
+        hard-invariant tier). Scope tagging is advisory until 2c.
+        """
+        goal_id, branch_id, user_id = self._scope_tiers(scope)
         self._conn.execute(
             """
             INSERT INTO scene_summaries
                 (universe_id, book_number, chapter_number, scene_number,
-                 summary, word_count)
-            VALUES (?, ?, ?, ?, ?, ?)
+                 summary, word_count, goal_id, branch_id, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(universe_id, book_number, chapter_number, scene_number)
             DO UPDATE SET summary=excluded.summary,
-                          word_count=excluded.word_count
+                          word_count=excluded.word_count,
+                          goal_id=COALESCE(excluded.goal_id, scene_summaries.goal_id),
+                          branch_id=COALESCE(excluded.branch_id, scene_summaries.branch_id),
+                          user_id=COALESCE(excluded.user_id, scene_summaries.user_id)
             """,
             (self._universe_id, book_number, chapter_number,
-             scene_number, summary, word_count),
+             scene_number, summary, word_count,
+             goal_id, branch_id, user_id),
         )
         self._conn.commit()
 
@@ -174,8 +255,17 @@ class EpisodicMemory:
         entity: str,
         content: str,
         source_scene: str = "",
+        scope: "MemoryScope | None" = None,
     ) -> None:
-        """Insert or increment evidence for a fact."""
+        """Insert or increment evidence for a fact.
+
+        Memory-scope Stage 2b: ``scope`` tags new rows with the
+        caller's sub-tiers. Existing rows' scope columns are left
+        untouched on evidence increment — re-tagging a fact mid-
+        evidence-chain is a semantic we don't want yet (would need a
+        conflict policy Stage 2c can define).
+        """
+        goal_id, branch_id, user_id = self._scope_tiers(scope)
         existing = self._conn.execute(
             "SELECT evidence_count, source_scenes FROM episodic_facts "
             "WHERE universe_id = ? AND fact_id = ?",
@@ -199,11 +289,13 @@ class EpisodicMemory:
                 """
                 INSERT INTO episodic_facts
                     (universe_id, fact_id, entity, content,
-                     evidence_count, source_scenes)
-                VALUES (?, ?, ?, ?, 1, ?)
+                     evidence_count, source_scenes,
+                     goal_id, branch_id, user_id)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
                 """,
                 (self._universe_id, fact_id, entity, content,
-                 json.dumps(scenes)),
+                 json.dumps(scenes),
+                 goal_id, branch_id, user_id),
             )
         self._conn.commit()
 
@@ -266,13 +358,20 @@ class EpisodicMemory:
         dimension: str,
         observation: str,
         scene_ref: str = "",
+        scope: "MemoryScope | None" = None,
     ) -> None:
-        """Record a style observation from judge feedback."""
+        """Record a style observation from judge feedback.
+
+        Memory-scope Stage 2b: optional ``scope`` tags the row.
+        """
+        goal_id, branch_id, user_id = self._scope_tiers(scope)
         self._conn.execute(
             "INSERT INTO style_observations "
-            "(universe_id, dimension, observation, scene_ref) "
-            "VALUES (?, ?, ?, ?)",
-            (self._universe_id, dimension, observation, scene_ref),
+            "(universe_id, dimension, observation, scene_ref, "
+            " goal_id, branch_id, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (self._universe_id, dimension, observation, scene_ref,
+             goal_id, branch_id, user_id),
         )
         self._conn.commit()
 
@@ -311,15 +410,21 @@ class EpisodicMemory:
         scene_number: int,
         critique: str,
         reflection: str,
+        scope: "MemoryScope | None" = None,
     ) -> None:
-        """Store a Reflexion entry from a revert cycle."""
+        """Store a Reflexion entry from a revert cycle.
+
+        Memory-scope Stage 2b: optional ``scope`` tags the row.
+        """
+        goal_id, branch_id, user_id = self._scope_tiers(scope)
         self._conn.execute(
             "INSERT INTO reflections "
             "(universe_id, chapter_number, scene_number, "
-            "critique, reflection) "
-            "VALUES (?, ?, ?, ?, ?)",
+            " critique, reflection, goal_id, branch_id, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (self._universe_id, chapter_number, scene_number,
-             critique, reflection),
+             critique, reflection,
+             goal_id, branch_id, user_id),
         )
         self._conn.commit()
 

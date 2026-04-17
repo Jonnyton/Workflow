@@ -1041,6 +1041,14 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
 
     from domains.fantasy_author.phases._provider_stub import call_provider
     from workflow.ingestion.indexer import index_text
+    from workflow.memory.scoping import MemoryScope
+
+    # Memory-scope Stage 2b: derive the universe tier from the
+    # universe directory name (same convention Stage 2a migration used
+    # when backfilling NULL rows). No sub-tiers on the worldbuild path
+    # — canon ingestion is universe-wide.
+    universe_id = Path(universe_path).name or ""
+    scope = MemoryScope(universe_id=universe_id) if universe_id else None
 
     total_stats: dict[str, int] = {
         "entities": 0, "edges": 0, "facts": 0, "chunks_indexed": 0,
@@ -1061,6 +1069,7 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
                     vector_store=vs,
                     embed_fn=embed,
                     provider_call=call_provider,
+                    scope=scope,
                 )
                 for k, v in stats.items():
                     total_stats[k] = total_stats.get(k, 0) + v
