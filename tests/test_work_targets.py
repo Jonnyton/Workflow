@@ -236,40 +236,20 @@ def test_api_note_tags_and_metadata_round_trip(client, universe_dir):
     assert note["metadata"]["target_id"] == "book-1"
 
 
-def test_api_work_targets_endpoint(client, universe_dir):
-    create_target(universe_dir, title="Book One", role=ROLE_PUBLISHABLE)
-    response = client.get("/v1/universes/test-universe/work-targets")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["count"] >= 1
-    assert any(target["title"] == "Book One" for target in data["targets"])
-
-
-    def test_api_review_state_endpoint(client, universe_dir):
-        create_target(universe_dir, title="Book One", role=ROLE_PUBLISHABLE)
-        foundation_priority_review({
-            "_universe_path": str(universe_dir),
-            "health": {"review_cycles_completed": 0},
-    })
-    (universe_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "review_stage": "authorial",
-                "selected_target_id": "book-one",
-                "selected_intent": "continue book one",
-                "alternate_target_ids": [],
-                "current_execution_id": None,
-                "last_review_artifact_ref": None,
-            },
-            indent=2,
-        ) + "\n",
-        encoding="utf-8",
-    )
-    response = client.get("/v1/universes/test-universe/review-state")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["review_stage"] == "authorial"
-    assert "hard_priorities" in data
+# ---------------------------------------------------------------------------
+# TOMBSTONE — orphan API tests deleted 2026-04-16
+# ---------------------------------------------------------------------------
+# test_api_work_targets_endpoint asserted GET /v1/universes/{id}/work-targets;
+# test_api_review_state_endpoint asserted GET /v1/universes/{id}/review-state.
+# Neither HTTP route ever existed on main — `git log -S "/work-targets"` and
+# `git log -S "/review-state"` return zero add-commits, and a 50+ route audit
+# of workflow/api.py + workflow/universe_server.py confirms. By design,
+# work-targets access is MCP-side (PLAN.md "API And MCP Interface"). The
+# review_state test was additionally malformed (nested-def, mixed indent —
+# pytest could not collect it). Same orphan-test pattern as commit d8a4757
+# (test_integration.py process-evaluation cleanup). Resurrection would
+# require fresh API design.
+# ---------------------------------------------------------------------------
 
 
 def test_run_book_uses_chapter_target_execution_scope(universe_dir):
