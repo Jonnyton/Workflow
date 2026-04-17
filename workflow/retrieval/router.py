@@ -8,6 +8,7 @@ RAPTOR (thematic/global), or LanceDB vectors (tone/similarity).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable
 
 import numpy as np
@@ -344,56 +345,130 @@ class RetrievalRouter:
 # ---------------------------------------------------------------------------
 
 
-def _row_universe_id(row: Any) -> str | None:
-    """Return the row's declared ``universe_id`` or None if absent.
+# Memory-scope Stage 2b.3: the four tiers the scope assertion inspects.
+# ``universe_id`` is always enforced (Stage 1 behavior, cross-universe
+# bleeds must always drop). The other three are gated on
+# ``WORKFLOW_TIERED_SCOPE`` — flag OFF preserves 2b.2-era behavior of
+# universe-only enforcement; flag ON extends the check to every tier
+# the caller is pinned at.
+_SCOPE_TIER_FIELDS: tuple[str, ...] = (
+    "universe_id", "goal_id", "branch_id", "user_id",
+)
 
-    Works for dataclass rows (``getattr``), dict rows (``get``), and any
-    string rows (returns None — strings carry no scope metadata in
-    Stage 1; KG/vector prose is path-tagged only).
+
+def tiered_scope_enabled() -> bool:
+    """Read ``WORKFLOW_TIERED_SCOPE``. Default OFF. Stage 2b.3 flag.
+
+    When OFF, read-side assertion only drops cross-universe rows
+    (2b.2-era behavior). When ON (future 2c), every pinned tier is
+    checked — a caller scoped to ``branch_id='main'`` drops rows
+    tagged for any other branch.
+    """
+    value = os.environ.get("WORKFLOW_TIERED_SCOPE", "off")
+    return value.strip().lower() in {"on", "1", "true", "yes"}
+
+
+def _row_tier_value(row: Any, field: str) -> str | None:
+    """Return the row's declared value for ``field`` or None if absent.
+
+    Works for dataclass rows (``getattr``), dict rows (``get``), and
+    string rows (always None — strings carry no scope metadata).
+    Empty strings are treated as missing/legacy values (LanceDB uses
+    "" as the string-null equivalent for its scope columns).
     """
     if isinstance(row, str):
         return None
     if isinstance(row, dict):
-        value = row.get("universe_id")
+        value = row.get(field)
     else:
-        value = getattr(row, "universe_id", None)
-    if value is None:
+        value = getattr(row, field, None)
+    if value is None or value == "":
         return None
     return str(value)
+
+
+def assert_scope_match(row: Any, caller_scope: MemoryScope) -> bool:
+    """Stage-1 assertion extended to all four scope tiers.
+
+    Returns True if the row is visible at ``caller_scope``. A row is
+    visible when every tier the caller is pinned at either:
+      - is absent/NULL on the row (legacy or universe-public row), or
+      - matches the caller's value for that tier.
+
+    ``universe_id`` mismatch always drops the row (Stage 1 hard
+    invariant). The sub-tiers (``goal_id`` / ``branch_id`` /
+    ``user_id``) are only enforced when ``WORKFLOW_TIERED_SCOPE`` is
+    on — flag OFF keeps 2b.2-era behavior for the sub-tiers (they
+    pass through even on mismatch).
+    """
+    # universe_id: always enforced.
+    declared = _row_tier_value(row, "universe_id")
+    if declared is not None and declared != caller_scope.universe_id:
+        return False
+    if not tiered_scope_enabled():
+        return True
+    # Flag ON: also enforce the three sub-tiers when caller is pinned.
+    pinned = (
+        ("goal_id", caller_scope.goal_id),
+        ("branch_id", caller_scope.branch_id),
+        ("user_id", caller_scope.user_id),
+    )
+    for field, caller_val in pinned:
+        if caller_val is None:
+            continue
+        declared = _row_tier_value(row, field)
+        if declared is None:
+            continue  # legacy / universe-public row passes through
+        if declared != caller_val:
+            return False
+    return True
 
 
 def _drop_cross_universe_rows(
     result: RetrievalResult, scope: MemoryScope,
 ) -> RetrievalResult:
-    """Drop any row whose declared ``universe_id`` disagrees with scope.
+    """Drop any row whose declared scope tiers disagree with the caller.
 
-    Rows without a ``universe_id`` attribute (the common case in
-    Stage 1 — KG and vector storage is path-tagged, not row-tagged)
-    pass through unchanged.
+    Memory-scope Stage 2b.3 extension: the check now spans all four
+    tiers (``universe_id`` / ``goal_id`` / ``branch_id`` / ``user_id``)
+    when ``WORKFLOW_TIERED_SCOPE`` is on. When off, only
+    ``universe_id`` is enforced — identical behavior to 2b.2.
+
+    Rows without a tier attribute or with an empty-string tier value
+    (the LanceDB string-null equivalent) pass through unchanged —
+    legacy / universe-public rows should not be dropped by the
+    assertion.
 
     When a mismatch is detected, a loud WARNING is logged with the
-    expected scope, the row's declared universe_id, and the row's
+    expected scope, the row's declared tier values, and the row's
     provenance field (``facts`` / ``relationships`` / ``prose_chunks``
     / ``community_summaries``). A mismatch is a bug signal — most
     likely a singleton-bleed in ``runtime.knowledge_graph`` where the
     backend got swapped to another universe's DB without the caller
-    being aware.
+    being aware, or (under the flag) a write-site threading gap.
     """
-    expected = scope.universe_id
     dropped_counts: dict[str, int] = {}
+    flag_on = tiered_scope_enabled()
 
-    def _filter(rows: list, field: str) -> list:
+    def _filter(rows: list, field_name: str) -> list:
         kept: list = []
         for row in rows:
-            declared = _row_universe_id(row)
-            if declared is None or declared == expected:
+            if assert_scope_match(row, scope):
                 kept.append(row)
                 continue
-            dropped_counts[field] = dropped_counts.get(field, 0) + 1
+            dropped_counts[field_name] = dropped_counts.get(field_name, 0) + 1
+            # Surface the specific tier that drove the drop so the
+            # mismatch log is actionable.
+            declared_tiers = {
+                t: _row_tier_value(row, t)
+                for t in _SCOPE_TIER_FIELDS
+                if _row_tier_value(row, t) is not None
+            }
             logger.warning(
                 "retrieval.scope_mismatch: dropped %s row "
-                "(expected universe_id=%r, got %r)",
-                field, expected, declared,
+                "(caller=%r, row_tiers=%r, tiered_flag=%s)",
+                field_name, scope.compose_predicate(),
+                declared_tiers, "on" if flag_on else "off",
             )
         return kept
 
@@ -407,13 +482,21 @@ def _drop_cross_universe_rows(
     if dropped_counts:
         logger.warning(
             "retrieval.scope_mismatch: dropped %d rows across fields %s "
-            "(scope.universe_id=%r) — likely a backend singleton bleed",
+            "(caller_scope=%r, tiered_flag=%s) — likely a backend "
+            "singleton bleed or a Stage-2b write-site threading gap",
             sum(dropped_counts.values()),
             sorted(dropped_counts.keys()),
-            expected,
+            scope.compose_predicate(),
+            "on" if flag_on else "off",
         )
 
     return result
+
+
+# Backward-compat alias — external callers expect ``_row_universe_id``.
+def _row_universe_id(row: Any) -> str | None:
+    """Compat shim for the 2b.2-era single-tier reader."""
+    return _row_tier_value(row, "universe_id")
 
 
 # ---------------------------------------------------------------------------

@@ -43,7 +43,9 @@ def memory_search(
         Free-form text query.
     scope : dict | None
         Scope filter as a dict with optional keys:
-        "universe_id", "branch_id", "author_id", "user_id", "session_id".
+        "universe_id", "goal_id", "branch_id", "user_id". Memory-scope
+        Stage 2b removed ``author_id`` (collapsed into ``user_id``) and
+        ``session_id`` (collapsed into node-execution lifetime).
     tiers : list[str] | None
         Which tiers to search: "core", "episodic", "archival".
         None = all tiers.
@@ -386,7 +388,7 @@ def get_memory_tools() -> list[dict[str, Any]]:
                         "type": "object",
                         "description": (
                             "Scope filter with optional keys: "
-                            "universe_id, branch_id, author_id, user_id, session_id."
+                            "universe_id, goal_id, branch_id, user_id."
                         ),
                     },
                     "tiers": {
