@@ -72,6 +72,7 @@ class FilterGuardrail:
             return results[:max_results]
 
         # Normalize query into keywords
+        query_lower = query.lower()
         query_terms = set(
             term.lower()
             for term in re.findall(r"\w+", query)
@@ -92,16 +93,24 @@ class FilterGuardrail:
                     break
 
             if not text:
-                score = 0
+                score = 0.0
             else:
                 # Count term matches
                 matches = sum(
                     1 for term in query_terms
                     if re.search(r"\b" + re.escape(term) + r"\b", text)
                 )
-                score = matches / len(query_terms) if query_terms else 0
+                score = matches / len(query_terms) if query_terms else 0.0
+                # Phrase bonus: if the full normalized query appears verbatim,
+                # break ties in favor of that result. Small enough not to
+                # outrank a result that matches more individual terms.
+                if score > 0 and query_lower in text:
+                    score += 0.1
 
             scored.append((score, result))
+
+        # Drop zero-score results so "filter by relevance" actually filters.
+        scored = [(s, r) for s, r in scored if s > 0]
 
         # Sort by score descending, take top N
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -329,14 +338,26 @@ class SummarizationGuardrail:
                 )
             ]
 
-        # Allocate budget evenly across items
-        per_item_tokens = max(max_total_tokens // len(items), 100)
+        # Allocate budget evenly across items. ``summarize_if_large`` uses
+        # 4 chars/token internally, but for list summarization the budget
+        # must be enforced strictly across the whole list — otherwise N
+        # items each under per_item_chars but summing over budget pass
+        # through unchanged. Treat ``max_total_tokens`` as a strict char
+        # budget and divide directly so the total output is bounded.
+        per_item_chars = max(max_total_tokens // len(items), 1)
+        # Convert back to tokens for summarize_if_large's chars/token math.
+        per_item_tokens = max(per_item_chars // 4, 1)
 
         result = []
         for item in items:
             truncated = SummarizationGuardrail.summarize_if_large(
                 item, per_item_tokens
             )
+            # Hard cap: if summarize_if_large left the item alone (because
+            # its 4x heuristic decided it fits), still enforce the strict
+            # per-item char share so the aggregate output respects budget.
+            if len(truncated) > per_item_chars:
+                truncated = truncated[:per_item_chars] + " [truncated]"
             result.append(truncated)
 
         return result

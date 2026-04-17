@@ -380,7 +380,12 @@ class HandoffStore:
 
     def _init_schema(self) -> None:
         """Create schema if not exists."""
-        with sqlite3.connect(self._db_path) as conn:
+        # sqlite3.Connection's context manager only commits/rollbacks; on
+        # Python 3.12+ it does NOT close the connection, leaving the file
+        # handle open until GC. On Windows that breaks tempdir cleanup.
+        # Close explicitly via try/finally.
+        conn = sqlite3.connect(self._db_path)
+        try:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS handoff_artifacts (
@@ -404,6 +409,8 @@ class HandoffStore:
                 "ON handoff_artifacts(created_at_timestamp)"
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def store(self, artifact: HandoffArtifact) -> None:
         """Store a handoff artifact.
@@ -413,7 +420,19 @@ class HandoffStore:
         artifact : HandoffArtifact
             Artifact to store.
         """
-        with sqlite3.connect(self._db_path) as conn:
+        # Derive the timestamp from artifact.created_at so prune() compares
+        # against the artifact's logical creation time, not the wall-clock
+        # at insert time. Falls back to wall-clock if the ISO string is
+        # missing or unparseable.
+        try:
+            created_ts = time.mktime(
+                time.strptime(artifact.created_at, "%Y-%m-%dT%H:%M:%SZ")
+            )
+        except (TypeError, ValueError):
+            created_ts = time.time()
+
+        conn = sqlite3.connect(self._db_path)
+        try:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO handoff_artifacts
@@ -430,10 +449,12 @@ class HandoffStore:
                     json.dumps(artifact.content),
                     artifact.token_count,
                     json.dumps(artifact.metadata),
-                    time.time(),
+                    created_ts,
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def retrieve(self, source_phase: str, scope: dict[str, Any]) -> list[HandoffArtifact]:
         """Retrieve artifacts for a given source phase and scope.
@@ -451,7 +472,8 @@ class HandoffStore:
             Matching artifacts, sorted by created_at descending.
         """
         # For simple scope matching, filter in Python
-        with sqlite3.connect(self._db_path) as conn:
+        conn = sqlite3.connect(self._db_path)
+        try:
             cursor = conn.execute(
                 """
                 SELECT artifact_id, source_phase, target_phase, created_at,
@@ -463,6 +485,8 @@ class HandoffStore:
                 (source_phase,),
             )
             rows = cursor.fetchall()
+        finally:
+            conn.close()
 
         results = []
         scope_universe = scope.get("universe_id")
@@ -514,13 +538,16 @@ class HandoffStore:
         else:
             before_time = before_timestamp
 
-        with sqlite3.connect(self._db_path) as conn:
+        conn = sqlite3.connect(self._db_path)
+        try:
             cursor = conn.execute(
                 "DELETE FROM handoff_artifacts WHERE created_at_timestamp < ?",
                 (before_time,),
             )
             conn.commit()
             return cursor.rowcount
+        finally:
+            conn.close()
 
     @staticmethod
     def _row_to_artifact(row: tuple) -> HandoffArtifact:
