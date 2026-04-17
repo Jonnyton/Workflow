@@ -1,10 +1,24 @@
-"""Tests for Phase 3.5 (explicit scope handling) and Phase 3.6 (agent-controlled tools)."""
+"""Tests for ``workflow.memory.scoping``.
+
+Covers the Stage 2b 5-tier orthogonal-composition model: ``MemoryScope``,
+``NodeScope``, ``SliceSpec``, ``ExternalSource``, ``ScopedQuery``,
+``ScopeResolver``, ``ScopedMemoryRouter``. Also exercises the
+agent-controlled memory tools from ``workflow.memory.tools``.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from workflow.memory.scoping import MemoryScope, ScopedMemoryRouter, ScopedQuery, ScopeResolver
+from workflow.memory.scoping import (
+    ExternalSource,
+    MemoryScope,
+    NodeScope,
+    ScopedMemoryRouter,
+    ScopedQuery,
+    ScopeResolver,
+    SliceSpec,
+)
 from workflow.memory.tools import (
     get_memory_tools,
     memory_assert,
@@ -16,116 +30,161 @@ from workflow.memory.tools import (
 )
 
 # =====================================================================
-# MemoryScope Tests
+# SliceSpec + ExternalSource + NodeScope
+# =====================================================================
+
+
+class TestSliceSpec:
+    def test_defaults_are_none(self):
+        spec = SliceSpec()
+        assert spec.entity_ids is None
+        assert spec.relation_types is None
+        assert spec.document_ids is None
+
+    def test_carries_explicit_fields(self):
+        spec = SliceSpec(
+            entity_ids=["ryn", "kael"],
+            relation_types=["ally_of"],
+            document_ids=["doc-1"],
+        )
+        assert spec.entity_ids == ["ryn", "kael"]
+        assert spec.relation_types == ["ally_of"]
+        assert spec.document_ids == ["doc-1"]
+
+
+class TestExternalSource:
+    def test_kind_enum_members(self):
+        # The four kinds locked by design §9.3 Q5.
+        for kind in ("universe", "external_api", "system_tool", "cross_universe_join"):
+            src = ExternalSource(kind=kind, identifier="x")
+            assert src.kind == kind
+
+    def test_identifier_is_opaque(self):
+        src = ExternalSource(kind="external_api", identifier="arxiv")
+        assert src.identifier == "arxiv"
+
+
+class TestNodeScope:
+    def test_default_is_universe_member_full_canon(self):
+        ns = NodeScope()
+        assert ns.universe_member is True
+        assert ns.breadth == "full_canon"
+        assert ns.slice_spec is None
+        assert ns.external_sources is None
+
+    def test_narrow_slice_requires_slice_spec(self):
+        with pytest.raises(ValueError, match="narrow_slice.*slice_spec"):
+            NodeScope(breadth="narrow_slice")
+
+    def test_narrow_slice_with_spec_ok(self):
+        ns = NodeScope(
+            breadth="narrow_slice",
+            slice_spec=SliceSpec(entity_ids=["ryn"]),
+        )
+        assert ns.breadth == "narrow_slice"
+        assert ns.slice_spec.entity_ids == ["ryn"]
+
+    def test_non_member_requires_external_sources(self):
+        with pytest.raises(ValueError, match="external_sources"):
+            NodeScope(universe_member=False)
+
+    def test_non_member_with_sources_ok(self):
+        ns = NodeScope(
+            universe_member=False,
+            external_sources=[ExternalSource(kind="external_api", identifier="arxiv")],
+        )
+        assert ns.universe_member is False
+        assert len(ns.external_sources) == 1
+
+
+# =====================================================================
+# MemoryScope
 # =====================================================================
 
 
 class TestMemoryScope:
-    """Test MemoryScope dataclass and methods."""
-
     def test_universal_scope(self):
-        """A universal scope has only universe_id."""
         scope = MemoryScope(universe_id="world")
         assert scope.universe_id == "world"
+        assert scope.goal_id is None
         assert scope.branch_id is None
-        assert scope.author_id is None
         assert scope.user_id is None
-        assert scope.session_id is None
+        assert scope.node_scope is None
 
-    def test_branch_scope(self):
-        """A branch scope adds a branch_id."""
-        scope = MemoryScope(universe_id="world", branch_id="main")
-        assert scope.universe_id == "world"
-        assert scope.branch_id == "main"
-
-    def test_contains_broader_than_narrower(self):
-        """A broader scope contains a narrower one."""
-        universal = MemoryScope(universe_id="world")
-        branch = MemoryScope(universe_id="world", branch_id="main")
-        assert universal.contains(branch)
-        assert not branch.contains(universal)
-
-    def test_contains_same_scope(self):
-        """A scope contains itself."""
-        scope = MemoryScope(universe_id="world", branch_id="main")
-        assert scope.contains(scope)
-
-    def test_contains_different_universes(self):
-        """Scopes in different universes don't contain each other."""
-        world1 = MemoryScope(universe_id="world1", branch_id="main")
-        world2 = MemoryScope(universe_id="world2", branch_id="main")
-        assert not world1.contains(world2)
-        assert not world2.contains(world1)
-
-    def test_overlaps_same_branch_different_author(self):
-        """Two scopes for the same branch but different authors don't overlap
-        (they represent distinct subsets of the branch)."""
-        branch_alice = MemoryScope(universe_id="world", branch_id="main", author_id="alice")
-        branch_bob = MemoryScope(universe_id="world", branch_id="main", author_id="bob")
-        # Different authors on same branch means no overlap in their personal scopes
-        assert not branch_alice.overlaps(branch_bob)
-
-    def test_overlaps_same_branch_universal_author(self):
-        """A branch-author scope overlaps with a universal-author branch scope."""
-        branch_alice = MemoryScope(universe_id="world", branch_id="main", author_id="alice")
-        branch_all = MemoryScope(universe_id="world", branch_id="main")
-        # Alice's work is a subset of main's universal facts
-        assert branch_alice.overlaps(branch_all)
-        assert branch_all.overlaps(branch_alice)
-
-    def test_overlaps_different_branches(self):
-        """Two scopes for different branches don't overlap."""
-        branch1 = MemoryScope(universe_id="world", branch_id="main")
-        branch2 = MemoryScope(universe_id="world", branch_id="dev")
-        assert not branch1.overlaps(branch2)
-
-    def test_narrow_valid(self):
-        """Narrowing a scope is valid."""
-        universal = MemoryScope(universe_id="world")
-        narrower = universal.narrow(branch_id="main")
-        assert narrower.branch_id == "main"
-        assert universal.contains(narrower)
-
-    def test_narrow_conflict_raises(self):
-        """Narrowing to a conflicting value raises an error."""
-        scope = MemoryScope(universe_id="world", branch_id="main")
-        with pytest.raises(ValueError, match="Cannot narrow branch"):
-            scope.narrow(branch_id="dev")
-
-    def test_broaden_removes_constraint(self):
-        """Broadening removes a constraint."""
-        scoped = MemoryScope(universe_id="world", branch_id="main", author_id="alice")
-        broader = scoped.broaden(author_id=None)
-        assert broader.author_id is None
-        assert broader.branch_id == "main"
-
-    def test_to_filter_dict(self):
-        """to_filter_dict returns only non-None fields."""
+    def test_full_tier_construction(self):
         scope = MemoryScope(
             universe_id="world",
+            goal_id="book-1",
             branch_id="main",
-            author_id=None,
+            user_id="alice",
+            node_scope=NodeScope(),
+        )
+        assert scope.goal_id == "book-1"
+        assert scope.branch_id == "main"
+        assert scope.user_id == "alice"
+        assert scope.node_scope is not None
+
+    def test_compose_predicate_omits_none_tiers(self):
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        pred = scope.compose_predicate()
+        assert pred == {"universe_id": "world", "branch_id": "main"}
+
+    def test_compose_predicate_all_tiers(self):
+        scope = MemoryScope(
+            universe_id="world",
+            goal_id="book-1",
+            branch_id="main",
             user_id="alice",
         )
-        filter_dict = scope.to_filter_dict()
-        assert filter_dict == {
+        pred = scope.compose_predicate()
+        assert pred == {
             "universe_id": "world",
+            "goal_id": "book-1",
             "branch_id": "main",
             "user_id": "alice",
         }
-        assert "author_id" not in filter_dict
+
+    def test_compose_predicate_never_includes_node_scope(self):
+        # node_scope is a structural attribute; it's not part of the
+        # row-level predicate (that's in the slice_spec layer).
+        scope = MemoryScope(universe_id="world", node_scope=NodeScope())
+        pred = scope.compose_predicate()
+        assert "node_scope" not in pred
+
+    def test_to_filter_dict_alias(self):
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        assert scope.to_filter_dict() == scope.compose_predicate()
+
+    def test_with_overrides_replaces_tier(self):
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        narrower = scope.with_overrides(goal_id="book-1")
+        assert narrower.universe_id == "world"
+        assert narrower.branch_id == "main"
+        assert narrower.goal_id == "book-1"
+
+    def test_with_overrides_can_clear_tier(self):
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        cleared = scope.with_overrides(branch_id=None)
+        assert cleared.branch_id is None
+
+    def test_with_overrides_rejects_universe_id(self):
+        scope = MemoryScope(universe_id="world")
+        with pytest.raises(ValueError, match="universe_id is invariant"):
+            scope.with_overrides(universe_id="other")
+
+    def test_is_frozen(self):
+        scope = MemoryScope(universe_id="world")
+        with pytest.raises(Exception):  # FrozenInstanceError is dataclasses-internal
+            scope.universe_id = "other"  # type: ignore[misc]
 
 
 # =====================================================================
-# ScopedQuery Tests
+# ScopedQuery
 # =====================================================================
 
 
 class TestScopedQuery:
-    """Test ScopedQuery dataclass."""
-
     def test_minimal_query(self):
-        """Create a minimal query with just scope."""
         scope = MemoryScope(universe_id="world")
         query = ScopedQuery(scope=scope)
         assert query.scope == scope
@@ -133,7 +192,6 @@ class TestScopedQuery:
         assert query.max_results == 50
 
     def test_full_query(self):
-        """Create a full query with all parameters."""
         scope = MemoryScope(universe_id="world", branch_id="main")
         query = ScopedQuery(
             scope=scope,
@@ -145,75 +203,124 @@ class TestScopedQuery:
             max_results=20,
             tiers=["episodic", "archival"],
         )
-        assert query.query_text == "What happened to Ryn?"
         assert query.entity == "Ryn"
         assert query.max_results == 20
+        assert query.tiers == ["episodic", "archival"]
 
 
 # =====================================================================
-# ScopeResolver Tests
+# ScopeResolver
 # =====================================================================
 
 
 class TestScopeResolver:
-    """Test scope resolution and permission logic."""
-
-    def test_resolve_caller_sees_universal_from_branch(self):
-        """A branch-scoped caller can see universal facts."""
+    def test_compose_read_predicate_matches_scope(self):
         resolver = ScopeResolver()
-        caller = MemoryScope(universe_id="world", branch_id="main")
-        requested = MemoryScope(universe_id="world")  # Universal
-        effective = resolver.resolve_effective_scope(requested, caller)
-        assert effective.branch_id == "main"
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        assert resolver.compose_read_predicate(scope) == scope.compose_predicate()
 
-    def test_resolve_rejects_cross_branch_access(self):
-        """A branch-scoped caller cannot see other branches."""
-        resolver = ScopeResolver()
-        caller = MemoryScope(universe_id="world", branch_id="main")
-        requested = MemoryScope(universe_id="world", branch_id="dev")
-        with pytest.raises(ValueError, match="Cross-branch access denied"):
-            resolver.resolve_effective_scope(requested, caller)
-
-    def test_can_write_to_own_scope(self):
-        """A caller can write to their own scope."""
+    def test_can_write_same_scope(self):
         resolver = ScopeResolver()
         scope = MemoryScope(universe_id="world", branch_id="main")
         assert resolver.can_write(scope, scope)
 
-    def test_cannot_write_to_broader_scope(self):
-        """A branch-scoped caller cannot write to universal scope."""
-        resolver = ScopeResolver()
-        caller = MemoryScope(universe_id="world", branch_id="main")
-        universal = MemoryScope(universe_id="world")
-        assert not resolver.can_write(universal, caller)
-
-    def test_visible_branches_universal_caller(self):
-        """A universal caller sees all branches."""
+    def test_can_write_universe_only_caller_to_any_subscope(self):
+        # Design intent: an unpinned caller at universe level can write
+        # rows tagged at any sub-scope of that universe.
         resolver = ScopeResolver()
         caller = MemoryScope(universe_id="world")
-        branches = ["main", "dev", "feature"]
-        visible = resolver.visible_branches(caller, branches)
-        assert visible == branches
+        target_branch = MemoryScope(universe_id="world", branch_id="main")
+        target_goal = MemoryScope(universe_id="world", goal_id="book-1")
+        target_user = MemoryScope(universe_id="world", user_id="alice")
+        assert resolver.can_write(target_branch, caller)
+        assert resolver.can_write(target_goal, caller)
+        assert resolver.can_write(target_user, caller)
 
-    def test_visible_branches_scoped_caller(self):
-        """A branch-scoped caller sees only their branch."""
+    def test_pinned_branch_caller_cannot_write_other_branch(self):
         resolver = ScopeResolver()
         caller = MemoryScope(universe_id="world", branch_id="main")
-        branches = ["main", "dev", "feature"]
-        visible = resolver.visible_branches(caller, branches)
-        assert visible == ["main"]
+        target = MemoryScope(universe_id="world", branch_id="dev")
+        assert not resolver.can_write(target, caller)
+
+    def test_pinned_branch_caller_cannot_write_null_branch(self):
+        # A pinned branch caller also can't write broader-than-its-pin
+        # rows — their writes must stay inside their branch.
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world", branch_id="main")
+        target = MemoryScope(universe_id="world")
+        assert not resolver.can_write(target, caller)
+
+    def test_cross_universe_write_denied(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world-a")
+        target = MemoryScope(universe_id="world-b")
+        assert not resolver.can_write(target, caller)
+
+    def test_pinned_goal_caller_writes_matching_goal(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world", goal_id="book-1")
+        ok = MemoryScope(universe_id="world", goal_id="book-1", branch_id="main")
+        bad = MemoryScope(universe_id="world", goal_id="book-2", branch_id="main")
+        assert resolver.can_write(ok, caller)
+        assert not resolver.can_write(bad, caller)
+
+    def test_pinned_user_caller_cannot_cross_user(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world", user_id="alice")
+        target = MemoryScope(universe_id="world", user_id="bob")
+        assert not resolver.can_write(target, caller)
+
+    def test_visible_branches_unpinned_caller(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world")
+        assert resolver.visible_branches(caller, ["main", "dev", "feature"]) == [
+            "main", "dev", "feature",
+        ]
+
+    def test_visible_branches_pinned_caller(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world", branch_id="main")
+        assert resolver.visible_branches(caller, ["main", "dev"]) == ["main"]
+
+    def test_visible_branches_pinned_caller_missing_branch(self):
+        resolver = ScopeResolver()
+        caller = MemoryScope(universe_id="world", branch_id="ghost")
+        assert resolver.visible_branches(caller, ["main", "dev"]) == []
 
 
 # =====================================================================
-# Agent-Controlled Tool Tests
+# ScopedMemoryRouter
+# =====================================================================
+
+
+class TestScopedMemoryRouter:
+    def test_router_initializes(self):
+        mock_manager = type("MockManager", (), {})()
+        router = ScopedMemoryRouter(mock_manager)
+        assert router._manager is mock_manager
+
+    def test_router_query_returns_list(self):
+        mock_manager = type("MockManager", (), {})()
+        router = ScopedMemoryRouter(mock_manager)
+        query = ScopedQuery(scope=MemoryScope(universe_id="world"))
+        result = router.query(query)
+        assert isinstance(result, list)
+
+    def test_router_store_accepts_data_and_scope(self):
+        mock_manager = type("MockManager", (), {})()
+        router = ScopedMemoryRouter(mock_manager)
+        scope = MemoryScope(universe_id="world", branch_id="main")
+        router.store({"fact_id": "f1", "text": "Ryn is a scout"}, scope)
+
+
+# =====================================================================
+# Agent-controlled memory tools (unchanged by Stage 2b; still exercised
+# here so the tools entry points stay covered alongside the scope tests)
 # =====================================================================
 
 
 class TestMemoryTools:
-    """Test agent-controlled memory tools."""
-
     def test_memory_search_returns_dict(self):
-        """memory_search returns a structured result."""
         result = memory_search("What happened to Ryn?")
         assert isinstance(result, dict)
         assert "success" in result
@@ -222,7 +329,6 @@ class TestMemoryTools:
         assert "error" in result
 
     def test_memory_search_with_scope(self):
-        """memory_search accepts a scope dict."""
         result = memory_search(
             "character appearance",
             scope={"universe_id": "world", "branch_id": "main"},
@@ -231,8 +337,6 @@ class TestMemoryTools:
         assert result["success"] is True
 
     def test_memory_promote_validation(self):
-        """memory_promote rejects invalid tier progressions."""
-        # Cannot promote from core.
         result = memory_promote(
             item_id="fact_1",
             from_tier="core",
@@ -243,7 +347,6 @@ class TestMemoryTools:
         assert "core memory" in result["error"].lower()
 
     def test_memory_promote_valid_progression(self):
-        """memory_promote accepts valid progressions."""
         result = memory_promote(
             item_id="fact_1",
             from_tier="episodic",
@@ -254,7 +357,6 @@ class TestMemoryTools:
         assert result["item_id"] == "fact_1"
 
     def test_memory_forget_soft_delete(self):
-        """memory_forget soft deletes by default."""
         result = memory_forget(
             item_id="fact_1",
             reason="Superseded by new observation",
@@ -264,7 +366,6 @@ class TestMemoryTools:
         assert result["deleted"] is False
 
     def test_memory_forget_hard_delete(self):
-        """memory_forget can hard delete."""
         result = memory_forget(
             item_id="fact_1",
             reason="Completely wrong",
@@ -274,7 +375,6 @@ class TestMemoryTools:
         assert result["deleted"] is True
 
     def test_memory_consolidate_entity(self):
-        """memory_consolidate consolidates a specific entity."""
         result = memory_consolidate(
             entity="Ryn",
             scope={"universe_id": "world"},
@@ -283,7 +383,6 @@ class TestMemoryTools:
         assert result["entity"] == "Ryn"
 
     def test_memory_assert_basic(self):
-        """memory_assert stores a fact."""
         result = memory_assert(
             entity="Ryn",
             attribute="class",
@@ -295,7 +394,6 @@ class TestMemoryTools:
         assert result["confidence"] == 0.95
 
     def test_memory_conflicts_entity(self):
-        """memory_conflicts returns conflicts for an entity."""
         result = memory_conflicts(
             entity="Ryn",
             scope={"universe_id": "world"},
@@ -305,13 +403,11 @@ class TestMemoryTools:
         assert "count" in result
 
     def test_get_memory_tools_returns_list(self):
-        """get_memory_tools returns a list of tool dicts."""
         tools = get_memory_tools()
         assert isinstance(tools, list)
         assert len(tools) == 6
 
     def test_get_memory_tools_have_required_fields(self):
-        """Each tool has name, description, function, and inputs."""
         tools = get_memory_tools()
         for tool in tools:
             assert "name" in tool
@@ -321,7 +417,6 @@ class TestMemoryTools:
             assert callable(tool["function"])
 
     def test_get_memory_tools_names(self):
-        """get_memory_tools returns the expected tools."""
         tools = get_memory_tools()
         names = {t["name"] for t in tools}
         expected = {
@@ -333,36 +428,3 @@ class TestMemoryTools:
             "memory_conflicts",
         }
         assert names == expected
-
-
-# =====================================================================
-# ScopedMemoryRouter Tests
-# =====================================================================
-
-
-class TestScopedMemoryRouter:
-    """Test the scoped router wrapper."""
-
-    def test_router_initializes(self):
-        """ScopedMemoryRouter initializes with a manager."""
-        # Mock manager
-        mock_manager = type("MockManager", (), {})()
-        router = ScopedMemoryRouter(mock_manager)
-        assert router._manager is mock_manager
-
-    def test_router_query_returns_list(self):
-        """router.query returns a list (placeholder implementation)."""
-        mock_manager = type("MockManager", (), {})()
-        router = ScopedMemoryRouter(mock_manager)
-        query = ScopedQuery(scope=MemoryScope(universe_id="world"))
-        result = router.query(query)
-        assert isinstance(result, list)
-
-    def test_router_store_accepts_data_and_scope(self):
-        """router.store accepts data and scope without error."""
-        mock_manager = type("MockManager", (), {})()
-        router = ScopedMemoryRouter(mock_manager)
-        scope = MemoryScope(universe_id="world", branch_id="main")
-        data = {"fact_id": "f1", "text": "Ryn is a scout"}
-        # Should not raise
-        router.store(data, scope)
