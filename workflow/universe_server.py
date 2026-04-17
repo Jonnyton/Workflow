@@ -138,6 +138,93 @@ def _default_universe() -> str:
     return "default-universe"
 
 
+def _upload_whitelist_prefixes() -> list[Path] | None:
+    """Return the configured upload whitelist, or ``None`` if unset.
+
+    Reads ``WORKFLOW_UPLOAD_WHITELIST`` at call time (consistent with
+    the other behavior-gate flags in this module). Values are split on
+    both ``;`` and ``:`` separators, stripped, resolved to absolute
+    paths. An unset or empty variable returns ``None`` meaning "no
+    whitelist enforcement" — preserving the open-by-default UX the
+    host wanted for the demo. ``None`` is NOT the same as an empty
+    list (the latter would forbid all uploads).
+    """
+    raw = os.environ.get("WORKFLOW_UPLOAD_WHITELIST", "").strip()
+    if not raw:
+        return None
+    # Accept both ``:`` (Unix PATH-style) and ``;`` (Windows PATH-style)
+    # so the same env-var syntax works on either platform. Drive-letter
+    # colons on Windows (``C:``) survive because the path gets split
+    # again inside ``_split_whitelist_entry``.
+    parts: list[Path] = []
+    for entry in _split_whitelist_entry(raw):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts.append(Path(entry).resolve())
+    return parts
+
+
+def _split_whitelist_entry(raw: str) -> list[str]:
+    """Split the env var on ``;`` (always) and on ``:`` except when the
+    colon is a Windows drive-letter separator (e.g. ``C:\\Users``).
+    """
+    chunks: list[str] = []
+    for semi_chunk in raw.split(";"):
+        # A bare ``:`` separator joins two paths; a drive-letter colon
+        # has a single letter to its left. Walk the string and split
+        # only on the first kind.
+        buffer = []
+        i = 0
+        while i < len(semi_chunk):
+            ch = semi_chunk[i]
+            if ch == ":":
+                # Drive letter iff this is position 1 of the current
+                # buffer AND the char before is a single letter AND
+                # the char after is a path separator.
+                if (
+                    len(buffer) == 1
+                    and buffer[0].isalpha()
+                    and i + 1 < len(semi_chunk)
+                    and semi_chunk[i + 1] in ("/", "\\")
+                ):
+                    buffer.append(ch)
+                    i += 1
+                    continue
+                # Otherwise this colon separates paths.
+                chunks.append("".join(buffer))
+                buffer = []
+                i += 1
+                continue
+            buffer.append(ch)
+            i += 1
+        if buffer:
+            chunks.append("".join(buffer))
+    return chunks
+
+
+def _warn_if_no_upload_whitelist() -> None:
+    """Log a WARNING once at import time if the whitelist is unset.
+
+    Reminds the host that ``add_canon_from_path`` accepts any absolute
+    path when ``WORKFLOW_UPLOAD_WHITELIST`` is empty. Best-effort —
+    logger failure must never block module import.
+    """
+    try:
+        if _upload_whitelist_prefixes() is None:
+            logger.warning(
+                "WORKFLOW_UPLOAD_WHITELIST is unset — add_canon_from_path "
+                "will accept any absolute path. Set the env var to a "
+                "colon/semicolon-separated list of prefixes to enforce.",
+            )
+    except Exception:
+        # Never let a logger-configuration edge case break import.
+        pass
+
+
+_warn_if_no_upload_whitelist()
+
+
 def _read_json(path: Path) -> dict[str, Any] | list[Any] | None:
     """Safely read a JSON file, returning None on any failure."""
     try:
@@ -2997,6 +3084,19 @@ def _action_add_canon_from_path(
     upload. This path reads the file server-side instead, preserving
     the "user uploads are authoritative" hard rule.
 
+    Trust-model mitigations (task #15):
+
+    - ``WORKFLOW_UPLOAD_WHITELIST`` (env var, optional): colon/
+      semicolon-separated absolute-path prefixes. When set, a path
+      not under any prefix is rejected with a clear error. When
+      unset, any absolute path is accepted and a WARNING is logged
+      at startup. The whitelist is opt-in enforcement — the demo
+      UX is open-by-default.
+    - Response includes ``preview_first_200_bytes``: the first ~200
+      UTF-8 characters of the ingested file so the host can see in
+      the MCP response what was actually stored (silent substitution
+      becomes detectable without an out-of-band read).
+
     Parameters
     ----------
     universe_id : str
@@ -3023,6 +3123,27 @@ def _action_add_canon_from_path(
                 "server's filesystem, not the MCP client's context."
             ),
         })
+
+    # Whitelist enforcement (opt-in via WORKFLOW_UPLOAD_WHITELIST).
+    # Resolve src to handle symlinks + ``..`` traversals before the
+    # prefix check; otherwise ``/allowed/../secret`` would slip past.
+    whitelist = _upload_whitelist_prefixes()
+    if whitelist is not None:
+        try:
+            resolved = src.resolve(strict=False)
+        except OSError as exc:
+            return json.dumps({"error": f"Failed to resolve path: {exc}"})
+        if not any(
+            resolved.is_relative_to(prefix) for prefix in whitelist
+        ):
+            return json.dumps({
+                "error": (
+                    f"Path is not under any WORKFLOW_UPLOAD_WHITELIST "
+                    f"prefix. Resolved={resolved!s}, "
+                    f"allowed_prefixes={[str(p) for p in whitelist]}."
+                ),
+            })
+
     if not src.exists():
         return json.dumps({"error": f"File not found: {path}"})
     if not src.is_file():
@@ -3037,7 +3158,7 @@ def _action_add_canon_from_path(
     # pipeline assumes UTF-8; binary or latin-1 files would silently
     # corrupt synthesis.
     try:
-        data.decode("utf-8")
+        decoded = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         return json.dumps({
             "error": (
@@ -3083,6 +3204,11 @@ def _action_add_canon_from_path(
             "synthesis_signal_emitted": result.signal_emitted,
             "routed_to": result.routed_to,
             "provenance": tag,
+            # Task #15: echo the first 200 decoded chars so the host
+            # can confirm in the MCP response what was ingested —
+            # silent file-swap becomes detectable without an
+            # out-of-band read.
+            "preview_first_200_bytes": decoded[:200],
             "note": (
                 "File ingested from server path. The daemon will pick "
                 "up the synthesize_source signal on its next cycle."

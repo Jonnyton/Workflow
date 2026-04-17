@@ -257,3 +257,164 @@ class TestAddCanonFromPathRejections:
         _call("add_canon_from_path", path=str(tmp_path / "missing"))
         ledger_path = us._base_path() / universe / "ledger.json"
         assert not ledger_path.exists()
+
+
+# ─── Trust-model mitigations (task #15) ─────────────────────────────────
+
+
+class TestAddCanonFromPathWhitelist:
+    """``WORKFLOW_UPLOAD_WHITELIST`` opt-in enforcement."""
+
+    def test_whitelist_unset_accepts_any_absolute(
+        self, universe: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default/demo behavior preserved: unset whitelist → accept."""
+        monkeypatch.delenv("WORKFLOW_UPLOAD_WHITELIST", raising=False)
+        src = tmp_path / "open.md"
+        src.write_text("open content", encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert "error" not in out
+        assert out["filename"] == "open.md"
+
+    def test_whitelist_set_accepts_path_under_prefix(
+        self, universe: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(tmp_path))
+        src = tmp_path / "inside.md"
+        src.write_text("inside content", encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert "error" not in out
+        assert out["filename"] == "inside.md"
+
+    def test_whitelist_set_rejects_path_outside_prefix(
+        self, universe: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A sibling directory outside the whitelist is rejected."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        forbidden = tmp_path / "forbidden"
+        forbidden.mkdir()
+        bad_file = forbidden / "secret.md"
+        bad_file.write_text("secret", encoding="utf-8")
+
+        monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(allowed))
+        out = _call("add_canon_from_path", path=str(bad_file))
+        assert "error" in out
+        assert "whitelist" in out["error"].lower()
+        # And no ledger entry was appended.
+        assert not (us._base_path() / universe / "ledger.json").exists()
+
+    def test_whitelist_traversal_attempt_rejected(
+        self, universe: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``resolve()`` collapses ``..`` before the prefix check so
+        ``/allowed/../forbidden/x`` cannot slip past."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        forbidden = tmp_path / "forbidden"
+        forbidden.mkdir()
+        bad_file = forbidden / "secret.md"
+        bad_file.write_text("secret", encoding="utf-8")
+
+        monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(allowed))
+        traversal = allowed / ".." / "forbidden" / "secret.md"
+        out = _call("add_canon_from_path", path=str(traversal))
+        assert "error" in out
+        assert "whitelist" in out["error"].lower()
+
+    def test_whitelist_multiple_prefixes(
+        self, universe: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Semicolon-separated list of prefixes; a file under any
+        listed prefix passes."""
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        file_a = dir_a / "one.md"
+        file_b = dir_b / "two.md"
+        file_a.write_text("a", encoding="utf-8")
+        file_b.write_text("b", encoding="utf-8")
+
+        monkeypatch.setenv(
+            "WORKFLOW_UPLOAD_WHITELIST", f"{dir_a};{dir_b}",
+        )
+        assert "error" not in _call("add_canon_from_path", path=str(file_a))
+        assert "error" not in _call("add_canon_from_path", path=str(file_b))
+
+    def test_whitelist_prefix_helper_parses_windows_drive(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Drive-letter colons on Windows must not get mis-split."""
+        monkeypatch.setenv(
+            "WORKFLOW_UPLOAD_WHITELIST",
+            r"C:\Users\Jonathan\Desktop;D:\data",
+        )
+        prefixes = us._upload_whitelist_prefixes()
+        assert prefixes is not None
+        # Whatever resolve produces, both drive-rooted paths must survive
+        # as a single prefix each — not split at the drive colon.
+        as_strs = [str(p) for p in prefixes]
+        assert any("Desktop" in s for s in as_strs)
+        assert any("data" in s for s in as_strs)
+        # And we did NOT wind up with bare drive-letter prefixes.
+        assert all(len(s) > 3 for s in as_strs)
+
+    def test_whitelist_unset_helper_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("WORKFLOW_UPLOAD_WHITELIST", raising=False)
+        assert us._upload_whitelist_prefixes() is None
+
+    def test_whitelist_empty_string_is_none(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", "")
+        assert us._upload_whitelist_prefixes() is None
+
+
+class TestAddCanonFromPathPreview:
+    """Response echoes first 200 decoded chars so silent file-swap is detectable."""
+
+    def test_preview_returns_first_200_chars(
+        self, universe: str, tmp_path: Path,
+    ) -> None:
+        body = "A" * 500
+        src = tmp_path / "long.md"
+        src.write_text(body, encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert out["preview_first_200_bytes"] == "A" * 200
+
+    def test_preview_shorter_than_200_for_short_file(
+        self, universe: str, tmp_path: Path,
+    ) -> None:
+        body = "short file"
+        src = tmp_path / "short.md"
+        src.write_text(body, encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert out["preview_first_200_bytes"] == body
+
+    def test_preview_empty_for_empty_file(
+        self, universe: str, tmp_path: Path,
+    ) -> None:
+        src = tmp_path / "empty.md"
+        src.write_text("", encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert out["preview_first_200_bytes"] == ""
+        # Empty file still ingested cleanly (0 bytes written).
+        assert "error" not in out
+
+    def test_preview_uses_decoded_chars_not_bytes(
+        self, universe: str, tmp_path: Path,
+    ) -> None:
+        """Multibyte UTF-8 chars count as 1 each in the preview, not per
+        byte — the param name says ``bytes`` for MCP consistency but
+        semantically it's 200 decoded chars."""
+        # 200 emoji would be 800 bytes but 200 chars.
+        body = "é" * 250  # 250 chars, 500 bytes
+        src = tmp_path / "utf8.md"
+        src.write_text(body, encoding="utf-8")
+        out = _call("add_canon_from_path", path=str(src))
+        assert out["preview_first_200_bytes"] == "é" * 200
+        # Byte count reflects the disk size, not the char count.
+        assert out["bytes_written"] == 500
