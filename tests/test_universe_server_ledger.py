@@ -87,7 +87,8 @@ def test_write_actions_table_is_exhaustive() -> None:
     preventing. This test pins the expected set so drift is caught.
     """
     expected = {
-        "submit_request", "give_direction", "set_premise", "add_canon",
+        "submit_request", "give_direction", "set_premise",
+        "add_canon", "add_canon_from_path",
         "control_daemon", "switch_universe", "create_universe",
         "queue_cancel",
         "subscribe_goal", "unsubscribe_goal", "post_to_goal_pool",

@@ -291,6 +291,25 @@ def _extract_add_canon(
     )
 
 
+def _extract_add_canon_from_path(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    name = result.get("filename", "") or Path(kwargs.get("path", "")).name
+    provenance = kwargs.get("provenance_tag", "") or "user_upload"
+    bytes_written = result.get("bytes_written", 0)
+    return (
+        f"canon/sources/{name}",
+        _truncate(f"{name} ({provenance}, {bytes_written} bytes)"),
+        {
+            "filename": name,
+            "provenance": provenance,
+            "source_path": kwargs.get("path", ""),
+            "bytes": bytes_written,
+            "synthesis_signal": result.get("synthesis_signal_emitted", False),
+        },
+    )
+
+
 def _extract_control_daemon(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
@@ -399,6 +418,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "give_direction": (_extract_give_direction, None),
     "set_premise": (_extract_set_premise, None),
     "add_canon": (_extract_add_canon, None),
+    "add_canon_from_path": (_extract_add_canon_from_path, None),
     "control_daemon": (_extract_control_daemon, {"pause", "resume"}),
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
@@ -1011,12 +1031,20 @@ def universe(
         action: One of — reads: list, inspect, read_output, query_world,
             get_activity, get_ledger, read_premise,
             list_canon, read_canon; writes: submit_request,
-            give_direction, set_premise, add_canon, control_daemon,
-            switch_universe, create_universe.
+            give_direction, set_premise, add_canon, add_canon_from_path,
+            control_daemon, switch_universe, create_universe.
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
             canon body, or daemon command: pause | resume | status).
-        path: Relative path for read_output (e.g. "book-1/ch-01.md").
+        path: Dual-semantic based on action:
+            - read_output: relative path inside the universe's output dir
+              (e.g. "book-1/ch-01.md").
+            - add_canon_from_path: **absolute** path on the server's
+              filesystem. The file is read server-side; MCP clients
+              never copy content through this param. Use this for any
+              upload larger than a few KB — ``add_canon`` (text=…) is
+              only safe for small inline uploads because LLM tool-arg
+              serialization drifts on long strings.
         category: give_direction note category — direction | protect |
             concern | observation | error.
         target: Optional file/scene reference for give_direction.
@@ -1026,9 +1054,12 @@ def universe(
         request_type: submit_request type — scene_direction | revision |
             canon_change | branch_proposal | general.
         branch_id: Target branch for submit_request.
-        filename: Filename for add_canon / read_canon.
-        provenance_tag: Source tag for add_canon (e.g. "published
-            novel", "rough notes").
+        filename: Filename for add_canon / add_canon_from_path /
+            read_canon. Defaults to basename(path) for
+            add_canon_from_path.
+        provenance_tag: Source tag for add_canon / add_canon_from_path
+            (e.g. "published novel", "rough notes"). Defaults to
+            "user_upload" for add_canon_from_path.
         limit: Max results for get_activity / get_ledger / query_world
             (default 30).
     """
@@ -1044,6 +1075,7 @@ def universe(
         "read_premise": _action_read_premise,
         "set_premise": _action_set_premise,
         "add_canon": _action_add_canon,
+        "add_canon_from_path": _action_add_canon_from_path,
         "list_canon": _action_list_canon,
         "read_canon": _action_read_canon,
         "control_daemon": _action_control_daemon,
@@ -2886,6 +2918,18 @@ def _action_add_canon(
     provenance_tag: str = "",
     **_kwargs: Any,
 ) -> str:
+    """Add inline canon text. Small uploads only; large files should use
+    ``add_canon_from_path`` so the LLM never has to copy content verbatim
+    into the tool-call arg.
+
+    Memory-scope Stage 2b landed the ``synthesize_source`` signal as the
+    trigger for premise/canon/entity synthesis. This path now routes
+    through :func:`workflow.ingestion.core.ingest_file` so the signal
+    fires (the earlier direct-write path bypassed it, breaking MCP
+    uploads). Files still land under ``canon/sources/`` on user
+    uploads; the daemon's worldbuild node picks up the signal and
+    synthesizes canon from the source.
+    """
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
     canon_dir = udir / "canon"
@@ -2895,9 +2939,21 @@ def _action_add_canon(
         return json.dumps({"error": "Invalid filename."})
 
     try:
+        data = text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        return json.dumps({"error": f"Failed to encode text as UTF-8: {exc}"})
+
+    from workflow.ingestion.core import ingest_file
+
+    try:
         canon_dir.mkdir(parents=True, exist_ok=True)
-        target = canon_dir / safe_name
-        target.write_text(text, encoding="utf-8")
+        result = ingest_file(
+            canon_dir=canon_dir,
+            filename=safe_name,
+            data=data,
+            universe_path=udir,
+            user_upload=True,
+        )
 
         if provenance_tag:
             meta_path = canon_dir / f".{safe_name}.meta.json"
@@ -2913,10 +2969,127 @@ def _action_add_canon(
             "filename": safe_name,
             "status": "written",
             "provenance": provenance_tag or "untagged",
-            "note": "Canon file added. The daemon will ingest it.",
+            "routed_to": result.routed_to,
+            "bytes_written": result.byte_count,
+            "synthesis_signal_emitted": result.signal_emitted,
+            "note": (
+                "Canon file ingested via ingest_file(). The daemon will "
+                "pick up the synthesize_source signal on its next cycle."
+            ),
         })
     except OSError as exc:
         return json.dumps({"error": f"Failed to write canon file: {exc}"})
+
+
+def _action_add_canon_from_path(
+    universe_id: str = "",
+    path: str = "",
+    filename: str = "",
+    provenance_tag: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Ingest a file from the server's filesystem into a universe's canon.
+
+    Solves the "copy-through-tool-arg" defect of ``add_canon``: for
+    large uploads (>20K tokens) the LLM cannot reliably reproduce the
+    file content verbatim in a tool-call arg — summarization drift,
+    max-output cutoff, and JSON-escaping errors silently corrupt the
+    upload. This path reads the file server-side instead, preserving
+    the "user uploads are authoritative" hard rule.
+
+    Parameters
+    ----------
+    universe_id : str
+        Target universe. Defaults to the active universe.
+    path : str
+        **Absolute** path on the server's filesystem. The MCP client's
+        LLM never reads the file content through this param — it just
+        references a path the host has already placed.
+    filename : str, optional
+        Filename to store the file under in ``canon/sources/``. Defaults
+        to the basename of ``path``.
+    provenance_tag : str, optional
+        Source tag (e.g. "published novel", "rough notes"). Defaults
+        to "user_upload".
+    """
+    if not path:
+        return json.dumps({"error": "path is required."})
+
+    src = Path(path)
+    if not src.is_absolute():
+        return json.dumps({
+            "error": (
+                "path must be absolute — this action reads from the "
+                "server's filesystem, not the MCP client's context."
+            ),
+        })
+    if not src.exists():
+        return json.dumps({"error": f"File not found: {path}"})
+    if not src.is_file():
+        return json.dumps({"error": f"Not a regular file: {path}"})
+
+    try:
+        data = src.read_bytes()
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to read file: {exc}"})
+
+    # Reject non-UTF-8 early with a clear error. The daemon's canon
+    # pipeline assumes UTF-8; binary or latin-1 files would silently
+    # corrupt synthesis.
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return json.dumps({
+            "error": (
+                f"File is not valid UTF-8 ({exc.reason} at byte "
+                f"{exc.start}). Convert to UTF-8 before ingesting."
+            ),
+        })
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    canon_dir = udir / "canon"
+    safe_name = Path(filename).name if filename else src.name
+    if not safe_name:
+        return json.dumps({"error": "Invalid filename."})
+
+    from workflow.ingestion.core import ingest_file
+
+    try:
+        canon_dir.mkdir(parents=True, exist_ok=True)
+        result = ingest_file(
+            canon_dir=canon_dir,
+            filename=safe_name,
+            data=data,
+            universe_path=udir,
+            user_upload=True,
+        )
+
+        tag = provenance_tag or "user_upload"
+        meta_path = canon_dir / f".{safe_name}.meta.json"
+        meta = {
+            "provenance": tag,
+            "source_path": str(src),
+            "added": datetime.now(timezone.utc).isoformat(),
+            "source": _current_actor(),
+        }
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        return json.dumps({
+            "universe_id": uid,
+            "filename": safe_name,
+            "canonical_path": str(canon_dir / "sources" / safe_name),
+            "bytes_written": result.byte_count,
+            "synthesis_signal_emitted": result.signal_emitted,
+            "routed_to": result.routed_to,
+            "provenance": tag,
+            "note": (
+                "File ingested from server path. The daemon will pick "
+                "up the synthesize_source signal on its next cycle."
+            ),
+        })
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to ingest file: {exc}"})
 
 
 def _action_list_canon(
