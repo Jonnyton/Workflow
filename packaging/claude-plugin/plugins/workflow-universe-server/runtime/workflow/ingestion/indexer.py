@@ -12,7 +12,10 @@ step is skipped. Never blocks the pipeline.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from workflow.memory.scoping import MemoryScope
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ def index_text(
     embed_fn: Callable[[str], list[float]] | None = None,
     provider_call: Callable | None = None,
     chapter_number: int = 0,
+    scope: "MemoryScope | None" = None,
 ) -> dict[str, int]:
     """Extract entities/facts from text and index into retrieval backends.
 
@@ -48,6 +52,11 @@ def index_text(
         Sync callable for entity extraction: (prompt, system, role) -> str.
     chapter_number : int
         Chapter number for vector store metadata.
+    scope : MemoryScope or None
+        Memory-scope Stage 2b: tags every KG and vector row with the
+        caller's tier values. When ``None``, rows inherit NULL (=
+        legacy/universe-public). Read-side enforcement waits on Stage
+        2c's ``WORKFLOW_TIERED_SCOPE`` flip.
 
     Returns
     -------
@@ -70,6 +79,7 @@ def index_text(
                 result = _extract_and_index_kg(
                     chunk, f"{source_id}_chunk_{i}",
                     knowledge_graph, provider_call,
+                    scope=scope,
                 )
                 stats["entities"] += result.get("entities", 0)
                 stats["edges"] += result.get("edges", 0)
@@ -89,6 +99,7 @@ def index_text(
                     vector_store, embed_fn,
                     source_id=source_id,
                     chapter_number=chapter_number,
+                    scope=scope,
                 )
                 stats["chunks_indexed"] += 1
             except Exception as e:
@@ -141,6 +152,8 @@ def _extract_and_index_kg(
     chunk_id: str,
     kg: Any,
     provider_call: Callable,
+    *,
+    scope: "MemoryScope | None" = None,
 ) -> dict[str, int]:
     """Extract entities/edges/facts and add to KnowledgeGraph."""
     from workflow.knowledge.entity_extraction import (
@@ -183,7 +196,7 @@ def _extract_and_index_kg(
     entities = [_build_entity(e) for e in parsed.get("entities", [])]
     for entity in entities:
         try:
-            kg.add_entity(entity)
+            kg.add_entity(entity, scope=scope)
         except Exception as e:
             logger.warning("Failed to add entity %s: %s", entity.get("entity_id", "?"), e)
 
@@ -191,7 +204,7 @@ def _extract_and_index_kg(
     edges = [_build_edge(r) for r in parsed.get("relationships", [])]
     for edge in edges:
         try:
-            kg.add_edge(edge)
+            kg.add_edge(edge, scope=scope)
         except Exception as e:
             logger.warning(
                 "Failed to add edge %s->%s: %s",
@@ -205,7 +218,7 @@ def _extract_and_index_kg(
     ]
     if facts:
         try:
-            kg.add_facts(facts)
+            kg.add_facts(facts, scope=scope)
         except Exception as e:
             logger.warning("Failed to add %d facts: %s", len(facts), e)
 
@@ -214,7 +227,7 @@ def _extract_and_index_kg(
             "LLM extraction returned valid JSON but no data for %s",
             chunk_id,
         )
-        return _regex_fallback_kg(text, chunk_id, kg)
+        return _regex_fallback_kg(text, chunk_id, kg, scope=scope)
 
     return {
         "entities": len(entities),
@@ -227,6 +240,8 @@ def _regex_fallback_kg(
     text: str,
     chunk_id: str,
     kg: Any,
+    *,
+    scope: "MemoryScope | None" = None,
 ) -> dict[str, int]:
     """Fallback: extract character entities from prose using regex.
 
@@ -265,7 +280,7 @@ def _regex_fallback_kg(
             "access_tier": 0,
         })
         try:
-            kg.add_entity(entity)
+            kg.add_entity(entity, scope=scope)
             entities_added += 1
         except Exception as e:
             logger.warning("Regex fallback: failed to add entity %s: %s", entity_id, e)
@@ -284,6 +299,7 @@ def _index_vector_chunk(
     *,
     source_id: str = "",
     chapter_number: int = 0,
+    scope: "MemoryScope | None" = None,
 ) -> None:
     """Compute embedding and index a single chunk into VectorStore."""
     embedding = embed_fn(text)
@@ -299,4 +315,4 @@ def _index_vector_chunk(
         "character": "",
         "location": "",
     }
-    vector_store.index([chunk_data])
+    vector_store.index([chunk_data], scope=scope)
