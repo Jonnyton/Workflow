@@ -681,7 +681,11 @@ def _handle_synthesize_source(
         logger.warning("Failed to read source file %s: %s", source_file, e)
         return False
 
-    from workflow.ingestion.extractors import extract_text, synthesize_source
+    from workflow.ingestion.extractors import (
+        extract_text,
+        get_last_bite_outcomes,
+        synthesize_source,
+    )
 
     text = extract_text(source_file, data)
     if not text.strip():
@@ -689,6 +693,12 @@ def _handle_synthesize_source(
         return False
 
     generated = synthesize_source(text, source_file, canon_dir, premise)
+
+    # Task #17 Fix C: pull per-bite outcomes (populated for Tier-2 runs
+    # only; empty dict for single-pass Tier-1) and mirror into the
+    # manifest as ``last_bite_outcomes``. Lets a failed bite-loop be
+    # diagnosed without re-running synthesis.
+    bite_outcomes = get_last_bite_outcomes(source_file)
 
     # Update manifest with synthesized doc mappings
     if generated:
@@ -698,13 +708,49 @@ def _handle_synthesize_source(
         entry = manifest.get(source_file)
         if entry is not None:
             entry.synthesized_docs = generated
+            if bite_outcomes:
+                entry.last_bite_outcomes = bite_outcomes
             manifest.save(canon_dir)
 
         logger.info(
             "Synthesized %d docs from source %s: %s",
             len(generated), source_file, ", ".join(generated),
         )
+
+        # Task #17 Fix E: forward defense. A successful canon synthesis
+        # means any drift facts the daemon wrote against the placeholder
+        # premise are now obsolete; wipe them universe-wide so retrieval
+        # doesn't resurface hallucinated "canon" on subsequent cycles.
+        try:
+            from domains.fantasy_author.phases.drift_cleanup import (
+                cleanup_drift_kg,
+            )
+
+            universe_path = state.get(
+                "_universe_path", state.get("universe_path", "")
+            )
+            kg_path = state.get("_kg_path", "")
+            if universe_path and kg_path:
+                universe_id = Path(universe_path).stem
+                cleanup_drift_kg(universe_id, kg_path)
+        except Exception:
+            logger.warning(
+                "Post-synthesis drift_cleanup failed for %s",
+                source_file, exc_info=True,
+            )
+
         return True
+
+    # Synthesis produced nothing — still record the bite outcomes so
+    # the manifest state explains why (e.g. "5 bites, all parse_failed").
+    if bite_outcomes:
+        from workflow.ingestion.core import SourceManifest
+
+        manifest = SourceManifest.load(canon_dir)
+        entry = manifest.get(source_file)
+        if entry is not None:
+            entry.last_bite_outcomes = bite_outcomes
+            manifest.save(canon_dir)
 
     logger.warning("Synthesis produced no documents for %s", source_file)
     return False

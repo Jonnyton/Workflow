@@ -255,6 +255,50 @@ def _build_book_execution_seed(
     return seed, execution_scope
 
 
+def _has_unsynthesized_canon(universe_path: str) -> bool:
+    """True iff a queued `synthesize_source` signal targets a manifest
+    entry whose `synthesized_docs` is empty.
+
+    Task #17 Fix A (revised) — the `run_book` entry barrier. Returns
+    False on any I/O or parse error so a corrupt/missing file never
+    permanently blocks drafting (fail-open; foundation_priority_review
+    is the authoritative gate).
+    """
+    if not universe_path:
+        return False
+    import json
+    from pathlib import Path
+
+    udir = Path(universe_path)
+    manifest_path = udir / "canon" / ".manifest.json"
+    signals_path = udir / "worldbuild_signals.json"
+    if not manifest_path.exists() or not signals_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        signals = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(manifest, dict) or not isinstance(signals, list):
+        return False
+
+    queued_sources = {
+        str(sig.get("source_file", ""))
+        for sig in signals
+        if isinstance(sig, dict)
+        and sig.get("type") == "synthesize_source"
+        and sig.get("source_file")
+    }
+    for source_file in queued_sources:
+        entry = manifest.get(source_file)
+        if not isinstance(entry, dict):
+            continue
+        synthesized = entry.get("synthesized_docs") or []
+        if not synthesized:
+            return True
+    return False
+
+
 def run_book(state: dict[str, Any]) -> dict[str, Any]:
     """Run a book within the universe.
 
@@ -274,6 +318,31 @@ def run_book(state: dict[str, Any]) -> dict[str, Any]:
 
     _log = logging.getLogger(__name__)
     _log.info("run_book: starting book subgraph")
+
+    # Task #17 Fix A (revised) — synthesis-skip barrier. Refuse to draft a
+    # book while there are queued `synthesize_source` signals whose manifest
+    # entry shows empty `synthesized_docs`. Early-return routes through
+    # `universe_cycle` -> `foundation_priority_review`, which sees the
+    # hard_priority and dispatches worldbuild instead. See
+    # `docs/concerns/2026-04-16-synthesis-skip-echoes.md`.
+    universe_path = state.get(
+        "_universe_path", state.get("universe_path", ""),
+    )
+    if _has_unsynthesized_canon(universe_path):
+        _log.warning(
+            "run_book: unsynthesized canon sources queued — skipping draft "
+            "to let foundation_priority_review re-route to worldbuild "
+            "(universe=%s)",
+            state.get("universe_id", "?"),
+        )
+        return {
+            "needs_synthesis": True,
+            "quality_trace": [{
+                "node": "run_book",
+                "action": "barrier_needs_synthesis",
+                "universe_id": state.get("universe_id"),
+            }],
+        }
 
     from domains.fantasy_author.graphs.book import build_book_graph
 
