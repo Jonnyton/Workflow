@@ -41,6 +41,11 @@ class ChapterState(TypedDict):
     chapter_word_count: int
     """Total words written in this chapter across all scenes."""
 
+    consecutive_revert_count: int
+    """Scene verdicts of ``"revert"`` in a row; non-revert verdicts reset to 0.
+    Used by ``should_continue_chapter`` to halt the scene loop after a
+    REVERT-3x streak instead of drafting forever (RC-3 gate)."""
+
     # ------------------------------------------------------------------
     # Workflow coordination
     # ------------------------------------------------------------------

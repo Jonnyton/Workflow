@@ -215,6 +215,26 @@ class TestConditionalEdges:
         }
         assert should_continue_chapter(state) == "next_scene"
 
+    def test_chapter_halts_after_three_consecutive_reverts(self):
+        """RC-3 gate: 3 reverts in a row forces consolidate, not next_scene."""
+        state = {
+            "scenes_completed": 3,
+            "scenes_target": 10,
+            "chapter_word_count": 500,
+            "consecutive_revert_count": 3,
+        }
+        assert should_continue_chapter(state) == "consolidate"
+
+    def test_chapter_continues_with_two_reverts(self):
+        """RC-3 gate: 2 reverts is under threshold, loop continues."""
+        state = {
+            "scenes_completed": 2,
+            "scenes_target": 10,
+            "chapter_word_count": 500,
+            "consecutive_revert_count": 2,
+        }
+        assert should_continue_chapter(state) == "next_scene"
+
     # -- Book: should_continue_book --
 
     def test_book_continues_when_chapters_remain(self):
@@ -924,3 +944,75 @@ class TestSceneProsesContinuity:
             run_scene(state)
 
         assert captured_input.get("recent_prose") == previous_prose
+
+    def test_run_scene_increments_revert_streak(self):
+        """RC-3 gate: run_scene increments consecutive_revert_count on revert."""
+        from domains.fantasy_author.graphs.chapter import run_scene
+
+        state: dict[str, Any] = {
+            "universe_id": "test",
+            "book_number": 1,
+            "chapter_number": 1,
+            "scenes_completed": 1,
+            "scenes_target": 5,
+            "chapter_word_count": 150,
+            "consecutive_revert_count": 2,
+            "workflow_instructions": {},
+            "_universe_path": "",
+            "_db_path": "",
+            "_kg_path": "",
+            "_last_scene_prose": "",
+        }
+
+        def mock_scene_invoke(input_state, *a, **kw):
+            return {
+                "draft_output": {"prose": "stuck prose", "word_count": 2},
+                "extracted_facts": [],
+                "verdict": "revert",
+            }
+
+        with patch(
+            "domains.fantasy_author.graphs.scene.build_scene_graph",
+        ) as mock_build:
+            mock_compiled = mock_build.return_value.compile.return_value
+            mock_compiled.invoke = mock_scene_invoke
+
+            result = run_scene(state)
+
+        assert result.get("consecutive_revert_count") == 3
+
+    def test_run_scene_resets_revert_streak_on_accept(self):
+        """RC-3 gate: non-revert verdict resets consecutive_revert_count to 0."""
+        from domains.fantasy_author.graphs.chapter import run_scene
+
+        state: dict[str, Any] = {
+            "universe_id": "test",
+            "book_number": 1,
+            "chapter_number": 1,
+            "scenes_completed": 1,
+            "scenes_target": 5,
+            "chapter_word_count": 150,
+            "consecutive_revert_count": 2,
+            "workflow_instructions": {},
+            "_universe_path": "",
+            "_db_path": "",
+            "_kg_path": "",
+            "_last_scene_prose": "",
+        }
+
+        def mock_scene_invoke(input_state, *a, **kw):
+            return {
+                "draft_output": {"prose": "good prose", "word_count": 2},
+                "extracted_facts": [],
+                "verdict": "accept",
+            }
+
+        with patch(
+            "domains.fantasy_author.graphs.scene.build_scene_graph",
+        ) as mock_build:
+            mock_compiled = mock_build.return_value.compile.return_value
+            mock_compiled.invoke = mock_scene_invoke
+
+            result = run_scene(state)
+
+        assert result.get("consecutive_revert_count") == 0

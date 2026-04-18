@@ -129,11 +129,18 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
         f"Scene {scene_num}: {word_count:,} words, verdict={verdict}",
     )
 
+    prior_reverts = state.get("consecutive_revert_count", 0)
+    if verdict == "revert":
+        next_reverts = prior_reverts + 1
+    else:
+        next_reverts = 0
+
     updates: dict[str, Any] = {
         "scenes_completed": state["scenes_completed"] + 1,
         "consolidated_facts": result.get("extracted_facts", []),
         "chapter_word_count": state.get("chapter_word_count", 0)
         + word_count,
+        "consecutive_revert_count": next_reverts,
     }
     # Store last scene prose for the next scene's recent_prose field
     if scene_prose:
@@ -227,6 +234,26 @@ def should_continue_chapter(state: ChapterState) -> str:
 
     # Hard maximum: never exceed scenes_target.
     if completed >= target:
+        return "consolidate"
+
+    # RC-3 gate: halt the scene loop if the evaluator has voted REVERT on
+    # the last 3 scenes in a row. Prevents the daemon from drafting forever
+    # against a stuck premise. Halt via consolidate (safe terminal); surface
+    # loudly in logs + activity.
+    revert_streak = state.get("consecutive_revert_count", 0)
+    if revert_streak >= 3:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "REVERT-3x gate: %d consecutive reverts after %d scenes; halting "
+            "chapter to consolidate (chapter %s)",
+            revert_streak, completed, state.get("chapter_number", "?"),
+        )
+        _activity_log(
+            state,
+            f"REVERT-3x gate: {revert_streak} reverts in a row -- "
+            f"halting chapter after scene {completed}",
+        )
         return "consolidate"
 
     # Adaptive early termination: if we've written at least 2 scenes
