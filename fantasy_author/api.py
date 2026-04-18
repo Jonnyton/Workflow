@@ -84,6 +84,11 @@ def configure(
     _daemon = daemon
     _daemon_thread = daemon_thread
 
+    if base_path:
+        from fantasy_author import author_server
+
+        author_server.sync_universes_from_filesystem(base_path)
+
     # Load persisted provider keys before any provider registration
     _load_provider_keys()
 
@@ -224,6 +229,11 @@ class NoteBody(BaseModel):
     target: str | None = Field(None, description="File path or scene reference")
     clearly_wrong: bool = Field(False, description="For concerns: provable error?")
     quoted_passage: str = Field("", description="Evidence from prose")
+    tags: list[str] = Field(default_factory=list, description="Optional note tags")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional note metadata",
+    )
 
 
 class NoteStatusBody(BaseModel):
@@ -870,6 +880,8 @@ def post_note(
         target=body.target,
         clearly_wrong=body.clearly_wrong,
         quoted_passage=body.quoted_passage,
+        tags=body.tags,
+        metadata=body.metadata,
     )
     return {"status": "ok", "note": note.to_dict()}
 
@@ -2117,12 +2129,12 @@ def propose_author_fork(
         # Create the vote window for the fork
         vote_result = author_server.propose_author_fork(
             base,
-            parent_author_id=parent_author_id,
+            universe_id=body.universe_id,
+            author_id=parent_author_id,
             display_name=body.display_name,
             soul_text=body.soul_text,
-            universe_id=body.universe_id,
             proposed_by=actor["user_id"],
-            vote_seconds=body.vote_seconds,
+            duration_seconds=body.vote_seconds,
             reason=body.reason,
         )
 
@@ -2150,11 +2162,7 @@ def cast_vote(
             user_id=actor["user_id"],
             choice=body.choice,
         )
-        return {
-            "vote_id": result["vote_id"],
-            "user_id": result["user_id"],
-            "choice": result["choice"],
-        }
+        return {"vote": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to cast vote: {str(e)}")
 
@@ -2173,7 +2181,7 @@ def resolve_vote(
 
     try:
         base = _base()
-        result = author_server.resolve_vote_if_due(base, vote_id=vote_id)
+        result = author_server.resolve_vote_if_due(base, vote_id=vote_id, force=True)
         if result is None:
             raise HTTPException(status_code=404, detail="Vote not found or not ready")
         return {"vote": result}
@@ -2200,6 +2208,20 @@ def create_branch(
             name=body.name,
             created_by=actor["user_id"],
             parent_branch_id=body.parent_branch_id,
+        )
+        author_server.record_action(
+            base,
+            universe_id=universe_id,
+            actor_type="host" if actor.get("is_host") else "user",
+            actor_id=actor["user_id"],
+            action_type="create_branch",
+            target_type="branch",
+            target_id=branch["branch_id"],
+            summary=f"Created branch {branch['name']}",
+            payload={
+                "branch_id": branch["branch_id"],
+                "parent_branch_id": body.parent_branch_id,
+            },
         )
         return {"branch": branch}
     except Exception as e:
@@ -2243,6 +2265,21 @@ def create_request(
             request_type=body.request_type,
             text=body.text,
             preferred_author_id=body.preferred_author_id,
+        )
+        author_server.record_action(
+            base,
+            universe_id=universe_id,
+            actor_type="host" if actor.get("is_host") else "user",
+            actor_id=actor["user_id"],
+            action_type="submit_request",
+            target_type="user_request",
+            target_id=request_item["request_id"],
+            summary=f"Submitted {body.request_type} request",
+            payload={
+                "branch_id": body.branch_id,
+                "preferred_author_id": body.preferred_author_id,
+                "request_type": body.request_type,
+            },
         )
         return {"request": request_item}
     except Exception as e:
@@ -2288,6 +2325,22 @@ def spawn_runtime(
             model_name=body.model_name,
             branch_id=body.branch_id,
             created_by=actor["user_id"],
+        )
+        author_server.record_action(
+            base,
+            universe_id=universe_id,
+            actor_type="host" if actor.get("is_host") else "user",
+            actor_id=actor["user_id"],
+            action_type="spawn_runtime_capacity",
+            target_type="runtime_instance",
+            target_id=runtime["instance_id"],
+            summary=f"Spawned runtime {body.provider_name}:{body.model_name}",
+            payload={
+                "author_id": body.author_id,
+                "branch_id": body.branch_id,
+                "provider_name": body.provider_name,
+                "model_name": body.model_name,
+            },
         )
         return {"runtime": runtime}
     except Exception as e:
