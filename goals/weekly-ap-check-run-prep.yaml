@@ -1,0 +1,15 @@
+id: 7d578f5ec243
+name: Weekly AP Check Run Prep
+description: Take a multi-invoice PDF, split by vendor, name each VENDOR_CODE-INVOICE_NUMBER,
+  code line items with per-charge-code notes using canon examples as few-shot reference,
+  emit a FinPayables CSV ready for Voyager 7S AP batch import and per-invoice markdown
+  notes. Unknowns are flagged for example seeding.
+author: anonymous
+tags:
+- accounting
+- ap
+- voyager
+- weekly
+visibility: private
+created_at: 1776492297.0828147
+updated_at: 1776492297.0828147
