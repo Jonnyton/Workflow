@@ -834,18 +834,22 @@ def _try_recover_input(page, *, on_step=None):
     input lookup comes up empty. Strategies, in order of blast radius:
 
       1. Click the chat body area to force focus back to the input.
-      2. If a selection widget is visible (`ask-user-option`), click its
-         "Skip" button. This is the widget's own dismiss affordance and
-         re-mounts the free-text input more reliably than Escape.
-      3. Press Escape to dismiss any invisible overlay / modal (and a
-         second Escape if the selection widget is still visible).
-      4. Scroll the message list to the bottom (puts the input back in
+      2. Press Escape to dismiss any overlay / modal — including the
+         `ask-user-option` selection widget. Escape does NOT post a
+         choice to the conversation; the widget's Skip button does.
+         Escape twice if the widget is still visible after the first
+         press. We deliberately never click Skip (persona authenticity
+         rule — see docs/design-notes/2026-04-19-option-select-bug-
+         claude-chat.md).
+      3. Scroll the message list to the bottom (puts the input back in
          view; sometimes it's virtualized off-screen).
-      5. Tab into the input role by keyboard.
-      6. Last resort: reload the current chat URL. This preserves chat
+      4. Tab into the input role by keyboard.
+      5. Last resort: reload the current chat URL. This preserves chat
          history (same chat id) but re-mounts the full UI. Do NOT
          navigate to /new — that loses the conversation. If the widget
-         re-renders after reload, click its Skip button once more.
+         persists after reload, return None — the caller's failure dump
+         emits selection_widget=visible and user-sim's next typed `ask`
+         will carry the persona's real answer and re-mount the input.
 
     Each step re-scans INPUT_SELECTORS; the first one that yields a
     visible input wins. `on_step` is an optional callback invoked with
@@ -885,29 +889,14 @@ def _try_recover_input(page, *, on_step=None):
     except Exception:
         pass
 
-    # 2. If a selection widget is visible, click its "Skip" button before
-    # trying Escape. Claude.ai's ask-user-option widget renders a
-    # <button data-widget-action="true">Skip</button> that dismisses the
-    # widget and re-mounts the free-text input. This is more reliable
-    # than Escape, which depends on focus being on the widget.
-    try:
-        widget_visible = _selection_widget_visible(page)
-    except Exception:
-        widget_visible = False
-    if widget_visible:
-        try:
-            skip_btn = page.locator(
-                'button[data-widget-action="true"]:has-text("Skip")'
-            )
-            if skip_btn.count() > 0 and skip_btn.first.is_visible():
-                skip_btn.first.click(timeout=1000)
-                time.sleep(0.4)
-                inp = _rescan()
-                if inp is not None:
-                    _log("widget_skip_click")
-                    return inp
-        except Exception:
-            pass
+    # 2. Escape to dismiss the selection widget WITHOUT submitting a choice.
+    # Earlier implementations clicked the widget's Skip button here; that
+    # is NOT a benign dismiss — the model sees Skip as "user picked 'no
+    # preference'" and proceeds as though the persona had no view. Persona
+    # authenticity requires that user-sim's next typed message be the
+    # persona's real answer. Escape closes the widget without posting,
+    # so the next `ask` carries the persona's voice verbatim.
+    # Full rationale: docs/design-notes/2026-04-19-option-select-bug-claude-chat.md
 
     # 3. Escape to dismiss overlays. Some Claude.ai widgets take two Esc
     # presses (one to close active element, one to dismiss the wrapper),
@@ -973,21 +962,11 @@ def _try_recover_input(page, *, on_step=None):
             if inp is not None:
                 _log("chat_reload")
                 return inp
-            # Widget may have re-rendered after reload. Try Skip once more.
-            try:
-                if _selection_widget_visible(page):
-                    skip_btn = page.locator(
-                        'button[data-widget-action="true"]:has-text("Skip")'
-                    )
-                    if skip_btn.count() > 0 and skip_btn.first.is_visible():
-                        skip_btn.first.click(timeout=1000)
-                        time.sleep(0.5)
-                        inp = _rescan()
-                        if inp is not None:
-                            _log("chat_reload_then_skip")
-                            return inp
-            except Exception:
-                pass
+            # Widget may have re-rendered after reload. Do NOT click Skip —
+            # Skip posts "no preference" and breaks persona authenticity.
+            # Fall through to None; caller emits selection_widget=visible
+            # diagnostic + user-sim's next typed `ask` re-mounts the input
+            # with the persona's real answer.
     except Exception:
         pass
 
@@ -1296,13 +1275,29 @@ def cmd_ask(message: str) -> int:
                         f"suspected_dialog_dump={suspected_dump or 'none'}"
                     ),
                 )
-                print(
-                    "ERROR: could not find chat input on claude.ai "
-                    "(even after recovery attempts). Is the page loaded? "
-                    f"Diagnostic dump: "
-                    f"output/claude_chat_failures/{dump}.{{html,png,txt}}",
-                    file=sys.stderr,
-                )
+                if widget_active:
+                    print(
+                        "ERROR: claude.ai's ask-user-option selection "
+                        "widget is blocking the input and Escape did "
+                        "not clear it. Retry this `ask` with your "
+                        "persona's freeform answer typed into the "
+                        "message — posting a new user turn re-mounts "
+                        "the input. Do NOT click Skip (posts 'no "
+                        "preference'; see docs/design-notes/2026-04-19-"
+                        "option-select-bug-claude-chat.md). Diagnostic "
+                        f"dump: output/claude_chat_failures/{dump}."
+                        "{html,png,txt}",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        "ERROR: could not find chat input on claude.ai "
+                        "(even after recovery attempts). Is the page "
+                        "loaded? Diagnostic dump: "
+                        f"output/claude_chat_failures/{dump}."
+                        "{html,png,txt}",
+                        file=sys.stderr,
+                    )
                 return 3
             # Recovery worked. Emit one line to stderr so user-sim knows
             # the chat state was auto-repaired.
