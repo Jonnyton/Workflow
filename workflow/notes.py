@@ -1,9 +1,8 @@
 """Unified notes system — one format for all feedback.
 
-Notes replace STEERING.md, editorial output, and verdict routing. Each
-universe has a notes.json file. Sources include user (steering), editor
-(editorial reader), structural (deterministic checks), and system
-(worldbuild signals, learning signals).
+Each universe has a notes.json file. Sources include user (steering),
+editor (editorial reader), structural (deterministic checks), and
+system (worldbuild signals, learning signals).
 
 Notes flow: created → unread → read (orient consumed) → acted_on/dismissed
 (commit processed). The writer reads notes and decides what to act on.
