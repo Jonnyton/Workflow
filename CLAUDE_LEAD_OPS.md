@@ -6,6 +6,21 @@ For core process rules, see AGENTS.md. For Claude Code basics, see CLAUDE.md.
 
 ---
 
+### Standing Permission To Dispatch User-Sim
+
+Host granted the lead CEO-level authority over user-sim dispatch (2026-04-19). Stop asking for per-mission approval. Run the auth hook instead:
+
+```bash
+python scripts/user_sim_auth_hook.py
+```
+
+Verdicts:
+- `approved` (exit 0) — CDP up, exactly 1 tab, browser visible → dispatch now, no handshake.
+- `heal-tabs` (exit 1) — run `python scripts/claude_chat.py tabs` (auto-heals), re-check hook.
+- `no-browser` (exit 2) — host hasn't launched Chrome. Message host; do NOT try to launch on their behalf.
+
+Treat user-sim as a standing team member for data-gathering, regression retests, and forward-looking exploration. If you have a question the team can answer by running it, run it. Don't queue questions for the host that user-sim can answer. Operate as if the host could be unreachable at any moment — the project keeps shipping.
+
 ### Recursive Learning From user-sim
 
 When user-sim reports a finding, don't default to "create a task and queue it." Inspect the fix class first:
