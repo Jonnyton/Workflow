@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workflow pre-commit invariants.
 #
-# Enforces two invariants at commit time so no session has to
+# Enforces three invariants at commit time so no session has to
 # re-check them by hand:
 #
 #   1. Skill-mirror parity. If any file in `.agents/skills/` is
@@ -12,6 +12,11 @@
 #      `workflow/**`, the packaged-plugin copy at
 #      `packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/**`
 #      must be byte-identical. Commits that break parity fail.
+#
+#   3. Mojibake detection. Staged `.md` / `.py` / `.json` / `.toml` /
+#      `.txt` files are scanned for CP-1252-as-UTF-8 garbled sequences
+#      (â€" in place of — and similar). Any match fails the commit
+#      with a file:line report + autofix hint.
 #
 # Override with `git commit --no-verify` for exceptional cases
 # (e.g. intentional mirror-only edit during a sync commit).
@@ -75,41 +80,89 @@ STAGED_CANONICAL=$(
 
 if [ -z "${STAGED_CANONICAL}" ]; then
   echo "${GREEN}pre-commit: no canonical workflow/ changes — mirror parity N/A${RESET}"
-  exit 0
-fi
-
-MIRROR_MISMATCHES=()
-for canon in ${STAGED_CANONICAL}; do
-  mirror="${MIRROR_PREFIX}/${canon}"
-  if [ ! -f "${mirror}" ]; then
-    # Canonical file has no mirror counterpart — acceptable, skip.
-    # (E.g. new workflow/ modules before the plugin build picks them up.)
-    continue
-  fi
-  if ! cmp -s "${canon}" "${mirror}"; then
-    MIRROR_MISMATCHES+=("${canon}")
-  fi
-done
-
-if [ "${#MIRROR_MISMATCHES[@]}" -gt 0 ]; then
-  echo "${RED}pre-commit: plugin-mirror parity broken.${RESET}" >&2
-  echo "" >&2
-  echo "The following staged canonical files diverge from their plugin-mirror copies:" >&2
-  for f in "${MIRROR_MISMATCHES[@]}"; do
-    echo "  ${f}" >&2
-    echo "    mirror: ${MIRROR_PREFIX}/${f}" >&2
+else
+  MIRROR_MISMATCHES=()
+  for canon in ${STAGED_CANONICAL}; do
+    mirror="${MIRROR_PREFIX}/${canon}"
+    if [ ! -f "${mirror}" ]; then
+      # Canonical file has no mirror counterpart — acceptable, skip.
+      # (E.g. new workflow/ modules before the plugin build picks them up.)
+      continue
+    fi
+    if ! cmp -s "${canon}" "${mirror}"; then
+      MIRROR_MISMATCHES+=("${canon}")
+    fi
   done
-  echo "" >&2
-  echo "Resync options:" >&2
-  echo "  1. Re-run the plugin build:" >&2
-  echo "       python packaging/claude-plugin/build_plugin.py" >&2
-  echo "  2. Or copy each canonical file to its mirror path and" >&2
-  echo "     stage both in the same commit." >&2
-  echo "" >&2
-  echo "Override with --no-verify if this is an intentional one-sided edit." >&2
-  exit 1
+
+  if [ "${#MIRROR_MISMATCHES[@]}" -gt 0 ]; then
+    echo "${RED}pre-commit: plugin-mirror parity broken.${RESET}" >&2
+    echo "" >&2
+    echo "The following staged canonical files diverge from their plugin-mirror copies:" >&2
+    for f in "${MIRROR_MISMATCHES[@]}"; do
+      echo "  ${f}" >&2
+      echo "    mirror: ${MIRROR_PREFIX}/${f}" >&2
+    done
+    echo "" >&2
+    echo "Resync options:" >&2
+    echo "  1. Re-run the plugin build:" >&2
+    echo "       python packaging/claude-plugin/build_plugin.py" >&2
+    echo "  2. Or copy each canonical file to its mirror path and" >&2
+    echo "     stage both in the same commit." >&2
+    echo "" >&2
+    echo "Override with --no-verify if this is an intentional one-sided edit." >&2
+    exit 1
+  fi
+
+  CHECKED_COUNT=$(printf '%s\n' "${STAGED_CANONICAL}" | wc -l | tr -d ' ')
+  echo "${GREEN}pre-commit: mirror parity verified (${CHECKED_COUNT} canonical files checked)${RESET}"
 fi
 
-CHECKED_COUNT=$(printf '%s\n' "${STAGED_CANONICAL}" | wc -l | tr -d ' ')
-echo "${GREEN}pre-commit: mirror parity verified (${CHECKED_COUNT} canonical files checked)${RESET}"
+# --- 3. Mojibake detection ------------------------------------------
+
+STAGED_TEXT=$(
+  git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '\.(md|py|json|toml|txt)$' \
+    | grep -v -E '^scripts/fix-mojibake\.py$|^tests/test_fix_mojibake\.py$' \
+    || true
+)
+
+if [ -n "${STAGED_TEXT}" ]; then
+  # Only scan files that still exist on disk (deleted files slip past
+  # the diff-filter on rename cases). Pass the full set to fix-mojibake.py
+  # in detection mode; exit 1 on any match.
+  EXISTING_PATHS=()
+  while IFS= read -r p; do
+    if [ -f "${p}" ]; then
+      EXISTING_PATHS+=("${p}")
+    fi
+  done <<< "${STAGED_TEXT}"
+
+  if [ "${#EXISTING_PATHS[@]}" -gt 0 ]; then
+    # Find a usable python. Prefer `python` on PATH; fall back to py -3
+    # via the Windows launcher.
+    if command -v python >/dev/null 2>&1; then
+      PYTHON_BIN="python"
+    elif command -v python3 >/dev/null 2>&1; then
+      PYTHON_BIN="python3"
+    elif command -v py >/dev/null 2>&1; then
+      PYTHON_BIN="py -3"
+    else
+      echo "${YELLOW}pre-commit: python not available; skipping mojibake scan${RESET}" >&2
+      PYTHON_BIN=""
+    fi
+
+    if [ -n "${PYTHON_BIN}" ]; then
+      if ! ${PYTHON_BIN} scripts/fix-mojibake.py "${EXISTING_PATHS[@]}"; then
+        echo "" >&2
+        echo "${RED}pre-commit: mojibake detected in staged files.${RESET}" >&2
+        echo "Run this to repair in-place, then re-stage:" >&2
+        echo "  ${PYTHON_BIN} scripts/fix-mojibake.py --autofix <paths>" >&2
+        echo "Override with --no-verify if intentional." >&2
+        exit 1
+      fi
+      echo "${GREEN}pre-commit: mojibake scan clean (${#EXISTING_PATHS[@]} text file(s) checked)${RESET}"
+    fi
+  fi
+fi
+
 exit 0
