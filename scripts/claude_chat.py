@@ -1496,6 +1496,12 @@ def cmd_new_chat() -> int:
         page = _ensure_claude_page(browser)
         page.goto(NEW_CHAT_URL, timeout=30000)
         time.sleep(2)
+        # Post-navigation heal: claude.ai's SPA occasionally opens the
+        # target as a new CDP target instead of navigating in-place,
+        # which leaves an orphan for the watchdog to clean up. Running
+        # _enforce_single_tab here closes the orphan synchronously —
+        # watchdog no longer has to heal on every new-chat call.
+        _enforce_single_tab(browser)
         print("new chat ready")
         return 0
     finally:
