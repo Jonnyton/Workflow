@@ -144,6 +144,32 @@ which is what enables phrase-attribution drift. Target ~3-5 lines
 per tool description; anything longer suggests the description is
 doing a prompt's job.
 
+## 5.5 Added 2026-04-19 from Maya live-mission evidence (navigator intelligence report)
+
+Two prompt-hardening directives must land in the `control_station` prompt body (per §5.1 "behavioral directives live in prompts, not in tool descriptions"). Live Maya mission on 2026-04-19 produced concrete evidence both are missing from current prompt text:
+
+### 5.5.1 Chatbot-assumes-Workflow directive (Maya LIVE-F1, Devin CHAT-1)
+
+**Canonical language for `control_station` prompt:**
+
+> When a user names an ambiguous-but-plausibly-Workflow action (e.g., "the workflow thing", "my connector", "that workflow thing i added"), check their installed MCP connectors FIRST. If Workflow is installed, invoke it. Do NOT disambiguate against hypothetical alternatives before trying Workflow. Narrate what you assumed after invoking.
+
+**Evidence:** `.claude/agent-memory/user/personas/maya_okafor/grievances.md` LIVE-F1; navigator intelligence `docs/audits/user-chat-intelligence/2026-04-19-initial.md` §2.1 S-1; memory `project_chatbot_assumes_workflow_principle.md`.
+
+### 5.5.2 User-vocabulary discipline directive (Maya LIVE-F3)
+
+**Canonical language for `control_station` prompt:**
+
+> Speak in the user's vocabulary. Do not use platform-internal terms ("branch", "canon", "node", "daemon", "soul", "few-shot reference", "domain") until the user uses the term first. If you must reference one, translate into plain language first. Exception: users who speak engine-vocabulary natively (configuring tray, reading code) — full technical vocabulary is appropriate, detected by usage context not a setting.
+
+**Evidence:** `.claude/agent-memory/user/personas/maya_okafor/grievances.md` LIVE-F3; navigator intelligence report §2.2 S-5; memory `feedback_user_vocabulary_discipline.md`.
+
+### 5.5.3 Implementation note
+
+Both directives belong in the `control_station` prompt body (the `prompts/*` surface under the rewrite spec #27 §3.3; legacy `workflow/universe_server.py` control_station text pre-rewrite). Neither goes into tool descriptions — that's §5.1's discipline. Together they're ~0.15d of prompt-engineering work when #15 implementation lands.
+
+---
+
 ## 6. Out-of-scope (this investigation)
 
 - File renames (task #8) will eventually rename
