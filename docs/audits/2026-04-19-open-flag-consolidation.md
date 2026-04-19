@@ -187,15 +187,73 @@
 
 This plan's dev-time-execution surface became obsolete per my #27 §8 pre-execution of the canonical `control_station` prompt in the new MCP gateway skeleton. **Flag as RESOLVED-via-supersession**: the directive relocation ships in the new gateway on track C, not via edits to `workflow/universe_server.py`. Task #15 can be formally retired.
 
+### `docs/specs/2026-04-19-plan-b-selfhost-migration-playbook.md` §8 (6 flags, post-audit)
+
+| # | Question | Tag | Notes |
+|---|---|---|---|
+| Q1 | Hetzner vs other self-host (Linode / Vultr / OVH) | **LATER** | Build-time pick; Hetzner recommended per uptime note §3.3. |
+| Q2 | Terraform vs Docker-Compose for provisioning | **LATER** | Build-time; Docker-Compose recommended for simplicity at v1 scale. |
+| Q3 | Monthly vs quarterly restore-rehearsal cadence | **LATER** | Build-time ops discipline. |
+| Q4 | Supabase Realtime OSS vs roll-our-own if archived | **LATER** | Contingent trigger; not blocking. |
+| Q5 | Pre-cutover DB replication mechanism | **LATER** | Build-time pick. |
+| Q6 | Contingency if GitHub bans the project — alt VCS | **HOST** | Host picks pre-committed fallback (GitLab vs self-hosted Gitea). |
+
+### `docs/catalogs/integration-patterns.md` §6 (5 flags, post-audit)
+
+| # | Question | Tag | Notes |
+|---|---|---|---|
+| Q1 | Multi-pattern branches — single primary vs hybrid | **LATER** | v1 single primary + secondary_patterns[]; revisit at v2. |
+| Q2 | Chatbot-suggested pattern match in discover_branches | **LATER** | Post-MVP UX enhancement. |
+| Q3 | Pattern linting | **LATER** | v2 tooling. |
+| Q4 | Streaming as MVP scope | **HOST** | Task description says "streaming = post-MVP typically"; confirm or re-scope. |
+| Q5 | Saga primitive support | **LATER** | Post-MVP; needs compensation-handler node schema. |
+
+### `docs/catalogs/node-type-taxonomy.md` §7 (5 flags, post-audit)
+
+| # | Question | Tag | Notes |
+|---|---|---|---|
+| Q1 | Multi-type nodes | **LATER** | v2 allows secondary_type column; v1 single primary. |
+| Q2 | User-extensible taxonomy | **LATER** | v1 fixed list; v2 extensible if community demands. |
+| Q3 | Auto-classification by chatbot | **LATER** | UX enhancement; chatbot proposes user confirms. |
+| Q4 | Historical bulk-classification pass | **LATER** | Migration task at real launch. |
+| Q5 | `discover_nodes` type filter at launch | **LATER** | Recommend expose as param; build-time pick. |
+
+### `docs/specs/2026-04-18-remix-and-convergence-detail.md` §K.8b post-audit additions
+
+Post-merge rollback RPC added in amendment `2516992`. No new OPEN flags from that amendment — it closed the "rollback path" gap from the original task.
+
 ---
 
-## Summary
+## Memory quotes for RESOLVED flags
+
+Amendment (task #54): cite the specific memory directive text for each RESOLVED tag so auditor can verify without following the reference.
+
+| Flag | RESOLVED by memory | Memory's decisive quote |
+|---|---|---|
+| Schema spec §6 Q9 (universe sensitivity_tier × per-field) | `project_privacy_per_piece_chatbot_judged.md` | "Privacy-tier inheritance is node-piece-scoped, not node-scoped. Old mental model (entire-universe `sensitivity_tier`) is too coarse." |
+| Paid-market spec §11 Q2 (on-chain vs off-chain) | `project_q10_q11_q12_resolutions.md` | "Paid settlements batched under $1-equivalent; above threshold settle on-chain." |
+| Paid-market spec §11 Q7 (fee-tunability) | `project_monetization_crypto_1pct.md` | "Platform charges 1% fee on every paid transaction." (flat, not progressive) |
+| Export-sync spec §11 Q1 (license specifier) | (resolved via host Q7 message, not memory — memory file `project_license_fully_open_commons.md` still flags both CC0 + CC-BY-SA as open) | Host confirmed CC0-1.0 in-session (commit `7a42e8e` memory update referenced "CC0 1.0 for workflow content"). |
+| Export-sync spec §11 Q5 (two-repo vs single-repo) | `project_collab_model_split.md` | "Workflow content = wiki-open editing. Platform code = GitHub fork-and-PR." Distinct surfaces → distinct repos. |
+| Export-sync spec §11 Q8 (DCO vs CLA) | `project_license_fully_open_commons.md` | "Contributors agree to the chosen license on tier-3 GitHub PR and tier-1 publish (DCO-style, not CLA)." |
+| Export-sync spec §11 Q10 (SEO indexing) | `project_license_fully_open_commons.md` | "Goal is to become what everyone uses, whether through this platform or repurposed inside the global OSS community." Indexing-friendly required for this goal. |
+| Web-app spec §9 Q5 (moderation triage UI scope) | `docs/specs/2026-04-18-moderation-mvp.md` + `moderation_rubric.md` | Spec + rubric fix queues as the scope. |
+| Web-app spec §9 Q9 (i18n posture) | `project_q13_q14_resolutions.md` | "Multi-lingual day one, chatbot translates." → English-only launch + scaffold the `[lang]` route reserved. |
+| Moderation spec §10 Q2 (tier-2 earn metric pick) | (self-resolved in spec §5.3) | My pick (a) 20 paid + 4 weeks — no conflicting memory; user preference recorded in spec. |
+| Moderation spec §10 Q8 (age-gate) | `project_q10_q11_q12_resolutions.md` | "Platform does NOT ask user age. Platform does NOT verify age." → rely transitively on chatbot provider. |
+| Remix+convergence spec OPEN Q5 (remix licensing) | `project_license_fully_open_commons.md` | CC0 throughout; compatibility check is a no-op at v1. |
+| Remix+convergence spec OPEN Q6 (remix of superseded) | (self-resolved in spec §K.4) | Explicit YES: concept still valid; superseded status just means it's not the current canonical. |
+| Load-test spec §9 Q6 (Locust alternative for Python-cohesion) | (self-resolved in spec §1) | k6 picked + Python sidecar bridges the Python code-reuse ask. |
+| SUCCESSION.md §9 Q5 (succession lead = co-maintainer?) | `project_host_independent_succession.md` | "contributor recruitment is a launch-readiness task." At launch, same person OK; at scale, separate. |
+| Privacy catalog §6.6 (chatbot gas-abstraction override) | `project_monetization_crypto_1pct.md` | Platform sponsors testnet gas implicit; mainnet user-paid. Not strictly quoted but implied by "crypto-native from day one" with no user-facing crypto UX friction mentioned. |
+
+## Aggregate
 
 | Tag | Count | What to do |
 |---|---|---|
-| **RESOLVED** | 13 | Update the originating spec's OPEN list to cite memory/spec resolving it. Low-priority cleanup; no action required pre-launch. |
-| **HOST** | ~20 | **Genuine decisions host needs to make.** Many cluster (Anthropic submission = 10 Qs that collapse to 1 WebFetch task). Real count of independent decisions: ~10. |
-| **LATER** | ~60 | Build-time picks; safe to leave open in specs. Address as the build lands; most have my recommendation in the OPEN entry. |
+| **RESOLVED** | 16 (13 original + 3 post-audit quotes) | Update the originating spec's OPEN list to cite memory/spec resolving it. Low-priority cleanup; no action required pre-launch. |
+| **HOST** | ~22 (20 original + Q4 integration-patterns streaming + Q6 plan-B VCS fallback) | **Genuine decisions host needs to make.** Many cluster (Anthropic submission = 10 Qs that collapse to 1 WebFetch task). Real count of independent decisions: ~12. |
+| **LATER** | ~75 (60 original + 15 post-audit across plan-B + integration-patterns + node-taxonomy specs) | Build-time picks; safe to leave open in specs. Address as the build lands; most have my recommendation in the OPEN entry. |
 
 **Net pre-launch host-action items (collapsed):**
 
@@ -209,7 +267,9 @@ This plan's dev-time-execution surface became obsolete per my #27 §8 pre-execut
 8. **Accessibility target pick** (full AA vs partial-with-plan).
 9. **DMCA counter-notice process** (legal; host + counsel).
 10. **KYC / sanctions posture** (legal; host + counsel; pre-mainnet only).
+11. **Streaming workflows at MVP?** (integration-patterns §6.6 Q4; default: post-MVP).
+12. **Pre-committed VCS fallback** (plan-B §8 Q6; GitLab vs Gitea vs other — used if GitHub bans the project).
 
-Item 1 is 30 min. Items 2-4 are each under an hour. Items 5-7 are project-management. Items 8-10 are legal-adjacent and not blocking for testnet launch.
+Item 1 is 30 min. Items 2-4 are each under an hour. Items 5-7 are project-management. Items 8-10 are legal-adjacent and not blocking for testnet launch. Items 11-12 are operational-resilience picks with defaults that work.
 
 **None of these block pre-spec work.** All tracks A-K stay execution-ready even with these unresolved; the specs just flag "at build time dev will need host's answer on Q1."
