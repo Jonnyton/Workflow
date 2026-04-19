@@ -30,7 +30,7 @@ ENV WORKFLOW_V0_DSN="postgresql://workflow:workflow_v0_dev@postgres:5432/workflo
 # track C uses `mcp.run(transport='streamable-http')`. v0 defaults to
 # stdio — use `docker compose run gateway` to invoke interactively, or
 # override the CMD for HTTP:
-#   CMD ["python", "-c", "from gateway import mcp; mcp.run(transport='streamable-http', host='0.0.0.0', port=8001)"]
+#   CMD ["python", "-c", "from gateway import mcp; mcp.run(transport='streamable-http', host='0.0.0.0', port=8002)"]
 CMD ["python", "gateway.py"]
 
-EXPOSE 8001
+EXPOSE 8002
