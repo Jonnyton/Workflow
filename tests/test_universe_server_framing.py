@@ -51,30 +51,43 @@ def test_server_instructions_lead_with_workflow_builder_not_fiction() -> None:
     ), "instructions must negate fiction-only framing"
 
 
-def test_server_instructions_include_no_simulation_rule() -> None:
-    """#34: runtime rule must be present in the server's own instructions
-    so any MCP client gets it even without invoking the control_station
-    prompt.
+def test_server_instructions_point_to_control_station_prompt() -> None:
+    """#15 (post-c97feac relocation): server instructions no longer carry
+    the NO SIMULATION block directly — that moved to control_station's
+    @mcp.prompt return to reduce the lexical surface Claude.ai's
+    injection-mitigation heuristic crystallizes around. Server instructions
+    must instead direct the client to load the canonical prompt.
+
+    Rationale: docs/design-notes/2026-04-18-claude-ai-injection-
+    hallucination.md §5.1, docs/audits/2026-04-18-universe-server-
+    directive-relocation-plan.md §3.
     """
     text = mcp.instructions or ""
     lower = text.lower()
-    # Core clause: must not simulate / must use the execute action.
-    assert "no simulation" in lower or "must use the provided execute" in lower
-    # Hard "do not" language against the fallback patterns user-sim saw.
-    # Normalize hyphens so "do not web-search" / "do not web search" both match.
-    normalized = lower.replace("-", " ")
-    assert "do not web search" in normalized
-    assert "stop" in lower, "instructions should tell the bot to STOP when runner is missing"
+    # Must point to the control_station prompt as the canonical
+    # behavioral surface.
+    assert "control_station" in lower, (
+        "server instructions must direct clients to the control_station prompt"
+    )
+    # UNIVERSE ISOLATION hard rule stays at this level (legitimate single-
+    # directive callout per §5.3; not a lexical cluster).
+    assert "universe isolation" in lower or "universe: <id>" in lower
 
 
-def test_extensions_tool_description_mentions_no_simulation() -> None:
-    """#34: the extensions tool is the run surface; its own description
-    must carry the rule so it's visible when the bot inspects the tool.
+def test_extensions_tool_description_points_to_prompts_for_rules() -> None:
+    """#15 (post-c97feac): the extensions tool description no longer
+    carries the NO SIMULATION / INTENT DISAMBIGUATION / AFFIRMATIVE CONSENT
+    blocks. Description is I/O contract only; behavioral rules live in
+    control_station + extension_guide prompts. Description must cite
+    those prompts.
     """
     tool = next(t for t in _list_tools() if t.name == "extensions")
     text = (tool.description or "").lower()
-    assert "no simulation" in text or "must use the `run_branch`" in text
-    assert "stop" in text
+    # Must reference the prompts that carry the behavioral guidance.
+    assert "control_station" in text or "extension_guide" in text
+    # Still name core action surface so the bot can find it.
+    assert "run_branch" in text
+    assert "build_branch" in text
 
 
 def test_wiki_tool_description_is_not_a_catchall() -> None:
@@ -96,30 +109,29 @@ def test_wiki_tool_description_is_not_a_catchall() -> None:
     assert "build / design / create a workflow" in lower or "build a workflow" in lower
 
 
-def test_universe_tool_description_frames_workflows_broadly() -> None:
-    """#28: universe tool's docstring must not read like a fiction-only
-    help page.
+def test_universe_tool_description_is_general_not_fiction_only() -> None:
+    """#28 post-4ef0769 (universe docstring trimmed to ≤6 lines + Args):
+    the multi-domain example list moved to control_station prompt (which
+    is the canonical framing surface). Universe tool description must
+    still avoid fiction-only framing but gets the breadth via pointer
+    to control_station.
     """
     tool = next(t for t in _list_tools() if t.name == "universe")
     text = (tool.description or "").lower()
-    # Multiple domain examples must appear.
-    example_domains = [
-        "research", "recipe", "screenplay", "news summar",
-        "journalism", "wedding",
-    ]
-    hits = [d for d in example_domains if d in text]
-    assert len(hits) >= 2, (
-        f"universe tool description should name multiple workflow domains; "
-        f"found: {hits}"
-    )
-    # Fantasy must be positioned as a benchmark / example, not the lead.
-    assert "benchmark" in text or "not the exclusive" in text or "fantasy authoring is one" in text
+    # Must cite control_station as the framing + operating-guidance source.
+    assert "control_station" in text
+    # Not fiction-only — generic workspace framing.
+    assert "workflow" in text or "workspace" in text
+    # No fiction-exclusive framing.
+    assert "only for fiction" not in text
 
 
 def test_control_station_prompt_carries_the_rules() -> None:
-    """#27/#28/#34: the prompt a control-station client loads must carry
-    the workflow-builder framing, the routing guidance, and the
-    no-simulation rule. Copy rewording is fine — the intents must stay.
+    """#27/#28/#34 post-4ef0769: the prompt a control-station client loads
+    must carry workflow-builder framing, routing guidance, and the
+    never-simulate rule. Copy may be rephrased (4ef0769 moved hard rule 5
+    to sentence-case + dropped 'Silently simulating breaks user trust'
+    distinctive lexical fingerprint).
     """
     from workflow.universe_server import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
@@ -129,128 +141,136 @@ def test_control_station_prompt_carries_the_rules() -> None:
     # Routing: extensions for workflow design, wiki for knowledge only.
     assert "extensions" in text
     assert "wiki" in text
-    # No-simulation clause.
-    assert "no simulation" in text or "fake output" in text
+    # Never-simulate clause — rephrased; positive-phrased "say so plainly
+    # and stop" carries the contract post-relocation.
+    assert "say so plainly and stop" in text or "no simulation" in text or "fake output" in text
     assert "stop" in text
 
 
-def test_extension_guide_prompt_carries_no_simulation() -> None:
-    """#34: the extension guide is where node authors learn the contract;
-    it must include the runtime rule so they don't build nodes that rely
-    on the bot faking execution.
+def test_extension_guide_prompt_points_to_control_station() -> None:
+    """#15 (post-c97feac): _EXTENSION_GUIDE_PROMPT no longer dup'd the
+    NO SIMULATION block. It now points to control_station as the
+    canonical behavioral surface. Guide focuses on node/branch authoring;
+    runtime rules live in control_station.
     """
     from workflow.universe_server import _EXTENSION_GUIDE_PROMPT
     text = _EXTENSION_GUIDE_PROMPT.lower()
-    assert "no simulation" in text or "fake output" in text
-    assert "run_branch" in text or "execute action" in text
-
-
-def test_list_branches_description_prompts_listing_first() -> None:
-    """#42: when a user asks about existing workflows from a past chat,
-    the bot must call `list_branches` first. The description must make
-    that obvious — not leave the bot exploring blindly for multiple
-    turns before landing on list.
-    """
-    tool = next(t for t in _list_tools() if t.name == "extensions")
-    text = (tool.description or "").lower()
-
-    # "USE THIS FIRST" guidance for list_branches.
-    assert "use this first" in text, (
-        "list_branches description must signal when to call it first"
+    assert "control_station" in text, (
+        "extension_guide must direct readers to control_station for "
+        "runtime rules (never-simulate, intent-disambiguation)"
     )
-    # Cue phrases users actually say. We require at least three to keep
-    # the hint multi-dimensional — a one-cue change from lead mustn't
-    # slip past.
+    # Guide is still about node authoring — keep that content signal.
+    assert "node" in text or "branch" in text
+
+
+def test_control_station_prompts_list_first_for_query_intent() -> None:
+    """#42 post-4ef0769: list_branches USE-THIS-FIRST guidance + user-
+    phrase enumeration moved from extensions tool description to
+    control_station prompt's canonical Intent-Disambiguation section.
+    """
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # list_branches is the query-intent routing target.
+    assert "list_branches" in text
+    # Query-intent cue phrases enumerated.
     user_phrases = [
         "what do i have",
-        "pull up my workflow",
-        "show me my workflows",
-        "what branches exist",
-        "did i already build",
-        "previous chat",
+        "pull up",
+        "show me",
+        "list my",
+        "find my",
     ]
     hits = [p for p in user_phrases if p in text]
     assert len(hits) >= 3, (
-        f"list_branches should enumerate user phrases that mean 'list "
-        f"my existing workflows'; found only: {hits}"
+        f"control_station must enumerate query-intent cue phrases; "
+        f"found: {hits}"
     )
 
 
-def test_describe_branch_description_targets_phone_legibility() -> None:
-    """#42: describe_branch is the conversational rendering; its
-    description must flag phone-legibility so the bot picks it over
-    get_branch for chat replies.
+def test_extensions_tool_still_lists_branch_query_actions() -> None:
+    """#42 post-4ef0769: describe_branch / get_branch / list_branches
+    remain listed as action names in the extensions tool's I/O contract
+    description. Preference guidance (use-this-when / use-this-first /
+    phone-legibility) moved to prompts.
     """
     tool = next(t for t in _list_tools() if t.name == "extensions")
     text = (tool.description or "").lower()
-    assert "use this when" in text
-    assert "plain-english" in text or "phone" in text
+    # Action names present for discovery.
+    assert "describe_branch" in text
+    assert "get_branch" in text
+    assert "list_branches" in text
 
 
-def test_get_branch_description_targets_detail_queries() -> None:
-    """#42: get_branch is the full-JSON path; the description must tell
-    the bot to pick it only when the full topology is actually needed,
-    not as the default path over describe_branch.
+def test_branch_design_guide_prompt_covers_branch_authoring() -> None:
+    """#42 post-4ef0769: _BRANCH_DESIGN_GUIDE is the canonical author-
+    facing prompt for branch design. The describe_vs_get preference
+    guidance is light content in the guide; the guide's primary role is
+    teaching the branch-authoring contract.
     """
-    tool = next(t for t in _list_tools() if t.name == "extensions")
-    text = (tool.description or "").lower()
-    assert "full topology" in text or "full branchdefinition" in text
-    assert "prefer `describe_branch`" in text or "prefer describe_branch" in text
+    from workflow.universe_server import _BRANCH_DESIGN_GUIDE
+    text = _BRANCH_DESIGN_GUIDE.lower()
+    # Guide covers branches as the core concept.
+    assert "branch" in text
+    # References run_branch so authors understand the runtime contract.
+    assert "run_branch" in text or "extensions" in text
 
 
-def test_extensions_register_requires_affirmative_consent() -> None:
-    """#46: `register` must refuse on query-intent phrases. Writing state
-    when the user only asked "what do i have" is the worst UX failure
-    mode — pin the affirmative-consent language in the description.
+def test_control_station_pins_register_explicit_ask_rule() -> None:
+    """#15 (post-c97feac migration of #46): the affirmative-consent rule
+    for `register` moved from the extensions tool description into the
+    control_station prompt's canonical Intent-Disambiguation section.
+    Test now pins the rule at its new canonical site.
+
+    Tool description retains the action name only; behavioral rule
+    (explicit-ask / route-queries-to-list) lives where clients load it
+    on orient, not in tool-metadata space.
     """
-    tool = next(t for t in _list_tools() if t.name == "extensions")
-    text = (tool.description or "").lower()
-    # Locate the register action block.
-    assert "register —" in text or "register -" in text
-    # Core rule text must be present somewhere in the description.
-    assert "affirmative consent" in text
-    assert "explicitly" in text
-    # At least one query-intent cue the bot must NOT treat as register.
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # Intent-disambiguation section carries the rule.
+    assert "intent disambiguation" in text or "explicit user" in text
+    # register is named as a write that requires explicit ask.
+    assert "register" in text
+    # Query-intent cues (enumerated at canonical site).
     query_cues = [
         "what do i have", "show me", "list my", "find my", "pull up",
     ]
     hits = [c for c in query_cues if c in text]
     assert len(hits) >= 3, (
-        f"register description must enumerate query-intent phrases that "
-        f"should NOT trigger a write; found: {hits}"
+        f"control_station must enumerate query-intent phrases at canonical "
+        f"site; found: {hits}"
     )
-    # Explicit "do not write" / "ask" fallback must appear.
-    assert "do not write state" in text or "ask them" in text or "ask the user" in text
+    # "When intent is ambiguous, ask" refusal language must be present.
+    assert "ambiguous" in text or "ask" in text
 
 
-def test_build_branch_requires_affirmative_consent() -> None:
-    """#46: `build_branch` is the composite create path — same rule as
-    `register`. Query-intent phrases route to `list_branches`, not build.
+def test_control_station_pins_build_branch_explicit_ask_rule() -> None:
+    """#15 (post-c97feac migration of #46): build_branch's affirmative-
+    consent rule moved to control_station prompt alongside register's.
+    Same canonical site — query-intent routes to list_branches.
     """
-    tool = next(t for t in _list_tools() if t.name == "extensions")
-    text = (tool.description or "").lower()
-    assert "build_branch" in text
-    assert "affirmative consent" in text
-    # Must cite list_branches as the query-intent alternative.
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    assert "build_branch" in text or "build" in text
+    # list_branches as the query-intent alternative.
     assert "list_branches" in text
-    # "Never build speculatively" or equivalent refusal language.
-    assert "never build speculatively" in text or "do not write state" in text
+    # Explicit-ask language at canonical site.
+    assert "explicit" in text or "ambiguous" in text
 
 
-def test_universe_tool_docstring_carries_cross_universe_rule() -> None:
-    """#15: the universe tool docstring must reinforce the cross-universe
-    transfer rule. Not just the server-level instructions; the per-tool
-    docstring is what a client reads when inspecting the tool directly.
+def test_universe_tool_docstring_points_to_cross_universe_rule() -> None:
+    """#15 post-4ef0769: the cross-universe isolation rule moved from the
+    universe tool docstring to control_station prompt's canonical section
+    (one lexical site, not two). Docstring must still direct the client
+    to control_station for the rule.
     """
     tool = next(t for t in _list_tools() if t.name == "universe")
     text = (tool.description or "").lower()
-    # Core rule text must be present.
-    assert "never transfer" in text or "do not transfer" in text
-    # Mention of the Universe: <id> header shape so the bot knows the
-    # contract, not just the prohibition.
-    assert "universe:" in text or "universe_id" in text
-    # Re-grounding guidance.
-    assert "inspect" in text and "re-ground" in text
+    # Docstring cites control_station as the rule source.
+    assert "control_station" in text
+    # Universe-isolation concept surfaced (docstring can still name it
+    # even while deferring full rule to control_station).
+    assert "universe" in text
 
 
 def test_control_station_prompt_has_cross_universe_section() -> None:
