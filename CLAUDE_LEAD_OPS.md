@@ -6,6 +6,26 @@ For core process rules, see AGENTS.md. For Claude Code basics, see CLAUDE.md.
 
 ---
 
+### No Phased Migrations (build-to-end-state standing rule)
+
+Host principle (2026-04-19): **we always build to the long-term best-known design in the present.** No 10-phase rollouts where each phase is a bandage for the previous and each gets refactored before the next ships. Go directly to the final shape.
+
+Operationalization:
+- **Reject multi-phase rename ladders.** If a rename must happen, ship the end-state in one commit (+ one compat-shim commit if the user-facing API needs a deprecation window, max). No Phase 1 → Phase 2 → Phase 3 → Phase 4.
+- **Reject compat-shim bandaids that will themselves need later removal.** If the shim exists only to let the next phase land, the phase and the shim both shouldn't exist — ship the destination.
+- **Reject "gradual" refactors where each step adds debt.** A single-commit refactor that breaks 200 test fixtures is preferable to 10 commits that each carry incremental debt.
+- **Code is disposable. `PLAN.md` captures the living understanding.** When understanding advances, update PLAN.md first, then refactor code to match. Don't treat existing layouts as sacred.
+
+Carve-out: this rule does NOT override atomic-commit discipline. One logical change = one commit. "One commit to end-state" means the commit is atomic AND takes the code to its final shape, not that all related work is squashed into one commit.
+
+Already-shipped phased work (72e696e Phase 1 Part 2, 7dde417 Phase 1 Part 2.5) stays landed. From here: no more phases. Collapse remaining rename work (Phase 2 A1-A5 + Phase 3 + Phase 4 + Phase 5) into one end-state commit if it ships; otherwise skip entirely.
+
+### Daemon Economy is Foundation, Chatbot Experience is Always-On
+
+Host principle (2026-04-19): **daemon economy first-draft before chatbot-experience refinement sweeps.** Both are needed, but the daemon economy is *foundationally* important — not a side feature. Chatbot experience work (self-auditing verbs, discovery polish, trust primitives) is standing high-priority throughout, but the daemon-economy first-draft is the thing to have shipped before big chatbot-UX investment.
+
+Track prioritization when picking among available dev work: tracks that ship daemon-economy primitives (paid-market bids, settlements, node capability resolution, fulfillment routing, moderation-for-the-market) rank above chatbot-experience polish when there's a queue choice.
+
 ### Code Before Agents (token-efficiency standing rule)
 
 Host principle (2026-04-19): **if an invariant can be enforced mechanically, build the hook — don't burn tokens checking it.** Every scheduled agent check-in for "is X still true?" is a place where a script-that-never-forgets would do better.
