@@ -38,7 +38,9 @@ Partial triggers → stay + monitor. Full triggers → execute this playbook.
 | CDN / Cache | Cloudflare (Free tier) | Unchanged — Cloudflare isn't part of the migration |
 | Domain | GoDaddy (host-owned per memory) | Unchanged |
 
-**Target cost:** ~€50-80/month at 10k-100k DAU range. Per uptime note §3.3 comparison.
+**Target cost:** ~€50-80/month at 10k-100k DAU range. Per uptime note §3.3 comparison. Per-DAU-tier breakdown in §6.5.
+
+**One-click self-host alternatives:** if admin pool wants managed-style UX on self-hosted infra, consider [Coolify](https://coolify.io/) or [Easypanel](https://easypanel.io/) — Docker-compose orchestration layers that wrap the Supabase OSS stack + add a UI. Recommend keeping vanilla Docker Compose at launch (fewer moving parts to debug); revisit Coolify/Easypanel if the ops-burden from §6.6 becomes painful.
 
 ---
 
@@ -146,6 +148,25 @@ The full playbook above migrates the whole stack. Cheaper partial migrations han
 - Migration: Fastly / Bunny.net / direct origin-serve with self-hosted HAProxy.
 - Lowest-friction because Cloudflare is stateless — just DNS + cache.
 
+### 5.5 Mid-cutover rollback (migration fails after Phase 3 DNS flip)
+
+If the self-host stack is unhealthy after the cutover + the 30-day safety net is still active (per §4 Phase 4), revert as follows. Target: total revert in <1 hour.
+
+1. **Stop admitting new writes to self-host** — put self-host Postgres in read-only mode (`ALTER DATABASE workflow SET default_transaction_read_only = on`).
+2. **Identify the delta** — rows written to self-host since the cutover. Export via `pg_dump --where='updated_at > '<cutover_timestamp>'` (or use logical replication if it was set up in Phase 2).
+3. **Apply delta to original Supabase** — `pg_restore` the delta dump against the paused-but-alive Supabase project.
+4. **DNS flip back** — Cloudflare DNS records point back at Supabase's origin. Because TTL was lowered to 60s in Phase 3, propagation completes in ~5-10 min.
+5. **Resume writes on Supabase** — original project had auto-renewal cancelled but project was kept alive on free tier; re-enable Pro plan.
+6. **Post-mortem** — write up what failed in self-host; fix for next attempt.
+
+**If the 30-day safety net has expired:** rollback is harder but possible via `pg_dump` from self-host → restore to a fresh Supabase project + DNS repoint. Worst case ~4-6 hours. Document lessons for next time.
+
+**Rollback triggers** (start executing when):
+- Gateway p99 latency >5s sustained >15 min on self-host.
+- Error rate >5% on self-host for >15 min.
+- Postgres connection exhaustion on self-host box (likely PgBouncer misconfig).
+- Storage corruption detected in the first 24h.
+
 ---
 
 ## 6. Data migration details
@@ -170,6 +191,41 @@ Edge Function code is Deno or Node. Port to:
 - **Option C:** Cloudflare Workers (more restrictions but cheap).
 
 Recommend **A** for minimal code change; **B** if we're fully anti-managed-services by this point.
+
+### 6.5 Cost comparison per scale tier
+
+Approximate monthly costs (USD), hosted vs self-hosted on Hetzner. Managed-service numbers per the live pricing pages (Apr 2026); self-host numbers based on Hetzner Cloud CX-line pricing.
+
+| DAU tier | Managed (Supabase Pro + Fly) | Self-hosted (Hetzner) | Break-even |
+|---|---|---|---|
+| **1k DAU** | ~$40/mo — Supabase Pro $25 + Fly min=2 $15 | ~$15/mo — 1× CX31 (8 GB) + 2× CX11 (2 GB) ≈ €14 | Hosted wins on ops-burden; cost basically a wash. Stay managed. |
+| **10k DAU** | ~$75-150/mo — Pro $25 + Realtime overage ~$20 + Fly $30 + storage $15 | ~$25-35/mo — CX41 (16 GB) + 2× CX21 (4 GB) + R2 | Self-host is ~3× cheaper; ops-burden matters more than $. See §6.6. |
+| **100k DAU** | ~$800-1500/mo — Pro + heavy Realtime + larger Fly fleet + bandwidth | ~$80-120/mo — dedicated AX41 (32 GB) + 4× CX31 + R2 + bandwidth | **Self-host saves ~10×.** Below this scale the savings don't justify migration; above this scale they do. |
+
+**Break-even takeaway:** at 1k DAU managed is free-equivalent. At 10k DAU self-host is cheaper but not compellingly so. **At 100k DAU, self-hosting is the correct decision** — both for cost AND because the managed plans at that scale start having per-request overage patterns that don't align with our workflow (bursty daemon work).
+
+Figures are rough — exact costs depend on Realtime-connection concurrency (dominant Supabase variable) + outbound-bandwidth (dominant on both sides).
+
+### 6.6 Ops-burden comparison
+
+Migration from managed → self-hosted lands new responsibilities on the admin pool.
+
+| Responsibility | Managed (today) | Self-hosted (post-migration) |
+|---|---|---|
+| Postgres version upgrades | Supabase handles automatic | Admin runs `pg_upgrade` on schedule; downtime window required. ~1 hour per major version. |
+| Security patches (Postgres, Realtime, Auth) | Supabase handles | Admin applies. Usually monthly. Dependabot-style reminder via cron. |
+| Backup automation | Supabase daily PITR | Admin runs `pg_dump` cron + R2 upload + quarterly restore-test. |
+| TLS cert rotation | Cloudflare Origin CA 15-year validity (unchanged). Let's Encrypt for origin-direct. | Same — Cloudflare handles public-facing; Postgres connection uses cert-from-vault. |
+| Realtime server health | Managed by Supabase | Admin monitors via healthcheck cron + PagerDuty/Pushover-style alert. |
+| DDoS mitigation | Cloudflare (unchanged) + Supabase-layer protections | Cloudflare still in front (free tier is fine); origin-layer protections must be added (fail2ban, Postgres rate limits). |
+| Scaling decisions | Supabase plan tier change | Admin sizes Hetzner box + does blue-green swap for upgrade. |
+| On-call coverage | None needed | Admin-pool rotation; bus-factor ≥ 2 (per SUCCESSION.md §2). |
+
+**Estimated added ops time:** ~2-4 admin-hours/month during steady-state, assuming weekly restore-test + monthly patch + emergency incident buffer. Spikes on version upgrades (~1 day every 12-18 months).
+
+**This is NOT free.** At 1k DAU, managed saves more than it costs vs self-host ops overhead. At 100k DAU, self-host dollars saved ($700-1400/mo) dwarf ops time at any reasonable contributor rate.
+
+**Critical pre-migration check:** does the admin pool have the skill to run Postgres competently? If yes, self-host is viable. If no, managed + accept the cost is the honest answer.
 
 ---
 
