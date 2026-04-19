@@ -490,6 +490,117 @@ def withdraw_convergence(
 
 Converge proposals themselves are subject to flagging. If a proposal is clearly hostile (user flags it as such), it enters moderation review. If upheld, proposal is force-withdrawn; source nodes stay as-is.
 
+### K.8b Post-merge rollback
+
+**Window:** 30 days from `converge_proposals.merged_at`. Within this window, any of the original source-node editors OR any admin-pool member can initiate rollback.
+
+**Why 30 days:** long enough for the community to notice if a canonical is worse than its sources; short enough that downstream remixers haven't built an irreversible tree of derivatives. Cross-refs account-deletion grace window (§account spec #35 §8) for consistency.
+
+```sql
+CREATE FUNCTION public.rollback_convergence(
+  p_proposal_id uuid,
+  p_rationale   text
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_proposal record;
+  v_user_id uuid := auth.uid();
+  v_is_source_editor bool;
+  v_is_admin bool;
+BEGIN
+  SELECT * INTO v_proposal FROM public.converge_proposals
+   WHERE proposal_id = p_proposal_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'proposal_not_found';
+  END IF;
+  IF v_proposal.status != 'merged' THEN
+    RAISE EXCEPTION 'proposal_not_merged: status=%', v_proposal.status;
+  END IF;
+  IF v_proposal.merged_at < now() - interval '30 days' THEN
+    RAISE EXCEPTION 'rollback_window_expired';
+  END IF;
+
+  -- Caller authority: must be source-node editor OR admin-pool member
+  SELECT EXISTS (
+    SELECT 1 FROM public.nodes
+    WHERE node_id = ANY(v_proposal.source_ids) AND owner_user_id = v_user_id
+  ) INTO v_is_source_editor;
+
+  SELECT mod_role = 'host_admin' INTO v_is_admin
+   FROM public.users WHERE user_id = v_user_id;
+
+  IF NOT (v_is_source_editor OR v_is_admin) THEN
+    RAISE EXCEPTION 'not_eligible_rollback_caller';
+  END IF;
+
+  -- Restore sources to 'published'; clear superseded_by
+  UPDATE public.nodes
+     SET status = 'published', superseded_by = NULL
+   WHERE node_id = ANY(v_proposal.source_ids);
+
+  -- Deprecate the canonical (don't delete — derivatives may already link to it)
+  UPDATE public.nodes
+     SET status = 'deprecated', deprecated = true
+   WHERE node_id = v_proposal.canonical_node_id;
+
+  -- Mark the proposal as rolled-back; preserve full audit history
+  UPDATE public.converge_proposals
+     SET status = 'rolled_back',
+         rolled_back_at = now(),
+         rollback_rationale = p_rationale
+   WHERE proposal_id = p_proposal_id;
+
+  INSERT INTO public.converge_decisions (
+    proposal_id, decision, rationale, decided_at
+  ) VALUES (p_proposal_id, 'rolled_back', p_rationale, now());
+
+  RETURN jsonb_build_object('rolled_back', true, 'sources_restored', v_proposal.source_ids);
+END;
+$$;
+```
+
+**Schema additions** (extend §K.3 `converge_proposals`):
+
+```sql
+ALTER TABLE public.converge_proposals
+  ADD COLUMN rolled_back_at timestamptz,
+  ADD COLUMN rollback_rationale text;
+
+ALTER TABLE public.converge_proposals
+  DROP CONSTRAINT converge_proposals_status_check,
+  ADD CONSTRAINT converge_proposals_status_check CHECK (
+    status IN ('pending', 'merged', 'withdrawn', 'rejected', 'rolled_back')
+  );
+
+ALTER TABLE public.converge_decisions
+  DROP CONSTRAINT converge_decisions_decision_check,
+  ADD CONSTRAINT converge_decisions_decision_check CHECK (
+    decision IN ('merged', 'withdrawn', 'rejected', 'rolled_back')
+  );
+```
+
+**Why canonical → deprecated, not deleted:** remix derivatives of the canonical may exist. Hard-deleting the canonical would orphan their `parents[]` pointers. Deprecating keeps it readable (with a banner: "This node was converged, then rolled back — sources restored; this canonical is retained for lineage") without surfacing it in default discovery.
+
+**What rollback does NOT undo:**
+
+- `remix_count` increments on the canonical's parents (the sources) — these stayed accurate throughout.
+- Public-concept fields that the community already remixed from the canonical — those remixes stay published; their `parents[]` still points at the now-deprecated canonical. The remixer sees a "parent is deprecated" banner + can optionally re-parent to one of the restored sources.
+- Any chatbot-conversation memory or external tooling that cached the canonical's content.
+
+### K.8c Rollback MCP tool
+
+```python
+@mcp.tool()
+def rollback_convergence(
+    proposal_id: str,
+    rationale: str,
+    bearer_token: str = "",
+) -> dict: ...
+```
+
+Returns the standard error envelope on ineligibility (`not_eligible_rollback_caller`, `rollback_window_expired`, `proposal_not_merged`).
+
 ### K.9 Dev-day estimate
 
 | Work | Estimate |
