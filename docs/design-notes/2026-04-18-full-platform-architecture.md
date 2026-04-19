@@ -2515,6 +2515,233 @@ Each entry ~20–60 lines in the YAML. Host Q23-nav below: confirm scope + prior
 
 ---
 
+## §32. Node autoresearch optimization
+
+**Host directive 2026-04-19.** Every workflow node can attach an optional **autoresearch optimization spec**. User sleeps; chatbot + daemons autonomously iterate the node overnight within a user-set metric + budget, parallelized across the host pool. Reference implementation: [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — translated to Workflow below.
+
+**Why day-one, not v1.1.** This *is* the platform's differentiator vs competitor workflow tools. "You build for a while, post 1000 runs on each node before bed, wake up to your entire workflow optimized" is a Q21 real-world-effect moment of the same class as Scenario C4 — generalized from "run the same workflow N times" to "let the workflow improve itself N times." Ships with MVP.
+
+**3-layer lens (see `project_chain_break_taxonomy.md`):**
+
+| Layer | What it provides |
+|---|---|
+| **System** | Optimization schema + bid-market `optimize_node` kind + fixed-harness isolation + merge-back flow + budget enforcement + parallelism primitives |
+| **Chatbot** | Drafts `optimization_spec.md` from user intent (simple or complex), asks clarifying questions, summarizes results at wake-time, surfaces top-N for human review |
+| **User** | The node worth optimizing + the metric they care about + the budget they're willing to spend |
+
+All three required. System without the other two = expensive idle. Chain-complete = overnight improvement as a reliable service.
+
+### §32.1 The 3-role pattern (Karpathy translation)
+
+Karpathy's autoresearch separates three concerns into three artifacts, editable by three roles. Workflow translates:
+
+| `karpathy/autoresearch` artifact | Workflow equivalent | Edited by |
+|---|---|---|
+| `program.md` — agent instructions / skill-like | Per-node `optimization_spec.md` (markdown) — what to optimize, how, bounds, merge policy | **User** (or user's chatbot, vibe-coded per §27) |
+| `train.py` — what the agent modifies | The node's **editable surface** — explicit list of field-paths in the node's `concept` blob (prompt text, hyperparameters, few-shot examples, tool-choice thresholds) | **Agent** (daemon, per iteration) |
+| `prepare.py` — fixed harness + metric | Per-node **test fixture + objective function** — never edited during optimization, locked at attach-time | **User** at node-creation, then locked until next explicit rev |
+
+**Why this separation is load-bearing.** The harness is the truth anchor. If the agent could edit it, it would learn to game the metric. The editable surface is the mutation space. The optimization_spec.md is the agent's compass. Three separate artifacts with three separate editors is the exact karpathy pattern, not coincidence.
+
+### §32.2 Simple mode — friction floor
+
+Minimum viable `optimization_spec.md` (one file, markdown with a small YAML frontmatter):
+
+```
+---
+metric: acceptance_score
+direction: maximize
+editable_surface:
+  - concept.prompt
+  - concept.few_shot_examples
+budget:
+  runs: 1000
+  wall_clock_hours: 8
+  usd_cap: 5.00
+merge_policy: auto_accept_if_improves_by: 0.02
+---
+
+# optional natural-language intent
+
+Optimize invoice-OCR prompt for higher vendor-name-accuracy. Test fixture
+has 50 labeled invoices. Keep tone professional.
+```
+
+Friction budget: **under 60 seconds** from "I want to optimize this" to "submitted." Chatbot scaffolds the YAML; user confirms or tweaks. Matches GitHub issue template friction.
+
+### §32.3 Complex mode — no ceiling
+
+User's `optimization_spec.md` can be as expressive as they want. Goes beyond simple YAML frontmatter into full narrative + explicit search-strategy declarations:
+
+- **Search strategies** — grid, random, evolutionary, bayesian (e.g. via Optuna), hand-authored curricula.
+- **Constraints** — structural (graph shape must not change), resource (max tokens per run), content (must preserve certain fields verbatim).
+- **Multi-objective tradeoffs** — Pareto frontiers across accuracy vs latency vs cost.
+- **Custom evaluation harnesses** — reference to a separate harness node (per §27 vibe-coding — harnesses are nodes too).
+- **Early stopping** — if metric plateaus, halt within N iterations.
+
+Same platform primitives; user's spec carries more of the agent's behavior. No artificial cap. Complexity is a user choice; simple-mode users aren't penalized for not reading beyond the frontmatter.
+
+### §32.4 Schema additions (§2 cross-ref)
+
+Spec #25 `nodes` table gains:
+
+```sql
+nodes ADD COLUMN optimization_spec_ref   text NULL;        -- pointer to markdown in concept blob or separate location
+nodes ADD COLUMN editable_surface        jsonb NULL;        -- array of JSON-pointer paths into concept
+nodes ADD COLUMN test_harness_ref        text NULL;         -- node_id of the harness node (harnesses are nodes)
+nodes ADD COLUMN optimization_metric     text NULL;         -- e.g. "acceptance_score"
+nodes ADD COLUMN optimization_direction  text NULL;         -- "maximize" | "minimize"
+```
+
+New `optimization_runs` table (append-only audit + candidate store):
+
+```sql
+CREATE TABLE public.optimization_runs (
+  run_id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id          uuid NOT NULL REFERENCES public.request_inbox(request_id),
+  node_id             uuid NOT NULL REFERENCES public.nodes(node_id),
+  iteration_n         int  NOT NULL,
+  candidate_concept   jsonb NOT NULL,       -- the concept variant this iteration tested
+  candidate_hash      text NOT NULL,         -- sha256 of candidate_concept, dedup across daemons
+  metric_value        numeric NULL,          -- null if failed / timed out
+  status              text NOT NULL CHECK (status IN ('running','completed','failed','timeout','dedup')),
+  daemon_host_id      uuid REFERENCES public.host_pool(host_id),
+  started_at          timestamptz NOT NULL DEFAULT now(),
+  completed_at        timestamptz NULL,
+  wall_ms             int NULL,
+  tokens_used         int NULL,
+  cost_usd            numeric(10,4) NULL
+);
+
+CREATE INDEX oruns_request_metric ON public.optimization_runs (request_id, metric_value DESC) WHERE status = 'completed';
+CREATE INDEX oruns_candidate_dedup ON public.optimization_runs (request_id, candidate_hash);
+```
+
+Spec #25 edit lands in the next spec-sharpening pass (gap already tracked by drift audit §64).
+
+### §32.5 Bid-market + cascade integration (§5.2 + §6 + §18)
+
+**New request kind: `optimize_node`.** Payload:
+```
+{
+  "kind": "optimize_node",
+  "node_id": uuid,
+  "budget": { "runs": int?, "wall_clock_hours": float?, "usd_cap": numeric? },
+  "deadline": timestamptz?,
+  "merge_policy": "auto_accept_if_improves_by" | "human_review_always" | "human_review_if_delta_below"
+}
+```
+
+Routes through the existing `submit_request` RPC per §20.4; `capability_id` includes the declared `autoresearch` capability plus the node's LLM-provider requirement.
+
+**New daemon capability: `autoresearch`.** Daemons opt in via the tray (`host_pool.capabilities` row). Bid-channel `bids:autoresearch×<llm_model>` broadcasts to subscribed daemons per §14.1 push-not-poll pattern. Per-capability-shard keeps the §14 scale primitives intact.
+
+**Cascade step-2 naturally absorbs `optimize_node` bids.** The highest-value/effort paid requests for a daemon in always-active mode will often be optimization runs — they're fungible, deadline-bounded, and fan out cleanly. No cascade logic change needed; the new request kind + capability are the only additions.
+
+**Settlement per §18 hybrid.** 1000 iterations at <$1-each batches to a single weekly on-chain settlement; ≥$1-each iterations settle per-bid. `self_hosted_zero_fee` branch (§18.3 pseudocode) applies when requester == daemon-host — your own daemon optimizing your own node is free.
+
+### §32.6 Parallelism — 1000 runs fans cleanly
+
+Existing §14 scale primitives carry the load:
+- **Claim.** Each iteration is a row in `optimization_runs` with `status='running'`; daemons claim via RPC with `SELECT FOR UPDATE SKIP LOCKED` against `status='pending'` and a monotonic `iteration_n` assignment. No two daemons claim the same iteration.
+- **Dedup.** Each daemon commits a `candidate_concept` + `candidate_hash`. The control plane rejects duplicates — if two daemons would independently test the same candidate (rare under diverse search strategies, common under grid search), the second gets `status='dedup'` and moves on without re-running the harness.
+- **Budget enforcement.** Total runs / wall-clock / $ tracked against the request's declared budget. When budget exhausts, control plane flips remaining pending rows to `status='timeout'` and proceeds to merge-back.
+
+At 1000 iterations across N daemons where N depends on marketplace capacity, expected runtime is N-scalable. Host's "1000 runs overnight" is a budget; throughput is market-scheduled.
+
+### §32.7 Merge-back flow
+
+After budget exhausts or deadline hits:
+
+1. **Aggregate.** Control plane SELECTs top-N candidates by `metric_value` ordered per direction (maximize/minimize). N default = 5, configurable per spec.
+2. **Apply merge_policy.**
+   - `auto_accept_if_improves_by: δ` — if top candidate's metric beats baseline by ≥δ, it becomes the new node `concept`. Normal wiki-edit per §16 (versioned row increments, presence-soft-lock aware). Attribution: the daemon host that produced the winning candidate gets credit in the commit's provenance trailer, user-as-requester is primary author.
+   - `human_review_always` — no auto-merge. Chatbot presents top-N for user review at wake-time; user picks one (or none).
+   - `human_review_if_delta_below: δ` — auto-merge if δ exceeded, else present for review. The practical default — conservative for close calls, autonomous for clear wins.
+3. **Notify.** User's chatbot (at next interaction) summarizes: "your 847-iteration overnight run on `payables-processor` improved accuracy from 0.81 to 0.89 (+10%). Top candidate merged per your `auto_accept_if_improves_by: 0.02` policy. 3 runner-ups available for manual review."
+
+Merged change = normal node edit. All §16 wiki-open primitives apply (rollback-able, provenance-chained, publicly-attributable per §19 CC0). Rejected candidates stay in `optimization_runs` for future remix material.
+
+### §32.8 Chatbot role (§29 extension)
+
+Per-user chatbot handles three conversational moments:
+
+**(a) Spec authoring.** User says *"I want this node to improve itself tonight — reduce invoice vendor-name mismatches."* Chatbot:
+- Identifies node from conversational context.
+- Proposes a simple-mode spec (one metric, 1-3 editable fields, budget suggestion based on historical rates per §15.1 `typical_fulfillment_pattern`).
+- Asks 0–2 clarifying questions (what counts as "improved"? should it still keep tone professional? specific vendors to prioritize?).
+- Drafts `optimization_spec.md`, shows user, lets them edit.
+
+**(b) Submission.** Chatbot fires `submit_request(kind='optimize_node', ...)`, confirms budget + deadline, returns request_id.
+
+**(c) Wake-up summarization.** On next interaction after optimization completes:
+- Pulls results via discovery / status APIs.
+- Summarizes metric delta, iterations, cost, top-N candidates.
+- If merge_policy auto-accepted, confirms commit; if pending review, surfaces top-N.
+- Proactively offers follow-up (per §29 scope-extension): *"Happy with the new prompt? Want me to queue an overnight run on the next node in your branch?"*
+
+**Vocabulary discipline (per `feedback_user_vocabulary_discipline.md`).** Chatbot speaks in user terms — "I'll run 1000 experiments tonight to find a better invoice-reader prompt" — not engine terms ("submit an `optimize_node` request with capability `autoresearch×claude-4-opus`"). Reserve engine vocabulary for tier-2/3 conversations where the user invites it.
+
+### §32.9 Real-world-effect-engine alignment (§24 cross-ref)
+
+This feature is the clearest Q21 real-world-effect moment across every persona:
+
+- **Maya (tier-1).** Her invoice-OCR node currently drifts on vendor names (grievance-LIVE-F-vendor-naming from Session 1 predictions). Set metric = vendor-name-match-rate, editable_surface = prompt + few-shots, budget = 100 runs on her 12-invoice April batch. Sleeps. Wakes to an optimized prompt that halves her manual-merge time. Real workflow, real hours saved, real monthly close done faster.
+- **Devin (tier-2).** His continuity-check node (Session 2 mock, Track N). Metric = continuity-error-false-positive-rate against a hand-labeled 20-chapter corpus. Budget = 500 runs on his RTX 4070 overnight, `self_hosted_zero_fee` branch means $0 cost. Wakes to an optimized node that flags real continuity breaks without noise.
+- **Ilse (tier-3).** Her research-paper critique prompt. Metric = agreement with peer-reviewer judgment on a known-good 10-paper sample. Budget = 200 runs, $5 cap. Wakes to an improved critique node she can contribute back to the commons.
+
+Every persona, every passion project, directly accelerated. "Real world utility is the only valid use case" (§24) — autoresearch makes every node in the catalog more useful tomorrow than it was today.
+
+### §32.10 Scale audit amendment (§14 cross-ref)
+
+Track J load-test harness gains **S12: optimize_node fan-out under budget pressure**:
+
+- Simulate 100 concurrent `optimize_node` requests each with `budget.runs=100`.
+- 10,000 iteration rows land in `optimization_runs` over ~2 minutes.
+- Assert: no SKIP-LOCKED contention cliff (§14.1 pattern holds), no duplicate-candidate work loss (dedup index enforces), no budget-exhaustion race (single-writer atomic update on request budget).
+- Per §14.1 we already validated SKIP LOCKED ceiling is ~128 concurrent workers; optimize_node's dispatch is push-via-Realtime per §14.1 claim-RPC pattern so the cliff doesn't apply. S12 verifies.
+
+Adds ~0.2d to track J total (now 4.2–4.7d).
+
+### §32.11 Three-layer-lens applied
+
+Per `project_chain_break_taxonomy.md` categories:
+
+- **System → Chatbot orientation gap (to prevent).** Chatbot must know `optimize_node` is a first-class primitive when user says "optimize this." `control_station` prompt directive required: *"When a user asks to optimize or improve a node, use the `submit_request(kind='optimize_node', ...)` path; draft an `optimization_spec.md` with the user before submitting."*
+- **System → Chatbot primitive gap (to prevent).** Chatbot needs introspection of node's `editable_surface` + `test_harness_ref` to propose sensible spec defaults. `discover_nodes` response (§15.1) extends with these fields for optimization-eligible nodes.
+- **System → Chatbot vocabulary gap (to prevent).** Engine terms `optimize_node`, `autoresearch capability`, `candidate_hash` stay out of chatbot-to-user surface. Chatbot translates to: "overnight improvement run," "daemon that does autonomous experiments," "each version it tries."
+- **Chatbot → User (intrinsic).** Wake-up summary quality depends on chatbot. This is the one interface-2 concern in autoresearch — if chatbot surfaces 1000 raw iterations instead of top-N with delta commentary, user drowns. Wake-up prompt template discipline matters.
+
+### §32.12 §10 dev-day estimate
+
+New track **O** in §10:
+
+| Track | Dev | Rough dev-days | Notes |
+|---|---|---|---|
+| **O — Node autoresearch optimization** | dev | 3–3.5 | Schema additions (0.5) + `optimize_node` request kind + `autoresearch` capability registration (0.75) + simple-mode UI scaffold (1.0) + merge-back flow + attribution (0.5) + chatbot prompt scaffolds (0.25) + tests + S12 load-test add (0.5). Depends on A (schema), E (paid-market), K (discovery), N (authoring) — all pre-existing dependencies. Parallelizable with existing tracks post-A. |
+
+Net §10 delta: **+3–3.5 dev-days.** New totals: **~22.8–27d with two devs, ~30.5–32.5 serial** (adds to the post-#66-drift-reconciliation baseline of ~19.8–23.5). Still "weeks not months"; recommended MVP-cut (§70 narrowing) becomes ~25–28d upper bound if autoresearch ships at MVP.
+
+**Ship or defer to v1.1?** Host directive says day-one, not v1.1. Matches Q21 product-soul lens and differentiates against competitors. Recommend ship at MVP; trim elsewhere if dev-day pressure rises (track J defer floors still available).
+
+### §32.13 New host Qs for §11
+
+**Q29-nav — OPEN (simple-mode DSL shape — YAML frontmatter vs inline spec vs separate file).** §32.2 proposes YAML frontmatter + optional narrative body. Alternatives: pure inline chat ("metric: x, direction: max, budget: 1000 runs" in natural language, chatbot converts) or separate file per node. Recommend YAML frontmatter — human-readable, versionable under §16 wiki, matches karpathy's `program.md` minimalism.
+
+**Q30-nav — OPEN (budget-exhaustion behavior).** When budget exhausts mid-run, current proposal flips remaining pending rows to `status='timeout'` and proceeds to merge-back. Alternative: best-candidate-so-far auto-submits as partial result. Recommend timeout-then-merge; "partial result" is ambiguous, "here's what we got in your budget" is honest.
+
+**Q31-nav — OPEN (merge-conflict resolution at scale).** If two concurrent `optimize_node` requests on the same node finish overlapping windows, who wins at merge-back? Recommend: per §14.3 optimistic CAS with `version` column — whichever merge-commit lands second must resolve against the updated baseline; if metric no longer beats the new baseline, user is asked to review.
+
+### §32.14 What §32 does NOT do
+
+- Does not optimize without a user-provided metric. The metric is the compass; platform does not infer one.
+- Does not edit the harness. Harness is locked at attach-time; changing it resets the optimization history (a new spec attaches to a new harness).
+- Does not gate the complex mode. Users can express whatever their chatbot can encode; platform does not limit search strategies or objective functions.
+- Does not run against private-instance data by default. `optimization_spec.md` + test harness live in the concept layer (public by default); instance data stays owner-local per §17. Users who want to optimize against their own instance data run `self_hosted_zero_fee` branch on their own daemon.
+- Does not auto-merge non-improving candidates. Baseline always wins ties. Attribution preserved even for rejected candidates (they stay in `optimization_runs` as remix material).
+
+---
+
 - **PLAN.md §Multiplayer Daemon Platform** — preserved. Host-run identity + named accounts + private MCP sessions + public actions all map cleanly onto this backend. Daemons stay forkable, soul-defined, branch-first.
 - **PLAN.md §Local-first execution** — preserved for daemons. Authoring moves to the control plane (necessary consequence of requirement 2); execution stays local.
 - **PLAN.md §GitHub as canonical shared state** — **re-evaluated and inverted.** GitHub is now an export sink. Flagged as §11 Q1.
