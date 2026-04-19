@@ -312,3 +312,71 @@ def test_control_station_prompt_has_intent_disambiguation() -> None:
     assert len(hits) >= 3, (
         f"control_station must enumerate query-intent cues; found: {hits}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Hard rules 7/8/9 pins (commit 27d67d3, LIVE-F1 + LIVE-F2 + LIVE-F3).
+# These defensive tests lock the three new hard rules against silent drift.
+# Verifier-recommended pattern: parallels test_control_station_prompt_
+# has_intent_disambiguation.
+# ---------------------------------------------------------------------------
+
+
+def test_control_station_prompt_has_rule_7_assume_workflow() -> None:
+    """LIVE-F1 (Maya): chatbot must assume Workflow on plausible intent
+    rather than present a disambiguation picker. Rule 7 in control_station
+    hard rules.
+    """
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # Aggressive-assume directive present.
+    assert "assume workflow" in text or "aggressive assumption is a feature" in text
+    # Forbids disambiguation pickers on ambiguous references.
+    assert "disambiguation picker" in text or "do not ask" in text
+    # Enumerates at least two ambiguous user phrases the rule applies to.
+    ambiguous_phrases = [
+        "the workflow thing", "the connector", "the thing i added",
+        "my builder", "my ai thing",
+    ]
+    hits = [p for p in ambiguous_phrases if p in text]
+    assert len(hits) >= 2, (
+        f"Rule 7 must enumerate ambiguous reference phrases; found: {hits}"
+    )
+
+
+def test_control_station_prompt_has_rule_8_no_fabrication() -> None:
+    """LIVE-F2 (Maya Yardi BLOCKER): chatbot must not fabricate prior-
+    conversation content. Rule 8 in control_station hard rules.
+    """
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # Core fabrication prohibition.
+    assert "never fabricate prior-conversation content" in text \
+        or "do not reference facts" in text \
+        or "pattern-matching a plausible" in text
+    # Safe-default: ask, don't assert on uncertainty.
+    assert "safe default is to ask" in text or "ask, not" in text \
+        or "unsure whether the user" in text
+
+
+def test_control_station_prompt_has_rule_9_user_vocabulary() -> None:
+    """LIVE-F3 (Maya): chatbot must speak in the user's vocabulary, not
+    engine-internal terms. Rule 9 in control_station hard rules.
+    """
+    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    text = _CONTROL_STATION_PROMPT.lower()
+    # Core user-vocabulary directive.
+    assert "speak in the user's vocabulary" in text
+    # Names at least some engine-internal terms the rule forbids using
+    # before user introduces them.
+    forbidden_teaching = ["branch", "canon", "node", "daemon"]
+    hits = [t for t in forbidden_teaching if t in text]
+    # Rule lists these exactly so it can tell the chatbot what NOT to
+    # preemptively teach. Finding ≥2 means the enumeration is intact.
+    assert len(hits) >= 2, (
+        f"Rule 9 must enumerate forbidden-until-user-introduces terms; "
+        f"found: {hits}"
+    )
+    # Engine-vocabulary exception detected by usage context, not a setting.
+    assert "detected by" in text or "usage context" in text or \
+        "engine-vocabulary" in text
