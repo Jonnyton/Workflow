@@ -6,19 +6,27 @@ For core process rules, see AGENTS.md. For Claude Code basics, see CLAUDE.md.
 
 ---
 
-### No Phased Migrations (build-to-end-state standing rule)
+### Foundation End-State vs Feature Iteration (refined 2026-04-19)
 
-Host principle (2026-04-19): **we always build to the long-term best-known design in the present.** No 10-phase rollouts where each phase is a bandage for the previous and each gets refactored before the next ships. Go directly to the final shape.
+Host principle: **the rule depends on whether the work is foundation or feature.**
+
+- **Foundation** = infrastructure everything else depends on. Multi-user support, storage schema, auth, daemon dispatch core, rename/naming commitments, module layout, MCP server core, basic paid-market routing. **Foundation always builds to the long-term best-known design in the present.** No phased rollouts, no compat-shim bandages, no "ship part 1 and iterate later" — ship the end-state. Refactor the foundation when a better implementation is discovered, but each foundation ship is itself end-state-shaped.
+- **Features** = surfaces the chatbot/user interact with. Trust verbs, discovery polish, autoresearch refinements, evaluation criteria, specific bid-UX, shared-account primitives. **Features CAN roll out in phases.** We don't know in advance exactly how the chatbot will want to use each feature — iterate with real usage signal. Phased feature work is legitimate research.
+
+The check before picking a shape: **is this load-bearing for other work?** If yes → foundation → end-state. If no → feature → iterate.
+
+**Refactor foundation as better implementations are discovered.** New understanding in PLAN.md → foundation refactor → still end-state-shaped, not phased. Foundation doesn't carry debt; features do, temporarily.
 
 Operationalization:
-- **Reject multi-phase rename ladders.** If a rename must happen, ship the end-state in one commit (+ one compat-shim commit if the user-facing API needs a deprecation window, max). No Phase 1 → Phase 2 → Phase 3 → Phase 4.
-- **Reject compat-shim bandaids that will themselves need later removal.** If the shim exists only to let the next phase land, the phase and the shim both shouldn't exist — ship the destination.
-- **Reject "gradual" refactors where each step adds debt.** A single-commit refactor that breaks 200 test fixtures is preferable to 10 commits that each carry incremental debt.
-- **Code is disposable. `PLAN.md` captures the living understanding.** When understanding advances, update PLAN.md first, then refactor code to match. Don't treat existing layouts as sacred.
+- **Rename / module layout / storage schema / auth / dispatch core** — foundation. End-state now.
+- **Trust verbs / discovery UX / autoresearch specifics / bid-UX** — features. Iterate.
+- **Ambiguous cases** — ask: "does the next thing I want to build depend on this being its final shape?" If yes → foundation. If no → feature.
 
-Carve-out: this rule does NOT override atomic-commit discipline. One logical change = one commit. "One commit to end-state" means the commit is atomic AND takes the code to its final shape, not that all related work is squashed into one commit.
+Code is disposable. `PLAN.md` captures the living understanding. When understanding advances, update PLAN.md first, then refactor foundation to match.
 
-Already-shipped phased work (72e696e Phase 1 Part 2, 7dde417 Phase 1 Part 2.5) stays landed. From here: no more phases. Collapse remaining rename work (Phase 2 A1-A5 + Phase 3 + Phase 4 + Phase 5) into one end-state commit if it ships; otherwise skip entirely.
+Carve-out: atomic-commit discipline stands. "End-state" means each commit is atomic AND takes the code to its final shape, not that all related work is squashed into one commit.
+
+Already-shipped phased work (72e696e Phase 1 Part 2, 7dde417 Phase 1 Part 2.5) stays landed — the rename is foundation but the already-landed phases can't be un-shipped. From here on: remaining rename work collapses to one end-state commit OR skip entirely with permanent aliases, per foundation-end-state rule.
 
 ### Daemon Economy is Foundation, Chatbot Experience is Always-On
 
