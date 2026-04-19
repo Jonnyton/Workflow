@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 import warnings
 
-from workflow._rename_compat import rename_compat_enabled
+from workflow._rename_compat import install_module_alias, rename_compat_enabled
 
 if not rename_compat_enabled():
     raise ImportError(
@@ -32,6 +32,19 @@ warnings.warn(
     stacklevel=2,
 )
 
+_alias_module = sys.modules[__name__]
 import domains.fantasy_daemon as _fd  # noqa: E402
 
-sys.modules[__name__] = _fd
+install_module_alias(__name__, "domains.fantasy_daemon")
+sys.modules[__name__] = _alias_module
+__doc__ = _fd.__doc__
+__all__ = list(getattr(_fd, "__all__", ()))
+__path__ = list(getattr(_fd, "__path__", ()))
+
+
+def __getattr__(name: str):
+    return getattr(_fd, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_fd)))

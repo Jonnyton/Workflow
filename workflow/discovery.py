@@ -21,6 +21,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from workflow._rename_compat import rename_compat_enabled
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,10 @@ def discover_domains() -> list[str]:
             domain_names.append(domain_path.name)
             logger.debug("Discovered domain: %s", domain_path.name)
 
-    return domain_names
+    if rename_compat_enabled() and "fantasy_daemon" in domain_names:
+        domain_names.append("fantasy_author")
+
+    return sorted(set(domain_names))
 
 
 def auto_register(registry: Any) -> None:
