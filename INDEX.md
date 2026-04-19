@@ -12,7 +12,6 @@ Top-level map for the repo and the Obsidian graph.
 - [CLAUDE.md](CLAUDE.md)
 - [CODEX.md](CODEX.md)
 - [LAUNCH_PROMPT.md](LAUNCH_PROMPT.md)
-- [STEERING.md](STEERING.md)
 
 ## Ideas
 
