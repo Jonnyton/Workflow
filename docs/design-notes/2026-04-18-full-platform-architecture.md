@@ -2525,7 +2525,7 @@ Each entry ~20–60 lines in the YAML. Host Q23-nav below: confirm scope + prior
 
 | Layer | What it provides |
 |---|---|
-| **System** | Optimization schema + bid-market `optimize_node` kind + fixed-harness isolation + merge-back flow + budget enforcement + parallelism primitives |
+| **System** | Optimization schema + bid-market `autoresearch` kind + fixed-harness isolation + merge-back flow + budget enforcement + parallelism primitives |
 | **Chatbot** | Drafts `optimization_spec.md` from user intent (simple or complex), asks clarifying questions, summarizes results at wake-time, surfaces top-N for human review |
 | **User** | The node worth optimizing + the metric they care about + the budget they're willing to spend |
 
@@ -2621,10 +2621,10 @@ Spec #25 edit lands in the next spec-sharpening pass (gap already tracked by dri
 
 ### §32.5 Bid-market + cascade integration (§5.2 + §6 + §18)
 
-**New request kind: `optimize_node`.** Payload:
+**New request kind: `autoresearch`.** Payload:
 ```
 {
-  "kind": "optimize_node",
+  "kind": "autoresearch",
   "node_id": uuid,
   "budget": { "runs": int?, "wall_clock_hours": float?, "usd_cap": numeric? },
   "deadline": timestamptz?,
@@ -2632,11 +2632,11 @@ Spec #25 edit lands in the next spec-sharpening pass (gap already tracked by dri
 }
 ```
 
-Routes through the existing `submit_request` RPC per §20.4; `capability_id` includes the declared `autoresearch` capability plus the node's LLM-provider requirement.
+Routes through the existing `submit_request` RPC per §20.4; `capability_id` includes the declared `autoresearch_executor` capability plus the node's LLM-provider requirement. (Request kind = `autoresearch`; capability = `autoresearch_executor` — disambiguated to avoid confusion between the user-facing verb and the daemon-side fulfillment role.)
 
-**New daemon capability: `autoresearch`.** Daemons opt in via the tray (`host_pool.capabilities` row). Bid-channel `bids:autoresearch×<llm_model>` broadcasts to subscribed daemons per §14.1 push-not-poll pattern. Per-capability-shard keeps the §14 scale primitives intact.
+**New daemon capability: `autoresearch_executor`.** Daemons opt in via the tray (`host_pool.capabilities` row). Bid-channel `bids:autoresearch_executor×<llm_model>` broadcasts to subscribed daemons per §14.1 push-not-poll pattern. Per-capability-shard keeps the §14 scale primitives intact.
 
-**Cascade step-2 naturally absorbs `optimize_node` bids.** The highest-value/effort paid requests for a daemon in always-active mode will often be optimization runs — they're fungible, deadline-bounded, and fan out cleanly. No cascade logic change needed; the new request kind + capability are the only additions.
+**Cascade step-2 naturally absorbs `autoresearch` bids.** The highest-value/effort paid requests for a daemon in always-active mode will often be optimization runs — they're fungible, deadline-bounded, and fan out cleanly. No cascade logic change needed; the new request kind + capability are the only additions.
 
 **Settlement per §18 hybrid.** 1000 iterations at <$1-each batches to a single weekly on-chain settlement; ≥$1-each iterations settle per-bid. `self_hosted_zero_fee` branch (§18.3 pseudocode) applies when requester == daemon-host — your own daemon optimizing your own node is free.
 
@@ -2672,7 +2672,7 @@ Per-user chatbot handles three conversational moments:
 - Asks 0–2 clarifying questions (what counts as "improved"? should it still keep tone professional? specific vendors to prioritize?).
 - Drafts `optimization_spec.md`, shows user, lets them edit.
 
-**(b) Submission.** Chatbot fires `submit_request(kind='optimize_node', ...)`, confirms budget + deadline, returns request_id.
+**(b) Submission.** Chatbot fires `submit_request(kind='autoresearch', ...)`, confirms budget + deadline, returns request_id.
 
 **(c) Wake-up summarization.** On next interaction after optimization completes:
 - Pulls results via discovery / status APIs.
@@ -2680,7 +2680,9 @@ Per-user chatbot handles three conversational moments:
 - If merge_policy auto-accepted, confirms commit; if pending review, surfaces top-N.
 - Proactively offers follow-up (per §29 scope-extension): *"Happy with the new prompt? Want me to queue an overnight run on the next node in your branch?"*
 
-**Vocabulary discipline (per `feedback_user_vocabulary_discipline.md`).** Chatbot speaks in user terms — "I'll run 1000 experiments tonight to find a better invoice-reader prompt" — not engine terms ("submit an `optimize_node` request with capability `autoresearch×claude-4-opus`"). Reserve engine vocabulary for tier-2/3 conversations where the user invites it.
+**Vocabulary discipline (per `feedback_user_vocabulary_discipline.md`, nuanced for `autoresearch`).** *"autoresearch"* is a **recognized term** from [@karpathy's autoresearch repo](https://github.com/karpathy/autoresearch) — AI-forward users recognize it on sight, and the pattern arrives pre-primed. Chatbot can and should use the word "autoresearch" with users who know it (tier-2/3, AI-aware tier-1). For users unfamiliar, translate: "overnight improvement run" / "1000 experiments tonight to find a better invoice-reader prompt." Reserve deeper engine terms (`autoresearch_executor`, `candidate_hash`, `capability_id`) for tier-2/3 contexts where the user invites technical depth.
+
+**Brand attribution.** Karpathy's repo is MIT-licensed; public idea; credit is the right posture. §32 preamble cites the reference.
 
 ### §32.9 Real-world-effect-engine alignment (§24 cross-ref)
 
@@ -2694,12 +2696,12 @@ Every persona, every passion project, directly accelerated. "Real world utility 
 
 ### §32.10 Scale audit amendment (§14 cross-ref)
 
-Track J load-test harness gains **S12: optimize_node fan-out under budget pressure**:
+Track J load-test harness gains **S12: autoresearch fan-out under budget pressure**:
 
-- Simulate 100 concurrent `optimize_node` requests each with `budget.runs=100`.
+- Simulate 100 concurrent `autoresearch` requests each with `budget.runs=100`.
 - 10,000 iteration rows land in `optimization_runs` over ~2 minutes.
 - Assert: no SKIP-LOCKED contention cliff (§14.1 pattern holds), no duplicate-candidate work loss (dedup index enforces), no budget-exhaustion race (single-writer atomic update on request budget).
-- Per §14.1 we already validated SKIP LOCKED ceiling is ~128 concurrent workers; optimize_node's dispatch is push-via-Realtime per §14.1 claim-RPC pattern so the cliff doesn't apply. S12 verifies.
+- Per §14.1 we already validated SKIP LOCKED ceiling is ~128 concurrent workers; autoresearch's dispatch is push-via-Realtime per §14.1 claim-RPC pattern so the cliff doesn't apply. S12 verifies.
 
 Adds ~0.2d to track J total (now 4.2–4.7d).
 
@@ -2707,9 +2709,9 @@ Adds ~0.2d to track J total (now 4.2–4.7d).
 
 Per `project_chain_break_taxonomy.md` categories:
 
-- **System → Chatbot orientation gap (to prevent).** Chatbot must know `optimize_node` is a first-class primitive when user says "optimize this." `control_station` prompt directive required: *"When a user asks to optimize or improve a node, use the `submit_request(kind='optimize_node', ...)` path; draft an `optimization_spec.md` with the user before submitting."*
+- **System → Chatbot orientation gap (to prevent).** Chatbot must know `autoresearch` is a first-class primitive when user says "optimize this." `control_station` prompt directive required: *"When a user asks to optimize or improve a node, use the `submit_request(kind='autoresearch', ...)` path; draft an `optimization_spec.md` with the user before submitting."*
 - **System → Chatbot primitive gap (to prevent).** Chatbot needs introspection of node's `editable_surface` + `test_harness_ref` to propose sensible spec defaults. `discover_nodes` response (§15.1) extends with these fields for optimization-eligible nodes.
-- **System → Chatbot vocabulary gap (to prevent).** Engine terms `optimize_node`, `autoresearch capability`, `candidate_hash` stay out of chatbot-to-user surface. Chatbot translates to: "overnight improvement run," "daemon that does autonomous experiments," "each version it tries."
+- **System → Chatbot vocabulary gap (to prevent).** `autoresearch` is recognized vocab — chatbot uses it verbatim with AI-aware users; translates for unfamiliar users. Deeper engine terms `autoresearch_executor`, `candidate_hash`, `capability_id` stay out of chatbot-to-user surface unless user signals technical depth.
 - **Chatbot → User (intrinsic).** Wake-up summary quality depends on chatbot. This is the one interface-2 concern in autoresearch — if chatbot surfaces 1000 raw iterations instead of top-N with delta commentary, user drowns. Wake-up prompt template discipline matters.
 
 ### §32.12 §10 dev-day estimate
@@ -2718,7 +2720,7 @@ New track **O** in §10:
 
 | Track | Dev | Rough dev-days | Notes |
 |---|---|---|---|
-| **O — Node autoresearch optimization** | dev | 3–3.5 | Schema additions (0.5) + `optimize_node` request kind + `autoresearch` capability registration (0.75) + simple-mode UI scaffold (1.0) + merge-back flow + attribution (0.5) + chatbot prompt scaffolds (0.25) + tests + S12 load-test add (0.5). Depends on A (schema), E (paid-market), K (discovery), N (authoring) — all pre-existing dependencies. Parallelizable with existing tracks post-A. |
+| **O — Node autoresearch optimization** | dev | 3–3.5 | Schema additions (0.5) + `autoresearch` request kind + `autoresearch_executor` capability registration (0.75) + simple-mode UI scaffold (1.0) + merge-back flow + attribution (0.5) + chatbot prompt scaffolds (0.25) + tests + S12 load-test add (0.5). Depends on A (schema), E (paid-market), K (discovery), N (authoring) — all pre-existing dependencies. Parallelizable with existing tracks post-A. |
 
 Net §10 delta: **+3–3.5 dev-days.** New totals: **~22.8–27d with two devs, ~30.5–32.5 serial** (adds to the post-#66-drift-reconciliation baseline of ~19.8–23.5). Still "weeks not months"; recommended MVP-cut (§70 narrowing) becomes ~25–28d upper bound if autoresearch ships at MVP.
 
@@ -2730,7 +2732,7 @@ Net §10 delta: **+3–3.5 dev-days.** New totals: **~22.8–27d with two devs, 
 
 **Q30-nav — OPEN (budget-exhaustion behavior).** When budget exhausts mid-run, current proposal flips remaining pending rows to `status='timeout'` and proceeds to merge-back. Alternative: best-candidate-so-far auto-submits as partial result. Recommend timeout-then-merge; "partial result" is ambiguous, "here's what we got in your budget" is honest.
 
-**Q31-nav — OPEN (merge-conflict resolution at scale).** If two concurrent `optimize_node` requests on the same node finish overlapping windows, who wins at merge-back? Recommend: per §14.3 optimistic CAS with `version` column — whichever merge-commit lands second must resolve against the updated baseline; if metric no longer beats the new baseline, user is asked to review.
+**Q31-nav — OPEN (merge-conflict resolution at scale).** If two concurrent `autoresearch` requests on the same node finish overlapping windows, who wins at merge-back? Recommend: per §14.3 optimistic CAS with `version` column — whichever merge-commit lands second must resolve against the updated baseline; if metric no longer beats the new baseline, user is asked to review.
 
 ### §32.14 What §32 does NOT do
 
@@ -2820,6 +2822,8 @@ User composes the tier stack per node per use case. Simple mode = one named eval
 Evaluators live in the catalog **alongside nodes**. Same schema shape (concept jsonb + structural_hash + embedding + provenance + license), same discovery via `discover_nodes` extended to accept `kind=evaluator`, same tier-3 PR-contribution path, same vibe-coding authoring surface (§27 authoring tools work for evaluators too — they're just nodes with a specific output contract).
 
 **Competitor-differentiation angle.** Anyone can build a workflow engine. Fewer can build one where every surface is continuously-evaluated + improving. The evaluator loop IS the compounding advantage. User-authored evaluators + remix-from-N (§15.3) = the commons compounds at the *evaluation* layer too, not just at the workflow layer. This is the answer to "what makes Workflow different from LangChain / n8n / Zapier at year two."
+
+**Recursive-application marketing hook.** *"autoresearch your evaluator"* is the product-line that closes the loop. Users who autoresearch a node soon ask "can I autoresearch the evaluator too, against a gold set?" — yes. Same §32 pattern, one layer up. §33.5 handles the cycle-detection guard. This is a compounding differentiator (most engines don't let you optimize either the workflow OR the evaluator; Workflow lets you optimize both) and taps into the same AI-forward brand recognition @karpathy's autoresearch carries — see §32 vocabulary-discipline note.
 
 ### §33.5 Evaluators are recursively eval-optimizable (and how to prevent infinite regress)
 
