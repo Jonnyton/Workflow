@@ -12,16 +12,28 @@
 
 ## Running
 
+**One-command startup** — migrations auto-apply via Postgres's `docker-entrypoint-initdb.d` convention on first container start:
+
 ```bash
 cd prototype/full-platform-v0
-docker compose up -d
+docker compose up -d          # starts postgres + gateway; migrations run automatically
+```
+
+Gateway exposes FastMCP streamable-HTTP at `http://localhost:8001/mcp`. Postgres at `localhost:5433` (non-default to avoid host clashes).
+
+### Running tests (requires host Python + deps)
+
+```bash
 python -m venv .venv && source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
-psql -h localhost -U workflow -d workflow_v0 -f migrations/001_core_tables.sql
-psql -h localhost -U workflow -d workflow_v0 -f migrations/002_rls.sql
-psql -h localhost -U workflow -d workflow_v0 -f migrations/003_discover_nodes.sql
-pytest tests/ -v
-python gateway.py  # FastMCP stdio; tests cover HTTP later
+pytest tests/ -v                                   # talks to docker-compose postgres on :5433
+```
+
+### Manual migration re-apply (if SQL changes)
+
+```bash
+# Nuke the volume + restart to re-run migrations cleanly:
+docker compose down -v && docker compose up -d
 ```
 
 ## Structure
