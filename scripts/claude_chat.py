@@ -107,6 +107,27 @@ ASSISTANT_MSG_SELECTORS = [
     '[data-is-streaming]',  # usually an assistant turn
 ]
 
+# Thinking blocks. claude.ai renders an extended-thinking transcript as a
+# collapsible panel at the top of the assistant message. The collapsed
+# summary is always visible ("Thinking about X"); the expanded content is
+# the full reasoning stream. Navigator reads the trace to diagnose
+# behavior, so we expand any collapsed block BEFORE reading so the full
+# stream lands in output/claude_chat_trace.md.
+#
+# Selectors are best-effort — claude.ai's DOM shifts. Missing an expander
+# degrades the trace (thinking omitted) rather than breaking the turn.
+THINKING_CONTAINER_SELECTORS = [
+    '[data-testid*="thinking" i]',
+    '[aria-label*="thinking" i]',
+    'div[class*="thinking" i]',
+]
+THINKING_EXPAND_BUTTON_SELECTORS = [
+    '[data-testid*="thinking" i] button[aria-expanded="false"]',
+    'button[aria-expanded="false"][aria-label*="thinking" i]',
+    'button[aria-expanded="false"][aria-label*="reasoning" i]',
+    'button[aria-expanded="false"][aria-label*="expand" i]',
+]
+
 # Artifact + rich-content selectors. claude.ai auto-renders things like
 # mermaid diagrams, code blocks, and long-form artifacts alongside the
 # text reply. inner_text() misses the non-textual parts. We scan for
@@ -1075,6 +1096,113 @@ def _last_assistant_locator(page):
     return None
 
 
+def _expand_thinking_blocks(last) -> int:
+    """Click any collapsed thinking-block expander in the last assistant msg.
+
+    Returns the number of expanders clicked. Best-effort — each selector
+    + click is wrapped so a missing / shifted DOM fails the capture, not
+    the turn. Idempotent: an already-expanded block has aria-expanded=true
+    and gets skipped.
+    """
+    if last is None:
+        return 0
+    clicked = 0
+    for sel in THINKING_EXPAND_BUTTON_SELECTORS:
+        try:
+            btns = last.locator(sel)
+            count = btns.count()
+        except Exception:
+            continue
+        for i in range(count):
+            try:
+                btn = btns.nth(i)
+                if btn.is_visible():
+                    btn.click(timeout=2000)
+                    clicked += 1
+            except Exception:
+                # Don't let one bad click abort the rest.
+                continue
+    if clicked:
+        # Small settle delay so the expanded content is fully rendered
+        # before any subsequent inner_text() read.
+        time.sleep(0.3)
+    return clicked
+
+
+def _read_thinking_text(last) -> str:
+    """Read the expanded thinking-block transcript from the last assistant msg.
+
+    Returns "" if no thinking container is present. Callers should have
+    already called `_expand_thinking_blocks` so the content is rendered
+    rather than collapsed.
+    """
+    if last is None:
+        return ""
+    for sel in THINKING_CONTAINER_SELECTORS:
+        try:
+            containers = last.locator(sel)
+            count = containers.count()
+        except Exception:
+            continue
+        if count == 0:
+            continue
+        # Read each matching container's text, concatenate (usually there's
+        # just one per assistant message).
+        parts = []
+        for i in range(count):
+            try:
+                text = containers.nth(i).inner_text().strip()
+            except Exception:
+                continue
+            if text:
+                parts.append(text)
+        if parts:
+            return "\n\n".join(parts)
+    return ""
+
+
+def _read_last_assistant_parts(page) -> tuple[str, str]:
+    """Read (thinking, reply) for the last assistant message.
+
+    Expands any collapsed thinking block first so the full transcript is
+    captured. Reply is the inner_text of the full assistant message with
+    the thinking-block text stripped from the front (claude.ai always
+    renders thinking above the reply). Stripping is exact-prefix only;
+    on no match the reply falls back to the full text (worst case:
+    thinking is duplicated in the reply section — not a correctness bug
+    for the trace reader, just noise).
+
+    Returns ("", full_text) when no thinking block is detected.
+    """
+    last = _last_assistant_locator(page)
+    if last is None:
+        return "", ""
+
+    try:
+        _expand_thinking_blocks(last)
+    except Exception:
+        # Expansion is enhancement-only; fall through to read whatever
+        # rendered DOM is available.
+        pass
+
+    thinking = ""
+    try:
+        thinking = _read_thinking_text(last)
+    except Exception:
+        thinking = ""
+
+    try:
+        full = last.inner_text().strip()
+    except Exception:
+        full = ""
+
+    if thinking and full.startswith(thinking):
+        reply = full[len(thinking):].lstrip()
+    else:
+        reply = full
+    return thinking, reply
+
+
 def _extract_rich_content(page) -> list[dict[str, str]]:
     """Collect artifacts + code blocks from the last assistant message.
 
@@ -1222,6 +1350,30 @@ def _wait_for_response_complete(
                 stable_ticks = 0
                 last_seen = text
     return last_seen, True  # timed out; return whatever we have
+
+
+def _format_assistant_trace(
+    *,
+    response: str,
+    thinking: str,
+    rich_section: str,
+    timed_out: bool = False,
+) -> str:
+    """Compose the trace body for a CLAUDE -> USER_SIM entry.
+
+    When thinking is non-empty, emits explicit `<thinking>` / `<reply>`
+    sections so navigator can see the reasoning chain separately from the
+    final visible reply. Otherwise falls back to the plain response body
+    (backward-compat with the existing trace format).
+    """
+    reply_body = response or "(empty response)"
+    if thinking:
+        return (
+            f"<thinking>\n{thinking}\n</thinking>\n"
+            f"<reply>\n{reply_body}\n</reply>"
+            f"{rich_section}"
+        )
+    return f"{reply_body}{rich_section}"
 
 
 def _append_trace(kind: str, body: str) -> None:
@@ -1413,6 +1565,26 @@ def cmd_ask(message: str) -> int:
 
         rich_section = _format_rich_content(rich_items)
 
+        # Capture expanded thinking transcript separately so navigator can
+        # read the chatbot's reasoning chain, not just the final reply.
+        thinking_text = ""
+        try:
+            thinking_text, split_reply = _read_last_assistant_parts(page)
+            # If thinking extraction succeeded and the split-out reply
+            # roughly matches the `response` already captured, prefer the
+            # split reply so we don't double-print the thinking prefix.
+            if thinking_text and split_reply and len(split_reply) > 20:
+                response = split_reply
+        except Exception as exc:
+            print(f"WARN: thinking capture failed: {exc}", file=sys.stderr)
+
+        body = _format_assistant_trace(
+            response=response,
+            thinking=thinking_text,
+            rich_section=rich_section,
+            timed_out=timed_out,
+        )
+
         if timed_out:
             note = (
                 f"prev_len={len(prev)}; response_len={len(response)}; "
@@ -1421,9 +1593,7 @@ def cmd_ask(message: str) -> int:
             dump = _capture_failure_dump(page, "response_timeout", note=note)
             _append_trace(
                 "CLAUDE -> USER_SIM",
-                f"(TIMEOUT after 180s; partial response below; dump={dump})\n"
-                f"{response or '(nothing captured)'}"
-                f"{rich_section}",
+                f"(TIMEOUT after 180s; partial response below; dump={dump})\n{body}",
             )
             print(response or "(no response captured)")
             print(
@@ -1433,10 +1603,7 @@ def cmd_ask(message: str) -> int:
             )
             return 5
 
-        _append_trace(
-            "CLAUDE -> USER_SIM",
-            f"{response or '(empty response)'}{rich_section}",
-        )
+        _append_trace("CLAUDE -> USER_SIM", body)
 
         # Optional per-turn screenshot for artifact visual verification.
         # Opt-in via WORKFLOW_CLAUDE_CHAT_SCREENSHOTS=1 so normal runs stay
