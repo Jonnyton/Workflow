@@ -14,6 +14,8 @@ Invariant framework lives at `scripts/invariants/` with pre-commit hooks in `.gi
 
 When you notice an agent doing the same "recheck X, heal if drifted" pattern across multiple sessions, file a task to promote it to a hook. Zero tokens, never forgets, logs only when it had to heal.
 
+**Invariant hooks must run their own invariants before commit** — including their own test suite, not just the test suite of the code they're protecting. The `#46 c880f94` regression shipped because the mojibake hook's own test coverage (`tests/test_pre_commit_mirror_parity.py`) was not the commit's gate; the hook protected downstream commits but didn't protect itself. 4 commits stacked on red main before verifier caught it. Always: any hook-adding commit has the hook's own tests as a blocker on merge.
+
 ### Standing Permission To Dispatch User-Sim
 
 Host granted the lead CEO-level authority over user-sim dispatch (2026-04-19). Stop asking for per-mission approval. Run the auth hook instead:
