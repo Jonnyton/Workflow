@@ -37,6 +37,46 @@ mcp = FastMCP(
 )
 
 
+def _check_postgres() -> str:
+    """Probe Postgres reachability. Returns 'ok' or 'unreachable'.
+
+    Plain callable — invokable from the Docker compose healthcheck
+    without FastMCP runtime context. The MCP-facing `health()` tool
+    below delegates here.
+    """
+    try:
+        with psycopg.connect(DSN, connect_timeout=2) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return "ok"
+    except Exception:
+        return "unreachable"
+
+
+def _health_payload() -> dict:
+    """Plain-callable health payload. Used by both the MCP tool and
+    the Docker compose healthcheck (which imports this directly to
+    avoid the FastMCP tool-wrapper callable-vs-object gotcha)."""
+    return {
+        "gateway": "ok",
+        "postgres": _check_postgres(),
+        "version": "0.0.1",
+    }
+
+
+@mcp.tool()
+def health() -> dict:
+    """Health probe — confirms gateway is alive + Postgres is reachable.
+
+    Returns {"gateway": "ok", "postgres": "ok" | "unreachable", "version": "0.0.1"}.
+    Used by Docker compose healthcheck + manual smoke tests. Delegates
+    to `_health_payload()` so the compose healthcheck can invoke the
+    probe without needing an MCP context.
+    """
+    return _health_payload()
+
+
 @contextmanager
 def user_conn(user_id: str):
     """Open a connection, apply v0 RLS context (app.current_user_id GUC)."""
