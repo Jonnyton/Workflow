@@ -6,6 +6,14 @@ For core process rules, see AGENTS.md. For Claude Code basics, see CLAUDE.md.
 
 ---
 
+### Code Before Agents (token-efficiency standing rule)
+
+Host principle (2026-04-19): **if an invariant can be enforced mechanically, build the hook — don't burn tokens checking it.** Every scheduled agent check-in for "is X still true?" is a place where a script-that-never-forgets would do better.
+
+Invariant framework lives at `scripts/invariants/` with pre-commit hooks in `.git/hooks/pre-commit`. Shipped invariants: tab-single (3s poll), mirror-parity (pre-commit), mojibake (pre-commit), concerns-staleness (on-demand proposal).
+
+When you notice an agent doing the same "recheck X, heal if drifted" pattern across multiple sessions, file a task to promote it to a hook. Zero tokens, never forgets, logs only when it had to heal.
+
 ### Standing Permission To Dispatch User-Sim
 
 Host granted the lead CEO-level authority over user-sim dispatch (2026-04-19). Stop asking for per-mission approval. Run the auth hook instead:
