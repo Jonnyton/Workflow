@@ -475,3 +475,160 @@ Track D is done when, on a clean install:
 10. All 10 OPEN flags in §11 resolved or explicitly deferred.
 
 If any of the above fails, track D is not shippable; tier-2 user onboarding breaks. Forever-rule "main is always downloadable" depends on this.
+
+---
+
+## 13. Confidential-tier observability (task #79 amendment, 2026-04-19)
+
+**Source directive:** Devin persona CHAT-2 (navigator intelligence report §S-3). Tier-2 hosts who handle sensitive work (Devin's D&D campaign notes = identifiable minor-player PII buried in session logs) need to SEE where their daemon is routing before trusting it, and have a hard-stop fail-local option. Without this, Devin's quote: "I'd tell my group not to install it."
+
+Cross-refs: `project_privacy_per_piece_chatbot_judged.md` (per-piece visibility enforcement), `project_user_tiers.md` (T2 = daemon host, one-click install, privacy-aware), privacy catalog `docs/catalogs/privacy-principles-and-data-leak-taxonomy.md` §7 system-point taxonomy.
+
+### 13.1 Tray surface: current LLM binding
+
+Every daemon row in the Daemons section already shows `provider + model` (§1.1). Amendment: add an explicit **route badge** that is load-bearing in the visual hierarchy (not just a label):
+
+```
+┌─ Daemons (3 running) ────────────────────────┐
+│ ☑ local      ollama-local          ● local   │ ← green dot
+│ ☑ claude     claude-sonnet-4-6     ○ cloud   │ ← amber dot
+│ ☑ codex      codex-mini            ○ cloud   │ ← amber dot
+└──────────────────────────────────────────────┘
+```
+
+**Color semantics:**
+- **Green `●` = on-host execution.** Node ran inside the daemon process, prompt + output never crossed host boundary.
+- **Amber `○` = cloud route.** Provider API received the prompt (Anthropic / OpenAI / Google / DeepSeek / etc.).
+- **Red `✕` = rejected.** Daemon tried to cloud-route a locked universe/capability; rejection is user-visible (see §13.3).
+
+Tooltip on each badge shows the last N routing decisions (timestamp + destination + justification). One-click opens the full audit tab (§13.4).
+
+### 13.2 Per-universe "lock local" switch
+
+New per-universe setting surfaced in the web app AND tray Settings:
+
+```
+┌─ Per-universe routing ───────────────────────┐
+│ D&D-campaign        [lock to local only ☑]   │
+│ fantasy-novel       [any provider ☐]          │
+│ maya-payables       [lock to local only ☑]   │
+└──────────────────────────────────────────────┘
+```
+
+Written to new schema-spec field `universes.sensitivity_tier` (values: `open` | `confidential` | `regulated`). `confidential` tier = local-only; `regulated` tier adds audit-log retention requirements. MVP ships `open` + `confidential`; `regulated` post-MVP.
+
+Enforcement is server-side at request-dispatch (spec #25 `submit_request` RPC + spec #27 gateway). Tray surfaces the status and triggers the switch via existing MCP tool; tray itself doesn't enforce. This matters: even if the tray is compromised, the server-side RLS + dispatch gate still blocks cloud providers on a confidential-tier universe's requests.
+
+Wire format: `submit_request` adds `routing_constraint: 'local_only' | 'any'` derived from the universe's `sensitivity_tier`. Gateway rejects any bid matching a non-local provider with MCP error envelope code `routing_violation`.
+
+### 13.3 Visible rejection on local-lock violation
+
+When the gateway rejects a cloud bid for a confidential-tier request:
+
+1. Bid source (the attempting daemon's tray) surfaces a **red toast** with the rejection reason.
+2. Requesting user's chatbot narrates: "I tried to route this to [provider] but your D&D-campaign universe is locked to local-only. Falling back to a local daemon in the queue." No silent fallback — narration always fires.
+3. Audit log row captures the attempt regardless of success (§13.4).
+
+Silent fallback is the exact failure mode Devin named; the `routing_violation` envelope exists specifically so user-facing surfaces can narrate without ambiguity.
+
+### 13.4 Audit log tab in tray
+
+New tab / dashboard (post-MVP can reuse Active-mode cascade log surface):
+
+```
+┌─ Routing audit ──────────────────────────────┐
+│ Filter: [all ▼] [today ▼] [universe: * ▼]     │
+├──────────────────────────────────────────────┤
+│ 14:32:10 goal_planner  → ollama-local        │
+│   u=D&D-campaign   confidential  ● local     │
+│   justification: capability=self-pinned       │
+├──────────────────────────────────────────────┤
+│ 14:31:04 scene_drafter → REJECTED (cloud)    │
+│   u=D&D-campaign   confidential  ✕ blocked   │
+│   attempt: claude-sonnet via paid-market     │
+│   reason: routing_violation (local_only)      │
+│   fallback: queued to local daemon pool      │
+├──────────────────────────────────────────────┤
+│ 14:28:45 scene_drafter → claude-sonnet       │
+│   u=fantasy-novel  open           ○ cloud    │
+│   justification: user-approved paid bid       │
+└──────────────────────────────────────────────┘
+```
+
+**Data source:** `daemon_routing_events` table (new in schema spec #25). Schema:
+
+```sql
+CREATE TABLE public.daemon_routing_events (
+  event_id bigserial PRIMARY KEY,
+  owner_user_id uuid NOT NULL REFERENCES auth.users(id),
+  daemon_id uuid NOT NULL REFERENCES public.host_pool(daemon_id),
+  universe_id uuid NULL,
+  sensitivity_tier text NULL,
+  request_id uuid NULL REFERENCES public.request_inbox(request_id),
+  capability_id text NOT NULL,
+  routed_to text NOT NULL,         -- provider:model OR 'rejected'
+  decision text NOT NULL
+    CHECK (decision IN ('local', 'cloud', 'rejected', 'fallback')),
+  justification text NOT NULL,     -- short tag: capability=self|user-approved|routing_violation
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX daemon_routing_events_owner_time
+  ON public.daemon_routing_events (owner_user_id, created_at DESC);
+
+ALTER TABLE public.daemon_routing_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY routing_events_owner_only
+  ON public.daemon_routing_events FOR SELECT USING (owner_user_id = auth.uid());
+```
+
+Retention: 30 days for `open`-tier universes, 90 days for `confidential`, 1 year for `regulated`. Reaper job runs daily.
+
+### 13.5 Confidential-tier request flow
+
+End-to-end for a `confidential` universe:
+
+1. User marks `D&D-campaign` as confidential in tray (§13.2) → writes `universes.sensitivity_tier='confidential'`.
+2. Chatbot submits a request referencing this universe.
+3. Gateway at `submit_request` looks up universe tier → injects `routing_constraint='local_only'` into the `request_inbox` row.
+4. Realtime bid channel broadcasts request with constraint; cloud-provider daemons see the constraint and skip bidding.
+5. Only local-provider daemons bid. If none online, request queues indefinitely with "waiting for local daemon" status narrated to chatbot.
+6. On any daemon attempting to fulfill in violation (race condition, cache staleness, etc.), `complete_request` RPC validates the daemon's provider against `routing_constraint` → rejects with `routing_violation` → re-queues → writes `daemon_routing_events` row with `decision='rejected'`.
+7. Tray of the attempting daemon shows red toast; user-facing chatbot narrates per §13.3.
+
+### 13.6 Dev-day impact
+
+Per navigator ~0.25d. Honest revision:
+
+| Component | Dev-days |
+|---|---|
+| `universes.sensitivity_tier` column + migration | 0.05 |
+| `daemon_routing_events` table + RLS + reaper | 0.10 |
+| `submit_request` routing_constraint injection | 0.10 |
+| Gateway/complete_request rejection + envelope | 0.15 |
+| Bid channel constraint propagation | 0.10 |
+| Tray: route badge + color dot | 0.20 |
+| Tray: per-universe lock switch (UI) | 0.15 |
+| Tray: audit log tab | 0.25 |
+| Chatbot narration of rejection + fallback | 0.10 |
+| Tests (integration: confidential flow end-to-end; unit: rejection envelope) | 0.20 |
+| **MVP subtotal** | **~1.4** |
+
+Revision rationale: navigator's 0.25d was for "tray display" only. Actual scope includes schema + dispatch gate + rejection envelope + end-to-end narration — all load-bearing for the privacy guarantee to be enforceable, not just visible. Cutting any component leaves a gap Devin's D&D group would find.
+
+**Deferral lever:** ship §13.1 badge + §13.2 switch + §13.3 rejection + basic §13.4 (using existing cascade-log surface, no new tab) — ~1.0d. Dedicated audit tab + 90-day retention policy post-MVP — saves ~0.4d.
+
+### 13.7 Acceptance criteria
+
+Amendment to §12:
+- 11. Marking `D&D-campaign` as confidential → chatbot asked to use a cloud-only capability → chatbot narrates "tried to route to X but locked local; falling back" → daemon_routing_events row has `decision='rejected'`.
+- 12. Tray's Daemon row shows `● local` / `○ cloud` badge matching the last recorded event for that daemon.
+- 13. Devin-persona smoke: user-sim persona files a GitHub Issue about confidentiality → tries to route → observes green dot + audit log showing local-only → confirms trust.
+
+### 13.8 Cross-refs
+
+- §30 tray spec (this file) §1.1 existing route display.
+- Spec #25 `submit_request` + schema — adds `routing_constraint` + `universes.sensitivity_tier` + `daemon_routing_events`.
+- Spec #27 MCP gateway — rejection envelope for `routing_violation` code.
+- Privacy catalog §7 system-point taxonomy — daemon execution system-point has an explicit entry naming this rejection path.
+- Memory `project_privacy_per_piece_chatbot_judged.md` — visibility is per-piece; this amendment extends to per-universe routing.
+- Navigator intelligence report §S-3 Devin CHAT-2 — source directive.
