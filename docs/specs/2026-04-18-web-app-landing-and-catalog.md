@@ -60,18 +60,36 @@ All under `tinyassets.io/`. SEO-relevant URLs in bold.
 | **`/editor/*`** | Dynamic (auth-gated) | In-browser node/goal/branch editor. Presence + CAS from §14.3. | Dynamic |
 | **`/earnings`** | Dynamic (auth-gated, T2+) | Tier-2 earnings + payout dashboard. Mirrors tray's earnings panel for non-tray users. | Dynamic |
 | **`/admin`** | Dynamic (role-gated) | Host/tier-3 moderation triage queue. Report handling, bot-token rotation UI. | Dynamic |
+| **`/account`** | Dynamic (auth-gated) | Signup landing, session status, "my exports" list (per-user data inventory), **delete account** action (full wipe + 30-day grace). Required for regulatory posture + trust. | Dynamic |
+| **`/legal`** | SSG | ToS + privacy policy + license info (CC0-1.0 content, MIT platform per host Q7). Versioned: each legal-update commits a new subpath `/legal/v<N>` + redirects from `/legal/`. | Static (GH Pages) |
 
-14 surfaces total (some grouped). 7 SSG + 7 dynamic. Static ones regenerate on catalog-export commit (hourly diff-batched per #32).
+16 surfaces total. 8 SSG + 8 dynamic. Static ones regenerate on catalog-export commit (hourly diff-batched per #32) or on `Workflow/` repo merge (landing + legal).
 
 ---
 
 ## 3. Static vs dynamic split
 
-### 3.1 Static surface (deploys to GitHub Pages)
+### 3.1 Static surface (deploys to GitHub Pages — or GoDaddy shared via cPanel SFTP)
 
-- Pages: `/`, `/catalog/`, `/catalog/nodes/<slug>`, `/catalog/goals/<slug>`, `/catalog/branches/<slug>`, `/connect`, `/contribute`.
+- Pages: `/`, `/catalog/`, `/catalog/nodes/<slug>`, `/catalog/goals/<slug>`, `/catalog/branches/<slug>`, `/connect`, `/contribute`, `/legal`.
 - **Build source:** SvelteKit `adapter-static` consumes the `Workflow-catalog/` repo at build-time (per #32: that repo is the canonical public-content source). Generates per-artifact pages.
-- **Deploy path:** GitHub Action on `Workflow-catalog/` merge → `npm run build` → push `build/` to `gh-pages` branch → GitHub Pages serves `tinyassets.io/*`. Cloudflare fronts with 5-min edge TTL + `stale-while-revalidate: 24h` per uptime §3.5.4.
+
+**Static-host pick: GitHub Pages (primary), GoDaddy-cPanel (fallback).** Comparison:
+
+| Criterion | GitHub Pages | GoDaddy shared hosting (cPanel SFTP) |
+|---|---|---|
+| Cost | Free | ~$0 marginal (host already pays) |
+| Deploy friction | `peaceiris/actions-gh-pages` is one-liner | GH Action `samkirkland/ftp-deploy-action` + cPanel SFTP creds as secrets |
+| Custom domain (`tinyassets.io`) | CNAME + `CNAME` file in repo; Pages sets TLS cert; Cloudflare fronts | Native at cPanel; Cloudflare fronts |
+| Cloudflare compat | Full (strict) TLS verified in uptime note §3.5.3 | Same |
+| Build-to-live latency | ~60-90s (Action + Pages deploy) | ~20-30s (SFTP copy) |
+| Fail behavior if origin down | Pages 404 bubbles through | cPanel 5xx bubbles through |
+| Host lock-in | None (repo mirrors content) | GoDaddy vendor dependency |
+| Recommended | **Yes** — cleanest OSS pathway + auditable deploys | Fallback if GH Pages has an outage or Pages policy changes |
+
+Go with **GitHub Pages as primary**. Run the cPanel-SFTP path as a parallel Action that fires AFTER successful Pages deploy — gives us a warm fallback that Cloudflare can re-point to in <1 minute via a DNS swap if Pages breaks.
+
+- **Deploy path:** GitHub Action on `Workflow-catalog/` merge → `npm run build` → push `build/` to `gh-pages` branch → GitHub Pages serves `tinyassets.io/*`. Cloudflare fronts with 5-min edge TTL + `stale-while-revalidate: 24h` per uptime §3.5.4. Parallel SFTP mirror to GoDaddy for fast fallback.
 - **Cache-bust:** GitHub Action calls Cloudflare Cache Purge API for `/catalog/*` after deploy (scoped API token as secret).
 - **SEO:** per-artifact pages emit `<link rel="canonical">`, OG tags, JSON-LD `CreativeWork` structured data. `sitemap.xml` regenerated on each build.
 
@@ -255,9 +273,36 @@ Sitemap: https://tinyassets.io/sitemap.xml
 - No heavy JS on landing — defer non-critical bundles. Target LCP ≤ 2.5s on 3G per Core Web Vitals.
 - No dark patterns. "Sign in with GitHub" is opt-in; browse works forever without an account.
 
+### 7.6 Internationalization posture
+
+**English-only at launch, scaffold-ready for i18n post-launch.** SvelteKit's `$app/paths` + `svelte-i18n` (or Inlang) wire in with zero URL impact if we reserve a `[lang]` route prefix from day one. Phase-in plan:
+
+- Day-one launch: all URLs un-prefixed (`tinyassets.io/catalog/`). Internally, content strings live in `src/lib/i18n/en.json`.
+- Future: add `[lang]/` prefix. `en` continues at un-prefixed URL (SEO preserved). Other langs land at `/es/catalog/` etc. Canonical tags maintain one-URL-per-language-per-content-item.
+- Scaffold cost: ~0.15 d day-one. Retrofit cost without scaffold: ~1+ d.
+
+Catalog content (node names, descriptions, concept text) stays in the source language the creator authored. Translations are a future "translate this workflow" feature — not an MVP concern.
+
 ---
 
-## 8. Honest dev-day estimate
+## 8. `/account` specifics
+
+Auth-gated at `/account`. Single-page dashboard covering:
+
+1. **Session status** — signed-in-as, GitHub handle, account_age_days, trust_tier.
+2. **My exports** — list of the user's public nodes/goals/branches currently in the `Workflow-catalog/` repo. Links to the canonical URLs. Indicates "last exported: N min ago" per artifact (reads `status.json` from the catalog repo).
+3. **Delete account** — the regulatory + trust posture surface. UX:
+   - Button reveals a confirm dialog listing everything that gets deleted (private nodes, wallets, session, activity log attribution) vs preserved (public concepts per CC0 license — cannot be unilaterally deleted from the commons, per license memory; public-attribution gets anonymized rather than removed).
+   - Confirm requires typing the user's GitHub handle as anti-accident gate.
+   - On confirm: `delete_account` RPC enters a 30-day grace window (`users.deleted_at = now()`). Session logged out immediately. Full purge fires after 30 days via pg_cron.
+   - Grace window is reversible — user can re-sign-in within 30 days and cancel the delete. Post-30d, only a support ticket can restore (and only metadata; content is gone).
+4. **Export my data** — GDPR-adjacent. Button triggers a background job that produces a ZIP of everything the user owns (private nodes, activity log, ledger entries, wallet history) + ships it to their email. Takes ~10 min at typical volume.
+
+Trust + legal posture: `/account` is the page regulators + privacy-conscious users expect. Not optional for a platform that handles user data. Reference: CCPA, GDPR Article 17 (right to erasure).
+
+---
+
+## 9. Honest dev-day estimate
 
 Navigator's §10 estimate: **4 dev-days** for track B.
 
@@ -277,6 +322,10 @@ My build-out:
 | `/editor/*` auth-gated editor — optimistic CAS + Presence + per-piece visibility UI | 1.0 d |
 | `/earnings` dashboard — reads `daemon_earnings` view, payout button | 0.3 d |
 | `/admin` moderation triage UI — report queue + action buttons | 0.5 d |
+| `/account` — session status + my-exports + delete-account + data-export | 0.4 d |
+| `/legal` — ToS + privacy + license page with version subpaths | 0.15 d |
+| i18n scaffold — `[lang]` route reserved + `svelte-i18n` setup + `en.json` content split | 0.15 d |
+| GoDaddy-cPanel parallel SFTP mirror (fast-fallback deploy path) | 0.2 d |
 | GitHub OAuth + `@supabase/ssr` session cookie plumbing | 0.4 d |
 | SEO: canonical URLs, OG images build script, JSON-LD, sitemap.xml, robots.txt | 0.4 d |
 | GH Action: catalog-export-triggered rebuild + GH-Pages-deploy + Cloudflare-purge hook | 0.35 d |
@@ -284,9 +333,9 @@ My build-out:
 | Accessibility pass — keyboard navigation, semantic HTML, color-contrast, ARIA where needed | 0.3 d |
 | Integration smoke — full 3-tier onboarding path tested end-to-end | 0.4 d |
 | Docs — contributor runbook for building locally, deploy runbook | 0.2 d |
-| **Total** | **~7.4 d** |
+| **Total** | **~8.3 d** |
 
-**Revision: 4 d → ~7.5 d.** Navigator's 4d is materially under-scoped — same pattern as #26/#29/#30/#32.
+**Revision: 4 d → ~8.3 d.** Navigator's 4d is materially under-scoped — same pattern as #26/#29/#30/#32. The /account + /legal + i18n-scaffold + GoDaddy-fallback additions added ~0.9 d over my initial 7.4 d estimate. Both are load-bearing for trust (GDPR) + operational robustness, not cosmetic.
 
 Biggest single under-count: **`/editor/*` (~1 d)**. The CAS + Presence + per-piece-visibility editor is the wiki-open collab surface from §16.2 — not a weekend project. Per-piece-visibility UI alone is novel (chatbot-suggested + explicit override per field).
 
