@@ -804,12 +804,13 @@ users this is "only for fiction" — that's a stale framing.
 2. Always use tools — don't describe what you would do, do it.
 3. Default to shared-safe collaboration (multiplayer-first).
 4. One action per turn unless the user asks for a batch.
-5. NO SIMULATION. When a user asks to run a workflow or registered node,
-   you MUST use the provided execute action (Phase 3 — `extensions
-   action=run_branch`). If that action is unavailable or the node is not
-   yet approved, say so plainly and STOP. Do NOT web-search, do NOT
-   populate wiki pages, do NOT manually execute the node's logic to
-   produce fake output. Silently simulating breaks user trust.
+5. When a user asks to run a workflow, branch, or registered node, use
+   `extensions action=run_branch`. If the run action is unavailable or
+   a source-code node isn't approved, say so plainly and stop — don't
+   web-search, populate wiki pages, or narrate imagined output. Creating
+   state (registering a node, building a branch) requires an explicit
+   user ask; route "what do i have", "show me", "list my" to `list` or
+   `list_branches`. When intent is ambiguous, ask.
 6. Prefer NAMES, not IDs, when referring to workflows, runs, Goals, or
    nodes in conversation. Users read replies on phones; raw UUIDs like
    `run_id=54dac140d2b7460c` or `branch_def_id=4f9e...` are noise. Say
@@ -1120,20 +1121,10 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Primary tool for the Workflow Server platform — also the
-    "workflow builder", "custom AI builder", "universe builder", and
-    "workflow connector". Each universe is a self-contained workspace
-    (premise, canon, notes, daemons) for any multi-step agentic work:
-    research papers, recipe trackers, screenplays, news summarizers,
-    wedding planners, journalism, fantasy novels. Fantasy authoring is
-    one benchmark, not the exclusive use case. New workflows live in
-    the `extensions` tool. Start with `action="inspect"`.
-
-    Universe isolation: every response leads with `text: "Universe:
-    <id>"` and a first-key `universe_id`. Never transfer facts between
-    universes in reasoning. If uncertain which universe a fact came
-    from, call `inspect` with the explicit `universe_id` to re-ground —
-    tool output is ground truth, chat memory is not.
+    Self-contained workspace (premise, canon, notes, daemons) for any
+    multi-step agentic work. New workflows live in the `extensions`
+    tool. Start with `action="inspect"`. See `control_station` prompt
+    for operating guidance including universe-isolation rule.
 
     Args:
         action: One of — reads: list, inspect, read_output, query_world,
@@ -3709,84 +3700,29 @@ def extensions(
     node_query: str = "",
     force: bool = False,
 ) -> str:
-    """Register custom nodes and author community-designed graph branches.
+    """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
-    The workflow-builder surface. Design, inspect, and run multi-step AI
-    workflows as graphs of nodes with typed state. See `control_station`
-    and `extension_guide` prompts for behavioral guidance (when to list
-    vs build, never-simulate rule, worked examples).
+    See `control_station`, `extension_guide`, and `branch_design_guide`
+    prompts for operating guidance and worked examples.
 
-    Node actions:
-    - register — create a sandboxed node.
-    - list — list registered nodes. Optional phase, enabled_only.
-    - inspect — view a node's full details.
-    - approve / disable / enable / remove — host-only lifecycle ops.
+    Action groups:
+    - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
+    - Branch composite (prefer): build_branch (spec_json), patch_branch (changes_json).
+    - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
+      add_state_field, update_node, validate_branch, delete_branch.
+    - Branch query: describe_branch, get_branch, list_branches, search_nodes.
+    - Run (Phase 3): run_branch, get_run, list_runs, stream_run, cancel_run,
+      get_run_output.
+    - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
+      suggest_node_edit, get_node_output, rollback_node, list_node_versions.
 
-    Composite branch actions (PREFER these — single round trip, fit
-    under Claude.ai's per-turn tool-call limit):
-    - build_branch: ship a full BranchDefinition via spec_json. Creates
-      nodes/edges/state_schema and sets entry_point atomically with
-      rollback on failure. Use this for NEW workflows; query-intent
-      ("what do i have", "show me") routes to list_branches instead.
-    - patch_branch: apply an ordered ops list in changes_json
-      transactionally against an existing branch. USE THIS for
-      multi-step edits.
+    Node reuse across branches uses `node_ref_json`
+    (`{"source": "standalone", "node_id": "..."}` or source=<branch_def_id>).
+    A bare node_id colliding with a standalone registration is rejected;
+    pass node_ref_json or intent="copy".
 
-    Atomic branch actions (single-item surgery; use composite for
-    builds): create_branch, add_node, connect_nodes, set_entry_point,
-    add_state_field, update_node, validate_branch, delete_branch.
-
-    Node reuse across branches: when you want a branch to reuse an
-    existing standalone registered node (or a node from another
-    branch), pass `node_ref_json` to the atomic `add_node` or a
-    `node_ref` field inside a `spec_json` / `changes_json` node entry:
-    `{"source": "standalone", "node_id": "rigor_checker"}` snapshots
-    the standalone registration into this branch; `{"source":
-    "<other_branch_def_id>", "node_id": "X"}` copies from another
-    branch. A bare `node_id` that collides with an existing standalone
-    node is REJECTED — the server refuses silent shadowing and tells
-    the caller to either pass `node_ref_json` / `intent="copy"` or
-    rename.
-
-    - describe_branch: plain-English summary of a workflow.
-      USE THIS WHEN the user wants a conversational explanation,
-      especially on phone where raw topology is hard to read.
-    - get_branch: full BranchDefinition JSON with full topology.
-      USE THIS WHEN the user needs node/edge/state-schema detail;
-      prefer describe_branch for conversational replies.
-    - list_branches: summaries of all branches. USE THIS FIRST when
-      a user asks about prior workflows or says "what do i have",
-      "pull up my workflow", "show me my workflows", "what branches
-      exist", "did i already build a X workflow", or references a
-      previous chat. Returns id/name/description/node_count/author —
-      match against the user's description, then call describe_branch
-      or get_branch on the winner. Do NOT explore blindly before
-      listing.
-    - search_nodes: free-text search across every Branch's nodes for
-      reuse candidates. USE THIS BEFORE inventing a new node when
-      the user describes a role like "citation audit", "fact check",
-      "outline". Pass `node_query` for the text and optional `phase`
-      for role filter. Each hit carries a `branch_def_id` suitable
-      for passing to `node_ref` / `node_ref_json` on a subsequent
-      add_node / build_branch / patch_branch. Reuse via #66's
-      `node_ref` primitive; never invent when a close match exists.
-
-    Run actions (Phase 3 — execute the compiled graph):
-    run_branch, get_run, list_runs, stream_run, cancel_run,
-    get_run_output. `run_branch` is async (returns run_id; poll
-    get_run or stream_run). `get_run` emits a ```mermaid``` diagram
-    ready for Claude.ai to auto-render. If a source_code node is
-    unapproved, the run is rejected — do not simulate around it.
-
-    Eval / iteration actions (Phase 4 — judge → edit → rerun loop):
-    judge_run (free-text natural-language only, no numeric rubric),
-    list_judgments, compare_runs, suggest_node_edit (bundles node
-    def + recent outputs + judgments — the calling client proposes
-    the edit and then calls update_node), get_node_output,
-    rollback_node (restore a previous version — bumps branch version
-    as a new edit so forward history survives), list_node_versions.
-    `update_node` keeps node_id stable so judgments and lineage
-    survive edits.
+    `run_branch` is async (returns run_id; poll get_run or stream_run).
+    `get_run` emits a ```mermaid``` diagram for Claude.ai auto-render.
 
     Args:
         action: Operation name.
