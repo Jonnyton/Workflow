@@ -409,6 +409,8 @@ class LauncherApp:
     # ------------------------------------------------------------------
 
     def _handle_start(self) -> None:
+        if self._running:
+            return
         if self._on_start is not None:
             self._on_start(
                 self.universe_path,
@@ -447,19 +449,20 @@ class LauncherApp:
             log_callback=self._append_feed_line,
         )
 
-        # Set up tray with our callbacks (reuse existing on reload)
+        # Bind this launcher to the shared host tray (reuse existing binding
+        # during code reloads so the tray icon stays stable).
         if self._tray is None:
-            from workflow.desktop.tray import TrayApp
+            from workflow.desktop.host_tray import HostTrayService
 
-            self._tray = TrayApp(
-                on_start=lambda: None,
+            self._tray = HostTrayService.shared().bind_dashboard(
+                dashboard_key=str(Path(self.universe_path).resolve()),
+                universe_name=Path(self.universe_path).name or "Workflow",
+                on_show_window=self._show_window,
                 on_pause=self._on_tray_pause,
                 on_resume=self._on_tray_resume,
                 on_quit=self._handle_quit,
-                on_show_window=self._show_window,
                 output_dir=self.universe_path,
             )
-            self._tray.start()
 
         # Wire the dashboard so we can read live stats
         from workflow.desktop.dashboard import DashboardHandler
@@ -507,6 +510,9 @@ class LauncherApp:
         self.set_status("Idle")
         self._stop_stats_polling()
         self._reload_btn.configure(state=tk.DISABLED)
+        if self._tray is not None:
+            self._tray.stop()
+            self._tray = None
 
     def _on_tray_pause(self) -> None:
         if self._daemon is not None:
@@ -607,7 +613,12 @@ class LauncherApp:
         if not changed:
             return "none"
 
-        ui_paths = ("workflow/desktop/launcher.py", "workflow/desktop/tray.py")
+        ui_paths = (
+            "workflow/desktop/launcher.py",
+            "workflow/desktop/tray.py",
+            "fantasy_author/desktop/launcher.py",
+            "fantasy_author/desktop/tray.py",
+        )
 
         has_code = False
         has_ui = False
@@ -768,6 +779,8 @@ class LauncherApp:
 
     def _start_stats_polling(self) -> None:
         """Start periodic refresh of the stats panel."""
+        if self._stats_polling:
+            return
         self._stats_polling = True
         self._poll_stats()
 
