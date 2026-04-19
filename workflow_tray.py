@@ -99,7 +99,7 @@ def make_icon(color: tuple, size: int = 64) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 class UniverseServerManager:
-    """Manages N pinned-provider daemons + MCP server + cloudflared tunnel."""
+    """Manages N pinned-provider daemons + MCP server + cloudflared tunnel + tab watchdog."""
 
     def __init__(self) -> None:
         # One daemon per provider. Value is (Popen, log_handle) so the
@@ -107,6 +107,10 @@ class UniverseServerManager:
         self.daemon_procs: dict[str, tuple[subprocess.Popen, IO]] = {}
         self.mcp_proc: subprocess.Popen | None = None
         self.tunnel_proc: subprocess.Popen | None = None
+        # Tab watchdog: continuous single-tab enforcement on the
+        # user-sim Chrome. Auto-started alongside MCP + tunnel so tabs
+        # can't accumulate while the host is idle.
+        self.watchdog_proc: subprocess.Popen | None = None
         self._icon: Icon | None = None
         self._stop_event = threading.Event()
         self._procs_lock = threading.Lock()
@@ -117,6 +121,7 @@ class UniverseServerManager:
         self._mcp_serving = False
         self._tunnel_alive = False
         self._tunnel_ok = False
+        self._watchdog_alive = False
 
         # Active universe tracking
         self._active_universe = self._read_active_universe()
@@ -221,6 +226,10 @@ class UniverseServerManager:
             parts.append("Tunnel: Connecting")
         else:
             parts.append("Tunnel: Down")
+        if self._watchdog_alive:
+            parts.append("Tab watchdog: Running")
+        else:
+            parts.append("Tab watchdog: Stopped")
         return " | ".join(parts)
 
     @property
@@ -360,6 +369,44 @@ class UniverseServerManager:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
+    def start_watchdog(self) -> None:
+        """Launch the tab-hygiene watchdog as a background process.
+
+        The watchdog polls the CDP endpoint every 3s and enforces the
+        single-tab forever rule on the user-sim Chrome. Runs without a
+        console window (pythonw on Windows, regular python elsewhere).
+        If `scripts/tab_watchdog.py` is missing (partial checkout),
+        skip silently — same defensive shape as the mojibake pre-commit
+        hook's script-existence check.
+        """
+        LOG_DIR.mkdir(exist_ok=True)
+        watchdog_script = PROJECT_DIR / "scripts" / "tab_watchdog.py"
+        if not watchdog_script.is_file():
+            # Partial checkout or upstream refactor — skip-with-warning,
+            # tray still starts.
+            self._phase = "Tab watchdog: script missing; skipping"
+            return
+
+        log = open(LOG_DIR / "tab_watchdog.log", "a", encoding="utf-8")
+        log.write(f"\n--- Watchdog start {time.strftime('%H:%M:%S')} ---\n")
+        log.flush()
+
+        # Prefer pythonw.exe on Windows so no console flash. Falls back
+        # to the current interpreter elsewhere.
+        python_bin = sys.executable
+        if sys.platform == "win32":
+            pythonw = Path(sys.executable).with_name("pythonw.exe")
+            if pythonw.is_file():
+                python_bin = str(pythonw)
+
+        self.watchdog_proc = subprocess.Popen(
+            [python_bin, str(watchdog_script)],
+            cwd=str(PROJECT_DIR),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
     def check_health(self) -> None:
         """Poll subprocess liveness + actual HTTP readiness."""
         self._runtime_status = self._read_runtime_status()
@@ -384,6 +431,10 @@ class UniverseServerManager:
         )
         self._tunnel_alive = (
             self.tunnel_proc is not None and self.tunnel_proc.poll() is None
+        )
+        self._watchdog_alive = (
+            self.watchdog_proc is not None
+            and self.watchdog_proc.poll() is None
         )
 
         if self._mcp_alive and not self._mcp_serving:
@@ -457,7 +508,7 @@ class UniverseServerManager:
     def kill_all(self) -> None:
         """Terminate all processes."""
         self._kill_all_daemons()
-        for proc in (self.mcp_proc, self.tunnel_proc):
+        for proc in (self.mcp_proc, self.tunnel_proc, self.watchdog_proc):
             if proc and proc.poll() is None:
                 proc.terminate()
                 try:
@@ -466,10 +517,12 @@ class UniverseServerManager:
                     proc.kill()
         self.mcp_proc = None
         self.tunnel_proc = None
+        self.watchdog_proc = None
         self._mcp_alive = False
         self._mcp_serving = False
         self._tunnel_alive = False
         self._tunnel_ok = False
+        self._watchdog_alive = False
 
     # -- Auto-start -----------------------------------------------------
 
@@ -610,6 +663,8 @@ class UniverseServerManager:
         time.sleep(2)
         self._phase = "Starting Cloudflare tunnel..."
         self.start_tunnel()
+        self._phase = "Starting tab watchdog..."
+        self.start_watchdog()
 
     def _on_quit(self, icon=None, item=None) -> None:
         self._stop_event.set()
@@ -644,6 +699,13 @@ class UniverseServerManager:
                 if not self._tunnel_alive and self.tunnel_proc is not None:
                     self._phase = "Tunnel died, restarting..."
                     self.start_tunnel()
+                    restarted = True
+                if (
+                    not self._watchdog_alive
+                    and self.watchdog_proc is not None
+                ):
+                    self._phase = "Tab watchdog died, restarting..."
+                    self.start_watchdog()
                     restarted = True
 
                 if restarted:
@@ -688,6 +750,14 @@ class UniverseServerManager:
         self._phase = "Starting Cloudflare tunnel..."
         self.start_tunnel()
         print("  [OK] Cloudflare tunnel starting")
+
+        # 4. Launch tab watchdog
+        self._phase = "Starting tab watchdog..."
+        self.start_watchdog()
+        if self.watchdog_proc is not None:
+            print("  [OK] Tab watchdog starting")
+        else:
+            print("  [skip] Tab watchdog script missing; tab hygiene degrades to entry-hook only")
         print()
         print("  Look for the 'U' icon in your system tray.")
         print("  Right-click it to manage providers or quit.")
