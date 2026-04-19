@@ -183,9 +183,9 @@ def test_daemon_overview_drift_surfaces(universe_harness, monkeypatch):
 
 def test_daemon_overview_settlements_count_accurate(universe_harness):
     """Settlements counted from repo_root/settlements/ dir."""
+    from workflow.bid.node_bid import NodeBid
+    from workflow.bid.settlements import record_settlement_event
     from workflow.executors.node_bid import NodeBidResult
-    from workflow.node_bid import NodeBid
-    from workflow.settlements import record_settlement_event
 
     repo_root = universe_harness["repo"]
     bid = NodeBid(node_bid_id="nb_o1", node_def_id="n/x", bid=1.0)
@@ -399,7 +399,7 @@ def test_daemon_overview_response_shape_doc_exists():
 
 
 def test_bid_execution_log_import_works():
-    from workflow.bid_execution_log import (  # noqa: F401
+    from workflow.bid.execution_log import (  # noqa: F401
         append_execution_log_entry,
         read_execution_log,
     )
@@ -407,7 +407,7 @@ def test_bid_execution_log_import_works():
 
 def test_bid_ledger_shim_still_works():
     """Deprecated alias continues to re-export during transition."""
-    from workflow.bid_ledger import (  # noqa: F401
+    from workflow.bid.execution_log import (  # noqa: F401
         append_ledger_entry,
         read_ledger,
     )
@@ -415,7 +415,7 @@ def test_bid_ledger_shim_still_works():
 
 def test_bid_execution_log_reads_legacy_filename(tmp_path):
     """Transition: if only bid_ledger.json exists, read from it."""
-    from workflow.bid_execution_log import read_execution_log
+    from workflow.bid.execution_log import read_execution_log
     (tmp_path / "bid_ledger.json").write_text(
         json.dumps([{"k": "v"}]), encoding="utf-8",
     )

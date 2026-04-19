@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from workflow.node_bid import NodeBid
+from workflow.bid.node_bid import NodeBid
 
 logger = logging.getLogger(__name__)
 

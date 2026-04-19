@@ -2078,7 +2078,7 @@ def _action_daemon_overview(
 
     # Bids + daemon capabilities.
     try:
-        from workflow.node_bid import read_node_bids
+        from workflow.bid.node_bid import read_node_bids
         from workflow.producers.goal_pool import repo_root_path
         from workflow.producers.node_bid import paid_market_enabled
         try:
@@ -2111,8 +2111,8 @@ def _action_daemon_overview(
     try:
         import yaml as _yaml
 
+        from workflow.bid.settlements import settlements_dir
         from workflow.producers.goal_pool import repo_root_path
-        from workflow.settlements import settlements_dir
         try:
             sroot = settlements_dir(repo_root_path(udir))
         except RuntimeError:
@@ -2628,7 +2628,7 @@ def _action_submit_node_bid(
     Response includes a ``next_step`` git push hint, mirroring
     ``post_to_goal_pool``.
     """
-    from workflow.node_bid import (
+    from workflow.bid.node_bid import (
         new_node_bid_id,
         validate_node_bid_inputs,
         write_node_bid_post,

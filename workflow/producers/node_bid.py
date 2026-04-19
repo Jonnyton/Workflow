@@ -18,9 +18,9 @@ import logging
 import os
 from pathlib import Path
 
+from workflow.bid.node_bid import read_node_bids, validate_node_bid_inputs
 from workflow.branch_tasks import BranchTask
 from workflow.graph_compiler import _BID_DANGEROUS_PATTERNS
-from workflow.node_bid import read_node_bids, validate_node_bid_inputs
 from workflow.producers.branch_task import register_branch_task_producer
 from workflow.producers.goal_pool import repo_root_path
 

@@ -21,11 +21,22 @@ from pathlib import Path
 import pytest
 import yaml
 
-from workflow.bid_execution_log import (
+from workflow.bid.execution_log import (
     append_execution_log_entry as append_ledger_entry,
 )
-from workflow.bid_execution_log import (
+from workflow.bid.execution_log import (
     read_execution_log as read_ledger,
+)
+from workflow.bid.node_bid import (
+    NodeBid,
+    bid_path,
+    claim_node_bid,
+    new_node_bid_id,
+    read_node_bid,
+    read_node_bids,
+    update_node_bid_status,
+    validate_node_bid_inputs,
+    write_node_bid_post,
 )
 from workflow.branch_tasks import BranchTask
 from workflow.dispatcher import (
@@ -38,17 +49,6 @@ from workflow.dispatcher import (
     paid_market_enabled as dispatcher_paid_market_enabled,
 )
 from workflow.executors.node_bid import execute_node_bid
-from workflow.node_bid import (
-    NodeBid,
-    bid_path,
-    claim_node_bid,
-    new_node_bid_id,
-    read_node_bid,
-    read_node_bids,
-    update_node_bid_status,
-    validate_node_bid_inputs,
-    write_node_bid_post,
-)
 from workflow.producers import branch_task as bt_producer_mod
 from workflow.producers.branch_task import (
     reset_branch_task_registry,
@@ -749,12 +749,12 @@ _VALID_SOURCE = "def run(state):\n    return {'ok': True}\n"
 
 
 def test_settlement_emitted_on_succeeded_bid(repo_root):
-    from workflow.executors.node_bid import NodeBidResult
-    from workflow.settlements import (
+    from workflow.bid.settlements import (
         SCHEMA_VERSION,
         record_settlement_event,
         settlements_dir,
     )
+    from workflow.executors.node_bid import NodeBidResult
 
     bid = NodeBid(
         node_bid_id="nb_ok", node_def_id="n/x",
@@ -777,8 +777,8 @@ def test_settlement_emitted_on_succeeded_bid(repo_root):
 
 
 def test_settlement_emitted_on_failed_bid(repo_root):
+    from workflow.bid.settlements import record_settlement_event
     from workflow.executors.node_bid import NodeBidResult
-    from workflow.settlements import record_settlement_event
 
     bid = NodeBid(node_bid_id="nb_fail", node_def_id="n/x")
     result = NodeBidResult(
@@ -796,11 +796,11 @@ def test_settlement_refuses_overwrite(repo_root):
     """Preflight §4.1 #5b: v1 records are IMMUTABLE. A second call
     with the same (bid_id, daemon_id) raises SettlementExistsError.
     """
-    from workflow.executors.node_bid import NodeBidResult
-    from workflow.settlements import (
+    from workflow.bid.settlements import (
         SettlementExistsError,
         record_settlement_event,
     )
+    from workflow.executors.node_bid import NodeBidResult
 
     bid = NodeBid(node_bid_id="nb_dup", node_def_id="n/x")
     result = NodeBidResult(
@@ -813,13 +813,13 @@ def test_settlement_refuses_overwrite(repo_root):
 
 
 def test_settlement_schema_version_locked():
-    from workflow.settlements import SCHEMA_VERSION
+    from workflow.bid.settlements import SCHEMA_VERSION
     assert SCHEMA_VERSION == "1"
 
 
 def test_settlement_rejects_invalid_outcome_status(repo_root):
+    from workflow.bid.settlements import record_settlement_event
     from workflow.executors.node_bid import NodeBidResult
-    from workflow.settlements import record_settlement_event
 
     bid = NodeBid(node_bid_id="nb_bad_outcome", node_def_id="n/x")
     # A result with status="running" shouldn't be able to settle.
@@ -831,7 +831,7 @@ def test_settlement_rejects_invalid_outcome_status(repo_root):
 
 
 def test_settlement_path_daemon_id_sanitized(tmp_path):
-    from workflow.settlements import settlement_path
+    from workflow.bid.settlements import settlement_path
     # daemon_id with slashes must not break the filename.
     path = settlement_path(tmp_path, "nb_1", "daemon/with/slashes")
     # Only the daemon-id suffix part is sanitized; the path itself
@@ -859,7 +859,7 @@ def _init_git(repo_root: Path) -> None:
 def test_claim_local_only_renames_yaml(repo_root):
     """Local-only install (no remote): file renames to .claimed_by
     suffix; original YAML gone; returned NodeBid has claimed status."""
-    from workflow.node_bid import bids_dir
+    from workflow.bid.node_bid import bids_dir
     _init_git(repo_root)
     _write_bid_yaml(repo_root, "nb_rename")
     claimed = claim_node_bid(repo_root, "nb_rename", "daemon-local")
@@ -891,7 +891,7 @@ def test_claim_revert_on_push_failure(tmp_path, monkeypatch):
     outputs_dir.mkdir(parents=True)
     (outputs_dir / "leftover.json").write_text("{}", encoding="utf-8")
 
-    import workflow.node_bid as nb_mod
+    import workflow.bid.node_bid as nb_mod
     monkeypatch.setattr(nb_mod, "_git_has_remote", lambda _root: True)
     monkeypatch.setattr(nb_mod, "_git_current_branch", lambda _root: "main")
 
@@ -923,7 +923,7 @@ def test_claim_returns_none_when_already_claimed(repo_root):
     result = claim_node_bid(repo_root, "nb_pre_claimed", "daemon-self")
     assert result is None
     # Original YAML untouched (status still claimed:other).
-    from workflow.node_bid import read_node_bid
+    from workflow.bid.node_bid import read_node_bid
     bid = read_node_bid(repo_root, "nb_pre_claimed")
     assert bid is not None
     assert bid.status == "claimed:other"
@@ -1062,10 +1062,10 @@ def test_race_bypass_rejected_when_remote_configured(
     _write_bid_yaml(repo_root, "nb_race_bypass", status="open")
 
     # Re-import the fantasy_author module with the monkeypatched
-    # claim_node_bid. We patch at `workflow.node_bid` so the
+    # claim_node_bid. We patch at `workflow.bid.node_bid` so the
     # function-local import in _try_execute_claimed_node_bid picks
     # up the patched callable.
-    import workflow.node_bid as nb_mod
+    import workflow.bid.node_bid as nb_mod
 
     def _patched_claim(repo, bid_id, daemon_id):
         return None  # always "race lost"
@@ -1115,7 +1115,7 @@ def test_fallback_still_works_without_remote(
     # NO `git remote add` — single-daemon local repo.
     _write_bid_yaml(repo_root, "nb_local_fb", status="open")
 
-    import workflow.node_bid as nb_mod
+    import workflow.bid.node_bid as nb_mod
 
     def _patched_claim(repo, bid_id, daemon_id):
         return None
@@ -1152,7 +1152,7 @@ def test_fallback_rejected_when_remote_and_yaml_missing(
     _init_repo_with_remote(repo_root)
     # Note: NO call to _write_bid_yaml — the file is missing.
 
-    import workflow.node_bid as nb_mod
+    import workflow.bid.node_bid as nb_mod
     monkeypatch.setattr(
         nb_mod, "claim_node_bid", lambda r, b, d: None,
     )

@@ -330,19 +330,19 @@ def _try_execute_claimed_node_bid(
       ``<repo_root>/bids/<bid_id>.yaml``.
     """
     try:
-        from workflow.bid_execution_log import append_execution_log_entry
-        from workflow.executors.node_bid import execute_node_bid
-        from workflow.node_bid import (
+        from workflow.bid.execution_log import append_execution_log_entry
+        from workflow.bid.node_bid import (
             claim_node_bid,
             git_has_remote,
             read_node_bid,
             update_node_bid_status,
         )
-        from workflow.producers.goal_pool import repo_root_path
-        from workflow.settlements import (
+        from workflow.bid.settlements import (
             SettlementExistsError,
             record_settlement_event,
         )
+        from workflow.executors.node_bid import execute_node_bid
+        from workflow.producers.goal_pool import repo_root_path
 
         inputs = dict(claimed_task.inputs or {})
         node_bid_id = str(inputs.get("__node_bid_id", ""))

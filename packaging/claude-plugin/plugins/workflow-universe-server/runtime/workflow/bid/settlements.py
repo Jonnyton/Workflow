@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from workflow.bid.node_bid import NodeBid
     from workflow.executors.node_bid import NodeBidResult
-    from workflow.node_bid import NodeBid
 
 logger = logging.getLogger(__name__)
 
