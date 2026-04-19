@@ -301,22 +301,38 @@ def test_recovery_never_navigates_to_new_chat(claude_chat) -> None:
         )
 
 
-def test_recovery_clicks_widget_skip_button_before_escape(claude_chat) -> None:
-    """Primary failure mode from 2026-04-12 dumps: selection widget is
-    active and the `Skip` button is its own dismiss affordance. Clicking
-    Skip is more reliable than Escape because it doesn't depend on
-    widget focus. The ladder must try Skip BEFORE falling through to
-    Escape / scroll / Tab / reload.
+def test_recovery_never_clicks_widget_skip_button(claude_chat) -> None:
+    """Persona-authenticity regression (2026-04-19 Maya live mission).
+
+    Claude.ai's ask-user-option widget renders a Skip button. The model
+    interprets a Skip click as "user picked 'no preference'" — NOT a
+    benign UI dismiss. For user-sim, that silently substitutes a neutral
+    answer for the persona's actual voice. Persona authenticity is a
+    first-class value — the tool must never post on the user's behalf.
+
+    Rationale: docs/design-notes/2026-04-19-option-select-bug-
+    claude-chat.md.
+
+    This test asserts the recovery ladder does NOT click any
+    data-widget-action Skip button under any selector/state combination,
+    even when the widget is visible and would be reachable.
     """
 
-    class WidgetPage(FakePage):
+    click_log: list[str] = []
+
+    class WidgetSkipTracker(FakePage):
         def locator(self, selector: str):
             if selector.startswith('button[data-widget-action'):
                 loc = FakeLocator(visible=True)
+                orig_click = loc.click
 
                 def _click(**kw):
-                    # Clicking Skip re-mounts the input and dismisses
-                    # the widget — claude.ai's real behavior.
+                    click_log.append(selector)
+                    orig_click(**kw)
+                    # If the ladder ever clicks Skip, simulate the
+                    # widget's real behavior so we notice: widget goes
+                    # away, input returns. A passing test should NOT
+                    # traverse this code path.
                     self.selectors['div[contenteditable="true"]'] = True
                     self.selectors[
                         '[aria-activedescendant*="ask-user-option" i]'
@@ -326,68 +342,73 @@ def test_recovery_clicks_widget_skip_button_before_escape(claude_chat) -> None:
             visible = self.selectors.get(selector, False)
             return FakeLocator(visible=visible)
 
-    page = WidgetPage(
+    page = WidgetSkipTracker(
         selectors={
             '[aria-activedescendant*="ask-user-option" i]': True,
             "main, [role='main']": True,
         },
+        url="https://claude.ai/chat/persona",
+    )
+    steps: list[str] = []
+    claude_chat._try_recover_input(page, on_step=steps.append)
+
+    assert click_log == [], (
+        f"recovery ladder clicked a widget Skip button ({click_log}) — "
+        "posts 'no preference' to the model; violates persona "
+        "authenticity. Only Escape is a safe dismiss."
+    )
+    assert "widget_skip_click" not in steps
+    assert "chat_reload_then_skip" not in steps
+
+
+def test_recovery_via_escape_does_not_submit_choice(claude_chat) -> None:
+    """Escape is the only widget-dismiss affordance we allow because it
+    does NOT post a choice to the conversation. If Escape clears the
+    widget and restores the input, user-sim's next typed `ask` carries
+    the persona's real answer verbatim.
+    """
+    page = FakePage(
+        selectors={
+            '[aria-activedescendant*="ask-user-option" i]': True,
+            "main, [role='main']": True,
+        },
+        recover_on="key:Escape",
     )
     steps: list[str] = []
     inp = claude_chat._try_recover_input(page, on_step=steps.append)
     assert inp is not None
-    assert "widget_skip_click" in steps
-    # Skip click must happen BEFORE any Escape presses.
-    assert "Escape" not in page.keyboard.presses
+    assert "Escape" in page.keyboard.presses
+    # Must NOT have attempted the Skip click anywhere in the ladder.
+    assert "widget_skip_click" not in steps
 
 
-def test_recovery_reload_then_skip_when_widget_rerenders(claude_chat) -> None:
-    """If the widget is sticky enough to survive a reload, the post-
-    reload path must click Skip once more instead of giving up.
+def test_recovery_returns_none_when_widget_survives_all_strategies(
+    claude_chat,
+) -> None:
+    """If Escape / scroll / Tab / reload all fail to clear the widget,
+    the ladder must return None instead of clicking Skip as a last
+    resort. Caller's failure dump then fires with selection_widget=
+    visible diagnostic; user-sim's next typed `ask` re-mounts the input
+    with the persona's answer.
     """
-
-    class ReloadStickyPage(FakePage):
-        def __init__(self) -> None:
-            super().__init__(
-                selectors={
-                    '[aria-activedescendant*="ask-user-option" i]': True,
-                    "main, [role='main']": True,
-                },
-                url="https://claude.ai/chat/sticky",
-            )
-            self._reloaded = False
-            # Prevent earlier Skip steps from firing. We only want to
-            # exercise the post-reload Skip path.
-            self._suppress_skip_until_reload = True
-
-        def locator(self, selector: str):
-            if selector.startswith('button[data-widget-action'):
-                if self._suppress_skip_until_reload:
-                    return FakeLocator(visible=False)
-                loc = FakeLocator(visible=True)
-
-                def _click(**kw):
-                    self.selectors['div[contenteditable="true"]'] = True
-                    self.selectors[
-                        '[aria-activedescendant*="ask-user-option" i]'
-                    ] = False
-                loc.click = _click
-                return loc
-            visible = self.selectors.get(selector, False)
-            return FakeLocator(visible=visible)
-
-        def goto(self, url: str, timeout: int = 20000) -> None:
-            self.goto_calls.append(url)
-            self._reloaded = True
-            self._suppress_skip_until_reload = False
-            # Reload does NOT bring the input back on its own here —
-            # only the subsequent Skip click will.
-
-    page = ReloadStickyPage()
+    page = FakePage(
+        selectors={
+            '[aria-activedescendant*="ask-user-option" i]': True,
+            "main, [role='main']": True,
+        },
+        url="https://claude.ai/chat/sticky",
+    )  # no recover_on — nothing mutates the page
     steps: list[str] = []
     inp = claude_chat._try_recover_input(page, on_step=steps.append)
-    assert inp is not None
-    assert "chat_reload_then_skip" in steps
+    assert inp is None
+    # Tried multiple non-Skip strategies.
+    assert "Escape" in page.keyboard.presses
+    assert "Tab" in page.keyboard.presses
+    # Reload was attempted (chat URL).
     assert page.goto_calls == ["https://claude.ai/chat/sticky"]
+    # No Skip was attempted.
+    assert "widget_skip_click" not in steps
+    assert "chat_reload_then_skip" not in steps
 
 
 def test_recovery_is_resilient_to_exceptions(claude_chat) -> None:
