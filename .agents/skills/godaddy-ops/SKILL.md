@@ -109,6 +109,18 @@ python scripts/browser_lock.py release lead
 
 User-sim's auth hook will then return to `approved` and missions can resume.
 
+## Cloudflare DNS dashboard — automation gotchas (learned 2026-04-19)
+
+When adding or editing DNS records via Cloudflare dash automation (same shared CDP browser), the following cost the lead ~15 minutes of wall time on first try. Bake into automation:
+
+- **The "Name" field is a `<textarea name="name">` not `<input>`.** Width renders extremely narrow (~4 px) when collapsed, so `:visible` filters with size thresholds miss it. Correct selector: `textarea[name="name"]`. Target it via `Shift+Tab` from the IPv4 field as a fallback.
+- **IPv4 field is `<input name="ipv4_address">`.** This one cooperates with `fill()`.
+- **The form's `<label for="name">` points to a `<th id="name">` (table header), NOT the form input.** Don't target by `#name`.
+- **Proxy toggle has no good selector.** Not an `input[type=checkbox]`, not a `button[role="switch"]`, no aria-label. Best option: click at bounding-box coords of the visible orange cloud icon in the DNS records table row.
+- **`Proxy=ON` breaks GoDaddy W+M origin routing** — Cloudflare terminates SSL on its own cert, GoDaddy W+M origin rejects. Always DNS-only (gray cloud) for records pointing at `76.223.105.230` / `13.248.243.5` / `*.godaddysites.com`.
+- **Save button sometimes returns "No success toast" without erroring.** Re-read the page; record may have actually landed. Verify via `nslookup -type=A <domain>` rather than trusting the UI.
+- **Moving a Tunnel public-hostname from apex → subdomain deletes the apex CNAME.** Cloudflare auto-managed the record; when the Tunnel's "Published application route" changes hostname, the DNS is updated atomically. Plan the replacement apex record BEFORE making the tunnel change or DNS goes dark.
+
 ## Known pitfalls
 
 1. **New-tab links.** GoDaddy has "Open in new tab" buttons on several flows. These VIOLATE the one-tab rule and confuse the watchdog. Prefer same-tab navigation (`lead_browser.py goto`). If an in-app link insists on spawning a new tab, navigate directly to the destination URL instead.
