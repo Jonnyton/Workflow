@@ -9679,6 +9679,189 @@ def _wiki_sync_projects(**_kwargs: Any) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# TOOL 5 — get_status (routing-evidence primitive for tier-2 trust)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Interim MCP primitive introduced 2026-04-19 (task #88) per navigator's
+# Devin-session1 intelligence report §T-7. Devin bounced at live exchange 4
+# because his chatbot had no tool-surface primitive to VERIFY the
+# confidential-tier routing promise — without concrete evidence it correctly
+# refused to guess from parameter names on a privacy-critical decision.
+#
+# This tool is a factual read-only surface that reports:
+#   - current active-host identity
+#   - the daemon's served LLM type (the closest legacy-surface analogue of
+#     a routing-constraint commitment)
+#   - a deterministic policy hash for drift detection across runs
+#   - recent-activity evidence drawn from the public activity.log
+#
+# The legacy universe_server surface predates spec #79's tier-routing
+# enforcement schema; this primitive returns what IS factual today and
+# narrates what's NOT yet enforced so the chatbot can make honest claims
+# instead of inferred ones. Full tray observability + per-universe
+# sensitivity_tier enforcement lives in the rewrite (spec #79 §13).
+#
+# The tool is deliberately narrow — no writes, no policy mutation, no
+# expensive calls. It reads config + recent activity. Shape is reusable
+# when the gateway rewrite lands: transplant verbatim into spec #27.
+
+
+def _policy_hash(payload: dict[str, Any]) -> str:
+    """Deterministic sha256 of sorted-JSON policy payload.
+
+    Chatbot-side callers can compare the hash across calls to detect
+    config drift. Hashing sorted JSON means key-order + whitespace
+    don't perturb the fingerprint.
+    """
+    import hashlib
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@mcp.tool(
+    title="Daemon Status + Routing Evidence",
+    tags={
+        "status", "routing", "privacy", "verification",
+        "confidential-tier", "workflow",
+    },
+    annotations=ToolAnnotations(
+        title="Daemon Status + Routing Evidence",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def get_status(universe_id: str = "") -> str:
+    """Factual snapshot of the daemon's identity + routing config.
+
+    Chatbots call this when a user asks a privacy-critical question
+    ("will my manuscript go to a cloud LLM?", "which model is this bound
+    to?"). Returns concrete evidence the chatbot can narrate; does not
+    infer or guess.
+
+    Shape:
+        {
+          "active_host": {host_id, served_llm_type, llm_endpoint_bound},
+          "tier_routing_policy": {served_llm_type, accept_*, bid_*, ...},
+          "evidence": {last_completed_request_llm_used,
+                       activity_log_tail, policy_hash},
+          "caveats": [...]
+        }
+
+    `caveats` is load-bearing — the legacy surface does NOT yet enforce
+    per-universe sensitivity_tier (that lives in spec #79 §13, post-
+    rewrite). The chatbot MUST read + narrate caveats so trust claims
+    match reality.
+
+    Args:
+        universe_id: Optional universe scope. Defaults to active universe.
+    """
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+
+    # Load the dispatcher config for the universe.
+    try:
+        from workflow.dispatcher import (
+            DispatcherConfig,
+            load_dispatcher_config,
+            paid_market_enabled,
+        )
+        cfg: DispatcherConfig = load_dispatcher_config(udir)
+    except Exception as exc:
+        return json.dumps({
+            "error": "config_load_failed",
+            "detail": str(exc),
+            "universe_id": uid,
+        })
+
+    served_llm_type = (cfg.served_llm_type or "").strip()
+    endpoint_hint = (
+        os.environ.get("OLLAMA_HOST")
+        or os.environ.get("ANTHROPIC_BASE_URL")
+        or ""
+    ).strip() or "unset"
+
+    tier_routing_policy = {
+        "served_llm_type": served_llm_type or "any",
+        "accept_external_requests": cfg.accept_external_requests,
+        "accept_goal_pool": cfg.accept_goal_pool,
+        "accept_paid_bids": cfg.accept_paid_bids,
+        "allow_opportunistic": cfg.allow_opportunistic,
+        "paid_market_flag_on": paid_market_enabled(),
+        "tier_status_map": cfg.tier_status_map(),
+    }
+
+    # Pull the last N lines of activity.log for evidence of what actually
+    # ran recently — chatbot cites this when narrating trust claims.
+    activity_tail: list[str] = []
+    last_completed_llm = "unknown"
+    log_path = udir / "activity.log"
+    if log_path.exists():
+        try:
+            content = log_path.read_text(encoding="utf-8").strip()
+            if content:
+                lines = content.splitlines()
+                activity_tail = lines[-20:]
+                # Best-effort scan for "llm=" or "provider=" tokens in
+                # recent lines. Legacy format varies; chatbot verifies by
+                # reading the tail itself if this heuristic misses.
+                for line in reversed(lines):
+                    for token in ("llm=", "provider=", "model="):
+                        idx = line.find(token)
+                        if idx >= 0:
+                            rest = line[idx + len(token):].split()[0]
+                            last_completed_llm = rest.rstrip(",;)")
+                            break
+                    if last_completed_llm != "unknown":
+                        break
+        except Exception:  # noqa: BLE001 — best-effort evidence
+            pass
+
+    caveats: list[str] = []
+    if not served_llm_type:
+        caveats.append(
+            "served_llm_type is unset — daemon accepts ANY LLM type. "
+            "Not a local-only guarantee."
+        )
+    if endpoint_hint == "unset":
+        caveats.append(
+            "No LLM endpoint env var detected (OLLAMA_HOST / "
+            "ANTHROPIC_BASE_URL). Provider routing is at-call discretion."
+        )
+    caveats.append(
+        "Legacy surface does NOT enforce per-universe sensitivity_tier. "
+        "Full enforcement ships with spec #79 §13 tray observability in "
+        "the rewrite. For confidential work today: pin served_llm_type + "
+        "run locally + verify via this tool's evidence field."
+    )
+
+    policy_payload = {
+        "active_host": {
+            "host_id": host_id,
+            "served_llm_type": served_llm_type or "any",
+            "llm_endpoint_bound": endpoint_hint,
+        },
+        "tier_routing_policy": tier_routing_policy,
+    }
+
+    response = {
+        "active_host": policy_payload["active_host"],
+        "tier_routing_policy": tier_routing_policy,
+        "evidence": {
+            "last_completed_request_llm_used": last_completed_llm,
+            "activity_log_tail": activity_tail,
+            "activity_log_line_count": len(activity_tail),
+            "policy_hash": _policy_hash(policy_payload),
+        },
+        "caveats": caveats,
+        "universe_id": uid,
+    }
+    return json.dumps(response)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Server Entry Point
 # ═══════════════════════════════════════════════════════════════════════════
 
