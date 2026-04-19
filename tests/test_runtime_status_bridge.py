@@ -154,12 +154,12 @@ def tray_manager(tmp_path, monkeypatch):
     sys.modules["pystray"].Menu = type("Menu", (), {"SEPARATOR": object()})
     sys.modules["pystray"].MenuItem = object
 
-    # Point universe_tray at our tmp project root
-    import universe_tray
+    # Point workflow_tray at our tmp project root
+    import workflow_tray
 
-    importlib.reload(universe_tray)
-    monkeypatch.setattr(universe_tray, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(universe_tray, "LOG_DIR", tmp_path / "logs")
+    importlib.reload(workflow_tray)
+    monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 
     # Create an output/<universe>/ tree so the manager picks it up
     universe = "test-universe"
@@ -167,7 +167,7 @@ def tray_manager(tmp_path, monkeypatch):
     universe_dir.mkdir(parents=True)
     (universe_dir / "PROGRAM.md").write_text("premise", encoding="utf-8")
 
-    mgr = universe_tray.UniverseServerManager()
+    mgr = workflow_tray.UniverseServerManager()
     mgr._active_universe = universe
     return mgr, universe_dir
 

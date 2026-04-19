@@ -1,4 +1,4 @@
-"""Tests for universe_tray.UniverseServerManager multi-provider lifecycle.
+"""Tests for workflow_tray.UniverseServerManager multi-provider lifecycle.
 
 Exercises the parts of the tray that don't depend on pystray event loops:
 constraint enforcement, lifecycle bookkeeping, auto-start ordering,
@@ -15,11 +15,11 @@ from typing import Any
 
 import pytest
 
-# universe_tray imports PIL + pystray at module load. Skip if unavailable.
+# workflow_tray imports PIL + pystray at module load. Skip if unavailable.
 pystray = pytest.importorskip("pystray")  # noqa: F841
 PIL = pytest.importorskip("PIL")  # noqa: F841
 
-import universe_tray  # noqa: E402
+import workflow_tray  # noqa: E402
 from workflow import preferences  # noqa: E402
 
 
@@ -76,8 +76,8 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     output.mkdir()
     (output / "testverse").mkdir()
     (output / ".active_universe").write_text("testverse", encoding="utf-8")
-    monkeypatch.setattr(universe_tray, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(universe_tray, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 
     # Patch spawn machinery so nothing real boots.
     spawned: list[dict[str, Any]] = []
@@ -89,11 +89,11 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def fake_open(path, *_args, **_kwargs):
         return FakeLog()
 
-    monkeypatch.setattr(universe_tray.subprocess, "Popen", fake_popen)
-    # Replace the global `open` universe_tray uses for log handles.
+    monkeypatch.setattr(workflow_tray.subprocess, "Popen", fake_popen)
+    # Replace the global `open` workflow_tray uses for log handles.
     monkeypatch.setattr("builtins.open", fake_open, raising=False)
 
-    m = universe_tray.UniverseServerManager()
+    m = workflow_tray.UniverseServerManager()
     m._spawn_log = spawned  # test-visible handle
     yield m
     preferences.reset_cache()
@@ -104,7 +104,7 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 
-def test_start_refuses_unknown_provider(mgr: universe_tray.UniverseServerManager) -> None:
+def test_start_refuses_unknown_provider(mgr: workflow_tray.UniverseServerManager) -> None:
     assert mgr.start_daemon_for("bogus-provider") is False
     assert mgr.daemon_procs == {}
 
@@ -119,11 +119,11 @@ def test_start_refuses_duplicate_subscription_provider(mgr) -> None:
 def test_start_refuses_second_local_provider(mgr, monkeypatch) -> None:
     # Pretend there's a second local provider registered.
     monkeypatch.setattr(
-        universe_tray, "_LOCAL_PROVIDER_SET", {"ollama-local", "fake-local"}
+        workflow_tray, "_LOCAL_PROVIDER_SET", {"ollama-local", "fake-local"}
     )
     monkeypatch.setattr(
-        universe_tray, "ALL_PROVIDERS",
-        universe_tray.ALL_PROVIDERS + ["fake-local"],
+        workflow_tray, "ALL_PROVIDERS",
+        workflow_tray.ALL_PROVIDERS + ["fake-local"],
     )
     assert mgr.start_daemon_for("ollama-local") is True
     assert mgr.start_daemon_for("fake-local") is False
