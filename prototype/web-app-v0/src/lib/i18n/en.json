@@ -51,6 +51,52 @@
     ],
     "what_happens_next_title": "What happens next",
     "what_happens_next": "Claude gets a new set of tools — nodes you can call, workflows you can design, daemons you can delegate to. Try starting simple: ask for a workflow that summarizes a document, or one that generates research hypotheses on a topic. Your chatbot takes it from there.",
+
+    "examples_title": "What you can do",
+    "examples_intro": "Real things real people get done through their chatbot:",
+    "examples": [
+      {
+        "category": "Accounting",
+        "invocation": "Workflow: process these invoice PDFs and post them to my accounting system.",
+        "outcome": "Invoice-number extraction + GL-account match + Voyager/QuickBooks push. Human reviews any over a configurable threshold."
+      },
+      {
+        "category": "Research",
+        "invocation": "Workflow: read these 5 papers and generate falsifiable hypotheses for my next experiment.",
+        "outcome": "Prior-work synthesis + gap identification + 3–5 hypotheses ranked by testability × novelty."
+      },
+      {
+        "category": "Writing",
+        "invocation": "Workflow: refine this scene — tighten pacing, keep my voice, don't add new beats.",
+        "outcome": "Transformer run that cuts slack without generating substance; voice preservation score returned so you can reject drift."
+      },
+      {
+        "category": "Cooking",
+        "invocation": "Workflow: scale this recipe from 4 servings to 14, keep the baking ratios honest.",
+        "outcome": "Ingredient scaling with non-linear-leavening warnings; caller knows when to halve-and-double vs free-scale."
+      },
+      {
+        "category": "Legal",
+        "invocation": "Workflow: pull all termination clauses out of this contract and compare to our standard template.",
+        "outcome": "Clause extraction + line-by-line diff against your template; flagged deviations for human review."
+      },
+      {
+        "category": "Code",
+        "invocation": "Workflow: lint this Python module under strict rules and suggest refactors for the top 3 issues.",
+        "outcome": "Rule-based lint + LLM-driven refactor suggestions ranked by downstream impact."
+      },
+      {
+        "category": "Journalism",
+        "invocation": "Workflow: summarize these 12 interview transcripts and map where sources agree vs disagree.",
+        "outcome": "Multi-source synthesis with explicit disagreement mapping; citations back to each transcript line."
+      },
+      {
+        "category": "Email",
+        "invocation": "Workflow: draft a reply to this thread in my voice, for my review before sending.",
+        "outcome": "Draft created in Gmail drafts (never auto-sent); your voice profile preserved; you send manually."
+      }
+    ],
+
     "faq_title": "Common questions",
     "faq": [
       {
@@ -68,6 +114,22 @@
       {
         "q": "What happens to my data?",
         "a": "The workflow design (how the steps work, what they call) is public by default — that's the commons. Your actual data (the documents you process, values you fill in) stays on your own machine or in owner-only storage. Never training data."
+      },
+      {
+        "q": "What if a workflow does the wrong thing?",
+        "a": "Every real-world action (sending email, submitting paper, posting to your accounting system) requires explicit per-invocation confirmation. The chatbot proposes; you confirm. No cached consent."
+      },
+      {
+        "q": "Can I run a workflow without executing it for real?",
+        "a": "Yes. Say 'dry-run' and any workflow simulates without calling external systems. Useful for previewing expensive or irreversible actions."
+      },
+      {
+        "q": "How do I find useful workflows?",
+        "a": "Say 'show me workflows for [what you do]' and the chatbot searches the public catalog. You see what's proven + what's new + who built it."
+      },
+      {
+        "q": "Can I edit or build my own?",
+        "a": "Yes. Describe what you want and the chatbot helps you assemble it from existing nodes or compose something new. No coding required."
       }
     ],
     "trust_signals": [
@@ -96,6 +158,24 @@
     "what_happens_next": "By default, your daemon runs an active cascade: it handles your own requests first, then picks up paid work it's qualified for, then helps with public requests. Idle is a failure state — it tries to stay useful. You can also flip a capability to \"self only\" so it never takes outside work.",
     "earnings_preview_title": "Earnings preview",
     "earnings_preview": "Paid work pays you in the project's testnet token today (real chain post-launch). Platform takes 1%; you get 99%. Settlements batch under $1 equivalent and go on-chain above that. You can request payout anytime.",
+
+    "visibility_modes_title": "Visibility modes (per capability)",
+    "visibility_modes_intro": "Each capability your daemon offers has a visibility setting. You can mix — one capability 'self only' and another 'paid' — whatever fits.",
+    "visibility_modes": [
+      {
+        "mode": "Self only",
+        "plain_language": "Your daemon runs workflows ONLY for requests that come from your own account. No one else sees it. Good for when you want private use without participating in the commons. Default on first install."
+      },
+      {
+        "mode": "Network",
+        "plain_language": "Your daemon runs for you + a list of GitHub handles you explicitly trust. No strangers. No money changes hands. Useful for small teams / collaborator networks."
+      },
+      {
+        "mode": "Paid",
+        "plain_language": "Your daemon accepts paid bids from anyone. You set a price floor. Platform takes 1%; you keep 99%. Opt-in per capability — you might host 'research-hypothesis-generator' paid while keeping 'invoice-ocr' self-only because it touches your instance data."
+      }
+    ],
+
     "faq_title": "Common questions",
     "faq": [
       {
@@ -117,6 +197,18 @@
       {
         "q": "Can I run multiple daemons?",
         "a": "Yes. 1 per provider (Claude, Codex, etc.) is free. Spawning a 2nd on the same provider warns you about rate limits + payment tier first."
+      },
+      {
+        "q": "Who sees the work my daemon runs?",
+        "a": "Only you (for self + your own work) or the requester (for network/paid work). The commons sees the concept layer of any workflow that gets published — not the specific data your daemon processed."
+      },
+      {
+        "q": "What if someone tries to use my daemon for something I don't want?",
+        "a": "Capabilities are per-node. If you don't host email-sender, you can't be asked to send email. Flag inappropriate requests; the platform's moderation queue reviews."
+      },
+      {
+        "q": "Can I leave my daemon running while I sleep?",
+        "a": "Yes — that's the design. Active-mode cascade runs continuously, handling your queue first, then paid work, then public contributions. Quit the tray anytime; in-flight work fails gracefully."
       }
     ],
     "trust_signals": [
@@ -145,6 +237,55 @@
     ],
     "what_happens_next_title": "After you contribute",
     "what_happens_next": "Merged engine PRs ship in the next release (weekly). Merged catalog PRs round-trip into the Postgres catalog within seconds of merge — other users see your change immediately. Your attribution is preserved on the provenance chain.",
+
+    "dco_title": "DCO, not CLA",
+    "dco_plain_language": "Every commit must include `Signed-off-by: Your Name <[email protected]>`. Use `git commit -s` to add it automatically. The Developer Certificate of Origin affirms you have the right to submit the contribution — no lawyer-style Contributor License Agreement. If that last sentence was gibberish: you're asserting 'I wrote this and I have the right to contribute it.' That's it.",
+
+    "what_to_work_on_title": "What to work on",
+    "what_to_work_on_intro": "Four ways to find work:",
+    "what_to_work_on": [
+      {
+        "path": "Open issues",
+        "where": "github.com/Workflow/Workflow/issues (platform) + github.com/Workflow/Workflow-catalog/issues (content). Labels to watch: good-first-issue, help-wanted, track-X (where X ∈ A-K)."
+      },
+      {
+        "path": "Track work",
+        "where": "The platform has uptime tracks A-K (gateway, schema, web app, tray, paid-market, etc.) documented in docs/specs/. Each has OPEN flags — things that need resolution. Claim one, propose a PR."
+      },
+      {
+        "path": "Design notes",
+        "where": "docs/design-notes/ has architectural documents that invite feedback. Comment on the latest ones or propose extensions."
+      },
+      {
+        "path": "Your itch",
+        "where": "Something annoying or missing when you use the platform? File an issue describing it. Contributors often work on what scratches their own itch — and that's the most durable contribution."
+      }
+    ],
+
+    "community_title": "Community",
+    "community": [
+      {
+        "channel": "GitHub Discussions",
+        "purpose": "Design questions, RFC-style proposals, general discussion. Public + searchable. Start here."
+      },
+      {
+        "channel": "GitHub Issues",
+        "purpose": "Concrete bugs, feature requests, track work. Actionable items only."
+      },
+      {
+        "channel": "Discord (TBD)",
+        "purpose": "Synchronous chat. Planned post-launch; for now discussion stays in GitHub."
+      },
+      {
+        "channel": "security@tinyassets.io",
+        "purpose": "Security vulnerabilities — private disclosure. First response within 72 hours."
+      },
+      {
+        "channel": "ops@tinyassets.io",
+        "purpose": "Platform operations questions (downtime reports, incident coordination). Admin-pool reads."
+      }
+    ],
+
     "faq_title": "Common questions",
     "faq": [
       {
@@ -162,6 +303,22 @@
       {
         "q": "Can I contribute without writing code?",
         "a": "Yes — workflow content contributions (catalog edits) happen via chatbot directly. No git required for that side. Git is for platform-code contributions."
+      },
+      {
+        "q": "How fast do PRs merge?",
+        "a": "Depends on scope. Typo/docs fix: hours. Feature PR on a spec'd track: 1-3 days. Architecture-touching PR: a week of review. We prefer small PRs merged quickly over big ones debated forever."
+      },
+      {
+        "q": "How do I become a tier-3 reviewer with merge rights?",
+        "a": "≥3 merged PRs is the default threshold. Acceptance of CONTRIBUTING.md + moderation_rubric.md + basic participation in reviews. Per SUCCESSION.md admin-pool expansion is 2-admin-approval."
+      },
+      {
+        "q": "What's the roadmap?",
+        "a": "The uptime tracks A-K (in docs/specs/) are the north star. Additional work happens on community-proposed features — we don't have a committed roadmap beyond the forever-rule uptime surfaces."
+      },
+      {
+        "q": "Is the project accepting funding / sponsorship?",
+        "a": "Not in v1. The 1% platform fee (when real money flows post-mainnet) is the intended sustainability mechanism. Foundation/LLC setup is a post-launch decision per SUCCESSION.md."
       }
     ],
     "trust_signals": [
