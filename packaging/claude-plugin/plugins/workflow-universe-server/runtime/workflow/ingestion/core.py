@@ -132,6 +132,12 @@ class ManifestEntry:
     routed_to: str  # "canon" or "sources"
     synthesized_docs: list[str] = field(default_factory=list)
     ingested_at: str = ""
+    # Task #17 Fix C: per-bite outcome tally from the most recent
+    # Tier-2 synthesis run. Empty dict when the source was Tier-1
+    # (single-pass) or hasn't been synthesized yet. Keys:
+    # ``ok``, ``provider_error``, ``empty_response``, ``parse_failed``,
+    # ``parsed_but_empty``, ``bites_total``.
+    last_bite_outcomes: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

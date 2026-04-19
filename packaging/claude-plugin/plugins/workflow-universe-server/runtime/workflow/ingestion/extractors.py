@@ -335,6 +335,21 @@ def _synthesize_single_pass(
     return docs
 
 
+_LAST_BITE_OUTCOMES: dict[str, dict[str, int]] = {}
+
+
+def get_last_bite_outcomes(filename: str) -> dict[str, int]:
+    """Return the per-bite outcome tally from the most recent Tier-2 run.
+
+    Task #17 Fix C — exposes the internal diagnostics so the
+    worldbuild handler can surface them into the manifest for post-mortem
+    debugging. Keys: ``ok``, ``provider_error``, ``empty_response``,
+    ``parse_failed``, ``parsed_but_empty``. Returns an empty dict if
+    the file hasn't been synthesized (or was single-pass).
+    """
+    return dict(_LAST_BITE_OUTCOMES.get(filename, {}))
+
+
 def _synthesize_bite_by_bite(
     source_text: str,
     filename: str,
@@ -347,6 +362,11 @@ def _synthesize_bite_by_bite(
     2. Fall back to fixed-size bites with overlap when no natural breaks exist.
     3. Each bite synthesizes into canon using the same prompt format.
     4. Results are merged progressively -- later bites update/extend earlier docs.
+
+    Task #17 Fix C: per-bite outcomes are stashed via
+    ``_LAST_BITE_OUTCOMES`` so the caller can surface them into the
+    manifest — "why is synthesized_docs empty?" becomes answerable
+    without source-spelunking.
     """
     bites = _split_into_bites(source_text)
     logger.info(
@@ -356,6 +376,12 @@ def _synthesize_bite_by_bite(
 
     all_docs: dict[str, str] = {}
     existing_topics: list[str] = []
+    # Task #17 Fix C: per-bite outcome tally so an empty-result failure
+    # mode ("all bites returned non-JSON") is debuggable from logs alone.
+    bite_outcomes: dict[str, int] = {
+        "ok": 0, "provider_error": 0, "empty_response": 0,
+        "parse_failed": 0, "parsed_but_empty": 0,
+    }
 
     for i, bite in enumerate(bites):
         logger.info(
@@ -387,15 +413,50 @@ def _synthesize_bite_by_bite(
         try:
             raw = provider_call(prompt, _SYNTHESIS_SYSTEM, role="writer")
         except Exception as e:
-            logger.warning("Bite %d/%d synthesis failed: %s", i + 1, len(bites), e)
+            logger.warning(
+                "bite_diag: %s bite %d/%d provider_error (%d chars in) — %s",
+                filename, i + 1, len(bites), len(bite), e,
+            )
+            bite_outcomes["provider_error"] += 1
             continue
 
         if not raw:
+            logger.warning(
+                "bite_diag: %s bite %d/%d empty_response (%d chars in, 0 chars out)",
+                filename, i + 1, len(bites), len(bite),
+            )
+            bite_outcomes["empty_response"] += 1
             continue
 
         bite_docs = _parse_synthesis_response(raw)
         if not bite_docs:
+            # Try to distinguish parse-failure vs parsed-empty-dict —
+            # both return ``{}`` from _parse_synthesis_response, so we
+            # look at the raw for a top-level JSON object shape. Cheap
+            # heuristic but enough to narrow the failure mode.
+            stripped = raw.strip().lstrip("`").strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                logger.warning(
+                    "bite_diag: %s bite %d/%d parsed_but_empty "
+                    "(%d chars in, %d chars raw out)",
+                    filename, i + 1, len(bites), len(bite), len(raw),
+                )
+                bite_outcomes["parsed_but_empty"] += 1
+            else:
+                logger.warning(
+                    "bite_diag: %s bite %d/%d parse_failed "
+                    "(%d chars in, %d chars raw out, head=%r)",
+                    filename, i + 1, len(bites), len(bite), len(raw),
+                    raw[:80],
+                )
+                bite_outcomes["parse_failed"] += 1
             continue
+
+        bite_outcomes["ok"] += 1
+        logger.info(
+            "bite_diag: %s bite %d/%d ok (%d chars in, %d topics out)",
+            filename, i + 1, len(bites), len(bite), len(bite_docs),
+        )
 
         # Merge bite results: for duplicate keys, append content
         for topic, content in bite_docs.items():
@@ -406,10 +467,23 @@ def _synthesize_bite_by_bite(
 
         existing_topics = list(all_docs.keys())
 
-    logger.info(
-        "Tier 2 synthesis complete for %s: %d topics from %d bites",
+    # Summary log so "why is synthesized_docs empty?" is answerable from
+    # one grep on the filename.
+    summary_level = logger.warning if not all_docs else logger.info
+    summary_level(
+        "Tier 2 synthesis complete for %s: %d topics from %d bites "
+        "(ok=%d, provider_error=%d, empty_response=%d, parse_failed=%d, "
+        "parsed_but_empty=%d)",
         filename, len(all_docs), len(bites),
+        bite_outcomes["ok"], bite_outcomes["provider_error"],
+        bite_outcomes["empty_response"], bite_outcomes["parse_failed"],
+        bite_outcomes["parsed_but_empty"],
     )
+    # Stash for the caller (worldbuild._handle_synthesize_source) to
+    # mirror into the manifest entry so the state is visible on disk.
+    _LAST_BITE_OUTCOMES[filename] = {
+        **bite_outcomes, "bites_total": len(bites),
+    }
     return all_docs
 
 

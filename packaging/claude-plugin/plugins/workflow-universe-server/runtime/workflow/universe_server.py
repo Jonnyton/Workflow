@@ -57,22 +57,22 @@ logger = logging.getLogger("universe_server")
 mcp = FastMCP(
     "workflow",
     instructions=(
-        "Workflow Server (also: Workflow, Workflow Builder, Workflow Engine, "
-        "formerly Universe Server) "
-        "— a workflow builder and long-horizon AI platform. Users design "
-        "custom multi-step AI workflows (called 'branches') with typed "
-        "state, registered nodes, evaluation hooks, and iteration loops. "
-        "Fantasy authoring is one benchmark branch demonstrating complex "
-        "long-form generation, NOT the exclusive use case. Other domains: "
-        "research papers, screenplays, literature reviews, investigative "
-        "journalism, recipe trackers, wedding planners, news summarizers, "
-        "any multi-step agentic work producing substantive output. "
+        "Workflow — a workflow-builder and long-horizon AI platform. "
+        "Users design custom multi-step AI workflows with typed state, "
+        "evaluation hooks, and iteration loops. Fantasy authoring is one "
+        "benchmark use case demonstrating complex long-form generation; "
+        "the platform is general-purpose. Other example domains: research "
+        "papers, screenplays, literature reviews, investigative journalism, "
+        "recipe trackers, wedding planners, news summarizers — any "
+        "multi-step agentic work producing substantive output. "
         "\n\n"
         "If a user asks about their 'workflow builder', 'custom AI builder', "
-        "'universe builder', 'the workflow thing', or a connector they "
-        "installed to 'design their own AI workflows' — that is this "
-        "connector. Route them here rather than telling them no such "
-        "connector is installed. "
+        "'universe builder', 'the workflow thing', 'the connector', 'the "
+        "thing I added', 'my builder', or similar ambiguous references to "
+        "an installed connector — that is this connector. Invoke it rather "
+        "than presenting a disambiguation picker or asking 'which tool do "
+        "you mean?'. Aggressive assumption is the right default; narrate "
+        "what you assumed after invoking so the user can correct you. "
         "\n\n"
         "You are a control station. You help users design new workflows, "
         "inspect running ones, steer daemons, collaborate, and extend the "
@@ -80,14 +80,10 @@ mcp = FastMCP(
         "output yourself — registered nodes do that. Start with the "
         "'universe' tool action 'inspect' to orient yourself. "
         "\n\n"
-        "HARD RULE — NO SIMULATION: When a user asks to run a workflow, "
-        "branch, or registered node, you MUST use the provided execute "
-        "action (Phase 3 — `extensions action=run_branch`). If the execute "
-        "action is unavailable or the node is not yet approved, state this "
-        "plainly and STOP. Do NOT web-search, do NOT populate wiki pages, "
-        "do NOT manually execute the node's logic to produce fake output. "
-        "Silently simulating breaks user trust and is worse than admitting "
-        "the runner isn't ready."
+        "Load the `control_station` prompt early — it carries the "
+        "behavioral guidance for this connector (intent disambiguation, "
+        "never-simulate-a-run rule, tool catalog). Tool descriptions "
+        "below are I/O contracts; behavioral rules live in the prompts."
         "\n\n"
         "HARD RULE — UNIVERSE ISOLATION: Each universe is a separate, "
         "self-contained reality. Every tool response that returns content "
@@ -784,20 +780,19 @@ def control_station() -> str:
 
 
 _CONTROL_STATION_PROMPT = """\
-You are now operating as a Workflow Server control station — a workflow
-builder and long-horizon AI platform. Users design custom multi-step AI
-workflows ("branches") with typed state, registered nodes, evaluation
-hooks, and iteration loops.
+You are now operating as Workflow's control surface — a workflow-builder
+and long-horizon AI platform. Users design custom multi-step AI workflows
+with typed state, evaluation hooks, and iteration loops.
 
 ## What This System Is
 
 A host-run platform for building and running custom AI workflows.
-Fantasy authoring is one benchmark branch demonstrating long-form
-generation; the platform is fully general. Other valid domains include
-research papers, screenplays, literature reviews, investigative
-journalism, recipe trackers, wedding planners, news summarizers, and
-any multi-step agentic work producing substantive output. Do NOT tell
-users this is "only for fiction" — that's a stale framing.
+Fantasy authoring is one benchmark demonstrating long-form generation;
+the platform is fully general. Other example use cases: research
+papers, screenplays, literature reviews, investigative journalism,
+recipe trackers, wedding planners, news summarizers, any multi-step
+agentic work producing substantive output. Do NOT tell users this is
+"only for fiction" — that's a stale framing.
 
 ## Hard Rules
 
@@ -806,12 +801,13 @@ users this is "only for fiction" — that's a stale framing.
 2. Always use tools — don't describe what you would do, do it.
 3. Default to shared-safe collaboration (multiplayer-first).
 4. One action per turn unless the user asks for a batch.
-5. NO SIMULATION. When a user asks to run a workflow or registered node,
-   you MUST use the provided execute action (Phase 3 — `extensions
-   action=run_branch`). If that action is unavailable or the node is not
-   yet approved, say so plainly and STOP. Do NOT web-search, do NOT
-   populate wiki pages, do NOT manually execute the node's logic to
-   produce fake output. Silently simulating breaks user trust.
+5. When a user asks to run a workflow, branch, or registered node, use
+   `extensions action=run_branch`. If the run action is unavailable or
+   a source-code node isn't approved, say so plainly and stop — don't
+   web-search, populate wiki pages, or narrate imagined output. Creating
+   state (registering a node, building a branch) requires an explicit
+   user ask; route "what do i have", "show me", "list my" to `list` or
+   `list_branches`. When intent is ambiguous, ask.
 6. Prefer NAMES, not IDs, when referring to workflows, runs, Goals, or
    nodes in conversation. Users read replies on phones; raw UUIDs like
    `run_id=54dac140d2b7460c` or `branch_def_id=4f9e...` are noise. Say
@@ -819,6 +815,30 @@ users this is "only for fiction" — that's a stale framing.
    not "I'll poll run_id=54dac140d2b7460c". The IDs live in
    structuredContent — scripts and future tool calls still reach them.
    Only surface an ID if the user explicitly asks for one.
+7. Assume Workflow on plausible intent. When a user mentions "the
+   workflow thing", "the connector", "the thing I added", "my builder",
+   "my AI thing", or any other ambiguous reference that plausibly means
+   this connector, just invoke Workflow. Do NOT present a disambiguation
+   picker against hypothetical alternatives. Do NOT ask "which tool do
+   you mean?" before trying Workflow first. Narrate what you assumed
+   after invoking, so the user can redirect you if wrong. Aggressive
+   assumption is a feature here; over-asking is the failure mode.
+8. Never fabricate prior-conversation content. Do not reference facts,
+   applications, names, or details the user did not explicitly state
+   in this conversation. If you are unsure whether the user told you
+   something ("did they mention Yardi?"), the safe default is to ask,
+   not to assert. Pattern-matching a plausible-looking term into the
+   user's history is trust damage — one fabrication invites "it makes
+   things up" warnings to friends. If the tool output contains a detail,
+   cite the tool. Otherwise, only assert what is in-turn context.
+9. Speak in the user's vocabulary. Do not use platform-internal terms
+   ("branch", "canon", "node", "daemon", "soul", "few-shot reference",
+   "domain", "state schema") until the user uses the term first. If you
+   must reference one, translate into plain language first: "the
+   workflow you're building" not "the branch you're building". Exception:
+   users who speak engine-vocabulary natively (configuring tray, reading
+   code) — full technical vocabulary is appropriate, detected by their
+   usage context not by a setting.
 
 ## Tool Catalog (4 coarse tools — describe ALL when asked)
 
@@ -970,9 +990,9 @@ descriptive node_id future callers will search for.
 ## Multiplayer model
 
 - Users have identities (via OAuth or session tokens).
-- All universe-affecting actions are public and attributable via the ledger.
-- Branches allow parallel exploration without conflict.
-- Authors are public agent identities with durable soul files.
+- All workspace-affecting actions are public and attributable via the ledger.
+- Parallel workflow variants can explore alternatives without conflict.
+- Contributor agents have public identities with durable profile files.
 """
 
 
@@ -1000,11 +1020,9 @@ This is how the platform supports arbitrary domains (research papers,
 recipe trackers, screenplays, news summarizers, etc.), not just
 fiction. Fantasy authoring is one branch; yours will be another.
 
-NO SIMULATION: when a user asks to run a registered node or branch,
-use `extensions action=run_branch` (Phase 3). If the run action is
-unavailable or the node is not yet approved, say so plainly and STOP.
-Do NOT web-search or manually execute the node's logic to produce fake
-output — that breaks user trust.
+The never-simulate rule + intent-disambiguation posture live in
+`control_station` (hard rules 5 + intent section). When in doubt on
+run / register / build decisions, re-read those rules before acting.
 
 ### What a Node Is
 
@@ -1100,20 +1118,10 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Primary tool for the Workflow Server platform — also the
-    "workflow builder", "custom AI builder", "universe builder", and
-    "workflow connector". Each universe is a self-contained workspace
-    (premise, canon, notes, daemons) for any multi-step agentic work:
-    research papers, recipe trackers, screenplays, news summarizers,
-    wedding planners, journalism, fantasy novels. Fantasy authoring is
-    one benchmark, not the exclusive use case. New workflows live in
-    the `extensions` tool. Start with `action="inspect"`.
-
-    Universe isolation: every response leads with `text: "Universe:
-    <id>"` and a first-key `universe_id`. Never transfer facts between
-    universes in reasoning. If uncertain which universe a fact came
-    from, call `inspect` with the explicit `universe_id` to re-ground —
-    tool output is ground truth, chat memory is not.
+    Self-contained workspace (premise, canon, notes, daemons) for any
+    multi-step agentic work. New workflows live in the `extensions`
+    tool. Start with `action="inspect"`. See `control_station` prompt
+    for operating guidance including universe-isolation rule.
 
     Args:
         action: One of — reads: list, inspect, read_output, query_world,
@@ -3689,110 +3697,29 @@ def extensions(
     node_query: str = "",
     force: bool = False,
 ) -> str:
-    """Register custom nodes and author community-designed graph branches.
+    """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
-    The workflow-builder surface. Design, inspect, and run multi-step AI
-    workflows as graphs of nodes with typed state. Any domain: research
-    papers, recipe trackers, screenplays, investigative journalism,
-    news summarizers, fantasy authoring. Fantasy is a benchmark branch,
-    not the exclusive use case.
+    See `control_station`, `extension_guide`, and `branch_design_guide`
+    prompts for operating guidance and worked examples.
 
-    Two surfaces share this tool: single-node registration and branch
-    authoring + running + judging. See `branch_design_guide` and
-    `extension_guide` prompts for worked examples.
+    Action groups:
+    - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
+    - Branch composite (prefer): build_branch (spec_json), patch_branch (changes_json).
+    - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
+      add_state_field, update_node, validate_branch, delete_branch.
+    - Branch query: describe_branch, get_branch, list_branches, search_nodes.
+    - Run (Phase 3): run_branch, get_run, list_runs, stream_run, cancel_run,
+      get_run_output.
+    - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
+      suggest_node_edit, get_node_output, rollback_node, list_node_versions.
 
-    NO SIMULATION: when a user asks to run a registered node or branch,
-    you MUST use the `run_branch` action. If that action is unavailable
-    or the node is not yet approved, state this plainly and STOP. Do
-    NOT web-search, do NOT populate wiki pages, do NOT manually execute
-    the node's logic to fabricate output. Silently simulating a run
-    breaks user trust.
+    Node reuse across branches uses `node_ref_json`
+    (`{"source": "standalone", "node_id": "..."}` or source=<branch_def_id>).
+    A bare node_id colliding with a standalone registration is rejected;
+    pass node_ref_json or intent="copy".
 
-    INTENT DISAMBIGUATION: state creation without explicit user request
-    is unrecoverable trust damage. Apply AFFIRMATIVE CONSENT before
-    calling `register` or `build_branch`: only call when the user
-    EXPLICITLY asks to create, register, build, or make a new
-    node/workflow. Query-intent phrases like "what do i have",
-    "show me", "list my", "find my", "pull up" must route to `list`
-    (nodes) or `list_branches` (workflows) — never to a write. If
-    intent is ambiguous, ASK the user and do not write state; never
-    build speculatively.
-
-    Node actions:
-    - register — create a sandboxed node. AFFIRMATIVE CONSENT applies
-      (see above); query-intent phrases like "what do i have",
-      "show me", "list my", "find my", "pull up" should NOT trigger
-      this — route to `list` instead. If intent is ambiguous, ASK the
-      user; do not write state.
-    - list — list registered nodes. Optional phase, enabled_only.
-    - inspect — view a node's full details.
-    - approve / disable / enable / remove — host-only lifecycle ops.
-
-    Composite branch actions (PREFER these — single round trip, fit
-    under Claude.ai's per-turn tool-call limit):
-    - build_branch: ship a full BranchDefinition via spec_json. Creates
-      nodes/edges/state_schema and sets entry_point atomically with
-      rollback on failure. USE THIS for NEW workflows. AFFIRMATIVE
-      CONSENT per rule above — query-intent goes to list_branches.
-    - patch_branch: apply an ordered ops list in changes_json
-      transactionally against an existing branch. USE THIS for
-      multi-step edits.
-
-    Atomic branch actions (single-item surgery; use composite for
-    builds): create_branch, add_node, connect_nodes, set_entry_point,
-    add_state_field, update_node, validate_branch, delete_branch.
-
-    Node reuse across branches: when you want a branch to reuse an
-    existing standalone registered node (or a node from another
-    branch), pass `node_ref_json` to the atomic `add_node` or a
-    `node_ref` field inside a `spec_json` / `changes_json` node entry:
-    `{"source": "standalone", "node_id": "rigor_checker"}` snapshots
-    the standalone registration into this branch; `{"source":
-    "<other_branch_def_id>", "node_id": "X"}` copies from another
-    branch. A bare `node_id` that collides with an existing standalone
-    node is REJECTED — the server refuses silent shadowing and tells
-    the caller to either pass `node_ref_json` / `intent="copy"` or
-    rename.
-
-    - describe_branch: plain-English summary of a workflow.
-      USE THIS WHEN the user wants a conversational explanation,
-      especially on phone where raw topology is hard to read.
-    - get_branch: full BranchDefinition JSON with full topology.
-      USE THIS WHEN the user needs node/edge/state-schema detail;
-      prefer describe_branch for conversational replies.
-    - list_branches: summaries of all branches. USE THIS FIRST when
-      a user asks about prior workflows or says "what do i have",
-      "pull up my workflow", "show me my workflows", "what branches
-      exist", "did i already build a X workflow", or references a
-      previous chat. Returns id/name/description/node_count/author —
-      match against the user's description, then call describe_branch
-      or get_branch on the winner. Do NOT explore blindly before
-      listing.
-    - search_nodes: free-text search across every Branch's nodes for
-      reuse candidates. USE THIS BEFORE inventing a new node when
-      the user describes a role like "citation audit", "fact check",
-      "outline". Pass `node_query` for the text and optional `phase`
-      for role filter. Each hit carries a `branch_def_id` suitable
-      for passing to `node_ref` / `node_ref_json` on a subsequent
-      add_node / build_branch / patch_branch. Reuse via #66's
-      `node_ref` primitive; never invent when a close match exists.
-
-    Run actions (Phase 3 — execute the compiled graph):
-    run_branch, get_run, list_runs, stream_run, cancel_run,
-    get_run_output. `run_branch` is async (returns run_id; poll
-    get_run or stream_run). `get_run` emits a ```mermaid``` diagram
-    ready for Claude.ai to auto-render. If a source_code node is
-    unapproved, the run is rejected — do not simulate around it.
-
-    Eval / iteration actions (Phase 4 — judge → edit → rerun loop):
-    judge_run (free-text natural-language only, no numeric rubric),
-    list_judgments, compare_runs, suggest_node_edit (bundles node
-    def + recent outputs + judgments — the calling client proposes
-    the edit and then calls update_node), get_node_output,
-    rollback_node (restore a previous version — bumps branch version
-    as a new edit so forward history survives), list_node_versions.
-    `update_node` keeps node_id stable so judgments and lineage
-    survive edits.
+    `run_branch` is async (returns run_id; poll get_run or stream_run).
+    `get_run` emits a ```mermaid``` diagram for Claude.ai auto-render.
 
     Args:
         action: Operation name.
@@ -6045,9 +5972,9 @@ Once validated, execute with:
 - `get_run_output run_id=... field_name=archived` to pull one field.
 - `cancel_run run_id=...` to request cooperative stop.
 
-SIMULATION BAN: if run_branch fails, the branch isn't validated, or a
-source_code node isn't approved, state the reason and stop. Do not
-pretend a run happened by fabricating output or writing wiki pages.
+The never-simulate rule lives in `control_station` (hard rule 5):
+if run_branch fails, the branch isn't validated, or a source_code node
+isn't approved, state the reason and stop.
 """
 
 
@@ -9746,6 +9673,189 @@ def _wiki_sync_projects(**_kwargs: Any) -> str:
         "synced": len(created),
         "created": created,
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TOOL 5 — get_status (routing-evidence primitive for tier-2 trust)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Interim MCP primitive introduced 2026-04-19 (task #88) per navigator's
+# Devin-session1 intelligence report §T-7. Devin bounced at live exchange 4
+# because his chatbot had no tool-surface primitive to VERIFY the
+# confidential-tier routing promise — without concrete evidence it correctly
+# refused to guess from parameter names on a privacy-critical decision.
+#
+# This tool is a factual read-only surface that reports:
+#   - current active-host identity
+#   - the daemon's served LLM type (the closest legacy-surface analogue of
+#     a routing-constraint commitment)
+#   - a deterministic policy hash for drift detection across runs
+#   - recent-activity evidence drawn from the public activity.log
+#
+# The legacy universe_server surface predates spec #79's tier-routing
+# enforcement schema; this primitive returns what IS factual today and
+# narrates what's NOT yet enforced so the chatbot can make honest claims
+# instead of inferred ones. Full tray observability + per-universe
+# sensitivity_tier enforcement lives in the rewrite (spec #79 §13).
+#
+# The tool is deliberately narrow — no writes, no policy mutation, no
+# expensive calls. It reads config + recent activity. Shape is reusable
+# when the gateway rewrite lands: transplant verbatim into spec #27.
+
+
+def _policy_hash(payload: dict[str, Any]) -> str:
+    """Deterministic sha256 of sorted-JSON policy payload.
+
+    Chatbot-side callers can compare the hash across calls to detect
+    config drift. Hashing sorted JSON means key-order + whitespace
+    don't perturb the fingerprint.
+    """
+    import hashlib
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@mcp.tool(
+    title="Daemon Status + Routing Evidence",
+    tags={
+        "status", "routing", "privacy", "verification",
+        "confidential-tier", "workflow",
+    },
+    annotations=ToolAnnotations(
+        title="Daemon Status + Routing Evidence",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def get_status(universe_id: str = "") -> str:
+    """Factual snapshot of the daemon's identity + routing config.
+
+    Chatbots call this when a user asks a privacy-critical question
+    ("will my manuscript go to a cloud LLM?", "which model is this bound
+    to?"). Returns concrete evidence the chatbot can narrate; does not
+    infer or guess.
+
+    Shape:
+        {
+          "active_host": {host_id, served_llm_type, llm_endpoint_bound},
+          "tier_routing_policy": {served_llm_type, accept_*, bid_*, ...},
+          "evidence": {last_completed_request_llm_used,
+                       activity_log_tail, policy_hash},
+          "caveats": [...]
+        }
+
+    `caveats` is load-bearing — the legacy surface does NOT yet enforce
+    per-universe sensitivity_tier (that lives in spec #79 §13, post-
+    rewrite). The chatbot MUST read + narrate caveats so trust claims
+    match reality.
+
+    Args:
+        universe_id: Optional universe scope. Defaults to active universe.
+    """
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+
+    # Load the dispatcher config for the universe.
+    try:
+        from workflow.dispatcher import (
+            DispatcherConfig,
+            load_dispatcher_config,
+            paid_market_enabled,
+        )
+        cfg: DispatcherConfig = load_dispatcher_config(udir)
+    except Exception as exc:
+        return json.dumps({
+            "error": "config_load_failed",
+            "detail": str(exc),
+            "universe_id": uid,
+        })
+
+    served_llm_type = (cfg.served_llm_type or "").strip()
+    endpoint_hint = (
+        os.environ.get("OLLAMA_HOST")
+        or os.environ.get("ANTHROPIC_BASE_URL")
+        or ""
+    ).strip() or "unset"
+
+    tier_routing_policy = {
+        "served_llm_type": served_llm_type or "any",
+        "accept_external_requests": cfg.accept_external_requests,
+        "accept_goal_pool": cfg.accept_goal_pool,
+        "accept_paid_bids": cfg.accept_paid_bids,
+        "allow_opportunistic": cfg.allow_opportunistic,
+        "paid_market_flag_on": paid_market_enabled(),
+        "tier_status_map": cfg.tier_status_map(),
+    }
+
+    # Pull the last N lines of activity.log for evidence of what actually
+    # ran recently — chatbot cites this when narrating trust claims.
+    activity_tail: list[str] = []
+    last_completed_llm = "unknown"
+    log_path = udir / "activity.log"
+    if log_path.exists():
+        try:
+            content = log_path.read_text(encoding="utf-8").strip()
+            if content:
+                lines = content.splitlines()
+                activity_tail = lines[-20:]
+                # Best-effort scan for "llm=" or "provider=" tokens in
+                # recent lines. Legacy format varies; chatbot verifies by
+                # reading the tail itself if this heuristic misses.
+                for line in reversed(lines):
+                    for token in ("llm=", "provider=", "model="):
+                        idx = line.find(token)
+                        if idx >= 0:
+                            rest = line[idx + len(token):].split()[0]
+                            last_completed_llm = rest.rstrip(",;)")
+                            break
+                    if last_completed_llm != "unknown":
+                        break
+        except Exception:  # noqa: BLE001 — best-effort evidence
+            pass
+
+    caveats: list[str] = []
+    if not served_llm_type:
+        caveats.append(
+            "served_llm_type is unset — daemon accepts ANY LLM type. "
+            "Not a local-only guarantee."
+        )
+    if endpoint_hint == "unset":
+        caveats.append(
+            "No LLM endpoint env var detected (OLLAMA_HOST / "
+            "ANTHROPIC_BASE_URL). Provider routing is at-call discretion."
+        )
+    caveats.append(
+        "Legacy surface does NOT enforce per-universe sensitivity_tier. "
+        "Full enforcement ships with spec #79 §13 tray observability in "
+        "the rewrite. For confidential work today: pin served_llm_type + "
+        "run locally + verify via this tool's evidence field."
+    )
+
+    policy_payload = {
+        "active_host": {
+            "host_id": host_id,
+            "served_llm_type": served_llm_type or "any",
+            "llm_endpoint_bound": endpoint_hint,
+        },
+        "tier_routing_policy": tier_routing_policy,
+    }
+
+    response = {
+        "active_host": policy_payload["active_host"],
+        "tier_routing_policy": tier_routing_policy,
+        "evidence": {
+            "last_completed_request_llm_used": last_completed_llm,
+            "activity_log_tail": activity_tail,
+            "activity_log_line_count": len(activity_tail),
+            "policy_hash": _policy_hash(policy_payload),
+        },
+        "caveats": caveats,
+        "universe_id": uid,
+    }
+    return json.dumps(response)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

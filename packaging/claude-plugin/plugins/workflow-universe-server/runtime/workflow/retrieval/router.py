@@ -8,6 +8,7 @@ RAPTOR (thematic/global), or LanceDB vectors (tone/similarity).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable
 
 import numpy as np

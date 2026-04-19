@@ -1374,7 +1374,7 @@ def execute_branch_async(
 def recover_in_flight_runs(base_path: str | Path) -> int:
     """Mark any ``queued`` or ``running`` rows as ``interrupted``.
 
-    Called at Universe Server startup to clean up runs that were in
+    Called at Workflow Server startup to clean up runs that were in
     flight when the server died. Returns the number of rows updated.
 
     A follow-up could resume these via SqliteSaver checkpoint + thread_id,
