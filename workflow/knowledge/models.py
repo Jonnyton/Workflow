@@ -47,6 +47,22 @@ class NarrativeFunction(str, Enum):
     CHARACTER_DEVELOPMENT = "character_dev"
 
 
+class FactHardness(str, Enum):
+    """Backward-compatible hardness enum for fact stability."""
+
+    SOFT = "soft"
+    HARD = "hard"
+
+
+class FactHorizon(str, Enum):
+    """Backward-compatible horizon enum for fact lifespan."""
+
+    SCENE = "scene"
+    CHAPTER = "chapter"
+    ARC = "arc"
+    STORY = "story"
+
+
 class TruthValue(str, Enum):
     """Has this fact's truth been revealed?"""
 
@@ -204,3 +220,9 @@ class RetrievalResult:
     warnings: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     token_count: int = 0
+
+
+# Backward-compatible aliases preserved for older tests and call sites.
+FactSourceType = SourceType
+FactLanguageType = LanguageType
+FactNarrativeFunction = NarrativeFunction
