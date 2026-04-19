@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Workflow pre-commit invariants.
+#
+# Enforces two invariants at commit time so no session has to
+# re-check them by hand:
+#
+#   1. Skill-mirror parity. If any file in `.agents/skills/` is
+#      staged, the Claude Code mirror at `.claude/skills/` is
+#      refreshed by running scripts/sync-skills.ps1.
+#
+#   2. Plugin-mirror parity. For every staged canonical file at
+#      `workflow/**`, the packaged-plugin copy at
+#      `packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/**`
+#      must be byte-identical. Commits that break parity fail.
+#
+# Override with `git commit --no-verify` for exceptional cases
+# (e.g. intentional mirror-only edit during a sync commit).
+#
+# Installed via `powershell -ExecutionPolicy Bypass -File scripts/install-git-hooks.ps1`.
+# Source of truth lives at `scripts/git-hooks/pre-commit`.
+
+set -u
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "${REPO_ROOT}" ]; then
+  echo "pre-commit: not inside a git repo; skipping invariants" >&2
+  exit 0
+fi
+
+cd "${REPO_ROOT}" || exit 0
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+# --- 1. Skill-mirror parity ------------------------------------------
+
+SKILL_SOURCE_CHANGED=0
+if git diff --cached --name-only | grep -q '^\.agents/skills/'; then
+  SKILL_SOURCE_CHANGED=1
+fi
+
+if [ "${SKILL_SOURCE_CHANGED}" -eq 1 ]; then
+  echo "${YELLOW}pre-commit: .agents/skills/ staged — resyncing .claude/skills/${RESET}"
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -ExecutionPolicy Bypass -File scripts/sync-skills.ps1 >/dev/null 2>&1
+    sync_status=$?
+  elif command -v pwsh >/dev/null 2>&1; then
+    pwsh -ExecutionPolicy Bypass -File scripts/sync-skills.ps1 >/dev/null 2>&1
+    sync_status=$?
+  else
+    echo "${RED}pre-commit: powershell not available to run sync-skills.ps1; skipping auto-resync${RESET}" >&2
+    sync_status=0
+  fi
+  if [ "${sync_status}" -ne 0 ]; then
+    echo "${RED}pre-commit: sync-skills.ps1 failed (exit ${sync_status})${RESET}" >&2
+    exit 1
+  fi
+  # Stage any refreshed .claude/skills/* so the commit reflects them.
+  git add .claude/skills 2>/dev/null || true
+fi
+
+# --- 2. Plugin-mirror parity -----------------------------------------
+
+MIRROR_PREFIX="packaging/claude-plugin/plugins/workflow-universe-server/runtime"
+
+# List staged canonical paths under workflow/ (excluding subpackaged-only
+# paths that don't have a mirror — currently none, but defensive against
+# future additions).
+STAGED_CANONICAL=$(
+  git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '^workflow/.*\.(py|md|json|toml)$' || true
+)
+
+if [ -z "${STAGED_CANONICAL}" ]; then
+  echo "${GREEN}pre-commit: no canonical workflow/ changes — mirror parity N/A${RESET}"
+  exit 0
+fi
+
+MIRROR_MISMATCHES=()
+for canon in ${STAGED_CANONICAL}; do
+  mirror="${MIRROR_PREFIX}/${canon}"
+  if [ ! -f "${mirror}" ]; then
+    # Canonical file has no mirror counterpart — acceptable, skip.
+    # (E.g. new workflow/ modules before the plugin build picks them up.)
+    continue
+  fi
+  if ! cmp -s "${canon}" "${mirror}"; then
+    MIRROR_MISMATCHES+=("${canon}")
+  fi
+done
+
+if [ "${#MIRROR_MISMATCHES[@]}" -gt 0 ]; then
+  echo "${RED}pre-commit: plugin-mirror parity broken.${RESET}" >&2
+  echo "" >&2
+  echo "The following staged canonical files diverge from their plugin-mirror copies:" >&2
+  for f in "${MIRROR_MISMATCHES[@]}"; do
+    echo "  ${f}" >&2
+    echo "    mirror: ${MIRROR_PREFIX}/${f}" >&2
+  done
+  echo "" >&2
+  echo "Resync options:" >&2
+  echo "  1. Re-run the plugin build:" >&2
+  echo "       python packaging/claude-plugin/build_plugin.py" >&2
+  echo "  2. Or copy each canonical file to its mirror path and" >&2
+  echo "     stage both in the same commit." >&2
+  echo "" >&2
+  echo "Override with --no-verify if this is an intentional one-sided edit." >&2
+  exit 1
+fi
+
+CHECKED_COUNT=$(printf '%s\n' "${STAGED_CANONICAL}" | wc -l | tr -d ' ')
+echo "${GREEN}pre-commit: mirror parity verified (${CHECKED_COUNT} canonical files checked)${RESET}"
+exit 0
