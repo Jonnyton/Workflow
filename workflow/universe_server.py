@@ -80,14 +80,10 @@ mcp = FastMCP(
         "output yourself — registered nodes do that. Start with the "
         "'universe' tool action 'inspect' to orient yourself. "
         "\n\n"
-        "HARD RULE — NO SIMULATION: When a user asks to run a workflow, "
-        "branch, or registered node, you MUST use the provided execute "
-        "action (Phase 3 — `extensions action=run_branch`). If the execute "
-        "action is unavailable or the node is not yet approved, state this "
-        "plainly and STOP. Do NOT web-search, do NOT populate wiki pages, "
-        "do NOT manually execute the node's logic to produce fake output. "
-        "Silently simulating breaks user trust and is worse than admitting "
-        "the runner isn't ready."
+        "Load the `control_station` prompt early — it carries the "
+        "behavioral guidance for this connector (intent disambiguation, "
+        "never-simulate-a-run rule, tool catalog). Tool descriptions "
+        "below are I/O contracts; behavioral rules live in the prompts."
         "\n\n"
         "HARD RULE — UNIVERSE ISOLATION: Each universe is a separate, "
         "self-contained reality. Every tool response that returns content "
@@ -1000,11 +996,9 @@ This is how the platform supports arbitrary domains (research papers,
 recipe trackers, screenplays, news summarizers, etc.), not just
 fiction. Fantasy authoring is one branch; yours will be another.
 
-NO SIMULATION: when a user asks to run a registered node or branch,
-use `extensions action=run_branch` (Phase 3). If the run action is
-unavailable or the node is not yet approved, say so plainly and STOP.
-Do NOT web-search or manually execute the node's logic to produce fake
-output — that breaks user trust.
+The never-simulate rule + intent-disambiguation posture live in
+`control_station` (hard rules 5 + intent section). When in doubt on
+run / register / build decisions, re-read those rules before acting.
 
 ### What a Node Is
 
@@ -3692,38 +3686,12 @@ def extensions(
     """Register custom nodes and author community-designed graph branches.
 
     The workflow-builder surface. Design, inspect, and run multi-step AI
-    workflows as graphs of nodes with typed state. Any domain: research
-    papers, recipe trackers, screenplays, investigative journalism,
-    news summarizers, fantasy authoring. Fantasy is a benchmark branch,
-    not the exclusive use case.
-
-    Two surfaces share this tool: single-node registration and branch
-    authoring + running + judging. See `branch_design_guide` and
-    `extension_guide` prompts for worked examples.
-
-    NO SIMULATION: when a user asks to run a registered node or branch,
-    you MUST use the `run_branch` action. If that action is unavailable
-    or the node is not yet approved, state this plainly and STOP. Do
-    NOT web-search, do NOT populate wiki pages, do NOT manually execute
-    the node's logic to fabricate output. Silently simulating a run
-    breaks user trust.
-
-    INTENT DISAMBIGUATION: state creation without explicit user request
-    is unrecoverable trust damage. Apply AFFIRMATIVE CONSENT before
-    calling `register` or `build_branch`: only call when the user
-    EXPLICITLY asks to create, register, build, or make a new
-    node/workflow. Query-intent phrases like "what do i have",
-    "show me", "list my", "find my", "pull up" must route to `list`
-    (nodes) or `list_branches` (workflows) — never to a write. If
-    intent is ambiguous, ASK the user and do not write state; never
-    build speculatively.
+    workflows as graphs of nodes with typed state. See `control_station`
+    and `extension_guide` prompts for behavioral guidance (when to list
+    vs build, never-simulate rule, worked examples).
 
     Node actions:
-    - register — create a sandboxed node. AFFIRMATIVE CONSENT applies
-      (see above); query-intent phrases like "what do i have",
-      "show me", "list my", "find my", "pull up" should NOT trigger
-      this — route to `list` instead. If intent is ambiguous, ASK the
-      user; do not write state.
+    - register — create a sandboxed node.
     - list — list registered nodes. Optional phase, enabled_only.
     - inspect — view a node's full details.
     - approve / disable / enable / remove — host-only lifecycle ops.
@@ -3732,8 +3700,8 @@ def extensions(
     under Claude.ai's per-turn tool-call limit):
     - build_branch: ship a full BranchDefinition via spec_json. Creates
       nodes/edges/state_schema and sets entry_point atomically with
-      rollback on failure. USE THIS for NEW workflows. AFFIRMATIVE
-      CONSENT per rule above — query-intent goes to list_branches.
+      rollback on failure. Use this for NEW workflows; query-intent
+      ("what do i have", "show me") routes to list_branches instead.
     - patch_branch: apply an ordered ops list in changes_json
       transactionally against an existing branch. USE THIS for
       multi-step edits.
@@ -6045,9 +6013,9 @@ Once validated, execute with:
 - `get_run_output run_id=... field_name=archived` to pull one field.
 - `cancel_run run_id=...` to request cooperative stop.
 
-SIMULATION BAN: if run_branch fails, the branch isn't validated, or a
-source_code node isn't approved, state the reason and stop. Do not
-pretend a run happened by fabricating output or writing wiki pages.
+The never-simulate rule lives in `control_station` (hard rule 5):
+if run_branch fails, the branch isn't validated, or a source_code node
+isn't approved, state the reason and stop.
 """
 
 
