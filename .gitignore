@@ -24,11 +24,14 @@ lancedb/
 .claude/agent-memory/
 
 # Secrets
+.secrets/
 .provider_keys.json
 .mcp.json
 .env
 *.key
 *.pem
+*.seed
+wallet-seed*.txt
 
 # OS / editor
 .fuse_hidden*
