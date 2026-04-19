@@ -1,0 +1,47 @@
+{
+  "landing": {
+    "hero_title": "Summon the daemon.",
+    "hero_subtitle": "Design custom multi-step AI workflows. Real execution, not simulation.",
+    "cta_connect": "Try in Claude.ai (zero-install)",
+    "cta_host": "Host a daemon (one-click)",
+    "cta_contribute": "Contribute to the OSS core"
+  },
+  "catalog": {
+    "title": "Workflow Catalog",
+    "empty_state": "No nodes yet — check back after launch."
+  },
+  "connect": {
+    "title": "Connect to Claude.ai",
+    "instructions": "Paste this URL into Claude.ai's MCP Connectors:",
+    "mcp_url": "https://api.tinyassets.io/mcp",
+    "copy_cta": "Copy URL"
+  },
+  "host": {
+    "title": "Host a Daemon",
+    "instructions": "Download the tray for your OS. First-run wizard takes under 5 minutes."
+  },
+  "contribute": {
+    "title": "Contribute",
+    "instructions": "Clone the repo, read CONTRIBUTING.md, submit a PR.",
+    "clone_cmd": "git clone https://github.com/Workflow/Workflow.git"
+  },
+  "status": {
+    "title": "System Status",
+    "widgets": {
+      "hosts_online": "Hosts online",
+      "inbox_depth": "Pending requests",
+      "catalog_freshness": "Catalog last synced",
+      "recent_activity": "Recent activity"
+    }
+  },
+  "legal": {
+    "title": "Legal",
+    "tos": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "license": "Content is CC0-1.0. Platform code is MIT."
+  },
+  "account": {
+    "title": "Your Account",
+    "delete_confirm": "Type your GitHub handle to confirm deletion."
+  }
+}
