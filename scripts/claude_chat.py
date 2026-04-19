@@ -404,6 +404,61 @@ def _find_claude_page(browser):
     return None
 
 
+def _enumerate_pages(browser):
+    pages = []
+    for ctx in browser.contexts:
+        for p in ctx.pages:
+            pages.append(p)
+    return pages
+
+
+def _enforce_single_tab(browser) -> int:
+    """Host-set forever rule: exactly one Chrome tab at every moment.
+
+    If >1 tab exists, pick the correct mission tab (claude.ai page with a
+    /chat/ URL > any claude.ai page > first page) and close every other.
+    Idempotent: if already 1 tab, returns 0 without side effects. Returns
+    the number of tabs closed so callers can log the heal.
+
+    Emits a single stderr line per heal so user-sim can forward it to
+    the session log. Never raises — a failure to close is logged but
+    does not block the primary flow.
+    """
+    pages = _enumerate_pages(browser)
+    if len(pages) <= 1:
+        return 0
+
+    def _rank(p) -> int:
+        url = (getattr(p, "url", "") or "")
+        if CLAUDE_HOST in url and "/chat/" in url:
+            return 0
+        if CLAUDE_HOST in url:
+            return 1
+        return 2
+
+    pages_sorted = sorted(pages, key=_rank)
+    keeper = pages_sorted[0]
+    closed_urls = []
+    for p in pages_sorted[1:]:
+        url = (getattr(p, "url", "") or "(unknown)")
+        try:
+            p.close()
+            closed_urls.append(url)
+        except Exception as exc:
+            print(
+                f"TAB HYGIENE WARN: failed to close tab {url}: {exc}",
+                file=sys.stderr,
+            )
+    if closed_urls:
+        keeper_url = (getattr(keeper, "url", "") or "(unknown)")
+        print(
+            f"TAB HYGIENE: closed {len(closed_urls)} extra tab(s); "
+            f"kept {keeper_url}; closed {closed_urls}",
+            file=sys.stderr,
+        )
+    return len(closed_urls)
+
+
 def _ensure_claude_page(browser):
     """Single-tab rule: navigate the first available tab to claude.ai if no claude tab exists.
 
@@ -421,6 +476,7 @@ def _ensure_claude_page(browser):
                 break
     if p is None:
         raise RuntimeError("No pages in the CDP browser context.")
+    _enforce_single_tab(browser)
     _install_auto_dismiss(p)
     return p
 
@@ -1454,11 +1510,34 @@ def cmd_status() -> int:
         print(str(exc), file=sys.stderr)
         return 4
     try:
+        _enforce_single_tab(browser)
         page = _find_claude_page(browser)
         if page is None:
             print("CDP reachable; no claude.ai tab found.")
             return 1
         print(f"OK: claude.ai tab at {page.url}")
+        return 0
+    finally:
+        browser.close()
+        pw.stop()
+
+
+def cmd_tabs() -> int:
+    """Report open-tab count + URLs. Always also enforces the single-tab rule."""
+    try:
+        pw, browser = _connect(auto_launch=False)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+    try:
+        pages = _enumerate_pages(browser)
+        urls_before = [(getattr(p, "url", "") or "(unknown)") for p in pages]
+        closed = _enforce_single_tab(browser)
+        pages_after = _enumerate_pages(browser)
+        urls_after = [(getattr(p, "url", "") or "(unknown)") for p in pages_after]
+        print(f"TAB HYGIENE: {len(pages_after)} tab(s) open; urls={urls_after}")
+        if closed:
+            print(f"  (healed from {len(pages)}; closed {closed}; before={urls_before})")
         return 0
     finally:
         browser.close()
@@ -1474,6 +1553,7 @@ def main() -> int:
     sub.add_parser("new-chat")
     sub.add_parser("status")
     sub.add_parser("dismiss-dialogs")
+    sub.add_parser("tabs")
     ns = p.parse_args()
 
     if ns.cmd == "ask":
@@ -1486,6 +1566,8 @@ def main() -> int:
         return cmd_status()
     if ns.cmd == "dismiss-dialogs":
         return cmd_dismiss_dialogs()
+    if ns.cmd == "tabs":
+        return cmd_tabs()
     return 1
 
 
