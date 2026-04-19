@@ -1,9 +1,9 @@
-"""Universe Server system tray launcher.
+"""Workflow Server system tray launcher.
 
 Double-click the desktop shortcut -> this script starts:
   1. One daemon per preferred provider (Author Daemons, LangGraph writing
      engines) with the writer role pinned via ``--provider <name>``
-  2. MCP Universe Server (Python, port 8001)
+  2. MCP Workflow Server (Python, port 8001)
   3. Cloudflare Tunnel (cloudflared, routes tinyassets.io -> localhost:8001)
 
 A system tray icon shows live status. Hover aggregates active providers.
@@ -35,6 +35,10 @@ from workflow.preferences import (
     load_preferences,
     save_preferences,
 )
+from workflow.singleton_lock import (
+    acquire_singleton_lock,
+    release_singleton_lock,
+)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -52,6 +56,7 @@ TUNNEL_TOKEN = (
 
 PROJECT_DIR = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_DIR / "logs"
+SINGLETON_LOCK_PATH = LOG_DIR / ".tray.lock"
 
 _LOCAL_PROVIDER_SET = set(LOCAL_PROVIDERS)
 
@@ -222,9 +227,9 @@ class UniverseServerManager:
     def hover_text(self) -> str:
         running = self._running_providers()
         if running and self._mcp_serving and self._tunnel_ok:
-            base = "Universe Server - Live at tinyassets.io/mcp"
+            base = "Workflow Server - Live at tinyassets.io/mcp"
         else:
-            base = f"Universe Server - {self._phase}"
+            base = f"Workflow Server - {self._phase}"
         if running:
             return f"{base} | Active: {', '.join(running)}"
         # Fallback: if nothing in daemon_procs but a fresh runtime_status
@@ -658,7 +663,7 @@ class UniverseServerManager:
     def run(self) -> None:
         """Start everything and block until quit."""
         auto_start = self._auto_start_providers()
-        print("Starting Universe Server...")
+        print("Starting Workflow Server...")
         print(f"  Project:   {PROJECT_DIR}")
         print(f"  Universe:  {self._active_universe}")
         print(f"  Endpoint:  {MCP_URL}")
@@ -691,9 +696,9 @@ class UniverseServerManager:
         monitor.start()
 
         self._icon = Icon(
-            "Universe Server",
+            "Workflow Server",
             make_icon(GRAY),
-            title="Universe Server - Starting...",
+            title="Workflow Server - Starting...",
             menu=self._build_menu(),
         )
 
@@ -707,9 +712,31 @@ class UniverseServerManager:
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main() -> int:
+    """Acquire the host-wide singleton lock and run the tray.
+
+    Returns exit code: 0 on success, 0 also on singleton conflict (silent
+    no-op so double-clicking the desktop shortcut is harmless).
+    """
+    LOG_DIR.mkdir(exist_ok=True)
+    acq = acquire_singleton_lock(SINGLETON_LOCK_PATH)
+    if not acq.acquired:
+        pid_str = f" (PID {acq.existing_pid})" if acq.existing_pid else ""
+        print(
+            f"Workflow Server is already running{pid_str}. "
+            "Check your system tray."
+        )
+        return 0
+
     mgr = UniverseServerManager()
     try:
         mgr.run()
     except KeyboardInterrupt:
         mgr.kill_all()
+    finally:
+        release_singleton_lock(acq)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

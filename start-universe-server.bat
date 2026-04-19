@@ -1,12 +1,22 @@
 @echo off
 :: ============================================================
-:: Universe Server - One-Click Startup
+:: Workflow Server - One-Click Startup
 :: Launches tray icon that manages MCP server + Cloudflare tunnel
 :: Endpoint: https://tinyassets.io/mcp
 :: ============================================================
 
 set PROJECT_DIR=%~dp0
 set VENV_DIR=%PROJECT_DIR%.venv
+
+:: ---- Short-circuit if tray already running ----
+:: Cheap check before any venv / python startup work: if something is
+:: already LISTENING on port 8001, the tray is up — exit silently so a
+:: double-click doesn't open a second console window.
+netstat -an | findstr /C:":8001 " | findstr /C:"LISTENING" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo Workflow Server is already running. Check your system tray.
+    exit /b 0
+)
 
 :: ---- Check Python ----
 where python >nul 2>&1

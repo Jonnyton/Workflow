@@ -41,7 +41,7 @@ class TestUniverseServerMetadata:
         control_station = prompts["control_station"]
         assert control_station.title == "Control Station Guide"
         assert {"control", "daemon", "multiplayer", "operations"} <= control_station.tags
-        assert "Universe Server" in control_station.description
+        assert "Workflow Server" in control_station.description
 
         extension_guide = prompts["extension_guide"]
         assert extension_guide.title == "Extension Authoring Guide"

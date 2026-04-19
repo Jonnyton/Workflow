@@ -1,4 +1,4 @@
-"""Universe Server — Remote MCP interface.
+"""Workflow Server — Remote MCP interface.
 
 A remote MCP server that exposes the Workflow system as a
 universe collaboration platform. Any MCP-compatible chatbot (Claude,
@@ -55,9 +55,10 @@ logger = logging.getLogger("universe_server")
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(
-    "universe-server",
+    "workflow",
     instructions=(
-        "Universe Server (also: Workflow, Workflow Builder, Workflow Engine) "
+        "Workflow Server (also: Workflow, Workflow Builder, Workflow Engine, "
+        "formerly Universe Server) "
         "— a workflow builder and long-horizon AI platform. Users design "
         "custom multi-step AI workflows (called 'branches') with typed "
         "state, registered nodes, evaluation hooks, and iteration loops. "
@@ -773,9 +774,9 @@ def _dispatch_with_ledger(
     tags={"control", "daemon", "multiplayer", "operations"},
 )
 def control_station() -> str:
-    """Load the Universe Server control station instructions.
+    """Load the Workflow Server control station instructions.
 
-    Invoke this prompt to learn how to operate as a Universe Server
+    Invoke this prompt to learn how to operate as a Workflow Server
     interface. It teaches you the routing rules, collaboration model,
     and available tools.
     """
@@ -783,7 +784,7 @@ def control_station() -> str:
 
 
 _CONTROL_STATION_PROMPT = """\
-You are now operating as a Universe Server control station — a workflow
+You are now operating as a Workflow Server control station — a workflow
 builder and long-horizon AI platform. Users design custom multi-step AI
 workflows ("branches") with typed state, registered nodes, evaluation
 hooks, and iteration loops.
@@ -980,7 +981,7 @@ descriptive node_id future callers will search for.
     tags={"extensions", "nodes", "plugins", "workflow"},
 )
 def extension_guide() -> str:
-    """Learn how to extend the Universe Server with custom LangGraph nodes.
+    """Learn how to extend the Workflow Server with custom LangGraph nodes.
 
     Invoke this prompt to understand how users can register their own
     graph nodes, what the node contract looks like, and how registered
@@ -990,7 +991,7 @@ def extension_guide() -> str:
 
 
 _EXTENSION_GUIDE_PROMPT = """\
-## Extending Universe Server with Custom Nodes
+## Extending Workflow Server with Custom Nodes
 
 The `extensions` tool is the workflow-builder surface. Users register
 their own nodes and assemble them into branches — multi-step AI
@@ -1099,7 +1100,7 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Primary tool for the Workflow / Universe Server platform — also the
+    Primary tool for the Workflow Server platform — also the
     "workflow builder", "custom AI builder", "universe builder", and
     "workflow connector". Each universe is a self-contained workspace
     (premise, canon, notes, daemons) for any multi-step agentic work:
@@ -7863,7 +7864,7 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
             "text": (
                 "**Leaderboard metric `outcome`** is gated by the "
                 "`GATES_ENABLED` flag (Phase 6.2). Set "
-                "`GATES_ENABLED=1` on the Universe Server to opt in, "
+                "`GATES_ENABLED=1` on the Workflow Server to opt in, "
                 "or use `metric=run_count` / `metric=forks` today."
             ),
             "status": "gates_disabled",
@@ -8765,7 +8766,7 @@ def gates(
             "status": "not_available",
             "error": (
                 "Outcome gates are gated by the GATES_ENABLED flag "
-                "(Phase 6.1). Set GATES_ENABLED=1 on the Universe Server "
+                "(Phase 6.1). Set GATES_ENABLED=1 on the Workflow Server "
                 "to opt in."
             ),
         })
@@ -9757,7 +9758,7 @@ def main(
     port: int = 8001,
     transport: str = "streamable-http",
 ) -> None:
-    """Run the Universe Server as a remote MCP server.
+    """Run the Workflow Server as a remote MCP server.
 
     Args:
         host: Bind address (default all interfaces).
@@ -9766,7 +9767,7 @@ def main(
             connections (default), "sse" for legacy, "stdio" for local.
     """
     logger.info(
-        "Starting Universe Server on %s:%d (transport=%s)",
+        "Starting Workflow Server on %s:%d (transport=%s)",
         host, port, transport,
     )
 

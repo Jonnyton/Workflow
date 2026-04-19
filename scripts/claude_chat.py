@@ -4,7 +4,7 @@ Setup (run ONCE by the human host, not by user-sim):
 
     powershell -Command "Start-Process 'C:\\Users\\Jonathan\\AppData\\Local\\ms-playwright\\chromium-1208\\chrome-win64\\chrome.exe' -ArgumentList '--user-data-dir=C:\\Users\\Jonathan\\.claude-ai-profile','--remote-debugging-port=9222','--no-first-run','--disable-blink-features=AutomationControlled','https://claude.ai/new'"
 
-Then log into claude.ai in that window, ensure the Universe Server custom connector is enabled, and keep the window visible. Single-tab rule: user-sim will navigate the existing tab, not open new ones.
+Then log into claude.ai in that window, ensure the Workflow custom connector is enabled, and keep the window visible. Single-tab rule: user-sim will navigate the existing tab, not open new ones.
 
 Usage (user-sim):
 
@@ -43,11 +43,12 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
         sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True,
     )
 
+_PLAYWRIGHT_MISSING = "ERROR: playwright not installed. Run: pip install playwright"
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
-    print("ERROR: playwright not installed. Run: pip install playwright", file=sys.stderr)
-    sys.exit(2)
+    sync_playwright = None
 
 CDP = "http://localhost:9222"
 CLAUDE_HOST = "claude.ai"
@@ -157,6 +158,8 @@ def _launch_chrome() -> None:
 
 
 def _connect(auto_launch: bool = True, launch_wait_s: int = 20):
+    if sync_playwright is None:
+        raise RuntimeError(_PLAYWRIGHT_MISSING)
     pw = sync_playwright().start()
     try:
         return pw, pw.chromium.connect_over_cdp(CDP)
@@ -541,8 +544,8 @@ _INLINE_ALWAYS_ALLOW_PROBE = r"""
   if (!/Claude wants to use/i.test(allText)) {
     return {found: false, reason: 'no permission card text'};
   }
-  if (!/Universe Server/i.test(allText)) {
-    return {found: false, reason: 'not Universe Server card'};
+  if (!/Workflow(?: Server)?|Universe Server/i.test(allText)) {
+    return {found: false, reason: 'not Workflow Server card'};
   }
   const buttons = Array.from(document.querySelectorAll('button'));
   const btn = buttons.find(b => {
@@ -787,14 +790,18 @@ def _first_usable_input(page):
             try:
                 if not cand.is_visible():
                     continue
-                aria_disabled = (cand.get_attribute("aria-disabled") or "").lower()
-                if aria_disabled == "true":
-                    continue
-                contenteditable = (cand.get_attribute("contenteditable") or "").lower()
-                if contenteditable == "false":
-                    continue
-                if cand.evaluate("el => el.tagName.toLowerCase() === 'textarea' && el.disabled"):
-                    continue
+                get_attribute = getattr(cand, "get_attribute", None)
+                if callable(get_attribute):
+                    aria_disabled = (get_attribute("aria-disabled") or "").lower()
+                    if aria_disabled == "true":
+                        continue
+                    contenteditable = (get_attribute("contenteditable") or "").lower()
+                    if contenteditable == "false":
+                        continue
+                evaluate = getattr(cand, "evaluate", None)
+                if callable(evaluate):
+                    if evaluate("el => el.tagName.toLowerCase() === 'textarea' && el.disabled"):
+                        continue
                 return cand
             except Exception:
                 continue
