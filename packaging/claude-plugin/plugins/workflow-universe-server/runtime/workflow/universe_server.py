@@ -1115,6 +1115,7 @@ def universe(
     bid: float = 0.0,
     tier: str = "",
     enabled: bool = False,
+    tag: str = "",
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -1125,7 +1126,7 @@ def universe(
 
     Args:
         action: One of — reads: list, inspect, read_output, query_world,
-            get_activity, get_ledger, read_premise,
+            get_activity, get_recent_events, get_ledger, read_premise,
             list_canon, read_canon; writes: submit_request,
             give_direction, set_premise, add_canon, add_canon_from_path,
             control_daemon, switch_universe, create_universe.
@@ -1156,8 +1157,13 @@ def universe(
         provenance_tag: Source tag for add_canon / add_canon_from_path
             (e.g. "published novel", "rough notes"). Defaults to
             "user_upload" for add_canon_from_path.
-        limit: Max results for get_activity / get_ledger / query_world
-            (default 30).
+        limit: Max results for get_activity / get_recent_events /
+            get_ledger / query_world (default 30).
+        tag: Tag prefix filter for ``get_recent_events`` (e.g.
+            ``"dispatch_guard"``, ``"overshoot_detected"``,
+            ``"revert_gate"``). Empty returns all entries. Prefix-match so
+            ``"dispatch"`` matches both ``dispatch_guard`` and
+            ``dispatch_execution``.
     """
     dispatch = {
         "list": _action_list_universes,
@@ -1165,6 +1171,7 @@ def universe(
         "read_output": _action_read_output,
         "query_world": _action_query_world,
         "get_activity": _action_get_activity,
+        "get_recent_events": _action_get_recent_events,
         "get_ledger": _action_get_ledger,
         "submit_request": _action_submit_request,
         "give_direction": _action_give_direction,
@@ -1219,6 +1226,7 @@ def universe(
         "bid": bid,
         "tier": tier,
         "enabled": enabled,
+        "tag": tag,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
@@ -3411,6 +3419,117 @@ def _action_get_activity(
         "lines": tail,
         "count": len(tail),
         "total": len(all_lines),
+    })
+
+
+# Pattern: "[2026-04-19 20:30:00] [dispatch_guard] message body" or
+# legacy "[2026-04-19 20:30:00] untagged message". Lenient — any line
+# that can't be parsed is surfaced in the 'raw' field so callers still
+# see the source text when they need it.
+_ACTIVITY_LINE_RE = re.compile(
+    r"^\[(?P<ts>[^\]]+)\](?:\s*\[(?P<tag>[^\]]+)\])?\s*(?P<msg>.*)$"
+)
+
+
+def _parse_activity_line(line: str) -> dict[str, str]:
+    """Split ``[TS] [TAG] MSG`` (or legacy ``[TS] MSG``) into fields.
+
+    Returns dict with keys ``ts``, ``tag`` (empty when untagged),
+    ``message``, ``raw``. Unparseable lines fall back to all-empty
+    fields + ``raw`` holding the original string.
+    """
+    line = line.rstrip("\n")
+    match = _ACTIVITY_LINE_RE.match(line)
+    if not match:
+        return {"ts": "", "tag": "", "message": "", "raw": line}
+    return {
+        "ts": match.group("ts") or "",
+        "tag": match.group("tag") or "",
+        "message": match.group("msg") or "",
+        "raw": line,
+    }
+
+
+def _action_get_recent_events(
+    universe_id: str = "",
+    tag: str = "",
+    limit: int = 30,
+    **_kwargs: Any,
+) -> str:
+    """Tag-filterable view of activity.log for chatbot observability.
+
+    Reads the universe's ``activity.log`` tail and returns entries as
+    structured dicts (``ts`` / ``tag`` / ``message`` / ``raw``). When
+    ``tag`` is non-empty, only entries whose tag starts with ``tag``
+    are returned — tag prefix-match so a caller can filter ``"dispatch"``
+    and get both ``dispatch_guard`` and ``dispatch_execution``.
+
+    Evidence + caveat fields follow the self-auditing-tools pattern:
+      - ``events``: matching structured entries (most recent first).
+      - ``source``: ``"activity.log"`` — the audit surface backing the
+        answer.
+      - ``caveats``: list of strings explaining any observation caveats
+        (e.g. "log file missing", "tag filter matched 0 of N entries").
+
+    Args:
+        universe_id: Target universe (falls back to default).
+        tag: Optional tag prefix filter (empty = all entries).
+        limit: Max entries to return (1..500, clamped).
+    """
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    log_path = udir / "activity.log"
+
+    limit = min(max(limit, 1), 500)
+    caveats: list[str] = []
+
+    content = _read_text(log_path)
+    if not content:
+        return json.dumps({
+            "universe_id": uid,
+            "events": [],
+            "source": "activity.log",
+            "tag_filter": tag,
+            "caveats": [
+                "No activity.log found. The daemon may not have run yet "
+                "in this universe, or the log was cleared.",
+            ],
+        })
+
+    all_lines = content.strip().splitlines()
+    parsed = [_parse_activity_line(line) for line in all_lines]
+
+    if tag:
+        matched = [p for p in parsed if p["tag"].startswith(tag)]
+        if not matched:
+            caveats.append(
+                f"Tag filter {tag!r} matched 0 of {len(parsed)} entries. "
+                f"Known tags in file: "
+                f"{sorted({p['tag'] for p in parsed if p['tag']})[:10]}."
+            )
+    else:
+        matched = parsed
+
+    # Return most-recent first so chatbot readers see newest events at top.
+    tail = matched[-limit:]
+    events = list(reversed(tail))
+
+    untagged_count = sum(1 for p in parsed if not p["tag"])
+    if untagged_count and not tag:
+        caveats.append(
+            f"{untagged_count} of {len(parsed)} activity lines carry no tag "
+            "(pre-tagging call sites or legacy entries)."
+        )
+
+    return json.dumps({
+        "universe_id": uid,
+        "events": events,
+        "source": "activity.log",
+        "tag_filter": tag,
+        "total_lines": len(all_lines),
+        "matched": len(matched),
+        "returned": len(events),
+        "caveats": caveats,
     })
 
 

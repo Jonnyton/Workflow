@@ -21,11 +21,27 @@ logger = logging.getLogger(__name__)
 _status_lock = threading.Lock()
 
 
-def activity_log(state: dict[str, Any], message: str) -> None:
+def activity_log(
+    state: dict[str, Any], message: str, tag: str = "",
+) -> None:
     """Append a timestamped line to the universe's activity.log.
 
     Safe to call from any node -- silently does nothing if
     ``_universe_path`` is missing or empty.
+
+    Parameters
+    ----------
+    state : dict
+        Universe state — must carry ``_universe_path``.
+    message : str
+        Free-form message body.
+    tag : str, optional
+        Machine-filterable category (e.g. ``"dispatch_guard"``,
+        ``"overshoot_detected"``, ``"revert_gate"``). When provided, the
+        line format becomes ``[TS] [TAG] MESSAGE`` so the
+        ``get_recent_events(tag=...)`` MCP verb can grep it out. Empty
+        string preserves the legacy ``[TS] MESSAGE`` shape (backward
+        compat for un-tagged callers).
     """
     universe_path = state.get("_universe_path", "")
     if not universe_path:
@@ -33,8 +49,9 @@ def activity_log(state: dict[str, Any], message: str) -> None:
     try:
         log_path = Path(universe_path) / "activity.log"
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        body = f"[{tag}] {message}" if tag else message
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {message}\n")
+            f.write(f"[{ts}] {body}\n")
     except OSError:
         logger.debug("Failed to write activity.log entry: %s", message)
 
