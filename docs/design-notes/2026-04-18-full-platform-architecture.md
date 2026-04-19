@@ -2742,6 +2742,233 @@ Net §10 delta: **+3–3.5 dev-days.** New totals: **~22.8–27d with two devs, 
 
 ---
 
+## §33. Evaluation layers — the through-line
+
+**Host directive 2026-04-19.** *"Similar to [karpathy autoresearch] and similar to the judges from the fantasy branches we need to think about how evaluation layers work, that's what this really all is."* Names an insight that's been latent across §8, §15, §16, §18, §24, §5.2, §32: every improvement loop runs on **evaluation**. The platform is an evaluation-driven optimization substrate wrapped in a workflow-design product. Naming this explicitly is load-bearing because it reveals a primitive (`Evaluator`) that was about to get re-invented in every surface.
+
+### §33.1 Is this unification genuine or forced? Honest audit
+
+Navigator audited eight surfaces. **Six genuinely collapse. Two partially collapse — they fit the primitive for *their* evaluation step but their surrounding workflow is distinct enough that they should not *structurally* inherit from `Evaluator`.**
+
+| Surface | Current location | Collapses under `Evaluator`? | Why |
+|---|---|---|---|
+| **Fantasy scene judges** (legacy `domains/fantasy_daemon/eval/criteria.py` — reference impl via `workflow.protocols.EvalCriteria`) | LLM-judge + deterministic rubric, returns bool/reason | **YES — full.** This IS the reference pattern; extract it. |
+| **Autoresearch metric** (§32) | Fixed harness + numeric objective | **YES — full.** Metric function = evaluator returning score. `test_harness_ref` IS an evaluator. |
+| **Real-world outcome verifiers** (§24/§30 arXiv / CrossRef / ISBN) | External API checks, boolean-ish with evidence | **YES — full.** External-API evaluators. Shape identical. |
+| **Discovery ranking signals** (§15 `public_demand_ranked`, node quality aggregates) | Numeric scores from counts/CAS/vectors | **YES — as aggregation of evaluator results over time.** Individual signals (success_count, usage_count) are evaluator-emitted facts; the materialized view is an aggregation function over them. |
+| **Paid-market bid acceptance** (§18 settlement verdict) | Verdict: accepted/refunded/disputed + evidence | **YES — full.** Acceptance check is an evaluator (did the claimed output satisfy the request?). Cost field applies directly. |
+| **Moderation rubric** (§8 + `moderation_rubric.md`) | Community vote + rubric check + human-backstop | **PARTIAL — the judgment step collapses, the queue/role machinery does not.** The rubric-check-and-vote IS an evaluator; the `moderation_flags` table + `admin_pool` escalation + appeals process is workflow orchestration around the evaluator. Moderation *uses* Evaluator as a primitive; it doesn't *inherit* from it. |
+| **Remix/converge ratification** (§15.3, §16) | Per-source editor consent + optional merge evaluator | **PARTIAL — same pattern as moderation.** Ratification-decision is an evaluator (is this merge improvement?); multi-party ratification protocol + proposal lifecycle is workflow orchestration. |
+| **Cascade step-3 ranking** (§5.2) | Daemon's "what to work on next" scoring | **NO — daemon's local ranking is not evaluator-shaped.** It's a *consumer* of evaluator outputs (request signals, upvote_count, improvement_cycle_id) but the cascade-step logic itself is a scheduling policy, not an evaluation of an artifact. Keep separate. Calling this an `Evaluator` would force the abstraction. |
+
+**Summary: 5 fully collapse, 2 partially collapse (evaluator-consuming but not evaluator-inheriting), 1 stays distinct.** Unification is genuine but not total. This is a real abstraction worth shipping, not a forced flattening of everything.
+
+### §33.2 The `Evaluator` primitive
+
+Minimum shape:
+
+```
+evaluate(artifact, context, policy?) -> {
+  score:        numeric,           # comparable; signed per evaluator's direction
+  verdict:      enum,              # accept | reject | needs_revision | uncertain
+  rationale:    text,              # human-readable "why"
+  evidence:     jsonb,             # what was checked, structured
+  evaluator_id: uuid,              # attribution + audit
+  ran_at:       timestamptz,
+  cost:         jsonb              # { usd?, tokens?, wall_ms, external_api_calls? }
+}
+```
+
+**Inputs.**
+- `artifact`: the thing being evaluated — a node concept, a draft output, a merge candidate, a bid-completion claim, a moderation report subject, a research-paper submission handle.
+- `context`: everything the evaluator needs that isn't the artifact itself — reference data, gold sets, thresholds, prior runs, related artifacts.
+- `policy` (optional): evaluator-specific configuration — temperature, strictness, LLM model to judge with, how many tiers to invoke.
+
+**Substrates (non-exhaustive; platform supports all):**
+- **LLM-judge** — fantasy scene evaluator, moderation auto-review, autoresearch metric when objective is LLM-assessed.
+- **Rubric function** — deterministic cheap checks; fantasy `_check_scene_coherence` pattern is the reference.
+- **External API** — arXiv indexed, DOI minted, ISBN valid, GitHub release published; outcome-verifiers per §30.
+- **Human vote** — community flagging (§8), convergence ratification (§15.3C), merge review.
+- **Vector-similarity** — semantic match between artifact and reference; discovery's HNSW query.
+- **Metric function** — numeric objective; the autoresearch `test_harness_ref` path.
+- **Consensus** — N evaluators + quorum decision; moderator-council tie-breaks, autoresearch best-of-N.
+
+### §33.3 Tiered-composition pipelines (fantasy-daemon is the reference)
+
+The pattern that fantasy-daemon's `eval/criteria.py` + `workflow.protocols.EvalCriteria` already proves:
+
+**cheap filter → expensive judge → human backstop**
+
+Platform ships this natively. An `EvaluatorChain` declares an ordered list of evaluators; each stage's verdict gates the next stage:
+
+```
+chain:
+  - evaluator: rubric:scene_coherence      # cheap, deterministic, ms scale
+    on_verdict: [accept, uncertain]:continue, [reject]:halt
+  - evaluator: llm:fantasy_scene_judge     # expensive, seconds scale
+    on_verdict: [accept]:halt, [reject, needs_revision]:continue, [uncertain]:continue
+  - evaluator: human:editor_review         # days scale, async
+    on_verdict: *:halt
+```
+
+User composes the tier stack per node per use case. Simple mode = one named evaluator (`use: accept_rate_evaluator`). Complex mode = full chain with custom policy per stage. Same simple/complex spectrum as §32 autoresearch + §27 vibe-coding.
+
+**Cost-aware scheduling.** Chain engine routes artifact to the cheapest evaluator first; expensive evaluators only run when cheap ones say uncertain or accept. Saves $ and wall-time at scale, matching §18 hybrid settlement's cost discipline.
+
+### §33.4 Evaluators are user-authored + catalog-discoverable
+
+Evaluators live in the catalog **alongside nodes**. Same schema shape (concept jsonb + structural_hash + embedding + provenance + license), same discovery via `discover_nodes` extended to accept `kind=evaluator`, same tier-3 PR-contribution path, same vibe-coding authoring surface (§27 authoring tools work for evaluators too — they're just nodes with a specific output contract).
+
+**Competitor-differentiation angle.** Anyone can build a workflow engine. Fewer can build one where every surface is continuously-evaluated + improving. The evaluator loop IS the compounding advantage. User-authored evaluators + remix-from-N (§15.3) = the commons compounds at the *evaluation* layer too, not just at the workflow layer. This is the answer to "what makes Workflow different from LangChain / n8n / Zapier at year two."
+
+### §33.5 Evaluators are recursively eval-optimizable (and how to prevent infinite regress)
+
+An evaluator is a node. §32 autoresearch optimizes nodes. Therefore autoresearch optimizes evaluators.
+
+**Pattern.** User has an `LLM-judge` evaluator for their research-paper critique node. They attach an `optimization_spec.md` to the *evaluator itself*: metric = agreement-with-expert-judgment on a 20-paper gold set. Overnight autoresearch iterates the evaluator's prompt + few-shots; chooses the best-agreeing candidate. The *meta-evaluator* (agreement-with-experts) IS an evaluator.
+
+**Infinite regress guard.** Each autoresearch layer needs a *fixed* meta-evaluator to bottom out. Platform enforces:
+- Every autoresearch run must reference an evaluator that is NOT currently being optimized by another autoresearch run it triggered.
+- Cycle detection on the evaluator-of-evaluator graph; optimization run rejects at submit-time if a cycle would form.
+- User can manually opt-in to n-deep meta-optimization by declaring each layer explicitly; platform permits but warns. Defaults to refusing.
+
+### §33.6 Schema additions (§2 cross-ref)
+
+New `evaluators` table — structurally similar to `nodes` (evaluators ARE nodes, conceptually), but typed for query ergonomics:
+
+```sql
+CREATE TABLE public.evaluators (
+  evaluator_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug            text NOT NULL,
+  name            text NOT NULL,
+  kind            text NOT NULL CHECK (kind IN (
+                    'llm_judge','rubric_fn','external_api','human_vote',
+                    'vector_sim','metric_fn','consensus','chain')),
+  concept         jsonb NOT NULL,              -- prompt / rubric / API spec / etc.
+  input_schema    jsonb,                        -- what it accepts as artifact
+  output_schema   jsonb NOT NULL,               -- always the §33.2 shape
+  default_policy  jsonb,                        -- defaults user can override per call
+  parents         uuid[] DEFAULT '{}',          -- §15.3 remix lineage
+  version         bigint NOT NULL DEFAULT 1,
+  owner_user_id   uuid NOT NULL REFERENCES public.users(user_id),
+  -- same content_license + concept/instance split as nodes per §17
+  concept_visibility text NOT NULL DEFAULT 'public',
+  content_license   text NOT NULL DEFAULT 'CC0-1.0',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, slug)
+);
+```
+
+New `evaluator_results` table — append-only, cacheable:
+
+```sql
+CREATE TABLE public.evaluator_results (
+  result_id        bigserial PRIMARY KEY,
+  evaluator_id     uuid NOT NULL REFERENCES public.evaluators(evaluator_id),
+  artifact_ref     jsonb NOT NULL,              -- {kind, id, version} — polymorphic
+  artifact_hash    text NOT NULL,               -- for dedup: same artifact + same evaluator_version = cache hit
+  score            numeric,
+  verdict          text NOT NULL,
+  rationale        text,
+  evidence         jsonb,
+  cost             jsonb,
+  ran_at           timestamptz NOT NULL DEFAULT now(),
+  daemon_host_id   uuid REFERENCES public.host_pool(host_id)
+);
+
+CREATE INDEX er_artifact_eval  ON public.evaluator_results (artifact_hash, evaluator_id);
+CREATE INDEX er_evaluator_time ON public.evaluator_results (evaluator_id, ran_at DESC);
+```
+
+**New column on `nodes`:** `evaluator_refs uuid[] DEFAULT '{}'` — nodes can declare zero or more evaluators that apply to them. Autoresearch reads this when drafting `optimization_spec.md` defaults; moderation reads it when deciding which rubric to invoke; discovery reads it when aggregating quality signals.
+
+All gap items tracked for spec #25 sharpening in the next drift-audit cycle.
+
+### §33.7 Integration with existing sections (retrofit)
+
+- **§32 autoresearch.** `optimization_spec.md` gains `evaluator: <id>`; `test_harness_ref` resolves to an evaluator. `optimization_metric` name collapses into `evaluator.output_schema.score`. Simple-mode defaults: chatbot suggests an evaluator from the catalog.
+- **§8 moderation.** `flag_content` invokes the node's configured moderation evaluator; result lands in `evaluator_results` and in `moderation_flags`. Tier-gated escalation routes to more-expensive evaluators (tier-1 auto-rubric → tier-2 rep-earned peer review → admin-pool human). Same tiered-chain pattern as §33.3.
+- **§24 real-world-outcomes.** `real_world_outcomes.verified_count` increments from outcome-verifier evaluator runs (DOI/ISBN/arXiv external-API evaluators). Badges sourced from `evaluator_results` where verdict='accept'.
+- **§15 discovery ranking.** `public_demand_ranked` materialized view becomes an aggregation over `evaluator_results` grouped by artifact. Quality signals lose their ad-hoc column sprinkle; one uniform source.
+- **§18 paid-market settlement.** Bid acceptance gates on the request's acceptance-evaluator verdict. Dispute window re-runs evaluator at higher tier. `self_hosted_zero_fee` branch still applies — no platform fee when host runs own evaluator against own work.
+- **§16 wiki-edit merge-suggest.** On every edit, chatbot invokes the node's default evaluator on (old, new) pair → surfaces "score improved 0.71 → 0.84" to the user before commit.
+- **§15.3C converge.** Ratification invokes each source's editor-evaluator on the proposed canonical. Passing threshold per source = ratification vote. Formal collapse of the ratification workflow around the evaluator primitive.
+- **§5.2 cascade step-3 stays distinct** per §33.1 audit. Cascade *consumes* evaluator outputs as signals but is not itself an evaluator. Clear boundary.
+
+### §33.8 Three-layer-lens (per `project_chain_break_taxonomy.md`)
+
+Evaluation **closes the chain**:
+
+- **System ships the primitive** — `evaluate()` RPC + `EvaluatorChain` composition + `evaluator_results` cache + discovery integration. Without the primitive, chatbot has no shared verification surface.
+- **Chatbot uses evaluators to verify output** — when user asks "is this good?" or "did it work?" chatbot calls the relevant evaluator(s), returns verdict + rationale + evidence in user vocabulary. Devin's LIVE-F8 `get_status` intuition generalizes: *give the chatbot something concrete to call instead of guessing*.
+- **User trusts real validation** — because the evidence is concrete (external API confirmed the DOI minted; LLM-judge cited the continuity error; rubric found the vendor-name mismatch), not "the chatbot said so."
+
+**Cross-reference with the 3-layer-lens pattern of Devin LIVE-F8.** `get_status` was Devin's verify-before-trust primitive; evaluators are the verify-before-trust primitive generalized across every artifact, every surface. **Closing the chain is the point of §33.**
+
+### §33.9 Scale audit (§14 cross-ref)
+
+**Evaluator dedup cache** — `evaluator_results.artifact_hash` index lets the same (artifact, evaluator) pair return cached. Discovery + moderation + autoresearch all hit the same cache. Saves redundant evaluator calls; at 10k DAU common artifacts (popular nodes) hit 100% cache.
+
+**Scale scenarios added to track J:**
+- **S13: evaluator result-cache hit-rate under concurrent fan-out.** 1000 concurrent `evaluate(node_X, evaluator_Y)` calls → 1 actual evaluator run, 999 cache hits. Dedup index validated.
+- **S14: evaluator-chain early-termination.** 1000 artifacts through 3-tier chain (rubric / llm / human) with 80% rubric-reject, 15% llm-accept, 5% human-review. Assert cost distribution matches tier cost model; no runaway fan-out to expensive tiers.
+
+Adds ~0.3d to Track J (now 4.5–5d full). Shares primitives with S11+S12 so implementation is incremental.
+
+### §33.10 Dev-day delta — honest accounting
+
+This is **partially consolidating and partially expanding**. Honest breakdown:
+
+**Expanding (new work):**
+- New `evaluators` table + `evaluator_results` table + RLS policies: **+0.5d** (track A/L).
+- `evaluate()` MCP tool + chain-composition engine + cost-aware scheduling: **+1d** (track C/N).
+- Evaluator authoring surface (evaluators are nodes, reuse §27): **+0.25d** integration gloss.
+- Cycle-detection for recursive meta-optimization: **+0.25d**.
+- S13 + S14 load-test scenarios: **+0.3d** (track J).
+
+**Consolidating (saves future work by unifying):**
+- §8 moderation: the ad-hoc rubric-invocation path becomes evaluator-chain-based. Net-zero vs. §8's current spec but easier to extend. **~0 net.**
+- §24 real-world-outcomes: the outcome-verification pipeline from §30 handoffs is already evaluator-shaped; formalizing it as Evaluator rather than per-handoff code saves ~0.25d in track N.
+- §15 ranking: `public_demand_ranked` aggregation becomes evaluator-results sum; spec stays, implementation is a join. ~0 net.
+- §32 autoresearch: `test_harness_ref` + `optimization_metric` collapse into `evaluator_id`. Simplifies §32 schema; saves ~0.1d on track O.
+- §15.3C converge ratification: formal wrapper around evaluator invocation. ~0 net.
+
+**Net Δ ≈ +1.9 to +2.3 dev-days (new track P).** Less than §32's 3–3.5d because evaluation partially consolidates work that was already budgeted. **Revised §10 totals: ~24.7–29.3d w/2 devs, ~32.4–34.8 serial.** Still weeks not months.
+
+New §10 track row:
+
+| Track | Dev | Rough dev-days | Notes |
+|---|---|---|---|
+| **P — Evaluation layers** | dev | 1.9–2.3 | `evaluators` + `evaluator_results` schema + RLS (0.5). `evaluate()` MCP tool + EvaluatorChain engine + cost-aware routing (1.0). Evaluator-authoring UI gloss (reuses §27 — 0.25). Cycle-detection for recursive meta-optimization (0.25). S13+S14 load-test (0.3). Retrofit glue for §8/§15/§18/§24/§30/§32/§15.3C (within respective tracks, net ~0 after consolidation savings). Depends on A, N (evaluators ARE nodes), K (discovery integrates). Parallel with O. |
+
+### §33.11 New host Qs for §11
+
+**Q32-nav — OPEN (evaluator-cost budget per tier).** Tier-1 chatbots invoking evaluators can generate unbounded cost if every discovery read + every edit triggers an expensive LLM-judge. Recommend: per-user per-hour evaluator-cost budget (default $0.50/user-hour free tier, higher for paid) + cache-hit ratio as a scaling primitive. Host confirm or adjust.
+
+**Q33-nav — OPEN (evaluator-authoring friction floor).** Simple mode per §33.3 = one named evaluator from catalog. Complex mode = full evaluator-chain authoring via §27 vibe-coding surface. Recommend: user-facing onboarding names evaluator as "quality check" (user-vocabulary, per `feedback_user_vocabulary_discipline.md`); `evaluator` term reserved for tier-2/3 contexts.
+
+**Q34-nav — OPEN (evaluator-drift detection).** Evaluators can silently drift (LLM model changes behavior; rubric-check fails on new edge cases; external API deprecates). Recommend: periodic gold-set re-runs; alert when verdict-distribution shifts by >N% vs baseline. Launch-day scope: passive logging only; active drift-alerting deferred to v1.1.
+
+### §33.12 What §33 does NOT do
+
+- Does not flatten §5.2 cascade into an evaluator (audited as not-evaluator-shaped).
+- Does not force every node to attach an evaluator. Attachment is optional; nodes without evaluators still discover + bid + settle normally.
+- Does not build evaluator-drift active-alerting at launch (Q34-nav defers to v1.1).
+- Does not auto-trigger evaluator runs on every edit (cost unbounded). Chatbot decides when to invoke, per user-vocabulary "want me to check that?" prompt.
+- Does not replace human judgment with evaluators. Evaluators inform decisions; escalation to human-vote substrate is first-class in every chain.
+- Does not commit to one LLM model for LLM-judge evaluators. Model is part of the evaluator's `default_policy`; user can override per call, per autoresearch iteration.
+
+### §33.13 Why this is the most-important unification of the session
+
+Every prior fold added a surface. §33 *names* what all the surfaces share. Two downstream effects:
+
+1. **Future design folds absorb faster.** When host proposes "let's add X that rates Y on Z axis," the answer is: *it's an evaluator over artifact Y with score-axis Z*. No new surface, just a new `evaluator_id` row.
+2. **The chatbot's mental model simplifies.** Chatbot has one verb — "evaluate this" — that applies across every domain, every tier, every substrate. User vocabulary simplifies in tandem ("let's check if it's better" works uniformly). Matches Q21 real-world-effect-engine framing: *real work needs real validation.*
+
+This is the single most-important architectural unification in the full-platform design. §32 autoresearch plus §33 evaluation is the engine; every other section is either a substrate (where evaluators run) or a consumer (what evaluator outputs drive).
+
+---
+
 - **PLAN.md §Multiplayer Daemon Platform** — preserved. Host-run identity + named accounts + private MCP sessions + public actions all map cleanly onto this backend. Daemons stay forkable, soul-defined, branch-first.
 - **PLAN.md §Local-first execution** — preserved for daemons. Authoring moves to the control plane (necessary consequence of requirement 2); execution stays local.
 - **PLAN.md §GitHub as canonical shared state** — **re-evaluated and inverted.** GitHub is now an export sink. Flagged as §11 Q1.
