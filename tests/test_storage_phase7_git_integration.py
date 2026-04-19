@@ -24,7 +24,7 @@ import pytest
 
 from workflow import git_bridge
 from workflow.branches import BranchDefinition, NodeDefinition
-from workflow.storage import (
+from workflow.catalog import (
     DirtyFileError,
     SqliteCachedBackend,
     YamlRepoLayout,

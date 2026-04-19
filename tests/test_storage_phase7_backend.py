@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 from workflow.branches import BranchDefinition, NodeDefinition
-from workflow.storage import (
+from workflow.catalog import (
     SqliteCachedBackend,
     SqliteOnlyBackend,
     YamlRepoLayout,

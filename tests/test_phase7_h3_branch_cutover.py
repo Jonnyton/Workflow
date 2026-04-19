@@ -69,7 +69,7 @@ def repo_env(tmp_path, monkeypatch):
     # Re-anchor the cached backend at the tmp repo by changing cwd.
     monkeypatch.chdir(tmp_path)
 
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)
@@ -90,7 +90,7 @@ def no_git_env(tmp_path, monkeypatch):
     monkeypatch.delenv("WORKFLOW_STORAGE_BACKEND", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)
@@ -112,7 +112,7 @@ def sqlite_only_env(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKFLOW_STORAGE_BACKEND", "sqlite_only")
     monkeypatch.chdir(tmp_path)
 
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)

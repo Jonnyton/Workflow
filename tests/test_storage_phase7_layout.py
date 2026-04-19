@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from workflow.storage import YamlRepoLayout
-from workflow.storage.layout import slugify
+from workflow.catalog import YamlRepoLayout
+from workflow.catalog.layout import slugify
 
 
 def test_branch_path_goes_under_branches(tmp_path):

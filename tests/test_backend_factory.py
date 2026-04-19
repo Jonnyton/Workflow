@@ -2,7 +2,7 @@
 
 Covers:
 
-- ``workflow.storage.get_backend`` env-var selection + auto-probe.
+- ``workflow.catalog.get_backend`` env-var selection + auto-probe.
 - Memoization + ``invalidate_backend_cache`` contract.
 - ``_format_dirty_file_conflict`` response shape.
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from workflow.storage import (
+from workflow.catalog import (
     DirtyFileError,
     SqliteCachedBackend,
     SqliteOnlyBackend,

@@ -41,7 +41,7 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from workflow.storage import (
+from workflow.catalog import (
     CommitFailedError,
     DirtyFileError,
     get_backend,
@@ -8367,8 +8367,8 @@ def _validate_evidence_url(url: str) -> str:
 
 def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import get_goal
+    from workflow.catalog.layout import slugify
     from workflow.identity import git_author
-    from workflow.storage.layout import slugify
 
     gid = (kwargs.get("goal_id") or "").strip()
     if not gid:
@@ -8486,8 +8486,8 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
         get_goal,
         get_goal_ladder,
     )
+    from workflow.catalog.layout import slugify
     from workflow.identity import git_author
-    from workflow.storage.layout import slugify
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     rung_key = (kwargs.get("rung_key") or "").strip()
@@ -8605,8 +8605,8 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
         get_gate_claim,
         get_goal,
     )
+    from workflow.catalog.layout import slugify
     from workflow.identity import git_author
-    from workflow.storage.layout import slugify
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     rung_key = (kwargs.get("rung_key") or "").strip()

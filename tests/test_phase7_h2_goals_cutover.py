@@ -57,7 +57,7 @@ def repo_env(tmp_path, monkeypatch):
     monkeypatch.delenv("WORKFLOW_STORAGE_BACKEND", raising=False)
     monkeypatch.delenv("WORKFLOW_GIT_AUTHOR", raising=False)
 
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)
@@ -77,7 +77,7 @@ def no_git_env(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     monkeypatch.delenv("WORKFLOW_STORAGE_BACKEND", raising=False)
 
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)
@@ -230,7 +230,7 @@ def test_sqlite_only_env_skips_yaml_and_commits(repo_env, monkeypatch):
     """WORKFLOW_STORAGE_BACKEND=sqlite_only: handlers work, no YAML, no commit."""
     us, repo, _base = repo_env
     monkeypatch.setenv("WORKFLOW_STORAGE_BACKEND", "sqlite_only")
-    from workflow.storage import invalidate_backend_cache
+    from workflow.catalog import invalidate_backend_cache
     invalidate_backend_cache()
 
     before = _commit_count(repo)

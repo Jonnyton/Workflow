@@ -60,7 +60,7 @@ The canonical subpackage layout the codebase is moving toward. Rooted in the spa
 | `workflow/bid/` | Per-node paid-market mechanics. Consolidates `node_bid.py`, `bid_execution_log.py`, `bid_ledger.py`, `settlements.py`. |
 | `workflow/servers/` | Entry-point shells. The integration layer that mounts `api/` submodules. Hosts `workflow_server.py` (post-layer-3 rename), `daemon_server.py`, `mcp_server.py`. **Acts as routing surface, not the place action logic lives.** |
 
-Existing subpackages that already conform: `auth/`, `checkpointing/`, `constraints/`, `context/`, `evaluation/`, `ingestion/`, `judges/`, `knowledge/`, `learning/`, `memory/`, `planning/`, `providers/`, `retrieval/`, `desktop/`, `testing/`, `utils/`.
+Existing subpackages that already conform: `auth/`, `catalog/`, `checkpointing/`, `constraints/`, `context/`, `evaluation/`, `ingestion/`, `judges/`, `knowledge/`, `learning/`, `memory/`, `planning/`, `providers/`, `retrieval/`, `desktop/`, `testing/`, `utils/`.
 
 Correctly-flat modules at root (small typed surfaces with no clear sibling): `protocols.py`, `exceptions.py`, `notes.py`, `packets.py`, `config.py`, `identity.py`, `discovery.py`, `singleton_lock.py`, `domain_registry.py`, `registry.py`, `preferences.py`, `compat.py` (post-Phase-5), `__init__.py`, `__main__.py`, `docview.py`.
 

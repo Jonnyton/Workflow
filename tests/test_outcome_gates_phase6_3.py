@@ -71,7 +71,7 @@ def cached_gates_env(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     monkeypatch.setenv("WORKFLOW_STORAGE_BACKEND", "sqlite_cached")
-    from workflow.storage import backend as backend_mod
+    from workflow.catalog import backend as backend_mod
     backend_mod.invalidate_backend_cache()
     from workflow import universe_server as us
     importlib.reload(us)
@@ -115,7 +115,7 @@ def _last_commit_message(repo: Path) -> str:
 
 
 def test_goal_yaml_roundtrip_with_ladder():
-    from workflow.storage.serializer import (
+    from workflow.catalog.serializer import (
         goal_from_yaml_payload,
         goal_to_yaml_payload,
     )
@@ -138,7 +138,7 @@ def test_goal_yaml_roundtrip_with_ladder():
 
 
 def test_goal_yaml_omits_empty_ladder():
-    from workflow.storage.serializer import goal_to_yaml_payload
+    from workflow.catalog.serializer import goal_to_yaml_payload
 
     payload = goal_to_yaml_payload({
         "goal_id": "g1", "name": "G", "gate_ladder": [],
@@ -147,7 +147,7 @@ def test_goal_yaml_omits_empty_ladder():
 
 
 def test_gate_claim_yaml_roundtrip():
-    from workflow.storage.serializer import (
+    from workflow.catalog.serializer import (
         gate_claim_from_yaml_payload,
         gate_claim_to_yaml_payload,
     )
@@ -170,7 +170,7 @@ def test_gate_claim_yaml_roundtrip():
 
 
 def test_gate_claim_yaml_roundtrip_retracted():
-    from workflow.storage.serializer import (
+    from workflow.catalog.serializer import (
         gate_claim_from_yaml_payload,
         gate_claim_to_yaml_payload,
     )
@@ -196,7 +196,7 @@ def test_gate_claim_yaml_roundtrip_retracted():
 
 
 def test_gate_claim_path_shape(tmp_path):
-    from workflow.storage.layout import YamlRepoLayout
+    from workflow.catalog.layout import YamlRepoLayout
 
     layout = YamlRepoLayout(tmp_path)
     path = layout.gate_claim_path("fantasy-novel", "loral-v3", "draft_complete")
@@ -222,7 +222,7 @@ def test_sqlite_only_save_gate_claim_returns_none_commit(tmp_path):
         update_branch_definition,
     )
     from workflow.branches import BranchDefinition
-    from workflow.storage.backend import SqliteOnlyBackend
+    from workflow.catalog.backend import SqliteOnlyBackend
 
     base = tmp_path / "out"
     base.mkdir()

@@ -30,8 +30,8 @@ import yaml
 
 from workflow import git_bridge
 from workflow.branches import BranchDefinition
-from workflow.storage.layout import YamlRepoLayout, slugify
-from workflow.storage.serializer import (
+from workflow.catalog.layout import YamlRepoLayout, slugify
+from workflow.catalog.serializer import (
     branch_to_yaml_payload,
     goal_to_yaml_payload,
 )
@@ -641,7 +641,7 @@ class SqliteCachedBackend:
         self, saved: dict[str, Any], *, goal_slug: str, branch_slug: str,
     ) -> Path:
         """Serialize + write a claim YAML, stage it, return the path."""
-        from workflow.storage.serializer import gate_claim_to_yaml_payload
+        from workflow.catalog.serializer import gate_claim_to_yaml_payload
 
         payload = gate_claim_to_yaml_payload(saved)
         claim_path = self.layout.gate_claim_path(

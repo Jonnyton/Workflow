@@ -51,11 +51,11 @@ def _isolate_storage_backend(monkeypatch):
     ``tests/test_storage_phase7_backend.py`` and future ``test_phase7_h3_*``.
     """
     monkeypatch.setenv("WORKFLOW_STORAGE_BACKEND", "sqlite_only")
-    from workflow import storage as _storage
+    from workflow import catalog as _catalog
 
-    _storage.invalidate_backend_cache()
+    _catalog.invalidate_backend_cache()
     yield
-    _storage.invalidate_backend_cache()
+    _catalog.invalidate_backend_cache()
 
 
 @pytest.fixture

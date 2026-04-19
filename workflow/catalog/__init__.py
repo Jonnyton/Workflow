@@ -23,7 +23,7 @@ pull the cache rebuilds from YAML via a separate tool (7.1 ships the
 writer; 7.2 ships the reader-rehydration path).
 """
 
-from workflow.storage.backend import (
+from workflow.catalog.backend import (
     CommitFailedError,
     DirtyFileError,
     SqliteCachedBackend,
@@ -33,8 +33,8 @@ from workflow.storage.backend import (
     invalidate_backend_cache,
     list_unreconciled_writes,
 )
-from workflow.storage.layout import YamlRepoLayout
-from workflow.storage.serializer import (
+from workflow.catalog.layout import YamlRepoLayout
+from workflow.catalog.serializer import (
     branch_from_yaml_payload,
     branch_to_yaml_payload,
     goal_from_yaml_payload,

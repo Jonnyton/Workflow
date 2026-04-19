@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 
-from workflow.storage.layout import slugify
+from workflow.catalog.layout import slugify
 
 _DISPLAY_NAME = "Workflow User"
 _NOREPLY_DOMAIN = "users.noreply.workflow.local"

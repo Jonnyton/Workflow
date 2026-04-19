@@ -21,7 +21,7 @@ from workflow.branches import (
     GraphNodeRef,
     NodeDefinition,
 )
-from workflow.storage.serializer import (
+from workflow.catalog.serializer import (
     branch_from_yaml_payload,
     branch_to_yaml_payload,
     goal_from_yaml_payload,
