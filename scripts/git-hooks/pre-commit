@@ -152,15 +152,18 @@ if [ -n "${STAGED_TEXT}" ]; then
     fi
 
     if [ -n "${PYTHON_BIN}" ]; then
-      if ! ${PYTHON_BIN} scripts/fix-mojibake.py "${EXISTING_PATHS[@]}"; then
+      if [ ! -f scripts/fix-mojibake.py ]; then
+        echo "${YELLOW}pre-commit: scripts/fix-mojibake.py missing; skipping mojibake scan${RESET}" >&2
+      elif ! ${PYTHON_BIN} scripts/fix-mojibake.py "${EXISTING_PATHS[@]}"; then
         echo "" >&2
         echo "${RED}pre-commit: mojibake detected in staged files.${RESET}" >&2
         echo "Run this to repair in-place, then re-stage:" >&2
         echo "  ${PYTHON_BIN} scripts/fix-mojibake.py --autofix <paths>" >&2
         echo "Override with --no-verify if intentional." >&2
         exit 1
+      else
+        echo "${GREEN}pre-commit: mojibake scan clean (${#EXISTING_PATHS[@]} text file(s) checked)${RESET}"
       fi
-      echo "${GREEN}pre-commit: mojibake scan clean (${#EXISTING_PATHS[@]} text file(s) checked)${RESET}"
     fi
   fi
 fi

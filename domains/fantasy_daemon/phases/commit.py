@@ -646,13 +646,92 @@ def _record_scene_verdict(
 # Pattern to extract capitalized names from fact text.
 # Minimum 2 chars total (capital + 1 lowercase) to catch short names like Ryn, Kai.
 _NAME_PATTERN = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")
+
+# Stopwords: capitalized tokens that must never be treated as character
+# names. Multi-word matches whose FIRST word lands here are trimmed at
+# the boundary rather than rejected — so "If Kael" becomes "Kael".
+#
+# Mission 26 (task #51) added articles + prepositions + sentence-starting
+# conjunctions + common capitalized nouns previously leaking through
+# (e.g. "Manual", "Oxygen"), plus the `_LEADING_STOPWORDS` fast-path
+# that strips a bad first token before the length / rejection gate.
 _NAME_STOPWORDS = frozenset({
-    "The", "She", "Her", "His", "They", "This", "That", "But", "And",
-    "Not", "Scene", "Chapter", "Book", "Northern", "Southern", "Eastern",
-    "Western", "Ancient", "Great", "Old", "New", "Dark", "Bright",
-    "When", "Then", "What", "Where", "How", "Who", "Why", "Now",
-    "Once", "Here", "There", "Some", "From", "Into", "With",
+    # Articles / determiners.
+    "The", "A", "An",
+    # Personal / possessive pronouns.
+    "She", "He", "Her", "His", "They", "Their", "It", "Its",
+    "We", "Our", "Us", "Me", "My", "You", "Your",
+    # Demonstratives / wh-words.
+    "This", "That", "These", "Those",
+    "When", "Then", "What", "Where", "How", "Who", "Why", "Which",
+    "Now", "Once", "Here", "There",
+    # Conjunctions + sentence-starters observed in Mission 26.
+    "But", "And", "Not", "Or", "So", "Yet", "If", "Though", "Because",
+    "While", "Although", "Since", "Unless", "After", "Before",
+    # Prepositions + motion/target markers.
+    "From", "Into", "With", "For", "By", "At", "On", "In", "Of",
+    "Without", "Within", "Through", "Across", "Against", "Around",
+    "Upon", "Under", "Over", "Between", "Beyond",
+    # Meta-narrative tokens from the fiction corpus.
+    "Scene", "Chapter", "Book", "Prologue", "Epilogue",
+    # Overgeneralized adjectives the old pattern picked up.
+    "Northern", "Southern", "Eastern", "Western",
+    "Ancient", "Great", "Old", "New", "Dark", "Bright",
+    "Some", "Many", "Few", "All", "None", "Every", "Each",
+    # Common capitalized nouns previously captured as "characters"
+    # (Mission 26 evidence).
+    "Manual", "Oxygen", "Stasis",
 })
+
+# Single-word gatekeeper — if a multi-word match starts with one of
+# these, we strip it rather than rejecting the whole match. "If Kael"
+# → "Kael"; "For Oxygen" → (drops; trailing single-word Oxygen is
+# still gated by the stopword set above).
+_LEADING_STOPWORDS = _NAME_STOPWORDS
+
+
+def _trim_leading_stopwords(name: str) -> str:
+    """Strip stopword prefix tokens from a multi-word match.
+
+    "If Kael" → "Kael". "In The Hall Kael" → "Hall Kael" (keeps first
+    non-stopword+tail). Returns "" when every token is a stopword.
+    """
+    tokens = name.split()
+    while tokens and tokens[0] in _LEADING_STOPWORDS:
+        tokens.pop(0)
+    return " ".join(tokens)
+
+
+# Minimum per-word length for a token to be a plausible name. "If" = 2
+# chars is rejected; "Kai" = 3 chars is kept.
+_MIN_TOKEN_LEN = 3
+
+
+def _is_plausible_name(name: str) -> bool:
+    """Gate a capitalized token sequence for character-name plausibility.
+
+    Rejects:
+      - Empty / too-short names (< 3 chars overall).
+      - First token in _NAME_STOPWORDS (post-trim safety net).
+      - ANY token in the sequence shorter than _MIN_TOKEN_LEN — catches
+        "Ryn X" style leaks where an abbreviation masquerades as a
+        middle name.
+      - Single-word names that exactly match _NAME_STOPWORDS (redundant
+        with _NAME_STOPWORDS check but defense-in-depth).
+    """
+    if not name or len(name) < _MIN_TOKEN_LEN:
+        return False
+    tokens = name.split()
+    if not tokens:
+        return False
+    if tokens[0] in _NAME_STOPWORDS:
+        return False
+    for tok in tokens:
+        if len(tok) < _MIN_TOKEN_LEN:
+            return False
+        if tok in _NAME_STOPWORDS:
+            return False
+    return True
 
 
 def _infer_fact_entity(fact: Any) -> str | None:
@@ -667,9 +746,8 @@ def _infer_fact_entity(fact: Any) -> str | None:
 
     text = getattr(fact, "text", "")
     for match in _NAME_PATTERN.finditer(text):
-        name = match.group(1)
-        first_word = name.split()[0]
-        if first_word not in _NAME_STOPWORDS and len(name) > 2:
+        name = _trim_leading_stopwords(match.group(1))
+        if _is_plausible_name(name):
             return name
 
     return None
@@ -692,30 +770,30 @@ def _upsert_characters_from_facts(
     characters: dict[str, set[str]] = {}
 
     for fact in facts_list:
-        # From pov_characters field
+        # From pov_characters field — trust more than free-text but still
+        # gate to catch LLM hallucination like ["If", "Manual"].
         for name in getattr(fact, "pov_characters", []) or []:
-            if name and name not in _NAME_STOPWORDS:
+            if _is_plausible_name(name or ""):
                 characters.setdefault(name, set()).add(fact.fact_id)
 
         # From narrator field
         narrator = getattr(fact, "narrator", None)
-        if narrator and narrator not in _NAME_STOPWORDS:
+        if narrator and _is_plausible_name(narrator):
             characters.setdefault(narrator, set()).add(fact.fact_id)
 
-        # From fact text — look for capitalized names
+        # From fact text — look for capitalized names. Trim leading
+        # stopwords ("If Kael" → "Kael") before plausibility gate.
         text = getattr(fact, "text", "")
         for match in _NAME_PATTERN.finditer(text):
-            name = match.group(1)
-            first_word = name.split()[0]
-            if first_word not in _NAME_STOPWORDS and len(name) > 2:
+            name = _trim_leading_stopwords(match.group(1))
+            if _is_plausible_name(name):
                 characters.setdefault(name, set()).add(fact.fact_id)
 
     # Fallback: scan prose directly if no characters found from facts
     if not characters and prose:
         for match in _NAME_PATTERN.finditer(prose):
-            name = match.group(1)
-            first_word = name.split()[0]
-            if first_word not in _NAME_STOPWORDS and len(name) > 2:
+            name = _trim_leading_stopwords(match.group(1))
+            if _is_plausible_name(name):
                 characters.setdefault(name, set())
 
     # Upsert each character
