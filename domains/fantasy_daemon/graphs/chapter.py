@@ -70,6 +70,14 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
     orient -> plan -> draft -> commit with conditional second-draft
     revision via ``route_after_commit``.
 
+    Task #63 plateau-escape: bumps a scene-attempt counter on the
+    originating WorkTarget before scene execution. If the count has
+    reached ``max_scene_attempts()`` (default 3, env-overridable via
+    ``WORKFLOW_MAX_SCENE_ATTEMPTS``), short-circuits to a force-accept
+    verdict and advances the target — the chapter-level guard that the
+    scene-level one-revise cap can't provide because the scene subgraph
+    re-enters with ``second_draft_used=False`` on every dispatch.
+
     Parameters
     ----------
     state : ChapterState
@@ -87,6 +95,81 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
     ch_num = state.get("chapter_number", "?")
     _log.info("run_scene: starting scene %s of chapter %s", scene_num, ch_num)
     _activity_log(state, f"Scene {scene_num}: starting (chapter {ch_num})")
+
+    # --- Task #63: scene-attempt counter + force-accept guard ---
+    instructions_pre = state.get("workflow_instructions", {}) or {}
+    target_id_pre = instructions_pre.get("selected_target_id")
+    execution_scope_pre = instructions_pre.get("execution_scope") or {}
+    universe_path_pre = state.get(
+        "_universe_path", state.get("universe_path", ""),
+    )
+    scene_id_pre = (
+        f"{(universe_path_pre.rsplit('/', 1)[-1] or 'universe')}"
+        f"-B{state.get('book_number', '?')}"
+        f"-C{ch_num}-S{scene_num}"
+    )
+
+    force_accept = False
+    attempts_used = 0
+    if universe_path_pre and target_id_pre:
+        try:
+            from domains.fantasy_daemon.phases.target_actions import (
+                bump_scene_attempt_count,
+                max_scene_attempts,
+            )
+
+            attempts_used = bump_scene_attempt_count(
+                universe_path_pre, target_id_pre,
+            )
+            if attempts_used >= max_scene_attempts():
+                force_accept = True
+        except Exception:
+            _log.warning(
+                "run_scene: scene-attempt counter bump failed",
+                exc_info=True,
+            )
+
+    if force_accept:
+        # Short-circuit: skip scene subgraph, emit tagged log, advance
+        # target via the existing accept path. User-sim verifies via
+        # get_recent_events(tag="dispatch_guard").
+        msg = (
+            f"force_accept scene_id={scene_id_pre} attempts={attempts_used} "
+            f"reason=plateau_escape"
+        )
+        _activity_log(state, msg, tag="dispatch_guard")
+        _log.warning("run_scene: %s", msg)
+
+        try:
+            from domains.fantasy_daemon.phases.target_actions import (
+                advance_work_target_on_accept,
+            )
+
+            advance_work_target_on_accept(
+                universe_path_pre,
+                target_id_pre,
+                verdict="accept",
+                execution_scope=execution_scope_pre,
+            )
+        except Exception:
+            _log.warning(
+                "run_scene: force-accept advance_work_target failed",
+                exc_info=True,
+            )
+
+        return {
+            "scenes_completed": state["scenes_completed"] + 1,
+            "consolidated_facts": [],
+            "chapter_word_count": state.get("chapter_word_count", 0),
+            "consecutive_revert_count": 0,
+            "quality_trace": [{
+                "node": "run_scene",
+                "action": "force_accept_plateau_escape",
+                "scene_id": scene_id_pre,
+                "attempts": attempts_used,
+                "max_attempts": max_scene_attempts(),
+            }],
+        }
 
     from domains.fantasy_daemon.graphs.scene import build_scene_graph
 

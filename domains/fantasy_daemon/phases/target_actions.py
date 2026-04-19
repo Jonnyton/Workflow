@@ -176,6 +176,10 @@ def advance_work_target_on_accept(
         after["scene_number"] = None
 
     target.metadata = metadata
+    # Scene advanced cleanly — reset the attempt counter so the next
+    # scene starts with a fresh budget. (No-op if counter absent.)
+    if "scene_attempt_count" in target.metadata:
+        target.metadata["scene_attempt_count"] = 0
     try:
         upsert_work_target(universe_path, target)
     except Exception as exc:
@@ -196,3 +200,74 @@ def advance_work_target_on_accept(
         "before": before,
         "after": after,
     }
+
+
+# -----------------------------------------------------------------
+# Scene-attempt counter (task #63 — plateau-escape guard)
+# -----------------------------------------------------------------
+#
+# Lives in `target.metadata["scene_attempt_count"]`. Bumped on every
+# run_scene entry; reset to 0 by `advance_work_target_on_accept`
+# above. When the count reaches MAX_SCENE_ATTEMPTS, `run_scene`
+# short-circuits to a force-accept verdict and advances the target
+# past the plateau — the chapter-level guard that the scene-level
+# one-revise cap can't provide because the scene subgraph re-enters
+# with `second_draft_used=False` on every dispatch.
+
+MAX_SCENE_ATTEMPTS_DEFAULT = 3
+
+
+def bump_scene_attempt_count(
+    universe_path: str, target_id: str | None,
+) -> int:
+    """Increment and persist the scene-attempt counter. Returns new count.
+
+    Returns 0 on any error (missing universe_path, missing target,
+    persistence failure). Callers treat 0 as "counter unavailable,
+    fall back to unbounded behavior rather than crash."
+    """
+    if not universe_path or not target_id:
+        return 0
+    try:
+        target = get_target(universe_path, target_id)
+    except Exception as exc:
+        logger.warning(
+            "bump_scene_attempt_count: get_target failed for %s: %s",
+            target_id, exc,
+        )
+        return 0
+    if target is None:
+        return 0
+
+    metadata = dict(target.metadata)
+    current = metadata.get("scene_attempt_count", 0)
+    try:
+        current_int = int(current)
+    except (TypeError, ValueError):
+        current_int = 0
+    metadata["scene_attempt_count"] = current_int + 1
+    target.metadata = metadata
+    try:
+        upsert_work_target(universe_path, target)
+    except Exception as exc:
+        logger.warning(
+            "bump_scene_attempt_count: upsert failed for %s: %s",
+            target_id, exc,
+        )
+        return 0
+    return current_int + 1
+
+
+def max_scene_attempts() -> int:
+    """Overridable ceiling. Env var wins; default = 3."""
+    import os
+
+    raw = os.environ.get("WORKFLOW_MAX_SCENE_ATTEMPTS", "").strip()
+    if raw:
+        try:
+            value = int(raw)
+            if value >= 1:
+                return value
+        except ValueError:
+            pass
+    return MAX_SCENE_ATTEMPTS_DEFAULT
