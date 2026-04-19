@@ -169,6 +169,7 @@ def test_configure_bootstraps_universes_from_filesystem(tmp_path):
     downstream branch/request/runtime endpoints 404 on un-synced universes.
     """
     from fantasy_author.api import configure
+
     from workflow import author_server
 
     # Fresh base dir with a universe directory (no prior configure).

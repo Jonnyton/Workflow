@@ -23,7 +23,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from domains.fantasy_author.graphs.universe import (
     _has_unsynthesized_canon,
     run_book,
@@ -32,6 +31,7 @@ from domains.fantasy_author.phases.drift_cleanup import (
     cleanup_drift_kg,
     is_drift_seeded_scene,
 )
+
 from workflow.ingestion.extractors import (
     _LAST_BITE_OUTCOMES,
     _synthesize_bite_by_bite,
