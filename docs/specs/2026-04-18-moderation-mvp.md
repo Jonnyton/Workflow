@@ -15,12 +15,13 @@ Track F is the commons' immune system. Community-flagged, volunteer-triaged, hos
 
 ## 1. Design principles
 
-1. **Users flag. Volunteer mods triage. Host backstops.** No platform-driven takedowns of legal content.
+1. **Users flag. Volunteer mods triage. Admin-pool backstops.** No platform-driven takedowns of legal content.
 2. **Auto-soft-hide at threshold, not at single report.** A single bad actor can't take anything down.
 3. **Rubric is contributor-owned.** Lives in `Workflow/` repo at `docs/moderation_rubric.md`. Editable via PR. Not hardcoded.
 4. **Economic disincentive first, human labor second.** Paid-market 1% fee + min-bid + account-age gates absorb most spam without human review.
-5. **Appeal is a right, not a favor.** Artifact owner can always escalate to host-admin.
+5. **Appeal is a right, not a favor.** Artifact owner can always escalate to the admin pool.
 6. **Mod bias is real.** Two separate mods must independently concur before hard-delete. Soft-hide needs one.
+7. **Bus-factor ≥ 2 from day one** (per `project_host_independent_succession.md`). `host_admin` role is **a pool of at least 2 operators**, not a single person. Recruit at minimum one tier-3 co-maintainer pre-launch.
 
 ---
 
@@ -310,9 +311,11 @@ END;
 $$;
 ```
 
-### 4.5 `resolve_appeal` (host-admin only)
+### 4.5 `resolve_appeal` (admin-pool)
 
-Host overrides or upholds. Standard pattern; omitted for brevity.
+Any user with `mod_role='host_admin'` can resolve. Admin-pool member overrides or upholds the prior mod decision. Standard pattern. **Recusal rule:** an admin cannot resolve an appeal on an artifact they own, nor one where they were the original mod whose decision is being appealed.
+
+Bus-factor-2 property: at least 2 admins exist, and any can handle any appeal (minus own-artifact / own-decision recusal). If host goes offline, the platform's appeals queue continues to drain through the co-maintainer(s).
 
 ---
 
@@ -329,7 +332,7 @@ Anyone with `account_age_days >= 2`. Prevents drive-by sybil flags.
 | T1 chatbot | `none` | Upgrade to T2 then earn rep (see below). |
 | T2 daemon host | `none` until earned | **Threshold metric (see §5.3)**. |
 | T3 contributor | `volunteer` by default | One-time acceptance of CONTRIBUTING.md + `moderation_rubric.md`. Signals via PR comment or the `/account` UI. Tier-3 status comes from having a merged PR to `Workflow/`. |
-| Host (Jonathan) | `host_admin` | Permanent. |
+| Admin pool (≥2 operators) | `host_admin` | Launch seed: host (Jonathan) + at least one tier-3 co-maintainer recruited pre-launch (per succession memory). New admins added via existing-admin-pool 2-of-N approval. Not permanent; can be rotated. |
 
 ### 5.3 Tier-2 → volunteer mod earn threshold (pick one)
 
@@ -413,7 +416,7 @@ Every `resolve_flag` call requires a rationale ≥20 characters. The rationale
 is visible to the artifact owner on appeal. Write as if the owner will read it.
 ```
 
-Subsequent rubric changes come via PR with 2 other mods approving. Host has veto.
+Subsequent rubric changes come via PR with 2 admin-pool members approving. No single-person veto (bus-factor ≥ 2 per succession memory) — a lone admin can't block a 2-admin majority on rubric changes.
 
 ---
 
