@@ -10,7 +10,7 @@ For live state, see STATUS.md. For how to work on the project, see AGENTS.md. Ch
 
 **Workflow is a global goals engine.** Humanity declares shared Goals — research breakthroughs, novels, prosecutions, cures, open datasets — and a legion of diverse AI-augmented workflows pursues each Goal in parallel. Branches evolve, cross-pollinate, and get ranked by how far their outputs advance up each Goal's real-world outcome-gate ladder. The value is the evolving ecology of many workflows chasing the same outcomes and learning from each other.
 
-Fantasy writing is the first playful benchmark branch: what design principles produce truly intelligent, iterative, self-improving agent workflows that many people can shape together?
+Fantasy writing is the first playful benchmark domain — a deliberate stress test for what design principles produce truly intelligent, iterative, self-improving agent workflows that many people can shape together. Future domains (research, journalism, scientific meta-analysis, legal, screenplay) inherit the engine, not the topology.
 
 The real abstraction is an open workflow playground, multiplayer daemon platform, and long-horizon agent research lab. The system should maintain explicit state across many cycles; search and manage memory across multiple backends; use tools instead of one giant prompt; separate generation from evaluation from environmental truth; learn through durable artifacts, not hidden chat; coordinate across timescales, users, and daemons; let users conversationally design and reshape state architecture; connect to tracked real-world outcomes, not only text output; and evolve itself as models and community practice improve.
 
@@ -30,7 +30,7 @@ The system should get simpler as models improve. Every scaffold is temporary unl
 
 **Harness design is part of the cognition stack.** Initializers, traces, browser harnesses, replayable tests, dashboards, status files, artifact stores materially change what the system can do.
 
-**Tools are the agent-computer interface.** Tool shape is architecture — names, parameters, return schemas, failure semantics. Prefer a smaller number of reliable composable tools over many overlapping ones.
+**Tools are the agent-computer interface.** Tool shape is architecture — names, parameters, return schemas, failure semantics. Prefer a smaller number of reliable composable tools over many overlapping ones. **Trust-critical tools include their own caveats** (the self-auditing-tools pattern, see `docs/design-notes/2026-04-19-self-auditing-tools.md`); structured evidence + structured caveats lets the chatbot compose trustworthy narratives without the system having to police its honesty.
 
 **Generator, evaluator, and ground truth stay separate.** Self-evaluation bias is real. Keep them as separate channels, often separate model families. The evaluator needs a different failure profile, not a better creator.
 
@@ -40,28 +40,54 @@ The system should get simpler as models improve. Every scaffold is temporary unl
 
 **Evals grade process and outcome.** Final quality isn't enough. Inspect retrieval choices, tool usage, stopping behavior, handoff quality, grounding, artifacts. When a run fails, traces should explain why.
 
+**Module shape is part of the architecture.** A flat namespace of 35 modules at `workflow/` root signals "no opinion about boundaries." A god-module of 10k lines signals "boundaries deferred indefinitely." Both are forms of architectural debt. The Module Layout section below codifies the target shape.
+
+**Cleanup operations against scene-attributed data must scope across all DBs that hold scene-attributed rows.** Generalizes the Fix E lesson (task #49): a cleanup path that prunes one DB but not its sibling leaves orphan derivatives that masquerade as canon on the next retrieval cycle. When a new DELETE or mutation operates on rows keyed to scene_id (or any cross-store attribution), scope it against both `knowledge.db` and `story.db` from the start, or explicitly document the opt-out with reason. Per the migration-audit follow-up at `docs/audits/2026-04-19-schema-migration-followups.md`.
+
+---
+
+## Module Layout (target shape)
+
+The canonical subpackage layout the codebase is moving toward. Rooted in the spaghetti audit at `docs/audits/2026-04-19-project-folder-spaghetti.md`. Where the current state diverges from this target, the gap is in-flight work (rename end-state collapse + post-rename cleanup), not architectural disagreement.
+
+`workflow/` is the engine package. Domain packages (`fantasy_daemon/`, future `research_daemon/`, etc.) consume from it. The engine layout follows five canonical subpackages plus a small set of correctly-flat modules:
+
+| Subpackage | Responsibility |
+|---|---|
+| `workflow/api/` | MCP tool surfaces. Mounted submodules per capability cluster (`api/branches.py`, `api/runs.py`, `api/judgments.py`, `api/goals.py`, `api/wiki.py`, etc.). Per FastMCP `mount()` pattern. **No god-modules.** |
+| `workflow/storage/` | Schema + bounded-context storage layers (`storage/accounts.py`, `storage/universes_branches.py`, `storage/requests_votes.py`, `storage/notes_work_targets.py`, `storage/goals_gates.py`). Shared `_connect()` + migrations in `__init__.py`. |
+| `workflow/runtime/` | Run scheduling primitives. Consolidates `runs.py`, `work_targets.py`, `dispatcher.py`, `branch_tasks.py`, `subscriptions.py`, plus existing `producers/` + `executors/` subpackages. `runtime/__init__.py` re-exports the public API. |
+| `workflow/bid/` | Per-node paid-market mechanics. Consolidates `node_bid.py`, `bid_execution_log.py`, `bid_ledger.py`, `settlements.py`. |
+| `workflow/servers/` | Entry-point shells. The integration layer that mounts `api/` submodules. Hosts `workflow_server.py` (post-layer-3 rename), `daemon_server.py`, `mcp_server.py`. **Acts as routing surface, not the place action logic lives.** |
+
+Existing subpackages that already conform: `auth/`, `checkpointing/`, `constraints/`, `context/`, `evaluation/`, `ingestion/`, `judges/`, `knowledge/`, `learning/`, `memory/`, `planning/`, `providers/`, `retrieval/`, `desktop/`, `testing/`, `utils/`.
+
+Correctly-flat modules at root (small typed surfaces with no clear sibling): `protocols.py`, `exceptions.py`, `notes.py`, `packets.py`, `config.py`, `identity.py`, `discovery.py`, `singleton_lock.py`, `domain_registry.py`, `registry.py`, `preferences.py`, `compat.py` (post-Phase-5), `__init__.py`, `__main__.py`, `docview.py`.
+
+**Migration policy.** When a flat module crosses ~500 LOC OR overlaps a sibling's responsibility, it gets a subpackage. New work goes into the target shape; legacy gets refactored opportunistically (the spaghetti audit ranks the priority order). The five subpackages above are the durable commitment — anything new must fit one of them or earn its place at the root with a one-line explanation in this section.
+
 ---
 
 ## Design Decisions
 
 - **Universe = single consistent reality.** Alternative realities are separate universes. Data isolation between universes is the only hard boundary.
 - **Upload provenance.** Each upload is tagged ("published book", "rough notes") and the writer weights canon sources accordingly.
-- **Unified notes.** All feedback is timestamped, attributed notes on files. One system, one format, one durable store per universe.
+- **Unified notes.** All feedback is timestamped, attributed notes on files. One system, one format, one durable store per universe. (Replaces the obsolete `STEERING.md` directive surface.)
 - **Writer self-indexes.** The writer produces entity and fact data when it commits. No separate extraction role is the end state.
 - **Editorial feedback, not scoring.** Natural-language notes about what works, what's concerning, and whether a concern is provably wrong. No numeric rubric in the core loop.
 - **Graph hierarchy is scaffolding.** Structure should emerge from the daemon's choices wherever possible, not fixed counters.
 - **Two review gates, one target registry.** Foundation review hard-blocks on unsynthesized uploads; authorial review may choose any justified work.
-- **Universe server, not single-user daemon.** One host runs the server with its own subscriptions and local models; many named users connect through MCP clients.
+- **Workflow Server, not single-user daemon.** One host runs the server with its own subscriptions and local models; many named users connect through MCP clients. (Renamed from "Universe Server" — the platform-name rebrand. The MCP namespace is currently `workflow-universe-server` pending the layer-3 plugin-dir rename per `docs/design-notes/2026-04-19-universe-to-workflow-server-rename.md`.)
 - **Workflow-first, domain-agnostic identity.** Fantasy authoring is an early benchmark domain, not the trunk.
 - **Open workflow playground.** Open-source, social, remixable, viral enough to spread. Playful surface, serious utility.
 - **MCP clients + local host dashboard.** MCP is the shared collaborative surface; host operational controls live in a local dashboard.
 - **One host tray, many dashboards.** The tray is a lightweight entry point; each live universe gets its own dashboard window.
 - **Private chats, public actions.** Conversations stay private; any universe-affecting action is publicly attributable.
-- **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting.
+- **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting. ("Author" → "daemon" rename in flight; agent-runtime concept is `daemon_id`, content-authorship concept stays `author_id` + `author_kind` discriminator. See `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` §1.5.)
 - **Branch-first collaboration.** Branches are first-class, long-lived, public-forkable. Reconciliation optional, no fixed mainline.
 - **Swarm runtime.** No universe-wide single active daemon. Runtime capacity and daemon identity are separate resources.
-- **GitHub as canonical shared state.** Public catalog of Goals, Branches, Nodes lives in the repo. Users clone, run locally, contribute via PR. No multi-tenant hosted runtime. The "global goals engine" is a shared git repo anyone can clone, run, push to.
-- **Local-first execution, git-native sync.** Each user runs Universe Server against their cloned repo. MCP actions read/write files under the repo. Push + PR is how public contribution happens.
+- **GitHub as canonical shared state — under host review (Q1 in `docs/design-notes/2026-04-18-full-platform-architecture.md`).** Current shape: public catalog of Goals, Branches, Nodes lives in the repo; users clone, run locally, contribute via PR. The full-platform architecture proposes Postgres-canonical with GitHub as export — a one-way-door decision flagged for host approval. Until Q1 resolves, both shapes are documented and neither is built into.
+- **Local-first execution, git-native sync (current).** Each user runs Workflow Server against their cloned repo. MCP actions read/write files under the repo. Push + PR is how public contribution happens. Likely superseded by Postgres-canonical pending Q1.
 - **User-controllable state architecture.** Users should eventually inspect, steer, and redesign workflow/state structure conversationally.
 - **Multi-host is the destination.** Local-host is important, but end-state is a network of hosts contributing model capacity to shared projects.
 - **The system must evolve itself.** Stagnation is the worst failure mode. Workflow, memory policy, retrieval, evaluation, naming should all learn from research and outcomes over time.
@@ -72,8 +98,9 @@ The system should get simpler as models improve. Every scaffold is temporary unl
 - **Scene commits emit structured packets.** Every accepted scene writes a validated JSON packet (facts, promises, entities, POV, deltas) beside the prose. Packets are the backbone for timelines, promise tracking, continuity, typed retrieval.
 - **Durable artifacts outlive context windows.** Plans, notes, checkpoints, logs, learned heuristics, subagent outputs belong in external storage.
 - **Human control belongs at irreversible boundaries.** Bounded loops for autonomy; pause/stop/takeover/confirmation at the edge.
-- **Engine is infrastructure, not topology.** `workflow/` is a shared library (providers, memory, retrieval, evaluation, checkpointing, notes, work targets) plus optional profiles. Each domain owns its own graph.
+- **Engine is infrastructure, not topology.** `workflow/` is a shared library plus optional profiles. Each domain owns its own graph. The engine is judged by whether a *second* domain can adopt it without engine changes — fantasy is the benchmark, not the trunk.
 - **Memory interface is query semantics, not tier names.** Three tiers (core/episodic/archival) is conceptual; the public interface feels like faceted search, not tier addressing.
+- **Trust-critical tools are self-auditing.** Tools that touch privacy, cost, routing, scope, or moderation expose structured evidence + structured caveats; the chatbot composes the user-facing narrative on top of the evidence. The chatbot cannot rubber-stamp because the caveats are part of the tool's contract. (See `docs/design-notes/2026-04-19-self-auditing-tools.md` for the pattern + 5 instantiations: memory-scope, provider routing, privacy decisions, autoresearch fulfillment, moderation.)
 
 ---
 
@@ -84,7 +111,7 @@ Users / Hosts
     <->
 MCP-compatible clients / Host dashboard
     <->
-FastAPI + Universe Server (MCP) control plane
+FastAPI + Workflow Server (MCP) control plane
     <->
 Daemon (LangGraph)
     |
@@ -153,7 +180,7 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 
 **Goal:** Improve quality through feedback, not brittle gates.
 
-**Principle:** Layered — deterministic checks for provable failures, an editorial reader for natural-language critique, environment-grounded artifacts and traces for verification. One strong independent reader beats a committee of shallow scorers.
+**Principle:** Layered — deterministic checks for provable failures, an editorial reader for natural-language critique, environment-grounded artifacts and traces for verification. One strong independent reader beats a committee of shallow scorers. **Evaluation is platform-wide, not fantasy-specific** — the §33 unifying frame (`docs/design-notes/2026-04-15-evaluation-layers.md` if landed; otherwise the §33 framing in the full-platform note) treats fantasy judges, autoresearch metrics, moderation rubrics, real-world outcomes, and discovery ranking as instantiations of one `Evaluator` primitive.
 
 ---
 
@@ -181,6 +208,8 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 
 **Shipping rule:** MCP tools and prompts publish explicit titles, tags, and behavior hints through the registered FastMCP surface — the daemon exposes a small number of coarse-grained tools, so discoverability metadata is part of the interface contract.
 
+**Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** The current 10k-line `universe_server.py` is in-flight refactor scope, not the target state.
+
 ---
 
 ## Distribution And Discoverability
@@ -191,6 +220,8 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 
 **Principle (install-readiness is continuous):** Main is a downloadable release at all times. Every change preserves flawless first-install — packaging auto-builds via CI (import probe + plugin drift check), user-facing copy is branded and unambiguous, broken install is a production bug (not a latent issue). Viral spread can happen any day; optimize throughout, not as a pre-release phase.
 
+**Principle (discovery via entry points, not filesystem scan):** Domain discovery uses `importlib.metadata.entry_points(group="workflow.domains")` per PyPA spec. Filesystem scan of `domains/*/skill.py` is a dev-mode fallback for editable worktrees only. Compat aliases stay out of discovery — compat lives in import shims, not in the domain registry contract. (See spaghetti audit hotspot #6.)
+
 **Principle (software surface is declarative and multi-layer-authorized):** The daemon's software surface is declarative, host-registered, and multi-layer-authorized. Nodes declare `required_capabilities` as a first-class field. Per-host capability registry resolves what's installed. Missing software auto-installs (host-policy gated). Daemons can invoke arbitrary local software — graphics engines, games, LLMs — via a dedicated `external_tool_node` type that bypasses the Python sandbox but layers security: bundled handler signatures, binary signature verification, universe-level allow-list, per-software host approval, subprocess isolation. Any single layer fails, the others hold. Cross-host software donation (Host A cached installer → Host B on demand) is supported; cross-host node-execution hopping is not.
 
 ---
@@ -199,7 +230,7 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 
 **Goal:** Make the system operable, testable, replayable, and improvable across both product runtime and AI-to-AI development.
 
-**Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — AGENTS/STATUS/PLAN and agent roles separate planning, implementation, testing, review, critique. That's not just process; it's part of the theory of durable agentic work.
+**Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — the **Three Living Files** (AGENTS.md / PLAN.md / STATUS.md, see `AGENTS.md`) and the verifier/navigator/dev/user agent roles separate process truth, design truth, live state, quality, direction, and live-mission validation. That's not just process; it's part of the theory of durable agentic work.
 
 ---
 
@@ -216,6 +247,8 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 **Goal:** `workflow/` is reusable infrastructure; `domains/*` own their graph topology and import what they need.
 
 **Principle:** Extract infrastructure first, prove topology second. Skills (swappable phase implementations, domain tools, eval criteria, state extensions) remain valuable within a graph but don't dictate graph shape. A second domain pressures the engine to prove it's actually domain-agnostic.
+
+**Module-shape commitment (refined):** Engine = `workflow/`. Domains = `domains/<name>/`. Currently fantasy_daemon is the only live domain; the pending engine/domain API separation work (`docs/design-notes/2026-04-17-engine-domain-api-separation.md`) extracts domain-specific MCP actions out of the engine shell into `domains/fantasy_daemon/api/` (or equivalent). The engine shell becomes a routing surface; domains register their actions on startup. The engine-vs-domain seam is *named* — once the separation lands, every action lives in exactly one of: shared engine API (`workflow/api/`) or a domain API (`domains/<name>/api/`). No third location.
 
 Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared `workflow/` infrastructure uses domain-agnostic names.
 
@@ -241,9 +274,9 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 - Authorship + attribution lineage chains.
 - Cross-Branch node library per Goal — patterns that work become shared primitives.
 
-**Privacy default:** Public-by-default; users can mark a branch private for drafting.
+**Privacy default:** Per-piece, chatbot-judged. Concept-public by default; instance-private when user data is involved. Chatbot makes per-piece visibility decisions dynamically. (See `docs/design-notes/2026-04-18-full-platform-architecture.md` §17 + memory `project_privacy_per_piece_chatbot_judged.md`.) The earlier "public-by-default; users can mark a branch private for drafting" framing has been refined to per-piece granularity.
 
-**Non-goals for now:** account system, monetization, moderation.
+**Non-goals for now:** account system MVP scope under Q1; monetization scoped to 1% crypto fee on paid-market bids only; moderation = community-flagged with volunteer-mod review (Q10-host RESOLVED).
 
 ---
 
@@ -253,3 +286,5 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 - **Structural scaffolding should shrink** as models improve — hard maxima and routing thresholds only survive if evals prove they help.
 - **Hybrid memory must become one policy.** Retrieval and memory may be separate implementations, but they should behave like one coherent decision system from the daemon's perspective.
 - **State contract mismatches are bugs.** TypedDicts, node outputs, and downstream consumers must agree.
+- **God-module decomposition is in-flight, not done.** `workflow/universe_server.py` (9.9k LOC) and `workflow/daemon_server.py` (3.6k LOC) are the dominant violations of the Module Layout commitment above. Refactor sequenced after rename Phase 5 — see spaghetti audit hotspots #1-#2 for the migration shape.
+- **Postgres-canonical vs GitHub-canonical (Q1 in full-platform note) is the largest unresolved architectural decision.** Until host answers, two design shapes coexist in this document. The decision should land in the next few cycles to avoid further documentation divergence.
