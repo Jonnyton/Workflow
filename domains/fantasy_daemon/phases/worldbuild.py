@@ -717,22 +717,25 @@ def _handle_synthesize_source(
             len(generated), source_file, ", ".join(generated),
         )
 
-        # Task #17 Fix E: forward defense. A successful canon synthesis
-        # means any drift facts the daemon wrote against the placeholder
-        # premise are now obsolete; wipe them universe-wide so retrieval
-        # doesn't resurface hallucinated "canon" on subsequent cycles.
+        # Task #17 Fix E (expanded 2026-04-19 per task #49): forward
+        # defense across BOTH knowledge.db + story.db. A successful
+        # canon synthesis means any drift rows the daemon wrote against
+        # the placeholder premise are now obsolete; wipe them
+        # universe-wide so retrieval doesn't resurface hallucinated
+        # "canon" on subsequent cycles.
         try:
             from domains.fantasy_daemon.phases.drift_cleanup import (
-                cleanup_drift_kg,
+                cleanup_drift_all,
             )
 
             universe_path = state.get(
                 "_universe_path", state.get("universe_path", "")
             )
             kg_path = state.get("_kg_path", "")
-            if universe_path and kg_path:
+            db_path = state.get("_db_path", "")
+            if universe_path and (kg_path or db_path):
                 universe_id = Path(universe_path).stem
-                cleanup_drift_kg(universe_id, kg_path)
+                cleanup_drift_all(universe_id, kg_path, db_path)
         except Exception:
             logger.warning(
                 "Post-synthesis drift_cleanup failed for %s",
