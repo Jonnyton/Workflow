@@ -40,19 +40,18 @@ Claim by setting Status to `claimed:yourname`. Files is the collision boundary.
 
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
-| **#3 Authorâ†’Daemon rename Phase 1+** | `fantasy_author/`â†’`fantasy_daemon/` + `domains/` + `author_server.py` + `fantasy_author_original/` deletion | â€” | pending | Exec plan: `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md`. |
+| **Rename A1-C2** | Phase 2-4 rename commits | â€” | pending | Dispatch §5 `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md`. A2-A4 parallel; B1 serial; C1-C2 parallel. |
 | **Mission 10 retest** | user-sim; new universe or resume echoes | host scope call | claimed:user | Exercises Fix A barrier + Fix E cleanup end-to-end. |
 | **#11 Engine/domain API separation** | `docs/design-notes/2026-04-17-engine-domain-api-separation.md` | rename lands first | host-review | 4 host asks in Â§6. |
 | **#19 Memory-scope Stage 2c flag flip** | â€” | 30d clean + zero Stage-1 firings | monitoring | Clock started 2026-04-16. |
-| **#23 Tray singleton** | `workflow/desktop/launcher.py` + packaging mirror | â€” | claimed:dev | One tray+server per host. HostTrayService.shared() binding pattern. |
 | **#25 File rename universe_*â†’workflow_*** | remaining canonical python renames + packaging mirror + shortcut label | â€” | pending | bat name already shipped at 1b29d92; module renames pending. |
 
 ---
 
 ## Next
 
-1. §11 now ~16 active Qs in full-platform note. Q1 Postgres-canonical, Q7 Fly, Q10 load-test, Q17 co-maintainer, Q29-31 autoresearch DSL/budget/conflict, Q32-34 evaluator cost/authoring/drift are load-bearing.
-2. Host-watched Devin Session 2 retest whenever ready — validates #15+#88+#89+#95 chain end-to-end (tier-routing + vocab-hygiene + pitch-alignment).
-3. Once §11 answered, break full-platform tracks A–P into Work rows. Track O = autoresearch (§32), Track P = evaluation-layers (§33).
-4. §10 dev-days: ~24.7–29.3 with 2 devs, ~32 serial. Still weeks-not-months at upper envelope.
-5. Subordinated: Mission 10/11 retests, rename Phase 2+, #11 API asks, modularity-audit legacy cleanup (deferred per #73).
+1. Rename Phase 2 A1 is the next dispatchable dev commit (unblocks A2-A5 parallel work, then B1, then C1-C2 parallel). ~3-4 dev-days to D2 with 2-dev parallelism.
+2. §11 full-platform host Qs (~16 active): Q1 Postgres-canonical, Q7 Fly, Q10 load-test, Q17 co-maintainer, Q29-31 autoresearch DSL, Q32-34 evaluator load-bearing — answer unblocks tracks A-P dispatch.
+3. Once §11 answered, break tracks A-P into Work rows. Track O = autoresearch (§32), Track P = evaluation-layers (§33).
+4. Layer-3 rename design note (`docs/design-notes/2026-04-19-universe-to-workflow-server-rename.md`) sequences AFTER Phase 1 Part 2 lands — host §5 answers still pending.
+5. Subordinated: Mission 10/11 retests, #11 API asks, modularity-audit legacy cleanup (deferred per #73), STEERING.md removal (#27 in flight).
