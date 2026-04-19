@@ -175,6 +175,33 @@ top_branch:
 
 **Node-taxonomy composition:** orchestrator (§2.10) at each level + sub-branches.
 
+### 2.9 Handoff-chain (gate + external-handoff)
+
+A sequential branch with one or more mid-chain gates that pause for human approval OR for an external-system handoff. Resume is event-driven — the branch only continues when the gate releases.
+
+```
+start → draft → human_gate ──(approve)──→ refine → handoff_gate ──(external_ok)──→ publish → end
+                    │                                    │
+                    └── (reject) → revise → draft         └── (retry) → queue_external → handoff_gate
+```
+
+**Sample (canonical — Scenario C3):** research-paper → peer-review-gate (human reviewer approval) → arxiv-submission-gate (external handoff to arXiv.submit_preprint) → post-submission citation-tracking. See `docs/specs/2026-04-19-handoffs-real-world-pipeline.md` §6 (irreversible-action gating) + `research-paper-submission.yaml` in prototype branches.
+
+**When to use:** workflow must pause at one or more specific points — for human judgment (legal review, author sign-off) or for external confirmation (DOI issuance, ISBN registration, journal acceptance). Resume is not "the next step runs now" — it's "we wait for an event, maybe for hours or days, then resume."
+
+**Failure modes:**
+- **Gate timeout** — human doesn't approve for N days; branch either dead-ends, escalates, or auto-rejects per gate policy. MUST declare timeout semantics at each gate.
+- **External-handoff orphaning** — connector push succeeded but external system never confirms (per `handoffs-real-world-pipeline.md` §10 Gate 6). Gate must have a cold-start tolerance + orphan-detection escape.
+- **Approval without downstream** — human approves but downstream fails on a technicality; re-approval needed. Design: gates should re-request only changed context, not restart from top.
+
+**Typical state_schema shape:** gate-status enum per gate (`pending | approved | rejected | timeout | external_pending | external_ok | external_orphan`) + resume-token fields the gate uses to continue. State is long-lived (persisted across many LangGraph checkpoint cycles).
+
+**Node-taxonomy composition:** generator/transformer nodes for the work, **gate** nodes at pause points (§2.8 in node-taxonomy for human approval; §2.6 side-effecter for external handoffs), orchestrator-style resume edges. Gates are NOT retry/eval-loops — they are event-triggered checkpoints.
+
+**Chatbot-author guidance:** user says "submit to arXiv after I approve" → chatbot builds a handoff-chain with two gates (human_approval + arxiv_handoff). User says "publish once the DOI is assigned" → chatbot builds with a doi_handoff gate. The pattern is recognizable by the phrase "after X" where X is a non-instant event.
+
+**Cross-refs:** spec #68 connectors (reversibility taxonomy), spec #69 handoffs (outcome-claim pre-verification on external gate release), memory `project_chatbot_assumes_workflow_ux.md` (irreversible actions = per-invocation confirm exception applies to gate release).
+
 ---
 
 ## 3. Decision tree — pick your pattern
@@ -206,6 +233,10 @@ Does the branch run continuously on arriving events vs a batch request?
 
 Is there enough complexity to warrant phase-level composition?
  ├─ Yes → §2.8 orchestrator (top-level) with any of §2.1-2.7 at each level
+
+Does the branch have one or more mid-chain pauses for human approval or external-system confirmation?
+ ├─ Yes → §2.9 handoff-chain (gates on top of whatever core shape)
+ └─ No → core pattern suffices
 ```
 
 ---
@@ -219,7 +250,8 @@ ALTER TABLE public.branches
   ADD COLUMN primary_pattern text NOT NULL DEFAULT 'chain'
     CHECK (primary_pattern IN (
       'chain', 'fork_join', 'eval_loop', 'router_split',
-      'fan_out_retriever', 'saga', 'streaming', 'orchestrator'
+      'fan_out_retriever', 'saga', 'streaming', 'orchestrator',
+      'handoff_chain'
     )),
   ADD COLUMN secondary_patterns text[] NOT NULL DEFAULT '{}';
 
@@ -239,6 +271,7 @@ From `prototype/workflow-catalog-v0/catalog/branches/`:
 | `research-paper-pipeline` | chain | — | Strict sequential: gap-map → hypothesize → method → citations. No branching. |
 | `fantasy-scene-chapter-loop` | eval_loop | — | Draft → evaluator → revise-or-advance with bounded retry. |
 | `invoice-batch-processor` | router_split | chain | Chain of extract + validate ends in a route-by-validator-result split. Router is the distinctive top-level shape. |
+| `research-paper-submission` | handoff_chain | chain | Draft → human-approval gate → arXiv external-handoff gate → citation-tracking. Two gates make this the distinctive shape. |
 
 ---
 
