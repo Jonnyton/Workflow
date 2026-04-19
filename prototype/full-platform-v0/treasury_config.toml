@@ -22,9 +22,15 @@ created                  = "2026-04-19"
 is_active                = true
 
 # Seed storage location (references only — never values):
-#   .secrets/base-sepolia-treasury.txt  (gitignored; host-local filesystem)
-#   MUST BE MOVED to admin-pool vault (1Password / Vaultwarden) before any
-#   production use per SUCCESSION.md §3.2.
+#   Default: ~/.workflow-secrets/base-sepolia-treasury-v0.txt (outside
+#            the project folder; gitignored by `.secrets/` + `*.seed`
+#            patterns, but stored at a home-dir path to avoid accidental
+#            project-folder backup / rm-rf loss).
+#   Override: set WORKFLOW_TREASURY_KEY_PATH env var (see .env.example).
+#
+# Testnet-phase posture (host directive 2026-04-19 task #65): secrets
+# live outside the project folder; no vault this iteration. Real-currency
+# phase flips to multisig + vault + hardware-signing per SUCCESSION.md §3.
 
 # Mainnet placeholder — to be populated when testnet validation is complete
 # and 2-of-3 multisig wallet is established per SUCCESSION.md §2.1 + §6.5.

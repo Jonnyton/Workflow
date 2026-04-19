@@ -99,7 +99,23 @@ A specifically named person who becomes primary operator if host is unreachable 
 
 ## 3. Secret locations (references, not values)
 
-**Policy:** every production secret lives in a shared managed vault. No production secret lives only in one person's personal keychain. Period.
+**Policy:** every **production** secret lives in a shared managed vault. No production secret lives only in one person's personal keychain. Period.
+
+### 3.0 Testnet-phase vs real-currency-phase posture
+
+The policy above applies to the **real-currency phase**. We split discipline by phase because the cost of a mistake differs by ~6 orders of magnitude.
+
+- **Testnet phase (current, 2026-04-19 onwards):** secrets live at host-local paths outside the project folder. No vault required. No multisig required. Treasury is a single-key wallet. Multiple test-currency rotations are EXPECTED (we'll burn + regenerate wallets as the prototype evolves). Blast radius of a compromise: zero real money. See §3.2 row "Treasury wallet seed phrase" for the specific default path.
+
+- **Real-currency phase (pre-launch gate, per `project_host_independent_succession.md`):** flip ALL of the following before any mainnet funds flow:
+  - Treasury wallet migrates to 2-of-3 multisig (Safe).
+  - All secrets move to a shared managed vault (1Password, Bitwarden, or self-hosted Vaultwarden — §9 Q1).
+  - Code-signing certs procured + in vault.
+  - Hardware-signing for any mainnet transactions.
+  - Admin-pool ≥2 seated + each has verified vault access.
+  - Secrets rotated from testnet-phase values.
+
+**The flip is a launch-gate item on the `docs/ops/launch-readiness-checklist.md` §B list.** Until that checklist is green, we do NOT move real money.
 
 ### 3.1 Vault of record
 
@@ -125,7 +141,7 @@ Rotation policy:
 | Fly.io access token | `Workflow-Prod/fly/access-token` | CI deploys | 180d |
 | `workflow-catalog-bot[bot]` GitHub App private key (PEM) | `Workflow-Prod/github-apps/catalog-bot.pem` | Postgres→catalog export sync | 180d |
 | GoDaddy account login | `Workflow-Prod/godaddy/account` | Domain renewal, static file SFTP | 180d |
-| Treasury wallet seed phrase — `workflow-testnet-treasury-v0` (Base Sepolia, chain_id=84532) | **Currently at `.secrets/base-sepolia-treasury.txt`** on host's local machine (gitignored). **MUST be moved to vault at `Workflow-Prod/treasury/base-sepolia-v0-seed` before any production use**. Current status: TESTNET ONLY, no real value at risk. Public address `0x3023f144fdaEC0F3E5F75125D55B9BAe3AEEdEb1` committed to `prototype/full-platform-v0/treasury_config.toml`. | 1% fee settlement destination | **NEVER rotate directly** — mainnet migration replaces with 2-of-3 multisig (Safe) per `project_host_independent_succession.md`. |
+| Treasury wallet seed phrase — `workflow-testnet-treasury-v0` (Base Sepolia, chain_id=84532) | **Default path: `~/.workflow-secrets/base-sepolia-treasury-v0.txt`** (host-local, OUTSIDE the project folder per §3.0 testnet-phase posture). Override via `WORKFLOW_TREASURY_KEY_PATH` env var (see `prototype/full-platform-v0/.env.example`). Public address `0x3023f144fdaEC0F3E5F75125D55B9BAe3AEEdEb1` committed to `prototype/full-platform-v0/treasury_config.toml`. **Testnet phase: multiple rotations expected; no vault required.** Real-currency phase flips to 2-of-3 multisig (Safe) + vault per §3.0 — until then, moving real money is launch-checklist-blocked. | 1% fee settlement destination | Rotations expected during testnet iteration. Mainnet migration is a separate flow (multisig + vault, not a rotation of this key). |
 | Windows EV code-signing cert + password | `Workflow-Prod/signing/windows-ev` | Tray .exe signing | On procurement + on expiry |
 | Apple Developer ID certs | `Workflow-Prod/signing/apple-dev-id` | Tray .dmg signing + notarization | On procurement + on expiry |
 | Sentry project DSN | `Workflow-Prod/sentry/dsn` | Crash reports | Rarely |
