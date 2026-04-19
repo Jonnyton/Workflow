@@ -10,13 +10,13 @@ Live steering only.
 
 **24/7 uptime is the forever rule.** Every surface must work with zero hosts online: tier-1 chatbot, tier-2 host install, tier-3 OSS clone, node discovery/remix/converge, paid-market, moderation. Target architecture: `docs/design-notes/2026-04-18-full-platform-architecture.md`.
 
-**Main is always downloadable.** Broken install is a production bug. See PLAN.md Â§Distribution.
+**Main is always downloadable.** Broken install is a production bug. See PLAN.md §Distribution.
 
 ### Lifecycle Rules
 
-- **Concerns** â€” one line, â‰¤150 chars. Delete when resolved.
-- **Work** â€” claimable board. Delete when landed.
-- **Next** â€” replace each session.
+- **Concerns** — one line, ≤150 chars. Delete when resolved.
+- **Work** — claimable board. Delete when landed.
+- **Next** — replace each session.
 
 ---
 
@@ -40,11 +40,11 @@ Claim by setting Status to `claimed:yourname`. Files is the collision boundary.
 
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
-| **Rename A1-C2** | Phase 2-4 rename commits | â€” | pending | Dispatch §5 `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md`. A2-A4 parallel; B1 serial; C1-C2 parallel. |
+| **Rename A1-C2** | Phase 2-4 rename commits | — | pending | Dispatch §5 `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md`. A2-A4 parallel; B1 serial; C1-C2 parallel. |
 | **Mission 10 retest** | user-sim; new universe or resume echoes | host scope call | claimed:user | Exercises Fix A barrier + Fix E cleanup end-to-end. |
-| **#11 Engine/domain API separation** | `docs/design-notes/2026-04-17-engine-domain-api-separation.md` | rename lands first | host-review | 4 host asks in Â§6. |
-| **#19 Memory-scope Stage 2c flag flip** | â€” | 30d clean + zero Stage-1 firings | monitoring | Clock started 2026-04-16. |
-| **#25 File rename universe_*â†’workflow_*** | remaining canonical python renames + packaging mirror + shortcut label | â€” | pending | bat name already shipped at 1b29d92; module renames pending. |
+| **#11 Engine/domain API separation** | `docs/design-notes/2026-04-17-engine-domain-api-separation.md` | rename lands first | host-review | 4 host asks in §6. |
+| **#19 Memory-scope Stage 2c flag flip** | — | 30d clean + zero Stage-1 firings | monitoring | Clock started 2026-04-16. |
+| **#25 File rename universe_*→workflow_*** | remaining canonical python renames + packaging mirror + shortcut label | — | pending | bat name already shipped at 1b29d92; module renames pending. |
 
 ---
 
