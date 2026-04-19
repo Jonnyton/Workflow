@@ -1,16 +1,28 @@
 # Workflow
 
-**A global goals engine.** Humanity declares shared Goals — research
-breakthroughs, great novels, successful prosecutions, cures, open datasets,
-whatever people actually want done — and a legion of diverse AI-augmented
-workflows pursues each Goal in parallel. Branches evolve, cross-pollinate,
-and get ranked by how far their outputs advance up each Goal's real-world
-outcome-gate ladder. `fantasy_author/` is the first benchmark branch; the
-system is built for everything people collectively care about next.
+**A global goals engine. Fully self-hostable, open-source (MIT platform / CC0 catalog), runs on your own infrastructure.** Humanity declares shared Goals — research breakthroughs, great novels, successful prosecutions, cures, open datasets, whatever people actually want done — and a legion of diverse AI-augmented workflows pursues each Goal in parallel. Branches evolve, cross-pollinate, and get ranked by how far their outputs advance up each Goal's real-world outcome-gate ladder. `fantasy_author/` is the first benchmark branch; the system is built for everything people collectively care about next.
 
-This repo already contains substantial architecture and implementation work.
-These starter surfaces exist to make that work easier to navigate, extend, and
-connect in Obsidian.
+This repo already contains substantial architecture and implementation work. These starter surfaces exist to make that work easier to navigate, extend, and connect in Obsidian.
+
+## Quick Start (for contributors)
+
+Clone-to-green-tests in ~5 minutes on a clean machine:
+
+```bash
+git clone https://github.com/your-org/Workflow.git
+cd Workflow
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -e .[dev]
+pytest -q                 # full suite — no API keys needed (tests mock providers)
+ruff check                # lints clean on a fresh clone
+```
+
+All tests run offline with `_FORCE_MOCK=True` set in `tests/conftest.py`. No `ANTHROPIC_API_KEY` or similar required for CI or local dev. If any test fails on a clean clone, file an issue — that's a TEST-1 regression.
+
+Cross-platform notes:
+- Tested on Windows, macOS, Linux. Paths use `pathlib.Path` — backslashes don't leak into tests.
+- Python 3.11+ required (see `pyproject.toml`).
+- The tray (`workflow/workflow_tray.py`) is Windows-first; macOS/Linux support is work-in-progress. Platform code is cross-platform.
 
 ## Start Here
 
