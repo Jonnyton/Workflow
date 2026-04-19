@@ -60,5 +60,5 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
 
 :: ---- Launch tray app (replaces this console window) ----
 cd /d "%PROJECT_DIR%"
-start /b pythonw universe_tray.py
+start /b pythonw workflow_tray.py
 exit
