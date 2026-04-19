@@ -101,6 +101,79 @@ mcp = FastMCP(
     version="0.1.0",
 )
 
+
+# ---------------------------------------------------------------------------
+# Public landing page
+# ---------------------------------------------------------------------------
+# Serves a minimal HTML index at `/` so tinyassets.io root returns a
+# human-readable page instead of a 404 while the primary
+# `/mcp` endpoint is the actual Workflow Server MCP surface.
+# Known-good fallback if the GoDaddy-hosted landing is unavailable.
+
+_LANDING_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow Server</title>
+<style>
+ :root { color-scheme: light dark; }
+ body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        max-width: 640px; margin: 5rem auto; padding: 0 1.25rem;
+        line-height: 1.55; }
+ h1 { margin-bottom: 0.3rem; }
+ .tag { color: #666; margin-top: 0; }
+ code { background: rgba(127,127,127,0.15); padding: 2px 6px;
+        border-radius: 3px; }
+ ul { padding-left: 1.2rem; }
+ li { margin-bottom: 0.4rem; }
+ footer { margin-top: 3rem; color: #888; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>Workflow Server</h1>
+<p class="tag">A goal-agnostic daemon engine. You summon it, bind it to a
+domain, and let it drive.</p>
+
+<p>This is the public surface of a local-first platform for building
+custom multi-step AI workflows &mdash; typed state, registered nodes,
+evaluation hooks, iteration loops, paid-market bid/claim mechanics.
+Fantasy authoring is the benchmark domain; the engine is general-purpose.</p>
+
+<p>If you arrived here looking for an MCP connector, the live endpoint
+is at <code>/mcp</code>.</p>
+
+<h2>Links</h2>
+<ul>
+<li><a href="https://github.com/jfarnsworth/workflow">GitHub repository</a>
+    &mdash; source, issues, contributor onboarding.</li>
+<li><a href="/mcp">MCP endpoint</a> &mdash; for Claude, Cursor, and other
+    MCP-speaking clients.</li>
+</ul>
+
+<footer>
+Workflow &middot; open collaborative design commons &middot; 2026
+</footer>
+</body>
+</html>
+"""
+
+
+@mcp.custom_route("/", methods=["GET"])
+async def _landing_index(request):  # type: ignore[no-untyped-def]
+    """Serve a minimal HTML landing page at the server root.
+
+    Returns a static HTML body with project-name + 1-line pitch + links
+    to the GitHub repo and the `/mcp` MCP endpoint. Intentionally
+    dependency-light (string body, no templating) so a missing
+    GoDaddy-hosted landing page still surfaces something at
+    tinyassets.io/.
+    """
+    from starlette.responses import HTMLResponse
+
+    return HTMLResponse(_LANDING_HTML)
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
