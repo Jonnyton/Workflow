@@ -189,6 +189,10 @@ Defaults: host-run server with named accounts; private per-user MCP sessions; sh
 
 **Principle:** Keep the core portable; add platform wrappers around it. MCPB packages, Claude Code / Cowork plugins, registry metadata, and future `.cnw.zip` packaging are distribution layers over the same daemon and tool surface, not replacement architectures.
 
+**Principle (install-readiness is continuous):** Main is a downloadable release at all times. Every change preserves flawless first-install — packaging auto-builds via CI (import probe + plugin drift check), user-facing copy is branded and unambiguous, broken install is a production bug (not a latent issue). Viral spread can happen any day; optimize throughout, not as a pre-release phase.
+
+**Principle (software surface is declarative and multi-layer-authorized):** The daemon's software surface is declarative, host-registered, and multi-layer-authorized. Nodes declare `required_capabilities` as a first-class field. Per-host capability registry resolves what's installed. Missing software auto-installs (host-policy gated). Daemons can invoke arbitrary local software — graphics engines, games, LLMs — via a dedicated `external_tool_node` type that bypasses the Python sandbox but layers security: bundled handler signatures, binary signature verification, universe-level allow-list, per-software host approval, subprocess isolation. Any single layer fails, the others hold. Cross-host software donation (Host A cached installer → Host B on demand) is supported; cross-host node-execution hopping is not.
+
 ---
 
 ## Harness And Coordination

@@ -270,16 +270,12 @@ Why it helps:
 - the skill focuses on learning from observed session failures instead of
   trusting original prompt design forever
 
-Why it is not a direct drop-in:
-
-- its instructions assume a `.Codex/agents/` style persistent team definition
-- this repo currently relies more on `AGENTS.md`, `LAUNCH_PROMPT.md`, and
-  shared-file norms than on a populated Codex agent-team directory
-
-Best adaptation:
-
-- run the same review pattern against `AGENTS.md`, `LAUNCH_PROMPT.md`,
-  skill-usage rules, and any future Codex agent definitions
+**Resolved 2026-04-16:** the skill was rewritten to be roster-agnostic. It now
+reads `.claude/agents/` dynamically and applies a generic rubric (mandate
+clarity, responsiveness, evidence discipline, hand-off shape, standing-team
+behavior, earning-its-keep) rather than enumerating role names. The `.Codex/agents/`
+path bug is fixed and the skill explicitly forbids hardcoding a roster going
+forward — composition changes belong in `LAUNCH_PROMPT.md`, not in this skill.
 
 ### 5. `using-agent-skills`
 

@@ -1,50 +1,58 @@
 # Status
 
-Live project state. This file only holds what is currently steering work.
+Live steering only.
 
-### Size Budget
+### Budget
 
-**Hard ceiling: 4 KB / 60 lines.** If this file exceeds either limit, trim before adding. Commits and `activity.log` are the history — this file is not.
+**Hard ceiling: 4 KB / 60 lines.**
+
+### Standing Principles
+
+**24/7 uptime is the forever rule.** Every surface must work with zero hosts online: tier-1 chatbot, tier-2 host install, tier-3 OSS clone, node discovery/remix/converge, paid-market, moderation. Target architecture: `docs/design-notes/2026-04-18-full-platform-architecture.md`.
+
+**Main is always downloadable.** Broken install is a production bug. See PLAN.md Â§Distribution.
 
 ### Lifecycle Rules
 
-- **Concerns** — one line each, ≤150 chars. If detail is needed, put it in the commit message, spec, or `docs/concerns/` and link from here. Delete when resolved — don't mark DONE, just delete. Landing records go in `activity.log`, not here. Accepted design decisions go in PLAN.md, not here. If a concern becomes a Work row, delete the concern.
-- **Work** — claimable task board. Position is priority. Each row has **Files** (collision boundary) and **Depends**. Delete rows when landed — commits are the record.
-- **Next** — what the next session should do. Replace each session, don't append.
+- **Concerns** â€” one line, â‰¤150 chars. Delete when resolved.
+- **Work** â€” claimable board. Delete when landed.
+- **Next** â€” replace each session.
 
 ---
 
 ## Concerns
 
-- [2026-04-14] Daemon restart needed for #6 guardrails to take effect. Host-gated, tray "Restart All".
-- [2026-04-14] Sporemarch fix (b): verify multi-scene overshoot + dispatch-guard retention in Mission 8.
-- [2026-04-14] Packaging mirror (`packaging/`) stale vs live `workflow/`. Host: auto-built or hand-maintained?
-- [2026-04-14] Phase E: `queue_cancel` lacks graph interrupt (deferred to Phase H); producer-registry test gap.
-- [2026-04-14] YAML-staged + SQLite-committed + no git commit on `git_bridge.commit` failure. Platform invariant, deferred.
-- [2026-04-14] Phase D: 3 cosmetic doc items fold into docs-pass before `WORKFLOW_UNIFIED_EXECUTION` flag flip.
-- [2026-04-14] MCP always-allow toggle: validate selectors in next user-sim mission.
-- [2026-04-14] Phase F: flag-flip requires restart (document); `repo_root` walk can find wrong `.git` (set `WORKFLOW_REPO_ROOT`).
-- [2026-04-14] Phase G: `exec()` security posture needs `bids/README.md` doc; unapproved-node bid wastes one pick.
-- [2026-04-14] Phase G: `_revert_claim` does `git reset --hard`; document before `WORKFLOW_PAID_MARKET` default flip.
-- [2026-04-14] Import-time flag discipline (`WORKFLOW_UNIFIED_EXECUTION`, `WORKFLOW_GOAL_POOL`, `WORKFLOW_PAID_MARKET`): document all three in release notes.
-- [2026-04-14] Host questions pending on 3 specs — see `docs/planning/daemon_task_economy.md` §6, `docs/specs/outcome_gates_phase6.md` §9, `docs/specs/taskproducer_phase_c.md` §9.
-- [2026-04-15] Ruff baseline debt: 60 errors across 16 untouched files (48 auto-fixable); sweep before next flag-flip.
+- [2026-04-14] Sporemarch fix (b): verify multi-scene overshoot + dispatch-guard retention in next user-sim.
+- [2026-04-17] Echoes drift-drafted Scene 1/2/3 still in `output/echoes_of_the_cosmos/story.db`; retest fresh universe vs resume.
+- [2026-04-17] 589e1fb REST changes need tests: `/votes/{id}/resolve` forced; `/votes/{id}/ballots` now `{"vote": ...}`.
+- [2026-04-17] Privacy mode note landed: `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md`; 3 host Qs remain.
+- [2026-04-18] `add_canon_from_path` sensitivity note landed: `docs/design-notes/2026-04-18-add-canon-from-path-sensitivity.md`; 3 host asks remain.
+- [2026-04-18] Claude.ai injection note landed: `docs/design-notes/2026-04-18-claude-ai-injection-hallucination.md`; task #15 still blocked.
+- [2026-04-18] `fantasy_daemon/author_server.py` alias risk: snapshot export, not sys.modules rebind; fix there if cross-alias drift appears.
+- [2026-04-18] Full-platform architecture supersedes phased plan: `docs/design-notes/2026-04-18-full-platform-architecture.md`.
+- [2026-04-19] Navigator follow-up: `docs/design-notes/2026-04-19-modularity-audit.md` flags `universe_server`, discovery, and `daemon_server` seams.
 
 ---
 
 ## Work
 
-Claim by setting Status to `claimed:yourname`. Files column is the collision boundary. Position is priority.
+Claim by setting Status to `claimed:yourname`. Files is the collision boundary.
 
 | Task | Files | Depends | Status | Notes |
 |------|-------|---------|--------|-------|
-| **#56 Phase 6.2.2** — private-Branch visibility filter | `workflow/author_server.py`, `workflow/universe_server.py` | host direction | blocked:host | Three design paths — pick one before claiming. |
-| **Memory-scope defense-in-depth** | `workflow/memory/scoping.py`, `workflow/retrieval/agentic_search.py`, `workflow/retrieval/phase_context.py` | design pass | pending | Tag KG/vector rows with `universe_id`; filter at read-time. |
-| **Author → Daemon mass-rename** | `fantasy_author/` module + `author_server.py` | after Phase C-H settles | pending | Drive-by fixes ongoing. Full rename after rollout. |
+| **#3 Authorâ†’Daemon rename Phase 1+** | `fantasy_author/`â†’`fantasy_daemon/` + `domains/` + `author_server.py` + `fantasy_author_original/` deletion | â€” | pending | Exec plan: `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md`. |
+| **Mission 10 retest** | user-sim; new universe or resume echoes | host scope call | claimed:user | Exercises Fix A barrier + Fix E cleanup end-to-end. |
+| **#11 Engine/domain API separation** | `docs/design-notes/2026-04-17-engine-domain-api-separation.md` | rename lands first | host-review | 4 host asks in Â§6. |
+| **#19 Memory-scope Stage 2c flag flip** | â€” | 30d clean + zero Stage-1 firings | monitoring | Clock started 2026-04-16. |
+| **#23 Tray singleton** | `workflow/desktop/launcher.py` + packaging mirror | â€” | claimed:dev | One tray+server per host. HostTrayService.shared() binding pattern. |
+| **#25 File rename universe_*â†’workflow_*** | remaining canonical python renames + packaging mirror + shortcut label | â€” | pending | bat name already shipped at 1b29d92; module renames pending. |
 
 ---
 
 ## Next
 
-1. **User-sim Mission 8** — Sporemarch queue drainage (fix a+b) + dispatch routing fix. Validate overshoot concern. Gate `WORKFLOW_UNIFIED_EXECUTION=1` flip (Phase D docs-pass first).
-2. **User-sim Mission 9** — end-to-end pool + NodeBid with all flags on (D+E+F+G). Gates `WORKFLOW_GOAL_POOL` + `WORKFLOW_PAID_MARKET` default flips.
+1. §11 now ~16 active Qs in full-platform note. Q1 Postgres-canonical, Q7 Fly, Q10 load-test, Q17 co-maintainer, Q29-31 autoresearch DSL/budget/conflict, Q32-34 evaluator cost/authoring/drift are load-bearing.
+2. Host-watched Devin Session 2 retest whenever ready — validates #15+#88+#89+#95 chain end-to-end (tier-routing + vocab-hygiene + pitch-alignment).
+3. Once §11 answered, break full-platform tracks A–P into Work rows. Track O = autoresearch (§32), Track P = evaluation-layers (§33).
+4. §10 dev-days: ~24.7–29.3 with 2 devs, ~32 serial. Still weeks-not-months at upper envelope.
+5. Subordinated: Mission 10/11 retests, rename Phase 2+, #11 API asks, modularity-audit legacy cleanup (deferred per #73).

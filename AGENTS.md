@@ -5,6 +5,37 @@ let it drive. Fantasy authoring is one domain. There will be others.
 
 ---
 
+## Forever Rule (2026-04-18): Complete-System 24/7 Uptime Is Top Priority
+
+One unified priority, not a ranked list. Every surface of the system
+works 24/7 with zero hosts online:
+
+- Tier-1 chatbot users create / browse / collaborate on nodes via
+  Claude.ai.
+- Tier-3 OSS contributors `git clone` and run cleanly.
+- Tier-2 daemon hosts one-click install the tray (<5min friction).
+- Node discovery, remix, converge, and live collaboration surfaces.
+- Paid-market inbox + bid matching.
+- Moderation + abuse response.
+
+Target architecture:
+`docs/design-notes/2026-04-18-full-platform-architecture.md`.
+
+Work ordering: pick the task that unblocks the largest currently-broken
+uptime surface. Treat any surface outage as equal severity — tiered
+severity invites starvation. Any uptime-track feature ships with §14
+concurrency/load-test proof or it is not done.
+
+Subordinated work (bug sprints, rename phases, unrelated design notes)
+continues but never blocks uptime work.
+
+Everything else — bug sprints, rename phases, design notes for
+unrelated concerns — is subordinated until the uptime vector is making
+steady forward progress. Subordinated does not mean cancelled; it means
+it doesn't top the queue.
+
+---
+
 ## Three Living Files
 
 All three are living documents. All three are updated immediately when
@@ -97,11 +128,11 @@ scoped reader at `python scripts/docview.py`.
 
 ### Project Skills
 
-- Project engineering skills are mirrored in `.agents/skills/`, `.claude/skills/`, and `.codex/skills/`.
-- Codex and project-visible agents should use `.agents/skills/` as the canonical mirror.
-- Claude Code should use `.claude/skills/`.
+- Project engineering skills live canonically in `.agents/skills/` and are mirrored into `.claude/skills/` for Claude Code's harness discovery.
+- Codex and project-visible agents read from `.agents/skills/` directly — there is no separate Codex mirror.
+- Claude Code reads from `.claude/skills/`.
 - When the right workflow skill is not obvious, start with `using-agent-skills` and then read the matching skill.
-- After editing shared skills, run `powershell -ExecutionPolicy Bypass -File scripts/sync-skills.ps1`.
+- After editing shared skills, run `powershell -ExecutionPolicy Bypass -File scripts/sync-skills.ps1` to refresh the Claude Code mirror.
 
 ### Multi-Session Steering
 
@@ -115,8 +146,8 @@ scoped reader at `python scripts/docview.py`.
 
 ## Team Norms
 
-- **Teammates communicate directly.** Dev messages tester and reviewer after finishing work. Use SendMessage by name, not broadcast.
-- **Tester is proactive.** Runs tests after every dev change without being asked. Runs as a background teammate.
+- **Teammates communicate directly.** Dev messages verifier after finishing work. Use SendMessage by name, not broadcast.
+- **Verifier is proactive.** Runs tests and reviews diffs after every dev change without being asked. Runs as a background teammate.
 - **The team is always ready.** Teammates stay up, idle when not needed. "Standing by" is a valid state.
 - **Iterate agent behavior.** If a teammate isn't performing well, refine its `.claude/agents/` definition and respawn.
 - **Broadcast sparingly.** Token cost scales with team size. Use direct messages for targeted coordination, broadcast only for team-wide state changes.
@@ -127,7 +158,7 @@ scoped reader at `python scripts/docview.py`.
 
 Three patterns keep agent output trustworthy:
 
-**Review is structural.** Reviewer is a core teammate, not on-demand. Every `TaskCompleted` event triggers reviewer notification. The lead only acts on code that reviewer has seen. If reviewer flags critical issues, the task goes back to dev — it is not marked complete.
+**Verification is structural.** Verifier is a core teammate, not on-demand. Every `TaskCompleted` event triggers verifier — it runs tests then reviews the diff. The lead only acts on code that verifier has cleared (verdict: SHIP). If verifier flags critical issues, the task goes back to dev — it is not marked complete.
 
 **Agent team loop guardrails with forced reflection.** If a teammate is stuck retrying the same approach, it must pause and reflect before the next attempt: "What failed? What specific change would fix it? Am I repeating the same approach?" If stuck for 3+ iterations on the same error, message the lead for reassignment or a fresh perspective. Don't loop forever. (Note: this is about dev agent stuck-loops, not daemon-level bounded reflection — see STATUS.md #6 for the daemon concern.)
 
@@ -222,14 +253,13 @@ useful concurrency, not waiting.
 | `notes.json` | Daemon + sessions | Per-universe unified notes (user, editor, structural, system). |
 | `scripts/docview.py` | Any AI, any tool | Scoped reader for large Markdown/text/JSON artifacts that should not be read raw. |
 | `scripts/capture_idea.py` | Any AI, any tool | Fast append helper for the idea inbox. |
-| `scripts/sync-skills.ps1` | Repo maintenance | Re-sync `.agents/skills/` into `.claude/skills/` and `.codex/skills/`. |
+| `scripts/sync-skills.ps1` | Repo maintenance | Re-sync `.agents/skills/` into `.claude/skills/`. |
 | `CLAUDE.md` | Claude Code only | Thin routing layer. |
 | `CLAUDE_LEAD_OPS.md` | Claude Code lead | Situational: user-sim loops, dev team management, token efficiency. Not auto-loaded. |
 | `LAUNCH_PROMPT.md` | Claude Code lead | Team spawn, session protocol, lead norms. |
 | `.claude/agents/*.md` | Claude Code only | Individual agent definitions. |
-| `.claude/skills/*/SKILL.md` | Claude Code only | Reusable skill definitions. |
-| `.agents/skills/*/SKILL.md` | Codex + project agents | Reusable skill definitions mirrored for Codex-visible discovery. |
-| `.codex/skills/*/SKILL.md` | Codex local mirror | Reusable skill definitions mirrored for local Codex use. |
+| `.agents/skills/*/SKILL.md` | Codex + project agents (canonical source) | Canonical skill definitions. Edit here first. |
+| `.claude/skills/*/SKILL.md` | Claude Code only | Mirror of `.agents/skills/` refreshed by `scripts/sync-skills.ps1`. |
 | `.agents/activity.log` | Any AI, any tool | Short cross-session activity feed for coordination. |
 | `ideas/*.md` | Any AI, any tool | Idea capture, triage, and shipped traceability. |
 | `knowledge/*.md` | Any human or AI | Human-readable compiled knowledge companion to `knowledge.db`. |

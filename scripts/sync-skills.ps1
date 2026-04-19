@@ -3,8 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $root ".agents\\skills"
 $targets = @(
-    (Join-Path $root ".claude\\skills"),
-    (Join-Path $root ".codex\\skills")
+    (Join-Path $root ".claude\\skills")
 )
 
 if (!(Test-Path $source)) {

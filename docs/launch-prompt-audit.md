@@ -90,9 +90,9 @@ You're using **Agent Teams** (the experimental multi-session system) with `.clau
 |---------|-------|---------------|
 | Team Norms | Only 4 bullet points, very generic. Doesn't reference agent team mechanics (shared task list, mailbox, SendMessage). | Expand with agent-team-specific norms: how teammates claim tasks, when to broadcast vs direct message, idle behavior |
 | Parallel Dispatch | Describes multi-provider coordination (Claude Code, Codex, Cowork) which is different from agent team coordination. Both exist but the distinction isn't clear. | Add a note distinguishing "inter-provider parallelism" (STATUS.md work table) from "intra-session parallelism" (agent team task list) |
-| Project Skills | References `.agents/skills/`, `.claude/skills/`, `.codex/skills/` with sync script. Are all three mirrors still active? | Verify which mirrors are still needed. If Codex is no longer used, simplify. |
+| Project Skills | ~~References `.agents/skills/`, `.claude/skills/`, `.codex/skills/` with sync script. Are all three mirrors still active?~~ **Resolved 2026-04-16:** `.codex/skills/` mirror was dead (directory did not exist on disk; Codex already read `.agents/skills/` directly per `AGENTS.md` line 101). Sync script simplified to two-way (`.agents/skills/` → `.claude/skills/`). Codex remains active, reads source directly. | — |
 | Large Docs | References `scripts/docview.py` which is Codex-specific (truncation workaround). Claude Code doesn't need this. | Mark as Codex-only, or remove if Codex isn't active |
-| Project Files table | Lists CODEX.md, `.codex/skills/`, `.agents/skills/` — are these still maintained? | Prune rows for dead mirrors |
+| Project Files table | ~~Lists CODEX.md, `.codex/skills/`, `.agents/skills/` — are these still maintained?~~ **Resolved 2026-04-16:** `.codex/skills/` row pruned from `AGENTS.md`. `CODEX.md` and `.agents/skills/` both verified active. | — |
 | Missing: Agent team task list vs STATUS.md | Two task systems exist: the agent team shared task list (ephemeral, auto-coordinated) and STATUS.md work table (persistent, cross-provider). No guidance on which is for what. | Add a section clarifying: STATUS.md = cross-provider durable state, agent team task list = intra-session coordination |
 
 ---

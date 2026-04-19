@@ -62,7 +62,7 @@ Never have both claude-side devs idle at once. Never have even one dev idle when
 
 Default operating mode while user-sim is in a test loop:
 
-- **Merge on green.** When tester + reviewer both clear a change, it lands. Don't batch fixes for some "release point" — there isn't one.
+- **Merge on green.** When verifier clears a change (verdict: SHIP), it lands. Don't batch fixes for some "release point" — there isn't one.
 - **Restart the Universe Server when new code needs to go live.** Lead has authority (kill MCP process; tray auto-restart reliable ~2s). Don't wait for host.
 - **user-sim absorbs disruption cheaply.** The UI isn't directly coupled; restarts drop the tunnel for a couple seconds, that's it. If a test fails across a restart, user-sim new-chats and resumes.
 - **Findings -> cheap fix -> ship -> user-sim re-tests** is the loop. Minutes, not sessions.
@@ -78,7 +78,7 @@ The loop is: user-sim ask -> finding -> lead fix -> ship -> restart -> user-sim 
 
 - **Lead side:** Don't message user-sim between their turns unless the direction is truly new. Batch fix acknowledgments. Don't re-read the full session log on each update — `docview.py lines --start --end` for the tail only.
 - **user-sim side:** Codified in the skill — 1-prompt = 1-question, terse log entries, stop-early triggers.
-- **Dev side:** One PR per fix cluster (not per task). Reviewer + tester run once per cluster.
+- **Dev side:** One PR per fix cluster (not per task). Verifier runs once per cluster.
 - **Restart side:** One restart per cluster of landed changes, not one per task.
 
 Red flag that the loop is bloating: user-sim uses >10 prompts before producing a MISSION FINDING, OR the session log grows by >50 lines between two pulses. If either happens, narrow the mission or stop.
@@ -90,4 +90,4 @@ user-sim is event-driven, not always-up. Idle notifications burn tokens on both 
 - Durable state lives in `output/user_sim_session.md` (transcript) and `.agents/skills/ui-test/` (skill). Agent memory is not needed.
 - Shut down when: a mission ends and the next is blocked on unrelated work; wait > 10 min; no active prompts.
 - Respawn with a specific Mission brief — don't rely on in-memory continuity. The skill + log give a fresh instance everything.
-- Dev/planner/reviewer/tester stay up across a session because they are continuously engaged; user-sim is not.
+- Core teammates (dev, verifier, navigator) stay up across a session because they are continuously engaged; user-sim is not.
