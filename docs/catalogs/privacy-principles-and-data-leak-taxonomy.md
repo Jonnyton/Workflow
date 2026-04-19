@@ -190,7 +190,98 @@ Flagged for future-version work:
 
 ---
 
-## 7. References
+## 7. System-point taxonomy — where data flows + what can leak
+
+Every point in the system where data moves. For each: what flows, what can leak, what defends.
+
+### 7.1 Ingest — user attaches file / sends message
+
+- **What flows:** user input — text, file contents, file paths, metadata.
+- **What can leak at this point:** PII in the user's own input (T1), credentials pasted into messages (T2), instance-specific examples the user didn't realize were sensitive (T3), regulated content (T4).
+- **Defenses by default:** chatbot runs §3 decision matrix on every field as it's accepted; private-instance content routes to `instance_ref` owner-local storage, never the concept layer. Ingestion logs mark `decided_by='chatbot'` with rationale.
+- **Escalation:** chatbot flags obvious credentials (`sk-...`, path strings, secrets-shaped values) + refuses to write them into concept even if user insists (P2 absolute).
+
+### 7.2 Storage — Postgres concept layer vs `instance_ref`
+
+- **What flows:** `nodes.concept` (public-biased JSONB) + `nodes.instance_ref` (owner-only pointer to host-local blob OR owner-scoped Supabase Storage URL).
+- **What can leak:** private field values accidentally written to `concept` (schema-spec #25 §1.2 dual-layer model prevents this structurally); field visibility forgotten in `artifact_field_visibility` (defaults-to-private per P6 mitigates).
+- **Defenses by default:** RLS policies at table level (per schema #25 §2); `strip_private_fields()` in the render function; `training_excluded=true` column + `workflow_analytics` Postgres role with column-level permission revoke (P5 structural).
+- **Escalation:** post-render paranoid scan (§6.3 of export-sync #32) catches credential-shaped regex in exported YAML as belt-and-suspenders.
+
+### 7.3 Retrieval — `discover_nodes` + read APIs
+
+- **What flows:** rendered concept (stripped for non-owner), quality signals, provenance chain. NEVER `instance_ref`.
+- **What can leak:** new fields added to `nodes` that aren't yet in the allowlist (§6.2 allowlist-over-blocklist pattern prevents); RLS policy gaps on adjacent tables (`node_activity`, `request_inbox`); denormalized views that bypass RLS.
+- **Defenses by default:** `SECURITY INVOKER` on read RPCs so RLS applies; `CASE WHEN auth.uid() = owner_user_id THEN concept ELSE strip_private_fields(...)` pattern enforces field stripping server-side.
+- **Escalation:** every new VIEW or materialized view goes through a privacy-review checklist before merge.
+
+### 7.4 Daemon execution — LangGraph runs + LLM calls
+
+- **What flows:** current run state (can include owner's private `instance_ref` content pulled in at the start of the run), intermediate LLM prompts + responses, final outputs.
+- **What can leak:** daemon sends instance data to LLM provider (unavoidable for owner's own work, but private vs private-to-Anthropic are different); LLM provider logs the full prompt (LLM terms-of-service risk); run transcripts persisted in a place non-owner callers can read (logging hygiene).
+- **Defenses by default:** daemons run owner-scoped — only the owner's own instance data ever enters a run that the owner authorized; LLM provider selection respects `confidentiality_tier` (per the privacy memory + `project_privacy_per_piece_chatbot_judged.md`) — ollama-local for T4/T5 content, provider APIs for public-concept work; run transcripts persisted with owner-only RLS.
+- **Escalation:** chatbot-judged per-piece visibility is re-consulted when a daemon run is about to emit output back to a non-owner.
+
+### 7.5 Export — `Workflow-catalog/` GitHub export
+
+- **What flows:** allowlisted fields from `nodes.concept` + quality signals + provenance chain → YAML files in the public GitHub repo.
+- **What can leak:** new schema columns accidentally exported (allowlist prevents); fields marked public at concept-level but containing private instance values (field-visibility stripping catches); bulk-import batch exposing data the user intended to privatize mid-batch (public→private flip emits DELETE diff per #32 §2.4).
+- **Defenses by default:** `render_public_concept()` allowlist-based (§6.2 of privacy catalog); `pending_export` trigger filters on `concept_visibility='public' AND training_excluded=false`; paranoid post-render regex scan before batch commits.
+- **Escalation:** any export-sink regression (§14.7 moderation backstop, "moderation_rubric" U2 credential leak) is hard-delete-after-redact-window per moderation rubric.
+
+### 7.6 Connector push — future: Gmail, Notion, arXiv, etc.
+
+- **What flows:** node output → external third-party destination via an integration node (side-effecter per node-taxonomy §2.8).
+- **What can leak:** node output that was owner-scoped private suddenly transmitted to a third party (Notion, arXiv, publisher system); credentials for the third party stored in instance layer leaked via misconfigured side-effecter; retention + deletion policies on third-party side are not ours to control.
+- **Defenses by default:** every connector-push side-effecter MUST require explicit per-destination consent from the owner (P4 chatbot-defers-to-user); connector credentials live in owner-scoped `instance_ref` storage, never in concept layer; push output + retention policy summarized to user at consent time.
+- **Escalation:** if a connector's TOS changes (e.g., Notion introduces a training-data clause), a chatbot notification surfaces to all users who have that connector active; user can revoke.
+
+### 7.7 Real-world handoff — publisher submission, DOI registration, external APIs
+
+- **What flows:** finalized output from the platform → external system that takes real-world action (paper published, DOI issued, invoice sent, API call made).
+- **What can leak:** the action itself is reality-altering + often irreversible (DOI can't be unassigned; email can't be unsent); any instance-data carried along (supplier account numbers in an invoice push; author PII in a paper submission).
+- **Defenses by default:** real-world-effect nodes are a special node-taxonomy class (§2.8 side-effecter + `effect_class='external-effect'` per node-taxonomy catalog §3.1); mandatory owner-consent-per-invocation (never cached consent); chatbot explicitly surfaces "this action is not reversible" language before the invocation.
+- **Escalation:** cooperative-trust-model memory applies — we don't pretend undo is always possible; we make the one-way nature explicit.
+
+---
+
+## 8. MCP prompt schema — how the chatbot fetches this catalog
+
+The gateway (per #27 §3.3) exposes this catalog as an MCP prompt:
+
+```
+@mcp.prompt(title="Privacy Principles + Data-Leak Taxonomy",
+            tags={"privacy", "safety", "taxonomy"})
+def privacy_principles() -> str:
+    """Load the canonical privacy-reasoning catalog for node design.
+
+    The chatbot SHOULD load this prompt at the start of any conversation
+    where the user is authoring or editing a node, goal, branch, or soul
+    file. The returned text is the full catalog §1-§7. Load once per
+    conversation; cache within the session.
+
+    Cite by version ('privacy catalog v1 §2.T2') in any rationale written
+    to artifact_field_visibility.reason.
+
+    Returns:
+      The full markdown content of
+      docs/catalogs/privacy-principles-and-data-leak-taxonomy.md at the
+      version specified by catalog_config.privacy_taxonomy_version.
+    """
+    return _load_catalog_markdown("privacy-principles-and-data-leak-taxonomy.md")
+```
+
+Client-side (chatbot) usage pattern:
+
+1. **On conversation start (write-session)** — call `prompts/get privacy_principles` once. Store returned markdown in working context.
+2. **On each field edit** — apply §3 decision matrix using the in-context catalog; cite specific section in `artifact_field_visibility.reason` column when writing the decision.
+3. **On catalog version bump** — `catalog_config.privacy_taxonomy_version` changes; chatbot next-conversation refresh picks up new version. Current-conversation decisions stay on the version the chat loaded with.
+
+**Why MCP prompt + not a static MCP tool call:** prompts are opt-in loaded on demand (per #27 §3.3 + the injection-hallucination mitigation from #12) rather than pushed into every turn's context. Keeps the catalog out of the per-turn injection-heuristic attention window; only loads when chatbot explicitly wants it for design reasoning.
+
+---
+
+## 9. References
 
 - **Memory:** `project_privacy_per_piece_chatbot_judged.md` — host directive for dual-layer model.
 - **Memory:** `project_q10_q11_q12_resolutions.md` — wiki-orphan deletion + export-yes policy.
