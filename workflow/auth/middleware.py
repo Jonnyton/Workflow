@@ -1,4 +1,4 @@
-"""Auth middleware for the Universe Server MCP.
+"""Auth middleware for the Workflow Server MCP.
 
 Provides request-level auth resolution that works with FastMCP's
 tool execution model. Since FastMCP tools are plain functions (not

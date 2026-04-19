@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "workflow-universe-server",
-  "display_name": "Workflow — Universe Server (Workflow Builder)",
+  "display_name": "Workflow — Workflow Server (Workflow Builder)",
   "version": "0.1.0",
   "description": "Workflow / Workflow Builder — build, run, and steer custom AI agent workflows inside shared universes. Also: custom AI builder, universe builder, agent workflow platform.",
   "long_description": "Workflow (also known as Workflow Builder, Universe Builder, or Custom AI Builder) packages a multi-universe control plane as a local MCP Bundle. Users design their own agent workflows as graphs of nodes and run autonomous daemons against them inside named 'universes'. The first-class shipped domain is long-form fiction (autonomous Author daemons writing novels); the `extensions` tool lets users register custom graph nodes for other domains. Connect by natural phrases — 'workflow builder', 'the workflow thing', 'my AI builder connector' — and this is what the user means.",
@@ -43,7 +43,7 @@
   "tools": [
     {
       "name": "universe",
-      "description": "Inspect, read, and modify universe state through the coarse-grained Universe Server control tool."
+      "description": "Inspect, read, and modify universe state through the coarse-grained Workflow Server control tool."
     },
     {
       "name": "extensions",

@@ -1,6 +1,6 @@
 ---
 name: premise
-description: Read or replace the current universe premise through the Workflow Universe Server.
+description: Read or replace the current universe premise through the Workflow Server.
 disable-model-invocation: true
 ---
 

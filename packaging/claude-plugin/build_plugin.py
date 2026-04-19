@@ -1,4 +1,4 @@
-"""Stage the Workflow Universe Server claude-plugin runtime tree.
+"""Stage the Workflow Server claude-plugin runtime tree.
 
 Mirrors the auto-build contract that ``packaging/mcpb/build_bundle.py``
 implements for the MCPB surface. Both surfaces auto-derive from the

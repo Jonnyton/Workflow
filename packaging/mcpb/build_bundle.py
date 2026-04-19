@@ -1,4 +1,4 @@
-"""Stage and pack the Workflow Universe Server MCPB bundle.
+"""Stage and pack the Workflow Server MCPB bundle.
 
 Per `docs/design-notes/2026-04-14-packaging-mirror-decision.md` Option 1:
 the bundle stages the live `workflow/` package directly. The legacy

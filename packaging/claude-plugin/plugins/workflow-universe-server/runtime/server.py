@@ -1,4 +1,4 @@
-"""Plugin runtime entry — boots the Workflow Universe Server MCP.
+"""Plugin runtime entry — boots the Workflow Server MCP.
 
 The build script (``packaging/claude-plugin/build_plugin.py``) stages
 the live ``workflow/`` package next to this file. ``import

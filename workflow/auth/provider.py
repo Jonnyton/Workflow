@@ -4,7 +4,7 @@ Two concrete providers:
   - DevAuthProvider: no auth, all requests are "anonymous" (dev/tunnel mode)
   - OAuthProvider: OAuth 2.1 + PKCE with Dynamic Client Registration
 
-The provider is selected at server startup based on UNIVERSE_SERVER_AUTH.
+The provider is selected at Workflow Server startup based on UNIVERSE_SERVER_AUTH.
 """
 
 from __future__ import annotations

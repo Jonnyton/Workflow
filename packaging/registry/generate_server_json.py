@@ -10,7 +10,7 @@ SCHEMA_URL = (
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 )
 REGISTRY_NAME = "io.github.jfarnsworth/workflow-universe-server"
-TITLE = "Workflow Universe Server"
+TITLE = "Workflow Server"
 DESCRIPTION = "Inspect and steer Workflow universes through a host-run daemon MCP server."
 REPOSITORY_URL = "https://github.com/jfarnsworth/workflow"
 ICON_URL = "https://raw.githubusercontent.com/jfarnsworth/workflow/main/assets/icon.png"

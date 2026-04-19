@@ -1,6 +1,6 @@
-# Workflow Universe Server Plugin
+# Workflow Server Plugin
 
-Packaged Claude plugin for the Workflow Universe Server.
+Packaged Claude plugin for the Workflow Server.
 
 ## Packaged Skills
 

@@ -1,10 +1,10 @@
-"""OAuth 2.1 + Dynamic Client Registration for Universe Server.
+"""OAuth 2.1 + Dynamic Client Registration for Workflow Server.
 
 Implements the MCP authorization specification:
   https://modelcontextprotocol.io/specification/draft/basic/authorization
 
 Production auth flow:
-  1. MCP client connects to Universe Server
+  1. MCP client connects to Workflow Server
   2. Server returns 401 with WWW-Authenticate pointing to resource metadata
   3. Client reads /.well-known/oauth-authorization-server for auth endpoints
   4. Client self-registers via Dynamic Client Registration (RFC 7591)

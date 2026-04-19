@@ -1,4 +1,4 @@
-"""Bundle entry point — boots the Workflow Universe Server MCP.
+"""Bundle entry point — boots the Workflow Server MCP.
 
 The build script stages the live ``workflow/`` package next to this
 file. ``uv run`` (configured by ``manifest.json``) then runs us with

@@ -1,7 +1,7 @@
 {
   "name": "workflow-universe-server",
   "version": "0.1.0",
-  "description": "Bundled Workflow Universe Server runtime and explicit slash-style skills for inspecting and steering local universes.",
+  "description": "Bundled Workflow Server runtime and explicit slash-style skills for inspecting and steering local universes.",
   "author": {
     "name": "Jonathan Farnsworth"
   },

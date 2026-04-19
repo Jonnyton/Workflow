@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "workflow-universe-server-mcpb"
 version = "0.1.0"
-description = "Bundled runtime for the Workflow Universe Server MCP bundle (auto-built from workflow/)."
+description = "Bundled runtime for the Workflow Server MCP bundle (auto-built from workflow/)."
 requires-python = ">=3.11"
 # Dep set is the MCP control-plane subset of workflow/'s pyproject.toml.
 # Heavy domain-execution deps (lancedb, igraph, clingo, spacy, pystray,

@@ -71,7 +71,7 @@ def _read_json(path: Path, default: Any) -> Any:
 
     Silent fallback loses signal: a corrupted ``requests.json`` must not
     look identical to "no file" to callers. The warning surfaces in the
-    Universe Server log so host/oncall can spot drop-on-the-floor cases.
+    Workflow Server log so host/oncall can spot drop-on-the-floor cases.
     Callers that need to hard-fail on corruption can distinguish by
     checking the file exists + has bytes themselves — keep this helper
     permissive so inspect/health reads don't crash on one bad file.
