@@ -33,6 +33,10 @@ try:
 except ImportError:
     sync_playwright = None
 
+import sys as _sys_for_lock
+_sys_for_lock.path.insert(0, str(Path(__file__).resolve().parent))
+import browser_lock  # noqa: E402
+
 CDP = "http://localhost:9222"
 CLAUDE_HOST = "claude.ai"
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,6 +73,29 @@ def _enforce_once(pw) -> int:
         return -1
     try:
         pages = [p for ctx in browser.contexts for p in ctx.pages]
+        lock = browser_lock.read()
+        if lock is not None and lock.get("owner") == "lead":
+            # Lead owns the tab — still enforce single-tab invariant,
+            # but don't reorder based on claude.ai preference. Keep
+            # the first (most-recently-active) page; close extras.
+            if len(pages) <= 1:
+                return 0
+            keeper = pages[0]
+            closed = []
+            for p in pages[1:]:
+                url = getattr(p, "url", "") or "(unknown)"
+                try:
+                    p.close()
+                    closed.append(url)
+                except Exception as exc:
+                    _log(f"WATCHDOG WARN (lead-lock): failed to close {url}: {exc}")
+            if closed:
+                keeper_url = getattr(keeper, "url", "") or "(unknown)"
+                _log(
+                    f"WATCHDOG HEAL (lead-lock): closed {len(closed)} extra tab(s); "
+                    f"kept {keeper_url}; closed {closed}"
+                )
+            return len(closed)
         if len(pages) <= 1:
             return 0
         pages_sorted = sorted(pages, key=_rank_page)

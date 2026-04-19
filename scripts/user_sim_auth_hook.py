@@ -28,6 +28,10 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import browser_lock  # noqa: E402
 
 CDP_VERSION_URL = "http://localhost:9222/json/version"
 CDP_TARGETS_URL = "http://localhost:9222/json"
@@ -78,6 +82,20 @@ def _browser_window_visible() -> bool:
 
 
 def check() -> dict:
+    lock = browser_lock.read()
+    if lock is not None and lock.get("owner") != "user-sim":
+        return {
+            "verdict": "held-by-other",
+            "cdp_reachable": _cdp_reachable(),
+            "tab_count": 0,
+            "browser_visible": False,
+            "tabs": [],
+            "lock": lock,
+            "reason": (
+                f"browser lock held by {lock.get('owner')!r} "
+                f"for {lock.get('intent')!r}; wait for release"
+            ),
+        }
     if not _cdp_reachable():
         return {
             "verdict": "no-browser",
@@ -132,9 +150,21 @@ def main() -> int:
                 f"tabs={result['tab_count']} visible={result['browser_visible']} "
                 f"urls={result['tabs']}"
             )
+        elif verdict == "held-by-other":
+            lock = result.get("lock") or {}
+            print(
+                f"held-by-other — browser lock owned by "
+                f"{lock.get('owner')!r} for {lock.get('intent')!r}; "
+                f"wait for release"
+            )
         else:
             print("no-browser — CDP unreachable at localhost:9222")
-    return {"approved": 0, "heal-tabs": 1, "no-browser": 2}[result["verdict"]]
+    return {
+        "approved": 0,
+        "heal-tabs": 1,
+        "no-browser": 2,
+        "held-by-other": 3,
+    }[result["verdict"]]
 
 
 if __name__ == "__main__":
