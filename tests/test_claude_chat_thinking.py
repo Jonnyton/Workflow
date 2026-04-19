@@ -248,3 +248,34 @@ def test_thinking_expand_button_selectors_include_aria_expanded(claude_chat):
         assert 'aria-expanded="false"' in sel, (
             f"Expander selector must target collapsed-state only; got: {sel}"
         )
+
+
+# -------------------------------------------------------------------
+# _trace_timestamp — ISO-8601 + millisecond precision + tz offset
+# -------------------------------------------------------------------
+
+
+def test_trace_timestamp_is_iso_8601_with_millis_and_tz(claude_chat):
+    """Navigator reads trace chronologically across providers; format must
+    be ISO-8601 + ms + tz offset so ambiguity on close-in-time events is
+    impossible.
+    """
+    import re
+
+    ts = claude_chat._trace_timestamp()
+
+    # YYYY-MM-DDTHH:MM:SS.mmm followed by +HHMM or -HHMM.
+    pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4}$"
+    assert re.match(pattern, ts), (
+        f"Timestamp must be ISO-8601 + ms + tz offset; got: {ts!r}"
+    )
+
+
+def test_trace_timestamps_sort_chronologically_as_strings(claude_chat):
+    """Consecutive calls produce strings that sort lexicographically."""
+    ts1 = claude_chat._trace_timestamp()
+    ts2 = claude_chat._trace_timestamp()
+
+    # Lexicographic comparison works for ISO-8601 so ordering navigators
+    # expect (earliest-first in a log) holds via simple string sort.
+    assert ts1 <= ts2

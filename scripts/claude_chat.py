@@ -1376,9 +1376,22 @@ def _format_assistant_trace(
     return f"{reply_body}{rich_section}"
 
 
+def _trace_timestamp() -> str:
+    """ISO-8601 with millisecond precision + local tz offset.
+
+    Navigator reads the trace chronologically across provider sessions
+    with overlapping time windows; millisecond precision + explicit tz
+    offset removes ambiguity on close-in-time events.
+    """
+    now = dt.datetime.now().astimezone()
+    # strftime %f is microseconds (6 digits); trim to ms (3 digits).
+    ms = now.strftime("%f")[:3]
+    return now.strftime("%Y-%m-%dT%H:%M:%S") + f".{ms}" + now.strftime("%z")
+
+
 def _append_trace(kind: str, body: str) -> None:
     TRACE.parent.mkdir(parents=True, exist_ok=True)
-    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = _trace_timestamp()
     with TRACE.open("a", encoding="utf-8") as f:
         f.write(f"\n\n## [{ts}] {kind}\n{body}\n")
 
