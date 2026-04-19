@@ -193,6 +193,133 @@ def test_configure_bootstraps_universes_from_filesystem(tmp_path):
         configure(base_path="", api_key="", daemon=None)
 
 
+def test_votes_ballots_returns_vote_shape(host_client: TestClient):
+    """Concern 3 / 589e1fb: POST /votes/{id}/ballots returns {"vote": ...}.
+
+    Pre-589e1fb the ballot endpoint returned a bare dict. Clients now
+    unwrap via response["vote"]; a regression would drop the outer key
+    and silently break every ballot-casting call site.
+    """
+    user_token = _create_session(host_client, "alice")
+    authors = host_client.get(
+        "/v1/authors",
+        headers={"Authorization": f"Bearer {user_token}"},
+    ).json()["authors"]
+    parent_author_id = authors[0]["author_id"]
+
+    proposal = host_client.post(
+        f"/v1/authors/{parent_author_id}/fork-proposals",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "universe_id": "test-universe",
+            "display_name": "Alice Branch",
+            "soul_text": "Branch author.",
+            "vote_seconds": 30,
+            "reason": "Pin ballots response shape",
+        },
+    )
+    assert proposal.status_code == 201
+    vote_id = proposal.json()["vote"]["vote_id"]
+
+    ballot = host_client.post(
+        f"/v1/votes/{vote_id}/ballots",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"choice": "yes"},
+    )
+    assert ballot.status_code == 201
+    body = ballot.json()
+    assert "vote" in body, (
+        "Ballot response must wrap the result in a top-level 'vote' key "
+        "for parity with the resolve-vote shape (589e1fb contract)."
+    )
+    assert body["vote"]["vote_id"] == vote_id
+
+
+def test_votes_resolve_forces_close_before_duration_elapses(host_client: TestClient):
+    """Concern 3 / 589e1fb: POST /votes/{id}/resolve passes force=True.
+
+    Pre-589e1fb the resolve endpoint would short-circuit to `get_vote`
+    when `closes_at > now()`, returning status=open. After the fix,
+    the host-only resolve call passes force=True so the vote closes
+    immediately regardless of the configured duration. This test pins
+    that contract using a long vote duration that would otherwise be
+    non-elapsed.
+    """
+    user_token = _create_session(host_client, "alice")
+    authors = host_client.get(
+        "/v1/authors",
+        headers={"Authorization": f"Bearer {user_token}"},
+    ).json()["authors"]
+    parent_author_id = authors[0]["author_id"]
+
+    # Long vote_seconds that will NOT elapse during the test run.
+    proposal = host_client.post(
+        f"/v1/authors/{parent_author_id}/fork-proposals",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "universe_id": "test-universe",
+            "display_name": "Alice Forced Branch",
+            "soul_text": "Forced-resolve branch author.",
+            "vote_seconds": 3600,
+            "reason": "Pin resolve force=True contract",
+        },
+    )
+    assert proposal.status_code == 201
+    vote_id = proposal.json()["vote"]["vote_id"]
+
+    host_client.post(
+        f"/v1/votes/{vote_id}/ballots",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"choice": "yes"},
+    )
+
+    # Host resolves the vote while closes_at is still ~1 hour in the future.
+    # force=True is required for this to actually close; without it the
+    # endpoint would return status=open and this assertion would fail.
+    resolved = host_client.post(
+        f"/v1/votes/{vote_id}/resolve",
+        headers=_host_headers(),
+    )
+    assert resolved.status_code == 200
+    vote = resolved.json()["vote"]
+    assert vote["status"] == "resolved", (
+        "/votes/{id}/resolve must pass force=True so host-only resolution "
+        "closes the vote regardless of remaining duration (589e1fb)."
+    )
+    assert "result" in vote
+
+
+def test_votes_resolve_is_host_only(host_client: TestClient):
+    """Non-host sessions get 403 from /votes/{id}/resolve."""
+    user_token = _create_session(host_client, "alice")
+    authors = host_client.get(
+        "/v1/authors",
+        headers={"Authorization": f"Bearer {user_token}"},
+    ).json()["authors"]
+    parent_author_id = authors[0]["author_id"]
+
+    proposal = host_client.post(
+        f"/v1/authors/{parent_author_id}/fork-proposals",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "universe_id": "test-universe",
+            "display_name": "Alice Guarded Branch",
+            "soul_text": "Guard-mode branch.",
+            "vote_seconds": 30,
+            "reason": "Pin host-only resolve",
+        },
+    )
+    assert proposal.status_code == 201
+    vote_id = proposal.json()["vote"]["vote_id"]
+
+    # Non-host user cannot force-resolve.
+    resolved = host_client.post(
+        f"/v1/votes/{vote_id}/resolve",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert resolved.status_code == 403
+
+
 def test_propose_author_fork_signature_regression():
     """Regression guard for the /fork-proposals TypeError.
 
