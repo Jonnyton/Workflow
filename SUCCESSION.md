@@ -125,7 +125,7 @@ Rotation policy:
 | Fly.io access token | `Workflow-Prod/fly/access-token` | CI deploys | 180d |
 | `workflow-catalog-bot[bot]` GitHub App private key (PEM) | `Workflow-Prod/github-apps/catalog-bot.pem` | Postgres→catalog export sync | 180d |
 | GoDaddy account login | `Workflow-Prod/godaddy/account` | Domain renewal, static file SFTP | 180d |
-| Treasury wallet seed phrase (testnet today; post-migration: 2-of-3 multisig) | `Workflow-Prod/treasury/wallet-seed` | 1% fee settlement destination | **NEVER** — use multisig migration instead |
+| Treasury wallet seed phrase — `workflow-testnet-treasury-v0` (Base Sepolia, chain_id=84532) | **Currently at `.secrets/base-sepolia-treasury.txt`** on host's local machine (gitignored). **MUST be moved to vault at `Workflow-Prod/treasury/base-sepolia-v0-seed` before any production use**. Current status: TESTNET ONLY, no real value at risk. Public address `0x3023f144fdaEC0F3E5F75125D55B9BAe3AEEdEb1` committed to `prototype/full-platform-v0/treasury_config.toml`. | 1% fee settlement destination | **NEVER rotate directly** — mainnet migration replaces with 2-of-3 multisig (Safe) per `project_host_independent_succession.md`. |
 | Windows EV code-signing cert + password | `Workflow-Prod/signing/windows-ev` | Tray .exe signing | On procurement + on expiry |
 | Apple Developer ID certs | `Workflow-Prod/signing/apple-dev-id` | Tray .dmg signing + notarization | On procurement + on expiry |
 | Sentry project DSN | `Workflow-Prod/sentry/dsn` | Crash reports | Rarely |
