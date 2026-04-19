@@ -10,11 +10,31 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Auto-apply migrations on first container start.
+      # Files here run in filename order (001 → 002 → 003). Only runs
+      # if pgdata volume is empty — subsequent restarts preserve state.
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U workflow -d workflow_v0"]
       interval: 2s
       timeout: 2s
       retries: 15
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: workflow_v0_gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      WORKFLOW_V0_DSN: "postgresql://workflow:workflow_v0_dev@postgres:5432/workflow_v0"
+    # Run gateway in HTTP transport mode for in-container debugging.
+    command: >
+      python -c "from gateway import mcp; mcp.run(transport='streamable-http', host='0.0.0.0', port=8001)"
+    ports:
+      - "8001:8001"
 
 volumes:
   pgdata:
