@@ -28,13 +28,13 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     sync_playwright = None
 
-import sys as _sys_for_lock
-_sys_for_lock.path.insert(0, str(Path(__file__).resolve().parent))
 import browser_lock  # noqa: E402
 
 CDP = "http://localhost:9222"
