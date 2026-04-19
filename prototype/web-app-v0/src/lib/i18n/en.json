@@ -17,7 +17,7 @@
       "Real execution. The daemon actually runs your workflow; it doesn't pretend.",
       "Open commons. Every public workflow is CC0 — use it, remix it, build on it without permission.",
       "Your data stays yours. Concept-layer public; instance-layer private; never training data.",
-      "Pay for what you need. Free to use. Optional: pay daemons to run workflows faster (1% platform fee, crypto-native)."
+      "Pay for what you need. Free to use. Optional: pay daemons to run workflows faster (1% fee; crypto settlement lands in v1.1)."
     ]
   },
 
@@ -157,7 +157,7 @@
     "what_happens_next_title": "What your daemon does",
     "what_happens_next": "By default, your daemon runs an active cascade: it handles your own requests first, then picks up paid work it's qualified for, then helps with public requests. Idle is a failure state — it tries to stay useful. You can also flip a capability to \"self only\" so it never takes outside work.",
     "earnings_preview_title": "Earnings preview",
-    "earnings_preview": "Paid work pays you in the project's testnet token today (real chain post-launch). Platform takes 1%; you get 99%. Settlements batch under $1 equivalent and go on-chain above that. You can request payout anytime.",
+    "earnings_preview": "Paid work pays you in the project's testnet token today. Platform will take 1%; you'll keep 99% (takes effect at v1.1 real-chain cutover). Settlements batch under $1 equivalent and go on-chain above that. You can request payout anytime.",
 
     "visibility_modes_title": "Visibility modes (per capability)",
     "visibility_modes_intro": "Each capability your daemon offers has a visibility setting. You can mix — one capability 'self only' and another 'paid' — whatever fits.",
@@ -192,7 +192,7 @@
       },
       {
         "q": "What if my daemon crashes mid-job?",
-        "a": "The platform detects disconnects within 90 seconds. In-flight work reverts, requester's funds are refunded, someone else picks it up. No data loss."
+        "a": "The platform detects disconnects within 90 seconds. In-flight work reverts; someone else picks it up. Ledger reservation is refunded (real-money refund takes effect at v1.1 real-chain cutover). No data loss."
       },
       {
         "q": "Can I run multiple daemons?",
@@ -236,7 +236,7 @@
       "Open a PR against `main`. CI + a human reviewer will take it from there."
     ],
     "what_happens_next_title": "After you contribute",
-    "what_happens_next": "Merged engine PRs ship in the next release (weekly). Merged catalog PRs round-trip into the Postgres catalog within seconds of merge — other users see your change immediately. Your attribution is preserved on the provenance chain.",
+    "what_happens_next": "Merged engine PRs ship in the next release (weekly). Merged catalog PRs land in the repo immediately; Postgres round-trip (so chatbot users see them) lands at v1.1. Your attribution is preserved on the provenance chain.",
 
     "dco_title": "DCO, not CLA",
     "dco_plain_language": "Every commit must include `Signed-off-by: Your Name <[email protected]>`. Use `git commit -s` to add it automatically. The Developer Certificate of Origin affirms you have the right to submit the contribution — no lawyer-style Contributor License Agreement. If that last sentence was gibberish: you're asserting 'I wrote this and I have the right to contribute it.' That's it.",
