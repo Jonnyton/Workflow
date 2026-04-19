@@ -17,7 +17,7 @@ The host launches Chrome with:
 powershell -Command "Start-Process 'C:\\Users\\Jonathan\\AppData\\Local\\ms-playwright\\chromium-1208\\chrome-win64\\chrome.exe' -ArgumentList '--user-data-dir=C:\\Users\\Jonathan\\.claude-ai-profile','--remote-debugging-port=9222','--no-first-run','--disable-blink-features=AutomationControlled','https://claude.ai/new'"
 ```
 
-logs into claude.ai in that window, confirms the Universe Server connector is on, and keeps the window visible. Before you act, verify with:
+logs into claude.ai in that window **if the profile's session is not already persisted** (the `--user-data-dir` caches auth; a returning host is often already logged in and goes straight to the chat), confirms the Universe Server connector is on, and keeps the window visible. Before you act, verify with:
 
 ```bash
 python scripts/claude_chat.py status
@@ -166,9 +166,26 @@ Sometimes the bot responds with a **set of buttons to click** (e.g., artifact ca
 - Bot shows cards asking "Which node do you want to edit?" → `ask "edit the novelty assessor"`.
 - Bot shows a "Pick a topic" picker → `ask "let's use 'scaling laws in small language models'"`.
 
-If you're unsure whether the bot is waiting on a selection: `ask "i'll reply in text — treat my next message as my choice."` That primes the bot to parse free-text as option selection.
-
 **Never abandon a chat just because the bot put up a picker.** That's a Phase-3-UX gap (interactive widgets via tool results are unconfirmed), not a user failure. Keep the conversation going by always typing your response.
+
+### The ask-user-option widget specifically
+
+Claude.ai sometimes renders a clarifying-question widget where the free-text input box is temporarily replaced by a set of option rows + a "Skip" button. `claude_chat.py ask` handles this as follows:
+
+- It tries to reach the text input first (click main, press Escape to dismiss the widget without submitting, scroll, Tab-cycle, reload chat).
+- It **DOES NOT** click the widget's Skip button. Skip is NOT a benign dismiss — the model interprets Skip as "user picked 'no preference'" and proceeds with a neutral answer on your persona's behalf. That's a persona-authenticity failure (host flagged this 2026-04-19 during Maya's live mission).
+
+**What you do when you see the widget:**
+
+1. If `ask` returned `input_not_found ... selection_widget=visible`: that's the tool telling you Escape/reload didn't clear the widget. **Do not panic and do not switch approaches.** Just run your next `ask` with your persona's real answer typed out. The act of posting a new user message re-mounts the input and the model treats your typed content as the reply to the widget's question.
+2. If the persona genuinely has no preference, type that in the persona's voice: `ask "honestly, no strong preference — whatever you think works best"`. That's a persona decision. The *tool* must never make that call for you.
+3. Log the event in the session log: `## [...] USER NOTE selection-widget-bypassed Asked: <your persona reply>` — helpful when the lead is auditing mission authenticity.
+
+Full bug history + fix rationale: `docs/design-notes/2026-04-19-option-select-bug-claude-chat.md`.
+
+### Fallback priming (rarely needed post-fix)
+
+If the persona-voice freeform reply somehow doesn't land (rare — the fix handles the common path): `ask "i'll reply in text — treat my next message as my choice."` primes the bot to parse free-text as option selection. Keep as a last-resort unstick; default behavior is "just type the real answer."
 
 ## CRITICAL — prompt hygiene
 
