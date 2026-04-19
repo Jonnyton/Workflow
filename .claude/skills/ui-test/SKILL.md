@@ -25,6 +25,19 @@ python scripts/claude_chat.py status
 
 If it returns non-zero, the browser is not up — **SendMessage the lead** and wait. Do not proceed.
 
+## CRITICAL — TAB HYGIENE (forever rule, every step)
+
+**One tab, always. Not just at start — forever.** The host watches a single Chrome tab. If a second tab exists at ANY moment, the host cannot see what you are doing. Host should never be the one to notice a second tab. Neither should lead. Only you.
+
+- **BEFORE every prompt you send:** query the open-tab list (CDP `Target.getTargets`, `python scripts/claude_chat.py tabs` if it exists, or equivalent). Confirm exactly one tab.
+- **AFTER every action that might have navigated:** re-check. Links, OAuth flows, extension redirects, and Claude.ai's own UI can all spawn tabs unexpectedly.
+- **If >1 tab is ever seen:** stop the mission. Decide which tab is the correct mission tab (the claude.ai chat with the active conversation). Close all others via CDP. Log `## [...] TAB HYGIENE: closed N extra tab(s) — healed to 1 tab at URL=...` with a diagnosis of how the extra tab appeared. Then resume.
+- **Do NOT call `new_tab` / `open_tab` / `window.open` / equivalent.** Ever. If a flow forces a new tab (OAuth popup, "open in new tab" links), navigate in the same tab or pause and flag lead.
+- **Log every tab check** to `sessions.md` / `user_sim_session.md` with a one-line `TAB HYGIENE: 1 tab, URL=...` entry. The log proves you checked; absence of the line means you skipped the check.
+- **Residue at session start is no excuse.** If extra tabs exist at startup, close them before the first prompt. This rule holds from session start to session end with zero exceptions.
+
+This rule supersedes convenience. A stalled mission is better than a mission the host cannot watch.
+
 ## CRITICAL — watch for the connector's per-tool approval dialog
 
 The Universe Server connector pops a per-tool approval dialog the FIRST time Claude.ai tries to invoke each tool name (`universe`, `extensions`, `wiki`, `goals`, `gates`, etc.). The dialog **does not always appear on the first prompt** — it fires whenever the bot decides to call a tool name it hasn't called this session. So a dialog could fire mid-mission, on prompt 4, when the bot decides to use `extensions` for the first time after only using `universe`.
