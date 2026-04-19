@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from domains.fantasy_author.phases import writer_tools as wt
+from domains.fantasy_daemon.phases import writer_tools as wt
 from workflow.protocols import DomainTool
 
 

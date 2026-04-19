@@ -13,7 +13,7 @@ def _init_producers() -> None:
     Kept in a function so tests that monkeypatch registry state can
     call it explicitly. No side effects beyond the registry.
     """
-    from domains.fantasy_author.producers import register_fantasy_producers
+    from domains.fantasy_daemon.producers import register_fantasy_producers
     register_fantasy_producers()
 
 

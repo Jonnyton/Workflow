@@ -27,7 +27,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("fantasy_author.api")
+logger = logging.getLogger("fantasy_daemon.api")
 
 # ---------------------------------------------------------------------------
 # App
@@ -85,7 +85,7 @@ def configure(
     _daemon_thread = daemon_thread
 
     if base_path:
-        from fantasy_author import author_server
+        from fantasy_daemon import author_server
 
         author_server.sync_universes_from_filesystem(base_path)
 
@@ -183,7 +183,7 @@ def _require_bearer_token(request: Request) -> dict[str, Any]:
 
     Returns the actor dict with user/host info and capabilities.
     """
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     auth = request.headers.get("Authorization", "").strip()
     if not auth.startswith("Bearer "):
@@ -424,7 +424,7 @@ def _stop_current_daemon(timeout: float = 10.0) -> None:
         _daemon_thread.join(timeout=timeout)
     # Clear runtime singletons so the next daemon creates fresh SQLite
     # connections in its own thread (SQLite objects can't cross threads).
-    from fantasy_author import runtime
+    from fantasy_daemon import runtime
     runtime.reset()
     _daemon = None
     _daemon_thread = None
@@ -437,7 +437,7 @@ def _start_daemon_for(universe_id: str) -> None:
     Persists the universe ID so the daemon auto-resumes after restart.
     """
     global _daemon, _daemon_thread
-    from fantasy_author.__main__ import DaemonController
+    from fantasy_daemon.__main__ import DaemonController
 
     universe_path = str(_base() / universe_id)
     controller = DaemonController(
@@ -628,7 +628,7 @@ def health() -> dict[str, Any]:
 
 def _get_provider_health() -> tuple[dict[str, Any], list[str]]:
     """Build provider status info and identify unhealthy roles."""
-    from fantasy_author.providers.router import FALLBACK_CHAINS
+    from fantasy_daemon.providers.router import FALLBACK_CHAINS
 
     # Known providers with setup hints
     _SETUP_HINTS: dict[str, str] = {
@@ -869,7 +869,7 @@ def post_note(
     uid: str, body: NoteBody, user: str = Depends(_require_auth),
 ) -> dict[str, Any]:
     """Add a note to the universe."""
-    from fantasy_author.notes import add_note
+    from fantasy_daemon.notes import add_note
 
     udir = _validate_universe_id(uid)
     note = add_note(
@@ -895,7 +895,7 @@ def get_notes(
     _user: str = Depends(_require_auth),
 ) -> dict[str, Any]:
     """List notes with optional filters."""
-    from fantasy_author.notes import list_notes
+    from fantasy_daemon.notes import list_notes
 
     udir = _validate_universe_id(uid)
     notes = list_notes(udir, source=source, category=category, status=status)
@@ -908,7 +908,7 @@ def patch_note(
     _user: str = Depends(_require_auth),
 ) -> dict[str, str]:
     """Update a note's status."""
-    from fantasy_author.notes import update_note_status
+    from fantasy_daemon.notes import update_note_status
 
     udir = _validate_universe_id(uid)
     if not update_note_status(udir, note_id, body.status):
@@ -921,7 +921,7 @@ def delete_note_endpoint(
     uid: str, note_id: str, _user: str = Depends(_require_auth),
 ) -> dict[str, str]:
     """Delete a note."""
-    from fantasy_author.notes import delete_note
+    from fantasy_daemon.notes import delete_note
 
     udir = _validate_universe_id(uid)
     if not delete_note(udir, note_id):
@@ -1001,7 +1001,7 @@ def _reemit_synthesis_signals(
 
     Returns the list of filenames that were actually re-emitted.
     """
-    from fantasy_author.ingestion.core import detect_file_type
+    from fantasy_daemon.ingestion.core import detect_file_type
 
     signals_file = udir / "worldbuild_signals.json"
     manifest_path = canon_dir / ".manifest.json"
@@ -1257,7 +1257,7 @@ def get_facts(
     if db_path is None:
         return {"facts": [], "count": 0}
 
-    from fantasy_author.nodes.world_state_db import (
+    from fantasy_daemon.nodes.world_state_db import (
         connect,
         get_all_facts,
         get_facts_for_chapter,
@@ -1297,7 +1297,7 @@ def get_characters(
     if db_path is None:
         return {"characters": [], "count": 0}
 
-    from fantasy_author.nodes.world_state_db import (
+    from fantasy_daemon.nodes.world_state_db import (
         connect,
         get_all_characters,
         init_db,
@@ -1337,7 +1337,7 @@ def get_promises(
 
     # Scene-level promises from world_state_db
     if db_path is not None:
-        from fantasy_author.nodes.world_state_db import (
+        from fantasy_daemon.nodes.world_state_db import (
             connect,
             init_db,
         )
@@ -1354,7 +1354,7 @@ def get_promises(
 
     # Series-level promises from SeriesPromiseTracker (via runtime)
     try:
-        from fantasy_author import runtime
+        from fantasy_daemon import runtime
 
         tracker = runtime.promise_tracker
         if tracker is not None:
@@ -1679,7 +1679,7 @@ async def upload_canon_files(
 
     import httpx
 
-    from fantasy_author.ingestion.core import ingest_file
+    from fantasy_daemon.ingestion.core import ingest_file
 
     udir = _validate_universe_id(uid)
     canon_dir = udir / "canon"
@@ -1782,7 +1782,7 @@ def batch_upload_canon(
     import base64
     import hashlib
 
-    from fantasy_author.ingestion.core import ingest_file
+    from fantasy_daemon.ingestion.core import ingest_file
 
     udir = _validate_universe_id(uid)
     canon_dir = udir / "canon"
@@ -2013,13 +2013,13 @@ def configure_provider(
 
     try:
         if body.provider == "gemini-free":
-            from fantasy_author.providers.gemini_provider import GeminiProvider
+            from fantasy_daemon.providers.gemini_provider import GeminiProvider
             router.register(GeminiProvider())
         elif body.provider == "groq-free":
-            from fantasy_author.providers.groq_provider import GroqProvider
+            from fantasy_daemon.providers.groq_provider import GroqProvider
             router.register(GroqProvider())
         elif body.provider == "grok-free":
-            from fantasy_author.providers.grok_provider import GrokProvider
+            from fantasy_daemon.providers.grok_provider import GrokProvider
             router.register(GrokProvider())
 
         return {
@@ -2044,7 +2044,7 @@ def create_session(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Create a user session. Returns a Bearer token for subsequent requests."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2081,7 +2081,7 @@ def list_authors(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """List all registered authors."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2100,7 +2100,7 @@ def get_author(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Get a specific author by ID."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2121,7 +2121,7 @@ def propose_author_fork(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Propose a fork of an existing author."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2152,7 +2152,7 @@ def cast_vote(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Cast a vote in a vote window."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2173,7 +2173,7 @@ def resolve_vote(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Resolve a vote window (host-only)."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     # Only host can resolve votes
     if not actor.get("is_host"):
@@ -2198,7 +2198,7 @@ def create_branch(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Create a new branch in a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2234,7 +2234,7 @@ def list_branches(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """List all branches in a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2253,7 +2253,7 @@ def create_request(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Submit a user request (e.g., author preference, notes)."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2292,7 +2292,7 @@ def list_requests(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """List all requests in a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2309,7 +2309,7 @@ def spawn_runtime(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """Spawn a runtime instance for an author in a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     # Only host can spawn runtimes
     if not actor.get("is_host"):
@@ -2353,7 +2353,7 @@ def list_runtimes(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """List runtime instances in a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()
@@ -2369,7 +2369,7 @@ def list_actions(
     actor: dict[str, Any] = Depends(_require_bearer_token),
 ) -> dict[str, Any]:
     """List action records (ledger) for a universe."""
-    from fantasy_author import author_server
+    from fantasy_daemon import author_server
 
     try:
         base = _base()

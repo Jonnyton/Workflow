@@ -18,14 +18,14 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from domains.fantasy_author.phases.authorial_priority_review import authorial_priority_review
-from domains.fantasy_author.phases.dispatch_execution import dispatch_execution
-from domains.fantasy_author.phases.foundation_priority_review import foundation_priority_review
-from domains.fantasy_author.phases.reflect import reflect
-from domains.fantasy_author.phases.universe_cycle import universe_cycle
-from domains.fantasy_author.phases.worldbuild import worldbuild
-from domains.fantasy_author.state.universe_state import UniverseState
-from domains.fantasy_author.work_kinds import infer_fantasy_execution_scope
+from domains.fantasy_daemon.phases.authorial_priority_review import authorial_priority_review
+from domains.fantasy_daemon.phases.dispatch_execution import dispatch_execution
+from domains.fantasy_daemon.phases.foundation_priority_review import foundation_priority_review
+from domains.fantasy_daemon.phases.reflect import reflect
+from domains.fantasy_daemon.phases.universe_cycle import universe_cycle
+from domains.fantasy_daemon.phases.worldbuild import worldbuild
+from domains.fantasy_daemon.state.universe_state import UniverseState
+from domains.fantasy_daemon.work_kinds import infer_fantasy_execution_scope
 from workflow.work_targets import get_target
 
 
@@ -344,7 +344,7 @@ def run_book(state: dict[str, Any]) -> dict[str, Any]:
             }],
         }
 
-    from domains.fantasy_author.graphs.book import build_book_graph
+    from domains.fantasy_daemon.graphs.book import build_book_graph
 
     book_seed, execution_scope = _build_book_execution_seed(state)
     book_state: dict[str, Any] = {
@@ -426,7 +426,7 @@ def _run_book_fallback(
     book_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Direct node calls as fallback if subgraph compilation fails."""
-    from domains.fantasy_author.graphs.book import run_chapter
+    from domains.fantasy_daemon.graphs.book import run_chapter
 
     result = run_chapter(book_state)
     book_state["chapters_completed"] = result["chapters_completed"]

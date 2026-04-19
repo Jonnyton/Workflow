@@ -13,10 +13,10 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from domains.fantasy_author.phases._activity import activity_log as _activity_log
-from domains.fantasy_author.phases.consolidate import consolidate
-from domains.fantasy_author.phases.learn import learn
-from domains.fantasy_author.state.chapter_state import ChapterState
+from domains.fantasy_daemon.phases._activity import activity_log as _activity_log
+from domains.fantasy_daemon.phases.consolidate import consolidate
+from domains.fantasy_daemon.phases.learn import learn
+from domains.fantasy_daemon.state.chapter_state import ChapterState
 
 
 def _make_scene_input(
@@ -88,7 +88,7 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
     _log.info("run_scene: starting scene %s of chapter %s", scene_num, ch_num)
     _activity_log(state, f"Scene {scene_num}: starting (chapter {ch_num})")
 
-    from domains.fantasy_author.graphs.scene import build_scene_graph
+    from domains.fantasy_daemon.graphs.scene import build_scene_graph
 
     # Carry prose from the previous scene for continuity
     recent_prose = state.get("_last_scene_prose", "")
@@ -151,7 +151,7 @@ def run_scene(state: dict[str, Any]) -> dict[str, Any]:
     # re-request the just-completed scene. Complement to fix (a) which
     # only patches at dispatch time.
     if verdict == "accept":
-        from domains.fantasy_author.phases.target_actions import (
+        from domains.fantasy_daemon.phases.target_actions import (
             advance_work_target_on_accept,
         )
         instructions = state.get("workflow_instructions", {}) or {}
@@ -183,10 +183,10 @@ def _run_scene_fallback(scene_state: dict[str, Any]) -> dict[str, Any]:
 
     _log = logging.getLogger(__name__)
 
-    from domains.fantasy_author.phases.commit import commit
-    from domains.fantasy_author.phases.draft import draft
-    from domains.fantasy_author.phases.orient import orient
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.commit import commit
+    from domains.fantasy_daemon.phases.draft import draft
+    from domains.fantasy_daemon.phases.orient import orient
+    from domains.fantasy_daemon.phases.plan import plan
 
     _log.info("scene_fallback: orient")
     _activity_log(scene_state, "Orient: analyzing scene context")

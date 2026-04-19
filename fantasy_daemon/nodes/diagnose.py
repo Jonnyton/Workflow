@@ -1,2 +1,2 @@
-"""Shim: use domains.fantasy_author.phases.diagnose instead."""
-from domains.fantasy_author.phases.diagnose import *  # noqa: F401,F403
+"""Shim: use domains.fantasy_daemon.phases.diagnose instead."""
+from domains.fantasy_daemon.phases.diagnose import *  # noqa: F401,F403

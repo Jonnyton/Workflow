@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from domains.fantasy_author.phases.world_state_db import connect, get_all_facts, init_db
+from domains.fantasy_daemon.phases.world_state_db import connect, get_all_facts, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +90,8 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
         - ``worldbuild_signals``: empty list (signals consumed).
         - ``quality_trace``: trace entry for this node.
     """
-    from domains.fantasy_author.phases._activity import activity_log, update_phase
-    from domains.fantasy_author.phases._paths import resolve_db_path
+    from domains.fantasy_daemon.phases._activity import activity_log, update_phase
+    from domains.fantasy_daemon.phases._paths import resolve_db_path
 
     db_path = resolve_db_path(state)
     promoted_count = 0
@@ -297,7 +297,7 @@ def _maybe_generate_premise(state: dict[str, Any]) -> str:
         return ""
 
     # Build prompt
-    from domains.fantasy_author.phases._provider_stub import call_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider
 
     file_summaries = "\n\n".join(
         f"**{name}**:\n{sample}" for name, sample in canon_files
@@ -485,7 +485,7 @@ def _handle_new_element(
     state: dict[str, Any],
 ) -> None:
     """Create a focused canon document for a newly discovered element."""
-    from domains.fantasy_author.phases._provider_stub import call_provider, last_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider, last_provider
 
     topic_slug = topic.lower().replace(" ", "_").replace("-", "_")
     topic_label = topic.replace("_", " ").title()
@@ -535,7 +535,7 @@ def _handle_contradiction(
     Asks the LLM which version makes for a better, more coherent universe
     given the full premise and context. Does NOT default to either side.
     """
-    from domains.fantasy_author.phases._provider_stub import call_provider, last_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider, last_provider
 
     topic_slug = topic.lower().replace(" ", "_").replace("-", "_")
 
@@ -603,7 +603,7 @@ def _handle_expansion(
     state: dict[str, Any],
 ) -> None:
     """Expand an existing thin canon document with new details from prose."""
-    from domains.fantasy_author.phases._provider_stub import call_provider, last_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider, last_provider
 
     topic_slug = topic.lower().replace(" ", "_").replace("-", "_")
 
@@ -722,7 +722,7 @@ def _handle_synthesize_source(
         # premise are now obsolete; wipe them universe-wide so retrieval
         # doesn't resurface hallucinated "canon" on subsequent cycles.
         try:
-            from domains.fantasy_author.phases.drift_cleanup import (
+            from domains.fantasy_daemon.phases.drift_cleanup import (
                 cleanup_drift_kg,
             )
 
@@ -868,7 +868,7 @@ def _generate_canon_documents(state: dict[str, Any]) -> list[str]:
                 topic, premise, direction_notes, existing_topics
             )
             if content:
-                from domains.fantasy_author.phases._provider_stub import last_provider
+                from domains.fantasy_daemon.phases._provider_stub import last_provider
                 filename = f"{topic}.md"
                 _write_canon_file(canon_dir, filename, content, model=last_provider)
                 # Verify the file actually exists on disk
@@ -964,7 +964,7 @@ def _call_for_worldbuild(
     Uses the provider stub's ``call_provider`` with role ``"writer"``.
     Returns the generated markdown content, or an empty string on failure.
     """
-    from domains.fantasy_author.phases._provider_stub import call_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider
 
     topic_label = topic.replace("_", " ").title()
 
@@ -1085,7 +1085,7 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
     if not canon_dir.is_dir():
         return
 
-    from domains.fantasy_author.phases._provider_stub import call_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider
     from workflow.ingestion.indexer import index_text
     from workflow.memory.scoping import MemoryScope
 

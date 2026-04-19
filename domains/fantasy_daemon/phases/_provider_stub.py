@@ -615,7 +615,7 @@ def call_for_extraction(prose: str, pov_character: str | None = None) -> str:
 
     Falls back to deterministic mock if no provider is available.
     """
-    from domains.fantasy_author.phases.fact_extraction import (
+    from domains.fantasy_daemon.phases.fact_extraction import (
         FACT_EXTRACTION_SYSTEM,
         build_extraction_prompt,
     )

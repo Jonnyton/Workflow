@@ -373,7 +373,7 @@ def _evaluate_canon(
     Each dict has ``filename``, ``reason``, and ``severity`` (0-10).
     Files with no issues are omitted.
     """
-    from domains.fantasy_author.phases._provider_stub import call_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider
 
     # Build a summary of each file (truncated to keep prompt manageable)
     file_summaries = []
@@ -447,7 +447,7 @@ def _rewrite_canon_file(
 
     Returns the new content, or empty string on failure.
     """
-    from domains.fantasy_author.phases._provider_stub import call_provider
+    from domains.fantasy_daemon.phases._provider_stub import call_provider
 
     original = all_canon.get(filename, "")
     reason = issue.get("reason", "quality issues detected")

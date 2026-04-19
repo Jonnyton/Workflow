@@ -33,9 +33,9 @@ def draft(state: dict[str, Any]) -> dict[str, Any]:
         - ``draft_output``: prose text, word count, voice decisions.
         - ``quality_trace``: decision trace entry.
     """
-    from domains.fantasy_author.phases._activity import activity_log, update_phase
-    from domains.fantasy_author.phases._provider_stub import call_for_draft
-    from domains.fantasy_author.phases.writer_tools import select_and_run_writer_tools
+    from domains.fantasy_daemon.phases._activity import activity_log, update_phase
+    from domains.fantasy_daemon.phases._provider_stub import call_for_draft
+    from domains.fantasy_daemon.phases.writer_tools import select_and_run_writer_tools
     from workflow.retrieval.agentic_search import assemble_phase_search_context
 
     plan_output = state.get("plan_output") or {}

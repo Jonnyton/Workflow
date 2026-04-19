@@ -1,6 +1,6 @@
-"""Shim: ``fantasy_author.runtime`` IS ``workflow.runtime``.
+"""Shim: ``fantasy_daemon.runtime`` IS ``workflow.runtime``.
 
-Re-binding ``sys.modules`` so ``import fantasy_author.runtime`` returns
+Re-binding ``sys.modules`` so ``import fantasy_daemon.runtime`` returns
 the same module object as ``import workflow.runtime``. A bare
 ``from workflow.runtime import *`` would only snapshot bindings at
 import time, so writes via one alias would not be visible through the

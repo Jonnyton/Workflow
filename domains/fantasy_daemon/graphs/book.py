@@ -14,11 +14,11 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from domains.fantasy_author.phases.book_close import book_close
-from domains.fantasy_author.phases.consolidate import consolidate
-from domains.fantasy_author.phases.diagnose import diagnose
-from domains.fantasy_author.phases.learn import learn
-from domains.fantasy_author.state.book_state import BookState
+from domains.fantasy_daemon.phases.book_close import book_close
+from domains.fantasy_daemon.phases.consolidate import consolidate
+from domains.fantasy_daemon.phases.diagnose import diagnose
+from domains.fantasy_daemon.phases.learn import learn
+from domains.fantasy_daemon.state.book_state import BookState
 
 
 def _get_config_scenes_target() -> int:
@@ -87,7 +87,7 @@ def run_chapter(state: dict[str, Any]) -> dict[str, Any]:
     ch_num = state["chapters_completed"] + 1
     _log.info("run_chapter: starting chapter %d", ch_num)
 
-    from domains.fantasy_author.graphs.chapter import build_chapter_graph
+    from domains.fantasy_daemon.graphs.chapter import build_chapter_graph
 
     chapter_state = _make_chapter_input(state)
 
@@ -124,7 +124,7 @@ def _run_chapter_fallback(
     chapter_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Direct node calls as fallback if subgraph compilation fails."""
-    from domains.fantasy_author.graphs.chapter import run_scene, should_continue_chapter
+    from domains.fantasy_daemon.graphs.chapter import run_scene, should_continue_chapter
 
     while should_continue_chapter(chapter_state) == "next_scene":
         result = run_scene(chapter_state)

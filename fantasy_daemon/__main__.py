@@ -42,23 +42,23 @@ from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: E402
 # ("fantasy_author", "universe_cycle_wrapper") in the workflow domain
 # registry. Must happen before _run_graph under
 # WORKFLOW_UNIFIED_EXECUTION=1 can compile its Branch.
-import fantasy_author.branch_registrations  # noqa: E402, F401
-import fantasy_author.runtime as runtime  # noqa: E402
-from fantasy_author.desktop.dashboard import DashboardHandler  # noqa: E402
-from fantasy_author.desktop.notifications import NotificationManager  # noqa: E402
-from fantasy_author.desktop.tray import TrayApp  # noqa: E402
-from fantasy_author.graphs.universe import build_universe_graph  # noqa: E402
-from fantasy_author.memory.ingestion import (  # noqa: E402
+import fantasy_daemon.branch_registrations  # noqa: E402, F401
+import fantasy_daemon.runtime as runtime  # noqa: E402
+from fantasy_daemon.desktop.dashboard import DashboardHandler  # noqa: E402
+from fantasy_daemon.desktop.notifications import NotificationManager  # noqa: E402
+from fantasy_daemon.desktop.tray import TrayApp  # noqa: E402
+from fantasy_daemon.graphs.universe import build_universe_graph  # noqa: E402
+from fantasy_daemon.memory.ingestion import (  # noqa: E402
     IngestionPriority,
     ProgressiveIngestor,
 )
-from fantasy_author.memory.manager import MemoryManager  # noqa: E402
-from fantasy_author.memory.promises import SeriesPromiseTracker  # noqa: E402
-from fantasy_author.memory.versioning import OutputVersionStore  # noqa: E402
-from fantasy_author.providers.claude_provider import ClaudeProvider  # noqa: E402
-from fantasy_author.providers.codex_provider import CodexProvider  # noqa: E402
-from fantasy_author.providers.ollama_provider import OllamaProvider  # noqa: E402
-from fantasy_author.providers.router import ProviderRouter  # noqa: E402
+from fantasy_daemon.memory.manager import MemoryManager  # noqa: E402
+from fantasy_daemon.memory.promises import SeriesPromiseTracker  # noqa: E402
+from fantasy_daemon.memory.versioning import OutputVersionStore  # noqa: E402
+from fantasy_daemon.providers.claude_provider import ClaudeProvider  # noqa: E402
+from fantasy_daemon.providers.codex_provider import CodexProvider  # noqa: E402
+from fantasy_daemon.providers.ollama_provider import OllamaProvider  # noqa: E402
+from fantasy_daemon.providers.router import ProviderRouter  # noqa: E402
 
 logger = logging.getLogger("fantasy_author")
 
@@ -91,21 +91,21 @@ def _build_provider_router() -> ProviderRouter:
 
     # Optional SDK providers (soft-fail if deps missing).
     try:
-        from fantasy_author.providers.gemini_provider import GeminiProvider
+        from fantasy_daemon.providers.gemini_provider import GeminiProvider
 
         router.register(GeminiProvider())
     except Exception:
         logger.debug("Gemini provider not available")
 
     try:
-        from fantasy_author.providers.groq_provider import GroqProvider
+        from fantasy_daemon.providers.groq_provider import GroqProvider
 
         router.register(GroqProvider())
     except Exception:
         logger.debug("Groq provider not available")
 
     try:
-        from fantasy_author.providers.grok_provider import GrokProvider
+        from fantasy_daemon.providers.grok_provider import GrokProvider
 
         router.register(GrokProvider())
     except Exception:
@@ -602,7 +602,7 @@ class DaemonController:
         universe_id = Path(self._universe_path).stem or "default"
 
         # Load per-universe config.yaml
-        from fantasy_author.config import load_universe_config
+        from fantasy_daemon.config import load_universe_config
 
         runtime.universe_config = load_universe_config(self._universe_path)
         logger.info(
@@ -625,7 +625,7 @@ class DaemonController:
 
         # Inject router into the provider stub module so nodes can use it
         try:
-            import fantasy_author.nodes._provider_stub as stub
+            import fantasy_daemon.nodes._provider_stub as stub
 
             stub._real_router = self._router
         except ImportError:
@@ -728,7 +728,7 @@ class DaemonController:
 
         # Knowledge graph
         try:
-            from fantasy_author.knowledge.knowledge_graph import KnowledgeGraph
+            from fantasy_daemon.knowledge.knowledge_graph import KnowledgeGraph
 
             runtime.knowledge_graph = KnowledgeGraph(kg_path)
             logger.info("KnowledgeGraph initialized at %s", kg_path)
@@ -737,7 +737,7 @@ class DaemonController:
 
         # Vector store (LanceDB)
         try:
-            from fantasy_author.retrieval.vector_store import VectorStore
+            from fantasy_daemon.retrieval.vector_store import VectorStore
 
             runtime.vector_store = VectorStore(db_path=lance_path)
             logger.info("VectorStore initialized at %s", lance_path)
@@ -746,7 +746,7 @@ class DaemonController:
 
         # Embedding function (Ollama)
         try:
-            from fantasy_author.providers.ollama_provider import OllamaProvider
+            from fantasy_daemon.providers.ollama_provider import OllamaProvider
 
             ollama = OllamaProvider()
 
@@ -785,7 +785,7 @@ class DaemonController:
         the tree.  Uses the shared ``rebuild_raptor_from_canon`` helper
         so the worldbuild node can trigger the same rebuild.
         """
-        from fantasy_author.knowledge.raptor import rebuild_raptor_from_canon
+        from fantasy_daemon.knowledge.raptor import rebuild_raptor_from_canon
 
         canon_dir = str(Path(self._universe_path) / "canon")
         universe_id = Path(self._universe_path).name or "default"
@@ -1133,7 +1133,7 @@ class DaemonController:
 
         # Track the most recently used LLM provider
         try:
-            from fantasy_author.nodes._provider_stub import last_provider
+            from fantasy_daemon.nodes._provider_stub import last_provider
             if last_provider:
                 self._last_provider_used = last_provider
         except ImportError:
@@ -1249,7 +1249,7 @@ class DaemonController:
         corruption when the heartbeat thread and node threads write
         concurrently.
         """
-        from fantasy_author.nodes._activity import _status_lock
+        from fantasy_daemon.nodes._activity import _status_lock
 
         summary = (
             self._dashboard.summary() if self._dashboard else {}
@@ -1398,7 +1398,7 @@ class DaemonController:
         active characters, open plot threads, and recent creative
         decisions.  Falls back to the chapter summary alone on failure.
         """
-        from fantasy_author.nodes._provider_stub import call_provider
+        from fantasy_daemon.nodes._provider_stub import call_provider
 
         chapter_summary = output.get("chapter_summary", "")
         if not chapter_summary:
@@ -1642,7 +1642,7 @@ class DaemonController:
             self._universe_id, target_universe,
         )
         try:
-            from fantasy_author.api import _start_daemon_for
+            from fantasy_daemon.api import _start_daemon_for
 
             _start_daemon_for(target_universe)
             logger.info("Started daemon on %s for synthesis", target_universe)
@@ -1841,7 +1841,7 @@ def _run_tray_mode(args: argparse.Namespace) -> None:
     """
     import uvicorn
 
-    from fantasy_author.api import app, configure
+    from fantasy_daemon.api import app, configure
 
     base_path = str(Path(args.universe).resolve())
     Path(base_path).mkdir(parents=True, exist_ok=True)
@@ -2102,7 +2102,7 @@ def main() -> None:
     # Env-var routing survives subprocess boundaries for future multi-
     # daemon tray work and keeps the module shape stable.
     if args.provider:
-        from fantasy_author.providers import router as _router_mod
+        from fantasy_daemon.providers import router as _router_mod
 
         known = set().union(*_router_mod.FALLBACK_CHAINS.values())
         if args.provider not in known:
@@ -2126,7 +2126,7 @@ def main() -> None:
 
     if args.mcp:
         os.environ.setdefault("WORKFLOW_UNIVERSE", args.universe)
-        from fantasy_author.mcp_server import main as mcp_main
+        from fantasy_daemon.mcp_server import main as mcp_main
 
         mcp_main()
         return
@@ -2146,7 +2146,7 @@ def main() -> None:
             tunnel_proc = _start_tunnel(args.mcp_port, args.tunnel_name)
 
         try:
-            from fantasy_author.universe_server import main as us_main
+            from fantasy_daemon.universe_server import main as us_main
 
             us_main(
                 host=args.host,
@@ -2165,7 +2165,7 @@ def main() -> None:
     if args.serve:
         import uvicorn
 
-        from fantasy_author.api import app, configure
+        from fantasy_daemon.api import app, configure
 
         # Resolve base path: --universe is the base directory in serve mode
         base_path = str(Path(args.universe).resolve())

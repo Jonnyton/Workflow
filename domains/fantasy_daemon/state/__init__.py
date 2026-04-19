@@ -14,11 +14,11 @@ UniverseLiveState -- thin universe live state alias
 ExecutionEnvelope -- thin live execution cursor
 """
 
-from domains.fantasy_author.state.book_state import BookState
-from domains.fantasy_author.state.chapter_state import ChapterState
-from domains.fantasy_author.state.scene_state import SceneState
-from domains.fantasy_author.state.series_state import SeriesState
-from domains.fantasy_author.state.universe_state import (
+from domains.fantasy_daemon.state.book_state import BookState
+from domains.fantasy_daemon.state.chapter_state import ChapterState
+from domains.fantasy_daemon.state.scene_state import SceneState
+from domains.fantasy_daemon.state.series_state import SeriesState
+from domains.fantasy_daemon.state.universe_state import (
     ExecutionEnvelope,
     UniverseLiveState,
     UniverseState,

@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Any
 
-from domains.fantasy_author.work_kinds import infer_fantasy_execution_scope
+from domains.fantasy_daemon.work_kinds import infer_fantasy_execution_scope
 from workflow.work_targets import (
     ROLE_NOTES,
     get_target,

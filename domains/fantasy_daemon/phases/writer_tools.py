@@ -82,7 +82,7 @@ def _select_tool_names(
     tools: list[WriterTool],
 ) -> list[str]:
     """Ask the selector which tools to use, with deterministic fallback."""
-    from domains.fantasy_author.phases import _provider_stub
+    from domains.fantasy_daemon.phases import _provider_stub
 
     allowed = {tool.name for tool in tools}
     defaults = _default_tool_names(phase, state, tools)

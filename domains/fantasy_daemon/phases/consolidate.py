@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from domains.fantasy_author.phases._provider_stub import call_provider
+from domains.fantasy_daemon.phases._provider_stub import call_provider
 
 logger = logging.getLogger(__name__)
 

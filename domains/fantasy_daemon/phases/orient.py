@@ -17,8 +17,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from domains.fantasy_author.phases._paths import resolve_db_path as _resolve_db_path
-from domains.fantasy_author.phases.world_state_db import (
+from domains.fantasy_daemon.phases._paths import resolve_db_path as _resolve_db_path
+from domains.fantasy_daemon.phases.world_state_db import (
     compute_pacing_flags,
     connect,
     get_active_promises,
@@ -366,7 +366,7 @@ def orient(state: dict[str, Any]) -> dict[str, Any]:
         - ``retrieved_context``: retrieval results from RetrievalRouter.
         - ``quality_trace``: decision trace entry.
     """
-    from domains.fantasy_author.phases._activity import activity_log, update_phase
+    from domains.fantasy_daemon.phases._activity import activity_log, update_phase
 
     scene_id = (
         f"{state['universe_id']}-B{state['book_number']}"
@@ -702,7 +702,7 @@ def _extract_pov_and_tier(
 
     # 1. Try world state DB: most recently updated character
     try:
-        from domains.fantasy_author.phases.world_state_db import get_all_characters
+        from domains.fantasy_daemon.phases.world_state_db import get_all_characters
 
         with connect(db_path) as conn:
             characters = get_all_characters(conn)

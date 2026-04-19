@@ -55,7 +55,7 @@ def universe_cycle_wrapper(state: dict[str, Any]) -> dict[str, Any]:
     # Import lazily so the registry can be imported without pulling
     # the full graph module at import time (helps test isolation and
     # keeps the engine→domain arrow clean).
-    from fantasy_author.graphs.universe import build_universe_graph
+    from fantasy_daemon.graphs.universe import build_universe_graph
 
     inner_graph = build_universe_graph()
     # No inner checkpointer — boundary-only persistence under

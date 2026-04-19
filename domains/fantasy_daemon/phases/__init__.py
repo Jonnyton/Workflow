@@ -19,19 +19,19 @@ book_close      -- book-level consolidation
 diagnose        -- stuck detection and recovery
 """
 
-from domains.fantasy_author.phases._activity import activity_log
-from domains.fantasy_author.phases.book_close import book_close
-from domains.fantasy_author.phases.commit import commit
-from domains.fantasy_author.phases.consolidate import consolidate
-from domains.fantasy_author.phases.diagnose import diagnose
-from domains.fantasy_author.phases.draft import draft
-from domains.fantasy_author.phases.learn import learn
-from domains.fantasy_author.phases.orient import orient
-from domains.fantasy_author.phases.plan import plan
-from domains.fantasy_author.phases.reflect import reflect
-from domains.fantasy_author.phases.select_task import select_task
-from domains.fantasy_author.phases.universe_cycle import universe_cycle
-from domains.fantasy_author.phases.worldbuild import worldbuild
+from domains.fantasy_daemon.phases._activity import activity_log
+from domains.fantasy_daemon.phases.book_close import book_close
+from domains.fantasy_daemon.phases.commit import commit
+from domains.fantasy_daemon.phases.consolidate import consolidate
+from domains.fantasy_daemon.phases.diagnose import diagnose
+from domains.fantasy_daemon.phases.draft import draft
+from domains.fantasy_daemon.phases.learn import learn
+from domains.fantasy_daemon.phases.orient import orient
+from domains.fantasy_daemon.phases.plan import plan
+from domains.fantasy_daemon.phases.reflect import reflect
+from domains.fantasy_daemon.phases.select_task import select_task
+from domains.fantasy_daemon.phases.universe_cycle import universe_cycle
+from domains.fantasy_daemon.phases.worldbuild import worldbuild
 
 __all__ = [
     "activity_log",

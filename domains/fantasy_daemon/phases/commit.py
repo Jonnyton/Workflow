@@ -19,13 +19,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from domains.fantasy_author.phases._provider_stub import call_for_extraction, call_provider
-from domains.fantasy_author.phases.fact_extraction import (
+from domains.fantasy_daemon.phases._provider_stub import call_for_extraction, call_provider
+from domains.fantasy_daemon.phases.fact_extraction import (
     detect_promises,
     extract_facts_from_llm_response,
     extract_facts_regex,
 )
-from domains.fantasy_author.phases.world_state_db import (
+from domains.fantasy_daemon.phases.world_state_db import (
     add_promise,
     connect,
     init_db,
@@ -73,7 +73,7 @@ def commit(state: dict[str, Any]) -> dict[str, Any]:
         - ``quality_trace``: decision trace entry.
         - ``quality_debt``: any degraded-lane markers.
     """
-    from domains.fantasy_author.phases._activity import activity_log, update_phase
+    from domains.fantasy_daemon.phases._activity import activity_log, update_phase
 
     draft_output = state.get("draft_output") or {}
     scene_id = draft_output.get("scene_id", "unknown")
@@ -122,7 +122,7 @@ def commit(state: dict[str, Any]) -> dict[str, Any]:
             "quality_debt": [],
         }
 
-    from domains.fantasy_author.phases._paths import resolve_db_path
+    from domains.fantasy_daemon.phases._paths import resolve_db_path
     db_path = resolve_db_path(state)
 
     # --- Memory context for evaluate phase ---

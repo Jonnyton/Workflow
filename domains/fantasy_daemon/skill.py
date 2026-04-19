@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from domains.fantasy_author.eval import get_fantasy_eval_criteria
-from domains.fantasy_author.graphs import build_universe_graph
-from domains.fantasy_author.memory import get_fantasy_memory_schemas
-from domains.fantasy_author.tools import get_fantasy_tools
+from domains.fantasy_daemon.eval import get_fantasy_eval_criteria
+from domains.fantasy_daemon.graphs import build_universe_graph
+from domains.fantasy_daemon.memory import get_fantasy_memory_schemas
+from domains.fantasy_daemon.tools import get_fantasy_tools
 from workflow.protocols import DomainConfig, DomainTool, EvalCriteria, MemorySchema
 
 

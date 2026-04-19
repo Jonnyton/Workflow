@@ -48,9 +48,9 @@ def plan(state: dict[str, Any]) -> dict[str, Any]:
         - ``plan_output``: beat sheet with done_when criteria.
         - ``quality_trace``: decision trace entry.
     """
-    from domains.fantasy_author.phases._activity import activity_log, update_phase
-    from domains.fantasy_author.phases._provider_stub import call_for_plan
-    from domains.fantasy_author.phases.writer_tools import select_and_run_writer_tools
+    from domains.fantasy_daemon.phases._activity import activity_log, update_phase
+    from domains.fantasy_daemon.phases._provider_stub import call_for_plan
+    from domains.fantasy_daemon.phases.writer_tools import select_and_run_writer_tools
     from workflow.retrieval.agentic_search import assemble_phase_search_context
 
     orient_result = state.get("orient_result", {})

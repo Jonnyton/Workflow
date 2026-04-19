@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from domains.fantasy_author.work_kinds import (
+from domains.fantasy_daemon.work_kinds import (
     EXECUTION_KIND_BOOK,
     EXECUTION_KIND_CHAPTER,
     EXECUTION_KIND_SCENE,

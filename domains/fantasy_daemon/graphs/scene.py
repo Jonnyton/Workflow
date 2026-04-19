@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
-from domains.fantasy_author.phases.commit import commit
-from domains.fantasy_author.phases.draft import draft
-from domains.fantasy_author.phases.orient import orient
-from domains.fantasy_author.phases.plan import plan
-from domains.fantasy_author.state.scene_state import SceneState
+from domains.fantasy_daemon.phases.commit import commit
+from domains.fantasy_daemon.phases.draft import draft
+from domains.fantasy_daemon.phases.orient import orient
+from domains.fantasy_daemon.phases.plan import plan
+from domains.fantasy_daemon.state.scene_state import SceneState
 
 
 def route_after_commit(state: SceneState) -> str:
