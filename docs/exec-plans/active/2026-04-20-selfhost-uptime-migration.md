@@ -220,18 +220,22 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 ## 5. Sequencing + timeline
 
-Provider pick is locked (Hetzner). No host round-trip in the critical path.
+Provider pick is locked (Hetzner). Worker (Row E) ships independently of Hetzner cutover. No host round-trip in the critical path.
 
 | Phase | Sequence | Dev-days | Wall-time |
 |---|---|---|---|
 | **P1 — Rows A + B + C** | Parallel across 1-2 devs (A + C independent; B serial) | ~1.5-2 dev-days serial, ~1 dev-day with 2 devs | 1-2 calendar days |
+| **P1b — Row E (Worker, parallel)** | Independent of A/B/C; dispatchable post-Row-A | ~0.5 dev-day | 1 calendar day (overlapping P1) |
 | **P2 — Row D (Hetzner deploy)** | After A + B + C land | ~1-1.5 dev-days | 1-2 calendar days |
-| **P3 — Row E (smoke + 48h offline trial)** | After D lands | ~0.25 dev-day active + 48h wall | 3 calendar days |
-| **Total dispatch-to-cutover** | | **~2.75-3.75 dev-days active** | **5-7 calendar days** |
+| **P3 — Row F (smoke + 48h offline trial)** | After D + E both land | ~0.25 dev-day active + 48h wall | 3 calendar days |
+| **P4 — Row G (canonical-URL docs sweep)** | After P3 acceptance closes clean | ~0.5-1 dev-day | 1 calendar day |
+| **Total dispatch to sweep closed** | | **~3.75-5.25 dev-days active** | **6-9 calendar days** |
 
-**Realistic range:** 5-7 days in normal conditions. 8-10 days if Row B surfaces more Windows-path surface area than audit predicts (LanceDB internals + vendored deps are the unknown).
+**Realistic range:** 6-9 days in normal conditions (was 5-7 pre-Worker — Row E + Row G add ~1-1.5 dev-days of work net, but Worker-before-Hetzner means user-facing canonical restores earlier in the arc). 10-12 days if Row B surfaces more Windows-path surface area than audit predicts.
 
-**Critical path observation:** the whole plan is dispatchable immediately. Row A + Row C parallel-ship on two devs with zero collision; Row B serial behind whichever finishes second. Row D goes as soon as A/B/C all land. Row E is the closer.
+**Critical path observation:** the whole plan is dispatchable immediately. Row A + Row C parallel-ship on two devs; Row B serial behind whichever finishes second; Row E (Worker) dispatches post-Row-A independently. Row D goes as soon as A/B/C all land. Row F is the trial closer. Row G is the final sweep.
+
+**User-facing canonical restores on Row E ship, NOT on Row D / F.** Once the Worker is live, `tinyassets.io/mcp` works regardless of whether the tunnel origin is the host machine or the Hetzner box. This is the near-term uptime win: the canonical URL is restored within ~1-2 days of dispatch, while the fuller host-machine-independence trial takes 6-9 days to close.
 
 ---
 
@@ -239,10 +243,10 @@ Provider pick is locked (Hetzner). No host round-trip in the critical path.
 
 The migration is "done" when all five hold simultaneously for a 48-hour window:
 
-1. **Layer-1 canary green for 48 consecutive hours** against `mcp.tinyassets.io/mcp`. Zero `exit != 0` probes. (Post-canary-ships; gate blocks if canary not live yet.)
-2. **`selfhost_smoke.py` green at hour 1, 24, 47.** No tool output regressions from the remote box vs local prod baseline (captured one week before cutover).
-3. **Host machine powered off or hibernated for ≥48 hours** without a single user-visible outage on `mcp.tinyassets.io/mcp`.
-4. **Hard Rule 10 satisfied:** any provider-dashboard DNS change or tunnel reconfig during the 48h window ran `scripts/uptime_canary.py --once` post-change and confirmed green.
+1. **Layer-1 canary green for 48 consecutive hours against BOTH URLs** — `tinyassets.io/mcp` (user-facing canonical via Worker) AND `mcp.tinyassets.io/mcp` (direct tunnel origin). Zero `exit != 0` probes on either. (Post-canary-ships; gate blocks if canary not live yet.)
+2. **`selfhost_smoke.py` green at hour 1, 24, 47.** No tool output regressions from the remote box vs local prod baseline (captured one week before cutover). Parity asserted between canonical + direct-origin URLs.
+3. **Host machine powered off or hibernated for ≥48 hours** without a single user-visible outage on `tinyassets.io/mcp`.
+4. **Hard Rule 10 satisfied:** any Cloudflare Worker, DNS, or provider-dashboard reconfig during the 48h window ran `scripts/uptime_canary.py --once` post-change against BOTH URLs and confirmed green.
 5. **Succession runbook updated** — `SUCCESSION.md` §5 references the provider box as the current authoritative origin, with a link to Row C's cloudflared config template for rebuild-from-scratch.
 
 If all five hold, **the host's computer is officially replaceable.** The forever rule's "system is always up without us" has gained an important piece: "without this specific machine" is now provably true.
@@ -291,8 +295,9 @@ Navigator owns the merge; ~0.25 nav-day after the 48h trial closes.
 - **Scope:** MCP daemon + tunnel origin off the host machine. Near-term, not full plan-b.
 - **Provider:** **Hetzner Cloud CX22 (Debian 12, Docker Compose).** Single pick, no host round-trip. Fallback: Fly.io (only on observed primary regression). Anti: Cloudflare Workers (rewrite cost too high).
 - **Internal decisions pre-made (§3):** secrets = systemd EnvironmentFile; Postgres = Supabase managed; host machine = dev seat only; first box = empty.
-- **5 Work rows, all dispatchable immediately — no host input blocks dispatch:** containerize (0.5d), extract paths (0.5-1d), tunnel config (0.25-0.5d), deploy (1-1.5d), smoke + trial (0.25d + 48h wall). Rows A + C parallel, B serial, D after A/B/C, E after D.
-- **Total active dev:** ~2.75-3.75 dev-days. Calendar 5-7 days to 48h-offline acceptance.
-- **Cutover gate:** host's computer offline for 48 consecutive hours, zero canary reds. That's the real acceptance.
+- **Canonical URL architecture (§0):** user-facing `tinyassets.io/mcp` via Cloudflare Worker; debug `mcp.tinyassets.io/mcp` via tunnel direct; `api.tinyassets.io/mcp` never live, don't resurrect.
+- **7 Work rows, all dispatchable immediately — no host input blocks dispatch:** containerize (0.5d), extract paths (0.5-1d), tunnel config (0.25-0.5d), Hetzner deploy (1-1.5d), Cloudflare Worker (0.5d independent of deploy), smoke + 48h trial (0.25d + wall), docs sweep follow-up (0.5-1d post-trial). Rows A + C parallel; B serial; E (Worker) parallel post-A; D after A/B/C; F after D+E; G after F.
+- **Total active dev:** ~3.75-5.25 dev-days. Calendar 6-9 days to sweep closed; **user-facing canonical URL restores on Row E ship (~1-2 days from dispatch).**
+- **Cutover gate:** host's computer offline for 48 consecutive hours, zero canary reds on BOTH canonical + direct-origin URLs. That's the real acceptance.
 
 Go.
