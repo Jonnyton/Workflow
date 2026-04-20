@@ -180,10 +180,17 @@ async def _landing_index(request):  # type: ignore[no-untyped-def]
 
 
 def _base_path() -> Path:
-    """Resolve the base directory containing all universe directories."""
-    return Path(
-        os.environ.get("UNIVERSE_SERVER_BASE", "output")
-    ).resolve()
+    """Resolve the base directory containing all universe directories.
+
+    Delegates to ``workflow.storage.data_dir`` — canonical env var
+    ``WORKFLOW_DATA_DIR`` (legacy ``UNIVERSE_SERVER_BASE`` still honored
+    with deprecation warning). This replaces the earlier CWD-relative
+    ``"output"`` default which wrote to ``/app/output`` in containers
+    instead of the bind-mounted ``/data`` volume — the 2026-04-19
+    containerization bug class.
+    """
+    from workflow.storage import data_dir
+    return data_dir()
 
 
 def _universe_dir(universe_id: str) -> Path:

@@ -123,6 +123,74 @@ def _slugify(text: str, fallback: str = "item") -> str:
 # -------------------------------------------------------------------
 
 
+def data_dir() -> Path:
+    """Return the on-disk root for all Workflow daemon state.
+
+    Canonical env var: ``WORKFLOW_DATA_DIR``.
+
+    Resolution order (first match wins):
+      1. ``$WORKFLOW_DATA_DIR`` if set and non-empty.
+      2. Legacy ``$UNIVERSE_SERVER_BASE`` if set and non-empty. Emits a
+         deprecation warning when ``WORKFLOW_DEPRECATIONS=1`` so the
+         legacy name can be found and updated without noise in normal
+         operation.
+      3. Platform default:
+         - Windows: ``%APPDATA%\\Workflow`` if ``APPDATA`` is set, else
+           ``Path.home() / 'AppData' / 'Roaming' / 'Workflow'``.
+         - macOS / Linux / container: ``~/.workflow``.
+
+    Always returns an absolute, resolved Path. Callers should NOT re-resolve
+    or re-expand; this function is the single source of truth for the
+    daemon's on-disk root so that a containerized deploy setting
+    ``WORKFLOW_DATA_DIR=/data`` gets all writes inside the bind-mount.
+
+    The previous shape (``UNIVERSE_SERVER_BASE`` defaulting to CWD-relative
+    ``"output"``) produced the 2026-04-19 container CWD-drift bug: running
+    the daemon from ``/app`` wrote to ``/app/output`` instead of
+    ``/data``. This function eliminates that class by refusing to return
+    CWD-relative paths.
+
+    Notes
+    -----
+    - This is the *root* for all on-disk state, not the universe dir.
+      Per-universe directories sit under this root. The previous
+      ``UNIVERSE_SERVER_BASE`` conflated the two; the new contract is
+      that ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and
+      universes are subdirectories (e.g., ``/data/my-universe``).
+    - The directory is not created here. Callers that write into it
+      are responsible for ``mkdir(parents=True, exist_ok=True)``.
+    """
+    import os
+    import warnings
+
+    explicit = os.environ.get("WORKFLOW_DATA_DIR", "").strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    legacy = os.environ.get("UNIVERSE_SERVER_BASE", "").strip()
+    if legacy:
+        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
+            warnings.warn(
+                "UNIVERSE_SERVER_BASE is deprecated; migrate to "
+                "WORKFLOW_DATA_DIR. Both currently resolve to the same "
+                "path; UNIVERSE_SERVER_BASE will be removed in a future "
+                "release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return Path(legacy).expanduser().resolve()
+
+    # Platform default.
+    appdata = os.environ.get("APPDATA", "").strip()
+    if appdata and os.name == "nt":
+        return (Path(appdata) / "Workflow").resolve()
+    if os.name == "nt":
+        # Windows without APPDATA (unusual) — fall back to the standard
+        # user path rather than ~/.workflow.
+        return (Path.home() / "AppData" / "Roaming" / "Workflow").resolve()
+    return (Path.home() / ".workflow").resolve()
+
+
 def author_server_db_path(base_path: str | Path) -> Path:
     return Path(base_path) / DB_FILENAME
 
@@ -178,6 +246,7 @@ __all__ = [
     "_slugify",
     "author_server_db_path",
     "base_path_from_universe",
+    "data_dir",
     "universe_id_from_path",
     "_connect",
     # Accounts bounded context

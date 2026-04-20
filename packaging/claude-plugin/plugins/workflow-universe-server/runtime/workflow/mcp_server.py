@@ -40,18 +40,28 @@ def _repo_root() -> Path:
 def _universe_dir() -> Path:
     """Resolve the universe directory from environment or default.
 
-    The default is anchored to the repo root, not the process CWD. A
-    CWD-relative default would silently create a second
-    ``output/default-universe/`` under the wrong directory whenever the
-    server is launched from elsewhere — exactly the class of bug that
-    caused cross-universe contamination pre-2026-04-11 (see STATUS.md
-    #47/#48 and the ``KnowledgeGraph`` / ``VectorStore`` hard-refuse
-    guards from #51).
+    Precedence:
+      1. ``$WORKFLOW_UNIVERSE`` — explicit per-universe override.
+      2. ``workflow.storage.data_dir() / "default-universe"`` — anchored
+         to the canonical ``WORKFLOW_DATA_DIR`` root (or its legacy
+         alias / platform default).
+
+    The default is anchored to the daemon's on-disk data root, NOT the
+    repo root. Pre-2026-04-20 this defaulted to
+    ``<repo_root>/output/default-universe`` which worked on a dev
+    machine but wrote to ``/app/output/default-universe`` in a
+    container — NOT the bind-mounted ``/data`` volume. Rooting at
+    ``data_dir()`` closes the container CWD-drift bug class.
+
+    Cross-universe contamination guard still applies: never CWD-relative.
+    See STATUS.md #47/#48 + ``KnowledgeGraph`` / ``VectorStore``
+    hard-refuse guards from #51.
     """
     env = os.environ.get("WORKFLOW_UNIVERSE")
     if env:
-        return Path(env)
-    return _repo_root() / "output" / "default-universe"
+        return Path(env).expanduser().resolve()
+    from workflow.storage import data_dir
+    return data_dir() / "default-universe"
 
 
 @mcp.tool(

@@ -1,106 +1,66 @@
-"""SQLite-backed multiplayer Author-server substrate."""
+"""SQLite-backed multiplayer Author-server substrate.
+
+R7 split in progress. Shared helpers live in ``workflow/storage/``
+per the Module Layout commitment (PLAN.md §Module Layout). This
+module still hosts the bounded-context functions + schema migration
+entry point; those move to ``workflow/storage/{accounts, daemons,
+universes_branches, requests_votes, notes_work_targets, goals_gates}.py``
+in follow-up commits.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import secrets
 import sqlite3
-import time
 import uuid
 from pathlib import Path
 from typing import Any
 
-DB_FILENAME = ".author_server.db"
-DEFAULT_BRANCH_MODE = "no_fixed_mainline"
-DEFAULT_QUICK_VOTE_SECONDS = 300
-SESSION_PREFIX = "fa_session_"
-
-CAP_READ_PUBLIC_UNIVERSE = "read_public_universe"
-CAP_SUBMIT_REQUEST = "submit_request"
-CAP_FORK_BRANCH = "fork_branch"
-CAP_PROPOSE_AUTHOR_FORK = "propose_author_fork"
-CAP_SPAWN_RUNTIME_CAPACITY = "spawn_runtime_capacity"
-CAP_ASSIGN_RUNTIME_PROVIDER = "assign_runtime_provider"
-CAP_PAUSE_RESUME_SERVER = "pause_resume_server"
-CAP_ROLLBACK_BRANCH = "rollback_branch"
-CAP_PROMOTE_BRANCH = "promote_branch"
-CAP_SUPERSEDE_BRANCH = "supersede_branch"
-CAP_EDIT_UNIVERSE_RULES = "edit_universe_rules"
-CAP_GRANT_CAPABILITIES = "grant_capabilities"
-
-ALL_CAPABILITIES: tuple[str, ...] = (
-    CAP_READ_PUBLIC_UNIVERSE,
-    CAP_SUBMIT_REQUEST,
-    CAP_FORK_BRANCH,
-    CAP_PROPOSE_AUTHOR_FORK,
-    CAP_SPAWN_RUNTIME_CAPACITY,
+from workflow.storage import (  # noqa: F401  (re-exports for in-flight R7 split; unused-in-this-module symbols are still imported by external callers of `workflow.daemon_server`)
+    ALL_CAPABILITIES,
     CAP_ASSIGN_RUNTIME_PROVIDER,
-    CAP_PAUSE_RESUME_SERVER,
-    CAP_ROLLBACK_BRANCH,
-    CAP_PROMOTE_BRANCH,
-    CAP_SUPERSEDE_BRANCH,
     CAP_EDIT_UNIVERSE_RULES,
-    CAP_GRANT_CAPABILITIES,
-)
-
-DEFAULT_USER_CAPABILITIES: tuple[str, ...] = (
-    CAP_READ_PUBLIC_UNIVERSE,
-    CAP_SUBMIT_REQUEST,
     CAP_FORK_BRANCH,
+    CAP_GRANT_CAPABILITIES,
+    CAP_PAUSE_RESUME_SERVER,
+    CAP_PROMOTE_BRANCH,
     CAP_PROPOSE_AUTHOR_FORK,
+    CAP_READ_PUBLIC_UNIVERSE,
+    CAP_ROLLBACK_BRANCH,
+    CAP_SPAWN_RUNTIME_CAPACITY,
+    CAP_SUBMIT_REQUEST,
+    CAP_SUPERSEDE_BRANCH,
+    DB_FILENAME,
+    DEFAULT_BRANCH_MODE,
+    DEFAULT_QUICK_VOTE_SECONDS,
+    DEFAULT_USER_CAPABILITIES,
+    SESSION_PREFIX,
+    _account_id_for_username,
+    _connect,
+    _json_dumps,
+    _json_loads,
+    _now,
+    _slugify,
+    actor_has_capability,
+    author_server_db_path,
+    base_path_from_universe,
+    create_or_update_account,
+    create_session,
+    ensure_host_account,
+    get_account,
+    grant_capabilities,
+    list_accounts,
+    list_capabilities,
+    resolve_bearer_token,
+    universe_id_from_path,
 )
 
-
-def _now() -> float:
-    return time.time()
-
-
-def _json_dumps(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-
-def _json_loads(payload: str | None, default: Any) -> Any:
-    if not payload:
-        return default
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        return default
-
-
-def _slugify(text: str, fallback: str = "item") -> str:
-    cleaned = [
-        ch.lower() if ch.isalnum() else "-"
-        for ch in text.strip()
-    ]
-    slug = "".join(cleaned).strip("-")
-    while "--" in slug:
-        slug = slug.replace("--", "-")
-    return slug or fallback
-
-
-def author_server_db_path(base_path: str | Path) -> Path:
-    return Path(base_path) / DB_FILENAME
-
-
-def base_path_from_universe(universe_path: str | Path) -> Path:
-    return Path(universe_path).resolve().parent
-
-
-def universe_id_from_path(universe_path: str | Path) -> str:
-    return Path(universe_path).resolve().name
-
-
-def _connect(base_path: str | Path) -> sqlite3.Connection:
-    db_path = author_server_db_path(base_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    return conn
+# The symbols above are the shared-helpers surface. Re-exported here
+# so existing `workflow.daemon_server` callers keep working without
+# changing imports during the in-flight R7 split. These re-exports
+# delete in the final R7 commit when callers migrate to
+# `workflow.storage.<context>`.
 
 
 def initialize_author_server(base_path: str | Path) -> Path:
@@ -445,10 +405,6 @@ def initialize_author_server(base_path: str | Path) -> Path:
     return author_server_db_path(base_path)
 
 
-def _account_id_for_username(username: str) -> str:
-    return f"user::{_slugify(username, 'user')}"
-
-
 def _author_id_for(display_name: str, soul_text: str) -> tuple[str, str]:
     soul_hash = hashlib.sha256(soul_text.encode("utf-8")).hexdigest()
     author_id = f"author::{_slugify(display_name, 'author')}::{soul_hash[:16]}"
@@ -476,248 +432,6 @@ def ensure_default_author(base_path: str | Path) -> dict[str, Any]:
         created_by="system",
         metadata={"auto_created": True},
     )
-
-
-def ensure_host_account(base_path: str | Path, username: str) -> dict[str, Any]:
-    return create_or_update_account(
-        base_path,
-        username=username,
-        display_name=username,
-        is_host=True,
-        capabilities=ALL_CAPABILITIES,
-        metadata={"host_managed": True},
-    )
-
-
-def create_or_update_account(
-    base_path: str | Path,
-    *,
-    username: str,
-    display_name: str | None = None,
-    is_host: bool = False,
-    capabilities: list[str] | tuple[str, ...] | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    initialize_author_server(base_path)
-    now = _now()
-    user_id = _account_id_for_username(username)
-    with _connect(base_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO user_accounts (
-                user_id, username, display_name, is_host, is_active,
-                created_at, updated_at, metadata_json
-            ) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                display_name=excluded.display_name,
-                is_host=MAX(user_accounts.is_host, excluded.is_host),
-                is_active=1,
-                updated_at=excluded.updated_at,
-                metadata_json=excluded.metadata_json
-            """,
-            (
-                user_id,
-                username,
-                display_name or username,
-                1 if is_host else 0,
-                now,
-                now,
-                _json_dumps(metadata or {}),
-            ),
-        )
-    if capabilities:
-        grant_capabilities(
-            base_path,
-            user_id=user_id,
-            capabilities=list(capabilities),
-            granted_by=user_id,
-        )
-    return get_account(base_path, user_id=user_id) or {
-        "user_id": user_id,
-        "username": username,
-        "display_name": display_name or username,
-        "is_host": is_host,
-        "capabilities": list(capabilities or []),
-    }
-
-
-def get_account(
-    base_path: str | Path,
-    *,
-    user_id: str | None = None,
-    username: str | None = None,
-) -> dict[str, Any] | None:
-    if not user_id and not username:
-        return None
-    initialize_author_server(base_path)
-    query = (
-        "SELECT * FROM user_accounts WHERE user_id = ?"
-        if user_id else
-        "SELECT * FROM user_accounts WHERE username = ? COLLATE NOCASE"
-    )
-    value = user_id or username
-    with _connect(base_path) as conn:
-        row = conn.execute(query, (value,)).fetchone()
-    if row is None:
-        return None
-    account = dict(row)
-    account["is_host"] = bool(account["is_host"])
-    account["is_active"] = bool(account["is_active"])
-    account["metadata"] = _json_loads(account.pop("metadata_json", None), {})
-    account["capabilities"] = list_capabilities(
-        base_path,
-        user_id=account["user_id"],
-    )
-    return account
-
-
-def list_accounts(base_path: str | Path) -> list[dict[str, Any]]:
-    initialize_author_server(base_path)
-    with _connect(base_path) as conn:
-        rows = conn.execute(
-            "SELECT * FROM user_accounts ORDER BY created_at, user_id"
-        ).fetchall()
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        account = dict(row)
-        account["is_host"] = bool(account["is_host"])
-        account["is_active"] = bool(account["is_active"])
-        account["metadata"] = _json_loads(account.pop("metadata_json", None), {})
-        account["capabilities"] = list_capabilities(
-            base_path,
-            user_id=account["user_id"],
-        )
-        result.append(account)
-    return result
-
-
-def list_capabilities(
-    base_path: str | Path,
-    *,
-    user_id: str,
-    universe_id: str | None = None,
-) -> list[str]:
-    initialize_author_server(base_path)
-    scopes = ["*"]
-    if universe_id:
-        scopes.append(universe_id)
-    placeholders = ", ".join("?" for _ in scopes)
-    with _connect(base_path) as conn:
-        rows = conn.execute(
-            f"""
-            SELECT capability
-            FROM capability_grants
-            WHERE user_id = ? AND scope IN ({placeholders})
-            ORDER BY capability
-            """,
-            (user_id, *scopes),
-        ).fetchall()
-    return [str(row["capability"]) for row in rows]
-
-
-def grant_capabilities(
-    base_path: str | Path,
-    *,
-    user_id: str,
-    capabilities: list[str],
-    granted_by: str,
-    universe_id: str | None = None,
-) -> None:
-    initialize_author_server(base_path)
-    scope = universe_id or "*"
-    with _connect(base_path) as conn:
-        for capability in capabilities:
-            conn.execute(
-                """
-                INSERT INTO capability_grants (
-                    user_id, capability, scope, granted_by, created_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, capability, scope) DO NOTHING
-                """,
-                (user_id, capability, scope, granted_by, _now()),
-            )
-
-
-def create_session(
-    base_path: str | Path,
-    *,
-    username: str,
-    display_name: str | None = None,
-    created_by: str = "system",
-    capabilities: list[str] | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    account = create_or_update_account(
-        base_path,
-        username=username,
-        display_name=display_name,
-        capabilities=capabilities or list(DEFAULT_USER_CAPABILITIES),
-        metadata=metadata,
-    )
-    token = SESSION_PREFIX + secrets.token_urlsafe(24)
-    now = _now()
-    with _connect(base_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO user_sessions (
-                session_token, user_id, created_at, last_seen, expires_at, metadata_json
-            ) VALUES (?, ?, ?, ?, NULL, ?)
-            """,
-            (token, account["user_id"], now, now, _json_dumps(metadata or {})),
-        )
-    return {
-        "token": token,
-        "account": account,
-        "created_at": now,
-        "created_by": created_by,
-    }
-
-
-def resolve_bearer_token(
-    base_path: str | Path,
-    token: str,
-    *,
-    master_api_key: str = "",
-    master_username: str = "host",
-) -> dict[str, Any] | None:
-    initialize_author_server(base_path)
-    if master_api_key and token == master_api_key:
-        actor = ensure_host_account(base_path, master_username)
-        actor["token_type"] = "master_api_key"
-        return actor
-
-    with _connect(base_path) as conn:
-        row = conn.execute(
-            """
-            SELECT s.session_token, s.user_id, s.expires_at, a.username, a.display_name, a.is_host
-            FROM user_sessions AS s
-            JOIN user_accounts AS a ON a.user_id = s.user_id
-            WHERE s.session_token = ?
-            """,
-            (token,),
-        ).fetchone()
-        if row is None:
-            return None
-        expires_at = row["expires_at"]
-        if expires_at is not None and float(expires_at) < _now():
-            conn.execute("DELETE FROM user_sessions WHERE session_token = ?", (token,))
-            return None
-        conn.execute(
-            "UPDATE user_sessions SET last_seen = ? WHERE session_token = ?",
-            (_now(), token),
-        )
-    actor = get_account(base_path, user_id=str(row["user_id"]))
-    if actor is None:
-        return None
-    actor["token_type"] = "session"
-    actor["session_token"] = token
-    return actor
-
-
-def actor_has_capability(actor: dict[str, Any], capability: str) -> bool:
-    if actor.get("is_host"):
-        return True
-    return capability in set(actor.get("capabilities", []))
 
 
 def ensure_universe_registered(

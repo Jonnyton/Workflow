@@ -105,17 +105,22 @@ Row D (pending Q-uptime-1 answer):
 Until Row D lands, this image is runnable locally for validation +
 for any provider-agnostic test you want to run.
 
-## Known caveats (Row B still pending)
+## Data-dir contract
 
-Some daemon code paths still resolve data locations via hardcoded
-Windows paths or `~/.workflow`-style user-home defaults instead of
-respecting `WORKFLOW_DATA_DIR`. The image sets the env var and the
-bind mount works for anything that honors it, but a full "48-hour
-cold-host" acceptance test (exec-plan Row E) won't pass until Row B
-routes every write through `WORKFLOW_DATA_DIR`.
+`WORKFLOW_DATA_DIR` is the canonical env var for the on-disk state
+root. Resolution order (see `workflow.storage.data_dir`):
 
-If you hit a write to an unexpected path, file it against Row B —
-the audit surfaces exactly those assumptions.
+1. `$WORKFLOW_DATA_DIR` if set + non-empty.
+2. Legacy `$UNIVERSE_SERVER_BASE` (deprecation warning under
+   `WORKFLOW_DEPRECATIONS=1`).
+3. Platform default: `%APPDATA%\Workflow` on Windows, `~/.workflow`
+   elsewhere.
+
+All three paths resolve to absolute paths — no CWD-relative drift.
+In a container, set `-e WORKFLOW_DATA_DIR=/data` + `-v host:/data`
+and every write lands in the bind mount.
+
+See AGENTS.md §Configuration for the full env-var table.
 
 ## Health check (containerized)
 
