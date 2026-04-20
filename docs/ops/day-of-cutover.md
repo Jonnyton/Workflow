@@ -10,26 +10,29 @@ Total host time: ~25-35 min, mostly waiting for Hetzner to provision + watching 
 
 Six MUST items, two OPTIONAL. Do MUST in order; OPTIONAL any time.
 
-### 1. Hetzner Cloud account + CX22 server — MUST (~10 min)
+### 1. DigitalOcean account + Droplet — MUST (~5-7 min)
 
-- Go to `https://accounts.hetzner.com/signUp`. Sign up with the email you want on invoices. Add payment card.
-- Once in: **Cloud** → select/create a project.
-- **Security → SSH Keys → Add SSH Key.** Paste the key from §4 below.
-- **Servers → Add Server:**
-  - Location: Falkenstein or Nuremberg.
-  - Image: Debian 12.
-  - Type: Shared vCPU → **CX22**.
-  - Networking: public IPv4 + IPv6 both ON.
-  - SSH key: select the one you just added.
-  - Firewall: create + attach — Inbound SSH (22) from your admin IP only, ICMP, everything else closed. Outbound: all.
-  - Name: `workflow-daemon-prod-01`.
-  - **Create & Buy now.**
-- Wait for status → green (~60 s). Copy the public IPv4.
+**Pivot note (2026-04-20):** this step used to say Hetzner. Host hit a broken Hetzner US individual-signup form mid-cutover; switched to DigitalOcean — GitHub-OAuth signup is 1-click for the typical host vs. captcha + email verification + card form on Hetzner. Same Droplet-as-Debian-12-VM target, same `hetzner-bootstrap.sh` runs on the box unchanged, same everything downstream.
+
+- Go to `https://cloud.digitalocean.com/registrations/new`. Sign up with **"Continue with GitHub"** (1-click if you're already logged into GitHub). Skip the email-signup fork entirely.
+- Add payment method when prompted (required before Droplet creation).
+- **Settings → Security → SSH Keys → Add SSH Key.** Paste the key from §4 below.
+- **Droplets → Create Droplet:**
+  - Region: closest to your users (NYC / SFO / AMS / FRA — all fine).
+  - Image: Distributions → **Debian 12**.
+  - Size: Basic → Regular SSD → **$6/mo** (1 vCPU, 1 GB RAM). Bump to $12/mo if you want headroom for paid-market day-one.
+  - Authentication: SSH Key → select the one you just added. Do NOT enable password auth.
+  - Hostname: `workflow-daemon-prod-01`.
+  - Firewall: attach or create — Inbound SSH (22) from your admin IP only, ICMP, everything else closed. Outbound: all.
+  - **Create Droplet.**
+- Wait for status → green (~60 s). Copy the public IPv4 from the Droplet detail page.
 
 **Paste back to me:**
 ```
-HETZNER_BOX_IP=203.0.113.42
+DROPLET_IP=203.0.113.42
 ```
+
+(Named `DROPLET_IP` not `HETZNER_BOX_IP` so the variable tracks reality. Lead uses it the same way downstream — it's just the remote box's public IP.)
 
 ### 2. Supabase project — MUST (~5 min)
 
@@ -131,11 +134,11 @@ HETZNER_API_TOKEN=<token>
 
 Each block names the command I run + expected output + next trigger. I run these via the Bash tool on your laptop; outbound SSH uses the key from §4.
 
-### 2.1 On first HETZNER_BOX_IP arrival (from §1.1)
+### 2.1 On first DROPLET_IP arrival (from §1.1)
 
 ```bash
 ssh -i ~/.ssh/workflow_deploy -o StrictHostKeyChecking=accept-new \
-    root@<HETZNER_BOX_IP> 'echo ready'
+    root@<DROPLET_IP> 'echo ready'
 # Expected: "ready"
 ```
 
@@ -144,7 +147,7 @@ If it errors: retry every 15 s for up to 2 min. If still failing, you (host) che
 Then bootstrap:
 
 ```bash
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> \
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
     'curl -fsSL https://raw.githubusercontent.com/jfarnsworth/workflow/main/deploy/hetzner-bootstrap.sh | sudo bash'
 # Expected trailing line: "[bootstrap] bootstrap complete."
 ```
@@ -156,7 +159,7 @@ Next trigger: your §1.2-§1.5 pastes.
 Once all MUST items arrive I compose `/etc/workflow/env`:
 
 ```bash
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> \
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
     'sudo tee /etc/workflow/env > /dev/null' <<'EOF'
 WORKFLOW_IMAGE=ghcr.io/jfarnsworth/workflow-daemon:latest
 CLOUDFLARE_TUNNEL_TOKEN=<your paste>
@@ -168,7 +171,7 @@ GITHUB_OAUTH_CLIENT_SECRET=<your paste>
 BETTERSTACK_SOURCE_TOKEN=<your paste or empty>
 EOF
 
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> \
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
     'sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env'
 # Expected: no output.
 ```
@@ -178,7 +181,7 @@ ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> \
 After §1.5 paste:
 
 ```bash
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> bash -s <<'SSHEOF'
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> bash -s <<'SSHEOF'
 sudo mkdir -p /etc/workflow/backup
 OBSCURED=$(echo -n '<STORAGE_BOX_PASSWORD>' | rclone obscure -)
 sudo tee /etc/workflow/backup/rclone.conf > /dev/null <<EOF
@@ -201,7 +204,7 @@ SSHEOF
 gh secret set CLOUDFLARE_API_TOKEN --body "<your paste>"
 gh secret set CLOUDFLARE_ZONE_ID --body "<your paste>"
 gh secret set SUPABASE_SERVICE_ROLE_KEY --body "<your paste>"
-gh secret set DEPLOY_SSH_HOST --body "<HETZNER_BOX_IP>"
+gh secret set DEPLOY_SSH_HOST --body "<DROPLET_IP>"
 gh secret set DEPLOY_SSH_USER --body "root"
 gh secret set DEPLOY_SSH_PRIVATE_KEY < ~/.ssh/workflow_deploy
 # If §1.7 pasted:
@@ -216,7 +219,7 @@ gh variable set SECRETS_EXPIRY_METADATA_JSON \
 ### 2.5 Start the daemon + enable timers
 
 ```bash
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> bash -s <<'SSHEOF'
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> bash -s <<'SSHEOF'
 sudo systemctl start workflow-daemon
 sudo systemctl status workflow-daemon --no-pager | head -20
 sudo systemctl enable --now workflow-watchdog.timer
@@ -228,7 +231,7 @@ SSHEOF
 First backup (sanity):
 
 ```bash
-ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> \
+ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
     'sudo systemctl start workflow-backup.service && \
      sudo journalctl -u workflow-backup.service --since "2 minutes ago" --no-pager | tail -20'
 # Expected: rsync completed, snapshot path logged.
@@ -282,7 +285,7 @@ If all green: I report cutover succeeded. You're free to hibernate the home mach
 Paste these blocks as-is into chat when the corresponding §1 step completes. Lead parses them verbatim. Empty values are fine for OPTIONAL items you skip.
 
 ```
-HETZNER_BOX_IP=
+DROPLET_IP=
 ```
 
 ```
@@ -340,7 +343,7 @@ Rules of the road:
 
 3. **Lead SSHs to the Hetzner box** via the Bash tool on your laptop. The private key at `~/.ssh/workflow_deploy` lives on your disk — every SSH command lead runs originates from your laptop, using your key:
    ```bash
-   ssh -i ~/.ssh/workflow_deploy root@<HETZNER_BOX_IP> <command>
+   ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> <command>
    ```
 
 4. **No human is in the middle after §1.1.** Lead runs commands via Bash; output returns in chat; next command auto-fires. Your laptop is the jump host but you don't see the shell — lead does.

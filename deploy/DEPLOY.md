@@ -1,10 +1,13 @@
-# Hetzner Cloud — Workflow daemon deploy runbook
+# Workflow daemon deploy runbook (provider-neutral Debian 12 VM)
 
 Self-host migration Row D per
 `docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md`.
 
-**Target:** Hetzner Cloud **CX22** (4 vCPU / 8 GB RAM / 80 GB SSD — €5.83/mo),
-**Debian 12** image, Falkenstein (FSN1) or Nuremberg (NBG1) region.
+**Current target (2026-04-20):** DigitalOcean **Basic Droplet** ($6/mo, 1 vCPU / 1 GB RAM / 25 GB SSD tier or larger), **Debian 12** image, region NYC / SFO / AMS / FRA.
+
+**Pivot note:** Hetzner Cloud CX22 was the original pick (per exec plan §2) and remains the documented fallback. Mid-cutover 2026-04-20 the Hetzner US individual-signup form blocked account creation; switched to DigitalOcean (GitHub-OAuth-based signup, works cleanly). Same Debian 12 image + same `hetzner-bootstrap.sh` script run unchanged. Script file name kept for git history; the script is generic-Debian-12.
+
+**Works on:** DigitalOcean Basic Droplet / Hetzner Cloud CX22 / Linode 1 GB / Vultr Cloud Compute / any Debian 12 VM with public IPv4. Steps below use DO terminology; Hetzner/Linode/Vultr equivalents noted where meaningful.
 
 **Outcome:** `https://tinyassets.io/mcp` stays green even when the host
 machine is powered off. 48-hour-offline acceptance gate lives at Row F;
@@ -14,8 +17,8 @@ this runbook gets you to the single-host green state.
 
 ## Prerequisites
 
-- Hetzner Cloud account + a project provisioned (free; billing card on file).
-- SSH keypair registered in Hetzner Cloud → Security → SSH Keys.
+- DigitalOcean account (or Hetzner Cloud / Linode / Vultr) with billing.
+- SSH keypair registered in the provider's SSH-keys surface.
 - Domain `tinyassets.io` managed by Cloudflare (already true post-P0).
 - Cloudflare Zero Trust tunnel `workflow-daemon-prod` already created
   (or a new tunnel you'll create at step 3). Token in hand.
@@ -23,25 +26,25 @@ this runbook gets you to the single-host green state.
 - GitHub OAuth app registered with callback
   `https://tinyassets.io/authorize/github/callback`.
 
-## Step 1 — Provision the CX22 (~5 min)
+## Step 1 — Provision the Droplet (~5 min)
 
-Via Hetzner Cloud Console (or `hcloud` CLI):
+Via DigitalOcean Control Panel (or `doctl` CLI):
 
-1. **Servers → Add Server**.
-2. **Location:** Falkenstein or Nuremberg.
-3. **Image:** Debian 12.
-4. **Type:** Shared vCPU → CX22 (Standard).
-5. **Networking:** public IPv4 + IPv6 both on. Optional: private network
-   if you want to add more boxes later.
-6. **SSH keys:** select your registered key.
-7. **Firewalls:** create + attach `workflow-daemon` firewall:
+1. **Droplets → Create Droplet**.
+2. **Region:** NYC / SFO / AMS / FRA — pick the one lowest-latency to your Cloudflare edge (typically your user base region).
+3. **Image:** Marketplace or Distributions → **Debian 12**.
+4. **Size:** Basic → Regular SSD → **$6/mo tier** (1 vCPU, 1 GB RAM, 25 GB SSD) minimum. Upgrade to $12/mo (2 GB RAM) if you expect paid-market concurrency on day one.
+5. **Authentication:** SSH Key → select your registered key. Do NOT enable password auth.
+6. **Firewall:** attach or create:
    - Inbound: SSH (22) from your admin IP only, ICMP open.
    - **Do NOT** open 8001 — the daemon binds loopback-only.
    - Outbound: all.
-8. **Name:** `workflow-daemon-prod-01`.
-9. **Cloud-config** (optional): none needed; bootstrap handles provisioning.
+7. **Hostname:** `workflow-daemon-prod-01`.
+8. **Cloud-config** (advanced options, optional): none needed; bootstrap handles provisioning.
 
 Wait for status → green. Copy the public IPv4.
+
+**Hetzner equivalent** (if using fallback provider): Hetzner Cloud Console → Servers → Add Server → Location Falkenstein/Nuremberg → Image Debian 12 → Shared vCPU CX22 → same SSH key + firewall posture. Name `workflow-daemon-prod-01`.
 
 ## Step 2 — Bootstrap the box (~3 min)
 

@@ -53,19 +53,33 @@ The goal is tight: **one remote Linux box runs the MCP daemon + the cloudflared 
 
 ---
 
-## 2. Provider pick: **Hetzner Cloud** (CX22, Debian 12, Docker Compose)
+## 2. Provider pick: **DigitalOcean Basic Droplet** (Debian 12, Docker Compose) — pivoted from Hetzner 2026-04-20
 
-**Single pick, no option-buffet.** Host directive: *"pick the cleanest design that always works for us having a website."* Criterion = always-works (operational simplicity + proven uptime + low-oops-factor, scaled through the full-platform target without a second migration). Not cheapest, not trendiest, not most-familiar.
+**Single pick, no option-buffet.** Host directive: *"pick the cleanest design that always works for us having a website."* Criterion = always-works (operational simplicity + proven uptime + low-oops-factor, scaled through the full-platform target without a second migration).
 
-**Fallback-if-primary-goes-bad:** **Fly.io**. Engaged only on observed Hetzner regression (multi-day regional outage, pricing shock per plan-b §5.2 trigger shape). Otherwise stays.
+**Pivot 2026-04-20:** Hetzner was the original pick (reasoning preserved below). Mid-cutover, host hit a broken Hetzner US individual-signup flow — the signup form wouldn't accept the verification path cleanly, blocking account provision. Rather than burn the cutover window, pivoted to **DigitalOcean Basic Droplet**: GitHub-OAuth-based signup (1-click for host who already had GitHub auth'd), same Debian 12 image target, same Docker Compose stack, same `hetzner-bootstrap.sh` script runs unchanged (file name kept for git history; script is provider-neutral). Monthly cost ~$6 Basic Droplet is comparable to CX22 €5.83 at this scale. Cutover completed on DO.
 
-### Why Hetzner, five bullets
+**Fallback-if-primary-goes-bad:** **Hetzner Cloud** (CX22, Debian 12). The always-works reasoning below ranks Hetzner as the superior long-term choice; pivot was friction-driven, not preference-driven. If Hetzner's US individual-signup form becomes fixable (retry in ~6 months) or the host re-attempts via EU/business-signup path, migrating back is: provision CX22 → `hetzner-bootstrap.sh` runs unchanged → `rsync` data from DO Droplet → DNS flip via `emergency-dns.yml`. Estimated ~2 hours.
 
-- **Proven uptime over the relevant timescale.** Hetzner Cloud has operated since 2018 with a documented ≥99.9% SLA. Fly.io has had multiple multi-hour all-region control-plane outages in 2024-2025 affecting `flyctl`, machine scheduling, and running apps simultaneously. For the forever rule ("user never sees an outage"), a boring Linux VM with a long clean uptime record beats an elegant orchestrator that goes hard-down a few times per year. Load-bearing factor.
-- **Zero managed-runtime fate-sharing.** The daemon runs on a rented Linux box. If Hetzner's *control plane* has a bad day, the *running VM keeps serving* with its tunnel attached — only NEW provisioning breaks. Fly/Render/Railway all have documented modes where control-plane outage takes running apps down. A chatbot call reaching a Hetzner VM during a control-plane event is strictly more robust than reaching a managed runtime that just lost its scheduler.
-- **Same box scales from MVP to full-platform target.** CX22 (€4/mo, 2 vCPU, 4 GB) handles near-term MVP; resize in-place to CX42 (€20/mo, 8 vCPU, 16 GB) covers thousands-concurrent + paid-market (`project_full_platform_target.md`). One-command upgrade, no migration event. No "we picked the MVP tool, now rewrite for scale" moment ever forced.
-- **Zero lock-in; clean succession handoff.** Deployment is `Dockerfile` + `docker-compose.yml` + a shell script. Any successor admin (`project_host_independent_succession.md`) can lift the whole stack to a different Linux provider with `rsync` + a DNS flip. Fly/Render/AWS each embed proprietary tooling (fly.toml, IAM role graphs, Render service IDs) that outlive their usefulness as handoff friction. Hetzner + Docker Compose is the most portable shape that exists today.
-- **Clean alignment with the rest of the architecture.** Supabase + Hetzner + Cloudflare-front is exactly the target shape in plan-b playbook §2, and matches `project_license_fully_open_commons.md` / OSS distribution posture (no provider terms constrain what we redistribute). Near-term migration and the documented plan-b migration path become the *same path* — plan-b becomes "we're already there" rather than "we'll execute if triggers fire." Eliminates a second architectural call later.
+**Tertiary fallback:** Fly.io. Engaged only if both DO AND Hetzner degrade.
+
+### Why DigitalOcean works fine near-term
+
+DO Basic Droplet is not "as good as Hetzner at always-works" — it's "good enough that the cutover-window ship cost of switching was worth it." Specifically:
+- **Track record is ≥99.99% SLA documented.** DO has had fewer multi-region control-plane outages in 2024-2026 than Fly.io; comparable to Hetzner at this tier.
+- **Zero managed-runtime fate-sharing** — same as Hetzner: running Droplet keeps serving if DO control plane hiccups. Docker Compose + systemd on a Linux VM.
+- **Same portability story** — `Dockerfile` + `docker-compose.yml` + `hetzner-bootstrap.sh` lifts to any other Debian 12 Linux VM (Hetzner, Linode, Vultr, GoDaddy VPS, all work). Handoff shape unchanged.
+- **Supabase + DO + Cloudflare-front** maps cleanly to the same architecture target as Supabase + Hetzner + Cloudflare-front.
+
+### Why Hetzner remains the documented long-term target (original reasoning, preserved)
+
+Reasoning below is the 5-bullet always-works case for Hetzner. It still applies — that's why Hetzner is the named fallback, not a dismissed option. The only reason we're not on Hetzner today is the signup-form bug, which is resolvable.
+
+- **Proven uptime over the relevant timescale.** Hetzner Cloud has operated since 2018 with a documented ≥99.9% SLA. Fly.io has had multiple multi-hour all-region control-plane outages in 2024-2025 affecting `flyctl`, machine scheduling, and running apps simultaneously. For the forever rule ("user never sees an outage"), a boring Linux VM with a long clean uptime record beats an elegant orchestrator that goes hard-down a few times per year.
+- **Zero managed-runtime fate-sharing.** The daemon runs on a rented Linux box. If Hetzner's *control plane* has a bad day, the *running VM keeps serving* with its tunnel attached — only NEW provisioning breaks. Fly/Render/Railway all have documented modes where control-plane outage takes running apps down.
+- **Same box scales from MVP to full-platform target.** CX22 (€4/mo, 2 vCPU, 4 GB) handles near-term MVP; resize in-place to CX42 (€20/mo, 8 vCPU, 16 GB) covers thousands-concurrent + paid-market (`project_full_platform_target.md`). One-command upgrade, no migration event.
+- **Zero lock-in; clean succession handoff.** Deployment is `Dockerfile` + `docker-compose.yml` + a shell script. Any successor admin (`project_host_independent_succession.md`) can lift the whole stack to a different Linux provider with `rsync` + a DNS flip.
+- **Clean alignment with the rest of the architecture.** Supabase + Hetzner + Cloudflare-front is exactly the target shape in plan-b playbook §2. DigitalOcean slots into the same architecture equally cleanly — the migration path Hetzner → DO → Hetzner → anywhere-else is all the same two-command lift.
 
 ### Why not the alternatives — one sentence each
 

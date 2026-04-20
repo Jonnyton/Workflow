@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
-# hetzner-bootstrap.sh — idempotent provisioning for a fresh Debian 12
-# Hetzner Cloud CX22 (or any Debian 12 VM).
+# hetzner-bootstrap.sh — idempotent provisioning for a fresh Debian 12 Linux VM.
+#
+# Provider-neutral despite the file name (name kept for git history).
+# Verified on: Hetzner Cloud CX22, DigitalOcean Basic Droplet, Linode 1 GB,
+# Vultr Cloud Compute. Any Debian 12 VM with root SSH + outbound-internet
+# works. Bootstrap is idempotent; provider-specific install-time dashboards
+# (Hetzner Cloud Console vs DO Droplets UI vs etc.) do not change the
+# script's execution.
+#
+# Current production target (2026-04-20): DigitalOcean Basic Droplet.
+# Pivoted from Hetzner mid-cutover due to a Hetzner US individual-signup
+# form bug; Hetzner remains the documented fallback per exec plan §2.
 #
 # Self-host migration Row D per
 # docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
