@@ -191,6 +191,51 @@ def data_dir() -> Path:
     return (Path.home() / ".workflow").resolve()
 
 
+def wiki_path() -> Path:
+    """Return the on-disk root for the knowledge wiki.
+
+    Canonical env var: ``WORKFLOW_WIKI_PATH``.
+
+    Resolution order (first match wins):
+      1. ``$WORKFLOW_WIKI_PATH`` if set and non-empty.
+      2. Legacy ``$WIKI_PATH`` if set and non-empty. Emits a
+         deprecation warning when ``WORKFLOW_DEPRECATIONS=1``.
+      3. Platform default: ``data_dir() / "wiki"`` — inherits the
+         canonical data root's platform handling (Windows
+         ``%APPDATA%\\Workflow\\wiki``; Linux/macOS ``~/.workflow/wiki``).
+
+    Pre-2026-04-20 the wiki fallback was hardcoded
+    ``r"C:\\Users\\Jonathan\\Projects\\Wiki"`` in
+    ``workflow/universe_server.py`` — broke every non-host deploy +
+    leaked the developer's username into docs. Using this resolver
+    closes that class the same way ``data_dir`` did for universe state.
+
+    Returns an absolute, resolved Path. Does not create the directory;
+    callers mkdir on first write.
+    """
+    import os
+    import warnings
+
+    explicit = os.environ.get("WORKFLOW_WIKI_PATH", "").strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    legacy = os.environ.get("WIKI_PATH", "").strip()
+    if legacy:
+        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
+            warnings.warn(
+                "WIKI_PATH is deprecated; migrate to WORKFLOW_WIKI_PATH. "
+                "Both currently resolve to the same path; WIKI_PATH will "
+                "be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return Path(legacy).expanduser().resolve()
+
+    # Platform default — inherit data_dir's platform handling.
+    return (data_dir() / "wiki").resolve()
+
+
 def author_server_db_path(base_path: str | Path) -> Path:
     return Path(base_path) / DB_FILENAME
 
@@ -248,6 +293,7 @@ __all__ = [
     "base_path_from_universe",
     "data_dir",
     "universe_id_from_path",
+    "wiki_path",
     "_connect",
     # Accounts bounded context
     "_account_id_for_username",

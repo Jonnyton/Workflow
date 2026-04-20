@@ -8994,10 +8994,19 @@ _STOP_WORDS = frozenset(
 
 
 def _wiki_root() -> Path:
-    """Resolve the wiki root directory."""
-    return Path(
-        os.environ.get("WIKI_PATH", r"C:\Users\Jonathan\Projects\Wiki")
-    ).resolve()
+    """Resolve the wiki root directory.
+
+    Delegates to ``workflow.storage.wiki_path`` — canonical env var
+    ``WORKFLOW_WIKI_PATH`` (legacy ``WIKI_PATH`` still honored with
+    deprecation warning). Platform default is
+    ``data_dir() / "wiki"``.
+
+    Pre-2026-04-20 this hardcoded ``r"C:\\Users\\Jonathan\\Projects\\Wiki"``
+    as the fallback, which broke every non-host deploy. See
+    ``workflow.storage.wiki_path`` for the precedence + rationale.
+    """
+    from workflow.storage import wiki_path
+    return wiki_path()
 
 
 def _wiki_pages_dir() -> Path:

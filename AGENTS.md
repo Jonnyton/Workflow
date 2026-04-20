@@ -256,7 +256,8 @@ the process was launched from.
 | `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `UNIVERSE_SERVER_DEFAULT_UNIVERSE` | Which universe ID is active when none explicit. | First subdir of `$WORKFLOW_DATA_DIR`. |
 | `WORKFLOW_REPO_ROOT` | Path to the local git checkout for `workflow.producers.goal_pool` + git-backed catalog writes. When unset, resolved via `Path(__file__).resolve().parent.parent`. | Derived from module path. |
-| `WIKI_PATH` | Path to the cross-project knowledge wiki the `wiki` tool reads/writes. | `C:\Users\Jonathan\Projects\Wiki` (Windows dev fallback — configure explicitly on container deploys). |
+| `WORKFLOW_WIKI_PATH` | Canonical root for the cross-project knowledge wiki the `wiki` tool reads/writes. Resolved via `workflow.storage.wiki_path()`; inherits `data_dir()` platform handling when unset. | `$WORKFLOW_DATA_DIR/wiki` (platform default). |
+| `WIKI_PATH` | **Deprecated.** Legacy alias for `WORKFLOW_WIKI_PATH`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `WORKFLOW_UPLOAD_WHITELIST` | Colon/semicolon-separated absolute-path prefixes allowed for `add_canon_from_path`. Unset = accept any absolute path. | Unset (permissive). |
 
 ### Auth + identity

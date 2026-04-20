@@ -236,43 +236,47 @@ STAGED_WF_PY=$(
 
 if [ -n "${STAGED_WF_PY}" ]; then
   BYPASS_HITS=()
+  # Pattern matches both UNIVERSE_SERVER_BASE (data_dir bypass, Row B)
+  # AND WIKI_PATH / WORKFLOW_WIKI_PATH (wiki_path bypass, Row B-pattern
+  # cleanup 2026-04-20). Anything that should route through the
+  # resolvers in workflow/storage/__init__.py.
+  BYPASS_RE='os\.environ\.get\s*\(\s*["'"'"'](UNIVERSE_SERVER_BASE|WIKI_PATH|WORKFLOW_WIKI_PATH)'
   while IFS= read -r f; do
     [ -z "${f}" ] && continue
     [ -f "${f}" ] || continue
-    # Look for: os.environ.get("UNIVERSE_SERVER_BASE" ...)  — allow any
-    # reads inside comments if someone explains the legacy name.
     while IFS=: read -r ln rest; do
       # Skip comment-only matches.
       case "$(echo "${rest}" | sed 's/^[[:space:]]*//')" in
         '#'*) continue;;
       esac
       BYPASS_HITS+=("${f}:${ln}:${rest}")
-    done < <(grep -nE 'os\.environ\.get\s*\(\s*["'"'"']UNIVERSE_SERVER_BASE' "${f}" 2>/dev/null || true)
+    done < <(grep -nE "${BYPASS_RE}" "${f}" 2>/dev/null || true)
   done <<< "${STAGED_WF_PY}"
 
   if [ "${#BYPASS_HITS[@]}" -gt 0 ]; then
-    echo "${RED}pre-commit: data_dir() bypass detected.${RESET}" >&2
+    echo "${RED}pre-commit: path-resolver bypass detected.${RESET}" >&2
     echo "" >&2
-    echo "The following staged lines read UNIVERSE_SERVER_BASE directly" >&2
-    echo "instead of routing through workflow.storage.data_dir():" >&2
+    echo "The following staged lines read UNIVERSE_SERVER_BASE / WIKI_PATH /" >&2
+    echo "WORKFLOW_WIKI_PATH directly instead of routing through the" >&2
+    echo "canonical resolvers in workflow.storage:" >&2
     for h in "${BYPASS_HITS[@]}"; do
       echo "  ${h}" >&2
     done
     echo "" >&2
-    echo "Fix:" >&2
-    echo "  from workflow.storage import data_dir" >&2
-    echo "  db_path = data_dir() / \".<file>.db\"" >&2
+    echo "Fix (choose the right resolver):" >&2
+    echo "  from workflow.storage import data_dir      # state / DBs / per-universe dirs" >&2
+    echo "  from workflow.storage import wiki_path     # knowledge wiki root" >&2
     echo "" >&2
-    echo "Why: Row B established data_dir() as the canonical resolver." >&2
-    echo "Direct env reads bypass it + default to CWD-relative \"output\"" >&2
-    echo "which breaks containerized deploys (writes to /app/output" >&2
-    echo "instead of \$WORKFLOW_DATA_DIR — data lost on restart)." >&2
+    echo "Why: Row B (data_dir) + Row B-pattern wiki cleanup established these" >&2
+    echo "as the canonical resolvers. Direct env reads bypass them + default" >&2
+    echo "to broken fallbacks (CWD-relative \"output\" for data_dir, hardcoded" >&2
+    echo "Windows dev path for WIKI_PATH). Both break containerized deploys." >&2
     echo "" >&2
-    echo "Exempt: workflow/storage/__init__.py (defines the resolver)." >&2
+    echo "Exempt: workflow/storage/__init__.py (defines the resolvers)." >&2
     echo "Override with --no-verify if intentional." >&2
     exit 1
   fi
-  echo "${GREEN}pre-commit: data_dir bypass lint clean${RESET}"
+  echo "${GREEN}pre-commit: path-resolver bypass lint clean${RESET}"
 fi
 
 exit 0
