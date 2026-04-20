@@ -30,10 +30,27 @@ output/
 .agents/uptime_alarms.log
 .agents/.uptime_alarm_state.json
 
-# Secrets + local config
+# Secrets + local config (belt-and-suspenders — should never be in
+# repo root, but .dockerignore is the last line of defense before
+# build context ships to the Docker daemon + potentially to a
+# registry).
 .env
 .env.*
 !.env.example
+*.key
+*.pem
+*.crt
+*.cer
+*.pfx
+*.p12
+*.token
+*.secret
+*secrets*
+.ssh/
+credentials*
+id_rsa*
+id_ed25519*
+id_ecdsa*
 
 # Source control + tooling (image doesn't need to be a git checkout)
 .git/

@@ -43,6 +43,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        # Pin explicitly so the "MCP initialize smoke" step runs on a
+        # known interpreter version instead of whatever the runner
+        # happens to ship. Matches the Dockerfile's python:3.11-slim
+        # base so builder + canary agree on syntax + stdlib behavior.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

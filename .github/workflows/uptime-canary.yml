@@ -1,0 +1,371 @@
+name: Uptime canary
+
+# Row H of the self-host migration (cloud-canary + out-of-band alarm sink).
+# Spec: docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# What this closes:
+#   - Pre-Row-H, Layer-1 uptime canary ran on the HOST's Windows Task
+#     Scheduler. Host box offline = no canary = no alarm = no signal
+#     that the platform is down. Host-fate-sharing defeats the canary.
+#   - This workflow runs on GitHub's infrastructure every 5 min (GHA
+#     cron minimum) + manual dispatch. Independent vantage point from
+#     the host. Probes BOTH canonical URLs every tick.
+#   - On 2 consecutive reds, automation opens / updates a GitHub issue
+#     labeled `p0-outage`. Out-of-band alarm sink — zero new deps,
+#     reuses issue infrastructure, host gets emailed by GitHub.
+#   - On GREEN after reds, comments "RECOVERED" + closes the issue.
+#
+# Consecutive-state is derived from the issue's own comment stream —
+# last comment's color determines the current streak. Stateless at
+# workflow level; state lives in the issue.
+
+on:
+  schedule:
+    # Every 5 min — GHA cron granularity. Drift tolerance: ±1 min per
+    # GHA's best-effort schedule policy.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# Permissions: canary reads repo; alarm sink writes issues.
+permissions:
+  contents: read
+  issues: write
+
+# Avoid piled-up runs if probe or alarm step is slow.
+concurrency:
+  group: uptime-canary
+  cancel-in-progress: false
+
+env:
+  # Single place to retune URLs. Must match both production canonical
+  # (tinyassets.io/mcp via Cloudflare Worker) AND direct tunnel origin
+  # (mcp.tinyassets.io/mcp for parity check).
+  PROBE_CANONICAL: https://tinyassets.io/mcp
+  PROBE_DIRECT: https://mcp.tinyassets.io/mcp
+  ALARM_ISSUE_LABEL: p0-outage
+  # Number of consecutive reds before alarming. 2 = "≥5 min outage
+  # (at 5-min cadence)" to filter transient Cloudflare blips.
+  ALARM_THRESHOLD: 2
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      canonical_status: ${{ steps.canonical.outputs.status }}
+      canonical_msg: ${{ steps.canonical.outputs.msg }}
+      direct_status: ${{ steps.direct.outputs.status }}
+      direct_msg: ${{ steps.direct.outputs.msg }}
+      overall: ${{ steps.aggregate.outputs.overall }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Probe canonical URL
+        id: canonical
+        continue-on-error: true
+        run: |
+          set +e
+          output=$(python scripts/mcp_public_canary.py --url "${PROBE_CANONICAL}" --verbose 2>&1)
+          code=$?
+          set -e
+          # Escape newlines for $GITHUB_OUTPUT multiline capture.
+          {
+            echo "status=$code"
+            echo "msg<<CANARY_EOF"
+            echo "$output"
+            echo "CANARY_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== canonical (${PROBE_CANONICAL}) exit=$code ==="
+          echo "$output"
+
+      - name: Probe direct-tunnel URL
+        id: direct
+        continue-on-error: true
+        run: |
+          set +e
+          output=$(python scripts/mcp_public_canary.py --url "${PROBE_DIRECT}" --verbose 2>&1)
+          code=$?
+          set -e
+          {
+            echo "status=$code"
+            echo "msg<<CANARY_EOF"
+            echo "$output"
+            echo "CANARY_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== direct (${PROBE_DIRECT}) exit=$code ==="
+          echo "$output"
+
+      - name: Aggregate
+        id: aggregate
+        run: |
+          can="${{ steps.canonical.outputs.status }}"
+          dir="${{ steps.direct.outputs.status }}"
+          if [ "$can" = "0" ] && [ "$dir" = "0" ]; then
+            overall=green
+          else
+            overall=red
+          fi
+          echo "overall=${overall}" >> "$GITHUB_OUTPUT"
+          echo "canonical=${can} direct=${dir} → overall=${overall}"
+          # Mark this run's conclusion as failure when overall=red so
+          # the next run's previousRunWasRed() check can detect the
+          # consecutive-red streak. Without this, continue-on-error
+          # above always makes the job conclude success regardless of
+          # color, defeating the threshold gate.
+          if [ "$overall" = "red" ]; then
+            exit 1
+          fi
+
+  alarm-sink:
+    # Runs on every tick so it can close issues after recovery too.
+    # State machine: we look at the PREVIOUS completed run of this
+    # workflow to decide whether the current red is the 1st or Nth
+    # consecutive red. The Nth (N >= ALARM_THRESHOLD) opens / updates
+    # the P0 issue. The 1st just logs to the run summary.
+    #
+    # `if: always()` because the probe job intentionally exits non-zero
+    # on red (so GHA's conclusion reflects canary color) — without
+    # always(), alarm-sink would skip on every red run. Defeats the
+    # alarm.
+    needs: probe
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Gate on consecutive-red threshold + manage issue
+        uses: actions/github-script@v7
+        env:
+          OVERALL: ${{ needs.probe.outputs.overall }}
+          CANONICAL_STATUS: ${{ needs.probe.outputs.canonical_status }}
+          CANONICAL_MSG: ${{ needs.probe.outputs.canonical_msg }}
+          DIRECT_STATUS: ${{ needs.probe.outputs.direct_status }}
+          DIRECT_MSG: ${{ needs.probe.outputs.direct_msg }}
+          LABEL: ${{ env.ALARM_ISSUE_LABEL }}
+          THRESHOLD: ${{ env.ALARM_THRESHOLD }}
+          PROBE_CANONICAL: ${{ env.PROBE_CANONICAL }}
+          PROBE_DIRECT: ${{ env.PROBE_DIRECT }}
+        with:
+          script: |
+            const overall = process.env.OVERALL;
+            const label = process.env.LABEL;
+            const threshold = parseInt(process.env.THRESHOLD, 10);
+
+            const canonicalStatus = process.env.CANONICAL_STATUS;
+            const canonicalMsg = process.env.CANONICAL_MSG || '';
+            const directStatus = process.env.DIRECT_STATUS;
+            const directMsg = process.env.DIRECT_MSG || '';
+
+            const now = new Date().toISOString();
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+            // --- state: count consecutive reds by looking back at ----
+            // previous runs of THIS workflow. Each probe job's conclusion
+            // is either success (green) or failure-tolerated (red via
+            // continue-on-error). We use job-level step outputs to infer
+            // color — specifically, we look for a prior run that emitted
+            // a "RED" step summary.
+            //
+            // Simpler + reliable: read the latest N completed runs of
+            // THIS workflow + count how many trailed red based on the
+            // `probe` job's conclusion. The probe job concludes
+            // `success` on both green (our steps all exit 0), but since
+            // we use continue-on-error the probe job's conclusion
+            // doesn't actually reflect the canary state. Use the
+            // aggregate step's outputs instead by parsing run logs.
+            //
+            // Since parsing run logs is expensive + fragile, we use
+            // this protocol: the open P0 issue IS the state. If no
+            // open issue and we hit red, we're in the "first red"
+            // window — log + skip alarm. If the previous completed
+            // run also hit red AND no issue was opened, we cross the
+            // threshold (2 reds) → open the issue. Track the
+            // "previous run was red" signal via a lightweight
+            // repo-variable: ``last_canary_color`` + ``last_canary_at``.
+            //
+            // Repo variables (actions variables API) are perfect for
+            // this — persisted, cheap, race-free for single-concurrency
+            // workflow. Requires `variables: write` permission; we
+            // already have issues:write + contents:read — add via the
+            // actions API with a token that has admin scope. The
+            // `GITHUB_TOKEN` does NOT have repo-variable write by
+            // default. Fall back to a safer protocol: the OPEN issue
+            // IS the state. Presence of open `p0-outage` issue = we've
+            // already alarmed. Absence + red = first red, don't alarm
+            // yet; record in run summary only. The NEXT run's red with
+            // still no issue opened would need cross-run lookup. To
+            // gate on 2 consecutive reds without an external store,
+            // we look at the previous workflow-run's status via the
+            // GHA API.
+
+            // Ensure label exists.
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'd73a4a',
+                  description: 'Auto-opened by uptime canary on public MCP outage.',
+                });
+                console.log(`created label ${label}`);
+              } else {
+                throw e;
+              }
+            }
+
+            // Find open p0-outage issue (expect 0 or 1).
+            const openIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 5,
+            });
+            const openIssue = openIssues.data[0] || null;
+
+            // Lookup previous runs of THIS workflow to count
+            // consecutive-red streak when no issue is open yet.
+            // Conclusion of the probe job on prior runs: we used
+            // continue-on-error, so the workflow itself always
+            // succeeds. Instead, grep the run's step-summary output
+            // via the "overall" annotation — NOT available from the
+            // API cheaply. Alternative: re-run our own probe logic
+            // by checking the prior run's step-summary markdown file,
+            // OR encode the color into the workflow-run name.
+            //
+            // Cleanest: on RED without an open issue, also check the
+            // previous run's STEP SUMMARY for the string "overall → red".
+            // GHA exposes the summary via downloadWorkflowRunLogs, which
+            // is tarball + heavy. Lighter: use the workflow's latest-run
+            // CONCLUSION with a conditional `exit 1` on red + an explicit
+            // "failure" conclusion. Then prior-run color = conclusion.
+            //
+            // For this commit, we GATE ALARM on: (a) current run is RED
+            // AND (b) either the previous completed run was also RED
+            // (conclusion=failure) OR an issue is already open. This
+            // delivers the 2-consecutive-red threshold without extra
+            // storage. To make the probe-job FAIL the workflow on red,
+            // add a final "fail if red" step on the probe job.
+            // See the ``fail-on-red`` step appended to the probe job.
+
+            async function previousRunWasRed() {
+              const prior = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: context.workflow,
+                status: 'completed',
+                per_page: 5,
+              });
+              // Filter out this run.
+              const priorRuns = (prior.data.workflow_runs || []).filter(
+                r => String(r.id) !== process.env.GITHUB_RUN_ID,
+              );
+              if (!priorRuns.length) return false;
+              // Most recent prior run — if conclusion is 'failure',
+              // that's a red.
+              return priorRuns[0].conclusion === 'failure';
+            }
+
+            function formatBody(kind) {
+              return [
+                `**${kind}** @ ${now}`,
+                ``,
+                `- canonical (\`${process.env.PROBE_CANONICAL}\`) → exit ${canonicalStatus}`,
+                `- direct-tunnel (\`${process.env.PROBE_DIRECT}\`) → exit ${directStatus}`,
+                ``,
+                `<details><summary>canonical probe output</summary>`,
+                ``,
+                '```',
+                canonicalMsg.trim() || '(empty)',
+                '```',
+                ``,
+                `</details>`,
+                ``,
+                `<details><summary>direct-tunnel probe output</summary>`,
+                ``,
+                '```',
+                directMsg.trim() || '(empty)',
+                '```',
+                ``,
+                `Run: ${runUrl}`,
+              ].join('\n');
+            }
+
+            if (overall === 'red') {
+              if (openIssue) {
+                // Already-open outage. Append a RED comment to extend
+                // the window record.
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: openIssue.number,
+                  body: formatBody('RED'),
+                });
+                console.log(`appended RED to #${openIssue.number}`);
+                return;
+              }
+
+              // No open issue. Check if previous run was also red
+              // (= this is the 2nd consecutive red = threshold reached).
+              const priorRed = await previousRunWasRed();
+              if (priorRed) {
+                const result = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `P0 Public MCP outage — ${now}`,
+                  labels: [label],
+                  body: [
+                    `Auto-opened by the uptime canary after ${threshold} consecutive reds.`,
+                    `This issue tracks the outage window; comments append per tick.`,
+                    ``,
+                    formatBody('RED (threshold crossed)'),
+                  ].join('\n'),
+                });
+                console.log(`opened issue #${result.data.number} (threshold crossed)`);
+              } else {
+                // First red. Record in the step summary but don't
+                // alarm yet. Transient single-tick blips don't page.
+                console.log('first-red — not yet alarming. Next red will open issue.');
+              }
+              return;
+            }
+
+            // GREEN path.
+            if (openIssue) {
+              // Was in outage — close with RECOVERED comment.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                body: formatBody('GREEN — RECOVERED'),
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              console.log(`closed #${openIssue.number} as RECOVERED`);
+            } else {
+              console.log('steady green — no action');
+            }
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Uptime canary result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **canonical** (${PROBE_CANONICAL}) → exit \`${{ needs.probe.outputs.canonical_status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **direct-tunnel** (${PROBE_DIRECT}) → exit \`${{ needs.probe.outputs.direct_status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **overall** → **${{ needs.probe.outputs.overall }}**" >> "$GITHUB_STEP_SUMMARY"
