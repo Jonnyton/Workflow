@@ -88,6 +88,42 @@ GITHUB_OAUTH_CLIENT_SECRET=
 
 
 # ---------------------------------------------------------------------
+# Hetzner Storage Box — Row J state backup
+# ---------------------------------------------------------------------
+
+# Credentials for the nightly backup (deploy/backup.sh +
+# workflow-backup.timer). Leave blank to disable backups — the timer
+# will still fire but backup.sh exits 1 with a clear error.
+#
+# Provision: Hetzner Cloud console → Storage Boxes → Add. BX11
+# (100 GB, ~€1/mo) is enough for 7 daily + 4 weekly archives at
+# current volume sizes.
+#
+# Subuser recommendation: create a dedicated subuser for this job
+# (Hetzner console → Storage Box → Subusers) with access scoped to
+# `/workflow-backups/` only. Compromised backup creds can't then read
+# or overwrite other Storage-Box content.
+STORAGEBOX_HOST=
+STORAGEBOX_USER=
+STORAGEBOX_PASS=
+
+# Retention — override defaults if the Storage Box fills up or a
+# different recovery window is wanted. Defaults: 7 daily + 4 weekly.
+# BACKUP_RETAIN_DAILY=7
+# BACKUP_RETAIN_WEEKLY=4
+
+
+# ---------------------------------------------------------------------
+# Log aggregation — Row K (optional)
+# ---------------------------------------------------------------------
+
+# Better Stack source token for container log shipping. Leave blank to
+# keep logs journald-only (default). When set, the log-sidecar service
+# ships daemon + cloudflared stdout to the Better Stack ingest.
+# BETTERSTACK_SOURCE_TOKEN=
+
+
+# ---------------------------------------------------------------------
 # Optional — deprecation + debug flags
 # ---------------------------------------------------------------------
 
