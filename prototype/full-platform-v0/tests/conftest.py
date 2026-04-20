@@ -14,9 +14,14 @@ from __future__ import annotations
 import os
 import uuid
 
-import psycopg
 import pytest
-from pgvector.psycopg import register_vector
+
+try:
+    import psycopg
+    from pgvector.psycopg import register_vector
+except ImportError:  # live-Postgres deps optional — tests skip if absent
+    psycopg = None
+    register_vector = None
 
 DSN = os.environ.get(
     "WORKFLOW_V0_DSN",
@@ -27,7 +32,12 @@ DSN = os.environ.get(
 @pytest.fixture
 def db():
     """Open a connection, truncate to clean state, register pgvector."""
-    conn = psycopg.connect(DSN)
+    if psycopg is None:
+        pytest.skip("psycopg not installed")
+    try:
+        conn = psycopg.connect(DSN, connect_timeout=2)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres unreachable at {DSN}: {exc}")
     register_vector(conn)
     conn.autocommit = False
     with conn.cursor() as cur:
