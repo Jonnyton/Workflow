@@ -1,0 +1,225 @@
+"""Tests for scripts/watchdog.py — consecutive-red threshold, rate limit, recovery.
+
+Uses injection seams (probe_fn, restart_fn) so tests don't shell out
+to the real canary or systemctl.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+_SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+from watchdog import watchdog_tick  # noqa: E402
+
+
+@pytest.fixture
+def state_path(tmp_path):
+    return tmp_path / "state.json"
+
+
+def _green_probe():
+    return (True, "green")
+
+
+def _red_probe(msg="HTTP 502"):
+    def fn():
+        return (False, msg)
+    return fn
+
+
+class _RestartRecorder:
+    def __init__(self, success=True, msg="restarted"):
+        self.calls: list[str] = []
+        self.success = success
+        self.msg = msg
+
+    def __call__(self, unit):
+        self.calls.append(unit)
+        return (self.success, self.msg)
+
+
+# ---- basic state transitions ---------------------------------------------
+
+
+def test_green_keeps_state_zero(state_path):
+    state = watchdog_tick(
+        state_file=state_path,
+        probe_fn=_green_probe,
+        restart_fn=_RestartRecorder(),
+    )
+    assert state["consecutive_reds"] == 0
+
+
+def test_first_red_increments(state_path):
+    recorder = _RestartRecorder()
+    state = watchdog_tick(
+        state_file=state_path,
+        probe_fn=_red_probe(),
+        restart_fn=recorder,
+    )
+    assert state["consecutive_reds"] == 1
+    assert recorder.calls == [], "single red should NOT trigger restart"
+
+
+def test_second_red_increments_no_restart(state_path):
+    recorder = _RestartRecorder()
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    state = watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    assert state["consecutive_reds"] == 2
+    assert recorder.calls == [], "2 reds (below threshold=3) should NOT restart"
+
+
+def test_third_red_triggers_restart(state_path):
+    recorder = _RestartRecorder()
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    state = watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    assert recorder.calls == ["workflow-daemon.service"]
+    # After successful restart, streak optimistically resets.
+    assert state["consecutive_reds"] == 0
+    assert state["last_restart_ts"] is not None
+
+
+def test_green_resets_streak(state_path):
+    recorder = _RestartRecorder()
+    # Two reds, then green.
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    state = watchdog_tick(state_file=state_path, probe_fn=_green_probe, restart_fn=recorder)
+    assert state["consecutive_reds"] == 0
+    assert recorder.calls == []
+
+
+def test_recovery_after_restart(state_path):
+    recorder = _RestartRecorder()
+    # 3 reds → restart
+    for _ in range(3):
+        watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    assert recorder.calls == ["workflow-daemon.service"]
+    # Next probe green → streak stays zero, no additional restart.
+    state = watchdog_tick(state_file=state_path, probe_fn=_green_probe, restart_fn=recorder)
+    assert state["consecutive_reds"] == 0
+    assert len(recorder.calls) == 1
+
+
+# ---- rate limit on restart -----------------------------------------------
+
+
+def test_rate_limit_blocks_rapid_restarts(state_path):
+    """After a restart, next restart is blocked until min-interval passes."""
+    recorder = _RestartRecorder()
+    for _ in range(3):
+        watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    assert recorder.calls == ["workflow-daemon.service"]
+
+    # State file's last_restart_ts is now. Another round of 3 reds
+    # should NOT trigger restart because min_restart_interval (default
+    # 600s) hasn't elapsed.
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe("hung again"),
+            restart_fn=recorder,
+            min_restart_interval=600.0,
+        )
+    assert recorder.calls == ["workflow-daemon.service"], (
+        "rate-limit should block a second restart within the interval"
+    )
+
+
+def test_rate_limit_allows_restart_after_interval(state_path):
+    """Setting min_restart_interval to 0 allows back-to-back restarts."""
+    recorder = _RestartRecorder()
+    for _ in range(3):
+        watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    assert len(recorder.calls) == 1
+
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe("hung again"),
+            restart_fn=recorder,
+            min_restart_interval=0.0,
+        )
+    assert len(recorder.calls) == 2
+
+
+# ---- failure modes --------------------------------------------------------
+
+
+def test_restart_failure_keeps_streak(state_path):
+    """If systemctl restart fails, the streak stays so the next tick retries."""
+    recorder = _RestartRecorder(success=False, msg="systemctl not found")
+    for _ in range(3):
+        state = watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+        )
+    assert recorder.calls == ["workflow-daemon.service"]
+    # Streak preserved so next tick tries again (don't "forget" the
+    # outage just because we couldn't fix it).
+    assert state["consecutive_reds"] >= 3
+
+
+def test_corrupt_state_resets_to_zero(state_path):
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text("not valid json", encoding="utf-8")
+    state = watchdog_tick(
+        state_file=state_path,
+        probe_fn=_green_probe,
+        restart_fn=_RestartRecorder(),
+    )
+    assert state["consecutive_reds"] == 0
+
+
+def test_missing_state_file_treated_as_zero(state_path):
+    # state_path does not exist.
+    state = watchdog_tick(
+        state_file=state_path,
+        probe_fn=_red_probe(),
+        restart_fn=_RestartRecorder(),
+    )
+    assert state["consecutive_reds"] == 1
+
+
+def test_state_persists_across_ticks(state_path):
+    """Verify the state file actually persists — not just in-memory."""
+    recorder = _RestartRecorder()
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(), restart_fn=recorder)
+    # Read the file directly — should show consecutive_reds=1.
+    disk_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert disk_state["consecutive_reds"] == 1
+    assert disk_state["last_probe_ts"] is not None
+
+
+# ---- threshold override --------------------------------------------------
+
+
+def test_threshold_1_single_red_restarts(state_path):
+    recorder = _RestartRecorder()
+    watchdog_tick(
+        state_file=state_path,
+        probe_fn=_red_probe(),
+        restart_fn=recorder,
+        threshold=1,
+    )
+    assert recorder.calls == ["workflow-daemon.service"]
+
+
+def test_threshold_5_needs_5_reds(state_path):
+    recorder = _RestartRecorder()
+    for _ in range(4):
+        watchdog_tick(state_file=state_path, probe_fn=_red_probe(),
+                      restart_fn=recorder, threshold=5)
+    assert recorder.calls == []
+    watchdog_tick(state_file=state_path, probe_fn=_red_probe(),
+                  restart_fn=recorder, threshold=5)
+    assert recorder.calls == ["workflow-daemon.service"]

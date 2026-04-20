@@ -1,0 +1,245 @@
+"""Workflow daemon watchdog — probe + restart on sustained failure.
+
+Self-host migration Row L per
+``docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md``.
+
+Beyond systemd's ``Restart=always`` (which handles process crash + OOM),
+this watchdog catches the failure mode systemd CAN'T see: the daemon
+process is alive but the MCP endpoint is unresponsive (hung request
+loop, deadlocked thread, wedged SQLite transaction, etc.).
+
+Mechanism: probe the container-internal MCP endpoint every tick via
+``scripts/mcp_public_canary.py``. Track consecutive reds across ticks
+via a small state file. On 3 consecutive reds → ``systemctl restart
+workflow-daemon`` (which the systemd unit wires to
+``docker compose down && up``). On GREEN after reds → reset state.
+
+Stdlib only. No third-party deps. Idempotent + race-free because the
+timer is single-concurrency at the systemd level.
+
+Exit codes
+----------
+0  Probe handled (green, first-red, sustained-red, or recovery).
+   Restart may or may not have been issued; see stderr/journald for
+   the decision.
+1  Fatal watchdog failure (cannot invoke canary, cannot read/write
+   state, systemctl not available). Unit should alert on this.
+
+State
+-----
+Persisted at ``/var/lib/workflow-watchdog/state.json`` (readable +
+writable by the ``workflow`` user). Schema::
+
+    {"consecutive_reds": N, "last_probe_ts": "<iso>",
+     "last_restart_ts": "<iso or null>"}
+
+A missing file = zero-reds state. Corrupted file → reset to
+zero-reds (warn via stderr).
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULT_PROBE_URL = "http://127.0.0.1:8001/mcp"
+DEFAULT_STATE_DIR = Path("/var/lib/workflow-watchdog")
+DEFAULT_STATE_FILE = DEFAULT_STATE_DIR / "state.json"
+DEFAULT_CANARY_SCRIPT = Path("/opt/workflow/scripts/mcp_public_canary.py")
+DEFAULT_SERVICE_UNIT = "workflow-daemon.service"
+DEFAULT_THRESHOLD = 3
+# Min wall-time between restarts. Prevents a wedged daemon from
+# being restart-looped every 2 min when the underlying problem
+# (bad env, dep issue) isn't "restart will fix it."
+MIN_RESTART_INTERVAL_SECONDS = 600  # 10 min
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def _log(level: str, msg: str) -> None:
+    """Emit to stderr + optionally to journald via the `logger` cmd.
+
+    systemd captures stderr of services launched via the .service unit,
+    so stderr alone is enough for journald. The `logger` fallback is
+    for direct invocations outside systemd.
+    """
+    line = f"[watchdog {level}] {msg}"
+    print(line, file=sys.stderr)
+
+
+def _load_state(path: Path) -> dict:
+    if not path.is_file():
+        return {"consecutive_reds": 0, "last_probe_ts": None, "last_restart_ts": None}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _log("WARN", f"state file corrupt ({exc!r}); resetting to zero-reds")
+        return {"consecutive_reds": 0, "last_probe_ts": None, "last_restart_ts": None}
+
+
+def _save_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _probe(canary_script: Path, url: str, timeout: float) -> tuple[bool, str]:
+    """Return (green, message). Green=True on canary exit 0."""
+    if not canary_script.is_file():
+        return (False, f"canary script missing: {canary_script}")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(canary_script), "--url", url, "--timeout", str(timeout)],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+        )
+    except subprocess.TimeoutExpired:
+        return (False, f"canary timeout after {timeout + 5}s")
+    except OSError as exc:
+        return (False, f"canary invoke error: {exc}")
+    if result.returncode == 0:
+        return (True, "green")
+    # Canary prints diagnostic to stderr; pass through.
+    msg = (result.stderr or result.stdout or "").strip().replace("\n", " | ")
+    return (False, f"exit={result.returncode}: {msg[:300]}")
+
+
+def _restart_service(unit: str) -> tuple[bool, str]:
+    """Issue systemctl restart via sudo. Return (success, message).
+
+    The workflow user doesn't have bare systemctl privilege — the
+    hetzner-bootstrap.sh script installs a scoped sudoers rule at
+    /etc/sudoers.d/workflow-watchdog giving the user NOPASSWD ONLY
+    for this exact command. Any other systemctl action is refused.
+    """
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/usr/bin/systemctl", "restart", unit],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return (False, "systemctl restart timeout (>60s)")
+    except OSError as exc:
+        return (False, f"systemctl invoke error: {exc}")
+    if result.returncode == 0:
+        return (True, "restarted")
+    return (False, f"systemctl exit={result.returncode}: {result.stderr.strip()[:200]}")
+
+
+def _iso_to_epoch(iso: str | None) -> float | None:
+    if not iso:
+        return None
+    try:
+        return _dt.datetime.fromisoformat(iso).timestamp()
+    except ValueError:
+        return None
+
+
+def watchdog_tick(
+    *,
+    canary_script: Path = DEFAULT_CANARY_SCRIPT,
+    probe_url: str = DEFAULT_PROBE_URL,
+    state_file: Path = DEFAULT_STATE_FILE,
+    service_unit: str = DEFAULT_SERVICE_UNIT,
+    threshold: int = DEFAULT_THRESHOLD,
+    probe_timeout: float = 10.0,
+    restart_fn=_restart_service,  # injection seam for tests
+    probe_fn=None,  # injection seam for tests
+    min_restart_interval: float = MIN_RESTART_INTERVAL_SECONDS,
+) -> dict:
+    """Run one probe cycle. Return the post-tick state dict."""
+    state = _load_state(state_file)
+
+    if probe_fn is None:
+        green, probe_msg = _probe(canary_script, probe_url, probe_timeout)
+    else:
+        green, probe_msg = probe_fn()
+
+    state["last_probe_ts"] = _now_iso()
+
+    if green:
+        if state["consecutive_reds"] > 0:
+            _log("INFO", f"RECOVERED after {state['consecutive_reds']} red(s)")
+        state["consecutive_reds"] = 0
+        _save_state(state_file, state)
+        return state
+
+    state["consecutive_reds"] = int(state.get("consecutive_reds", 0)) + 1
+    _log(
+        "WARN",
+        f"RED #{state['consecutive_reds']}/{threshold} — {probe_msg}",
+    )
+
+    if state["consecutive_reds"] < threshold:
+        _save_state(state_file, state)
+        return state
+
+    # Threshold crossed. Restart — but rate-limit to avoid hot-loop.
+    last_restart_epoch = _iso_to_epoch(state.get("last_restart_ts"))
+    now_epoch = _dt.datetime.now(_dt.timezone.utc).timestamp()
+    if last_restart_epoch and (now_epoch - last_restart_epoch) < min_restart_interval:
+        wait = int(min_restart_interval - (now_epoch - last_restart_epoch))
+        _log(
+            "WARN",
+            f"threshold crossed but last restart was <{int(min_restart_interval)}s ago; "
+            f"waiting {wait}s before next restart attempt",
+        )
+        _save_state(state_file, state)
+        return state
+
+    _log(
+        "ERROR",
+        f"threshold crossed ({state['consecutive_reds']} consecutive reds); "
+        f"restarting {service_unit}",
+    )
+    success, restart_msg = restart_fn(service_unit)
+    state["last_restart_ts"] = _now_iso()
+    if success:
+        _log("INFO", f"restart issued: {restart_msg}")
+        # Reset streak optimistically. Next probe validates recovery.
+        state["consecutive_reds"] = 0
+    else:
+        _log("ERROR", f"restart FAILED: {restart_msg}")
+        # Keep the streak — maybe next tick succeeds.
+
+    _save_state(state_file, state)
+    return state
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="Workflow daemon watchdog — one tick.")
+    ap.add_argument("--probe-url", default=DEFAULT_PROBE_URL)
+    ap.add_argument("--state-file", default=str(DEFAULT_STATE_FILE))
+    ap.add_argument("--service-unit", default=DEFAULT_SERVICE_UNIT)
+    ap.add_argument("--canary-script", default=str(DEFAULT_CANARY_SCRIPT))
+    ap.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD)
+    ap.add_argument("--probe-timeout", type=float, default=10.0)
+    args = ap.parse_args(argv)
+
+    try:
+        watchdog_tick(
+            canary_script=Path(args.canary_script),
+            probe_url=args.probe_url,
+            state_file=Path(args.state_file),
+            service_unit=args.service_unit,
+            threshold=args.threshold,
+            probe_timeout=args.probe_timeout,
+        )
+    except Exception as exc:
+        _log("FATAL", f"watchdog tick crashed: {exc!r}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

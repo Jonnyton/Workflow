@@ -52,7 +52,9 @@ apt-get install -y -qq \
     gnupg \
     python3 \
     python3-pip \
-    jq
+    jq \
+    rclone \
+    zstd
 
 # ----- 2. Docker CE + compose plugin --------------------------------------
 
@@ -141,13 +143,80 @@ fi
 SYSTEMD_UNIT="/etc/systemd/system/workflow-daemon.service"
 if [[ ! -f "${SYSTEMD_UNIT}" ]] \
    || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-daemon.service" "${SYSTEMD_UNIT}"; then
-    log "installing systemd unit..."
+    log "installing workflow-daemon.service..."
     cp "${WORKFLOW_HOME}/deploy/workflow-daemon.service" "${SYSTEMD_UNIT}"
     systemctl daemon-reload
     systemctl enable workflow-daemon
-    log "  unit installed + enabled (NOT started — fill env first)"
+    log "  daemon unit installed + enabled (NOT started — fill env first)"
 else
-    log "systemd unit already current"
+    log "workflow-daemon.service already current"
+fi
+
+# Row L — watchdog unit + timer. Enabled immediately because it's
+# idempotent even before the main daemon starts — it just records
+# reds + waits to cross threshold.
+WATCHDOG_UNIT="/etc/systemd/system/workflow-watchdog.service"
+WATCHDOG_TIMER="/etc/systemd/system/workflow-watchdog.timer"
+watchdog_changed=0
+if [[ ! -f "${WATCHDOG_UNIT}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-watchdog.service" "${WATCHDOG_UNIT}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-watchdog.service" "${WATCHDOG_UNIT}"
+    watchdog_changed=1
+fi
+if [[ ! -f "${WATCHDOG_TIMER}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-watchdog.timer" "${WATCHDOG_TIMER}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-watchdog.timer" "${WATCHDOG_TIMER}"
+    watchdog_changed=1
+fi
+if [[ "${watchdog_changed}" -eq 1 ]]; then
+    log "installed workflow-watchdog service + timer"
+    systemctl daemon-reload
+    systemctl enable --now workflow-watchdog.timer
+else
+    log "workflow-watchdog service + timer already current"
+fi
+
+# Scoped sudoers rule — workflow user gets NOPASSWD ONLY for
+# `systemctl restart workflow-daemon.service`. Watchdog needs this when
+# threshold is crossed. No other sudo privileges granted.
+SUDOERS_FILE="/etc/sudoers.d/workflow-watchdog"
+SUDOERS_RULE="${WORKFLOW_USER} ALL=(root) NOPASSWD:/usr/bin/systemctl restart workflow-daemon.service"
+if [[ ! -f "${SUDOERS_FILE}" ]] || ! grep -qF "${SUDOERS_RULE}" "${SUDOERS_FILE}"; then
+    log "installing scoped sudoers rule for watchdog restart..."
+    echo "${SUDOERS_RULE}" > "${SUDOERS_FILE}"
+    chmod 0440 "${SUDOERS_FILE}"
+    if ! visudo -c -q; then
+        log "ERROR: sudoers syntax check failed; removing the rule"
+        rm -f "${SUDOERS_FILE}"
+        exit 1
+    fi
+else
+    log "sudoers rule already present"
+fi
+
+# Row J — backup service + timer. Enabled unconditionally — if
+# STORAGEBOX_* env is blank, backup.sh exits 1 with a clear message.
+# Enable-on-install gives ops a one-step "fill the creds and it
+# backs up tonight" flow instead of a forgotten-enable trap.
+BACKUP_UNIT="/etc/systemd/system/workflow-backup.service"
+BACKUP_TIMER="/etc/systemd/system/workflow-backup.timer"
+backup_changed=0
+if [[ ! -f "${BACKUP_UNIT}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-backup.service" "${BACKUP_UNIT}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-backup.service" "${BACKUP_UNIT}"
+    backup_changed=1
+fi
+if [[ ! -f "${BACKUP_TIMER}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-backup.timer" "${BACKUP_TIMER}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-backup.timer" "${BACKUP_TIMER}"
+    backup_changed=1
+fi
+if [[ "${backup_changed}" -eq 1 ]]; then
+    log "installed workflow-backup service + timer"
+    systemctl daemon-reload
+    systemctl enable --now workflow-backup.timer
+else
+    log "workflow-backup service + timer already current"
 fi
 
 # ----- 7. final checks + instructions -------------------------------------

@@ -225,10 +225,126 @@ Two URLs gives us two signals. The color asymmetry names the broken layer.
 
 ## What this deploy does NOT include (future rows)
 
-- **Row J (state backup).** Named volume `workflow-data` is NOT yet backed up. Lose the box + lose state. Row J adds nightly snapshots to Hetzner Storage Box (~€1/mo).
-- **Row K (log aggregation).** `journalctl` is local-only. Box death loses logs.
-- **Row L (daemon watchdog).** `systemd` restarts on crash, but doesn't detect hung-not-crashed (daemon alive, /mcp unresponsive). Row L adds a watchdog unit probing the canary + issuing `systemctl restart` on sustained red.
-- **Row M (CI deploy pipeline).** Image updates require manual `WORKFLOW_IMAGE=<new-sha>` edit + `systemctl restart`. Row M adds merge-to-main → SSH deploy → post-deploy canary with auto-rollback.
+## Row L — Daemon watchdog (installed by bootstrap)
+
+`hetzner-bootstrap.sh` installs a watchdog alongside the daemon unit.
+Catches the failure systemd's `Restart=always` CAN'T see: daemon
+process alive, `/mcp` unresponsive (hung transaction, wedged thread,
+OOM-adjacent).
+
+- **Timer:** `workflow-watchdog.timer` fires every 2 min starting 60s after boot.
+- **Script:** `scripts/watchdog.py` probes `http://127.0.0.1:8001/mcp` via the canary. State persists at `/var/lib/workflow-watchdog/state.json` across ticks.
+- **Trigger:** 3 consecutive reds → `sudo systemctl restart workflow-daemon.service`.
+- **Rate limit:** min 10 min between restarts — blocks hot-loop on persistent-failure states.
+- **Logs:** `sudo journalctl -u workflow-watchdog -f`.
+- **Sudoers:** scoped rule at `/etc/sudoers.d/workflow-watchdog` — `workflow` user has NOPASSWD ONLY for the one restart command; no other sudo access.
+
+Check next fire: `sudo systemctl list-timers workflow-watchdog.timer`.
+
+## Row J — State backup (installed by bootstrap)
+
+`hetzner-bootstrap.sh` installs a nightly backup of the `workflow-data`
+named Docker volume to Hetzner Storage Box. Bootstrap enables the
+timer unconditionally; if Storage Box creds are blank, `backup.sh`
+exits 1 with a clear message (so ops sees the wiring but can defer
+the Storage Box provisioning).
+
+- **Timer:** `workflow-backup.timer` fires nightly at 03:00 UTC.
+- **Script:** `deploy/backup.sh` tars the volume → `zstd` → `rclone` to `storagebox:workflow-backups/workflow-data-<ts>.tar.zst`.
+- **Retention:** 7 daily + 4 weekly (override via `BACKUP_RETAIN_*` env vars).
+- **Host action needed:** provision a Hetzner Storage Box (BX11 recommended, ~€1/mo), create a dedicated subuser scoped to `/workflow-backups/`, fill `STORAGEBOX_HOST` / `STORAGEBOX_USER` / `STORAGEBOX_PASS` in `/etc/workflow/env`, `sudo systemctl restart workflow-backup.timer`.
+
+Storage Box provisioning (host does this when ready):
+1. Hetzner Cloud console → Storage Boxes → Add → BX11 (100 GB, ~€1/mo).
+2. Create subuser scoped to `/workflow-backups/`. Copy the SFTP host + subuser credentials.
+3. `sudo nano /etc/workflow/env` → fill in the 3 STORAGEBOX_* vars.
+4. Manually trigger first backup to verify: `sudo systemctl start workflow-backup.service && sudo journalctl -u workflow-backup -n 50`.
+5. On success, 03:00 UTC nightly cadence takes over.
+
+**Restore runbook:** `deploy/RESTORE.md` covers full-volume restore
+from a specific tarball. Estimated 5-15 min depending on archive size.
+
+## Row M — CI deploy pipeline (GitHub Actions)
+
+`.github/workflows/deploy-prod.yml` auto-deploys the freshly-published
+image on every successful `build-image.yml` run on `main`. SSH to the
+Hetzner box, pin the new tag in `/etc/workflow/env`, `docker pull`,
+`systemctl restart`, run post-deploy canary, auto-rollback on red.
+
+**GitHub secrets required** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `HETZNER_HOST` | Public IPv4 of the CX22 (or DNS name). |
+| `HETZNER_SSH_USER` | Username for SSH — typically `root` or a dedicated `deploy` user. |
+| `HETZNER_SSH_KEY` | Private key (ed25519 recommended). Paste whole contents including BEGIN/END lines. |
+
+Generate the key pair:
+```bash
+ssh-keygen -t ed25519 -C "gh-actions-deploy" -f ~/.ssh/workflow_deploy -N ""
+cat ~/.ssh/workflow_deploy.pub  # add to /root/.ssh/authorized_keys on the Hetzner box
+cat ~/.ssh/workflow_deploy      # paste into HETZNER_SSH_KEY secret
+```
+
+Recommended: use a dedicated `deploy` user (not `root`) with limited
+sudo — passwordless for the 2 commands the pipeline runs:
+
+```bash
+# On the Hetzner box, as root:
+useradd -m -s /bin/bash deploy
+usermod -aG docker deploy
+mkdir -p /home/deploy/.ssh
+cp /root/.ssh/authorized_keys /home/deploy/.ssh/  # or paste deploy pubkey directly
+chown -R deploy:deploy /home/deploy/.ssh
+chmod 700 /home/deploy/.ssh
+
+# Scoped sudoers for deploy:
+cat > /etc/sudoers.d/deploy-pipeline <<EOF
+deploy ALL=(root) NOPASSWD:/usr/bin/sed -i * /etc/workflow/env
+deploy ALL=(root) NOPASSWD:/usr/bin/docker pull *
+deploy ALL=(root) NOPASSWD:/usr/bin/systemctl restart workflow-daemon
+deploy ALL=(root) NOPASSWD:/usr/bin/grep * /etc/workflow/env
+EOF
+chmod 0440 /etc/sudoers.d/deploy-pipeline
+visudo -c
+```
+
+Then `HETZNER_SSH_USER=deploy` in the GH secret.
+
+**Behavior:**
+- Trigger: successful `build-image.yml` run on `main`, OR `workflow_dispatch` with optional `image_tag` input.
+- Deploy pins the new image tag + restarts the daemon.
+- Waits up to 90s for cold-start; polls canary every 5s.
+- On canary green, deploy succeeds.
+- On canary red, auto-rollback to the previous `WORKFLOW_IMAGE` value, re-verify canary, and open a `deploy-failed` GitHub issue with the run URL. Distinct from `p0-outage` (Row H) — deploy-failed = we caused it; p0-outage = daemon died spontaneously.
+
+## Row K — Log aggregation (sidecar in compose)
+
+The `logs` service in `deploy/compose.yml` runs a Vector sidecar that
+tails `daemon` + `cloudflared` container stdout via the Docker socket
+and forwards events. Two paths:
+
+- **Default (no config):** Vector writes to its own stdout, which
+  `docker compose` + journald capture. Equivalent to not running the
+  sidecar, but the wiring exists for one-env-flip enable.
+- **With Better Stack:** set `BETTERSTACK_SOURCE_TOKEN` in
+  `/etc/workflow/env`, `sudo systemctl restart workflow-daemon`.
+  Vector starts shipping to `https://in.logs.betterstack.com` with
+  `workflow` service + `daemon`/`cloudflared` role metadata on each
+  event. Free tier = 3 GB/mo retention.
+
+**Host action (optional — enable Better Stack):**
+1. Sign up at betterstack.com (free tier). Create a "Logs" source.
+2. Copy the source token.
+3. `sudo nano /etc/workflow/env` → fill `BETTERSTACK_SOURCE_TOKEN=...`.
+4. `sudo systemctl restart workflow-daemon` (restarts the whole compose stack including the logs sidecar).
+5. Verify in Better Stack dashboard — events should appear within ~30s.
+
+If the box dies, Better Stack retains the most recent logs for
+debugging the death itself. Without this, `journalctl` is box-local +
+lost on destroy.
+
+## What this deploy does NOT include (future rows)
 
 Each of these ships independently on top of this compose + systemd
 foundation. Row D is the anchor.
