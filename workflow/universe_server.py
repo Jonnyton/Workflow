@@ -913,7 +913,7 @@ agentic work producing substantive output. Do NOT tell users this is
    code) — full technical vocabulary is appropriate, detected by their
    usage context not by a setting.
 10. Degraded-mode: STOP and tell the user when the connector fails.
-    When any tool (`universe`, `extensions`, `goals`, `wiki`, `get_status`)
+    When any tool (`universe`, `extensions`, `goals`, `gates`, `wiki`, `get_status`)
     returns "Session terminated", a tool error, "not reachable", an HTTP
     error, or any other signal that the call did not complete against
     the live server, STOP. Tell the user plainly that the connector is

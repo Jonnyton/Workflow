@@ -87,8 +87,12 @@ def test_directive_names_multiple_failure_triggers():
     )
 
 
-def test_directive_covers_all_four_coarse_tools():
-    """Directive must name the four coarse tools whose failure triggers the rule."""
+def test_directive_covers_all_six_coarse_tools():
+    """Directive must name all six coarse tools whose failure triggers the rule.
+
+    `gates` was added after verifier's second-pass audit flagged the enumeration
+    didn't match the actual @mcp.tool set (6 tools, rule originally named 5).
+    """
     body = _prompt_text()
     # Find the rule-10 block for targeted assertion.
     rule_10_match = re.search(
@@ -98,7 +102,7 @@ def test_directive_covers_all_four_coarse_tools():
     )
     assert rule_10_match, "could not locate rule 10 block"
     rule_10 = rule_10_match.group(0)
-    for tool in ["universe", "extensions", "goals", "wiki"]:
+    for tool in ["universe", "extensions", "goals", "gates", "wiki", "get_status"]:
         assert f"`{tool}`" in rule_10, (
             f"rule 10 doesn't name the `{tool}` tool — partial coverage risks "
             f"the chatbot applying the rule to some tools but not others"
@@ -109,11 +113,26 @@ def test_directive_covers_all_four_coarse_tools():
 
 
 def test_directive_forbids_fabrication():
-    """'fabricate' is the load-bearing verb — silent removal breaks the rule."""
+    """'fabricate' is the load-bearing verb AND must be in imperative-negative context.
+
+    Substring-check alone was verifier-flagged as weak — it would pass if someone
+    wrote 'You may fabricate anything you want.' Regex now requires a negative
+    imperative ('Do NOT fabricate', 'never fabricate', 'must not fabricate').
+    """
     body = _prompt_text()
     assert "fabricate" in body.lower(), (
         "'fabricate' forbidden-action verb missing from prompt — "
         "the rule's teeth depend on this word"
+    )
+    # Imperative-negative context — protects against rule dilution to permissive.
+    assert re.search(
+        r"(do\s+not|never|must\s+not|don['\u2019]t)\s+\w*\s*fabricat",
+        body,
+        re.IGNORECASE,
+    ), (
+        "'fabricate' is present but not in a negative-imperative context "
+        "('Do NOT fabricate' / 'never fabricate' / 'must not fabricate'). "
+        "Rule dilution risk — strengthen the forbidden-action phrasing."
     )
 
 
