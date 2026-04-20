@@ -65,8 +65,18 @@ Single-line format so `grep RED .agents/uptime.log | tail -5` gives instant stat
 - Pass = tool was called AND response parsed. Fail = tool not called, OR error, OR empty.
 - Runs hourly IF `scripts/browser_lock.py status` shows the lock is available AND no higher-priority mission is in flight.
 - Log to `.agents/uptime.log` with `layer=2`.
+- **Measure response settle time.** Record the `ask` wall time on every probe; emit as `settle_ms=<n>` in the log line. Soft-signal feeds the fabrication-detection rule below.
 
 **Runner:** a thin scheduler entry that checks the browser lock before claiming; if busy, skip this hour's probe (NOT fail — skip).
+
+**Soft-signal augmentation (post-P0 probe 2026-04-19): fabrication detection via abnormal settle time.**
+
+Per `docs/design-notes/2026-04-19-degraded-mode-fabrication.md` §5, degraded-mode fabrication produces responses that settle ~3x slower than tool-mediated responses (~150-180s+ vs ~10-60s) because the chatbot generates the artifact from scratch rather than narrating a tool result. Fold as a soft-signal code:
+
+- `exit=8` (soft) — response settled but took >150s. Interpretation: possible fabrication mode. NOT an alarm by itself.
+- **Alarm rule:** two consecutive `exit=8` from the same probe AND Layer 1 green concurrently → distinct Concerns entry: `CHATBOT FABRICATION SUSPECT — layer-2 slow-settle <N>, layer-1 green. Possible silent MCP degradation with chatbot compensation.` The Layer-1-green requirement is load-bearing — if Layer 1 is red, the slow response is already explained by the known outage and no additional diagnostic applies.
+
+Adds ~0.1 dev-day to canary first-draft scope.
 
 ---
 
