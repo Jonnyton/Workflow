@@ -136,6 +136,75 @@ def test_tag_filter_no_match_returns_caveat(universe_with_log):
     assert response["matched"] == 0
 
 
+def test_dispatch_guard_empty_match_adds_absence_caveat(tmp_path, monkeypatch):
+    """tag='dispatch_guard' with zero matches must warn empty != no-overshoots."""
+    from workflow import universe_server as us
+
+    udir = tmp_path / "no-dispatch-universe"
+    udir.mkdir()
+    (udir / "activity.log").write_text(
+        "[2026-04-19 10:00:00] [revert_gate] reverting scene-3\n"
+        "[2026-04-19 10:01:00] Commit: evaluating scene-1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(us, "_default_universe", lambda: "no-dispatch-universe")
+
+    response = _parse_response(_action_get_recent_events(tag="dispatch_guard"))
+
+    assert response["events"] == []
+    assert any("matched 0" in c for c in response["caveats"])
+    assert any(
+        "Empty dispatch_guard list does not prove no overshoots" in c
+        for c in response["caveats"]
+    )
+
+
+def test_dispatch_guard_missing_log_adds_absence_caveat(tmp_path, monkeypatch):
+    """tag='dispatch_guard' on a universe with no activity.log still warns."""
+    from workflow import universe_server as us
+
+    udir = tmp_path / "fresh-dispatch-universe"
+    udir.mkdir()
+    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(us, "_default_universe", lambda: "fresh-dispatch-universe")
+
+    response = _parse_response(_action_get_recent_events(tag="dispatch_guard"))
+
+    assert response["events"] == []
+    assert any("No activity.log" in c for c in response["caveats"])
+    assert any(
+        "Empty dispatch_guard list does not prove no overshoots" in c
+        for c in response["caveats"]
+    )
+
+
+def test_dispatch_guard_with_matches_no_absence_caveat(universe_with_log):
+    """When dispatch_guard events DO match, absence caveat must NOT fire."""
+    response = _parse_response(
+        _action_get_recent_events(tag="dispatch_guard")
+    )
+
+    assert len(response["events"]) == 1
+    assert not any(
+        "Empty dispatch_guard list does not prove" in c
+        for c in response["caveats"]
+    )
+
+
+def test_non_dispatch_tag_empty_match_skips_absence_caveat(universe_with_log):
+    """Absence caveat is specific to dispatch_guard — other empty tags unaffected."""
+    response = _parse_response(
+        _action_get_recent_events(tag="nonexistent_tag")
+    )
+
+    assert response["events"] == []
+    assert any("matched 0" in c for c in response["caveats"])
+    assert not any(
+        "Empty dispatch_guard list" in c for c in response["caveats"]
+    )
+
+
 def test_untagged_caveat_when_no_filter(universe_with_log):
     """The two legacy untagged lines surface a caveat on unfiltered reads."""
     response = _parse_response(_action_get_recent_events())

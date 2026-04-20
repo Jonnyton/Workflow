@@ -3503,6 +3503,18 @@ _ACTIVITY_LINE_RE = re.compile(
     r"^\[(?P<ts>[^\]]+)\](?:\s*\[(?P<tag>[^\]]+)\])?\s*(?P<msg>.*)$"
 )
 
+# Domain caveat for dispatch_guard queries with zero matching events.
+# dispatch_guard only emits when the daemon actively dispatches a scene;
+# empty results could mean (a) no overshoots fired, OR (b) the daemon did
+# not dispatch at all in this window (endpoint unbound, daemon paused,
+# universe idle). Chatbot must not read empty-list as "no overshoots."
+_DISPATCH_GUARD_ABSENCE_CAVEAT = (
+    "Empty dispatch_guard list does not prove no overshoots — the daemon "
+    "may not have dispatched any scenes in this window (endpoint unbound, "
+    "daemon paused, or universe idle). Verify daemon ran before inferring "
+    "'guard never needed to fire'."
+)
+
 
 def _parse_activity_line(line: str) -> dict[str, str]:
     """Split ``[TS] [TAG] MSG`` (or legacy ``[TS] MSG``) into fields.
@@ -3558,15 +3570,18 @@ def _action_get_recent_events(
 
     content = _read_text(log_path)
     if not content:
+        missing_caveats = [
+            "No activity.log found. The daemon may not have run yet "
+            "in this universe, or the log was cleared.",
+        ]
+        if tag == "dispatch_guard":
+            missing_caveats.append(_DISPATCH_GUARD_ABSENCE_CAVEAT)
         return json.dumps({
             "universe_id": uid,
             "events": [],
             "source": "activity.log",
             "tag_filter": tag,
-            "caveats": [
-                "No activity.log found. The daemon may not have run yet "
-                "in this universe, or the log was cleared.",
-            ],
+            "caveats": missing_caveats,
         })
 
     all_lines = content.strip().splitlines()
@@ -3580,6 +3595,8 @@ def _action_get_recent_events(
                 f"Known tags in file: "
                 f"{sorted({p['tag'] for p in parsed if p['tag']})[:10]}."
             )
+            if tag == "dispatch_guard":
+                caveats.append(_DISPATCH_GUARD_ABSENCE_CAVEAT)
     else:
         matched = parsed
 
