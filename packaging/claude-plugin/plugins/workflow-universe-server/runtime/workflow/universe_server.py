@@ -1596,10 +1596,23 @@ def _daemon_liveness(udir: Path, status: dict[str, Any] | None) -> dict[str, Any
 def _action_list_universes(**_kwargs: Any) -> str:
     base = _base_path()
     if not base.is_dir():
-        return json.dumps({"universes": [], "note": "No base directory found."})
+        return json.dumps({
+            "universes": [],
+            "count": 0,
+            "note": f"Base directory does not exist: {base}",
+        })
+
+    try:
+        all_entries = list(base.iterdir())
+    except OSError as exc:
+        return json.dumps({
+            "universes": [],
+            "count": 0,
+            "note": f"Base directory unreadable ({base}): {exc}",
+        })
 
     universes = []
-    for child in sorted(base.iterdir()):
+    for child in sorted(all_entries):
         if not child.is_dir() or child.name.startswith("."):
             continue
         status = _read_json(child / "status.json")
@@ -1616,7 +1629,16 @@ def _action_list_universes(**_kwargs: Any) -> str:
         }
         universes.append(info)
 
-    return json.dumps({"universes": universes, "count": len(universes)})
+    result: dict[str, Any] = {"universes": universes, "count": len(universes)}
+    if not universes:
+        if not all_entries:
+            result["note"] = f"Base directory is empty: {base}"
+        else:
+            result["note"] = (
+                f"Base directory has {len(all_entries)} entries but none "
+                f"are valid universes (all hidden or non-directories): {base}"
+            )
+    return json.dumps(result)
 
 
 def _action_inspect_universe(universe_id: str = "", **_kwargs: Any) -> str:
@@ -10110,6 +10132,7 @@ def get_status(universe_id: str = "") -> str:
     """
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
+    universe_exists = udir.is_dir()
     host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
 
     # Load the dispatcher config for the universe.
@@ -10125,6 +10148,7 @@ def get_status(universe_id: str = "") -> str:
             "error": "config_load_failed",
             "detail": str(exc),
             "universe_id": uid,
+            "universe_exists": universe_exists,
         })
 
     served_llm_type = (cfg.served_llm_type or "").strip()
@@ -10258,6 +10282,18 @@ def get_status(universe_id: str = "") -> str:
         "tier_routing_policy": tier_routing_policy,
     }
 
+    if not universe_exists:
+        caveats.append(
+            f"Universe '{uid}' does not exist on disk. Daemon is reporting "
+            "default-fallback identity, not a live universe. Call "
+            "universe action=list to see what exists; universe action=create "
+            "to bootstrap."
+        )
+        actionable_next_steps.append(
+            f"Create universe '{uid}' or pick an existing one via universe "
+            "action=list."
+        )
+
     response = {
         "active_host": policy_payload["active_host"],
         "tier_routing_policy": tier_routing_policy,
@@ -10272,6 +10308,7 @@ def get_status(universe_id: str = "") -> str:
         "caveats": caveats,
         "actionable_next_steps": actionable_next_steps,
         "universe_id": uid,
+        "universe_exists": universe_exists,
     }
     return json.dumps(response)
 
