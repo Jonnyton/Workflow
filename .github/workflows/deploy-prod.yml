@@ -109,6 +109,16 @@ jobs:
           echo "previous=${prev}" >> "$GITHUB_OUTPUT"
           echo "Previous: ${prev}"
 
+      # BUG-002 (2026-04-19): host's Windows WIKI_PATH leaked to the
+      # droplet env file, making wiki_path() resolve to /app/C:\Users\...
+      # Strip any legacy WIKI_PATH / WORKFLOW_WIKI_PATH lines so the
+      # resolver falls back to $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
+      - name: Scrub legacy Windows WIKI_PATH env leakage
+        run: |
+          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
+              "${HETZNER_SSH_USER}@${HETZNER_HOST}" \
+              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env"
+
       - name: Deploy new image
         id: deploy
         run: |
