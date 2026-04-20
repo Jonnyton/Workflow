@@ -52,7 +52,7 @@ All under `tinyassets.io/`. SEO-relevant URLs in bold.
 | **`/catalog/goals/<slug>`** | SSG per goal | Goal page. Description, associated branches, leaderboard. | Static (GH Pages) |
 | **`/catalog/branches/<slug>`** | SSG per branch | Branch page. BranchDefinition, node graph viz, recent runs, run-it CTA. | Static (GH Pages) |
 | **`/catalog/search?q=…&domain=…`** | SSR | Search results. Calls `discover_nodes` RPC; shows ranked candidates with scores. | Dynamic (Fly.io) |
-| **`/connect`** | SSG | Tier-1 onboarding. One-line copy-paste `api.tinyassets.io/mcp` as MCP URL. GitHub OAuth sign-in widget. 60-sec timer showing "first tool call success" metric. | Static (GH Pages) |
+| **`/connect`** | SSG | Tier-1 onboarding. One-line copy-paste `mcp.tinyassets.io/mcp` as MCP URL. GitHub OAuth sign-in widget. 60-sec timer showing "first tool call success" metric. | Static (GH Pages) |
 | **`/host`** | SSR | Tier-2 onboarding. OS-detect → correct installer (Win `.exe` / macOS `.dmg` / Linux `.deb`+`.AppImage`). Earnings preview. | Dynamic (Fly.io) |
 | **`/contribute`** | SSG | Tier-3 onboarding. Clone link, CONTRIBUTING.md preview, CLA/DCO pointer, active-PR list via GitHub API client-side. | Static |
 | **`/status`** | SSR + Realtime | Live platform status. Host count, inbox depth, catalog freshness, last-batch timestamp. Uses Supabase Realtime subscriptions. | Dynamic |
@@ -174,8 +174,8 @@ Reuses the same Supabase Auth pattern the gateway uses (#27 §5.1). Web-app-side
 
 Flow:
 1. User clicks "Sign in with GitHub" on `/connect` or `/editor`.
-2. Browser redirects to `api.tinyassets.io/auth/github` → Supabase Auth redirects to GitHub.
-3. GitHub callback returns to `api.tinyassets.io/auth/callback` → Supabase issues session.
+2. Browser redirects to `mcp.tinyassets.io/auth/github` → Supabase Auth redirects to GitHub.
+3. GitHub callback returns to `mcp.tinyassets.io/auth/callback` → Supabase issues session.
 4. Web app reads session cookie; populates `Authorization: Bearer <jwt>` on XHRs.
 
 ### 5.3 Tier-1 lightweight path
@@ -183,7 +183,7 @@ Flow:
 Tier-1 users can add the MCP URL to Claude.ai without a web-app signin. The signin flow happens during the FIRST MCP tool call via the gateway's OAuth 2.1 + PKCE. Web-app signin is for when a tier-1 user wants to visit `/editor` directly — a minority path.
 
 `/connect` page sequence:
-1. **Primary CTA**: "Copy this URL" → `api.tinyassets.io/mcp`.
+1. **Primary CTA**: "Copy this URL" → `mcp.tinyassets.io/mcp`.
 2. **Secondary**: "Sign in with GitHub" → optional; unlocks `/editor` and richer in-browser features.
 
 Measured metric on landing: % of visitors who reach step 1's copy-to-clipboard. Target ≥40% at viral-traffic launch.
@@ -204,7 +204,7 @@ All four degrade gracefully on Realtime outage — show cached last-known values
 ### 6.1 `/status` also shows
 
 Static/dynamic split visible to user:
-- Gateway status (up/degraded/down) via `api.tinyassets.io/mcp/health` check.
+- Gateway status (up/degraded/down) via `mcp.tinyassets.io/mcp/health` check.
 - Catalog export status (last batch committed N min ago).
 - Realtime status (connected/reconnecting).
 - Postgres status (indirect: if RPCs work, it's up).

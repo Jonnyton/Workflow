@@ -187,7 +187,7 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 | Record | Points at | Cache rule | Note |
 |---|---|---|---|
 | `tinyassets.io` (apex) | GitHub Pages (via CNAME-flatten) | 5-min edge TTL + 24h stale-while-revalidate on `/catalog/*` | Primary static host. |
-| `api.tinyassets.io` | Fly.io anycast | Bypass `/mcp*` + `/authorize*` | Control plane. |
+| `mcp.tinyassets.io` | Cloudflare Tunnel → localhost:8001 (current); future `api.` alias | Bypass `/mcp*` + `/authorize*` | Control plane. Tunnel published hostname is `mcp.`; `api.` was the pre-launch intended canonical but was never created and is held open as a future alias CNAME. |
 | `host-<slug>.tinyassets.io` | cloudflared per-host tunnels | Bypass | Daemon-host outbound-only pattern. |
 | TLS mode | Full (strict) on all subdomains | — | Non-negotiable. Origin CA cert (15-yr validity). |
 
@@ -228,7 +228,7 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 
 ### 6.1 If the gateway is down
 
-**Symptoms:** `api.tinyassets.io/mcp` returns 5xx, Claude.ai MCP connector fails handshake.
+**Symptoms:** `mcp.tinyassets.io/mcp` returns 5xx (or any non-2xx JSON-RPC response), Claude.ai MCP connector fails handshake, `scripts/mcp_public_canary.py` exits non-zero. Pre-P0 canonical `api.tinyassets.io/mcp` was never shipped — that address is NXDOMAIN and reserved as a future alias.
 
 1. Check Fly.io status page. If Fly outage, wait + monitor.
 2. Check `fly machine list --app workflow-gateway` — are Machines healthy?
@@ -242,7 +242,7 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 
 1. Spin up Hetzner CX11 box (~5 min via Hetzner Cloud console using vault-stored API token).
 2. Run `Workflow/scripts/migrate-to-hetzner.sh` — Docker-compose with both gateway + web images.
-3. Update Cloudflare DNS: `api.tinyassets.io` A record → Hetzner box IP.
+3. Update Cloudflare DNS: `mcp.tinyassets.io` A record → Hetzner box IP. (If the future `api.` alias has been created by the time this runbook fires, update both.)
 4. TLS propagates via Cloudflare Origin CA (no new cert needed).
 5. Return to Fly when their outage resolves; Cloudflare DNS switch reverts.
 

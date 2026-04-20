@@ -127,7 +127,7 @@ The three audited files have expected lifetimes tied to the rewrite cutover:
 
 | File | Lifetime | Cutover trigger | Cleanup posture |
 |---|---|---|---|
-| `workflow/universe_server.py` | Live until MCP gateway (`api.tinyassets.io/mcp`) is stable + Claude.ai connector-catalog listing live | ~4.5 weeks (MVP) | Post-cutover: delete file + remove directory structure per Rename Phase 2 (task #17) |
+| `workflow/universe_server.py` | Live until MCP gateway (`mcp.tinyassets.io/mcp` — actual tunnel hostname; pre-launch canonical `api.tinyassets.io/mcp` was never shipped and is held open as future alias) is stable + Claude.ai connector-catalog listing live | ~4.5 weeks (MVP) | Post-cutover: delete file + remove directory structure per Rename Phase 2 (task #17) |
 | `workflow/discovery.py` | Live until domain-plugin discovery is moot (all node/branch/domain metadata moved to Postgres) | ~4.5 weeks (MVP) | Post-cutover: delete file; pattern re-appears in new Connectors + Handoffs specs via `workflow.connectors` + `workflow.handoffs` entry-point groups |
 | `workflow/daemon_server.py` | Live until Supabase-backed control plane is stable | ~4.5 weeks (MVP) | Post-cutover: delete file; bounded contexts are now Postgres tables + RLS, not Python modules |
 

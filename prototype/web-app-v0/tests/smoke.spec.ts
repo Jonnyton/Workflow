@@ -10,7 +10,7 @@ test('landing page loads with three CTAs', async ({ page }) => {
 
 test('connect page shows the MCP URL + copy button', async ({ page }) => {
   await page.goto('/connect');
-  await expect(page.getByText('https://api.tinyassets.io/mcp')).toBeVisible();
+  await expect(page.getByText('https://mcp.tinyassets.io/mcp')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy URL' })).toBeVisible();
 });
 

@@ -38,7 +38,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-DEFAULT_URL = "https://tinyassets.io/mcp"
+DEFAULT_URL = "https://mcp.tinyassets.io/mcp"
 DEFAULT_TIMEOUT = 10.0
 
 _INIT_PAYLOAD = {

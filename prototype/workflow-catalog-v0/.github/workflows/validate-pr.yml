@@ -45,7 +45,7 @@ jobs:
         run: |
           # v0: log the author; real build verifies against users.github_handle
           echo "PR author: $PR_AUTHOR"
-          # TODO: POST to api.tinyassets.io/mcp/verify_contributor_identity
+          # TODO: POST to mcp.tinyassets.io/mcp/verify_contributor_identity
 
       - name: Check 6 — version = base + 1
         run: python scripts/check-version-bump.py

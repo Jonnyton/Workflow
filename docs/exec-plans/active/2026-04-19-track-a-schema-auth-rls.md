@@ -68,7 +68,7 @@ Per daemon-economy §2 OUT classifications:
 ### 4.1 GitHub OAuth at the edge (per §11 Q4 ratified)
 
 - **Supabase Auth + GitHub OAuth provider** — single identity primitive for all four migration paths (T1↔T2↔T3, per §2.5 of full-platform note).
-- **OAuth 2.1 + PKCE** at the MCP edge for tier-1 chatbot users connecting via Claude.ai (`api.tinyassets.io/mcp`).
+- **OAuth 2.1 + PKCE** at the MCP edge for tier-1 chatbot users connecting via Claude.ai (`mcp.tinyassets.io/mcp` — actual tunnel hostname; `api.` was the pre-launch canonical that was never shipped and is held open as future alias).
 - **`auth.users` is Supabase-managed**, `public.users` is the thin projection (sketch §1.1).
 - **Session tokens** scoped per user; daemon-side tray reuses the same Supabase session (no separate auth flow per §2.5 T1→T2 path).
 

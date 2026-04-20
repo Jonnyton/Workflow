@@ -199,8 +199,8 @@ Gateway degrades gracefully rather than hard-fails:
 Per §7, GitHub OAuth via Supabase Auth is the single identity primitive.
 
 **Claude.ai client flow:**
-1. User adds `https://api.tinyassets.io/mcp` as a remote MCP server in Claude.ai.
-2. Claude.ai hits `GET https://api.tinyassets.io/mcp/.well-known/oauth-authorization-server` — gateway returns the metadata pointing at Supabase Auth's OAuth endpoints.
+1. User adds `https://mcp.tinyassets.io/mcp` as a remote MCP server in Claude.ai.
+2. Claude.ai hits `GET https://mcp.tinyassets.io/mcp/.well-known/oauth-authorization-server` — gateway returns the metadata pointing at Supabase Auth's OAuth endpoints.
 3. Claude.ai initiates PKCE flow: generates `code_verifier` + `code_challenge`, opens the authorization URL in a browser tab.
 4. User completes GitHub OAuth consent; Supabase Auth redirects to Claude.ai's callback with `code`.
 5. Claude.ai exchanges `code` + `code_verifier` for a bearer JWT at `POST /mcp/token` (proxied to Supabase `/auth/v1/token?grant_type=authorization_code`).
@@ -261,7 +261,7 @@ Claude.ai / web app
            │
            ▼ HTTPS (origin)
 ┌──────────────────────────────────────┐
-│ Fly.io — api.tinyassets.io/mcp       │
+│ Fly.io — mcp.tinyassets.io/mcp       │
 │ - N Machines (autoscale min=2, max=8)│
 │ - Global anycast                     │
 │ - each Machine: FastMCP + bearer-verify │
@@ -283,7 +283,7 @@ Claude.ai / web app
 
 **Session survives instance death:** no state to lose. Next tool call hits any Machine, re-derives user from JWT, serves. Client's session-id persists across the gap (Claude.ai tracks it, gateway doesn't).
 
-**DNS:** `api.tinyassets.io` CNAME → Fly.io Anycast. Cloudflare proxied (orange-cloud). Origin is Fly's `<app>.fly.dev` (via Fly Cert).
+**DNS:** `mcp.tinyassets.io` CNAME → Fly.io Anycast. Cloudflare proxied (orange-cloud). Origin is Fly's `<app>.fly.dev` (via Fly Cert).
 
 ---
 
@@ -430,7 +430,7 @@ Recommend telling host **"~3 d, with +0.25 d buffer for error-envelope edge case
 
 Track C is done when:
 
-1. `api.tinyassets.io/mcp` responds to `GET /.well-known/oauth-authorization-server` with valid OAuth 2.1 metadata.
+1. `mcp.tinyassets.io/mcp` responds to `GET /.well-known/oauth-authorization-server` with valid OAuth 2.1 metadata.
 2. Claude.ai successfully adds the server as a connector, completes PKCE flow, calls `discover_nodes` tool, gets back a valid response with RLS enforced (non-owner sees public-concept only per schema spec §3.1).
 3. All 10 tools from §3.1 map to their Supabase RPCs; each error code from §4 triggers correctly under simulated failure.
 4. Load test S2 + S4 + S8 pass against the deployed gateway (#26 integration).

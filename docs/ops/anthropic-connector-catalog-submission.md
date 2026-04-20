@@ -1,7 +1,7 @@
 # Anthropic MCP Connector-Catalog Submission — Research + Plan
 
 **Status:** Research-in-progress + submission plan. This doc pre-draws the submission workflow so it's ready to execute when the platform is launch-ready.
-**Priority:** **Launch-gate per the A-follow directive.** Workflow must appear in Claude's connector directory for tier-1 adoption. Without this, users must manually paste `api.tinyassets.io/mcp` — friction point that kills the zero-install funnel.
+**Priority:** **Launch-gate per the A-follow directive.** Workflow must appear in Claude's connector directory for tier-1 adoption. Without this, users must manually paste `mcp.tinyassets.io/mcp` — friction point that kills the zero-install funnel.
 **Owner:** host (Jonathan) drives submission; admin-pool reviews.
 
 ---
@@ -73,9 +73,9 @@ The daemon is a real executor, not a chatbot simulation. Open commons
 
 ### 2.2 Technical artifacts
 
-- **MCP server URL:** `https://api.tinyassets.io/mcp`
-- **OAuth 2.1 + PKCE metadata:** served at `https://api.tinyassets.io/mcp/.well-known/oauth-authorization-server` per #27 §5.1.
-- **Health endpoint:** `https://api.tinyassets.io/mcp/health` — returns 200 + JSON payload indicating gateway + Supabase + Realtime status.
+- **MCP server URL:** `https://mcp.tinyassets.io/mcp`
+- **OAuth 2.1 + PKCE metadata:** served at `https://mcp.tinyassets.io/mcp/.well-known/oauth-authorization-server` per #27 §5.1.
+- **Health endpoint:** `https://mcp.tinyassets.io/mcp/health` — returns 200 + JSON payload indicating gateway + Supabase + Realtime status.
 - **Version:** `1.0.0` at launch; server info MCP handshake also advertises this.
 
 ### 2.3 Branding assets
@@ -111,7 +111,7 @@ This is the workflow we'd run if the submission is lightweight (form + manual re
 
 Before submitting, verify:
 
-- [ ] `api.tinyassets.io/mcp` is live, OAuth 2.1 flow works end-to-end with a real Claude.ai client.
+- [ ] `mcp.tinyassets.io/mcp` is live, OAuth 2.1 flow works end-to-end with a real Claude.ai client.
 - [ ] `.well-known/oauth-authorization-server` returns valid metadata.
 - [ ] `/health` endpoint responds 200 under load (#26 S8 mixed-workload passes).
 - [ ] Privacy policy + ToS pages live at their canonical URLs.
@@ -130,7 +130,7 @@ Short description: [from §2.1]
 Long description: [from §2.1]
 Category: Productivity
 Maintainer: Workflow <ops@tinyassets.io>
-Server URL: https://api.tinyassets.io/mcp
+Server URL: https://mcp.tinyassets.io/mcp
 Auth: OAuth 2.1 + PKCE
 Privacy policy: https://tinyassets.io/legal/privacy
 Terms of service: https://tinyassets.io/legal/terms
@@ -201,7 +201,7 @@ Document findings in this file (§1 + §2 + §4) as a follow-up commit.
 
 ### Step 2: Outreach (if §1 research is inconclusive)
 
-- Email `developer-relations@anthropic.com` (if it exists) with a concise: "We're launching an MCP connector at `api.tinyassets.io/mcp` — could you point us at the submission process for the Claude directory?"
+- Email `developer-relations@anthropic.com` (if it exists) with a concise: "We're launching an MCP connector at `mcp.tinyassets.io/mcp` — could you point us at the submission process for the Claude directory?"
 - Post in Anthropic DevRel Discord / community (if one exists) — same question.
 - File an issue in the MCP GitHub org asking about submission canonical path.
 
@@ -215,7 +215,7 @@ Once §4 answers are gathered: run through §3 steps 1-4.
 
 Directory listing may not be achievable at MVP launch if the submission process is slow, invite-only, or requires SOC-2-level security audit. Fallback paths:
 
-1. **Manual-paste fallback (already the default).** User copies `api.tinyassets.io/mcp` into Claude.ai's custom-connector field. Friction: ~60 seconds vs ~5 seconds one-click. Documented in `/connect` page per #35.
+1. **Manual-paste fallback (already the default).** User copies `mcp.tinyassets.io/mcp` into Claude.ai's custom-connector field. Friction: ~60 seconds vs ~5 seconds one-click. Documented in `/connect` page per #35.
 2. **MCP community aggregator listings.** Several community-maintained lists (e.g. `awesome-mcp-servers` on GitHub) accept PRs. Lower-reach than the official directory but some SEO + discovery value.
 3. **Viral content loop.** Per #35 §7, the per-node catalog URLs are SEO-indexable (CC0 license + OG tags). "Found this cool workflow → how do I run it?" → landing page → manual-paste. Works without directory.
 4. **Direct partnerships.** For very early-adopters, 1:1 outreach to researchers / journalists / specific communities that would benefit; bypass directory entirely.

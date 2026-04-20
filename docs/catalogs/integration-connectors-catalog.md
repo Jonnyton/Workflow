@@ -133,7 +133,7 @@ Most push-to-external connectors use OAuth. Standard flow:
 
 1. Tier-1 chatbot surfaces "Connect your [service]" when user needs the integration.
 2. User clicks → browser opens vendor OAuth consent screen.
-3. On approval: vendor redirects to `api.tinyassets.io/oauth-callback/<vendor>` with authorization code.
+3. On approval: vendor redirects to `mcp.tinyassets.io/oauth-callback/<vendor>` with authorization code.
 4. Gateway exchanges code for tokens; stores refresh token in owner's `instance_ref` storage.
 5. Subsequent invocations re-derive access tokens from refresh token automatically.
 6. Tokens visible in tier-2 tray under Settings → Connected Services; revoke-any-time.

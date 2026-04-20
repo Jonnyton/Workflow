@@ -20,7 +20,7 @@ Phase 1a is the **fastest shippable piece** of the persistent-uptime work: a rea
 - **`tinyassets.io/catalog/index.json`** — single JSON index of all goals/branches/nodes for Phase 1b consumers (control plane reads it on cold start, Cloudflare caches it).
 
 **Explicitly out of scope (wait for Phase 1b):**
-- MCP dynamic surface (`api.tinyassets.io/mcp`). Phase 1a does NOT touch the existing cloudflared tunnel at `tinyassets.io/mcp` — behavior there is unchanged.
+- MCP dynamic surface (`mcp.tinyassets.io/mcp`). Phase 1a does NOT touch the existing cloudflared tunnel at `tinyassets.io/mcp` — behavior there is unchanged.
 - OAuth / identity / bearer tokens.
 - Bid inbox, request queue, daemon dispatch.
 - Write operations of any kind.
@@ -124,7 +124,7 @@ Minimum templates required. Dev has latitude on HTML/CSS; copy below is the auth
 One-page pitch with daemon-vocabulary brand voice. Required sections:
 - **Hero:** headline "Summon the daemon." Sub-headline: one-sentence explanation of Workflow as a goals-and-daemons platform.
 - **How it works (3 cards):** (a) Pick a goal, (b) Summon a daemon, (c) Fork and remix branches.
-- **Connect your Claude.ai:** step-by-step for adding the MCP connector at `tinyassets.io/mcp` (current endpoint; Phase 1b migrates to `api.tinyassets.io/mcp`).
+- **Connect your Claude.ai:** step-by-step for adding the MCP connector at `tinyassets.io/mcp` (current endpoint; Phase 1b migrates to `mcp.tinyassets.io/mcp`).
 - **Status badge:** pulls from `/status.json`, shows green ("catalog live, <N> goals, <M> branches") or yellow ("no daemons currently online — you can still browse"). Never red: if `/status.json` itself is unreachable, Pages is down and the badge is invisible anyway.
 - **Footer:** link to GitHub repo, link to `/catalog/`.
 
@@ -176,7 +176,7 @@ Machine-readable flat manifest — arrays of `{slug, name, href, tags}` for each
 - Users hitting `https://tinyassets.io/catalog/` get a browseable catalog 24/7.
 
 **What does NOT change in Phase 1a:**
-- Users' MCP connectors at `tinyassets.io/mcp` still go HTTP 530 when the laptop is off. That's fixed in Phase 1b when `api.tinyassets.io/mcp` comes online with a queued-response path.
+- Users' MCP connectors at `tinyassets.io/mcp` still go HTTP 530 when the laptop is off. That's fixed in Phase 1b when `mcp.tinyassets.io/mcp` comes online with a queued-response path.
 
 **User-facing messaging in the transitional window:**
 - Landing page's "Connect your Claude.ai" section includes a clear note: *"Workflow is in Phase 1 — MCP dynamic tools require a running daemon host. You can browse the catalog anytime; creation and daemon summoning resume when a host is online. We'll announce always-on MCP (Phase 1b) shortly."*

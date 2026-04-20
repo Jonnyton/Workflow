@@ -68,7 +68,7 @@ Don't wait for a crisis. Each of these keeps the migration path warm:
 
 ### 3.4 DNS freeze rehearsal
 
-- Document + test the exact Cloudflare DNS changes needed to point `api.tinyassets.io` + `tinyassets.io` at Hetzner boxes.
+- Document + test the exact Cloudflare DNS changes needed to point `mcp.tinyassets.io` + `tinyassets.io` at Hetzner boxes. (Pre-outage drafts of this playbook named `api.tinyassets.io`; that was the intended canonical but never shipped. Actual tunnel hostname is `mcp.tinyassets.io`; `api.` remains reserved as a future alias.)
 - Rehearse once per year: temporarily add a staging Hetzner box, point a staging subdomain at it, verify TLS + health.
 
 ---
@@ -97,13 +97,13 @@ Don't wait for a crisis. Each of these keeps the migration path warm:
 
 ### Phase 3: DNS cutover (30-60 minutes active, plus TTL propagation)
 
-1. **Short-TTL preparation** (do this 24-48h ahead of cutover): lower Cloudflare DNS TTL on `api.tinyassets.io` + `tinyassets.io` to 60s.
+1. **Short-TTL preparation** (do this 24-48h ahead of cutover): lower Cloudflare DNS TTL on `mcp.tinyassets.io` + `tinyassets.io` to 60s.
 2. **Final data sync:** stop Supabase writes (put gateway in read-only mode via `UPDATE app_config SET writes_enabled=false`). Take final dump; restore delta to Hetzner.
 3. **Flip DNS:**
-   - `api.tinyassets.io` A record → Hetzner gateway-1 IP (and gateway-2 as second record for round-robin).
+   - `mcp.tinyassets.io` A record → Hetzner gateway-1 IP (and gateway-2 as second record for round-robin).
    - `tinyassets.io` CNAME/flatten → Hetzner gateway-1 (SvelteKit dynamic routes) OR keep GitHub Pages for static catalog content (static/dynamic split holds even on self-host).
 4. **Cloudflare Origin CA certs:** valid for 15 years per uptime note §3.5.3 — no new cert needed; existing one works against any origin.
-5. **Propagation window (~5-10 min at 60s TTL):** monitor `api.tinyassets.io/mcp/health`. Some traffic hits old Supabase until propagation completes; readers get cached data, writers retry.
+5. **Propagation window (~5-10 min at 60s TTL):** monitor `mcp.tinyassets.io/mcp/health`. Some traffic hits old Supabase until propagation completes; readers get cached data, writers retry.
 
 ### Phase 4: Verify + decommission (first week post-cutover)
 
@@ -130,7 +130,7 @@ The full playbook above migrates the whole stack. Cheaper partial migrations han
 
 - Trigger: Fly.io outage or pricing shock; Supabase fine.
 - Swap: Gateway + Web → Hetzner CX11; DB stays on Supabase.
-- Gateway config change: same Postgres URL (Supabase-hosted); add `api.tinyassets.io` DNS to Hetzner IP.
+- Gateway config change: same Postgres URL (Supabase-hosted); point `mcp.tinyassets.io` DNS at Hetzner IP.
 - Skip Phase 1 step 2's db-primary; keep Supabase.
 
 ### 5.3 GitHub itself — most extreme

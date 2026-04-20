@@ -78,7 +78,7 @@ The tray is repositioned: no longer a self-contained MCP endpoint, now a **host-
 - **No chat UX.** Chat stays in Claude.ai. Tray is hosting-and-earnings only.
 - **No universe authoring.** Editing nodes/goals/branches happens in the web app or Claude.ai, not the tray.
 - **No tunnel management.** Post-full-platform, the tray does NOT run cloudflared; the daemon connects directly to Supabase Realtime. Drop the `TUNNEL_TOKEN` + `start_tunnel()` code paths from today's `universe_tray.py`.
-- **No per-universe local MCP port.** Today's tray runs an MCP server on :8001 for local-only testing. Post-full-platform, Claude.ai talks to the remote gateway at `api.tinyassets.io/mcp`; the local MCP server becomes optional (kept as a dev-debug tool via an env flag, not a default).
+- **No per-universe local MCP port.** Today's tray runs an MCP server on :8001 for local-only testing. Post-full-platform, Claude.ai talks to the remote gateway at `mcp.tinyassets.io/mcp` (actual tunnel hostname; `api.` was the pre-outage intended canonical that was never shipped — held open as future alias); the local MCP server becomes optional (kept as a dev-debug tool via an env flag, not a default).
 
 ---
 
@@ -102,7 +102,7 @@ Step 1/5  Welcome
    [Continue]
 
 Step 2/5  Sign in
-   [Sign in with GitHub]  (OAuth via browser to api.tinyassets.io/authorize)
+   [Sign in with GitHub]  (OAuth via browser to mcp.tinyassets.io/authorize — same tunnel hostname as the MCP surface; `api.` alias is reserved for future use)
    ↳ Gateway returns bearer JWT stored in OS keychain (macOS Keychain / Windows Credential Locker / Linux libsecret).
    [Skip for now]  (offline install; retried on next launch)
 

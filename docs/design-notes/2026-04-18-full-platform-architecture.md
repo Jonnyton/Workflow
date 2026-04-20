@@ -6,6 +6,8 @@
 
 **Replaces:** the phased rollout in `docs/design-notes/2026-04-18-persistent-uptime-architecture.md` §7 Phase 1/2/3. Supersedes `docs/exec-plans/active/2026-04-18-uptime-phase-1a-static-landing.md` — phased plan rejected by host.
 
+**Hostname correction (2026-04-19 post-P0):** this doc originally named `api.tinyassets.io` as the MCP gateway hostname throughout. Post-outage discovery showed the actual tunnel Published Application Route is `mcp.tinyassets.io` (the `api.` subdomain was never created and is NXDOMAIN). All body text below has been updated in-place to `mcp.tinyassets.io`; `api.` is held open as a future alias CNAME.
+
 **Related (not replaced, integrates):**
 - `docs/research/github_as_catalog.md` (re-evaluated in §4).
 - `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md` (sensitivity tiers integrate here).
@@ -48,7 +50,7 @@ Single backend owning all authoritative state except daemon execution + user upl
 - **Paid-market bid inbox** — requests land here, daemons poll for eligible work, control plane settles via the ledger.
 - **Ledger + settlements** — economic truth.
 - **Upload store** — canon files, per-universe; large-blob storage backed by object storage (S3-compatible).
-- **MCP gateway** — exposes the above as MCP tools at `api.tinyassets.io/mcp` for Claude.ai chatbot users. REST surface for the web app.
+- **MCP gateway** — exposes the above as MCP tools at `mcp.tinyassets.io/mcp` for Claude.ai chatbot users. REST surface for the web app.
 - **Web app** — landing page + catalog browse + collaborative editor. Primary surface for requirement (3).
 
 ### §2.2 Real-time strategy — recommendation: versioned rows + row-level broadcast, NOT CRDT
@@ -73,7 +75,7 @@ Users (web app, Claude.ai chatbot, future mobile / desktop MCP clients)
    │  HTTPS + WebSockets (near-real-time subscriptions)
    ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   api.tinyassets.io                             │
+│                   mcp.tinyassets.io                             │
 │                                                                 │
 │   ┌───────────────┐   ┌──────────────┐   ┌────────────────┐     │
 │   │ MCP gateway   │   │ Web REST     │   │ WebSocket      │     │
@@ -116,7 +118,7 @@ Users (web app, Claude.ai chatbot, future mobile / desktop MCP clients)
 
 | Tier | Who | Install cost | Primary surface |
 |---|---|---|---|
-| **T1 — Chatbot user** | Anyone with a Claude.ai account | **Zero-install.** Adds `api.tinyassets.io/mcp` as an MCP connector + visits `tinyassets.io/` in a browser. | Claude.ai chat + web app |
+| **T1 — Chatbot user** | Anyone with a Claude.ai account | **Zero-install.** Adds `mcp.tinyassets.io/mcp` as an MCP connector + visits `tinyassets.io/` in a browser. | Claude.ai chat + web app |
 | **T2 — Daemon host** | T1 user who also wants to run daemons (for self, for friends, for paid requests) | **One-click install** of the Workflow tray (MCPB bundle / platform-native installer). Authenticates against same account. | Tray app + web app + Claude.ai |
 | **T3 — OSS contributor** | Anyone who wants to extend domains, add node types, fix bugs | `git clone` + standard Python toolchain. Needs CONTRIBUTING.md pointer. | Local dev env + GitHub PR |
 
@@ -403,7 +405,7 @@ Integrates with the project-memory bid model (requester sets node + LLM + price;
 - Session tokens usable from MCP (Claude.ai connector OAuth 2.1 + PKCE) and web app (same backend).
 
 **Claude.ai MCP integration:**
-- User adds `api.tinyassets.io/mcp` as a remote MCP server in Claude.ai.
+- User adds `mcp.tinyassets.io/mcp` as a remote MCP server in Claude.ai.
 - Claude.ai walks OAuth 2.1 + PKCE — per MCP spec 2025-11-25 mandate.
 - Control plane trusts the MCP session's user_id on all subsequent tool calls.
 - RLS enforces per-user visibility at the DB level: a user cannot read another user's private drafts, period, even if the LLM asks nicely.
@@ -498,12 +500,12 @@ This is an ordering of work within a single-build delivery, not a phased rollout
 |---|---|---|---|
 | **A — Schema + Auth** | dev | 2 | Postgres schema for catalog + host-pool + requests + bids + ledger + comments + presence. Supabase Auth wired to GitHub OAuth. RLS policies for visibility. |
 | **B — Web app (landing + catalog browse + editor)** | dev | 4 | Read catalog, browse by goal/branch/node, create/edit node, comments, presence, fork. Hooks Supabase Realtime for live updates. |
-| **C — MCP gateway** | dev | 2 | FastMCP at `api.tinyassets.io/mcp` wrapping the same backend. Tool surface mirrors the existing `universe` action set, adapted to Postgres writes + RLS. OAuth 2.1 + PKCE for Claude.ai. |
+| **C — MCP gateway** | dev | 2 | FastMCP at `mcp.tinyassets.io/mcp` wrapping the same backend. Tool surface mirrors the existing `universe` action set, adapted to Postgres writes + RLS. OAuth 2.1 + PKCE for Claude.ai. |
 | **D — Daemon host changes** | dev | 2 | Tray's new host-pool registration + capability + visibility toggles. Heartbeat. Bid-polling loop. Deprecate the local MCP as primary surface; keep as debugging tool. |
 | **E — Paid-market flow** | dev | 1 | Requests + bids + claim + settlement wiring. Mostly Postgres + Realtime glue. |
 | **F — Moderation MVP** | dev | 0.5 | Report button + admin queue + rate limit triggers. |
 | **G — GitHub export sync** | dev | 1 | Hourly Action pushes Postgres public-rows to catalog repo as flat YAML. PR-ingest path on the return leg. |
-| **H — Cloudflare + DNS + deploy** | host | 0.5 | DNS cutover to Supabase-hosted domain (`api.tinyassets.io` CNAME to Supabase), TLS, cache rules. |
+| **H — Cloudflare + DNS + deploy** | host | 0.5 | DNS cutover to Supabase-hosted domain (`mcp.tinyassets.io` CNAME to Supabase), TLS, cache rules. |
 | **I — Content templates + daemon-brand copy** | dev | 0.5 | Landing page, editor UI copy, "summon the daemon" voice. |
 
 **Sequential dependencies:**
@@ -704,7 +706,7 @@ All three paths must stay healthy simultaneously. "Main is always downloadable" 
 **Entry:** tinyassets.io/ landing page. One primary CTA.
 
 1. Read the hero ("Summon the daemon.") + 3-step how-it-works.
-2. Click **"Connect Claude.ai"** → opens a setup page with a one-line copy-paste: `https://api.tinyassets.io/mcp` as the MCP remote URL.
+2. Click **"Connect Claude.ai"** → opens a setup page with a one-line copy-paste: `https://mcp.tinyassets.io/mcp` as the MCP remote URL.
 3. Completes OAuth 2.1 + PKCE flow (Claude.ai handles this natively in 2026).
 4. Back in Claude.ai chat, user says "summon me a daemon for a research paper"; the MCP tool creates the goal, branches list populates, web app surfaces it in realtime if open.
 
@@ -715,7 +717,7 @@ Friction budget: < 60 seconds from landing to first tool call. No downloads, no 
 **Entry:** from the web app, "Host a daemon" button (visible to signed-in T1 users who haven't yet). Or direct link `tinyassets.io/host`.
 
 1. User clicks "Download tray" → serves the platform-native installer (MCPB bundle via Claude Desktop's distribution, or direct installer).
-2. Installer runs; first launch opens the tray's OAuth flow against `api.tinyassets.io/authorize` — **same account** as their web app login (no new account).
+2. Installer runs; first launch opens the tray's OAuth flow against `mcp.tinyassets.io/authorize` — **same account** as their web app login (no new account).
 3. Tray registers host with default `visibility=self` on all capabilities the host's hardware can declare.
 4. User flips toggles to opt into `network` or `paid` as they choose. Optional: one-time tax/banking setup for `paid` earnings.
 
@@ -921,7 +923,7 @@ Quick scan for "this works because there's one of everything":
 
 ### §15.1 Chatbot data contract — the discovery RPC
 
-**One call returns everything the chatbot needs to reason.** Avoid N follow-ups. Name the RPC `discover_nodes` at `api.tinyassets.io/mcp` (also exposed as REST `POST /v1/discovery/nodes`).
+**One call returns everything the chatbot needs to reason.** Avoid N follow-ups. Name the RPC `discover_nodes` at `mcp.tinyassets.io/mcp` (also exposed as REST `POST /v1/discovery/nodes`).
 
 **Request:**
 ```
