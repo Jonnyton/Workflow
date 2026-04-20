@@ -78,6 +78,30 @@ services:
       org.workflow.component: tunnel
       org.workflow.role: cloudflare-ingress
 
+  # Row K — log aggregation sidecar. Tails daemon + cloudflared stdout
+  # via the Docker socket. Ships to Better Stack when
+  # BETTERSTACK_SOURCE_TOKEN is set in /etc/workflow/env; otherwise
+  # logs are captured by compose stdout (journald) only.
+  logs:
+    image: timberio/vector:0.40.0-alpine
+    container_name: workflow-logs
+    restart: unless-stopped
+    env_file:
+      - /etc/workflow/env
+    # Vector reads its config from /etc/vector/vector.yaml. Mount
+    # deploy/vector.yaml as the source; the config env-interpolates
+    # ${BETTERSTACK_SOURCE_TOKEN} at load time.
+    volumes:
+      - /opt/workflow/deploy/vector.yaml:/etc/vector/vector.yaml:ro
+      # Docker socket access so vector's docker_logs source can tail
+      # container stdout. Read-only — we never modify containers.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - daemon
+    labels:
+      org.workflow.component: logs
+      org.workflow.role: log-forwarder
+
 volumes:
   workflow-data:
     name: workflow-data

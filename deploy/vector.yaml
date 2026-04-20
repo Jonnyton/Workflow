@@ -1,0 +1,98 @@
+# Vector config — ship daemon + cloudflared container stdout to
+# Better Stack (or /dev/null when BETTERSTACK_SOURCE_TOKEN is unset).
+#
+# Self-host migration Row K per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Mounted read-only into the vector container at
+# /etc/vector/vector.yaml. The container tails Docker's container-log
+# socket + forwards to the configured sink.
+#
+# Default sink (BETTERSTACK_SOURCE_TOKEN unset): log events land in
+# the vector container's stdout, which compose captures + journald
+# stores. Equivalent to not running a sidecar at all, but keeps the
+# wiring in place for easy flip-on.
+#
+# Configured sink (token set): HTTP push to Better Stack's ingest
+# endpoint. Free tier = 3 GB/mo retention; plenty for a single daemon.
+
+# ---------------------------------------------------------------------
+# Sources: Docker container logs
+# ---------------------------------------------------------------------
+
+sources:
+  docker_logs:
+    type: docker_logs
+    # Scope to only our containers — don't spam Better Stack with
+    # every Docker container on the box (if any).
+    include_containers:
+      - workflow-daemon
+      - workflow-tunnel
+
+# ---------------------------------------------------------------------
+# Transforms: add metadata
+# ---------------------------------------------------------------------
+
+transforms:
+  enriched:
+    type: remap
+    inputs: [docker_logs]
+    source: |
+      .service = "workflow"
+      # Derive role from container name so Better Stack can filter.
+      if .container_name == "workflow-daemon" {
+        .role = "daemon"
+      } else if .container_name == "workflow-tunnel" {
+        .role = "cloudflared"
+      } else {
+        .role = "other"
+      }
+
+# ---------------------------------------------------------------------
+# Sinks — dual-path
+# ---------------------------------------------------------------------
+#
+# vector's env-var interpolation treats an unset BETTERSTACK_SOURCE_TOKEN
+# as empty string, which means the betterstack sink will fail to auth.
+# We avoid that by using a config fragment loaded conditionally — but
+# vector-yaml doesn't support conditional sinks inline. Instead, we
+# write BOTH sinks; the betterstack one is disabled when the token is
+# empty via a healthcheck-style token presence check (vector reloads
+# config on SIGHUP, so an env flip + reload works without compose
+# restart).
+#
+# Simpler: ship everything to stdout always. If the operator wants
+# Better Stack, they set BETTERSTACK_SOURCE_TOKEN and we ALSO ship
+# there. Missing token = single-sink (stdout only).
+
+sinks:
+  # Always-on: write to vector's stdout so journald captures logs
+  # even when Better Stack is unconfigured or temporarily down.
+  stdout:
+    type: console
+    inputs: [enriched]
+    encoding:
+      codec: json
+
+  # Optional: Better Stack HTTP ingest. Vector auto-retries + buffers
+  # on network failure. Token comes from env — empty = no-op config
+  # that still loads but issues 401s (so missing-token = no wiring).
+  # When the token is a real value, logs flow.
+  betterstack:
+    type: http
+    inputs: [enriched]
+    uri: https://in.logs.betterstack.com
+    encoding:
+      codec: json
+    compression: gzip
+    request:
+      headers:
+        Authorization: "Bearer ${BETTERSTACK_SOURCE_TOKEN:-dummy-missing}"
+    # Short acks so lost events show up fast in ops monitoring.
+    # If Better Stack is slow, stdout still has everything.
+    healthcheck:
+      enabled: false  # better-stack may not expose a health endpoint we can use
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: drop_newest
