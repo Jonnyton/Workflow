@@ -63,7 +63,7 @@ services:
   cloudflared:
     # Official image, pinned to a known-stable tag. Bump by hand
     # after testing on a staging box; don't track `latest` in prod.
-    image: cloudflare/cloudflared:2026.4.1
+    image: cloudflare/cloudflared:2026.3.0
     container_name: workflow-tunnel
     restart: unless-stopped
     # cloudflared connects outbound to Cloudflare edge; no ports
