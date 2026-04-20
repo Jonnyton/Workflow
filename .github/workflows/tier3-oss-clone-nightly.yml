@@ -50,6 +50,16 @@ jobs:
           source .venv/bin/activate
           python scripts/tier3_smoke.py
 
+      - name: Import-graph smoke
+        working-directory: /tmp/workflow-fresh
+        run: |
+          source .venv/bin/activate
+          # Catches the 2026-04-19 P0 class — missing-symbol regressions
+          # at package import time. Checks primary targets (workflow.storage
+          # + consumer surfaces) + every workflow/** package that declares
+          # __all__.
+          python scripts/import_graph_smoke.py --verbose
+
       - name: Smoke pytest
         working-directory: /tmp/workflow-fresh
         run: |

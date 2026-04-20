@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workflow pre-commit invariants.
 #
-# Enforces three invariants at commit time so no session has to
+# Enforces four invariants at commit time so no session has to
 # re-check them by hand:
 #
 #   1. Skill-mirror parity. If any file in `.agents/skills/` is
@@ -17,6 +17,12 @@
 #      `.txt` files are scanned for CP-1252-as-UTF-8 garbled sequences
 #      (â€" in place of — and similar). Any match fails the commit
 #      with a file:line report + autofix hint.
+#
+#   4. Import-graph smoke. When any `workflow/**/*.py` is staged, run
+#      scripts/import_graph_smoke.py to catch missing-symbol regressions
+#      of the 2026-04-19 P0 class (R7a-style refactor declaring names
+#      that don't resolve at runtime). Only runs on workflow/ touches
+#      so non-python commits don't pay the import cost.
 #
 # Override with `git commit --no-verify` for exceptional cases
 # (e.g. intentional mirror-only edit during a sync commit).
@@ -165,6 +171,44 @@ if [ -n "${STAGED_TEXT}" ]; then
         echo "${GREEN}pre-commit: mojibake scan clean (${#EXISTING_PATHS[@]} text file(s) checked)${RESET}"
       fi
     fi
+  fi
+fi
+
+# --- 4. Import-graph smoke ------------------------------------------
+
+STAGED_WORKFLOW_PY=$(
+  git diff --cached --name-only --diff-filter=ACMRD \
+    | grep -E '^(workflow|packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow)/.*\.py$' \
+    || true
+)
+
+if [ -n "${STAGED_WORKFLOW_PY}" ]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v py >/dev/null 2>&1; then
+    PYTHON_BIN="py -3"
+  else
+    echo "${YELLOW}pre-commit: python not available; skipping import-graph smoke${RESET}" >&2
+    PYTHON_BIN=""
+  fi
+
+  if [ -n "${PYTHON_BIN}" ] && [ -f scripts/import_graph_smoke.py ]; then
+    if ! ${PYTHON_BIN} scripts/import_graph_smoke.py --primary-only; then
+      echo "" >&2
+      echo "${RED}pre-commit: import-graph regression detected.${RESET}" >&2
+      echo "A staged workflow/ change breaks at-import-time symbol" >&2
+      echo "resolution — this is the 2026-04-19 P0 class of bug." >&2
+      echo "" >&2
+      echo "Fix: check __all__ lists in the staged module(s) and make" >&2
+      echo "sure every declared name actually resolves. Re-run:" >&2
+      echo "  ${PYTHON_BIN} scripts/import_graph_smoke.py --verbose" >&2
+      echo "" >&2
+      echo "Override with --no-verify if intentional." >&2
+      exit 1
+    fi
+    echo "${GREEN}pre-commit: import-graph smoke clean (primary targets)${RESET}"
   fi
 fi
 
