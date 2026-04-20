@@ -1,24 +1,6 @@
 # Status
 
-Live steering only.
-
-### Budget
-
-**Hard ceiling: 4 KB / 60 lines.**
-
-### Standing Principles
-
-**24/7 uptime is the forever rule.** Every surface must work with zero hosts online: tier-1 chatbot, tier-2 host install, tier-3 OSS clone, node discovery/remix/converge, paid-market, moderation. Target architecture: `docs/design-notes/2026-04-18-full-platform-architecture.md`.
-
-**Main is always downloadable.** Broken install is a production bug. See PLAN.md §Distribution.
-
-### Lifecycle Rules
-
-- **Concerns** — one line, ≤150 chars. Delete when resolved.
-- **Work** — claimable board. Delete when landed.
-- **Next** — replace each session.
-
----
+Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; Concerns host-managed; Work rows delete when landed; Next replaced each session. Forever rule = 24/7 uptime with zero hosts online (see AGENTS.md top-of-file).
 
 ## Concerns
 
@@ -36,22 +18,30 @@ Live steering only.
 
 ## Work
 
-Claim by setting Status to `claimed:yourname`. Files is the collision boundary.
+Claim by setting Status to `claimed:yourname`. Files is the collision boundary. All Row-X tasks live in `docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md`.
 
-| Task | Files | Depends | Status | Notes |
-|------|-------|---------|--------|-------|
-| **Rename A1-C2** | Phase 2-4 rename commits | — | pending | Dispatch §5 `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md`. A2-A4 parallel; B1 serial; C1-C2 parallel. |
-| **Mission 10 retest** | user-sim; new universe or resume echoes | host scope call | claimed:user | Exercises Fix A barrier + Fix E cleanup end-to-end. |
-| **#11 Engine/domain API separation** | `docs/design-notes/2026-04-17-engine-domain-api-separation.md` | rename lands first | host-review | 4 host asks in §6. |
-| **#19 Memory-scope Stage 2c flag flip** | — | 30d clean + zero Stage-1 firings | monitoring | Clock started 2026-04-16. |
-| **#25 File rename universe_*→workflow_*** | remaining canonical python renames + packaging mirror + shortcut label | — | pending | bat name already shipped at 1b29d92; module renames pending. |
+| Task | Files | Depends | Status |
+|------|-------|---------|--------|
+| Row E deploy — Worker push | CF dash: Workers + route tinyassets.io/mcp* | — | claimed:claude-code |
+| Row H — cloud canary + GH-Issue alarm | `.github/workflows/uptime-canary.yml`; `scripts/uptime_canary.py` | — | claimed:claude-code |
+| Row I — GHCR image registry | `.github/workflows/build-image.yml` | — | pending |
+| Row N — host-indep admin (bills/DNS/secrets) | `docs/ops/host-independence-runbook.md`; `scripts/emergency_dns_flip.py`; `.github/workflows/secrets-expiry-check.yml` | — | pending |
+| Row D — Hetzner deploy | `deploy/compose.yml`; systemd units | Row I | pending |
+| Row F — 48h smoke + acceptance | `scripts/selfhost_smoke.py` | Row D | pending |
+| Row G — canonical-URL docs sweep | specs/audits/SUCCESSION/ui-test | Row F green | pending |
+| Row J — state backup | `deploy/backup.sh`; systemd timer | Row D | pending |
+| Row K — log aggregation | `deploy/compose.yml` log-sidecar | Row D | pending |
+| Row L — auto-restart + watchdog | systemd unit; `scripts/watchdog.py` | Row D | pending |
+| Row M — CI deploy pipeline | `.github/workflows/deploy-prod.yml` | Row D, I | pending |
+| Mission 10 retest | user-sim | host scope call | claimed:user |
+| #19 Memory-scope Stage 2c flag | — | 30d clean | monitoring |
 
 ---
 
 ## Next
 
-1. Rename Phase 2 A1 is the next dispatchable dev commit (unblocks A2-A5 parallel work, then B1, then C1-C2 parallel). ~3-4 dev-days to D2 with 2-dev parallelism.
-2. §11 full-platform host Qs (~16 active): Q1 Postgres-canonical, Q7 Fly, Q10 load-test, Q17 co-maintainer, Q29-31 autoresearch DSL, Q32-34 evaluator load-bearing — answer unblocks tracks A-P dispatch.
-3. Once §11 answered, break tracks A-P into Work rows. Track O = autoresearch (§32), Track P = evaluation-layers (§33).
-4. Layer-3 rename design note (`docs/design-notes/2026-04-19-universe-to-workflow-server-rename.md`) sequences AFTER Phase 1 Part 2 lands — host §5 answers still pending.
-5. Subordinated: Mission 10/11 retests, #11 API asks, modularity-audit legacy cleanup (deferred per #73), STEERING.md removal (#27 in flight).
+1. **Row E dashboard deploy** (claude-code in flight) → canary both URLs → P0 closes for real.
+2. **Row H** (claude-code, queued) — cloud canary + GH-Issue alarm sink. Hard block on 48h acceptance.
+3. **Row I + Row N are dispatchable NOW to any provider** — no deps, repo-only scripts + workflows. Codex welcome to claim either.
+4. **Row D** unblocks J/K/L/M (the Hetzner-resident rows). Needs Row B + Row I done; Row B landed `e254048`, Row I pending.
+5. Subordinated: rename-end-state (post-daemon-economy), #11 API asks, mission retests. Not blocking 24/7 uptime goal.
