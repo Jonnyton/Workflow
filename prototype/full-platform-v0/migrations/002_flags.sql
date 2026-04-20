@@ -2,9 +2,11 @@
 -- Spec: docs/exec-plans/active/2026-04-19-track-a-schema-auth-rls.md §3.4 / §7.
 -- Minimal moderation entry-point. Full moderation surface ships post-first-draft.
 --
--- Control plane reads state='flagged' on flags.target_kind + updates the
--- corresponding requests.state / bids.state / nodes.status='flagged' via
--- application-layer trigger. Flagged rows are excluded from broadcast.
+-- Control plane reads state='flagged' on flags.target_kind. Flagged rows
+-- are excluded from broadcast. Target-row state transitions (requests.state
+-- / bids.state / nodes.status='flagged') are done by manual host-admin SQL
+-- per spec §7 — no trigger ships in first-draft; moderation automation is
+-- post-first-draft feature work.
 
 CREATE TABLE IF NOT EXISTS public.flags (
   flag_id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
