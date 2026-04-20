@@ -247,15 +247,61 @@ The daemon reads configuration from env vars. Defaults are
 CWD-independent so containerized deploys don't drift based on where
 the process was launched from.
 
+### Data + paths
+
 | Var | Purpose | Default |
 |-----|---------|---------|
 | `WORKFLOW_DATA_DIR` | Canonical root for all on-disk state (SQLite checkpoint, LanceDB indexes, per-universe output dirs). Absolute path. | Platform default — Windows: `%APPDATA%\Workflow`; Linux/macOS/container: `~/.workflow`. |
 | `WORKFLOW_UNIVERSE` | Per-universe override — specific universe dir for the stdio MCP shim (`workflow.mcp_server`). | `$WORKFLOW_DATA_DIR/default-universe`. |
-| `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. | — |
+| `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `UNIVERSE_SERVER_DEFAULT_UNIVERSE` | Which universe ID is active when none explicit. | First subdir of `$WORKFLOW_DATA_DIR`. |
+| `WORKFLOW_REPO_ROOT` | Path to the local git checkout for `workflow.producers.goal_pool` + git-backed catalog writes. When unset, resolved via `Path(__file__).resolve().parent.parent`. | Derived from module path. |
+| `WIKI_PATH` | Path to the cross-project knowledge wiki the `wiki` tool reads/writes. | `C:\Users\Jonathan\Projects\Wiki` (Windows dev fallback — configure explicitly on container deploys). |
 | `WORKFLOW_UPLOAD_WHITELIST` | Colon/semicolon-separated absolute-path prefixes allowed for `add_canon_from_path`. Unset = accept any absolute path. | Unset (permissive). |
+
+### Auth + identity
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `UNIVERSE_SERVER_USER` | Username the Workflow Server credits for commit-authorship + ledger write-author + request claims. Required for paid-market claims; otherwise falls back. | `anonymous`. |
+| `UNIVERSE_SERVER_HOST_USER` | Host-identity username used when a request is claimed by the box running the daemon (as opposed to an individual operator). | `host`. |
+| `UNIVERSE_SERVER_AUTH` | Auth mode. `"true"` / `"1"` enables OAuth-gated MCP. Disabled by default for single-operator dev. | `false`. |
+| `UNIVERSE_SERVER_PORT` | Port used by `workflow.auth.wellknown` when emitting OAuth metadata URLs. | `8001`. |
+| `WORKFLOW_GIT_AUTHOR` | Verbatim override for git commit author (e.g. `"Workflow User <user@users.noreply.workflow.local>"`). Highest precedence; falls through to `UNIVERSE_SERVER_USER`-derived synthetic. | Unset (synthetic from `UNIVERSE_SERVER_USER`). |
+
+### Feature flags
+
+Each flag reads as a string; truthy = `"on"`, `"1"`, `"true"`, `"yes"` (case-insensitive). Defaults chosen so out-of-the-box behavior matches current tier-1 contract.
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `WORKFLOW_DISPATCHER_ENABLED` | Master switch for the dispatcher. Off = every request runs inline; on = dispatch goes through the claim/bid surface. | `on`. |
+| `WORKFLOW_PAID_MARKET` | Enables the paid-market bid/claim surface. `WORKFLOW_DISPATCHER_ENABLED` must also be on. Phase-G flag. | `off`. |
+| `WORKFLOW_GOAL_POOL` | Enables the goal-pool producer in `workflow.producers.goal_pool` — cross-branch goal aggregation. | `off`. |
+| `WORKFLOW_PRODUCER_INTERFACE` | Enables the producer-interface surface — multi-producer concurrency for branches. | `on`. |
+| `WORKFLOW_TIERED_SCOPE` | Enables the tiered-memory-scope retrieval router (`workflow.retrieval.router`). Memory scope is tier-gated (node/branch/goal/user/universe). | `off` (Stage 1 monitoring; flip to `on` at Stage 2c per task #19). |
+| `GATES_ENABLED` | Enables outcome-gate claims (Phase 6). When off, `gates` tool returns placeholder. | `off`. |
+| `WORKFLOW_STORAGE_BACKEND` | Catalog storage backend selection. Values: empty (default), `"git"`, `"sqlite"`. | Empty (auto-select per backend factory). |
+| `WORKFLOW_RUN_MAX_CONCURRENT` | Integer cap on concurrent in-flight branch runs. | Unset = unlimited. |
+
+### LLM + provider routing
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `OLLAMA_HOST` | Local Ollama endpoint URL. Presence is the "local-LLM-bound" signal `get_status` reports. | Unset. |
+| `ANTHROPIC_BASE_URL` | Alternate Anthropic endpoint (e.g. self-hosted relay). Presence also flips `llm_endpoint_bound` to truthy. | Unset. |
+| `WORKFLOW_PIN_WRITER` | Pin a specific writer provider by name (e.g. `"claude-code"`, `"codex"`). Overrides the provider router's fallback chain. | Unset. |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` / `XAI_API_KEY` | Provider API keys for the Gemini / Groq / Grok providers respectively. Missing key → provider unavailable. | Unset. |
+| `FANTASY_DAEMON_LLM_TYPES` | Comma-separated list of LLM types the fantasy daemon prefers (e.g. `"claude,codex"`). Filters provider selection. | Unset. |
+
+### Observability + uptime
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. Canary-specific — keeps the `mcp.` direct-tunnel URL so a Worker outage is distinguishable from tunnel/daemon outage. | `https://mcp.tinyassets.io/mcp`. |
 | `WORKFLOW_DEPRECATIONS` | Set to `1` / `true` / `yes` to surface deprecation warnings for legacy env vars + import shims. | Unset (silent). |
-| `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. | `https://mcp.tinyassets.io/mcp`. |
+| `TAB_WATCHDOG_INTERVAL_S` | Interval (seconds) for the tray tab-watchdog's polling. `scripts/tab_watchdog.py`. | `60`. |
+| `WORKFLOW_CLAUDE_CHAT_SCREENSHOTS` | User-sim skill flag — capture a screenshot on every `claude_chat.py` response settle. Cost: ~200 KB per response. | Unset (off). |
 
 **Canonical resolver:** `workflow.storage.data_dir()` is the single
 source of truth for `WORKFLOW_DATA_DIR` resolution. Do not re-implement
