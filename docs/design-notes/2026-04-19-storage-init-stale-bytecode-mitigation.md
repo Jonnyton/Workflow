@@ -150,16 +150,60 @@ Called as the first step after imports. Server refuses to start if the check fai
 
 ---
 
+### Option D — Tray-level mtime watcher auto-restarts MCP on source change
+
+**Shape.** Tray spawns a lightweight watcher thread that polls mtimes of canonical workflow paths every ~5s (or uses `watchdog`'s filesystem events where available). When any of `workflow/**/*.py`, `domains/**/*.py`, or the packaged-plugin mirror changes, tray gracefully restarts the MCP subprocess (SIGTERM + respawn).
+
+```python
+# tray/mtime_watcher.py (conceptual)
+_WATCH_ROOTS = [
+    "workflow", "domains",
+    "packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow",
+]
+
+def poll_once(last_mtime: float) -> tuple[bool, float]:
+    current = max(
+        p.stat().st_mtime
+        for root in _WATCH_ROOTS for p in Path(root).rglob("*.py")
+    )
+    return (current > last_mtime, current)
+```
+
+When `True`, tray calls existing restart pathway (SIGTERM PID 2412-equivalent → respawn within 2-5s per `reference_daemon_restart_procedure` memory).
+
+**What it fixes.**
+- Catches 2026-04-19 P0 directly — the file mtime (16:34:46) post-dates the server start (15:12:06); watcher fires at next 5s tick; server restarts with the new import graph.
+- Works even when the developer forgets to bounce manually.
+- Covers the entire class of "source updated, process stale," not just storage.
+
+**What it does NOT fix.**
+- Does not catch missing-symbol regressions at COMMIT time (B does).
+- Does not prevent structural fragility (A does).
+- Auto-restart has usual blast-radius concerns: file saved mid-edit triggers restart on a syntactically broken file; restart loop. Mitigation: 500ms debounce after last mtime change before triggering; rate-limit to max 3 restarts per 10 min (same as C's hint).
+- Windows filesystem mtime resolution is ~1s; a rapid save-save within 1s looks like one change. Acceptable for the tray-polling cadence.
+- Polling overhead: ~200-500 file stats per poll. At 5s cadence = negligible (<0.5% CPU).
+
+**Cost.** ~80 LOC for watcher thread + debounce + rate limiter + test coverage. Plus integration with existing tray process-management. ~0.5-1 dev-day depending on how much tray refactor is needed.
+
+**Risk.** Higher than A/B/C. Auto-restart behavior is user-visible — mid-request restart can drop in-flight tool calls. Mitigation: watch-and-defer — queue restart until current MCP sessions are idle (no active requests in past 30s) OR restart immediately if user explicitly opts in via tray setting. Recommend OPT-IN initially; move to default-on after field experience.
+
+**Verdict:** the most aggressive + most complete fix for the stale-process class. Best paired with A (structural) + B (CI); paired alone it masks commit-time regressions by auto-rescuing the user experience, which is both a feature and a risk (easier to land broken code when the dev loop self-heals).
+
+---
+
 ## 4. Recommendation
 
-Ship **A + B together**; defer C as a follow-on.
+Ship **A + B together**; defer C and D as follow-ons.
 
 **Rationale.**
 - A fixes the structural fragility (circular import + body-level re-exports). Cheapest per unit of long-term robustness.
 - B catches A's rare regressions plus ALL symbol-missing regressions at commit time — this is where the P0 class of bug should be caught, not at the already-running process.
-- C is useful but only fires at server start, and server start on a fresh deploy is already covered by tier-3 OSS clone GHA. Returns on C come later: when we add multi-host auto-deploy.
+- C is useful but only fires at server start; server start on a fresh deploy is already covered by tier-3 OSS clone GHA. Returns on C come later when we add multi-host auto-deploy.
+- D is the most complete fix for the live-process leg but carries the highest risk (auto-restart UX, mid-request drops) and masks regressions that A+B would have surfaced earlier. Worth shipping after A+B, opt-in, then default-on after field experience.
 
-**Combined cost:** ~0.5 dev-day total. Single commit is fine; option A is the load-bearing piece, option B is the safety net.
+**Combined cost:** ~0.5 dev-day for A+B. D adds ~0.5-1 dev-day when greenlit. C adds ~0.25 dev-day. Single commit is fine for A+B; D is its own commit because it touches tray process management.
+
+**Why NOT D first:** D *auto-heals* the symptom without fixing the structural fragility. A developer who doesn't understand the underlying fragility (circular imports at line 206, wide re-export surface) will keep shipping symbol-addition PRs that D silently rescues. That's exactly the wrong teaching signal — the mistake should surface at commit time (B) or be structurally impossible (A), not invisibly recovered at runtime.
 
 ---
 
@@ -186,7 +230,12 @@ Ship **A + B together**; defer C as a follow-on.
 - **Primary:** Option A (lazy `__getattr__` on `workflow/storage/__init__.py` re-export block). ~15 LOC. Fixes circular-import fragility.
 - **Secondary:** Option B (import-graph smoke in pre-commit + tier-3 GHA). ~55 LOC. Catches missing-symbol regressions at commit/install time.
 - **Deferred:** Option C (server-startup import-graph check). ~30 LOC. Useful after A+B; not load-bearing for this class.
-- **Total recommended:** A + B, ~0.5 dev-day, single commit.
-- **Would have caught 2026-04-19 P0:** both A (structural) and B (CI) would have prevented the class. A alone would not catch a truly stale process; B alone would not fix the underlying fragility.
+- **Deferred (highest blast radius):** Option D (tray mtime watcher auto-restart). ~80 LOC + tray refactor. Catches the live-process leg directly but needs opt-in UX and doesn't fix the underlying fragility that A+B address.
+- **Total recommended first commit:** A + B, ~0.5 dev-day, single commit. D is a separate commit after field-testing A+B.
+- **Would have caught 2026-04-19 P0:**
+  - A: yes (structurally — missing symbol raises `AttributeError` at narrow call site, not at import; restart still required but the process doesn't outright fail to serve unrelated tools).
+  - B: yes (at commit time — smoke test would have flagged the missing export on the R7a commit).
+  - C: no (server started BEFORE the refactor; check doesn't re-fire).
+  - D: yes (directly — mtime watcher would have fired at 16:34:46 and restarted the process before host hit it at 17:05).
 
 Scoping complete. Implementation waits for lead greenlight.
