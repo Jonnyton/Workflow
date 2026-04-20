@@ -1,0 +1,81 @@
+name: Build and publish image
+
+# Self-host migration Row I:
+# publish the daemon image Row D deploys, while docker-build.yml remains
+# the PR/push smoke test that proves the Dockerfile still boots.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: workflow-daemon
+
+jobs:
+  build-and-push:
+    name: Build and push GHCR image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive GHCR tags
+        id: image
+        shell: bash
+        run: |
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="${REGISTRY}/${owner}/${IMAGE_NAME}"
+          short_sha="$(git rev-parse --short=12 HEAD)"
+
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "tags<<EOF"
+            echo "${image}:latest"
+            echo "${image}:${short_sha}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.image.outputs.short_sha }}
+          cache-from: type=gha,scope=workflow-daemon
+          cache-to: type=gha,mode=max,scope=workflow-daemon
+
+      - name: Publish image summary
+        run: |
+          {
+            echo "Published image:"
+            echo "- ${{ steps.image.outputs.image }}:latest"
+            echo "- ${{ steps.image.outputs.image }}:${{ steps.image.outputs.short_sha }}"
+          } >> "${GITHUB_STEP_SUMMARY}"
