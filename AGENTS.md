@@ -230,6 +230,7 @@ useful concurrency, not waiting.
 7. **Python 3.11+** required.
 8. **Fail loudly, never silently.** Mock fallbacks that look like real output are worse than crashes.
 9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
+10. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io` / `mcp.tinyassets.io`, run `python scripts/mcp_public_canary.py` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe before considering the change complete. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class.
 
 ---
 
