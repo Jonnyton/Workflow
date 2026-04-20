@@ -1,0 +1,224 @@
+name: Deploy prod
+
+# Self-host migration Row M per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Fires after build-image.yml succeeds on main. SSH into the Hetzner
+# box, pull the freshly-published image tag, `docker compose up -d`,
+# run a post-deploy canary against `tinyassets.io/mcp`, and on canary
+# red, auto-rollback to the previous tag.
+#
+# Alarm hook: deploy failures open a GitHub issue labeled `deploy-failed`
+# — distinct from the canary-triggered `p0-outage` issue shape from
+# Row H. That way host can tell "deploy broke" from "daemon died
+# spontaneously."
+
+on:
+  workflow_run:
+    workflows: ["Build and publish image"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (default = latest main commit short-SHA)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+  HETZNER_SSH_USER: ${{ secrets.HETZNER_SSH_USER }}
+  # Canonical post-deploy probe URL.
+  CANARY_URL: https://tinyassets.io/mcp
+  DIRECT_URL: https://mcp.tinyassets.io/mcp
+
+jobs:
+  deploy:
+    # Don't run on failed build-image runs. Manual dispatch always allowed.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Derive the image tag to deploy. workflow_dispatch override wins;
+      # otherwise use the build-image run's head SHA.
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            full_sha="${{ github.event.workflow_run.head_sha }}"
+            echo "tag=${full_sha:0:12}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+          owner_lower="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner_lower}/workflow-daemon" >> "$GITHUB_OUTPUT"
+
+      - name: Verify secrets present
+        run: |
+          missing=()
+          [ -z "$HETZNER_HOST" ] && missing+=("HETZNER_HOST")
+          [ -z "$HETZNER_SSH_USER" ] && missing+=("HETZNER_SSH_USER")
+          [ -z "${{ secrets.HETZNER_SSH_KEY }}" ] && missing+=("HETZNER_SSH_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "::error::Configure at: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+      - name: Install SSH key
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/hetzner_deploy
+          chmod 600 ~/.ssh/hetzner_deploy
+          ssh-keyscan -t ed25519,rsa "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Capture previous image tag (for rollback)
+        id: prev
+        run: |
+          # Read current WORKFLOW_IMAGE from the running env file.
+          prev=$(ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
+              "${HETZNER_SSH_USER}@${HETZNER_HOST}" \
+              "sudo grep -E '^WORKFLOW_IMAGE=' /etc/workflow/env | head -1 | cut -d= -f2-" \
+              || echo '')
+          if [ -z "$prev" ]; then
+            echo "::warning::no previous WORKFLOW_IMAGE found on box; rollback will use :latest fallback"
+            prev="${{ steps.tag.outputs.image }}:latest"
+          fi
+          echo "previous=${prev}" >> "$GITHUB_OUTPUT"
+          echo "Previous: ${prev}"
+
+      - name: Deploy new image
+        id: deploy
+        run: |
+          NEW_IMAGE="${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}"
+          echo "Deploying: ${NEW_IMAGE}"
+          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
+              "${HETZNER_SSH_USER}@${HETZNER_HOST}" <<EOF
+            set -e
+            # Pin the new tag in /etc/workflow/env.
+            sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${NEW_IMAGE}|" /etc/workflow/env
+            # Pull + restart via the systemd unit (which runs docker
+            # compose down + up with the new env).
+            sudo docker pull "${NEW_IMAGE}"
+            sudo systemctl restart workflow-daemon
+          EOF
+
+      - name: Wait for daemon health
+        run: |
+          # Give compose time to bring the new image up + healthcheck
+          # to settle. Cold-start budget 90s.
+          for i in $(seq 1 18); do
+            if python scripts/mcp_public_canary.py \
+                 --url "${CANARY_URL}" --timeout 10 >/dev/null 2>&1; then
+              echo "canonical green after ${i} poll(s)"
+              break
+            fi
+            sleep 5
+            if [ "$i" = "18" ]; then
+              echo "::error::canary still red after 90s — rolling back"
+              exit 1
+            fi
+          done
+
+      - name: Post-deploy canary — both URLs
+        id: canary
+        run: |
+          python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
+          python scripts/mcp_public_canary.py --url "${DIRECT_URL}" --verbose
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "::warning::Rolling back to ${{ steps.prev.outputs.previous }}"
+          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
+              "${HETZNER_SSH_USER}@${HETZNER_HOST}" <<EOF
+            set -e
+            sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${{ steps.prev.outputs.previous }}|" /etc/workflow/env
+            sudo docker pull "${{ steps.prev.outputs.previous }}" || true
+            sudo systemctl restart workflow-daemon
+          EOF
+          # Confirm rollback restored green.
+          sleep 30
+          python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
+
+      - name: Open deploy-failed issue
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.tag }}
+          PREV_IMAGE: ${{ steps.prev.outputs.previous }}
+        with:
+          script: |
+            const label = "deploy-failed";
+            // Ensure label exists.
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'fbca04',
+                  description: 'CI deploy to Hetzner failed; auto-rollback attempted.',
+                });
+              } else {
+                throw e;
+              }
+            }
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Deploy failed — ${process.env.NEW_TAG} @ ${new Date().toISOString()}`,
+              labels: [label],
+              body: [
+                `Auto-opened by the deploy-prod workflow.`,
+                ``,
+                `- Attempted: \`${process.env.NEW_TAG}\``,
+                `- Rolled back to: \`${process.env.PREV_IMAGE}\``,
+                `- Run: ${runUrl}`,
+                ``,
+                `Check the run logs for the failing step (build, deploy, canary, or rollback).`,
+                `If rollback canary is also red, the daemon is down — investigate urgently.`,
+              ].join('\n'),
+            });
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy result"
+            echo ""
+            echo "- **Target image:** \`${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}\`"
+            echo "- **Previous image:** \`${{ steps.prev.outputs.previous }}\`"
+            echo "- **Deploy step:** \`${{ steps.deploy.outcome }}\`"
+            echo "- **Canary step:** \`${{ steps.canary.outcome }}\`"
+            echo "- **Overall:** \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
