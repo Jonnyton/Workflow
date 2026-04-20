@@ -189,8 +189,14 @@ class OAuthProvider(AuthProvider):
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         if db_path is None:
-            base = os.environ.get("UNIVERSE_SERVER_BASE", "output")
-            db_path = Path(base) / ".auth.db"
+            # Route through the canonical resolver so container deploys
+            # get $WORKFLOW_DATA_DIR/.auth.db instead of the CWD-relative
+            # ``output/.auth.db`` (which lands in /app/output inside a
+            # container — ephemeral, loses auth sessions on every
+            # restart). See workflow.storage.data_dir for precedence
+            # semantics.
+            from workflow.storage import data_dir
+            db_path = data_dir() / ".auth.db"
         self._db_path = Path(db_path)
         self._initialize_db()
 

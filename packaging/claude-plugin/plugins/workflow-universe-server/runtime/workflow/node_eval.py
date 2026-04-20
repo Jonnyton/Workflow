@@ -156,9 +156,12 @@ class NodeEvaluator:
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         if db_path is None:
-            import os
-            base = os.environ.get("UNIVERSE_SERVER_BASE", "output")
-            db_path = Path(base) / ".node_eval.db"
+            # Route through the canonical resolver so container deploys
+            # get $WORKFLOW_DATA_DIR/.node_eval.db instead of the
+            # CWD-relative ``output/.node_eval.db``. See
+            # workflow.storage.data_dir for precedence semantics.
+            from workflow.storage import data_dir
+            db_path = data_dir() / ".node_eval.db"
         self._db_path = Path(db_path)
         self._initialize_db()
 

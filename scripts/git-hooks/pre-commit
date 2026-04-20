@@ -212,4 +212,67 @@ if [ -n "${STAGED_WORKFLOW_PY}" ]; then
   fi
 fi
 
+# --- 5. data_dir bypass lint -----------------------------------------
+#
+# Row B established ``workflow.storage.data_dir()`` as the canonical
+# resolver for on-disk state paths. Two sites pre-existing-Row-B
+# bypassed it by reading UNIVERSE_SERVER_BASE directly + defaulting to
+# CWD-relative ``output``, which wrote to /app/output in containers
+# (ephemeral, lost on restart). Fixed in commit ${ROW_B_CLEANUP}.
+#
+# Prevent the regression: any staged python file under workflow/ that
+# reads UNIVERSE_SERVER_BASE via os.environ.get is suspect — it should
+# route through data_dir() instead. Grep the staged diff; fail on hit.
+#
+# Exempt: ``workflow/storage/__init__.py`` itself defines the resolver
+# and is allowed to read the legacy env var for backcompat.
+
+STAGED_WF_PY=$(
+  git diff --cached --name-only --diff-filter=ACMRD \
+    | grep -E '^(workflow|packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow)/.*\.py$' \
+    | grep -v -E '(workflow|runtime/workflow)/storage/__init__\.py$' \
+    || true
+)
+
+if [ -n "${STAGED_WF_PY}" ]; then
+  BYPASS_HITS=()
+  while IFS= read -r f; do
+    [ -z "${f}" ] && continue
+    [ -f "${f}" ] || continue
+    # Look for: os.environ.get("UNIVERSE_SERVER_BASE" ...)  — allow any
+    # reads inside comments if someone explains the legacy name.
+    while IFS=: read -r ln rest; do
+      # Skip comment-only matches.
+      case "$(echo "${rest}" | sed 's/^[[:space:]]*//')" in
+        '#'*) continue;;
+      esac
+      BYPASS_HITS+=("${f}:${ln}:${rest}")
+    done < <(grep -nE 'os\.environ\.get\s*\(\s*["'"'"']UNIVERSE_SERVER_BASE' "${f}" 2>/dev/null || true)
+  done <<< "${STAGED_WF_PY}"
+
+  if [ "${#BYPASS_HITS[@]}" -gt 0 ]; then
+    echo "${RED}pre-commit: data_dir() bypass detected.${RESET}" >&2
+    echo "" >&2
+    echo "The following staged lines read UNIVERSE_SERVER_BASE directly" >&2
+    echo "instead of routing through workflow.storage.data_dir():" >&2
+    for h in "${BYPASS_HITS[@]}"; do
+      echo "  ${h}" >&2
+    done
+    echo "" >&2
+    echo "Fix:" >&2
+    echo "  from workflow.storage import data_dir" >&2
+    echo "  db_path = data_dir() / \".<file>.db\"" >&2
+    echo "" >&2
+    echo "Why: Row B established data_dir() as the canonical resolver." >&2
+    echo "Direct env reads bypass it + default to CWD-relative \"output\"" >&2
+    echo "which breaks containerized deploys (writes to /app/output" >&2
+    echo "instead of \$WORKFLOW_DATA_DIR — data lost on restart)." >&2
+    echo "" >&2
+    echo "Exempt: workflow/storage/__init__.py (defines the resolver)." >&2
+    echo "Override with --no-verify if intentional." >&2
+    exit 1
+  fi
+  echo "${GREEN}pre-commit: data_dir bypass lint clean${RESET}"
+fi
+
 exit 0
