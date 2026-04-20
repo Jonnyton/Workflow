@@ -66,8 +66,16 @@ services:
     image: cloudflare/cloudflared:2026.3.0
     container_name: workflow-tunnel
     restart: unless-stopped
-    # cloudflared connects outbound to Cloudflare edge; no ports
-    # published to host. Tunnel token auth (shape A per Row C).
+    # cloudflared runs in host network namespace so that the tunnel's
+    # dashboard-configured ingress rule `http://localhost:8001` resolves
+    # to the daemon's loopback-published port (127.0.0.1:8001 on the
+    # Droplet host). Without this, "localhost" inside the cloudflared
+    # container is the container's own loopback — not the daemon.
+    # Long-term cleaner fix: edit the tunnel ingress rule in Cloudflare
+    # Zero Trust dashboard to point at `http://daemon:8001` (Docker
+    # service name), then drop network_mode: host.
+    network_mode: host
+    # Tunnel token auth (shape A per Row C).
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     env_file:
       - /etc/workflow/env
