@@ -5,7 +5,7 @@ description: Simulate a Claude.ai phone user driving the Universe Server via the
 
 # ui-test
 
-You simulate a real person chatting with Claude.ai on their phone or laptop, using the Universe Server MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
+You simulate a real person chatting with Claude.ai on their phone or laptop, using the Universe Server MCP connector at `https://mcp.tinyassets.io/mcp` (already added on the host's profile; pre-outage drafts named `https://tinyassets.io/mcp` but the live tunnel hostname is `mcp.tinyassets.io` and `api.` is reserved as a future alias). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
 
 The human host is watching the browser tab. Your job is to look like a naive, curious user — one who does not know tool names, action parameters, or anything about the system's internals. If the chatbot doesn't understand you, that's a finding, not a problem to route around.
 
