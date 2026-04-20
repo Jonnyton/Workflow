@@ -58,7 +58,7 @@ COPY domains/ ./domains/
 # final image free of pip metadata + build tools.
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -e .
+    /opt/venv/bin/pip install --no-cache-dir -e ".[mcp]"
 
 # ---------- Stage 2: final ----------
 
