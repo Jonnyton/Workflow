@@ -1,0 +1,45 @@
+# wrangler.toml — Cloudflare Worker config for the tinyassets.io/mcp
+# path-based router.
+#
+# Deploy targets:
+#   zone: tinyassets.io
+#   route: tinyassets.io/mcp*  (matches /mcp, /mcp/, /mcp/anything)
+#
+# Reference: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "workflow-mcp-router"
+main = "worker.js"
+
+# Pin the compat date so upstream runtime changes don't silently alter
+# behavior. Bump this knowingly when a new Worker feature is needed.
+compatibility_date = "2025-10-01"
+
+# nodejs_compat isn't needed for this Worker — we only use the Fetch
+# API + URL + Headers + Response primitives. Keeping it off keeps the
+# bundle small + avoids tree-shake surprises.
+compatibility_flags = []
+
+# Route — matches any request to tinyassets.io whose path starts with
+# /mcp. Cloudflare route syntax uses `*` as a match-any suffix.
+# Zone name must match the Cloudflare zone that owns tinyassets.io.
+routes = [
+    { pattern = "tinyassets.io/mcp*", zone_name = "tinyassets.io" },
+]
+
+# Observability — enable request logs so post-P0 debugging has a trail.
+# Tail via `wrangler tail`. Costs negligible at our request volume.
+[observability]
+enabled = true
+head_sampling_rate = 1.0
+
+# No bindings (KV, D1, Queues) — this Worker is a pure proxy.
+# No secrets — no API tokens, no upstream auth. The tunnel origin is
+# public via the subdomain.
+
+# Local dev:
+#   wrangler dev --local
+# Deploy:
+#   wrangler login
+#   wrangler deploy
+# Tail logs:
+#   wrangler tail

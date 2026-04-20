@@ -1,0 +1,205 @@
+// worker.js — path-based router for tinyassets.io.
+//
+// Problem:
+//   - tinyassets.io apex serves GoDaddy Website Builder (landing page).
+//   - mcp.tinyassets.io serves the Cloudflare Tunnel → workflow daemon MCP.
+//   - Installed Claude.ai connectors point at https://tinyassets.io/mcp.
+//   - Without this Worker, tinyassets.io/mcp falls through to GoDaddy's
+//     404 handler → "Session terminated" in Claude.ai (the 2026-04-19 P0).
+//
+// Fix:
+//   This Worker runs on route `tinyassets.io/mcp*`. Any request whose
+//   path begins with `/mcp` is forwarded to the tunnel origin at
+//   `mcp.tinyassets.io` (same path). All other paths are left untouched
+//   by this Worker — they hit the GoDaddy origin as before.
+//
+// Design constraints:
+//   - MCP streamable-http emits SSE (text/event-stream) for long
+//     responses. Must not buffer the body; pass the ReadableStream
+//     straight through.
+//   - Accept, Content-Type, Authorization, Mcp-Session-Id, and every
+//     other request header preserved. Upstream decides which to act on.
+//   - POST, GET, OPTIONS all supported (OPTIONS for CORS preflight).
+//   - 5xx from the tunnel becomes 502 Bad Gateway with a clear body —
+//     NOT GoDaddy fallthrough. Ambiguity on failure mode is what caused
+//     the original P0; explicit status here.
+//   - Pure proxy: no response-body rewriting.
+//
+// Canonical URL post-deploy: https://tinyassets.io/mcp  (apex + path).
+// Direct-tunnel URL (kept for canary + debug): https://mcp.tinyassets.io/mcp.
+
+const TUNNEL_ORIGIN = 'https://mcp.tinyassets.io';
+
+// Hop-by-hop headers that a proxy MUST NOT forward. Per RFC 7230 §6.1.
+// Cloudflare strips most of these automatically, but being explicit
+// protects against future runtime changes.
+const HOP_BY_HOP_REQUEST_HEADERS = new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailers',
+    'transfer-encoding',
+    'upgrade',
+    'host', // we rewrite Host to the tunnel origin
+]);
+
+const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailers',
+    'transfer-encoding',
+    'upgrade',
+]);
+
+/**
+ * Proxy one request to the tunnel origin.
+ *
+ * Preserves method, body stream, and all non-hop-by-hop headers.
+ * Rewrites Host to `mcp.tinyassets.io` (Cloudflare's edge routes the
+ * subrequest to the tunnel based on hostname, so this is load-bearing).
+ */
+async function proxyToTunnel(request) {
+    const incoming = new URL(request.url);
+    const upstream = new URL(TUNNEL_ORIGIN);
+    upstream.pathname = incoming.pathname;
+    upstream.search = incoming.search;
+
+    const forwardedHeaders = new Headers();
+    for (const [name, value] of request.headers) {
+        if (!HOP_BY_HOP_REQUEST_HEADERS.has(name.toLowerCase())) {
+            forwardedHeaders.set(name, value);
+        }
+    }
+    forwardedHeaders.set('Host', upstream.host);
+
+    // Preserve X-Forwarded-* so the upstream can log + rate-limit by
+    // real client IP rather than Cloudflare's edge.
+    const clientIp = request.headers.get('CF-Connecting-IP');
+    if (clientIp && !forwardedHeaders.has('X-Forwarded-For')) {
+        forwardedHeaders.set('X-Forwarded-For', clientIp);
+    }
+    if (!forwardedHeaders.has('X-Forwarded-Proto')) {
+        forwardedHeaders.set('X-Forwarded-Proto', incoming.protocol.replace(':', ''));
+    }
+    if (!forwardedHeaders.has('X-Forwarded-Host')) {
+        forwardedHeaders.set('X-Forwarded-Host', incoming.host);
+    }
+
+    // Body: pass the ReadableStream through. For bodyless methods
+    // (GET, HEAD, OPTIONS) this is null automatically.
+    // ``duplex: 'half'`` is required by the fetch spec when sending a
+    // ReadableStream body. Cloudflare Workers tolerate its absence but
+    // Node 18+ undici (used by tests) requires it.
+    const init = {
+        method: request.method,
+        headers: forwardedHeaders,
+        body: request.body,
+        // redirect: 'manual' so redirect responses come back to the
+        // client untouched. An MCP server shouldn't 30x but if it
+        // does, the client needs to see it verbatim.
+        redirect: 'manual',
+    };
+    if (request.body !== null && request.body !== undefined) {
+        init.duplex = 'half';
+    }
+    const upstreamRequest = new Request(upstream.toString(), init);
+
+    let upstreamResponse;
+    try {
+        upstreamResponse = await fetch(upstreamRequest);
+    } catch (err) {
+        return new Response(
+            JSON.stringify({
+                error: 'bad_gateway',
+                detail: 'tunnel origin unreachable',
+                upstream: upstream.host,
+                message: String(err && err.message ? err.message : err),
+            }),
+            {
+                status: 502,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-store',
+                },
+            },
+        );
+    }
+
+    // 5xx from the tunnel — surface as explicit 502 so the caller can
+    // distinguish "tunnel origin sick" from "Worker code broken" or
+    // "apex fallthrough to GoDaddy 404."
+    if (upstreamResponse.status >= 500 && upstreamResponse.status < 600) {
+        return new Response(
+            JSON.stringify({
+                error: 'bad_gateway',
+                detail: 'tunnel origin returned 5xx',
+                upstream_status: upstreamResponse.status,
+            }),
+            {
+                status: 502,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-store',
+                },
+            },
+        );
+    }
+
+    // Streaming pass-through. Do NOT call .text() / .json() / .arrayBuffer()
+    // on the response — those buffer the whole body and break SSE.
+    const responseHeaders = new Headers();
+    for (const [name, value] of upstreamResponse.headers) {
+        if (!HOP_BY_HOP_RESPONSE_HEADERS.has(name.toLowerCase())) {
+            responseHeaders.set(name, value);
+        }
+    }
+
+    return new Response(upstreamResponse.body, {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        headers: responseHeaders,
+    });
+}
+
+/**
+ * CORS preflight — MCP clients in browsers issue OPTIONS before POST.
+ * Pass through to the origin (the daemon + FastMCP handle CORS headers
+ * themselves); this is purely the method-allow check.
+ */
+function shouldProxy(pathname) {
+    // Anything under `/mcp` belongs to the tunnel. The Cloudflare route
+    // `tinyassets.io/mcp*` should only invoke this Worker for matching
+    // paths, but double-check to defend against route-misconfiguration.
+    return pathname === '/mcp' || pathname.startsWith('/mcp/') || pathname.startsWith('/mcp?');
+}
+
+export default {
+    async fetch(request) {
+        const url = new URL(request.url);
+
+        if (!shouldProxy(url.pathname)) {
+            // Defensive — if the route somehow matched a non-/mcp path,
+            // return 404 rather than leaking a proxy to the tunnel for
+            // paths the tunnel isn't meant to serve. GoDaddy apex paths
+            // should never reach this Worker under correct routing.
+            return new Response('Not Found', { status: 404 });
+        }
+
+        // OPTIONS + POST + GET + everything-else: all proxied identically.
+        return proxyToTunnel(request);
+    },
+};
+
+// Export internals for unit tests.
+export {
+    proxyToTunnel,
+    shouldProxy,
+    TUNNEL_ORIGIN,
+    HOP_BY_HOP_REQUEST_HEADERS,
+    HOP_BY_HOP_RESPONSE_HEADERS,
+};
