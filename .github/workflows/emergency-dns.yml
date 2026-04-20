@@ -1,0 +1,124 @@
+name: Emergency DNS flip
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Cloudflare operation to run.
+        required: true
+        type: choice
+        options:
+          - upsert-record
+          - delete-record
+          - upsert-worker-route
+          - delete-worker-route
+      record_type:
+        description: DNS record type for record actions.
+        required: false
+        default: CNAME
+      name:
+        description: DNS record name, for example mcp.tinyassets.io.
+        required: false
+      content:
+        description: DNS record target/content for upsert-record.
+        required: false
+      ttl:
+        description: 1 means Cloudflare automatic TTL; otherwise 60-86400.
+        required: false
+        default: "1"
+      proxied:
+        description: Set proxied flag for record upserts, or leave unchanged.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "true"
+          - "false"
+      pattern:
+        description: Worker route pattern for Worker route actions.
+        required: false
+        default: tinyassets.io/mcp*
+      script:
+        description: Worker script name for upsert-worker-route.
+        required: false
+        default: workflow-mcp-router
+      apply:
+        description: Mutate Cloudflare. False runs a dry-run only.
+        required: true
+        type: boolean
+        default: false
+      canary_url:
+        description: Public MCP canary URL to verify after applied changes.
+        required: false
+        default: https://mcp.tinyassets.io/mcp
+
+permissions:
+  contents: read
+
+jobs:
+  emergency-dns:
+    name: Run Cloudflare emergency DNS action
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run emergency DNS script
+        shell: bash
+        env:
+          ACTION: ${{ inputs.action }}
+          APPLY: ${{ inputs.apply }}
+          CANARY_URL: ${{ inputs.canary_url }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ZONE_NAME: ${{ vars.CLOUDFLARE_ZONE_NAME || 'tinyassets.io' }}
+          CONTENT: ${{ inputs.content }}
+          NAME: ${{ inputs.name }}
+          PATTERN: ${{ inputs.pattern }}
+          PROXIED: ${{ inputs.proxied }}
+          RECORD_TYPE: ${{ inputs.record_type }}
+          SCRIPT: ${{ inputs.script }}
+          TTL: ${{ inputs.ttl }}
+        run: |
+          args=(
+            --action "$ACTION"
+            --zone-name "${CLOUDFLARE_ZONE_NAME:-tinyassets.io}"
+            --record-type "${RECORD_TYPE:-CNAME}"
+            --ttl "${TTL:-1}"
+            --pattern "${PATTERN:-tinyassets.io/mcp*}"
+            --script "${SCRIPT:-workflow-mcp-router}"
+            --json
+          )
+
+          if [[ -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
+            args+=(--zone-id "$CLOUDFLARE_ZONE_ID")
+          fi
+          if [[ -n "${NAME:-}" ]]; then
+            args+=(--name "$NAME")
+          fi
+          if [[ -n "${CONTENT:-}" ]]; then
+            args+=(--content "$CONTENT")
+          fi
+          if [[ "${PROXIED:-unchanged}" != "unchanged" ]]; then
+            args+=(--proxied "$PROXIED")
+          fi
+          if [[ "$APPLY" == "true" ]]; then
+            args+=(--apply)
+          fi
+
+          python scripts/emergency_dns_flip.py "${args[@]}"
+
+          if [[ "$APPLY" == "true" ]]; then
+            python scripts/mcp_public_canary.py \
+              --url "$CANARY_URL" \
+              --timeout 20 \
+              --verbose
+          else
+            echo "Dry-run only; public MCP canary skipped."
+          fi
