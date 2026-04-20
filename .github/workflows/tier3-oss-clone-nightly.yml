@@ -1,0 +1,64 @@
+name: tier3-oss-clone-nightly
+
+# Nightly tier-3 OSS clone smoke per AGENTS.md Forever Rule:
+# "tier-3 OSS contributors `git clone` and run cleanly" is a P0 uptime
+# surface. Spec: docs/design-notes/2026-04-19-tier3-oss-clone-nightly-gha.md.
+
+on:
+  schedule:
+    - cron: '17 7 * * *'  # 07:17 UTC daily — avoid top-of-hour contention
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-clone-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fresh clone (simulate OSS contributor path)
+        run: |
+          git clone --depth 1 https://github.com/${{ github.repository }} /tmp/workflow-fresh
+          cd /tmp/workflow-fresh
+          git rev-parse HEAD
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create venv
+        working-directory: /tmp/workflow-fresh
+        run: python -m venv .venv
+
+      - name: pip install -e .
+        working-directory: /tmp/workflow-fresh
+        run: |
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Top-level import smoke
+        working-directory: /tmp/workflow-fresh
+        run: |
+          source .venv/bin/activate
+          python -c "import workflow; print('workflow imported from', workflow.__file__ if hasattr(workflow, '__file__') else '<namespace>')"
+
+      - name: Structural smoke script
+        working-directory: /tmp/workflow-fresh
+        run: |
+          source .venv/bin/activate
+          python scripts/tier3_smoke.py
+
+      - name: Smoke pytest
+        working-directory: /tmp/workflow-fresh
+        run: |
+          source .venv/bin/activate
+          pip install pytest
+          pytest tests/smoke/ -x --no-header -q
+
+      - name: Alarm on failure
+        if: failure()
+        run: |
+          echo "::error::Tier-3 OSS clone smoke FAILED on commit $(cd /tmp/workflow-fresh && git rev-parse HEAD)"
+          exit 1
