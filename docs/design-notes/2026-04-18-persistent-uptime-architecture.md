@@ -2,7 +2,7 @@
 
 **Status (2026-04-18 update):** **SUPERSEDED** by `2026-04-18-full-platform-architecture.md`. Host rejected the phased rollout (Phase 1 thin relay → Phase 2 state migration → Phase 3 paid failover) in favor of a single-build collaborative backend. Retained as historical reference for the plane-split analysis, hosting-option matrix, and Cloudflare-front deep-dive, which remain useful input to the successor note.
 
-**Hostname correction (2026-04-19 post-P0):** this doc originally named `api.tinyassets.io` as the MCP gateway hostname throughout. Post-outage discovery showed the actual tunnel Published Application Route is `mcp.tinyassets.io` (`api.` was never created). All body text below has been updated in-place; `api.` held open as future alias CNAME.
+**Hostname history (2026-04-18 → 2026-04-20):** this doc originally named `api.tinyassets.io` as the MCP gateway hostname; `api.` was never created. Post-P0, a Cloudflare Worker shipped to restore apex `tinyassets.io/mcp` as canonical user-facing; the Worker proxies to tunnel origin `mcp.tinyassets.io`. Body text uses apex URL for user-facing MCP references; tunnel-origin mentions keep the `mcp.` subdomain.
 
 **Original status:** Design note for host review. Proposes the minimum viable always-on piece for v1 and sequences the rest.
 
@@ -156,15 +156,15 @@ Inherits the matrix from `always_on_hosting_and_federation.md` §1. 2026 updates
 **Subdomains on `tinyassets.io` are free leverage** regardless of tier:
 - `tinyassets.io/` — static landing page. Cheapest GoDaddy shared tier can host it.
 - `tinyassets.io/catalog/*` — static snapshot of the catalog repo, served from GoDaddy or GitHub Pages CNAME.
-- `mcp.tinyassets.io` — dynamic control plane (MCP gateway, OAuth issuer, request inbox). Needs the Python-capable tier.
+- `tinyassets.io` — dynamic control plane (MCP gateway, OAuth issuer, request inbox). Needs the Python-capable tier.
 - `host-<slug>.tinyassets.io` — per-host tunnel ingress; wildcard CNAME for federation in v2+.
-- `mcp.tinyassets.io` or keep the path `tinyassets.io/mcp` — MCP entrypoint for clients. Both work.
+- `tinyassets.io` or keep the path `tinyassets.io/mcp` — MCP entrypoint for clients. Both work.
 
 **Three concrete GoDaddy-first scenarios:**
 
 1. **Host has only shared hosting.** Then GoDaddy hosts static landing + static catalog at `tinyassets.io/` and `tinyassets.io/catalog/*`. Dynamic control plane goes on the cheapest external Python-capable host (Fly.io $5/mo, or upgrade GoDaddy to VPS). Even this split is a real partial win on requirement (1) — users hitting the domain when the laptop is off get a working landing page instead of HTTP 530.
 
-2. **Host has or upgrades to GoDaddy VPS.** Then the entire Phase 1 control plane lives on `mcp.tinyassets.io` under one GoDaddy bill. Cloudflare optionally stays in front for TLS/CDN of static surfaces. Cleanest "one vendor" outcome.
+2. **Host has or upgrades to GoDaddy VPS.** Then the entire Phase 1 control plane lives on `tinyassets.io` under one GoDaddy bill. Cloudflare optionally stays in front for TLS/CDN of static surfaces. Cleanest "one vendor" outcome.
 
 3. **Host has Business Hosting.** Possible but fragile for streamable HTTP. Upgrading to VPS within GoDaddy is better than wrestling Business Hosting into a daemon-shaped role.
 
@@ -200,8 +200,8 @@ Inherits from `docs/research/always_on_hosting_and_federation.md` §1, with 2026
 ### §3.4 Revised recommendation
 
 1. **Answer first:** what tier does the host currently pay for on GoDaddy, and is upgrading within GoDaddy preferred over switching vendors? (§8 Q1.)
-2. **If GoDaddy VPS is in play** — deploy the Phase 1 control plane at `mcp.tinyassets.io` on GoDaddy VPS. One vendor, sunk cost. Cloudflare optionally in front for DNS/TLS/CDN.
-3. **If only shared/managed hosting and upgrading is off the table** — put the static landing + static catalog snapshot on `tinyassets.io/` immediately (immediate partial win on requirement (1)), and put the dynamic control plane on Fly.io Machine at `mcp.tinyassets.io` via CNAME.
+2. **If GoDaddy VPS is in play** — deploy the Phase 1 control plane at `tinyassets.io` on GoDaddy VPS. One vendor, sunk cost. Cloudflare optionally in front for DNS/TLS/CDN.
+3. **If only shared/managed hosting and upgrading is off the table** — put the static landing + static catalog snapshot on `tinyassets.io/` immediately (immediate partial win on requirement (1)), and put the dynamic control plane on Fly.io Machine at `tinyassets.io` via CNAME.
 4. **Cloudflare Workers rewrite — deferred to v2 regardless.** Structurally cleanest but the migration cost isn't justified at the weeks-not-months horizon.
 5. **Rejected: serverless (Lambda), Railway, Render.** SSE / session affinity costs outweigh any simplicity gain at our scale.
 
@@ -243,7 +243,7 @@ tinyassets.io (apex)
   └─ A or CNAME (orange-clouded)  →  GoDaddy static hosting or GitHub Pages
                                       (static landing + /catalog/*)
 
-mcp.tinyassets.io
+tinyassets.io
   └─ A (orange-clouded)           →  Control plane origin IP
                                       (GoDaddy VPS or Fly.io)
                                       TLS mode: Full (strict)
@@ -265,7 +265,7 @@ host-<slug>.tinyassets.io (one per host)
 - Direct proxy is simpler ops: one fewer cloudflared process, one fewer token to rotate, standard HTTP health checks.
 - TLS Full (strict) between Cloudflare and the control-plane origin keeps transit encrypted. Origin certificate via Cloudflare Origin CA (free, auto-rotating) or Let's Encrypt.
 
-**Transition:** Phase 1 retains the existing tunnel → laptop as `host-jonathan.tinyassets.io`. `tinyassets.io/mcp` at the apex is retired as a connector URL; clients migrate to `mcp.tinyassets.io/mcp`. For one release, the apex `tinyassets.io/mcp` can 301-redirect to `mcp.tinyassets.io/mcp` so existing Claude.ai connectors don't break abruptly.
+**Transition:** Phase 1 retains the existing tunnel → laptop as `host-jonathan.tinyassets.io`. `tinyassets.io/mcp` at the apex is retired as a connector URL; clients migrate to `tinyassets.io/mcp`. For one release, the apex `tinyassets.io/mcp` can 301-redirect to `tinyassets.io/mcp` so existing Claude.ai connectors don't break abruptly.
 
 #### §3.5.3 Per-subdomain layout — DNS, TLS, cache
 
@@ -273,14 +273,14 @@ host-<slug>.tinyassets.io (one per host)
 |---|---|---|---|---|---|
 | `tinyassets.io` (apex) | A or CNAME-flattened | Yes | Full (strict) | GoDaddy static / GitHub Pages | Default "cache everything static" + 1 day edge TTL |
 | `tinyassets.io/catalog/*` | (same apex) | Yes | Full (strict) | GoDaddy static / GitHub Pages | Cache Rule: match `/catalog/*`, cache 5 min edge TTL with stale-while-revalidate 24 h |
-| `mcp.tinyassets.io` | A | Yes | Full (strict) | Control plane (GoDaddy VPS or Fly) | Default cache behavior |
-| `mcp.tinyassets.io/mcp` | (same subdomain) | Yes | Full (strict) | Control plane | Cache Rule: match `/mcp*`, **bypass cache**. MCP is stateful streamable HTTP; caching is wrong. |
-| `mcp.tinyassets.io/authorize` | (same subdomain) | Yes | Full (strict) | Control plane | Bypass cache (auth flow). |
+| `tinyassets.io` | A | Yes | Full (strict) | Control plane (GoDaddy VPS or Fly) | Default cache behavior |
+| `tinyassets.io/mcp` | (same subdomain) | Yes | Full (strict) | Control plane | Cache Rule: match `/mcp*`, **bypass cache**. MCP is stateful streamable HTTP; caching is wrong. |
+| `tinyassets.io/authorize` | (same subdomain) | Yes | Full (strict) | Control plane | Bypass cache (auth flow). |
 | `host-<slug>.tinyassets.io` | CNAME to `<uuid>.cfargotunnel.com` | Yes | Full (strict) — Cloudflare<>cloudflared is automatically strict | Host's cloudflared daemon | Bypass cache (tool calls). |
 
 **Gotchas:**
 - **Apex CNAME** — DNS doesn't allow real CNAMEs at the apex. Cloudflare offers CNAME-flattening (free) which resolves this transparently. No action needed beyond adding the record.
-- **Universal SSL covers one subdomain level** — `mcp.tinyassets.io` and `host-<slug>.tinyassets.io` are both one-level, both covered. If we later want `host-<slug>.subdomain.tinyassets.io` (two levels deep), Universal SSL does *not* cover it and we'd need Advanced Certificate Manager ($10/mo). Stay one-level deep in Phase 1.
+- **Universal SSL covers one subdomain level** — `tinyassets.io` and `host-<slug>.tinyassets.io` are both one-level, both covered. If we later want `host-<slug>.subdomain.tinyassets.io` (two levels deep), Universal SSL does *not* cover it and we'd need Advanced Certificate Manager ($10/mo). Stay one-level deep in Phase 1.
 - **TLS Full vs Full (strict)** — always use Full (strict). Full alone accepts any origin cert (self-signed, expired); that's effectively unencrypted from a trust standpoint. Cloudflare Origin CA certs are free, valid 15 years, and work with Full (strict).
 - **GitHub Pages as origin for `/catalog/*`** — supported and common. GitHub Pages sets its own TLS cert for `tinyassets.io`; with Cloudflare proxy in front, terminate TLS at CF and use Full (strict) back to Pages. Follow Cloudflare's GitHub Pages setup guide to avoid redirect loops.
 - **Cloudflared ingress wildcard rules** — if a single host exposes multiple services (e.g. laptop runs both MCP server and a future dashboard), one cloudflared can handle both via ingress rules. Wildcards match leftmost label only (`*.example.com`, not `a.*.example.com`).
@@ -383,17 +383,17 @@ Using the owned domain's free subdomains lets auth / static / dynamic boundaries
 
 - `tinyassets.io/` — public landing page (static). No auth. Cheapest GoDaddy tier.
 - `tinyassets.io/catalog/*` — static catalog snapshot. Public-by-default; optional signed-read tokens later.
-- `mcp.tinyassets.io/authorize` — GitHub-OAuth sign-in flow (v0) and OAuth 2.1 issuer (v1+). Returns tokens.
-- `mcp.tinyassets.io/mcp` — authenticated MCP gateway for clients. What users add to Claude.ai. All requests past this point carry a bearer or OAuth token.
+- `tinyassets.io/authorize` — GitHub-OAuth sign-in flow (v0) and OAuth 2.1 issuer (v1+). Returns tokens.
+- `tinyassets.io/mcp` — authenticated MCP gateway for clients. What users add to Claude.ai. All requests past this point carry a bearer or OAuth token.
 - `host-<slug>.tinyassets.io/mcp` — direct per-host tunnel entrypoints (federation, v2+). Control plane issues signed assertions authorizing a subdomain for user X.
 
-Clients still use a single published entrypoint (`mcp.tinyassets.io/mcp` or `tinyassets.io/mcp`; host decides in §8 Q6). Subdomain split is an internal architecture choice exposed through that entrypoint.
+Clients still use a single published entrypoint (`tinyassets.io/mcp` or `tinyassets.io/mcp`; host decides in §8 Q6). Subdomain split is an internal architecture choice exposed through that entrypoint.
 
 ### §6.2 Recommended flow
 
 **OAuth 2.1 + PKCE at the control plane** (per MCP spec 2025-03-26 — mandatory for streamable HTTP in 2026). Control plane is the identity provider.
 
-1. User adds `https://mcp.tinyassets.io/mcp` as an MCP connector in their client (Claude.ai, Claude Desktop, Code, any other MCP client).
+1. User adds `https://tinyassets.io/mcp` as an MCP connector in their client (Claude.ai, Claude Desktop, Code, any other MCP client).
 2. Client does OAuth 2.1 dance with the control plane — PKCE, device flow, or DCR per RFC 7591.
 3. Control plane issues a short-lived access token + long-lived refresh token, scoped to `user_id = ...`.
 4. Every MCP tool call from the client includes the token.
@@ -407,7 +407,7 @@ This gives us:
 
 ### §6.3 v0 simplification
 
-OAuth 2.1 + DCR is non-trivial. For the first shippable v1, **start with bearer tokens minted by the control plane via a one-click "authorize this client" flow on a landing page** (user opens `mcp.tinyassets.io/authorize`, logs in via GitHub OAuth, receives a token to paste into their MCP client config). This is what the prior research flagged as acceptable alpha. Migrate to full OAuth 2.1 once the shape stabilizes.
+OAuth 2.1 + DCR is non-trivial. For the first shippable v1, **start with bearer tokens minted by the control plane via a one-click "authorize this client" flow on a landing page** (user opens `tinyassets.io/authorize`, logs in via GitHub OAuth, receives a token to paste into their MCP client config). This is what the prior research flagged as acceptable alpha. Migrate to full OAuth 2.1 once the shape stabilizes.
 
 The paid-market trust model (project memory: "treat market as cooperative, not stranger-marketplace") means v0 can lean on GitHub identity and skip escrow/reputation infrastructure. Defend against abuse when it appears.
 
@@ -430,12 +430,12 @@ Split into two sub-phases so partial value lands early. Whether they can ship in
 - Publish a periodically regenerated static catalog snapshot at `tinyassets.io/catalog/*` (goals, branches, nodes, rendered Markdown/JSON). A GitHub Action on catalog-repo merge regenerates it.
 - **Result:** when the laptop is off, users hitting the domain get a working browseable site instead of HTTP 530. Partial win on requirement (1) — no dynamic node creation yet, but catalog reads and demo link work 24/7. **This sub-phase alone is worth shipping even before the dynamic control plane.**
 
-**Phase 1b — Dynamic control plane at mcp.tinyassets.io (target: 1–2 weeks after 1a).**
-- Deploy a slim FastMCP at `mcp.tinyassets.io/mcp`. Host: GoDaddy VPS if in play, else Fly.io Machine. Exposes dynamic catalog tools + dispatch logic. Identity via v0 bearer tokens from `mcp.tinyassets.io/authorize`.
+**Phase 1b — Dynamic control plane at tinyassets.io (target: 1–2 weeks after 1a).**
+- Deploy a slim FastMCP at `tinyassets.io/mcp`. Host: GoDaddy VPS if in play, else Fly.io Machine. Exposes dynamic catalog tools + dispatch logic. Identity via v0 bearer tokens from `tinyassets.io/authorize`.
 - When a tool call needs a daemon (`summon_daemon`, `request_node_run`, any write action), control plane checks the host directory.
   - Host registered + online → proxy to the host's tunnel (current cloudflared tunnels stay, reachable as `host-<slug>.tinyassets.io`).
   - No host → structured `{"status": "queued", "reason": "no host serving capability X"}`.
-- DNS: `tinyassets.io` apex stays on GoDaddy; `mcp.tinyassets.io` CNAME to the dynamic host; the current laptop tunnel becomes `host-jonathan.tinyassets.io`.
+- DNS: `tinyassets.io` apex stays on GoDaddy; `tinyassets.io` CNAME to the dynamic host; the current laptop tunnel becomes `host-jonathan.tinyassets.io`.
 - `universe_tray.py` registers itself with the control plane on startup, heartbeats every 30s, deregisters on shutdown.
 
 **What works after Phase 1:**
@@ -481,8 +481,8 @@ Split into two sub-phases so partial value lands early. Whether they can ship in
 Before starting build, host should decide:
 
 **Q1. GoDaddy plan tier + upgrade preference.** *What GoDaddy plan does the host currently pay for, and is upgrading within GoDaddy preferred over switching vendors?* This is the single biggest input to §3 and drives the whole Phase 1 shape.
-- If VPS tier (or willing to upgrade to it) — deploy the Phase 1 control plane at `mcp.tinyassets.io` on GoDaddy VPS. One vendor, sunk cost. ~$15–25/mo at 10k DAU.
-- If shared/managed only and upgrading is off the table — Phase 1a (static landing + static catalog) on GoDaddy, Phase 1b (dynamic control plane) on Fly.io Machine at `mcp.tinyassets.io` via CNAME. GoDaddy sunk + $5–15/mo.
+- If VPS tier (or willing to upgrade to it) — deploy the Phase 1 control plane at `tinyassets.io` on GoDaddy VPS. One vendor, sunk cost. ~$15–25/mo at 10k DAU.
+- If shared/managed only and upgrading is off the table — Phase 1a (static landing + static catalog) on GoDaddy, Phase 1b (dynamic control plane) on Fly.io Machine at `tinyassets.io` via CNAME. GoDaddy sunk + $5–15/mo.
 - Regardless, defer Cloudflare Workers rewrite to v2.
 
 **Q2. Reference-host commitment.** Do we commit to running at least one always-on cloud host as a soft backstop (pattern (a) from §4) in v1, or rely entirely on (b) capability-tiered degradation + (c) paid-market fallback? The design works either way; the commitment changes service-level expectations.

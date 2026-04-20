@@ -187,7 +187,8 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 | Record | Points at | Cache rule | Note |
 |---|---|---|---|
 | `tinyassets.io` (apex) | GitHub Pages (via CNAME-flatten) | 5-min edge TTL + 24h stale-while-revalidate on `/catalog/*` | Primary static host. |
-| `mcp.tinyassets.io` | Cloudflare Tunnel → localhost:8001 (current); future `api.` alias | Bypass `/mcp*` + `/authorize*` | Control plane. Tunnel published hostname is `mcp.`; `api.` was the pre-launch intended canonical but was never created and is held open as a future alias CNAME. |
+| `tinyassets.io/mcp*` (apex + path) | Cloudflare Worker `tinyassets-mcp-proxy` → `mcp.tinyassets.io` origin | Bypass `/mcp*` + `/authorize*` | **Canonical user-facing MCP URL.** Installed Claude.ai connectors point here. Worker is a pure proxy; preserves streaming + session headers. |
+| `mcp.tinyassets.io` | Cloudflare Tunnel → localhost:8001 | Bypass | Direct-tunnel origin — target of the Worker above + canary parity probes. Not the user-facing URL. |
 | `host-<slug>.tinyassets.io` | cloudflared per-host tunnels | Bypass | Daemon-host outbound-only pattern. |
 | TLS mode | Full (strict) on all subdomains | — | Non-negotiable. Origin CA cert (15-yr validity). |
 
@@ -228,7 +229,7 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 
 ### 6.1 If the gateway is down
 
-**Symptoms:** `mcp.tinyassets.io/mcp` returns 5xx (or any non-2xx JSON-RPC response), Claude.ai MCP connector fails handshake, `scripts/mcp_public_canary.py` exits non-zero. Pre-P0 canonical `api.tinyassets.io/mcp` was never shipped — that address is NXDOMAIN and reserved as a future alias.
+**Symptoms:** `tinyassets.io/mcp` returns 5xx (or any non-2xx JSON-RPC response), Claude.ai MCP connector fails handshake, `scripts/mcp_public_canary.py` exits non-zero. Diagnostic split: probe `mcp.tinyassets.io/mcp` directly (bypasses the Worker) — if that's green and apex is red, the Worker or its route is the broken link; if both are red, the tunnel or daemon is down.
 
 1. Check Fly.io status page. If Fly outage, wait + monitor.
 2. Check `fly machine list --app workflow-gateway` — are Machines healthy?

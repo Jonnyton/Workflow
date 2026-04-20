@@ -13,7 +13,7 @@ Single authoritative gate. **Every box below MUST be checked before any public l
 - [ ] **Domain `tinyassets.io` pre-paid ≥2 years** (per `SUCCESSION.md` §4.1).
 - [ ] **Domain expiry monitor cron live + verified** (fires >60 days before expiry to `ops@tinyassets.io`).
 - [ ] **GoDaddy account login + GoDaddy billing card documented in vault** (ref `SUCCESSION.md §3.2 Workflow-Prod/godaddy/account`).
-- [ ] **Cloudflare DNS configured** per uptime-note §3.5.3: `tinyassets.io` → GH Pages, `mcp.tinyassets.io` → Fly, `host-<slug>` reserved pattern.
+- [ ] **Cloudflare DNS + Worker configured:** `tinyassets.io` → GH Pages (landing), `tinyassets.io/mcp*` routes through the `tinyassets-mcp-proxy` Worker to the tunnel origin at `mcp.tinyassets.io` → Fly (or whatever provider hosts the daemon), `host-<slug>` reserved pattern for per-host tunnels.
 - [ ] **Cloudflare Origin CA certs installed** (Full-strict TLS on all subdomains, 15-yr validity).
 - [ ] **Fly.io Machines deployed** at `min=2, max=8`, regions `ord` primary + `fra` secondary.
 - [ ] **Supabase Pro project provisioned** with daily backups enabled.

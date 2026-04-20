@@ -121,6 +121,90 @@ When adding or editing DNS records via Cloudflare dash automation (same shared C
 - **Save button sometimes returns "No success toast" without erroring.** Re-read the page; record may have actually landed. Verify via `nslookup -type=A <domain>` rather than trusting the UI.
 - **Moving a Tunnel public-hostname from apex → subdomain deletes the apex CNAME.** Cloudflare auto-managed the record; when the Tunnel's "Published application route" changes hostname, the DNS is updated atomically. Plan the replacement apex record BEFORE making the tunnel change or DNS goes dark.
 
+## Cloudflare Workers dashboard — deploy patterns (learned 2026-04-20)
+
+Landing + route-binding a Cloudflare Worker via the dashboard has two sharp edges that `lead_browser.py`'s default selectors miss.
+
+### Monaco editor — pasting source via clipboard
+
+The Worker code editor is Monaco (VS Code's editor in a web div). `textarea` selectors miss; the editor uses contenteditable divs under a shadow-ish layer. Clipboard paste is faster + more reliable than keystroke typing for any code over ~100 lines.
+
+Pattern (tested on 206-line worker.js, completed in <2s):
+
+```python
+# After navigating to .../workers/services/edit/<name>/production
+# Focus the editor — multiple selector fallbacks because the
+# dashboard iframes/shadow-DOMs the editor unpredictably.
+for sel in [".view-lines", ".monaco-editor .view-lines",
+            "[class*='editor'] .view-lines", ".monaco-editor"]:
+    try:
+        page.locator(sel).first.click(timeout=5000)
+        break
+    except Exception:
+        continue
+else:
+    # Last-ditch: click center of left half of viewport.
+    vp = page.viewport_size or {"width": 1280, "height": 800}
+    page.mouse.click(vp["width"] // 4, vp["height"] // 2)
+
+# Clear existing + paste via clipboard.
+page.keyboard.press("Control+a")
+page.keyboard.press("Delete")
+page.evaluate(
+    "async (t) => { await navigator.clipboard.writeText(t); }",
+    file_contents,
+)
+page.keyboard.press("Control+v")
+```
+
+Post-paste verification: `page.locator(".monaco-editor").first.inner_text()` returns the pasted content; grep for a known signature line before clicking Deploy.
+
+### Route binding — Radix UI dropdowns
+
+"Triggers → Domains & Routes → + Add → Route" opens a form with a **Radix UI** zone dropdown that does NOT respond to `lead_browser.py click "text=..."`. The trigger is a `<button aria-haspopup="menu">` inside `form#domains_and_routes_form`; options render with `role="menuitem"`.
+
+Pattern:
+
+```python
+# Open the zone dropdown.
+trigger = page.locator(
+    'form#domains_and_routes_form button[aria-haspopup="menu"]'
+).first
+trigger.click()
+page.wait_for_timeout(800)
+
+# Select the target zone by menuitem text.
+for mi in page.locator("[role='menuitem']").all():
+    if not mi.is_visible():
+        continue
+    if "tinyassets.io" in (mi.inner_text(timeout=500) or ""):
+        mi.click()
+        break
+
+# Verify the trigger now shows the selected zone.
+assert trigger.inner_text().strip() == "tinyassets.io"
+```
+
+**Gotcha:** clicking the empty "Click to copy" placeholder on the trigger does NOT open the dropdown. Target the button directly by `aria-haspopup="menu"` scoped to the form.
+
+### Route form — pattern field is `<input name="pattern">`
+
+The URL-pattern input (next to the Zone dropdown) has `placeholder="*.example.com/*"`. It DOES respond to `lead_browser.py type 'input[placeholder*="example"]' "tinyassets.io/mcp*"` but the visual render is cramped — the typed value is present in the DOM before it's visible. Verify via `page.locator('input[name="pattern"]').input_value()` rather than trusting the screenshot.
+
+### Clicking "Add route" needs zone committed first
+
+The "Add route" button silently validates on click. If Zone shows "Required" (red underline), the submit no-ops. Always verify `trigger.inner_text()` returns the selected zone name BEFORE clicking Add route.
+
+### Worker deploy flow (condensed, for future ops)
+
+1. `dash.cloudflare.com/<acct>/workers-and-pages` → **Create application** → **Start with Hello World!**
+2. Rename placeholder (`nameless-*`) → desired name. Deploy.
+3. Navigate `/workers/services/edit/<name>/production` to open Monaco. Clipboard-paste full worker.js. Click **Deploy**.
+4. Back to `/triggers` → **Domains & Routes** → **+ Add** → **Route**. Click the Radix zone trigger, pick menuitem. Type route pattern. Click **Add route**.
+5. Verify via canary: `python scripts/mcp_public_canary.py --url https://<hostname>/<path> --verbose`.
+
+Total wall time at second-run cadence: ~3 min.
+
 ## Known pitfalls
 
 1. **New-tab links.** GoDaddy has "Open in new tab" buttons on several flows. These VIOLATE the one-tab rule and confuse the watchdog. Prefer same-tab navigation (`lead_browser.py goto`). If an in-app link insists on spawning a new tab, navigate directly to the destination URL instead.

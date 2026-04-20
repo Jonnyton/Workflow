@@ -155,7 +155,7 @@ New MCP tool: `connect_wallet` — returns a WalletConnect v2 URI + deep link.
 ```
 connect_wallet() → {
   "wc_uri": "wc:abc123@2?relay-protocol=irn&symKey=...",
-  "qr_code_url": "https://mcp.tinyassets.io/qr/abc123.png",
+  "qr_code_url": "https://tinyassets.io/qr/abc123.png",
   "mobile_deep_link": "https://metamask.app.link/wc?uri=...",
   "expires_at": <unix_ts>
 }

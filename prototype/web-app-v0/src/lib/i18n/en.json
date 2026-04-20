@@ -38,7 +38,7 @@
     "title": "Connect to Claude.ai",
     "tagline": "Zero install. Just paste one URL.",
     "instructions": "Paste this URL into Claude.ai's MCP Connectors:",
-    "mcp_url": "https://mcp.tinyassets.io/mcp",
+    "mcp_url": "https://tinyassets.io/mcp",
     "copy_cta": "Copy URL",
     "copied": "Copied!",
     "step_by_step_title": "How to connect",

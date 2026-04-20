@@ -241,6 +241,31 @@ useful concurrency, not waiting.
 
 ---
 
+## Configuration — environment variables
+
+The daemon reads configuration from env vars. Defaults are
+CWD-independent so containerized deploys don't drift based on where
+the process was launched from.
+
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `WORKFLOW_DATA_DIR` | Canonical root for all on-disk state (SQLite checkpoint, LanceDB indexes, per-universe output dirs). Absolute path. | Platform default — Windows: `%APPDATA%\Workflow`; Linux/macOS/container: `~/.workflow`. |
+| `WORKFLOW_UNIVERSE` | Per-universe override — specific universe dir for the stdio MCP shim (`workflow.mcp_server`). | `$WORKFLOW_DATA_DIR/default-universe`. |
+| `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. | — |
+| `UNIVERSE_SERVER_DEFAULT_UNIVERSE` | Which universe ID is active when none explicit. | First subdir of `$WORKFLOW_DATA_DIR`. |
+| `WORKFLOW_UPLOAD_WHITELIST` | Colon/semicolon-separated absolute-path prefixes allowed for `add_canon_from_path`. Unset = accept any absolute path. | Unset (permissive). |
+| `WORKFLOW_DEPRECATIONS` | Set to `1` / `true` / `yes` to surface deprecation warnings for legacy env vars + import shims. | Unset (silent). |
+| `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. | `https://mcp.tinyassets.io/mcp`. |
+
+**Canonical resolver:** `workflow.storage.data_dir()` is the single
+source of truth for `WORKFLOW_DATA_DIR` resolution. Do not re-implement
+the precedence logic elsewhere — call the resolver.
+
+**Container deploys:** set `WORKFLOW_DATA_DIR=/data` + bind-mount the
+host path to `/data`. See `deploy/README.md` for the full pattern.
+
+---
+
 ## Project Files
 
 | File | Audience | Purpose |
