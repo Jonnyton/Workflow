@@ -1,0 +1,80 @@
+# Cloudflared tunnel config — provider-agnostic template.
+#
+# Per docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md Row C.
+# Parameterized by $TUNNEL_TOKEN + $ORIGIN_PORT; no hardcoded hostnames,
+# no hardcoded tunnel IDs. Same config ships to Fly, Hetzner, GoDaddy VPS,
+# or any Linux host that can run cloudflared.
+#
+# Two ways Cloudflare tunnels authenticate:
+#   (a) Token-based (current production shape per 2026-04-19 P0 discovery).
+#       No config file needed; cloudflared is invoked as:
+#           cloudflared tunnel run --token "$TUNNEL_TOKEN"
+#       Ingress rules live in the Cloudflare Zero Trust dashboard.
+#       Use when the tunnel's hostname/path routing is managed via the
+#       dashboard UI (simpler ops, less in-repo state).
+#
+#   (b) Config-based (this file).
+#       cloudflared reads ingress rules from this YAML. Use when ops want
+#       the routing rules in version control, or for declarative setup
+#       on fresh hosts.
+#
+# Production 2026-04-19 uses shape (a). This file exists so shape (b) is
+# also supported for teams that prefer declarative tunnel config. Pick one
+# — don't mix both (they conflict on ingress ownership).
+#
+# References:
+#   Cloudflare tunnel docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/local-management/configuration-file/
+#   godaddy-ops skill §"Cloudflare DNS dashboard — automation gotchas"
+#   for the atomic-hostname-delete trap that caused 2026-04-19 P0.
+
+# ----------------------------------------------------------------------
+# Tunnel identity
+# ----------------------------------------------------------------------
+#
+# For shape (a) token auth: leave `tunnel:` unset and supply
+# `--token "$TUNNEL_TOKEN"` on the cloudflared CLI. The config below's
+# ingress block is then ignored; dashboard rules apply.
+#
+# For shape (b) config-file auth: set `tunnel:` to the tunnel UUID (from
+# `cloudflared tunnel list` or the dashboard), and set `credentials-file:`
+# to the path of the downloaded tunnel credential JSON. Both are env-var
+# substituted at run time by `scripts/run-tunnel.sh`.
+
+# tunnel: ${TUNNEL_ID}
+# credentials-file: ${TUNNEL_CREDENTIALS_FILE}
+
+# ----------------------------------------------------------------------
+# Logging + metrics
+# ----------------------------------------------------------------------
+
+loglevel: info
+metrics: 0.0.0.0:2000        # Prometheus scrape endpoint — firewall to localhost in prod.
+no-autoupdate: true          # Reproducibility; ops upgrades cloudflared via image tag.
+
+# ----------------------------------------------------------------------
+# Ingress rules (shape-b only — shape-a uses dashboard rules)
+# ----------------------------------------------------------------------
+#
+# ORDER MATTERS. Cloudflare matches top-down; the catch-all MUST be last.
+# Replace ${HOSTNAME} with your public hostname (e.g. mcp.tinyassets.io)
+# at deploy time via envsubst, OR set it per-host in a per-environment
+# override file.
+
+ingress:
+  # Primary MCP surface — streamable-http origin on the container port.
+  - hostname: ${HOSTNAME}
+    service: http://localhost:${ORIGIN_PORT}
+    originRequest:
+      # streamable-http tolerates long-held connections; bump these if
+      # long-running tool calls hit defaults.
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      noHappyEyeballs: false
+      keepAliveConnections: 10
+      keepAliveTimeout: 90s
+
+  # Catch-all — return 404 for any hostname not explicitly routed above.
+  # Never use `service: http_status:200` as a catch-all; masks routing
+  # bugs by pretending everything is fine.
+  - service: http_status:404

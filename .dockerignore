@@ -1,17 +1,67 @@
+# Docker build context exclusions.
+# Per docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md Row A
+# + `docs/ops/docker-notes.md` build discipline.
+#
+# What goes IN the image: workflow/ + domains/ + pyproject.toml.
+# Everything else is build context pollution — slower builds, larger
+# context upload, and in some cases a security footprint risk (secrets,
+# host identity, credentials).
+
+# Python artifacts
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+.ruff_cache/
 *.egg-info/
+.venv/
+venv/
+
+# Build artifacts
 dist/
 build/
-.pytest_cache/
+
+# On-disk state + outputs (belongs in WORKFLOW_DATA_DIR bind-mount, not image)
+output/
 *.db
-.codex/
-.claude/
+*.db-wal
+*.db-shm
+.agents/uptime.log
+.agents/uptime_alarms.log
+.agents/.uptime_alarm_state.json
+
+# Secrets + local config
+.env
+.env.*
+!.env.example
+
+# Source control + tooling (image doesn't need to be a git checkout)
 .git/
 .gitignore
-.ruff_cache/
+.gitattributes
+
+# Platform-specific surfaces that don't ship in the server image
+packaging/       # Windows tray plugin + MCPB bundle — tray not in container
+.claude/         # Claude Code harness config
+.agents/         # Agent coordination files
+.agent-memory/
+
+# Documentation + tests — image stays lean
 tests/
-output/
+docs/
 *.md
 !pyproject.toml
+
+# IDE + editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Prototype / research trees — not production code
+prototype/
+output_archive/
