@@ -122,3 +122,98 @@ def test_get_status_never_errors_on_missing_activity_log() -> None:
     # last_completed_request_llm_used defaults to "unknown" when no log.
     # (Also accept any value — chatbot only depends on field existing.)
     assert payload["evidence"]["last_completed_request_llm_used"] is not None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Track Q — routing-evidence fold-in (§10.7 self-auditing-tools shape).
+# Adds `last_n_calls` + `evidence_caveats` + `actionable_next_steps` to
+# the existing get_status response. Mirrors the dispatch_evidence
+# caveat-augmentation pattern from commit 7d19f34.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _write_activity_log(tmp_path, lines):
+    """Write `lines` to a universe's activity.log. Returns universe_id."""
+    import os
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    udir = tmp_path / "track_q_universe"
+    udir.mkdir(parents=True, exist_ok=True)
+    (udir / "activity.log").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    return "track_q_universe"
+
+
+def test_get_status_evidence_includes_last_n_calls() -> None:
+    """Track Q — evidence dict must surface `last_n_calls` as structured
+    parsed entries (not just raw strings), so the chatbot can filter by
+    tag without reparsing.
+    """
+    payload = json.loads(get_status())
+    ev = payload["evidence"]
+    assert "last_n_calls" in ev
+    assert isinstance(ev["last_n_calls"], list)
+
+
+def test_get_status_has_evidence_caveats_dict() -> None:
+    """Track Q — per-field caveats keyed by evidence field name so the
+    chatbot can cite only the degenerate keys when narrating."""
+    payload = json.loads(get_status())
+    assert "evidence_caveats" in payload
+    assert isinstance(payload["evidence_caveats"], dict)
+
+
+def test_get_status_has_actionable_next_steps_list() -> None:
+    """Track Q — §10.7 canonical shape surfaces optional concrete next
+    steps the chatbot can relay to the user."""
+    payload = json.loads(get_status())
+    assert "actionable_next_steps" in payload
+    assert isinstance(payload["actionable_next_steps"], list)
+
+
+def test_get_status_last_n_calls_parses_tagged_entries(tmp_path) -> None:
+    """Track Q — tagged activity.log entries become {ts, tag, message,
+    raw} dicts in last_n_calls, newest-first."""
+    uid = _write_activity_log(tmp_path, [
+        "[2026-04-20 10:00:00] [dispatch_guard] older entry",
+        "[2026-04-20 10:05:00] [scene_write] newer entry",
+    ])
+    payload = json.loads(get_status(universe_id=uid))
+    calls = payload["evidence"]["last_n_calls"]
+    assert len(calls) == 2
+    # Newest-first ordering.
+    assert calls[0]["tag"] == "scene_write"
+    assert calls[1]["tag"] == "dispatch_guard"
+    # Structured parse, not raw strings.
+    assert "ts" in calls[0] and "message" in calls[0]
+
+
+def test_get_status_evidence_caveats_flag_empty_log(tmp_path) -> None:
+    """Track Q — when activity.log is empty, per-field caveats must flag
+    BOTH activity_log_tail AND last_n_calls as unreliable."""
+    import os
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    udir = tmp_path / "empty_universe"
+    udir.mkdir(parents=True, exist_ok=True)
+    payload = json.loads(get_status(universe_id="empty_universe"))
+    ec = payload["evidence_caveats"]
+    # No log → both evidence keys should carry caveats.
+    assert "activity_log_tail" in ec
+    assert "last_n_calls" in ec
+    assert any("empty" in c.lower() or "missing" in c.lower()
+               for c in ec["activity_log_tail"])
+
+
+def test_get_status_activity_log_line_count_reflects_total(tmp_path) -> None:
+    """Track Q — regression: previously reported len(activity_tail) which
+    caps at 20. Must now report the true total line count so the
+    chatbot's narration of 'N entries logged' is correct."""
+    uid = _write_activity_log(tmp_path, [
+        f"[2026-04-20 10:{i:02d}:00] [scene_write] entry {i}"
+        for i in range(30)
+    ])
+    payload = json.loads(get_status(universe_id=uid))
+    ev = payload["evidence"]
+    # Total should be 30; activity_log_tail is capped at 20.
+    assert ev["activity_log_line_count"] == 30
+    assert len(ev["activity_log_tail"]) == 20

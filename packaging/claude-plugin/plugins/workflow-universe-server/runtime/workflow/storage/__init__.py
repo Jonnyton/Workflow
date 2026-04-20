@@ -123,6 +123,45 @@ def _slugify(text: str, fallback: str = "item") -> str:
 # -------------------------------------------------------------------
 
 
+def _looks_like_windows_path(raw: str) -> bool:
+    """Return True if ``raw`` looks like a Windows drive-letter path.
+
+    Matches ``C:\\...``, ``c:/...``, ``D:\\...`` etc. Used to detect
+    cross-OS env-var leakage: a host machine setting
+    ``WIKI_PATH=C:\\Users\\Jonathan\\...`` that then reaches a Linux
+    container joins against CWD on POSIX (``Path("C:\\Users\\...")``
+    is NOT absolute on POSIX) and yields nonsense like
+    ``/app/C:\\Users\\Jonathan\\Projects\\Wiki``.
+    """
+    if len(raw) < 3:
+        return False
+    if not raw[0].isalpha() or raw[1] != ":":
+        return False
+    return raw[2] in ("\\", "/")
+
+
+def _reject_windows_path_on_posix(raw: str, var_name: str) -> None:
+    """Raise with a specific error if ``raw`` is a Windows path on POSIX.
+
+    Per AGENTS.md hard rule #8 (fail loudly, never silently): a silent
+    fallback would hide the deploy misconfig that originally leaked a
+    Windows path into the container. The error names the env var and
+    the current runtime so the fix is obvious from the traceback.
+    """
+    import os
+    if os.name == "nt":
+        return
+    if _looks_like_windows_path(raw):
+        raise ValueError(
+            f"{var_name}={raw!r} looks like a Windows drive-letter path "
+            f"but the runtime is POSIX ({os.name!r}). Refusing: joining "
+            f"this against the current working directory would produce "
+            f"nonsense like '/app/{raw}'. Unset the variable to use the "
+            f"platform default, or set it to a POSIX absolute path "
+            f"(e.g. '/data/wiki')."
+        )
+
+
 def data_dir() -> Path:
     """Return the on-disk root for all Workflow daemon state.
 
@@ -165,10 +204,12 @@ def data_dir() -> Path:
 
     explicit = os.environ.get("WORKFLOW_DATA_DIR", "").strip()
     if explicit:
+        _reject_windows_path_on_posix(explicit, "WORKFLOW_DATA_DIR")
         return Path(explicit).expanduser().resolve()
 
     legacy = os.environ.get("UNIVERSE_SERVER_BASE", "").strip()
     if legacy:
+        _reject_windows_path_on_posix(legacy, "UNIVERSE_SERVER_BASE")
         if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
             warnings.warn(
                 "UNIVERSE_SERVER_BASE is deprecated; migrate to "
@@ -210,6 +251,13 @@ def wiki_path() -> Path:
     leaked the developer's username into docs. Using this resolver
     closes that class the same way ``data_dir`` did for universe state.
 
+    If a Windows-style path leaks into a POSIX runtime (the
+    2026-04-19 container incident: host set ``WIKI_PATH`` on Windows,
+    value shipped into the Linux container, ``Path("C:\\...")``
+    joined against ``/app`` yielding ``/app/C:\\Users\\Jonathan\\...``),
+    this resolver raises ``ValueError`` rather than silently returning
+    a nonsense path.
+
     Returns an absolute, resolved Path. Does not create the directory;
     callers mkdir on first write.
     """
@@ -218,10 +266,12 @@ def wiki_path() -> Path:
 
     explicit = os.environ.get("WORKFLOW_WIKI_PATH", "").strip()
     if explicit:
+        _reject_windows_path_on_posix(explicit, "WORKFLOW_WIKI_PATH")
         return Path(explicit).expanduser().resolve()
 
     legacy = os.environ.get("WIKI_PATH", "").strip()
     if legacy:
+        _reject_windows_path_on_posix(legacy, "WIKI_PATH")
         if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
             warnings.warn(
                 "WIKI_PATH is deprecated; migrate to WORKFLOW_WIKI_PATH. "

@@ -4293,6 +4293,60 @@ def _split_csv(text: str) -> list[str]:
     return [p.strip() for p in text.split(",") if p.strip()]
 
 
+def _coerce_node_keys(
+    value: Any, field_name: str,
+) -> tuple[list[str], str]:
+    """Coerce input_keys / output_keys to list[str], or return an error.
+
+    Accepts list[str], JSON-encoded list strings (e.g. '["a","b"]'),
+    CSV strings ("a, b, c"), and bare single tokens ("a"). Rejects
+    anything else — in particular, naked iteration over an un-parsed
+    string like "node.output" was silently yielding a per-character
+    list, which then validated as a node spec but was unrunnable.
+
+    Returns (keys, error). On success error is "". On failure keys is
+    [] and error is a human-readable reason.
+    """
+    if value is None:
+        return [], ""
+    if isinstance(value, list):
+        out: list[str] = []
+        for idx, item in enumerate(value):
+            if not isinstance(item, str):
+                return [], (
+                    f"{field_name}[{idx}] must be a string, got "
+                    f"{type(item).__name__}"
+                )
+            trimmed = item.strip()
+            if not trimmed:
+                return [], f"{field_name}[{idx}] is empty"
+            out.append(trimmed)
+        return out, ""
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return [], ""
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                return [], (
+                    f"{field_name} looks like JSON but did not parse: {exc}"
+                )
+            if not isinstance(parsed, list):
+                return [], (
+                    f"{field_name} JSON must decode to a list, got "
+                    f"{type(parsed).__name__}"
+                )
+            return _coerce_node_keys(parsed, field_name)
+        # CSV path — also handles the bare single-token case.
+        return [p.strip() for p in raw.split(",") if p.strip()], ""
+    return [], (
+        f"{field_name} must be a list or string, got "
+        f"{type(value).__name__}"
+    )
+
+
 def _append_global_ledger(
     action: str,
     *,
@@ -4517,8 +4571,8 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "display_name": kwargs.get("display_name", "").strip(),
         "description": kwargs.get("description", ""),
         "phase": kwargs.get("phase", "") or "custom",
-        "input_keys": _split_csv(kwargs.get("input_keys", "")),
-        "output_keys": _split_csv(kwargs.get("output_keys", "")),
+        "input_keys": kwargs.get("input_keys", ""),
+        "output_keys": kwargs.get("output_keys", ""),
         "source_code": kwargs.get("source_code", ""),
         "prompt_template": kwargs.get("prompt_template", ""),
         "author": kwargs.get("author") or _current_actor(),
@@ -5119,14 +5173,20 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
         )
 
     phase = (raw.get("phase") or "").strip() or "custom"
+    in_keys, err = _coerce_node_keys(raw.get("input_keys"), "input_keys")
+    if err:
+        return err
+    out_keys, err = _coerce_node_keys(raw.get("output_keys"), "output_keys")
+    if err:
+        return err
     try:
         node = NodeDefinition(
             node_id=nid,
             display_name=display,
             description=raw.get("description", ""),
             phase=phase,
-            input_keys=list(raw.get("input_keys") or []),
-            output_keys=list(raw.get("output_keys") or []),
+            input_keys=in_keys,
+            output_keys=out_keys,
             source_code=source_code,
             prompt_template=prompt_template,
             author=raw.get("author") or _current_actor(),
@@ -5402,9 +5462,19 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                 if "source_code" in op:
                     n.source_code = op["source_code"]
                 if "input_keys" in op:
-                    n.input_keys = list(op["input_keys"] or [])
+                    keys, err = _coerce_node_keys(
+                        op["input_keys"], "input_keys",
+                    )
+                    if err:
+                        return err
+                    n.input_keys = keys
                 if "output_keys" in op:
-                    n.output_keys = list(op["output_keys"] or [])
+                    keys, err = _coerce_node_keys(
+                        op["output_keys"], "output_keys",
+                    )
+                    if err:
+                        return err
+                    n.output_keys = keys
                 return ""
         return f"update_node: node '{nid}' not found"
     # Branch-level metadata ops (#67). These let patch_branch rename /
@@ -5632,9 +5702,9 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             if kwargs.get(field):
                 updates[field] = kwargs[field]
         if kwargs.get("input_keys"):
-            updates["input_keys"] = _split_csv(kwargs["input_keys"])
+            updates["input_keys"] = kwargs["input_keys"]
         if kwargs.get("output_keys"):
-            updates["output_keys"] = _split_csv(kwargs["output_keys"])
+            updates["output_keys"] = kwargs["output_keys"]
 
     if not updates:
         return json.dumps({
@@ -5705,9 +5775,19 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             if target_node.source_code:
                 target_node.prompt_template = ""
         if "input_keys" in updates:
-            target_node.input_keys = list(updates["input_keys"] or [])
+            keys, err = _coerce_node_keys(
+                updates["input_keys"], "input_keys",
+            )
+            if err:
+                return json.dumps({"status": "rejected", "error": err})
+            target_node.input_keys = keys
         if "output_keys" in updates:
-            target_node.output_keys = list(updates["output_keys"] or [])
+            keys, err = _coerce_node_keys(
+                updates["output_keys"], "output_keys",
+            )
+            if err:
+                return json.dumps({"status": "rejected", "error": err})
+            target_node.output_keys = keys
     except Exception as exc:
         return json.dumps({
             "status": "rejected",
@@ -9238,11 +9318,27 @@ def wiki(
         skip_lint: Promote skips quality checks when true.
         max_results: Max search results (default 10).
     """
-    wiki_root = _wiki_root()
+    try:
+        wiki_root = _wiki_root()
+    except ValueError as exc:
+        # _wiki_root() raises when WORKFLOW_WIKI_PATH / WIKI_PATH holds a
+        # Windows path on a POSIX runtime (2026-04-19 container incident
+        # — host env leaked into Linux container).
+        return json.dumps({
+            "error": str(exc),
+            "hint": (
+                "Unset WORKFLOW_WIKI_PATH/WIKI_PATH to use the platform "
+                "default (data_dir()/wiki), or set it to a POSIX absolute "
+                "path like '/data/wiki'."
+            ),
+        })
     if not wiki_root.is_dir():
         return json.dumps({
             "error": f"Wiki not found at {wiki_root}.",
-            "hint": "Set WIKI_PATH environment variable to the wiki directory.",
+            "hint": (
+                "Set WORKFLOW_WIKI_PATH to the wiki directory (legacy "
+                "WIKI_PATH still honored)."
+            ),
         })
 
     dispatch = {
@@ -9984,19 +10080,30 @@ def get_status(universe_id: str = "") -> str:
     to?"). Returns concrete evidence the chatbot can narrate; does not
     infer or guess.
 
-    Shape:
+    Shape (§10.7 self-auditing-tools canonical):
         {
           "active_host": {host_id, served_llm_type, llm_endpoint_bound},
           "tier_routing_policy": {served_llm_type, accept_*, bid_*, ...},
           "evidence": {last_completed_request_llm_used,
-                       activity_log_tail, policy_hash},
-          "caveats": [...]
+                       activity_log_tail, last_n_calls,
+                       activity_log_line_count, policy_hash},
+          "evidence_caveats": {<evidence_key>: [caveat, ...]},
+          "caveats": [global_caveat, ...],
+          "actionable_next_steps": [...]
         }
 
     `caveats` is load-bearing — the legacy surface does NOT yet enforce
     per-universe sensitivity_tier (that lives in spec #79 §13, post-
     rewrite). The chatbot MUST read + narrate caveats so trust claims
-    match reality.
+    match reality. Per-field caveats let the chatbot cite only the
+    evidence keys that are degenerate, instead of wrapping every claim
+    in the global caveat list.
+
+    `last_n_calls` is a structured view of the most recent activity
+    entries (parsed `{ts, tag, message, raw}` dicts, most-recent first).
+    Derived from the same activity.log tail as `activity_log_tail`;
+    mirrors the dispatch_evidence caveat-augmentation pattern introduced
+    in commit 7d19f34.
 
     Args:
         universe_id: Optional universe scope. Defaults to active universe.
@@ -10040,14 +10147,25 @@ def get_status(universe_id: str = "") -> str:
     # Pull the last N lines of activity.log for evidence of what actually
     # ran recently — chatbot cites this when narrating trust claims.
     activity_tail: list[str] = []
+    last_n_calls: list[dict[str, str]] = []
     last_completed_llm = "unknown"
+    total_log_lines = 0
     log_path = udir / "activity.log"
+    log_read_ok = True
     if log_path.exists():
         try:
             content = log_path.read_text(encoding="utf-8").strip()
             if content:
                 lines = content.splitlines()
+                total_log_lines = len(lines)
                 activity_tail = lines[-20:]
+                # last_n_calls: structured parse of most-recent entries,
+                # newest-first. Reuses _parse_activity_line so the shape
+                # matches get_recent_events (dispatch_evidence idiom).
+                last_n_calls = [
+                    _parse_activity_line(line)
+                    for line in reversed(lines[-10:])
+                ]
                 # Best-effort scan for "llm=" or "provider=" tokens in
                 # recent lines. Legacy format varies; chatbot verifies by
                 # reading the tail itself if this heuristic misses.
@@ -10061,8 +10179,39 @@ def get_status(universe_id: str = "") -> str:
                     if last_completed_llm != "unknown":
                         break
         except Exception:  # noqa: BLE001 — best-effort evidence
-            pass
+            log_read_ok = False
 
+    # Per-field caveats — chatbot cites only the degenerate keys instead
+    # of wrapping every claim in the global caveat list.
+    evidence_caveats: dict[str, list[str]] = {}
+    if last_completed_llm == "unknown":
+        evidence_caveats["last_completed_request_llm_used"] = [
+            "Heuristic found no llm=/provider=/model= token in recent "
+            "activity. Either the daemon has not completed a request, or "
+            "the log format does not emit a provider token. Do not read "
+            "'unknown' as 'no provider routing happened'."
+        ]
+    if not activity_tail:
+        tail_caveats = [
+            "activity.log is empty or missing — daemon has not run in "
+            "this universe, or the log was cleared."
+        ]
+        if not log_read_ok:
+            tail_caveats.append(
+                "activity.log read failed (I/O error). Tail not available."
+            )
+        evidence_caveats["activity_log_tail"] = tail_caveats
+        evidence_caveats["last_n_calls"] = tail_caveats
+    else:
+        untagged = sum(1 for c in last_n_calls if not c.get("tag"))
+        if untagged:
+            evidence_caveats["last_n_calls"] = [
+                f"{untagged} of {len(last_n_calls)} recent entries carry "
+                "no tag (pre-tagging call sites or legacy entries). "
+                "Tag-based filtering on these is unreliable."
+            ]
+
+    # Global caveats — apply regardless of which evidence field is read.
     caveats: list[str] = []
     if not served_llm_type:
         caveats.append(
@@ -10081,6 +10230,25 @@ def get_status(universe_id: str = "") -> str:
         "run locally + verify via this tool's evidence field."
     )
 
+    # Actionable next steps — §10.7 canonical shape. Only surfaced when
+    # the chatbot has something concrete it can do or recommend.
+    actionable_next_steps: list[str] = []
+    if not served_llm_type:
+        actionable_next_steps.append(
+            "Set served_llm_type in the dispatcher config to constrain "
+            "which LLM types this daemon will accept work for."
+        )
+    if endpoint_hint == "unset":
+        actionable_next_steps.append(
+            "Export OLLAMA_HOST (local) or ANTHROPIC_BASE_URL (cloud) "
+            "before the next daemon run to bind a routable endpoint."
+        )
+    if last_completed_llm == "unknown" and activity_tail:
+        actionable_next_steps.append(
+            "Inspect the full activity_log_tail — provider token heuristic "
+            "may have missed a non-standard format."
+        )
+
     policy_payload = {
         "active_host": {
             "host_id": host_id,
@@ -10096,10 +10264,13 @@ def get_status(universe_id: str = "") -> str:
         "evidence": {
             "last_completed_request_llm_used": last_completed_llm,
             "activity_log_tail": activity_tail,
-            "activity_log_line_count": len(activity_tail),
+            "activity_log_line_count": total_log_lines,
+            "last_n_calls": last_n_calls,
             "policy_hash": _policy_hash(policy_payload),
         },
+        "evidence_caveats": evidence_caveats,
         "caveats": caveats,
+        "actionable_next_steps": actionable_next_steps,
         "universe_id": uid,
     }
     return json.dumps(response)
