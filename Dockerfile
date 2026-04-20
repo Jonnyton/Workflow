@@ -84,6 +84,13 @@ COPY --from=builder /build/workflow /app/workflow
 COPY --from=builder /build/domains /app/domains
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
 
+# Stdlib-only MCP canary — reused across Layer-1 (local), tier-3 GHA,
+# docker-build CI, cloud canary, and the compose.yml container-health
+# healthcheck. Single definition of "healthy MCP" across every probe
+# surface. Copied directly (not via the builder stage) because the
+# script is pure stdlib — no compilation needed.
+COPY scripts/mcp_public_canary.py /app/scripts/mcp_public_canary.py
+
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
