@@ -218,38 +218,247 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 ---
 
+## 4b. Additional uptime gaps (Rows H-N) — post-host-list triage + expansion
+
+Lead surfaced 10 gaps 2026-04-20 after host asked *"what else is needed for 24/7 uptime without my computer?"* Navigator triaged, bundled related items, kept the row count tight.
+
+**Triage outcome — 10 gaps → 7 rows + 1 already-covered + 1 new addition:**
+
+| Gap | Disposition | Row |
+|---|---|---|
+| 1. Canary Layer 1 on host Task Scheduler | Standalone row — critical for acceptance gate. | **H** |
+| 2. Alarms to disk only, no out-of-band sink | Bundles with Gap 1 (same commit, same file set — the alarm sink is how the cloud canary gets noticed). | **H** |
+| 3. Docker image registry (GHCR) | Standalone row — blocks Row D reliably. | **I** |
+| 4. State backup (LanceDB + SqliteSaver + data to off-box storage) | Standalone row — single-disk failure is currently unmitigated. | **J** |
+| 5. Log aggregation (stdout → cloud sink) | Standalone row — if box dies we need the evidence. | **K** |
+| 6. Daemon auto-restart + watchdog | Standalone row — systemd Restart=always + MCP-initialize watchdog. | **L** |
+| 7. Deploy pipeline (merge → build → SSH deploy) | Standalone row — post-merge ship without host action. | **M** |
+| 8. Bill-payment autonomy | Bundles with 9 + 10 under "host-independence admin." | **N** |
+| 9. DNS changes locked to host login | Bundles with 8 + 10. | **N** |
+| 10. Secrets rotation calendar + alerts | Bundles with 8 + 9. | **N** |
+| (already covered) Row E Worker fallback-on-outage | Gap 9's "emergency DNS flip" is materially covered by the Worker's independence from tunnel origin — apex route change at the Worker level is a one-command `wrangler deploy` that uses a checked-in-repo API token, not a dashboard login. Row N narrows Gap 9 to "non-Worker DNS surfaces" (A/CNAME records under Cloudflare zone). | — |
+| **11th gap navigator sees — acceptance gate IS the canary** | The whole 48h acceptance in §6 depends on the Layer-1 canary existing. Row H explicitly makes that dependency a hard block in the sequencing. Not a new row, but a clarification. | — |
+
+**Per-row summaries below.** All Rows H-N dispatchable in parallel with existing A-G work unless explicitly noted.
+
+### Row H: Cloud canary + out-of-band alarm sink (gaps 1 + 2)
+
+**Files:**
+- `.github/workflows/uptime-canary.yml` (new) — GHA cron scheduling.
+- `scripts/uptime_canary.py` (already sketched in `docs/design-notes/2026-04-19-uptime-canary-layered.md` — ship it, don't re-design).
+- `scripts/uptime_alarm.py` (new) — reads last N log lines, applies escalation table, fires alarms.
+- `.github/workflows/uptime-canary.yml` posts alarms via a Discord webhook OR opens a GitHub issue via `gh issue create` using the built-in `GITHUB_TOKEN`.
+
+**Scope:**
+- GHA cron at every 5 minutes (GHA's floor is `*/5` practically — 2-min cadence from host Task Scheduler remains best-effort + supplementary, not primary). Probes BOTH `tinyassets.io/mcp` AND `mcp.tinyassets.io/mcp`.
+- Alarm sink: **GitHub Issue on 2 consecutive reds.** Pre-decided per always-works criterion — Discord webhook requires a webhook secret + a Discord server we depend on; GitHub Issue uses the repo's existing infrastructure with zero new dependencies. Issue body includes last N probe lines + suspected cause from exit code. Issue is auto-closed on 3 consecutive greens (same workflow).
+- Host Task Scheduler canary continues as supplementary when host is online (2-min cadence catches faster); GHA is the uptime-critical path.
+
+**Effort:** ~0.75 dev-day. Canary script exists in design; GHA yml + alarm script + issue-auto-open/close + tests.
+
+**Cost:** $0/mo. GHA free tier, GitHub Issues free.
+
+**Sequence:** Dispatchable NOW. Independent of all existing rows.
+
+**Acceptance:** With host box offline, canary probes every 5 min from GHA; a forced outage (temporarily stop daemon) produces a GitHub issue within ~10 min; bringing daemon back closes the issue within ~15 min.
+
+**This row is a hard block on §6 acceptance gate** — the 48h-offline trial cannot be validated if the canary itself lives on the host.
+
+### Row I: Docker image registry (gap 3)
+
+**Files:**
+- `.github/workflows/build-image.yml` (new) — build + push on every main-branch push.
+- `Dockerfile` (Row A artifact) tagged for GHCR.
+- `deploy/compose.yml` pulls from `ghcr.io/<owner>/workflow-daemon:<tag>`.
+
+**Scope:**
+- GitHub Actions workflow on push to main: `docker buildx build` + push to GHCR. Tags: `latest` + git SHA short.
+- GHCR visibility: public read for OSS posture (matches `project_license_fully_open_commons.md`); no private-repo premium needed.
+- `deploy/compose.yml` references `:latest` for simplicity at MVP; upgrade to SHA-pinning when first deploy regression happens (foundation-end-state discipline says no phased complexity, so this is intentionally simple).
+
+**Effort:** ~0.25 dev-day. GitHub provides GHCR + the Action template.
+
+**Cost:** $0/mo. GHCR free for public images.
+
+**Sequence:** Dispatchable NOW. Collides only with whoever is editing `Dockerfile` (Row A already landed — no collision).
+
+**Acceptance:** `docker pull ghcr.io/<owner>/workflow-daemon:latest` from a fresh machine succeeds + `docker run` serves `/mcp` green. Row D's deploy can pull from registry instead of local build.
+
+**Without this row, Row D has no deploy source.** The plan previously hand-waved image source; Row I names it.
+
+### Row J: State backup (gap 4)
+
+**Files:**
+- `deploy/backup.sh` (new) — nightly snapshot.
+- `deploy/compose.yml` adds a backup sidecar OR systemd timer on the Hetzner box.
+- `docs/ops/backup-restore.md` (new) — runbook.
+
+**Scope:**
+- Hetzner Storage Box (€1/mo, 100GB, S3-compatible via `rclone`) — the plan-b playbook already references this shape.
+- `backup.sh` runs nightly at 03:00 UTC (low-traffic): rsync'd snapshot of `/var/lib/workflow/data/` (LanceDB + SqliteSaver + SQLite DBs + any disk-backed state) to Storage Box with 7-day rotation + 4-week weekly retention + 12-month monthly retention.
+- Supabase-hosted data (Postgres rows) NOT in this backup — Supabase Pro handles its own daily PITR.
+- Restore runbook: one-command restore from a named snapshot date.
+
+**Effort:** ~0.5 dev-day. rsync + systemd timer + restore script + a restore-test.
+
+**Cost:** €1/mo (~$1.10).
+
+**Sequence:** Depends on Row D (box must exist). Parallel-safe with Row F / G once D lands.
+
+**Acceptance:**
+- Nightly backup runs for 7 consecutive days without failure (check via alarm sink — Row H fires an alarm if backup job fails).
+- Restore-test: spin up a second CX22, restore from last night's snapshot, confirm daemon starts + `get_status` green + recent state visible.
+
+### Row K: Log aggregation (gap 5)
+
+**Files:**
+- `deploy/compose.yml` adds a `vector` or `fluent-bit` sidecar (whichever ships with simplest config).
+- `docs/ops/logs.md` (new) — runbook to grep aggregated logs.
+
+**Scope:**
+- Daemon writes to stdout (already does). Docker captures → journald. Sidecar ships journald → cloud sink.
+- **Sink choice (navigator-decided, always-works criterion):** Better Stack (formerly Logtail) free tier — 3 GB/mo retention, 3-day history, zero-credit-card free signup. Matches Papertrail's shape; Papertrail is now SolarWinds and harder to get a free account on in 2026.
+- Alternative if Better Stack's free tier changes: ship to an S3-compatible bucket (Hetzner Storage Box already available from Row J) with date-partitioned files. Less queryable but zero external dependency. Acceptable fallback.
+- No log-based alerting at first-draft — Row H's canary handles outage alerts; log aggregation is for forensic reconstruction.
+
+**Effort:** ~0.5 dev-day.
+
+**Cost:** $0/mo (Better Stack free tier) or €0 marginal (Storage Box if fallback chosen).
+
+**Sequence:** Depends on Row D (box must exist). Parallel-safe with Row F.
+
+**Acceptance:** Induce an error in the daemon; verify the error line appears in Better Stack (or fallback bucket) within 30 s. During an outage test (daemon killed), the final 60 s of logs are queryable after the box recovers.
+
+### Row L: Daemon auto-restart + watchdog (gap 6)
+
+**Files:**
+- `deploy/systemd/workflow-daemon.service` (new OR extend existing).
+- `scripts/watchdog.py` (new) — external MCP-initialize probe every 30 s on `localhost:8001/mcp`; if 3 consecutive failures, `systemctl restart workflow-daemon`.
+- `deploy/systemd/workflow-watchdog.service` + `.timer`.
+
+**Scope:**
+- systemd `Restart=always` + `RestartSec=5` on the daemon unit. Covers plain crashes.
+- Watchdog covers the scarier failure modes: OOM-kill (systemd sees the kill + restarts) + stale-bytecode class (#11 fixed the acute case; watchdog catches any future regression) + hung-but-not-crashed (socket accepting, initialize hanging — systemd won't catch this, watchdog will).
+- Restart count ceiling: if watchdog restarts the daemon >5 times in 10 min, stop + fire an alarm via Row H instead of flapping. Prevents restart-loop-burning-CPU.
+
+**Effort:** ~0.5 dev-day.
+
+**Cost:** $0/mo.
+
+**Sequence:** Depends on Row D. Parallel-safe with Row F.
+
+**Acceptance:**
+- `kill -9 $(pgrep -f workflow-daemon)` — daemon back and serving within 10 s.
+- Force-hang (simulate infinite loop in a test build) — watchdog restarts within 90 s.
+- Induce flap (crash the daemon in a restart loop) — after 5 restarts in 10 min, watchdog stops + Row H fires an alarm; box does NOT go into a CPU-burning loop.
+
+### Row M: Deploy pipeline — merge to production (gap 7)
+
+**Files:**
+- `.github/workflows/deploy-prod.yml` (new) — triggered on main-branch push after Row I's image build succeeds.
+- Required secrets in repo settings: `HETZNER_SSH_HOST`, `HETZNER_SSH_USER`, `HETZNER_SSH_KEY` (private key for a deploy-only user on the box).
+
+**Scope:**
+- On main-branch push (after Row I's image build green), GHA SSHs into the Hetzner box as a deploy-only user (`chmod`-restricted, `sudo` allowed for only `docker compose pull && docker compose up -d workflow-daemon`).
+- Deploy step: `docker compose pull && docker compose up -d workflow-daemon` — rolling restart; systemd's `Restart=always` + Row L's watchdog + the daemon's own graceful-shutdown-of-pending-MCP-sessions keep continuity.
+- Post-deploy: GHA runs a remote `scripts/uptime_canary.py --once` against `tinyassets.io/mcp` AND `mcp.tinyassets.io/mcp`. Green = ship confirmed; red = **automatic rollback** via `docker compose pull --tag=<previous-SHA>` + retry canary.
+- Manual override: `workflow_dispatch` trigger with a `--skip-canary` parameter (NOT default) for emergency rollback scenarios.
+
+**Effort:** ~0.75 dev-day. SSH key management is the fiddly part.
+
+**Cost:** $0/mo.
+
+**Sequence:** Depends on Rows D + I. Parallel-safe with Row F.
+
+**Acceptance:**
+- Merge a trivial PR (e.g., README typo fix); image builds; deploy runs; canary green within 5 min of merge.
+- Merge a regression (intentional test: a PR that breaks `get_status`); canary goes red post-deploy; rollback triggers; next canary green within 10 min. Row H fires an alarm during the red window.
+
+### Row N: Host-independence admin — bills + DNS + secrets (gaps 8 + 9 + 10)
+
+**Files:**
+- `docs/ops/host-independence-runbook.md` (new) — a single runbook covering all three concerns.
+- `scripts/emergency_dns_flip.py` (new) — Cloudflare API script that flips `tinyassets.io/mcp` Worker route OR `mcp.tinyassets.io` CNAME OR apex routing to a named fallback target, using a Cloudflare API token stored in GitHub Actions secrets (not host's dashboard login).
+- `.github/workflows/secrets-expiry-check.yml` (new) — monthly cron that queries expiry dates on known secrets + opens a GitHub issue ≥30 days pre-expiry.
+
+**Scope:**
+
+**Bills autonomy (gap 8):**
+- GoDaddy domain: host pre-pays for 5 years (GoDaddy allows multi-year — already recommended in SUCCESSION.md §4.1). Runbook: "at next renewal window, pre-pay to 2031."
+- Cloudflare: Free tier covers current + foreseeable 10k-user scale; no bill to fail. Worker paid tier at ~$5/mo enters when we scale beyond Workers free quota (~100k requests/day — not near-term).
+- Hetzner: monthly billing via card. Pre-pay options exist (Hetzner accepts 12-month advance pay). Runbook: "pay 12 months in advance immediately post-Row-D; review annually."
+- Supabase: Pro plan $25/mo via card; Supabase allows annual prepay ($300 with ~1 month free). Runbook: "switch to annual pre-pay at Row-D+30-day mark once traffic pattern confirmed."
+- Fallback card: runbook names a secondary card (host's spouse's card or a backup card) that can be swapped in via each vendor's dashboard by a co-admin with vault access.
+
+**DNS autonomy (gap 9):**
+- Cloudflare API token (zone-edit scope) stored in GitHub Actions secrets + in SUCCESSION.md's vault.
+- `scripts/emergency_dns_flip.py` supports: (a) flip Worker route off (apex `/mcp` back to raw tunnel), (b) change CNAME target, (c) add/remove a record. Runs via `gh workflow run emergency-dns.yml` by anyone with repo write access — host login to Cloudflare dashboard NOT required.
+- Row E's Worker is a *separate* emergency path — deployed via `wrangler` from a repo-stored API token.
+- **Row E's Worker independence materially covers Gap 9's primary scenario.** The emergency DNS script covers the residual: non-Worker DNS records (the tunnel subdomain, MX records, TXT for SPF/DKIM, any future subdomains).
+
+**Secrets rotation (gap 10):**
+- Monthly GHA cron queries: Cloudflare token expiry (Cloudflare API `/user/tokens/<id>`), Supabase JWT rotation date (manual — Supabase doesn't expose expiry API; cron checks a local `secrets-metadata.json` with human-maintained renewal dates), GitHub OAuth app secret expiry, Hetzner API token expiry.
+- If any < 30 days from expiry, open a GitHub issue titled `SECRET EXPIRY: <name> in <N> days` with rotation runbook link.
+- `docs/ops/host-independence-runbook.md` §3 carries a table of all known secrets + their metadata.
+- `secrets-metadata.json` committed to repo (no secret values, only names + expiry dates + rotation runbook pointers).
+
+**Effort:** ~1 dev-day bundled. Runbook is the longest; scripts are small.
+
+**Cost:** $0/mo marginal (uses existing GHA + Cloudflare free-tier API).
+
+**Sequence:** Dispatchable NOW for the scripts + runbook. Bill pre-pay is a host-action (not dev work) — can happen at any point; `SUCCESSION.md` §4.1 already recommends it.
+
+**Acceptance:**
+- A simulated DNS emergency: co-admin (or lead agent) runs `gh workflow run emergency-dns.yml` with a test payload; DNS change lands within 60 s; canary verifies; change is reverted.
+- Secrets-expiry cron opens a test issue on a known-expiring secret.
+- Bill pre-pay: Hetzner annual prepay confirmed in dashboard; runbook reflects the new expiry date.
+
+---
+
 ## 5. Sequencing + timeline
 
-Provider pick is locked (Hetzner). Worker (Row E) ships independently of Hetzner cutover. No host round-trip in the critical path.
+Provider pick is locked (Hetzner). Worker (Row E) ships independently of Hetzner cutover. Row H (cloud canary) gates the §6 acceptance. No host round-trip in the critical path.
 
 | Phase | Sequence | Dev-days | Wall-time |
 |---|---|---|---|
 | **P1 — Rows A + B + C** | Parallel across 1-2 devs (A + C independent; B serial) | ~1.5-2 dev-days serial, ~1 dev-day with 2 devs | 1-2 calendar days |
 | **P1b — Row E (Worker, parallel)** | Independent of A/B/C; dispatchable post-Row-A | ~0.5 dev-day | 1 calendar day (overlapping P1) |
-| **P2 — Row D (Hetzner deploy)** | After A + B + C land | ~1-1.5 dev-days | 1-2 calendar days |
-| **P3 — Row F (smoke + 48h offline trial)** | After D + E both land | ~0.25 dev-day active + 48h wall | 3 calendar days |
+| **P1c — Rows H + I + N (all repo-only, parallel)** | Dispatchable NOW — no dependencies on D/Hetzner. H = cloud canary, I = GHCR, N = admin runbook + scripts. | ~2 dev-days total serial, ~1 dev-day with 2 devs | 1-2 calendar days (overlapping P1) |
+| **P2 — Row D (Hetzner deploy)** | After A + B + C + I land | ~1-1.5 dev-days | 1-2 calendar days |
+| **P2b — Rows J + K + L + M (on-box infra, parallel post-D)** | J = backup, K = logs, L = watchdog, M = CI deploy. All parallel; all depend on D. | ~2.25 dev-days total, ~1-1.5 dev-days with 2 devs | 1-2 calendar days |
+| **P3 — Row F (smoke + 48h offline trial)** | After D + E + H land; J/K/L/M recommended but not hard-block | ~0.25 dev-day active + 48h wall | 3 calendar days |
 | **P4 — Row G (canonical-URL docs sweep)** | After P3 acceptance closes clean | ~0.5-1 dev-day | 1 calendar day |
-| **Total dispatch to sweep closed** | | **~3.75-5.25 dev-days active** | **6-9 calendar days** |
+| **Total dispatch to sweep closed** | | **~8-11 dev-days active** | **7-10 calendar days with 2 devs; 10-13 with 1** |
 
-**Realistic range:** 6-9 days in normal conditions (was 5-7 pre-Worker — Row E + Row G add ~1-1.5 dev-days of work net, but Worker-before-Hetzner means user-facing canonical restores earlier in the arc). 10-12 days if Row B surfaces more Windows-path surface area than audit predicts.
+**Realistic range:** 7-10 days with 2 devs in normal conditions. 11-14 days with 1 dev or if Row B surfaces more Windows-path surface area than audit predicts.
 
-**Critical path observation:** the whole plan is dispatchable immediately. Row A + Row C parallel-ship on two devs; Row B serial behind whichever finishes second; Row E (Worker) dispatches post-Row-A independently. Row D goes as soon as A/B/C all land. Row F is the trial closer. Row G is the final sweep.
+**Row H is a HARD BLOCK on §6 acceptance.** The 48h-offline gate cannot be validated if the canary itself runs on the host — without Row H, we're measuring host uptime, not public-URL uptime. Dispatch Row H as priority-equal to Row E.
 
-**User-facing canonical restores on Row E ship, NOT on Row D / F.** Once the Worker is live, `tinyassets.io/mcp` works regardless of whether the tunnel origin is the host machine or the Hetzner box. This is the near-term uptime win: the canonical URL is restored within ~1-2 days of dispatch, while the fuller host-machine-independence trial takes 6-9 days to close.
+**Critical path observation (updated):** parallelism now significant. Two devs can run:
+- **Lane 1 (repo-only, no dependencies):** A → C → E → H → I → N. ~3.5 dev-days.
+- **Lane 2 (serial but cheap):** B → wait-for-lane-1-A-done → parallel with lane-1-remainder.
+- **After D:** J/K/L/M parallel.
+Single-dev serial: ~8-11 dev-days. Two-dev parallel: ~5-7 dev-days.
+
+**User-facing canonical restores on Row E ship, NOT on Row D / F.** Once the Worker is live, `tinyassets.io/mcp` works regardless of whether the tunnel origin is the host machine or the Hetzner box. Row H's cloud canary + Row I's GHCR + Row N's admin runbook all ship alongside E — the "user-visible restored + monitoring-independent + deploy-independent" story gets to green in roughly the same window.
 
 ---
 
 ## 6. Day 1 after cutover — acceptance criteria
 
-The migration is "done" when all five hold simultaneously for a 48-hour window:
+The migration is "done" when all seven hold simultaneously for a 48-hour window:
 
-1. **Layer-1 canary green for 48 consecutive hours against BOTH URLs** — `tinyassets.io/mcp` (user-facing canonical via Worker) AND `mcp.tinyassets.io/mcp` (direct tunnel origin). Zero `exit != 0` probes on either. (Post-canary-ships; gate blocks if canary not live yet.)
+1. **Cloud canary (Row H GHA cron) green for 48 consecutive hours against BOTH URLs** — `tinyassets.io/mcp` (user-facing canonical via Worker) AND `mcp.tinyassets.io/mcp` (direct tunnel origin). Zero `exit != 0` probes on either. **Probed from GHA, not from host** — that is the load-bearing part.
 2. **`selfhost_smoke.py` green at hour 1, 24, 47.** No tool output regressions from the remote box vs local prod baseline (captured one week before cutover). Parity asserted between canonical + direct-origin URLs.
 3. **Host machine powered off or hibernated for ≥48 hours** without a single user-visible outage on `tinyassets.io/mcp`.
 4. **Hard Rule 10 satisfied:** any Cloudflare Worker, DNS, or provider-dashboard reconfig during the 48h window ran `scripts/uptime_canary.py --once` post-change against BOTH URLs and confirmed green.
 5. **Succession runbook updated** — `SUCCESSION.md` §5 references the provider box as the current authoritative origin, with a link to Row C's cloudflared config template for rebuild-from-scratch.
+6. **Row H alarm path verified** — induced outage during the trial produces a GitHub issue within ~10 min (Row H acceptance criterion held under live conditions).
+7. **Row J backup ran at least once during the 48h window** — nightly snapshot landed in Hetzner Storage Box, rotation logic verified (not a bare "does it work" — an actual snapshot for that date is browsable).
 
-If all five hold, **the host's computer is officially replaceable.** The forever rule's "system is always up without us" has gained an important piece: "without this specific machine" is now provably true.
+**Recommended but not hard-block for the 48h gate:** Rows K (log aggregation), L (watchdog), M (CI deploy), N (admin runbook). These are always-works resilience layers; the gate is demonstrably independent without them, but shipping them before the gate closes means the system is durable, not merely currently-up.
+
+If all seven hold, **the host's computer is officially replaceable.** The forever rule's "system is always up without us" has gained an important piece: "without this specific machine" is now provably true, and a suite of independence layers means the state stays true through next-week's power outage / card expiry / secret rotation.
 
 ---
 
@@ -296,8 +505,16 @@ Navigator owns the merge; ~0.25 nav-day after the 48h trial closes.
 - **Provider:** **Hetzner Cloud CX22 (Debian 12, Docker Compose).** Single pick, no host round-trip. Fallback: Fly.io (only on observed primary regression). Anti: Cloudflare Workers (rewrite cost too high).
 - **Internal decisions pre-made (§3):** secrets = systemd EnvironmentFile; Postgres = Supabase managed; host machine = dev seat only; first box = empty.
 - **Canonical URL architecture (§0):** user-facing `tinyassets.io/mcp` via Cloudflare Worker; debug `mcp.tinyassets.io/mcp` via tunnel direct; `api.tinyassets.io/mcp` never live, don't resurrect.
-- **7 Work rows, all dispatchable immediately — no host input blocks dispatch:** containerize (0.5d), extract paths (0.5-1d), tunnel config (0.25-0.5d), Hetzner deploy (1-1.5d), Cloudflare Worker (0.5d independent of deploy), smoke + 48h trial (0.25d + wall), docs sweep follow-up (0.5-1d post-trial). Rows A + C parallel; B serial; E (Worker) parallel post-A; D after A/B/C; F after D+E; G after F.
-- **Total active dev:** ~3.75-5.25 dev-days. Calendar 6-9 days to sweep closed; **user-facing canonical URL restores on Row E ship (~1-2 days from dispatch).**
-- **Cutover gate:** host's computer offline for 48 consecutive hours, zero canary reds on BOTH canonical + direct-origin URLs. That's the real acceptance.
+- **14 Work rows** across core migration (A-G) and 24/7 uptime gaps (H-N):
+  - **Core migration A-G (7 rows):** containerize → extract paths → tunnel config → Hetzner deploy → Worker → smoke+trial → docs sweep.
+  - **24/7 gaps H-N (7 rows, triaged from 10 lead-surfaced gaps):** cloud canary + alarm sink (H) / GHCR (I) / state backup (J) / log aggregation (K) / watchdog (L) / CI deploy pipeline (M) / bills+DNS+secrets admin (N).
+- **Everything dispatchable now except D + J/K/L/M (depend on D) + F (depends on D+E+H) + G (depends on F).** Lanes:
+  - Lane 1 (repo-only, no dependencies): A, C, E, H, I, N — ~3.5 dev-days.
+  - Lane 2 (path-refactor serial): B — ~0.5-1 dev-day.
+  - Post-D parallel: J, K, L, M — ~2.25 dev-days.
+- **Total active dev:** ~8-11 dev-days serial, ~5-7 dev-days with 2 devs. Calendar 7-10 days with 2 devs to sweep closed.
+- **Row H (cloud canary) is a HARD BLOCK on the §6 acceptance gate** — 48h-offline trial can't be validated by a canary that lives on the host.
+- **Monthly infra cost at MVP:** Hetzner CX22 €4 + Storage Box €1 + Supabase Pro $25 + Cloudflare $0 + GHA $0 + GHCR $0 + Better Stack $0 = **~$30-35/month**. No line item scales surprisingly through the full-platform target.
+- **User-facing canonical URL restores on Row E ship (~1-2 days from dispatch).** Host-machine-replaceable happens at §6 acceptance (7-10 days with 2 devs).
 
 Go.
