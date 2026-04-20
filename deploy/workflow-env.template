@@ -1,0 +1,101 @@
+# Workflow daemon env file template.
+#
+# Self-host migration Row D per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Install:
+#   1. sudo mkdir -p /etc/workflow
+#   2. sudo cp deploy/workflow-env.template /etc/workflow/env
+#   3. sudo chown root:workflow /etc/workflow/env
+#   4. sudo chmod 640 /etc/workflow/env
+#   5. Fill in the real values below (secrets live here, never in the
+#      repo).
+#   6. sudo systemctl start workflow-daemon
+#
+# Reload after changing values:
+#   sudo systemctl restart workflow-daemon
+#
+# Semantics:
+#   - Lines starting with # are comments; blank lines are ignored.
+#   - Values can be quoted or unquoted; systemd + docker compose
+#     env-file parsing both strip surrounding quotes.
+#   - No interpolation; each line is KEY=VALUE literal.
+#   - Whitespace in values must be quoted.
+#
+# Audit note: this template file IS checked into the repo and is SAFE
+# to commit because it contains no secrets — only structure + empty
+# placeholders. The filled-in /etc/workflow/env NEVER leaves the host.
+
+
+# ---------------------------------------------------------------------
+# Daemon image + version pinning
+# ---------------------------------------------------------------------
+
+# GHCR image reference. Default in compose.yml is `latest`; pin to a
+# short-SHA tag in production for deterministic deploys + easy rollback.
+# Short-SHA tags are emitted by .github/workflows/build-image.yml.
+# Example: ghcr.io/jfarnsworth/workflow-daemon:a1b2c3d4e5f6
+WORKFLOW_IMAGE=ghcr.io/jfarnsworth/workflow-daemon:latest
+
+
+# ---------------------------------------------------------------------
+# Cloudflare tunnel
+# ---------------------------------------------------------------------
+
+# Cloudflare Zero Trust token for the `workflow-daemon-prod` tunnel.
+# Fetch from: Cloudflare dashboard → Zero Trust → Networks → Tunnels
+# → (tunnel) → Connectors → Install tunnel → "Token" field.
+#
+# Never log this value. Never commit a filled-in version.
+CLOUDFLARE_TUNNEL_TOKEN=
+
+
+# ---------------------------------------------------------------------
+# Canary + observability
+# ---------------------------------------------------------------------
+
+# URL the container-internal healthcheck probes. Default is the public
+# canonical (tinyassets.io/mcp, Worker-routed). Override to
+# http://127.0.0.1:8001/mcp if the host is behind strict egress
+# filtering that blocks outbound TLS.
+WORKFLOW_MCP_CANARY_URL=https://tinyassets.io/mcp
+
+
+# ---------------------------------------------------------------------
+# Supabase (Row A — runtime dependency)
+# ---------------------------------------------------------------------
+
+# Postgres connection string for the Supabase-hosted control plane.
+# Use the POOLED URI (port 6543) for serverless compatibility, not
+# the direct URI (port 5432) which caps at 60 conns per plan.
+SUPABASE_DB_URL=
+
+# Supabase service-role key (for server-side RLS bypass where needed,
+# e.g. migrations). Anon key goes to tier-1 clients separately; do NOT
+# put the anon key in this file.
+SUPABASE_SERVICE_ROLE_KEY=
+
+
+# ---------------------------------------------------------------------
+# GitHub OAuth (Row A — tier-1 user auth)
+# ---------------------------------------------------------------------
+
+# GitHub OAuth App created for the Workflow connector. Callback URL
+# registered on the OAuth app must match the canonical:
+#   https://tinyassets.io/authorize/github/callback
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+
+
+# ---------------------------------------------------------------------
+# Optional — deprecation + debug flags
+# ---------------------------------------------------------------------
+
+# Emit DeprecationWarning for legacy env vars (e.g. UNIVERSE_SERVER_BASE).
+# Default off (silent) to avoid log noise; flip to 1 when auditing.
+# WORKFLOW_DEPRECATIONS=1
+
+# Override the data-dir root. Default (unset) resolves to /data inside
+# the container (matches compose.yml volume mount). Only override for
+# unusual layouts.
+# WORKFLOW_DATA_DIR=/data

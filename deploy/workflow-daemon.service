@@ -1,0 +1,67 @@
+# Workflow daemon systemd unit — wraps docker compose up.
+#
+# Self-host migration Row D per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Install:
+#   sudo cp deploy/workflow-daemon.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now workflow-daemon
+#
+# State:
+#   sudo systemctl status workflow-daemon
+#   sudo journalctl -u workflow-daemon -f
+#
+# Restart semantics: `Restart=always` — if docker compose exits for any
+# reason (crash, OOM, compose stop), systemd re-starts it. Row L adds
+# a watchdog unit on top that probes the MCP endpoint and issues
+# `systemctl restart workflow-daemon` on hung-but-not-crashed states.
+#
+# Runs as the unprivileged `workflow` user (uid 1001 per Dockerfile
+# non-root setup). Assumes `workflow` user is in the `docker` group —
+# bootstrap script handles that.
+
+[Unit]
+Description=Workflow MCP daemon + cloudflared tunnel sidecar
+Documentation=https://github.com/jfarnsworth/workflow/blob/main/deploy/HETZNER-DEPLOY.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=workflow
+Group=workflow
+WorkingDirectory=/opt/workflow
+EnvironmentFile=/etc/workflow/env
+
+# docker compose up runs in foreground; systemd watches the PID.
+# The image's own tini PID-1 handles SIGTERM cleanly (Row A Dockerfile).
+ExecStart=/usr/bin/docker compose -f /opt/workflow/compose.yml up
+ExecStop=/usr/bin/docker compose -f /opt/workflow/compose.yml down --timeout 30
+
+# Restart posture. 10s delay avoids hot-loop on persistent failure;
+# StartLimitInterval/Burst caps cascading restarts to 5 in 5 min
+# (after which systemd refuses further restarts until manual reset).
+Restart=always
+RestartSec=10s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# TimeoutStopSec > the cloudflared + daemon graceful-shutdown budgets.
+TimeoutStopSec=60s
+
+# Hardening — readonly-everything except what compose needs.
+# /var/lib/docker must remain writable for the Docker daemon's
+# storage; the workflow user only reads /opt/workflow.
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/docker /run/docker.sock /etc/workflow
+
+# Journald captures compose stdout/stderr.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=workflow-daemon
+
+[Install]
+WantedBy=multi-user.target

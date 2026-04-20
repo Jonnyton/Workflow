@@ -1,0 +1,90 @@
+# Workflow daemon — Docker Compose for self-host deploys.
+#
+# Self-host migration Row D per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Two services:
+#   daemon      — the MCP server image (Row A Dockerfile, published to
+#                 GHCR by Row I build-image.yml). Binds 127.0.0.1:8001.
+#                 Reads on-disk state from a named volume mounted at
+#                 /data, env-var driven per Row B data_dir() resolver.
+#   cloudflared — tunnel sidecar exposing daemon at mcp.tinyassets.io
+#                 (tunnel origin). Token read from env. Runs the
+#                 official cloudflared image + the same run-tunnel.sh
+#                 entrypoint used locally (Row C).
+#
+# The daemon does NOT publish 8001 to the host network; cloudflared
+# reaches it via Docker's default bridge at daemon:8001. Only the
+# loopback is exposed for host-side canary probes.
+#
+# Secrets: sourced from /etc/workflow/env (the env_file below). Host
+# provisions that file with chmod 600 per HETZNER-DEPLOY.md. Never
+# commit real values to this repo.
+#
+# Dev use:
+#   # Render this compose against a local env file for smoke tests.
+#   cp deploy/workflow-env.template /tmp/workflow-env
+#   # ...fill in real values...
+#   docker compose -f deploy/compose.yml --env-file /tmp/workflow-env up
+
+services:
+  daemon:
+    # Pinned via env to support rollbacks. `latest` is the default
+    # for first-deploy convenience; production pins a short-SHA tag
+    # emitted by .github/workflows/build-image.yml.
+    image: ${WORKFLOW_IMAGE:-ghcr.io/jfarnsworth/workflow-daemon:latest}
+    container_name: workflow-daemon
+    restart: unless-stopped
+    # Image CMD already runs `python -m workflow.universe_server`.
+    # Expose loopback only; cloudflared reaches via Docker network.
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      WORKFLOW_DATA_DIR: /data
+      # Pass through anything in the env file.
+      WORKFLOW_MCP_CANARY_URL: ${WORKFLOW_MCP_CANARY_URL:-https://tinyassets.io/mcp}
+    env_file:
+      - /etc/workflow/env
+    volumes:
+      - workflow-data:/data
+    healthcheck:
+      # Use the same canary shape as Layer-1 / tier-3 / docker-build
+      # CI. Python already in the image.
+      test: ["CMD", "python", "/app/scripts/mcp_public_canary.py",
+             "--url", "http://127.0.0.1:8001/mcp", "--timeout", "10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    labels:
+      org.workflow.component: daemon
+      org.workflow.role: mcp-server
+
+  cloudflared:
+    # Official image, pinned to a known-stable tag. Bump by hand
+    # after testing on a staging box; don't track `latest` in prod.
+    image: cloudflare/cloudflared:2026.4.1
+    container_name: workflow-tunnel
+    restart: unless-stopped
+    # cloudflared connects outbound to Cloudflare edge; no ports
+    # published to host. Tunnel token auth (shape A per Row C).
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    env_file:
+      - /etc/workflow/env
+    depends_on:
+      daemon:
+        condition: service_healthy
+    labels:
+      org.workflow.component: tunnel
+      org.workflow.role: cloudflare-ingress
+
+volumes:
+  workflow-data:
+    name: workflow-data
+    # Local named volume backed by Docker's default driver. Backups
+    # (Row J) snapshot this to Hetzner Storage Box.
+
+networks:
+  default:
+    name: workflow-net
+    # Default bridge; cloudflared reaches daemon via `daemon:8001`.
