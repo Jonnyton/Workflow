@@ -217,3 +217,112 @@ def test_get_status_activity_log_line_count_reflects_total(tmp_path) -> None:
     # Total should be 30; activity_log_tail is capped at 20.
     assert ev["activity_log_line_count"] == 30
     assert len(ev["activity_log_tail"]) == 20
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Task #56 — llm_endpoint_bound provider-chain expansion.
+# Priority: ollama → anthropic → codex → claude → unset.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _get_endpoint_hint(monkeypatch, env: dict, which_map: dict) -> str:
+    """Helper: patch env + shutil.which, call get_status, return endpoint hint."""
+    import shutil as _shutil
+
+    for key in ("OLLAMA_HOST", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    for key, val in env.items():
+        monkeypatch.setenv(key, val)
+
+    def _which(cmd, *args, **kwargs):
+        return which_map.get(cmd)
+
+    monkeypatch.setattr("shutil.which", _which)
+    monkeypatch.setattr(_shutil, "which", _which)
+
+    payload = json.loads(get_status())
+    return payload["active_host"]["llm_endpoint_bound"]
+
+
+def test_llm_endpoint_bound_ollama(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"OLLAMA_HOST": "http://localhost:11434"},
+        which_map={},
+    )
+    assert hint == "ollama"
+
+
+def test_llm_endpoint_bound_anthropic(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"ANTHROPIC_BASE_URL": "http://relay.internal"},
+        which_map={},
+    )
+    assert hint == "anthropic"
+
+
+def test_llm_endpoint_bound_ollama_takes_priority_over_anthropic(
+    monkeypatch,
+) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={
+            "OLLAMA_HOST": "http://localhost:11434",
+            "ANTHROPIC_BASE_URL": "http://relay.internal",
+        },
+        which_map={},
+    )
+    assert hint == "ollama"
+
+
+def test_llm_endpoint_bound_codex(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"OPENAI_API_KEY": "sk-test"},
+        which_map={"codex": "/usr/local/bin/codex"},
+    )
+    assert hint == "codex"
+
+
+def test_llm_endpoint_bound_openai_key_without_codex_cli_falls_through(
+    monkeypatch,
+) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"OPENAI_API_KEY": "sk-test"},
+        which_map={"claude": "/usr/local/bin/claude"},
+    )
+    assert hint == "claude"
+
+
+def test_llm_endpoint_bound_claude_cli(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={},
+        which_map={"claude": "/usr/local/bin/claude"},
+    )
+    assert hint == "claude"
+
+
+def test_llm_endpoint_bound_unset_when_nothing_available(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={},
+        which_map={},
+    )
+    assert hint == "unset"
+
+
+def test_llm_endpoint_bound_codex_takes_priority_over_claude(
+    monkeypatch,
+) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"OPENAI_API_KEY": "sk-test"},
+        which_map={
+            "codex": "/usr/local/bin/codex",
+            "claude": "/usr/local/bin/claude",
+        },
+    )
+    assert hint == "codex"

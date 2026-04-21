@@ -10425,11 +10425,17 @@ def get_status(universe_id: str = "") -> str:
         })
 
     served_llm_type = (cfg.served_llm_type or "").strip()
-    endpoint_hint = (
-        os.environ.get("OLLAMA_HOST")
-        or os.environ.get("ANTHROPIC_BASE_URL")
-        or ""
-    ).strip() or "unset"
+    import shutil as _shutil
+    if os.environ.get("OLLAMA_HOST"):
+        endpoint_hint = "ollama"
+    elif os.environ.get("ANTHROPIC_BASE_URL"):
+        endpoint_hint = "anthropic"
+    elif os.environ.get("OPENAI_API_KEY") and _shutil.which("codex"):
+        endpoint_hint = "codex"
+    elif _shutil.which("claude"):
+        endpoint_hint = "claude"
+    else:
+        endpoint_hint = "unset"
 
     tier_routing_policy = {
         "served_llm_type": served_llm_type or "any",
@@ -10517,8 +10523,8 @@ def get_status(universe_id: str = "") -> str:
         )
     if endpoint_hint == "unset":
         caveats.append(
-            "No LLM endpoint env var detected (OLLAMA_HOST / "
-            "ANTHROPIC_BASE_URL). Provider routing is at-call discretion."
+            "No LLM provider detected (checked: OLLAMA_HOST, ANTHROPIC_BASE_URL, "
+            "OPENAI_API_KEY+codex CLI, claude CLI). Provider routing is at-call discretion."
         )
     caveats.append(
         "Legacy surface does NOT enforce per-universe sensitivity_tier. "
@@ -10537,8 +10543,9 @@ def get_status(universe_id: str = "") -> str:
         )
     if endpoint_hint == "unset":
         actionable_next_steps.append(
-            "Export OLLAMA_HOST (local) or ANTHROPIC_BASE_URL (cloud) "
-            "before the next daemon run to bind a routable endpoint."
+            "Bind an LLM provider: set OLLAMA_HOST (local Ollama), "
+            "ANTHROPIC_BASE_URL (Anthropic relay), or OPENAI_API_KEY with "
+            "codex CLI on PATH, or install the claude CLI."
         )
     if last_completed_llm == "unknown" and activity_tail:
         actionable_next_steps.append(

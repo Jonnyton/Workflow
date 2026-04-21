@@ -220,7 +220,54 @@ python /opt/workflow/scripts/watchdog.py --dry-run
 
 ---
 
-## 6. References
+## 6. P0 Auto-Triage
+
+When `uptime-canary.yml` opens a `p0-outage` issue, `.github/workflows/p0-outage-triage.yml`
+fires automatically:
+
+1. SSHs into the Droplet using `DO_SSH_KEY` / `DO_DROPLET_HOST` / `DO_SSH_USER` secrets.
+2. Captures pre-restart diagnostics (`docker ps`, compose status, journalctl tail).
+3. Runs `docker compose up -d --force-recreate daemon` (non-destructive; data volume untouched).
+4. Waits 30s, re-probes `https://tinyassets.io/mcp`.
+5. **Green**: comments auto-recovered + closes the issue.
+6. **Still red**: comments diag output + adds `needs-human` label. GHA run marked failed.
+
+Required secrets (same set as `deploy-prod.yml`): `DO_SSH_KEY`, `DO_DROPLET_HOST`, `DO_SSH_USER`.
+
+If secrets are missing, the workflow comments and exits 1 — the `p0-outage` issue stays open
+for manual response.
+
+---
+
+## 7. LLM Binding Canary
+
+`.github/workflows/llm-binding-canary.yml` runs every 6 hours via GHA schedule.
+It calls `scripts/verify_llm_binding.py --url https://tinyassets.io/mcp` and
+checks that `llm_endpoint_bound` in `get_status` is not `"unset"`.
+
+**Consecutive-fail logic (threshold = 2):**
+- First red: logs to step summary, no issue opened.
+- Second consecutive red: opens `llm-binding-red` GH issue with probe output.
+- Recovery (green after open issue): comments RECOVERED + closes issue.
+
+**Likely causes when it fires:**
+- `OPENAI_API_KEY` rotated or expired in `/etc/workflow/env`
+- `codex` CLI missing from the container image (image rebuild needed)
+- Container restarted without env file (`docker compose down` + manual restart)
+- `OLLAMA_HOST` or `ANTHROPIC_BASE_URL` unset after host reconfiguration
+
+**Manual re-check:**
+```bash
+python scripts/verify_llm_binding.py --url https://tinyassets.io/mcp
+```
+Exit 0 = bound. Exit 3 = unset. See `scripts/verify_llm_binding.py` for full
+exit code table.
+
+No extra secrets required — uses only `GITHUB_TOKEN` (built-in).
+
+---
+
+## 8. References
 
 - Cloudflare DNS Records API: <https://developers.cloudflare.com/api/resources/dns/>
   lists create, patch, and delete endpoints under `/zones/{zone_id}/dns_records`.
