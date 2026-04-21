@@ -25,6 +25,10 @@
 #   BACKUP_RETAIN_MONTHLY  keep first archive per month, last N months (default: 6)
 #   DRY_RUN                set to "1" — print plan, no tar/upload/prune
 #   BACKUP_LOG             append log to this file (default: /var/log/workflow-backup.log)
+#   GH_TOKEN               GitHub token for offsite upload to BACKUP_GH_REPO.
+#                          When set, tarball is also shipped as a GH release asset.
+#   BACKUP_GH_REPO         GitHub repo for offsite releases (default: Jonnyton/workflow-backups).
+#   BACKUP_GH_RETAIN       GH releases to keep (default: 30).
 #
 # Exit codes:
 #   0  upload + prune succeeded (or DRY_RUN=1 — no mutations).
@@ -108,9 +112,30 @@ if ! rclone copyto --contimeout 60s --timeout 900s \
     exit 3
 fi
 log "  upload OK"
+
+# ----- 5. offsite upload (GH release assets) ----------------------------
+# Best-effort; failure is non-fatal so local backup still counts as done.
+# Activated only when GH_TOKEN is set.
+
+SHIP_SCRIPT="$(dirname "$(realpath "$0")")/../scripts/backup_ship_gh.py"
+if [[ -n "${GH_TOKEN:-}" ]]; then
+    log "shipping to GitHub releases (${BACKUP_GH_REPO:-Jonnyton/workflow-backups})..."
+    set +e
+    python3 "${SHIP_SCRIPT}" "${TAR_PATH}" 2>&1 | while IFS= read -r line; do
+        log "  gh-ship: ${line}"
+    done
+    ship_status=$?
+    set -e
+    if [[ "${ship_status}" -ne 0 ]]; then
+        log "WARN: GH offsite ship exited ${ship_status} (local backup succeeded)"
+    fi
+else
+    log "GH_TOKEN not set — skipping offsite GH release upload"
+fi
+
 rm -f "${TAR_PATH}"
 
-# ----- 5. retention prune ----------------------------------------------
+# ----- 6. retention prune ----------------------------------------------
 
 # Keep:
 #   - last BACKUP_RETAIN_DAILY daily archives (most recent N)
