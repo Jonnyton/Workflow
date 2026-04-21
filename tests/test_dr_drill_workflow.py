@@ -233,3 +233,67 @@ def test_dr_drill_runbook_mentions_quarterly():
 def test_dr_drill_runbook_mentions_pass_fail():
     text = _RUNBOOK.read_text(encoding="utf-8").lower()
     assert "pass" in text and "fail" in text
+
+
+# ---------------------------------------------------------------------------
+# Task #66 — pipefail fix + size bump + mid-job cleanup
+# ---------------------------------------------------------------------------
+
+def test_bootstrap_step_uses_pipefail():
+    """Bootstrap pipe to tee must not swallow exit code — pipefail required."""
+    text = _text()
+    assert "pipefail" in text, (
+        "Bootstrap step must use set -euo pipefail so SSH exit code propagates through tee"
+    )
+
+
+def test_bootstrap_step_uses_tee_not_tail_pipe():
+    """tail -50 after pipe swallows exit; tee preserves it."""
+    text = _text()
+    # Old pattern was `| tail -50` alone; new pattern is `| tee /tmp/bootstrap.log`
+    assert "tee" in text, "Bootstrap step should pipe to tee, not tail alone"
+
+
+def test_default_drill_size_is_not_1gb():
+    """s-1vcpu-1gb OOMs on apt+docker install; default must be at least 2GB."""
+    wf = _load()
+    inputs = _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+    default_size = inputs.get("drill_droplet_size", {}).get("default", "")
+    assert default_size != "s-1vcpu-1gb", (
+        f"Default size {default_size!r} is known to OOM; bump to s-2vcpu-2gb or larger"
+    )
+    assert "2vcpu" in default_size or "2gb" in default_size.lower() or \
+           default_size >= "s-2", (
+        f"Default size {default_size!r} appears smaller than recommended minimum"
+    )
+
+
+def test_mid_job_cleanup_step_exists():
+    """A cleanup step must fire even when bootstrap/restore fail (before probe runs)."""
+    names = _step_names(_load())
+    assert any("cleanup" in n or "mid-job" in n for n in names), (
+        "Must have a cleanup step that fires on mid-job failure (before probe color is set)"
+    )
+
+
+def test_mid_job_cleanup_fires_on_always():
+    """Cleanup step must have if: always() so it fires even when prior steps fail."""
+    steps = _steps(_load())
+    cleanup_steps = [s for s in steps
+                     if "cleanup" in (s.get("name") or "").lower()
+                     or "mid-job" in (s.get("name") or "").lower()]
+    assert cleanup_steps, "no cleanup step found"
+    for s in cleanup_steps:
+        cond = s.get("if", "")
+        assert "always()" in str(cond).lower(), (
+            f"Cleanup step '{s.get('name')}' must have if: always(), got: {cond!r}"
+        )
+
+
+def test_mid_job_cleanup_checks_probe_color_empty():
+    """Cleanup fires only when probe color is unset (mid-job fail, not normal paths)."""
+    text = _text()
+    # Must guard on drillprobe.outputs.color == '' to avoid double-destroy.
+    assert "drillprobe.outputs.color" in text and "''" in text, (
+        "Mid-job cleanup must check that drillprobe.outputs.color is empty"
+    )

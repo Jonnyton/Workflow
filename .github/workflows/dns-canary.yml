@@ -34,20 +34,24 @@ jobs:
       overall: ${{ steps.dns.outputs.overall }}
       msg: ${{ steps.dns.outputs.msg }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Run DNS canary tests
         id: dns
         continue-on-error: true
         run: |
           set +e
-          output=$(python -m pytest tests/test_dns_canary.py \
-            -k "resolves" \
-            --tb=short -q 2>&1)
+          output=$(python3 << 'ENDSCRIPT'
+          import socket, sys
+          errors = []
+          for host in ("tinyassets.io", "mcp.tinyassets.io"):
+              try:
+                  ip = socket.gethostbyname(host)
+                  print(f"PASS {host} -> {ip}")
+              except Exception as e:
+                  errors.append(host)
+                  print(f"FAIL {host}: {e}")
+          sys.exit(len(errors))
+          ENDSCRIPT
+          )
           code=$?
           set -e
 
@@ -111,7 +115,7 @@ jobs:
             async function previousRunWasRed() {
               const prior = await github.rest.actions.listWorkflowRuns({
                 owner: context.repo.owner, repo: context.repo.repo,
-                workflow_id: context.workflow, status: 'completed', per_page: 5,
+                workflow_id: 'dns-canary.yml', status: 'completed', per_page: 5,
               });
               const priorRuns = (prior.data.workflow_runs || []).filter(
                 r => String(r.id) !== process.env.GITHUB_RUN_ID,

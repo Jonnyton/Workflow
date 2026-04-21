@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       drill_droplet_size:
-        description: 'DO Droplet size slug (default: s-1vcpu-1gb)'
+        description: 'DO Droplet size slug (default: s-2vcpu-2gb — 1GB OOMs on apt+docker)'
         required: false
-        default: 's-1vcpu-1gb'
+        default: 's-2vcpu-2gb'
         type: string
       backup_source:
         description: 'Backup tarball path on primary (default: latest in /var/backups/workflow/)'
@@ -230,13 +230,17 @@ jobs:
         env:
           DRILL_IP: ${{ steps.drillip.outputs.ip }}
         run: |
+          set -euo pipefail
           # Send the bootstrap script and run it. Timeout 10 min for apt + Docker install.
           scp -i ~/.ssh/do_deploy -o BatchMode=yes \
               deploy/hetzner-bootstrap.sh \
               "root@${DRILL_IP}:/tmp/bootstrap.sh"
+          # tee to stdout for GHA log; pipefail propagates bootstrap exit code.
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "root@${DRILL_IP}" \
-              "bash /tmp/bootstrap.sh" 2>&1 | tail -50
+              "bash /tmp/bootstrap.sh" 2>&1 | tee /tmp/bootstrap.log
+          echo "=== bootstrap last 50 lines ==="
+          tail -50 /tmp/bootstrap.log
 
       - name: Transfer backup to drill Droplet
         env:
@@ -399,6 +403,22 @@ jobs:
               -H "Authorization: Bearer ${DO_TOKEN}" \
               "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}"
           echo "Drill Droplet ${DROPLET_ID} destroyed (destroy_on_failure=true)."
+
+      - name: Cleanup — destroy drill Droplet on mid-job failure
+        # Fires when the job fails BEFORE the probe step sets drillprobe.outputs.color.
+        # The probe-success and probe-failure destroy steps above handle the normal paths;
+        # this catches: bootstrap fail, transfer fail, restore fail, compose fail.
+        if: always() && steps.droplet.outputs.droplet_id != '' && steps.drillprobe.outputs.color == ''
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+        run: |
+          echo "Mid-job failure cleanup: destroying drill Droplet ${DROPLET_ID}..."
+          curl -sf -X DELETE \
+              -H "Authorization: Bearer ${DO_TOKEN}" \
+              "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}" || \
+              echo "WARN: DELETE returned non-zero; Droplet may already be gone or needs manual cleanup"
+          echo "Cleanup done."
 
       - name: Summary
         if: always()
