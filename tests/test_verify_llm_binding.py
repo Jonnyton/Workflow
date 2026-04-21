@@ -1,0 +1,237 @@
+"""Tests for scripts/verify_llm_binding.py — mocked MCP responses."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from verify_llm_binding import VerifyError, check_llm_binding, main  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_INIT_OK = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+_NOTIF_NONE = None  # notifications return None body
+
+_STATUS_BOUND = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": '{"llm_endpoint_bound": "anthropic", "phase": "idle"}',
+            }
+        ]
+    },
+}
+_STATUS_UNBOUND = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": '{"llm_endpoint_bound": "unset", "phase": "starved"}',
+            }
+        ]
+    },
+}
+_ADD_CANON_OK = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {"content": [{"type": "text", "text": "canon entry added"}]},
+}
+_ADD_CANON_ERROR = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "isError": True,
+        "content": [{"type": "text", "text": "universe not initialized"}],
+    },
+}
+
+
+def _make_post_fn(*responses: tuple[dict | None, str | None]):
+    """Return a post_fn that yields successive (resp, sid) pairs."""
+    it = iter(responses)
+
+    def _post(url, sid, payload, timeout):
+        return next(it)
+
+    return _post
+
+
+# ---------------------------------------------------------------------------
+# Happy-path
+# ---------------------------------------------------------------------------
+
+
+def test_llm_bound_returns_status():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),       # initialize
+        (_NOTIF_NONE, "sid1"),    # notifications/initialized
+        (_STATUS_BOUND, "sid1"),  # get_status
+        (_ADD_CANON_OK, "sid1"),  # add_canon
+    )
+    result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert result.get("llm_endpoint_bound") == "anthropic"
+
+
+def test_llm_bound_add_canon_non_fatal():
+    """add_canon failure must not raise — binding check still passes."""
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND, "sid1"),
+        (_ADD_CANON_ERROR, "sid1"),
+    )
+    result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert result.get("llm_endpoint_bound") == "anthropic"
+
+
+# ---------------------------------------------------------------------------
+# Unbound
+# ---------------------------------------------------------------------------
+
+
+def test_llm_unbound_raises_code3():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_UNBOUND, "sid1"),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 3
+
+
+def test_llm_empty_string_unbound():
+    status_empty = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "result": {
+            "content": [
+                {"type": "text", "text": '{"llm_endpoint_bound": ""}'}
+            ]
+        },
+    }
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (status_empty, "sid1"),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 3
+
+
+def test_llm_false_string_unbound():
+    status_false = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "result": {
+            "content": [
+                {"type": "text", "text": '{"llm_endpoint_bound": "false"}'}
+            ]
+        },
+    }
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (status_false, "sid1"),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 3
+
+
+# ---------------------------------------------------------------------------
+# Protocol errors
+# ---------------------------------------------------------------------------
+
+
+def test_initialize_no_result_raises_code1():
+    bad_init = {"jsonrpc": "2.0", "id": 1, "error": {"code": -32600}}
+    post_fn = _make_post_fn(
+        (bad_init, None),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 1
+
+
+def test_initialize_none_response_raises_code1():
+    post_fn = _make_post_fn(
+        (None, None),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 1
+
+
+def test_get_status_no_result_raises_code1():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (None, "sid1"),  # get_status returns None
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Network errors
+# ---------------------------------------------------------------------------
+
+
+def test_network_error_raises_code2():
+    def _failing_post(url, sid, payload, timeout):
+        raise VerifyError(2, "network error")
+
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding("http://fake/mcp", 10.0, post_fn=_failing_post)
+    assert exc_info.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# main() CLI
+# ---------------------------------------------------------------------------
+
+
+def test_main_returns_0_on_bound():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND, "sid1"),
+        (_ADD_CANON_OK, "sid1"),
+    )
+    with patch("verify_llm_binding._post", side_effect=post_fn):
+        code = main(["--url", "http://fake/mcp", "--timeout", "5"])
+    assert code == 0
+
+
+def test_main_returns_3_on_unbound():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_UNBOUND, "sid1"),
+    )
+    with patch("verify_llm_binding._post", side_effect=post_fn):
+        code = main(["--url", "http://fake/mcp", "--timeout", "5"])
+    assert code == 3
+
+
+def test_main_returns_2_on_network_error():
+    def _failing(url, sid, payload, timeout):
+        raise VerifyError(2, "network error")
+
+    with patch("verify_llm_binding._post", side_effect=_failing):
+        code = main(["--url", "http://fake/mcp", "--timeout", "5"])
+    assert code == 2
