@@ -31,7 +31,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-from emergency_dns_flip import CloudflareApiError, CloudflareClient  # noqa: E402
+from emergency_dns_flip import (  # noqa: E402
+    CloudflareApiError,
+    CloudflareClient,
+    GlobalKeyClient,
+    make_cloudflare_client,
+)
 
 SERVICE_TOKEN_NAME = "workflow-mcp-worker"
 APP_DOMAIN = "mcp.tinyassets.io"
@@ -147,13 +152,20 @@ def main() -> int:
     p.add_argument("--skip-verify", action="store_true")
     args = p.parse_args()
 
-    token = os.environ.get("CLOUDFLARE_API_TOKEN")
     zone_id = os.environ.get("CLOUDFLARE_ZONE_ID")
-    if not token or not zone_id:
-        print("CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID required", file=sys.stderr)
+    if not zone_id:
+        print("CLOUDFLARE_ZONE_ID required", file=sys.stderr)
         return 2
 
-    client = CloudflareClient(token)
+    try:
+        client = make_cloudflare_client()
+    except CloudflareApiError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    if isinstance(client, GlobalKeyClient):
+        print("auth: X-Auth-Email + X-Auth-Key (Global API Key)")
+    else:
+        print("auth: Bearer token")
     account_id = _resolve_account_id(client, zone_id)
     print(f"account: {account_id}")
 

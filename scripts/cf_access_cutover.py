@@ -24,7 +24,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-from emergency_dns_flip import CloudflareApiError, CloudflareClient  # noqa: E402
+from emergency_dns_flip import (  # noqa: E402
+    CloudflareApiError,
+    CloudflareClient,
+    GlobalKeyClient,
+    make_cloudflare_client,
+)
 
 SERVICE_TOKEN_NAME = "workflow-mcp-worker"
 APP_DOMAIN = "mcp.tinyassets.io"
@@ -32,69 +37,13 @@ APP_NAME = "workflow-mcp-worker-gate"
 POLICY_NAME = "worker-only"
 
 
-class _GlobalKeyClient(CloudflareClient):
-    """Variant of CloudflareClient using X-Auth-Email + X-Auth-Key."""
-
-    def __init__(self, email: str, global_key: str) -> None:
-        if not email or not global_key:
-            raise CloudflareApiError("CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_KEY required")
-        # Skip parent __init__'s token requirement; we use different headers.
-        self.token = None  # type: ignore[assignment]
-        self.base_url = "https://api.cloudflare.com/client/v4"
-        self._email = email
-        self._key = global_key
-
-    def request(self, method, path, *, params=None, payload=None):
-        import urllib.parse
-
-        query = f"?{urllib.parse.urlencode(params)}" if params else ""
-        url = f"{self.base_url}{path}{query}"
-        headers = {
-            "X-Auth-Email": self._email,
-            "X-Auth-Key": self._key,
-            "Accept": "application/json",
-            "User-Agent": "workflow-cf-cutover/1.0",
-        }
-        data = None
-        if payload is not None:
-            data = json.dumps(payload, sort_keys=True).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-
-        req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                body = resp.read()
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise CloudflareApiError(
-                f"Cloudflare HTTP {exc.code} for {method} {path}: {body}"
-            ) from exc
-        try:
-            decoded = json.loads(body.decode("utf-8"))
-        except json.JSONDecodeError as exc:
-            raise CloudflareApiError(
-                f"Cloudflare returned non-JSON body: {body[:200]!r}"
-            ) from exc
-        if isinstance(decoded, dict) and decoded.get("success") is False:
-            raise CloudflareApiError(
-                f"Cloudflare API rejected {method} {path}: {decoded.get('errors')}"
-            )
-        return decoded
-
-
 def _make_client() -> CloudflareClient:
-    bearer = os.environ.get("CLOUDFLARE_API_TOKEN")
-    email = os.environ.get("CLOUDFLARE_EMAIL")
-    gkey = os.environ.get("CLOUDFLARE_GLOBAL_KEY")
-    if email and gkey:
+    client = make_cloudflare_client()
+    if isinstance(client, GlobalKeyClient):
         print("auth: X-Auth-Email + X-Auth-Key (Global API Key)")
-        return _GlobalKeyClient(email, gkey)
-    if bearer:
+    else:
         print("auth: Bearer token")
-        return CloudflareClient(bearer)
-    raise CloudflareApiError(
-        "Set CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_KEY, or CLOUDFLARE_API_TOKEN."
-    )
+    return client
 
 
 def _resolve_account_id(client: CloudflareClient, zone_id: str) -> str:
@@ -217,7 +166,10 @@ def three_check(canonical: str, internal: str) -> None:
     req = urllib.request.Request(
         canonical,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
         data=json.dumps(
             {
                 "jsonrpc": "2.0",

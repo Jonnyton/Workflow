@@ -26,7 +26,12 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 import cf_access_cutover as cut  # noqa: E402
-from emergency_dns_flip import CloudflareApiError, CloudflareClient  # noqa: E402
+from emergency_dns_flip import (  # noqa: E402
+    CloudflareApiError,
+    CloudflareClient,
+    GlobalKeyClient,
+    make_cloudflare_client,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -404,3 +409,121 @@ def test_service_token_post_api_error_propagates():
     ])
     with pytest.raises(CloudflareApiError, match="permission denied"):
         cut._find_or_create_service_token(client, ACCT, apply=True)
+
+
+# ---------------------------------------------------------------------------
+# Auth-scheme unification tests
+# ---------------------------------------------------------------------------
+
+
+class TestMakeCloudflareClient:
+    def test_bearer_token_returns_cloudflare_client(self, monkeypatch):
+        monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "tok-abc")
+        monkeypatch.delenv("CLOUDFLARE_EMAIL", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_GLOBAL_KEY", raising=False)
+        client = make_cloudflare_client()
+        assert isinstance(client, CloudflareClient)
+        assert not isinstance(client, GlobalKeyClient)
+        assert client.token == "tok-abc"
+
+    def test_global_key_returns_global_key_client(self, monkeypatch):
+        monkeypatch.setenv("CLOUDFLARE_EMAIL", "admin@example.com")
+        monkeypatch.setenv("CLOUDFLARE_GLOBAL_KEY", "global-key-xyz")
+        monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+        client = make_cloudflare_client()
+        assert isinstance(client, GlobalKeyClient)
+        assert client._email == "admin@example.com"
+        assert client._key == "global-key-xyz"
+
+    def test_global_key_wins_over_bearer_when_both_set(self, monkeypatch):
+        monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "tok-abc")
+        monkeypatch.setenv("CLOUDFLARE_EMAIL", "admin@example.com")
+        monkeypatch.setenv("CLOUDFLARE_GLOBAL_KEY", "global-key-xyz")
+        client = make_cloudflare_client()
+        assert isinstance(client, GlobalKeyClient)
+
+    def test_no_credentials_raises(self, monkeypatch):
+        monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_EMAIL", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_GLOBAL_KEY", raising=False)
+        with pytest.raises(CloudflareApiError, match="No Cloudflare credentials"):
+            make_cloudflare_client()
+
+    def test_explicit_token_arg_overrides_env(self, monkeypatch):
+        monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_EMAIL", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_GLOBAL_KEY", raising=False)
+        client = make_cloudflare_client(token="explicit-tok")
+        assert isinstance(client, CloudflareClient)
+        assert client.token == "explicit-tok"
+
+    def test_explicit_global_key_args_override_env(self, monkeypatch):
+        monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_EMAIL", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_GLOBAL_KEY", raising=False)
+        client = make_cloudflare_client(email="e@x.com", global_key="gk-123")
+        assert isinstance(client, GlobalKeyClient)
+
+
+class TestGlobalKeyClientHeaders:
+    def test_request_sends_x_auth_headers(self):
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["headers"] = dict(req.headers)
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(
+                {"success": True, "result": {}}
+            ).encode()
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        client = GlobalKeyClient("admin@test.com", "gk-secret")
+        with patch("emergency_dns_flip.urllib.request.urlopen", side_effect=fake_urlopen):
+            client.request("GET", "/zones/abc")
+
+        assert captured["headers"].get("X-auth-email") == "admin@test.com"
+        assert captured["headers"].get("X-auth-key") == "gk-secret"
+        assert "Authorization" not in captured["headers"]
+
+    def test_bearer_client_sends_authorization_header(self):
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["headers"] = dict(req.headers)
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(
+                {"success": True, "result": {}}
+            ).encode()
+            cm = MagicMock()
+            cm.__enter__ = MagicMock(return_value=resp)
+            cm.__exit__ = MagicMock(return_value=False)
+            return cm
+
+        client = CloudflareClient("bearer-tok-123")
+        with patch("emergency_dns_flip.urllib.request.urlopen", side_effect=fake_urlopen):
+            client.request("GET", "/zones/abc")
+
+        assert "Authorization" in captured["headers"]
+        assert captured["headers"]["Authorization"] == "Bearer bearer-tok-123"
+        assert "X-auth-email" not in captured["headers"]
+
+
+class TestCutoverMakeClientPrintsAuthScheme:
+    def test_bearer_prints_bearer(self, monkeypatch, capsys):
+        monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "tok-xyz")
+        monkeypatch.delenv("CLOUDFLARE_EMAIL", raising=False)
+        monkeypatch.delenv("CLOUDFLARE_GLOBAL_KEY", raising=False)
+        cut._make_client()
+        out = capsys.readouterr().out
+        assert "Bearer" in out
+
+    def test_global_key_prints_global_key(self, monkeypatch, capsys):
+        monkeypatch.setenv("CLOUDFLARE_EMAIL", "e@x.com")
+        monkeypatch.setenv("CLOUDFLARE_GLOBAL_KEY", "gk-abc")
+        monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+        cut._make_client()
+        out = capsys.readouterr().out
+        assert "Global API Key" in out

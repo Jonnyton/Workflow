@@ -198,7 +198,7 @@ def test_rotate_token_deletes_both(monkeypatch):
     mock_client = MagicMock()
     mock_client.request = MagicMock(side_effect=lambda *a, **kw: next(it))
 
-    with patch("cf_access_rollback.CloudflareClient", return_value=mock_client):
+    with patch("cf_access_rollback.make_cloudflare_client", return_value=mock_client):
         _call_main(rb, ["--apply", "--rotate-token"])
 
     # Verify DELETE was called for both app and token
@@ -232,7 +232,7 @@ def test_no_rotate_token_skips_token_delete(monkeypatch):
     mock_client = MagicMock()
     mock_client.request = MagicMock(side_effect=lambda *a, **kw: next(it))
 
-    with patch("cf_access_rollback.CloudflareClient", return_value=mock_client):
+    with patch("cf_access_rollback.make_cloudflare_client", return_value=mock_client):
         rc = _call_main(rb, ["--apply"])
 
     assert rc == 0
@@ -270,7 +270,7 @@ def test_main_returns_1_on_api_error(monkeypatch):
         CloudflareApiError("403 Forbidden"),
     ])
 
-    with patch("cf_access_rollback.CloudflareClient", return_value=mock_client):
+    with patch("cf_access_rollback.make_cloudflare_client", return_value=mock_client):
         rc = _call_main(rb, ["--apply"])
 
     assert rc == 1

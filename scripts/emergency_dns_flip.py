@@ -28,13 +28,6 @@ class CloudflareApiError(RuntimeError):
     """Cloudflare request or safety validation failed."""
 
 
-@dataclass(frozen=True)
-class ChangeResult:
-    action: str
-    resource: str
-    details: dict[str, Any]
-
-
 class CloudflareClient:
     def __init__(self, token: str, *, base_url: str = API_BASE) -> None:
         if not token:
@@ -88,6 +81,101 @@ class CloudflareClient:
         if not isinstance(decoded, dict):
             raise CloudflareApiError(f"Cloudflare returned unexpected payload: {decoded!r}")
         return decoded
+
+
+class GlobalKeyClient(CloudflareClient):
+    """CloudflareClient variant using X-Auth-Email + X-Auth-Key (Global API Key)."""
+
+    def __init__(self, email: str, global_key: str, *, base_url: str = API_BASE) -> None:
+        if not email or not global_key:
+            raise CloudflareApiError("CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_KEY required")
+        self.token = None  # type: ignore[assignment]
+        self.base_url = base_url.rstrip("/")
+        self._email = email
+        self._key = global_key
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        query = f"?{urllib.parse.urlencode(params)}" if params else ""
+        url = f"{self.base_url}{path}{query}"
+        headers = {
+            "X-Auth-Email": self._email,
+            "X-Auth-Key": self._key,
+            "Accept": "application/json",
+            "User-Agent": "workflow-emergency-dns/1.0",
+        }
+        data = None
+        if payload is not None:
+            data = json.dumps(payload, sort_keys=True).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise CloudflareApiError(
+                f"Cloudflare HTTP {exc.code} for {method} {path}: {body}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise CloudflareApiError(
+                f"Cloudflare request failed for {method} {path}: {exc}"
+            ) from exc
+
+        try:
+            decoded = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise CloudflareApiError(
+                f"Cloudflare returned non-JSON body: {body[:200]!r}"
+            ) from exc
+        if isinstance(decoded, dict) and decoded.get("success") is False:
+            raise CloudflareApiError(
+                f"Cloudflare API rejected {method} {path}: {decoded.get('errors')}"
+            )
+        if not isinstance(decoded, dict):
+            raise CloudflareApiError(f"Cloudflare returned unexpected payload: {decoded!r}")
+        return decoded
+
+
+def make_cloudflare_client(
+    *,
+    token: str | None = None,
+    email: str | None = None,
+    global_key: str | None = None,
+    base_url: str = API_BASE,
+) -> CloudflareClient:
+    """Auto-detect auth scheme and return the appropriate client.
+
+    Priority: explicit args > env vars. Global Key wins over Bearer when both
+    are present (Global Key is needed for account-level Access endpoints).
+    Falls back to Bearer if only CLOUDFLARE_API_TOKEN is available.
+    """
+    _email = email or os.environ.get("CLOUDFLARE_EMAIL", "")
+    _gkey = global_key or os.environ.get("CLOUDFLARE_GLOBAL_KEY", "")
+    _token = token or os.environ.get("CLOUDFLARE_API_TOKEN", "")
+
+    if _email and _gkey:
+        return GlobalKeyClient(_email, _gkey, base_url=base_url)
+    if _token:
+        return CloudflareClient(_token, base_url=base_url)
+    raise CloudflareApiError(
+        "No Cloudflare credentials found. "
+        "Set CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_KEY, or CLOUDFLARE_API_TOKEN."
+    )
+
+
+@dataclass(frozen=True)
+class ChangeResult:
+    action: str
+    resource: str
+    details: dict[str, Any]
 
 
 def _single_match(items: list[dict[str, Any]], *, resource: str) -> dict[str, Any] | None:
@@ -330,7 +418,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(args: argparse.Namespace) -> ChangeResult:
-    client = CloudflareClient(args.api_token)
+    client = make_cloudflare_client(token=args.api_token)
     zone_id = resolve_zone_id(client, zone_id=args.zone_id, zone_name=args.zone_name)
     dry_run = not args.apply
 
