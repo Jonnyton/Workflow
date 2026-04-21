@@ -157,11 +157,31 @@ jobs:
             fi
           done
 
-      - name: Post-deploy canary — both URLs
+      - name: Post-deploy canary — canonical URL only
         id: canary
         run: |
+          # Since CF Access Option-1 cutover, the direct URL (mcp.tinyassets.io)
+          # correctly returns 403. Only the canonical URL is a valid health signal.
           python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
-          python scripts/mcp_public_canary.py --url "${DIRECT_URL}" --verbose
+
+      - name: Verify CF Access gates direct URL (expects 403/401)
+        id: access-gate
+        run: |
+          # Confirm CF Access is still protecting the direct tunnel URL.
+          # 403/401 = correct. 200 = Access accidentally disabled — FAIL deploy.
+          # 000/timeout = tunnel down (advisory only — not a deploy blocker).
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 10 "${DIRECT_URL}" || echo "000")
+          echo "direct URL HTTP status: ${http_code}"
+          if [ "${http_code}" = "200" ]; then
+            echo "::error::CF Access is OPEN on ${DIRECT_URL} (returned 200). Access policy may be disabled."
+            echo "::error::Fix: Cloudflare dashboard → Access → Applications → confirm tunnel policy is active."
+            exit 1
+          elif [ "${http_code}" = "000" ]; then
+            echo "::warning::Direct URL unreachable (${DIRECT_URL}) — tunnel may be down. Daemon is still live via canonical."
+          else
+            echo "Access gate confirmed: ${DIRECT_URL} → HTTP ${http_code} (expected 403/401)"
+          fi
 
       - name: Rollback on failure
         if: failure() && steps.deploy.outcome == 'success'
@@ -235,5 +255,6 @@ jobs:
             echo "- **Previous image:** \`${{ steps.prev.outputs.previous }}\`"
             echo "- **Deploy step:** \`${{ steps.deploy.outcome }}\`"
             echo "- **Canary step:** \`${{ steps.canary.outcome }}\`"
+            echo "- **Access gate step:** \`${{ steps.access-gate.outcome }}\`"
             echo "- **Overall:** \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

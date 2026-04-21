@@ -6,8 +6,9 @@ Covers:
   (c) workflow_run trigger fires on build-image success
   (d) Required DO secret names referenced (not legacy Hetzner names)
   (e) SSH key file and known_hosts use DO_DROPLET_HOST variable
-  (f) Post-deploy canary step present
+  (f) Post-deploy canary step probes ONLY canonical URL (not direct)
   (g) Rollback step present and conditioned on failure
+  (h) CF Access gate step blocks deploy on 200 (Access broken); advisory on tunnel-down
 """
 
 from __future__ import annotations
@@ -140,6 +141,56 @@ def test_post_deploy_canary_step_present():
     names = [s.get("name", "") for s in _steps(wf)]
     assert any("canary" in (n or "").lower() for n in names), \
         "deploy job must have a post-deploy canary step"
+
+
+def test_canary_step_only_probes_canonical():
+    """Canary must NOT probe the direct URL (returns 403 after CF Access cutover)."""
+    wf = _load()
+    for step in _steps(wf):
+        name = step.get("name", "") or ""
+        if "canary" in name.lower() and "access" not in name.lower():
+            run_script = step.get("run", "") or ""
+            assert "DIRECT_URL" not in run_script, (
+                f"Canary step '{name}' must not probe DIRECT_URL — it correctly "
+                "returns 403 after CF Access Option-1 cutover. Only canonical URL is valid."
+            )
+            assert "CANARY_URL" in run_script, (
+                f"Canary step '{name}' must probe CANARY_URL (canonical)"
+            )
+            return
+    pytest.fail("Post-deploy canary step not found")
+
+
+def test_access_gate_step_present():
+    """A separate advisory step must verify the direct URL still returns 403/401."""
+    wf = _load()
+    steps = _steps(wf)
+    access_steps = [s for s in steps if "access" in (s.get("name") or "").lower()]
+    assert access_steps, (
+        "deploy job must have a CF Access gate verification step "
+        "(expects 403/401 from direct URL — advisory, not blocking)"
+    )
+
+
+def test_access_gate_blocks_on_200():
+    """Access gate step must exit 1 when direct URL returns 200 (CF Access broken),
+    but must NOT unconditionally exit 1 — tunnel-down (000) is advisory only."""
+    wf = _load()
+    for step in _steps(wf):
+        if "access" in (step.get("name") or "").lower():
+            run_script = step.get("run", "") or ""
+            assert "exit 1" in run_script, (
+                "Access gate step must exit 1 when direct URL returns 200 "
+                "(CF Access disabled — this is a deploy-blocking security failure)"
+            )
+            # The step must NOT be unconditionally blocking — tunnel-down (000)
+            # is advisory. Verify exit 1 is guarded (inside an if-block).
+            assert run_script.count("exit 1") < run_script.count("if ["), (
+                "Access gate step exit 1 must be inside a conditional — "
+                "tunnel-down (000) case must be advisory, not blocking"
+            )
+            return
+    pytest.fail("Access gate step not found")
 
 
 # ---------------------------------------------------------------------------
