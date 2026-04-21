@@ -243,7 +243,7 @@ Future post-launch feature: a smart-contract treasury bill-payer that pulls from
 
 1. Spin up Hetzner CX11 box (~5 min via Hetzner Cloud console using vault-stored API token).
 2. Run `Workflow/scripts/migrate-to-hetzner.sh` — Docker-compose with both gateway + web images.
-3. Update Cloudflare DNS: `mcp.tinyassets.io` A record → Hetzner box IP. (If the future `api.` alias has been created by the time this runbook fires, update both.)
+3. Update Cloudflare DNS: `mcp.tinyassets.io` A record → Hetzner box IP.
 4. TLS propagates via Cloudflare Origin CA (no new cert needed).
 5. Return to Fly when their outage resolves; Cloudflare DNS switch reverts.
 

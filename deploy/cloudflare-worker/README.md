@@ -115,15 +115,8 @@ Post-deploy:
 | URL | Purpose |
 |---|---|
 | `https://tinyassets.io/mcp` | **Canonical — installed Claude.ai connectors.** Worker routes to tunnel. |
-| `https://mcp.tinyassets.io/mcp` | Direct-tunnel access. Still works; used by canary + debug. |
+| `https://mcp.tinyassets.io/mcp` | Direct-tunnel origin — Access-gated, not user-facing. Used by canary parity probes + debug. |
 | `https://tinyassets.io/` | GoDaddy Website Builder landing (unchanged). |
-| `https://api.tinyassets.io/*` | NXDOMAIN — reserved as future alias if needed. |
-
-The earlier api→mcp doc sweep (commit `8537cb5`) leaves docs pointing
-at `mcp.tinyassets.io/mcp`. A follow-up commit after this Worker lands
-will sweep the canonical-in-docs back to `tinyassets.io/mcp` with the
-`mcp.` noted as direct-tunnel shape — but that's a separate commit, not
-part of this deploy.
 
 ---
 
