@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+
+try:
+    import yaml
+    _YAML_AVAILABLE = True
+except ImportError:
+    _YAML_AVAILABLE = False
 
 _SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
@@ -142,3 +149,126 @@ def test_delete_worker_route_deletes_exact_pattern_match():
     assert result.action == "deleted"
     assert client.calls[1]["method"] == "DELETE"
     assert client.calls[1]["path"] == "/zones/zone123/workers/routes/route-1"
+
+
+# ---------------------------------------------------------------------------
+# CLI dry-run tests — exercise _run() via mocked make_cloudflare_client
+# ---------------------------------------------------------------------------
+
+_REPO = Path(__file__).resolve().parent.parent
+_EMERGENCY_DNS_WORKFLOW = _REPO / ".github" / "workflows" / "emergency-dns.yml"
+
+
+def _cli_dry_run(monkeypatch, action, extra_argv=None):
+    """Run the CLI in dry-run mode with a mocked client. Returns (rc, calls)."""
+    calls = []
+
+    class CapturingClient:
+        def request(self, method, path, *, params=None, payload=None):
+            calls.append({"method": method, "path": path, "payload": payload})
+            if method == "GET" and "dns_records" in path:
+                return {"result": []}
+            if method == "GET" and "workers/routes" in path:
+                return {"result": []}
+            if method == "GET" and path.startswith("/zones/"):
+                return {"result": {"id": "zone-abc"}}
+            return {"result": {}}
+
+    mock_client = CapturingClient()
+
+    argv = [
+        "emergency_dns_flip.py",
+        "--action", action,
+        "--zone-id", "zone-abc",
+        # no --apply → dry-run
+    ] + (extra_argv or [])
+
+    monkeypatch.setattr(sys, "argv", argv)
+    with patch(
+        "emergency_dns_flip.make_cloudflare_client", return_value=mock_client
+    ):
+        rc = dns_flip.main()
+
+    return rc, calls
+
+
+class TestCLIDryRun:
+    def test_upsert_record_dry_run_exits_0(self, monkeypatch, capsys):
+        rc, calls = _cli_dry_run(
+            monkeypatch,
+            "upsert-record",
+            ["--name", "mcp.tinyassets.io", "--content", "fallback.example.net"],
+        )
+        assert rc == 0
+
+    def test_upsert_record_dry_run_no_mutating_calls(self, monkeypatch, capsys):
+        _, calls = _cli_dry_run(
+            monkeypatch,
+            "upsert-record",
+            ["--name", "mcp.tinyassets.io", "--content", "fallback.example.net"],
+        )
+        mutating = [c for c in calls if c["method"] in ("POST", "PATCH", "PUT", "DELETE")]
+        assert mutating == [], f"Unexpected mutating calls in dry-run: {mutating}"
+
+    def test_upsert_record_dry_run_prints_dry_run(self, monkeypatch, capsys):
+        _cli_dry_run(
+            monkeypatch,
+            "upsert-record",
+            ["--name", "mcp.tinyassets.io", "--content", "fallback.example.net"],
+        )
+        out = capsys.readouterr().out
+        assert "dry" in out.lower(), f"Expected 'dry' in output, got: {out!r}"
+
+    def test_upsert_worker_route_dry_run_no_mutating_calls(self, monkeypatch, capsys):
+        _, calls = _cli_dry_run(monkeypatch, "upsert-worker-route")
+        mutating = [c for c in calls if c["method"] in ("POST", "PATCH", "PUT", "DELETE")]
+        assert mutating == []
+
+    def test_delete_record_dry_run_no_mutating_calls(self, monkeypatch, capsys):
+        _, calls = _cli_dry_run(
+            monkeypatch,
+            "delete-record",
+            ["--name", "mcp.tinyassets.io"],
+        )
+        mutating = [c for c in calls if c["method"] in ("POST", "PATCH", "PUT", "DELETE")]
+        assert mutating == []
+
+
+# ---------------------------------------------------------------------------
+# emergency-dns.yml structural tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not _YAML_AVAILABLE, reason="pyyaml not installed")
+class TestEmergencyDnsWorkflow:
+    def _load(self):
+        return yaml.safe_load(_EMERGENCY_DNS_WORKFLOW.read_text(encoding="utf-8"))
+
+    def _triggers(self, wf):
+        return wf.get(True, {}) or {}
+
+    def test_workflow_parses(self):
+        self._load()
+
+    def test_has_workflow_dispatch(self):
+        wf = self._load()
+        assert "workflow_dispatch" in self._triggers(wf)
+
+    def test_apply_input_defaults_false(self):
+        wf = self._load()
+        dispatch = self._triggers(wf).get("workflow_dispatch") or {}
+        apply_input = (dispatch.get("inputs") or {}).get("apply") or {}
+        assert apply_input.get("default") is False, (
+            "apply input must default to false so manual triggers are safe dry-runs"
+        )
+
+    def test_has_action_input(self):
+        wf = self._load()
+        dispatch = self._triggers(wf).get("workflow_dispatch") or {}
+        inputs = dispatch.get("inputs") or {}
+        assert "action" in inputs
+
+    def test_no_secrets_in_workflow_body(self):
+        text = _EMERGENCY_DNS_WORKFLOW.read_text(encoding="utf-8")
+        assert "CLOUDFLARE_API_TOKEN" not in text or "secrets.CLOUDFLARE_API_TOKEN" in text, (
+            "Token must be read from GitHub secrets, not hardcoded"
+        )
