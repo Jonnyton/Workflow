@@ -42,8 +42,11 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 DEFAULT_PROBE_URL = "http://127.0.0.1:8001/mcp"
@@ -53,9 +56,12 @@ DEFAULT_CANARY_SCRIPT = Path("/opt/workflow/scripts/mcp_public_canary.py")
 DEFAULT_SERVICE_UNIT = "workflow-daemon.service"
 DEFAULT_THRESHOLD = 3
 # Min wall-time between restarts. Prevents a wedged daemon from
-# being restart-looped every 2 min when the underlying problem
+# being restart-looped every 30s when the underlying problem
 # (bad env, dep issue) isn't "restart will fix it."
 MIN_RESTART_INTERVAL_SECONDS = 600  # 10 min
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+ALARM_LOG = _REPO_ROOT / ".agents" / "uptime_alarms.log"
 
 
 def _now_iso() -> str:
@@ -71,6 +77,16 @@ def _log(level: str, msg: str) -> None:
     """
     line = f"[watchdog {level}] {msg}"
     print(line, file=sys.stderr)
+
+
+def _append_alarm_log(line: str, alarm_log: Path = ALARM_LOG) -> None:
+    """Append one line to the shared uptime_alarms.log. Best-effort."""
+    try:
+        alarm_log.parent.mkdir(parents=True, exist_ok=True)
+        with alarm_log.open("a", encoding="utf-8") as fp:
+            fp.write(line + "\n")
+    except OSError:
+        pass
 
 
 def _load_state(path: Path) -> dict:
@@ -110,6 +126,42 @@ def _probe(canary_script: Path, url: str, timeout: float) -> tuple[bool, str]:
     # Canary prints diagnostic to stderr; pass through.
     msg = (result.stderr or result.stdout or "").strip().replace("\n", " | ")
     return (False, f"exit={result.returncode}: {msg[:300]}")
+
+
+GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "jfarnsworth/workflow")
+GITHUB_API = "https://api.github.com"
+
+
+def _open_gh_issue(title: str, body: str) -> tuple[bool, str]:
+    """Open a GitHub issue via the REST API. Best-effort — never raises.
+
+    Requires ``GH_TOKEN`` env var. If unset, logs a warning and returns
+    (False, "GH_TOKEN not set"). Uses stdlib urllib only.
+    """
+    token = os.environ.get("GH_TOKEN", "")
+    if not token:
+        return (False, "GH_TOKEN not set; skipping GH issue")
+    payload = json.dumps({"title": title, "body": body, "labels": ["watchdog"]}).encode()
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/issues"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+            return (True, f"issue #{result.get('number', '?')}: {result.get('html_url', '')}")
+    except urllib.error.HTTPError as exc:
+        return (False, f"GitHub API HTTP {exc.code}: {exc.read().decode()[:200]}")
+    except Exception as exc:
+        return (False, f"GitHub API error: {exc!r}")
 
 
 def _restart_service(unit: str) -> tuple[bool, str]:
@@ -155,9 +207,19 @@ def watchdog_tick(
     probe_timeout: float = 10.0,
     restart_fn=_restart_service,  # injection seam for tests
     probe_fn=None,  # injection seam for tests
+    gh_issue_fn=_open_gh_issue,  # injection seam for tests
     min_restart_interval: float = MIN_RESTART_INTERVAL_SECONDS,
+    dry_run: bool = False,
+    alarm_log: Path = ALARM_LOG,
 ) -> dict:
-    """Run one probe cycle. Return the post-tick state dict."""
+    """Run one probe cycle. Return the post-tick state dict.
+
+    When ``dry_run=True`` (or ``DRY_RUN=1`` env var), probes are still
+    executed (read-only) but restarts + GH issues are suppressed.
+    """
+    if os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes"):
+        dry_run = True
+
     state = _load_state(state_file)
 
     if probe_fn is None:
@@ -197,6 +259,15 @@ def watchdog_tick(
         _save_state(state_file, state)
         return state
 
+    if dry_run:
+        _log(
+            "INFO",
+            f"DRY_RUN: would restart {service_unit} after "
+            f"{state['consecutive_reds']} consecutive reds (suppressed)",
+        )
+        _save_state(state_file, state)
+        return state
+
     _log(
         "ERROR",
         f"threshold crossed ({state['consecutive_reds']} consecutive reds); "
@@ -208,6 +279,22 @@ def watchdog_tick(
         _log("INFO", f"restart issued: {restart_msg}")
         # Reset streak optimistically. Next probe validates recovery.
         state["consecutive_reds"] = 0
+        # Append to shared alarm log so uptime_alarm.py + host sees it.
+        alarm_line = (
+            f"{_now_iso()} WATCHDOG_RESTART service={service_unit} "
+            f"reds={threshold} probe_url={probe_url}"
+        )
+        _append_alarm_log(alarm_line, alarm_log)
+        # Best-effort GH issue so ops gets an out-of-band alert.
+        gh_ok, gh_msg = gh_issue_fn(
+            f"[watchdog] daemon auto-restarted on {_now_iso()}",
+            f"The watchdog on the self-hosted Droplet restarted `{service_unit}` "
+            f"after {threshold} consecutive probe failures.\n\n"
+            f"**Probe URL:** `{probe_url}`\n"
+            f"**Last probe message:** {probe_msg}\n\n"
+            f"Check `journalctl -u {service_unit}` for root cause.",
+        )
+        _log("INFO", f"GH issue: {gh_msg}" if gh_ok else f"GH issue skipped: {gh_msg}")
     else:
         _log("ERROR", f"restart FAILED: {restart_msg}")
         # Keep the streak — maybe next tick succeeds.
@@ -224,6 +311,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--canary-script", default=str(DEFAULT_CANARY_SCRIPT))
     ap.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD)
     ap.add_argument("--probe-timeout", type=float, default=10.0)
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Probe only; suppress restarts, alarm log, and GH issues.",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -234,6 +326,7 @@ def main(argv: list[str]) -> int:
             service_unit=args.service_unit,
             threshold=args.threshold,
             probe_timeout=args.probe_timeout,
+            dry_run=args.dry_run,
         )
     except Exception as exc:
         _log("FATAL", f"watchdog tick crashed: {exc!r}")

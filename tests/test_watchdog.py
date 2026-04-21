@@ -223,3 +223,160 @@ def test_threshold_5_needs_5_reds(state_path):
     watchdog_tick(state_file=state_path, probe_fn=_red_probe(),
                   restart_fn=recorder, threshold=5)
     assert recorder.calls == ["workflow-daemon.service"]
+
+
+# ---- GH issue emission -------------------------------------------------------
+
+
+class _GhRecorder:
+    def __init__(self, success=True):
+        self.calls: list[tuple[str, str]] = []
+        self.success = success
+
+    def __call__(self, title, body):
+        self.calls.append((title, body))
+        return (self.success, "issue #42: https://github.com/example/issues/42")
+
+
+def test_gh_issue_fired_on_restart(state_path):
+    """Restart should trigger one GH issue emission."""
+    recorder = _RestartRecorder()
+    gh = _GhRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=gh,
+        )
+    assert recorder.calls == ["workflow-daemon.service"]
+    assert len(gh.calls) == 1
+    title, body = gh.calls[0]
+    assert "watchdog" in title.lower()
+    assert "daemon" in body.lower()
+
+
+def test_gh_issue_not_fired_below_threshold(state_path):
+    """No GH issue until restart threshold is crossed."""
+    recorder = _RestartRecorder()
+    gh = _GhRecorder()
+    for _ in range(2):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=gh,
+        )
+    assert gh.calls == []
+
+
+# ---- DRY_RUN suppression ---------------------------------------------------
+
+
+def test_dry_run_suppresses_restart(state_path):
+    """dry_run=True must not call restart_fn even at threshold."""
+    recorder = _RestartRecorder()
+    gh = _GhRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=gh,
+            dry_run=True,
+        )
+    assert recorder.calls == [], "dry_run must suppress restart"
+    assert gh.calls == [], "dry_run must suppress GH issue"
+
+
+def test_dry_run_env_suppresses_restart(state_path, monkeypatch):
+    """DRY_RUN=1 env var is equivalent to dry_run=True."""
+    monkeypatch.setenv("DRY_RUN", "1")
+    recorder = _RestartRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+        )
+    assert recorder.calls == [], "DRY_RUN=1 env must suppress restart"
+
+
+# ---- alarm log writes -------------------------------------------------------
+
+
+def test_alarm_log_written_on_restart(state_path, tmp_path):
+    """Alarm line must be appended to alarm_log on successful restart."""
+    alarm_log = tmp_path / "uptime_alarms.log"
+    recorder = _RestartRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=_GhRecorder(),
+            alarm_log=alarm_log,
+        )
+    assert alarm_log.exists(), "alarm log file must be created"
+    content = alarm_log.read_text(encoding="utf-8")
+    assert "WATCHDOG_RESTART" in content
+
+
+def test_alarm_log_not_written_on_dry_run(state_path, tmp_path):
+    """dry_run must not write to the alarm log."""
+    alarm_log = tmp_path / "uptime_alarms.log"
+    recorder = _RestartRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            alarm_log=alarm_log,
+            dry_run=True,
+        )
+    assert not alarm_log.exists(), "alarm log must not be written in dry_run mode"
+
+
+def test_alarm_log_not_written_below_threshold(state_path, tmp_path):
+    """No alarm until restart threshold is crossed."""
+    alarm_log = tmp_path / "uptime_alarms.log"
+    recorder = _RestartRecorder()
+    for _ in range(2):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            alarm_log=alarm_log,
+        )
+    assert not alarm_log.exists()
+
+
+def test_gh_issue_skipped_on_restart_failure(state_path):
+    """If systemctl restart fails, GH issue is NOT emitted (restart_fn=fail)."""
+    recorder = _RestartRecorder(success=False, msg="no sudoers")
+    gh = _GhRecorder()
+    for _ in range(3):
+        watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=gh,
+        )
+    assert recorder.calls == ["workflow-daemon.service"]
+    assert gh.calls == [], "GH issue should not fire when restart failed"
+
+
+def test_gh_issue_failure_does_not_crash_watchdog(state_path):
+    """A GH API failure must not propagate — watchdog tick still returns state."""
+    recorder = _RestartRecorder()
+    gh = _GhRecorder(success=False)
+    for _ in range(3):
+        state = watchdog_tick(
+            state_file=state_path,
+            probe_fn=_red_probe(),
+            restart_fn=recorder,
+            gh_issue_fn=gh,
+        )
+    # Watchdog should still complete normally.
+    assert state is not None
+    assert len(gh.calls) == 1
