@@ -58,6 +58,21 @@ class NodeTimeoutError(CompilerError):
         self.node_id = node_id
 
 
+class EmptyResponseError(CompilerError):
+    """Raised when an LLM provider returns an empty response.
+
+    Distinct from a generic CompilerError so the runner can record a
+    ``failed`` node event with ``reason: empty_response`` and surface a
+    structured error rather than a generic crash message.
+
+    ``node_id`` is exposed as an attribute mirroring ``NodeTimeoutError``.
+    """
+
+    def __init__(self, message: str, *, node_id: str = "") -> None:
+        super().__init__(message)
+        self.node_id = node_id
+
+
 # Shared executor so every timeout-wrapped call doesn't spin up a
 # fresh thread. Bounded worker count keeps a runaway graph from
 # spawning unbounded threads on a slow provider.
@@ -316,6 +331,13 @@ def _build_prompt_template_node(
                 raise CompilerError(
                     f"Provider call failed in node '{node.node_id}': {exc}"
                 ) from exc
+
+        if not response:
+            raise EmptyResponseError(
+                f"Node '{node.node_id}': LLM returned empty response — "
+                f"check provider availability and credentials",
+                node_id=node.node_id,
+            )
 
         if event_sink is not None:
             try:

@@ -160,6 +160,29 @@ def test_compile_reports_missing_state_key_cleanly():
     assert "topic" in str(exc_info.value)
 
 
+def test_empty_provider_response_raises_compiler_error():
+    """Empty string from provider must raise CompilerError, not silently
+    set result='', which would cascade as phantom success downstream."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from workflow.graph_compiler import CompilerError, compile_branch
+
+    branch = _make_branch("topic: {topic}", ["topic"])
+    compiled = compile_branch(
+        branch,
+        provider_call=lambda *a, **k: "",  # empty response
+    )
+    runnable = compiled.graph.compile(checkpointer=InMemorySaver())
+    with pytest.raises(Exception) as exc_info:
+        runnable.invoke(
+            {"topic": "test"},
+            config={"configurable": {"thread_id": "t-empty"}},
+        )
+    assert "empty response" in str(exc_info.value).lower() or isinstance(
+        exc_info.value.__context__ or exc_info.value, CompilerError
+    )
+
+
 def test_jinja_style_double_braces_still_substitute():
     """The #44 Jinja-style normalizer must still fire — templates using
     ``{{var}}`` keep working unchanged."""
