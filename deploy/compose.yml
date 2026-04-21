@@ -32,7 +32,7 @@ services:
     # Pinned via env to support rollbacks. `latest` is the default
     # for first-deploy convenience; production pins a short-SHA tag
     # emitted by .github/workflows/build-image.yml.
-    image: ${WORKFLOW_IMAGE:-ghcr.io/jfarnsworth/workflow-daemon:latest}
+    image: ${WORKFLOW_IMAGE:-ghcr.io/jonnyton/workflow-daemon:latest}
     container_name: workflow-daemon
     restart: unless-stopped
     # Image CMD already runs `python -m workflow.universe_server`.
