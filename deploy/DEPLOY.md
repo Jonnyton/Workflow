@@ -271,29 +271,29 @@ from a specific tarball. Estimated 5-15 min depending on archive size.
 
 `.github/workflows/deploy-prod.yml` auto-deploys the freshly-published
 image on every successful `build-image.yml` run on `main`. SSH to the
-Hetzner box, pin the new tag in `/etc/workflow/env`, `docker pull`,
+DigitalOcean Droplet, pin the new tag in `/etc/workflow/env`, `docker pull`,
 `systemctl restart`, run post-deploy canary, auto-rollback on red.
 
 **GitHub secrets required** (Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 |---|---|
-| `HETZNER_HOST` | Public IPv4 of the CX22 (or DNS name). |
-| `HETZNER_SSH_USER` | Username for SSH — typically `root` or a dedicated `deploy` user. |
-| `HETZNER_SSH_KEY` | Private key (ed25519 recommended). Paste whole contents including BEGIN/END lines. |
+| `DO_DROPLET_HOST` | Droplet public IP (e.g. `161.35.237.133`) or DNS name. |
+| `DO_SSH_USER` | SSH user on the Droplet — typically `root` or a dedicated `deploy` user. |
+| `DO_SSH_KEY` | Private key PEM (ed25519 recommended). Paste whole contents including BEGIN/END lines. |
 
 Generate the key pair:
 ```bash
 ssh-keygen -t ed25519 -C "gh-actions-deploy" -f ~/.ssh/workflow_deploy -N ""
-cat ~/.ssh/workflow_deploy.pub  # add to /root/.ssh/authorized_keys on the Hetzner box
-cat ~/.ssh/workflow_deploy      # paste into HETZNER_SSH_KEY secret
+cat ~/.ssh/workflow_deploy.pub  # add to /root/.ssh/authorized_keys on the Droplet
+cat ~/.ssh/workflow_deploy      # paste into DO_SSH_KEY secret
 ```
 
 Recommended: use a dedicated `deploy` user (not `root`) with limited
 sudo — passwordless for the 2 commands the pipeline runs:
 
 ```bash
-# On the Hetzner box, as root:
+# On the Droplet, as root:
 useradd -m -s /bin/bash deploy
 usermod -aG docker deploy
 mkdir -p /home/deploy/.ssh
@@ -312,7 +312,7 @@ chmod 0440 /etc/sudoers.d/deploy-pipeline
 visudo -c
 ```
 
-Then `HETZNER_SSH_USER=deploy` in the GH secret.
+Then `DO_SSH_USER=deploy` in the GH secret.
 
 **Behavior:**
 - Trigger: successful `build-image.yml` run on `main`, OR `workflow_dispatch` with optional `image_tag` input.

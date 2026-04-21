@@ -3,8 +3,8 @@ name: Deploy prod
 # Self-host migration Row M per
 # docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
 #
-# Fires after build-image.yml succeeds on main. SSH into the Hetzner
-# box, pull the freshly-published image tag, `docker compose up -d`,
+# Fires after build-image.yml succeeds on main. SSH into the DigitalOcean
+# Droplet, pull the freshly-published image tag, `docker compose up -d`,
 # run a post-deploy canary against `tinyassets.io/mcp`, and on canary
 # red, auto-rollback to the previous tag.
 #
@@ -12,6 +12,11 @@ name: Deploy prod
 # — distinct from the canary-triggered `p0-outage` issue shape from
 # Row H. That way host can tell "deploy broke" from "daemon died
 # spontaneously."
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   DO_DROPLET_HOST  — Droplet public IP (e.g. 161.35.237.133)
+#   DO_SSH_USER      — SSH user on the Droplet (e.g. root or deploy)
+#   DO_SSH_KEY       — Private key PEM for the above user
 
 on:
   workflow_run:
@@ -35,8 +40,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-  HETZNER_SSH_USER: ${{ secrets.HETZNER_SSH_USER }}
+  DO_DROPLET_HOST: ${{ secrets.DO_DROPLET_HOST }}
+  DO_SSH_USER: ${{ secrets.DO_SSH_USER }}
   # Canonical post-deploy probe URL.
   CANARY_URL: https://tinyassets.io/mcp
   DIRECT_URL: https://mcp.tinyassets.io/mcp
@@ -76,9 +81,9 @@ jobs:
       - name: Verify secrets present
         run: |
           missing=()
-          [ -z "$HETZNER_HOST" ] && missing+=("HETZNER_HOST")
-          [ -z "$HETZNER_SSH_USER" ] && missing+=("HETZNER_SSH_USER")
-          [ -z "${{ secrets.HETZNER_SSH_KEY }}" ] && missing+=("HETZNER_SSH_KEY")
+          [ -z "$DO_DROPLET_HOST" ] && missing+=("DO_DROPLET_HOST")
+          [ -z "$DO_SSH_USER" ] && missing+=("DO_SSH_USER")
+          [ -z "${{ secrets.DO_SSH_KEY }}" ] && missing+=("DO_SSH_KEY")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Missing required secrets: ${missing[*]}"
             echo "::error::Configure at: Settings → Secrets and variables → Actions"
@@ -87,19 +92,19 @@ jobs:
 
       - name: Install SSH key
         env:
-          SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/hetzner_deploy
-          chmod 600 ~/.ssh/hetzner_deploy
-          ssh-keyscan -t ed25519,rsa "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "$SSH_KEY" > ~/.ssh/do_deploy
+          chmod 600 ~/.ssh/do_deploy
+          ssh-keyscan -t ed25519,rsa "$DO_DROPLET_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Capture previous image tag (for rollback)
         id: prev
         run: |
           # Read current WORKFLOW_IMAGE from the running env file.
-          prev=$(ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
-              "${HETZNER_SSH_USER}@${HETZNER_HOST}" \
+          prev=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "sudo grep -E '^WORKFLOW_IMAGE=' /etc/workflow/env | head -1 | cut -d= -f2-" \
               || echo '')
           if [ -z "$prev" ]; then
@@ -115,8 +120,8 @@ jobs:
       # resolver falls back to $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
       - name: Scrub legacy Windows WIKI_PATH env leakage
         run: |
-          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
-              "${HETZNER_SSH_USER}@${HETZNER_HOST}" \
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env"
 
       - name: Deploy new image
@@ -124,8 +129,8 @@ jobs:
         run: |
           NEW_IMAGE="${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}"
           echo "Deploying: ${NEW_IMAGE}"
-          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
-              "${HETZNER_SSH_USER}@${HETZNER_HOST}" <<EOF
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" <<EOF
             set -e
             # Pin the new tag in /etc/workflow/env.
             sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${NEW_IMAGE}|" /etc/workflow/env
@@ -162,8 +167,8 @@ jobs:
         if: failure() && steps.deploy.outcome == 'success'
         run: |
           echo "::warning::Rolling back to ${{ steps.prev.outputs.previous }}"
-          ssh -i ~/.ssh/hetzner_deploy -o BatchMode=yes \
-              "${HETZNER_SSH_USER}@${HETZNER_HOST}" <<EOF
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" <<EOF
             set -e
             sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${{ steps.prev.outputs.previous }}|" /etc/workflow/env
             sudo docker pull "${{ steps.prev.outputs.previous }}" || true
@@ -196,7 +201,7 @@ jobs:
                   repo: context.repo.repo,
                   name: label,
                   color: 'fbca04',
-                  description: 'CI deploy to Hetzner failed; auto-rollback attempted.',
+                  description: 'CI deploy to DO Droplet failed; auto-rollback attempted.',
                 });
               } else {
                 throw e;
