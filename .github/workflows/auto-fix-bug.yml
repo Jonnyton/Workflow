@@ -1,0 +1,228 @@
+name: Auto-fix bug
+
+# Second half of the auto-detect-and-fix loop.
+#
+# Flow:
+#   wiki file_bug → wiki-bug-sync creates `auto-bug`-labeled GH Issue
+#   → this workflow fires → Claude attempts a fix → PR or `needs-human`.
+#
+# Auth priority:
+#   1. CLAUDE_CODE_OAUTH_TOKEN (preferred — uses OAuth, no API key needed)
+#   2. ANTHROPIC_API_KEY       (fallback — direct API access)
+#   3. Neither set             → graceful-skip: add `needs-human` label +
+#                                comment explaining what auth to add; exit 0.
+#
+# Disable toggle: set repo variable AUTO_FIX_DISABLED=true (Settings →
+# Variables → Actions → New repository variable). Flip to false to re-enable.
+# Variable-based toggle preserves the secrets — no data loss.
+#
+# Branch naming: auto-bug/issue-<N>
+# PR title:      [auto-fix] BUG-NNN: <short title>
+# PR body:       Fixes #<N> + Claude summary
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write        # create branch + push commits
+  issues: write          # add labels + comments
+  pull-requests: write   # open PRs
+
+concurrency:
+  # One fix attempt per issue at a time.
+  group: auto-fix-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    # Only run when the `auto-bug` label was just added.
+    if: github.event.label.name == 'auto-bug'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check disable flag
+        id: check-disabled
+        run: |
+          if [[ "${{ vars.AUTO_FIX_DISABLED }}" == "true" ]]; then
+            echo "disabled=true" >> "$GITHUB_OUTPUT"
+            echo "Auto-fix is disabled (AUTO_FIX_DISABLED=true). Skipping."
+          else
+            echo "disabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add needs-human if disabled
+        if: steps.check-disabled.outputs.disabled == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-human'],
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                '**Auto-fix skipped** — `AUTO_FIX_DISABLED` repo variable is `true`.',
+                '',
+                'To re-enable: Settings → Variables → Actions → set `AUTO_FIX_DISABLED=false`.',
+              ].join('\n'),
+            });
+
+      - name: Detect auth
+        if: steps.check-disabled.outputs.disabled == 'false'
+        id: auth
+        run: |
+          if [[ -n "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]]; then
+            echo "mode=oauth" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
+            echo "mode=api_key" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Graceful-skip if no auth
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'none'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-human'],
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                '**Auto-fix skipped** — no Claude auth configured.',
+                '',
+                'To enable auto-fix, add one of these repo secrets:',
+                '- `CLAUDE_CODE_OAUTH_TOKEN` *(preferred)* — from https://claude.ai/settings',
+                '- `ANTHROPIC_API_KEY` *(fallback)* — from https://console.anthropic.com',
+                '',
+                'Settings → Secrets and variables → Actions → New repository secret.',
+                '',
+                'Once a secret is added, re-run this workflow or add/remove the `auto-bug` label.',
+              ].join('\n'),
+            });
+
+      - name: Checkout
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode != 'none'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract bug metadata
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode != 'none'
+        id: meta
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title;
+            const body  = issue.body || '';
+
+            // Pull BUG-NNN from title like "[BUG-003] some title"
+            const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
+            const bugId = bugMatch ? bugMatch[1].toUpperCase() : `BUG-${String(issue.number).padStart(3,'0')}`;
+
+            // Short title = everything after the [BUG-NNN] prefix, trimmed
+            const shortTitle = title.replace(/^\[?BUG-\d+\]?\s*/i, '').trim() || title;
+
+            core.setOutput('issue_number', String(issue.number));
+            core.setOutput('bug_id', bugId);
+            core.setOutput('short_title', shortTitle);
+            core.setOutput('branch', `auto-bug/issue-${issue.number}`);
+            core.setOutput('pr_title', `[auto-fix] ${bugId}: ${shortTitle}`);
+            core.setOutput('issue_body', body);
+
+      - name: Run Claude Code action (OAuth)
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'oauth'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.meta.outputs.branch }}
+          pr_title: ${{ steps.meta.outputs.pr_title }}
+          pr_body: |
+            Fixes #${{ steps.meta.outputs.issue_number }}
+
+            Auto-generated fix attempt for ${{ steps.meta.outputs.bug_id }}.
+
+            ---
+            *Generated by the auto-fix workflow. Review carefully before merging.*
+          assignees: ''
+          prompt: |
+            You are fixing a bug in the Workflow repository.
+
+            Bug ID: ${{ steps.meta.outputs.bug_id }}
+            Issue #${{ steps.meta.outputs.issue_number }}: ${{ steps.meta.outputs.short_title }}
+
+            Issue body:
+            ${{ steps.meta.outputs.issue_body }}
+
+            Instructions:
+            1. Read AGENTS.md and STATUS.md for project context.
+            2. Reproduce or reason about the bug from the description.
+            3. Find the root cause in the codebase.
+            4. Implement a minimal, targeted fix — no refactoring beyond what's needed.
+            5. Add or update tests that prove the fix.
+            6. Run `python -m ruff check` on touched files and fix any violations.
+            7. Do NOT commit — the action handles branch + PR creation.
+
+            If you cannot find the root cause or are not confident in the fix, leave a
+            comment in the code and exit gracefully. Do not guess.
+
+      - name: Run Claude Code action (API key)
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'api_key'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.meta.outputs.branch }}
+          pr_title: ${{ steps.meta.outputs.pr_title }}
+          pr_body: |
+            Fixes #${{ steps.meta.outputs.issue_number }}
+
+            Auto-generated fix attempt for ${{ steps.meta.outputs.bug_id }}.
+
+            ---
+            *Generated by the auto-fix workflow. Review carefully before merging.*
+          assignees: ''
+          prompt: |
+            You are fixing a bug in the Workflow repository.
+
+            Bug ID: ${{ steps.meta.outputs.bug_id }}
+            Issue #${{ steps.meta.outputs.issue_number }}: ${{ steps.meta.outputs.short_title }}
+
+            Issue body:
+            ${{ steps.meta.outputs.issue_body }}
+
+            Instructions:
+            1. Read AGENTS.md and STATUS.md for project context.
+            2. Reproduce or reason about the bug from the description.
+            3. Find the root cause in the codebase.
+            4. Implement a minimal, targeted fix — no refactoring beyond what's needed.
+            5. Add or update tests that prove the fix.
+            6. Run `python -m ruff check` on touched files and fix any violations.
+            7. Do NOT commit — the action handles branch + PR creation.
+
+            If you cannot find the root cause or are not confident in the fix, leave a
+            comment in the code and exit gracefully. Do not guess.
