@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workflow pre-commit invariants.
 #
-# Enforces four invariants at commit time so no session has to
+# Enforces five invariants at commit time so no session has to
 # re-check them by hand:
 #
 #   1. Skill-mirror parity. If any file in `.agents/skills/` is
@@ -23,6 +23,12 @@
 #      of the 2026-04-19 P0 class (R7a-style refactor declaring names
 #      that don't resolve at runtime). Only runs on workflow/ touches
 #      so non-python commits don't pay the import cost.
+#
+#   5. Worker CF Access header invariant. When `deploy/cloudflare-worker/worker.js`
+#      is staged, verify it still contains both `env.CF_ACCESS_CLIENT_ID` and
+#      `env.CF_ACCESS_CLIENT_SECRET` reads. Prevents accidentally removing
+#      the Access header injection (root cause of the 2026-04-20 incident where
+#      the Worker was committed without the Access headers deployed).
 #
 # Override with `git commit --no-verify` for exceptional cases
 # (e.g. intentional mirror-only edit during a sync commit).
@@ -277,6 +283,36 @@ if [ -n "${STAGED_WF_PY}" ]; then
     exit 1
   fi
   echo "${GREEN}pre-commit: path-resolver bypass lint clean${RESET}"
+fi
+
+# --- 6. Worker CF Access header invariant ---------------------------
+#
+# When worker.js is staged, verify CF Access header reads are present.
+# Delegates to scripts/pre_commit_invariant_worker.py so the logic
+# is testable in Python without re-parsing shell.
+
+if git diff --cached --name-only | grep -q '^deploy/cloudflare-worker/worker\.js$'; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v py >/dev/null 2>&1; then
+    PYTHON_BIN="py -3"
+  else
+    echo "${YELLOW}pre-commit: python not available; skipping Worker CF Access header invariant${RESET}" >&2
+    PYTHON_BIN=""
+  fi
+
+  if [ -n "${PYTHON_BIN}" ]; then
+    if [ ! -f scripts/pre_commit_invariant_worker.py ]; then
+      echo "${YELLOW}pre-commit: scripts/pre_commit_invariant_worker.py missing; skipping${RESET}" >&2
+    elif ! ${PYTHON_BIN} scripts/pre_commit_invariant_worker.py; then
+      echo "" >&2
+      echo "${RED}pre-commit: Worker CF Access invariant failed.${RESET}" >&2
+      echo "See message above. Override with --no-verify if removal is intentional." >&2
+      exit 1
+    fi
+  fi
 fi
 
 exit 0
