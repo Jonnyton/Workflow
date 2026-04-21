@@ -178,7 +178,49 @@ Row N is complete when these checks pass:
 5. `secrets-expiry-check.yml` non-dry-run opens one test issue and dedupes on rerun.
 6. Billing prepay dates are recorded in the vault and reflected in section 1.
 
-## 5. References
+## 5. Watchdog Restart Signals
+
+`scripts/watchdog.py` fires every 30 s via `workflow-watchdog.timer`. When 3 consecutive probes fail, it:
+
+1. Issues `sudo systemctl restart workflow-daemon.service`.
+2. Appends a `WATCHDOG_RESTART` line to `.agents/uptime_alarms.log`.
+3. Opens a GitHub issue (label `watchdog`) if `GH_TOKEN` is set.
+
+### Reading watchdog signals
+
+```bash
+# On the Droplet — live watchdog logs
+journalctl -u workflow-watchdog -f
+
+# Alarm log (also readable locally after sync)
+tail -f /opt/workflow/.agents/uptime_alarms.log | grep WATCHDOG_RESTART
+
+# GitHub issues opened by the watchdog
+gh issue list --label watchdog --repo jfarnsworth/workflow
+```
+
+### Suppressing restarts during maintenance
+
+```bash
+# Stop the timer without disabling it permanently
+systemctl stop workflow-watchdog.timer
+
+# Resume when done
+systemctl start workflow-watchdog.timer
+```
+
+### DRY_RUN mode
+
+```bash
+# Probe without restarting or emitting alarms — safe for smoke-testing the watchdog itself
+DRY_RUN=1 python /opt/workflow/scripts/watchdog.py
+# or
+python /opt/workflow/scripts/watchdog.py --dry-run
+```
+
+---
+
+## 6. References
 
 - Cloudflare DNS Records API: <https://developers.cloudflare.com/api/resources/dns/>
   lists create, patch, and delete endpoints under `/zones/{zone_id}/dns_records`.
