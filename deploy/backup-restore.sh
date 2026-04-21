@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# backup-restore.sh — restore workflow-data from a remote snapshot.
+#
+# Self-host migration Row J per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+#
+# Pulls a named (or latest) archive from the rclone remote and restores
+# it into the workflow-data Docker named volume. Stops the daemon before
+# restore and restarts it after.
+#
+# Usage:
+#   sudo bash deploy/backup-restore.sh                     # latest archive
+#   sudo bash deploy/backup-restore.sh --timestamp=2026-04-20T02-00-00Z
+#   sudo bash deploy/backup-restore.sh --list              # list available
+#   DRY_RUN=1 sudo bash deploy/backup-restore.sh           # show plan only
+#
+# Required env (same as backup.sh — from /etc/workflow/env):
+#   BACKUP_DEST   rclone destination URL (same value used by backup.sh)
+#
+# Optional env:
+#   BACKUP_VOLUME    Docker volume name (default: workflow-data)
+#   DRY_RUN          "1" to skip all mutations
+#   BACKUP_LOG       log file path (default: /var/log/workflow-backup.log)
+#
+# Exit codes:
+#   0  restore complete (or DRY_RUN=1).
+#   1  config missing or bad arguments.
+#   2  archive not found on remote.
+#   3  rclone download failed.
+#   4  tar extract failed.
+#   5  daemon restart failed (data restored, daemon did not come back up).
+
+set -euo pipefail
+
+BACKUP_VOLUME="${BACKUP_VOLUME:-workflow-data}"
+DRY_RUN="${DRY_RUN:-0}"
+BACKUP_LOG="${BACKUP_LOG:-/var/log/workflow-backup.log}"
+
+TIMESTAMP_ARG=""
+LIST_MODE=0
+
+for arg in "$@"; do
+    case "${arg}" in
+        --timestamp=*) TIMESTAMP_ARG="${arg#--timestamp=}" ;;
+        --list)        LIST_MODE=1 ;;
+        *) echo "Unknown argument: ${arg}" >&2; exit 1 ;;
+    esac
+done
+
+log() {
+    local msg="[restore $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+    echo "${msg}"
+    echo "${msg}" >> "${BACKUP_LOG}" 2>/dev/null || true
+}
+
+# ----- 1. validate env --------------------------------------------------
+
+if [[ -z "${BACKUP_DEST:-}" ]]; then
+    log "ERROR: BACKUP_DEST is not set"
+    log "Set it in /etc/workflow/env, e.g.: BACKUP_DEST=s3://my-bucket/workflow-backups"
+    exit 1
+fi
+
+# ----- 2. list mode -----------------------------------------------------
+
+if [[ "${LIST_MODE}" -eq 1 ]]; then
+    log "available archives at ${BACKUP_DEST}:"
+    rclone lsf --format tp "${BACKUP_DEST}/" 2>/dev/null \
+        | sort -r \
+        | awk -F';' '{print "  " $2}'
+    exit 0
+fi
+
+# ----- 3. resolve archive -----------------------------------------------
+
+if [[ -n "${TIMESTAMP_ARG}" ]]; then
+    TAR_NAME="workflow-data-${TIMESTAMP_ARG}.tar.gz"
+else
+    TAR_NAME="$(rclone lsf --format tp "${BACKUP_DEST}/" 2>/dev/null \
+        | sort -r \
+        | awk -F';' 'NR==1 {print $2}')"
+    if [[ -z "${TAR_NAME}" ]]; then
+        log "ERROR: no archives found at ${BACKUP_DEST}/"
+        exit 2
+    fi
+fi
+
+log "target archive: ${TAR_NAME}"
+
+# Verify it exists on remote.
+if ! rclone ls "${BACKUP_DEST}/${TAR_NAME}" > /dev/null 2>&1; then
+    log "ERROR: archive not found: ${BACKUP_DEST}/${TAR_NAME}"
+    exit 2
+fi
+
+if [[ "${DRY_RUN}" == "1" ]]; then
+    log "DRY_RUN=1 — would restore ${TAR_NAME} into volume ${BACKUP_VOLUME}. No mutations."
+    exit 0
+fi
+
+# ----- 4. stop daemon ---------------------------------------------------
+
+log "stopping workflow-daemon..."
+docker stop workflow-daemon 2>/dev/null || log "  daemon was not running"
+
+# ----- 5. download archive ----------------------------------------------
+
+TAR_PATH="/tmp/${TAR_NAME}"
+log "downloading ${TAR_NAME}..."
+if ! rclone copyto --contimeout 60s --timeout 900s \
+        "${BACKUP_DEST}/${TAR_NAME}" "${TAR_PATH}"; then
+    log "ERROR: rclone download failed"
+    exit 3
+fi
+log "  download OK ($(stat -c %s "${TAR_PATH}" 2>/dev/null || echo '?') bytes)"
+
+# ----- 6. locate / create volume ----------------------------------------
+
+VOLUME_DIR="/var/lib/docker/volumes/${BACKUP_VOLUME}/_data"
+if [[ ! -d "${VOLUME_DIR}" ]]; then
+    VOLUME_DIR="$(docker volume inspect --format '{{ .Mountpoint }}' "${BACKUP_VOLUME}" 2>/dev/null || echo '')"
+    if [[ -z "${VOLUME_DIR}" ]]; then
+        log "  volume ${BACKUP_VOLUME} not found; creating..."
+        docker volume create "${BACKUP_VOLUME}" >/dev/null
+        VOLUME_DIR="$(docker volume inspect --format '{{ .Mountpoint }}' "${BACKUP_VOLUME}")"
+    fi
+fi
+
+log "restoring into ${VOLUME_DIR}..."
+
+# ----- 7. extract -------------------------------------------------------
+
+rm -rf "${VOLUME_DIR:?}/"*
+
+if ! tar -xzf "${TAR_PATH}" -C "$(dirname "${VOLUME_DIR}")" \
+        --strip-components=1 "$(basename "${VOLUME_DIR}")"; then
+    log "ERROR: tar extract failed"
+    rm -f "${TAR_PATH}"
+    exit 4
+fi
+
+rm -f "${TAR_PATH}"
+log "  extract OK"
+
+# ----- 8. restart daemon ------------------------------------------------
+
+log "restarting workflow-daemon..."
+if ! docker start workflow-daemon 2>/dev/null; then
+    log "WARN: docker start failed — try: docker compose -f /opt/workflow/deploy/compose.yml up -d"
+    exit 5
+fi
+
+log "restore complete. daemon restarted."
+exit 0

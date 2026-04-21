@@ -4,58 +4,75 @@
 # Self-host migration Row J per
 # docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
 #
-# Tars the Docker named volume's backing directory + uploads via
-# rclone to a Hetzner Storage Box. Retention: 7 daily + 4 weekly,
-# purged at the end of each run.
+# Tars the Docker named volume's backing directory + uploads to any
+# rclone-compatible remote. Retention: 7 daily + 4 weekly + 6 monthly,
+# pruned at the end of each run.
 #
-# Triggered by workflow-backup.service (systemd oneshot) from
-# workflow-backup.timer (nightly 03:00 UTC).
+# Triggered by backup.service (systemd oneshot) from
+# backup.timer (nightly 02:00 UTC).
 #
 # Required env (from /etc/workflow/env, sourced by the systemd unit):
-#   STORAGEBOX_HOST   e.g. u123456.your-storagebox.de
-#   STORAGEBOX_USER   storage box username
-#   STORAGEBOX_PASS   storage box password (unquoted)
+#   BACKUP_DEST   rclone destination URL, e.g.:
+#                   s3://my-do-spaces-bucket/workflow-backups
+#                   sftp://u123456.your-storagebox.de/workflow-backups
+#                 Any rclone remote URL works; rclone must already be
+#                 configured for the scheme (see docs/ops/backup-restore-runbook.md).
 #
 # Optional env:
-#   BACKUP_PREFIX     remote path prefix (default: workflow-backups)
-#   BACKUP_VOLUME     Docker volume name (default: workflow-data)
-#   BACKUP_RETAIN_DAILY   default 7
-#   BACKUP_RETAIN_WEEKLY  default 4
+#   BACKUP_VOLUME          Docker volume name (default: workflow-data)
+#   BACKUP_RETAIN_DAILY    keep last N daily archives (default: 7)
+#   BACKUP_RETAIN_WEEKLY   keep first archive per week, last N weeks (default: 4)
+#   BACKUP_RETAIN_MONTHLY  keep first archive per month, last N months (default: 6)
+#   DRY_RUN                set to "1" — print plan, no tar/upload/prune
+#   BACKUP_LOG             append log to this file (default: /var/log/workflow-backup.log)
 #
 # Exit codes:
-#   0 upload + prune succeeded.
-#   1 config missing / rclone config failed.
-#   2 tar failed (source volume missing or corrupted).
-#   3 rclone upload failed.
-#   4 retention prune failed (non-fatal; surfaced but doesn't block).
+#   0  upload + prune succeeded (or DRY_RUN=1 — no mutations).
+#   1  BACKUP_DEST not set.
+#   2  tar failed (source volume missing or unreadable).
+#   3  rclone upload failed.
+#   4  retention prune failed (non-fatal; upload itself succeeded).
 
 set -euo pipefail
 
-BACKUP_PREFIX="${BACKUP_PREFIX:-workflow-backups}"
 BACKUP_VOLUME="${BACKUP_VOLUME:-workflow-data}"
 BACKUP_RETAIN_DAILY="${BACKUP_RETAIN_DAILY:-7}"
 BACKUP_RETAIN_WEEKLY="${BACKUP_RETAIN_WEEKLY:-4}"
+BACKUP_RETAIN_MONTHLY="${BACKUP_RETAIN_MONTHLY:-6}"
+DRY_RUN="${DRY_RUN:-0}"
+BACKUP_LOG="${BACKUP_LOG:-/var/log/workflow-backup.log}"
 
-# Docker-internal volume mountpoint. `docker volume inspect` is more
-# robust than hardcoding the path, but requires docker CLI + is slower.
-# Hardcode for speed; fall back to inspect if the literal doesn't exist.
+# Docker-internal volume mountpoint. Fall back to `docker volume inspect`
+# when Docker uses a non-default storage root.
 VOLUME_DIR="/var/lib/docker/volumes/${BACKUP_VOLUME}/_data"
 
-log() { echo "[backup $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
+log() {
+    local msg="[backup $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+    echo "${msg}"
+    echo "${msg}" >> "${BACKUP_LOG}" 2>/dev/null || true
+}
 
 # ----- 1. validate env --------------------------------------------------
 
-if [[ -z "${STORAGEBOX_HOST:-}" || -z "${STORAGEBOX_USER:-}" || -z "${STORAGEBOX_PASS:-}" ]]; then
-    log "ERROR: STORAGEBOX_HOST / STORAGEBOX_USER / STORAGEBOX_PASS not set"
-    log "fill them in /etc/workflow/env and restart this timer"
-    exit 1
+if [[ "${DRY_RUN}" != "1" ]]; then
+    if [[ -z "${BACKUP_DEST:-}" ]]; then
+        log "ERROR: BACKUP_DEST is not set"
+        log "Set it in /etc/workflow/env, e.g.: BACKUP_DEST=s3://my-bucket/workflow-backups"
+        exit 1
+    fi
+fi
+
+if [[ "${DRY_RUN}" == "1" ]]; then
+    log "DRY_RUN=1 — skipping volume locate, tar, upload, and prune. No mutations."
+    log "  BACKUP_DEST=${BACKUP_DEST:-<unset>}"
+    log "  BACKUP_VOLUME=${BACKUP_VOLUME}"
+    log "  retention: daily=${BACKUP_RETAIN_DAILY} weekly=${BACKUP_RETAIN_WEEKLY} monthly=${BACKUP_RETAIN_MONTHLY}"
+    exit 0
 fi
 
 # ----- 2. locate volume -------------------------------------------------
 
 if [[ ! -d "${VOLUME_DIR}" ]]; then
-    # Fall back to `docker volume inspect` in case Docker picked a
-    # non-default storage root.
     VOLUME_DIR="$(docker volume inspect --format '{{ .Mountpoint }}' "${BACKUP_VOLUME}" 2>/dev/null || echo '')"
     if [[ -z "${VOLUME_DIR}" || ! -d "${VOLUME_DIR}" ]]; then
         log "ERROR: volume ${BACKUP_VOLUME} not found on disk"
@@ -64,15 +81,16 @@ if [[ ! -d "${VOLUME_DIR}" ]]; then
 fi
 
 log "source: ${VOLUME_DIR}"
+log "dest:   ${BACKUP_DEST}"
 
 # ----- 3. tar the volume ------------------------------------------------
 
 TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-TAR_NAME="workflow-data-${TS}.tar.zst"
+TAR_NAME="workflow-data-${TS}.tar.gz"
 TAR_PATH="/tmp/${TAR_NAME}"
 
 log "creating archive ${TAR_PATH}..."
-if ! tar --zstd -cf "${TAR_PATH}" -C "$(dirname "${VOLUME_DIR}")" "$(basename "${VOLUME_DIR}")"; then
+if ! tar -czf "${TAR_PATH}" -C "$(dirname "${VOLUME_DIR}")" "$(basename "${VOLUME_DIR}")"; then
     log "ERROR: tar failed"
     rm -f "${TAR_PATH}"
     exit 2
@@ -80,71 +98,59 @@ fi
 TAR_SIZE="$(stat -c %s "${TAR_PATH}" 2>/dev/null || echo '?')"
 log "  archive size: ${TAR_SIZE} bytes"
 
-# ----- 4. rclone config (ephemeral) ------------------------------------
+# ----- 4. upload --------------------------------------------------------
 
-# Write a minimal rclone config to $HOME/.config/rclone so the upload
-# command knows the remote. Credentials come from env — never written
-# to disk in a way that survives this invocation (systemd's PrivateTmp).
-RCLONE_CONFIG_DIR="${HOME}/.config/rclone"
-mkdir -p "${RCLONE_CONFIG_DIR}"
-RCLONE_CONFIG_FILE="${RCLONE_CONFIG_DIR}/rclone.conf"
-
-# Use SFTP backend; Hetzner Storage Box supports SFTP on port 22.
-cat > "${RCLONE_CONFIG_FILE}" <<EOF
-[storagebox]
-type = sftp
-host = ${STORAGEBOX_HOST}
-user = ${STORAGEBOX_USER}
-pass = $(rclone obscure "${STORAGEBOX_PASS}" 2>/dev/null || echo "${STORAGEBOX_PASS}")
-port = 22
-EOF
-chmod 600 "${RCLONE_CONFIG_FILE}"
-
-# ----- 5. upload --------------------------------------------------------
-
-REMOTE_PATH="storagebox:${BACKUP_PREFIX}/${TAR_NAME}"
-log "uploading to ${REMOTE_PATH}..."
-if ! rclone copyto --contimeout 60s --timeout 900s "${TAR_PATH}" "${REMOTE_PATH}"; then
+log "uploading to ${BACKUP_DEST}/${TAR_NAME}..."
+if ! rclone copyto --contimeout 60s --timeout 900s \
+        "${TAR_PATH}" "${BACKUP_DEST}/${TAR_NAME}"; then
     log "ERROR: rclone upload failed"
     rm -f "${TAR_PATH}"
     exit 3
 fi
 log "  upload OK"
-
 rm -f "${TAR_PATH}"
 
-# ----- 6. retention prune ----------------------------------------------
+# ----- 5. retention prune ----------------------------------------------
 
-# Keep the last BACKUP_RETAIN_DAILY daily tarballs + the first tarball
-# of each of the last BACKUP_RETAIN_WEEKLY weeks (Sunday cutoff).
-# Prune is best-effort; failure here doesn't fail the backup itself.
-log "pruning retention window (keep ${BACKUP_RETAIN_DAILY} daily + ${BACKUP_RETAIN_WEEKLY} weekly)..."
+# Keep:
+#   - last BACKUP_RETAIN_DAILY daily archives (most recent N)
+#   - first archive of each week for last BACKUP_RETAIN_WEEKLY weeks
+#   - first archive of each month for last BACKUP_RETAIN_MONTHLY months
+# Prune is best-effort; failure is non-fatal.
+log "pruning retention (daily=${BACKUP_RETAIN_DAILY} weekly=${BACKUP_RETAIN_WEEKLY} monthly=${BACKUP_RETAIN_MONTHLY})..."
 set +e
-rclone lsf --format tp "storagebox:${BACKUP_PREFIX}/" 2>/dev/null \
+rclone lsf --format tp "${BACKUP_DEST}/" 2>/dev/null \
     | sort -r \
-    | awk -F';' -v keep_daily="${BACKUP_RETAIN_DAILY}" -v keep_weekly="${BACKUP_RETAIN_WEEKLY}" '
+    | awk -F';' \
+        -v keep_daily="${BACKUP_RETAIN_DAILY}" \
+        -v keep_weekly="${BACKUP_RETAIN_WEEKLY}" \
+        -v keep_monthly="${BACKUP_RETAIN_MONTHLY}" '
         {
           name = $2
-          # Files named workflow-data-YYYY-MM-DDTHH-MM-SSZ.tar.zst
-          if (name !~ /^workflow-data-[0-9].*\.tar\.zst$/) next
+          if (name !~ /^workflow-data-[0-9].*\.tar\.gz$/) next
           daily_count++
           if (daily_count <= keep_daily) { keep[name]=1; next }
-          # Weekly: retain first tarball seen per ISO week.
-          match(name, /[0-9]{4}-[0-9]{2}-[0-9]{2}/, d)
-          if (d[0] == "") next
-          # Use week-year as the bucket key. gawk-specific mktime.
-          bucket = substr(d[0], 1, 7)  # YYYY-MM roughly enough for weekly
-          if (!(bucket in week_seen)) {
-            week_seen[bucket] = 1
+          if (match(name, /([0-9]{4}-[0-9]{2}-[0-9]{2})/, d)) {
+            date_str = d[1]
+          } else next
+          week_bucket = substr(date_str, 1, 7) "-W" int((substr(date_str, 9, 2) + 6) / 7)
+          if (!(week_bucket in week_seen)) {
+            week_seen[week_bucket] = 1
             weekly_count++
-            if (weekly_count <= keep_weekly) keep[name] = 1
+            if (weekly_count <= keep_weekly) { keep[name] = 1; next }
+          }
+          month_bucket = substr(date_str, 1, 7)
+          if (!(month_bucket in month_seen)) {
+            month_seen[month_bucket] = 1
+            monthly_count++
+            if (monthly_count <= keep_monthly) { keep[name] = 1; next }
           }
           if (!(name in keep)) print name
         }
     ' \
     | while read -r victim; do
         log "  prune: ${victim}"
-        rclone deletefile "storagebox:${BACKUP_PREFIX}/${victim}" || \
+        rclone deletefile "${BACKUP_DEST}/${victim}" || \
             log "    WARN: delete failed for ${victim}"
     done
 prune_status=$?
