@@ -52,11 +52,13 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal
 
-# Install codex CLI globally. npm puts the binary at
-# /usr/local/bin/codex (or /usr/bin/codex on some distros); we locate it
-# at build time and copy the resolved path to the final stage.
-# Pin to the latest published version; bump here to upgrade.
-RUN npm install -g @openai/codex && \
+# Install codex CLI to an explicit prefix so the path is deterministic
+# across distros. npm global prefix under nodesource Debian may be
+# /usr/lib/node_modules (not /usr/local/lib), so we pin to /opt/codex-install
+# and symlink the bin — then COPY --from=builder targets a known path.
+RUN mkdir -p /opt/codex-install && \
+    npm install --prefix /opt/codex-install @openai/codex && \
+    ln -s /opt/codex-install/node_modules/.bin/codex /usr/local/bin/codex && \
     codex --version
 
 WORKDIR /build
@@ -95,10 +97,10 @@ RUN apt-get update && \
     groupadd --system --gid 1001 workflow && \
     useradd --system --uid 1001 --gid workflow --home /app --shell /bin/bash workflow
 
-# Copy the codex CLI and its Node module tree from the builder stage.
-# npm global prefix is /usr/local; the codex wrapper script + lib live there.
-COPY --from=builder /usr/local/bin/codex /usr/local/bin/codex
-COPY --from=builder /usr/local/lib/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
+# Copy the codex install tree from builder and recreate the symlink.
+# /opt/codex-install is a deterministic path set in the builder stage.
+COPY --from=builder /opt/codex-install /opt/codex-install
+RUN ln -s /opt/codex-install/node_modules/.bin/codex /usr/local/bin/codex
 
 WORKDIR /app
 

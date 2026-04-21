@@ -58,18 +58,18 @@ def test_dockerfile_final_stage_has_nodejs_runtime():
 
 
 def test_dockerfile_copies_codex_binary():
-    """Final stage must COPY codex binary from builder."""
+    """Final stage must COPY codex install tree from builder."""
     text = DOCKERFILE.read_text(encoding="utf-8")
-    assert "codex" in text and "COPY --from=builder" in text, (
+    assert "COPY --from=builder" in text, (
         "Dockerfile must COPY codex from builder to final stage"
     )
-    # More specific: a COPY line referencing codex
+    # Codex is installed to /opt/codex-install in the builder; that dir is COPY'd.
     copy_lines = [
         line for line in text.splitlines()
-        if line.strip().startswith("COPY --from=builder") and "codex" in line
+        if line.strip().startswith("COPY --from=builder") and "codex-install" in line
     ]
     assert copy_lines, (
-        "Expected a 'COPY --from=builder ... codex ...' line in final stage"
+        "Expected a 'COPY --from=builder /opt/codex-install ...' line in final stage"
     )
 
 
