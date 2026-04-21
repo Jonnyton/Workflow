@@ -52,6 +52,27 @@ log() { echo "[bootstrap] $*"; }
 
 # ----- 1. apt baseline ----------------------------------------------------
 
+# Fresh DO/Hetzner/Linode Droplets run cloud-init + unattended-upgrades
+# at first boot. Racing them produces
+#   "Could not get lock /var/lib/apt/lists/lock. It is held by process N"
+# and the bootstrap exits 100. Wait for both to release before we touch apt.
+if command -v cloud-init >/dev/null 2>&1; then
+    log "waiting for cloud-init to finish..."
+    cloud-init status --wait >/dev/null 2>&1 || true
+fi
+log "waiting for apt/dpkg locks to clear..."
+for i in $(seq 1 180); do
+    if ! pgrep -x apt-get >/dev/null 2>&1 \
+         && ! pgrep -x dpkg >/dev/null 2>&1 \
+         && ! pgrep -x unattended-upgr >/dev/null 2>&1; then
+        break
+    fi
+    if [[ "${i}" -eq 180 ]]; then
+        log "WARN: apt/dpkg still running after 180s — proceeding anyway"
+    fi
+    sleep 1
+done
+
 log "apt update + base packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
