@@ -1,0 +1,187 @@
+name: DNS canary
+
+# Row N sub-gate: verify tinyassets.io + mcp.tinyassets.io resolve from
+# an independent vantage point (GHA runner, not the host machine).
+#
+# On failure: opens a GitHub issue labeled `dns-red`.
+# On recovery: comments RECOVERED + closes the issue.
+#
+# Mirrors the uptime-canary.yml alarm-sink pattern.
+
+on:
+  schedule:
+    # Every 15 min. DNS failures are rare but consequential —
+    # 15 min is fine-grained enough to catch propagation issues quickly.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: dns-canary
+  cancel-in-progress: false
+
+env:
+  ALARM_ISSUE_LABEL: dns-red
+
+jobs:
+  dns-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      overall: ${{ steps.dns.outputs.overall }}
+      msg: ${{ steps.dns.outputs.msg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run DNS canary tests
+        id: dns
+        continue-on-error: true
+        run: |
+          set +e
+          output=$(python -m pytest tests/test_dns_canary.py \
+            -k "resolves" \
+            --tb=short -q 2>&1)
+          code=$?
+          set -e
+
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "msg<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+            if [ "$code" = "0" ]; then
+              echo "overall=green"
+            else
+              echo "overall=red"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+          echo "=== DNS canary exit=$code ==="
+          echo "$output"
+          exit $code
+
+  alarm-sink:
+    needs: dns-check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Manage dns-red issue
+        uses: actions/github-script@v7
+        env:
+          OVERALL: ${{ needs.dns-check.outputs.overall }}
+          MSG: ${{ needs.dns-check.outputs.msg }}
+          LABEL: ${{ env.ALARM_ISSUE_LABEL }}
+        with:
+          script: |
+            const overall = process.env.OVERALL;
+            const label = process.env.LABEL;
+            const msg = process.env.MSG || '';
+            const now = new Date().toISOString();
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+            // Ensure label exists.
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: label, color: 'e4e669',
+                  description: 'Auto-opened by DNS canary on resolution failure.',
+                });
+              } else { throw e; }
+            }
+
+            const openIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: label, per_page: 5,
+            });
+            const openIssue = openIssues.data[0] || null;
+
+            async function previousRunWasRed() {
+              const prior = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner, repo: context.repo.repo,
+                workflow_id: context.workflow, status: 'completed', per_page: 5,
+              });
+              const priorRuns = (prior.data.workflow_runs || []).filter(
+                r => String(r.id) !== process.env.GITHUB_RUN_ID,
+              );
+              if (!priorRuns.length) return false;
+              return priorRuns[0].conclusion === 'failure';
+            }
+
+            function formatBody(kind) {
+              return [
+                `**${kind}** @ ${now}`,
+                ``,
+                '<details><summary>pytest output</summary>',
+                ``,
+                '```',
+                msg.trim() || '(empty)',
+                '```',
+                ``,
+                '</details>',
+                ``,
+                `Run: ${runUrl}`,
+              ].join('\n');
+            }
+
+            if (overall === 'red') {
+              if (openIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: openIssue.number, body: formatBody('RED'),
+                });
+                console.log(`appended RED to #${openIssue.number}`);
+                return;
+              }
+              const priorRed = await previousRunWasRed();
+              if (priorRed) {
+                const result = await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `DNS resolution failure — ${now}`,
+                  labels: [label],
+                  body: [
+                    'Auto-opened by the DNS canary after 2 consecutive failures.',
+                    '',
+                    formatBody('RED (threshold crossed)'),
+                  ].join('\n'),
+                });
+                console.log(`opened issue #${result.data.number}`);
+              } else {
+                console.log('first-red — not yet alarming. Next red will open issue.');
+              }
+              return;
+            }
+
+            // GREEN path.
+            if (openIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: openIssue.number, body: formatBody('GREEN — RECOVERED'),
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: openIssue.number, state: 'closed', state_reason: 'completed',
+              });
+              console.log(`closed #${openIssue.number} as RECOVERED`);
+            } else {
+              console.log('steady green — no action');
+            }
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### DNS canary result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **overall** → **${{ needs.dns-check.outputs.overall }}**" >> "$GITHUB_STEP_SUMMARY"
