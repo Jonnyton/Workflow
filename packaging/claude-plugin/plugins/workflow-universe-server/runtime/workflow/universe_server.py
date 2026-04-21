@@ -941,6 +941,21 @@ agentic work producing substantive output. Do NOT tell users this is
     not a plausible-looking artifact. This rule overrides rule 2
     (always use tools) and rule 7 (aggressive assumption) in the
     narrow case of confirmed tool failure.
+11. Shared-account / cross-session: ask, don't assert. One Claude.ai
+    account may be used by multiple people (household members, a host
+    and a collaborator). Your memory layer is account-scoped — it cannot
+    distinguish Person A's prior work from Person B's. When your memory
+    or context suggests a prior project that doesn't match the current
+    prompt's vocabulary, domain, or framing, do NOT assert that history
+    as the current user's. Instead: narrate what you see ("I have memory
+    of earlier Workflow sessions on a fantasy novel — is that yours, or
+    are you a different person sharing this account?") and let the user
+    confirm or redirect. Silent action is correct when the current prompt
+    is self-contained and prior context is irrelevant. Ask before acting
+    when the mismatch is load-bearing (prior project vocabulary surfaces,
+    history is being claimed as fact, or you're about to take an
+    irreversible action). Never let cross-session memory bleed cause you
+    to assert fabricated history as this user's lived experience.
 
 ## Tool Catalog (4 coarse tools — describe ALL when asked)
 
@@ -9131,6 +9146,58 @@ def _wiki_log_path() -> Path:
     return _wiki_root() / "log.md"
 
 
+def _ensure_wiki_scaffold(wiki_root: Path) -> None:
+    """Ensure the wiki tree exists so read/list/search don't error on a
+    fresh deploy (Task #6 — post-scrub droplet boot has an empty
+    `/data/wiki`).
+
+    Idempotent: every `mkdir` uses `exist_ok=True`; anchor files are
+    only written when absent. Safe to call on every `wiki` invocation —
+    steady-state cost is ~10 stat calls.
+
+    Creates:
+      - `wiki_root` itself + `pages/<cat>/` + `drafts/<cat>/` for every
+        entry in `_WIKI_CATEGORIES`.
+      - `log/` (matches existing `_wiki_log_path` shape — `.md` file at
+        the root, but also reserves the `log/` dir for future per-day
+        rollover if the log grows large).
+      - `index.md`, `WIKI.md`, `log.md` as minimal anchor pages if they
+        don't already exist. Never overwrites user content.
+    """
+    from datetime import date as _date
+    today = _date.today().isoformat()
+
+    wiki_root.mkdir(parents=True, exist_ok=True)
+    for base in ("pages", "drafts"):
+        for cat in _WIKI_CATEGORIES:
+            (wiki_root / base / cat).mkdir(parents=True, exist_ok=True)
+    (wiki_root / "log").mkdir(parents=True, exist_ok=True)
+    (wiki_root / "raw").mkdir(parents=True, exist_ok=True)
+
+    anchors = {
+        "index.md": (
+            f"---\ntitle: Index\ntype: index\nupdated: {today}\n---\n\n"
+            f"# Wiki Index\n\nWiki seeded {today} by Workflow daemon. "
+            "Categories populate as chatbots write. See `log.md` for "
+            "recent activity; `bugs/` for active defects.\n"
+        ),
+        "WIKI.md": (
+            f"---\ntitle: Wiki Schema\ntype: schema\nupdated: {today}\n---\n\n"
+            "# Wiki Schema\n\nCategories, frontmatter conventions, and "
+            "lint rules. See AGENTS.md + the wiki tool docstring for the "
+            "live contract.\n"
+        ),
+        "log.md": (
+            "# Wiki Log\n\n"
+            f"{today} | scaffold | wiki seeded by Workflow daemon\n"
+        ),
+    }
+    for name, body in anchors.items():
+        path = wiki_root / name
+        if not path.exists():
+            path.write_text(body, encoding="utf-8")
+
+
 def _find_all_pages(directory: Path) -> list[Path]:
     """Recursively find all .md files under a directory."""
     if not directory.is_dir():
@@ -9354,6 +9421,20 @@ def wiki(
                 "path like '/data/wiki'."
             ),
         })
+
+    # Task #6 — scaffold the tree on first call so fresh deploys
+    # (empty /data/wiki) don't error on read/list/search/lint. Idempotent.
+    try:
+        _ensure_wiki_scaffold(wiki_root)
+    except OSError as exc:
+        return json.dumps({
+            "error": f"Wiki scaffold failed at {wiki_root}: {exc}",
+            "hint": (
+                "Check filesystem permissions on the wiki root. The volume "
+                "must be writable by the daemon uid."
+            ),
+        })
+
     if not wiki_root.is_dir():
         return json.dumps({
             "error": f"Wiki not found at {wiki_root}.",

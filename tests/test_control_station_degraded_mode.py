@@ -1,20 +1,25 @@
-"""Tests for control_station degraded-mode directive (task #13).
+"""Tests for control_station directives (hard rules 10 + 11).
 
-Pattern-response to two live fabrication-on-tool-failure instances
-within 24 hours:
-
+Rule 10 (degraded-mode, task #13):
 - Devin Session 2 §6 (2026-04-18): chatbot fabricated tier-2 routing
   claims when `get_status` was absent.
 - P0 uptime canary probe (2026-04-19): chatbot fabricated a 6-node
   workflow JSON + session history when MCP returned Session terminated.
 
+Rule 11 (shared-account / cross-session, task #5):
+- Devin Session 2 (first incident): chatbot asserted host session memory
+  as Devin's own history.
+- P0 uptime probe: chatbot claimed fabricated prior work from another
+  session as the bare-user's lived experience.
+- DO-cutover echo: third incident confirmed recurring pattern.
+
 Refs:
 - `docs/audits/user-chat-intelligence/2026-04-19-devin-session-2.md` §6
 - `docs/audits/user-chat-intelligence/2026-04-19-p0-uptime-canary-probe.md` §2.2
+- `docs/design-notes/2026-04-19-shared-account-tier2-ux.md`
 
-The directive itself lives in `workflow.universe_server` at the
-`control_station` prompt. These tests catch silent removal of the
-directive or accidental regression of its key phrases.
+The directives live in `workflow.universe_server._CONTROL_STATION_PROMPT`.
+These tests catch silent removal or accidental regression of key phrases.
 """
 
 from __future__ import annotations
@@ -191,3 +196,118 @@ def test_directive_names_rules_it_overrides():
     # Rule 10 must call those out by number so the precedence is unambiguous.
     assert "rule 2" in rule_10.lower(), "rule 10 must override rule 2 explicitly"
     assert "rule 7" in rule_10.lower(), "rule 10 must override rule 7 explicitly"
+
+
+# ---- Rule 11: shared-account / cross-session directive -------------------
+#
+# Three live incidents (Devin S2 + P0 probe + DO-cutover echo) showed the
+# chatbot asserting another session's memory as the current user's fact.
+# Rule 11 must tell the chatbot to ASK rather than ASSERT when cross-session
+# context is detected.
+
+
+def _rule_11_block(body: str) -> str:
+    m = re.search(
+        r"11\.\s*Shared-account.*?(?=^\s*\d+\.|^## )",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert m, "could not locate rule 11 block in control_station prompt"
+    return m.group(0)
+
+
+def test_shared_account_rule_is_present():
+    """Hard rule 11 (shared-account) must exist as a numbered rule."""
+    body = _prompt_text()
+    assert re.search(
+        r"^\s*11\.\s*Shared-account",
+        body,
+        re.MULTILINE,
+    ), "Hard rule 11 (shared-account) missing from control_station prompt"
+
+
+def test_shared_account_rule_in_hard_rules_block():
+    """Rule 11 must sit inside the ## Hard Rules section, before ## Tool Catalog."""
+    body = _prompt_text()
+    hard_rules_start = body.find("## Hard Rules")
+    tool_catalog_start = body.find("## Tool Catalog")
+    assert hard_rules_start != -1
+    assert tool_catalog_start != -1
+    hard_rules_block = body[hard_rules_start:tool_catalog_start]
+    assert "Shared-account" in hard_rules_block, (
+        "rule 11 escaped the Hard Rules block"
+    )
+
+
+def test_shared_account_rule_says_ask_not_assert():
+    """Rule 11 must instruct the chatbot to ASK rather than assert prior history."""
+    rule = _rule_11_block(_prompt_text())
+    # The core behavioral requirement: ask / question the user, don't assert.
+    assert re.search(
+        r"\b(ask|question|confirm|redirect)\b",
+        rule,
+        re.IGNORECASE,
+    ), "rule 11 must instruct chatbot to ask/confirm rather than silently assert"
+
+
+def test_shared_account_rule_forbids_asserting_cross_session_history():
+    """Rule 11 must forbid asserting cross-session memory as the current user's fact."""
+    rule = _rule_11_block(_prompt_text())
+    # Must have a negative-imperative around assert/claim/treat.
+    assert re.search(
+        r"(do\s+not|never|must\s+not|don['\u2019]t)\s+\w*\s*(assert|claim|treat)",
+        rule,
+        re.IGNORECASE,
+    ), (
+        "rule 11 must contain a negative-imperative ('do NOT assert', 'never claim', "
+        "etc.) to prevent cross-session history bleed"
+    )
+
+
+def test_shared_account_rule_uses_user_vocabulary():
+    """Rule 11 must phrase the user-facing question in plain language, not engine terms.
+
+    The user-vocabulary discipline (feedback_user_vocabulary_discipline) forbids
+    surfacing engine terms to users. The chatbot's suggested question in rule 11
+    should say 'different person sharing this account' or similar plain language,
+    NOT 'cross-session memory' or 'context bleed'.
+    """
+    rule = _rule_11_block(_prompt_text())
+    # Plain-language user-question must appear.
+    assert re.search(
+        r"(sharing this account|different (user|person)|previous session)",
+        rule,
+        re.IGNORECASE,
+    ), (
+        "rule 11's user-facing question must use plain language "
+        "('sharing this account', 'different user', 'previous session') "
+        "not engine vocabulary"
+    )
+    # Engine vocabulary must NOT appear in the user-facing suggested question.
+    # We allow these terms in the rule body for internal description, but
+    # the chatbot's literal suggested question (in quotes) must be clean.
+    quoted = re.findall(r'"([^"]+)"', rule)
+    for q in quoted:
+        assert "cross-session" not in q.lower(), (
+            "user-facing question quote contains 'cross-session' — engine vocabulary"
+        )
+        assert "memory bleed" not in q.lower(), (
+            "user-facing question quote contains 'memory bleed' — engine vocabulary"
+        )
+
+
+def test_shared_account_rule_covers_silent_action_case():
+    """Rule 11 must allow SILENT ACTION when current prompt is self-contained.
+
+    Over-asking is the failure mode for households using Workflow weekly.
+    The rule must say when NOT to ask (zero-friction path) as well as when to ask.
+    """
+    rule = _rule_11_block(_prompt_text())
+    assert re.search(
+        r"silent\s+action|self.contained|irrelevant",
+        rule,
+        re.IGNORECASE,
+    ), (
+        "rule 11 must specify the zero-friction path (silent action when "
+        "prior context is not load-bearing) to prevent over-asking"
+    )
