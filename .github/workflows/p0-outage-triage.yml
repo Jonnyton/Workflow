@@ -1,0 +1,264 @@
+name: P0 outage auto-triage
+
+# Triggered when uptime-canary opens a p0-outage issue (via labels event).
+# Attempts a non-destructive compose restart on the Droplet, re-probes,
+# and either closes the issue (auto-recovered) or adds needs-human label.
+#
+# Flow:
+#   1. SSH in, restart daemon container (non-destructive --force-recreate).
+#   2. Wait 30s for startup.
+#   3. Re-probe canonical URL.
+#   4. GREEN → comment auto-recovered + close issue.
+#   5. RED  → comment diag output + add needs-human label.
+#
+# Required secrets:
+#   DO_SSH_KEY       — private key PEM for the Droplet
+#   DO_DROPLET_HOST  — Droplet public IP
+#   DO_SSH_USER      — SSH user (root / deploy)
+#
+# Alarm hook: distinct from deploy-prod.yml's deploy-failed label.
+# This workflow is only for spontaneous outages, not deploy regressions.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  # One triage run per issue — prevents concurrent restarts on the same box.
+  group: p0-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+env:
+  CANARY_URL: https://tinyassets.io/mcp
+  DO_DROPLET_HOST: ${{ secrets.DO_DROPLET_HOST }}
+  DO_SSH_USER: ${{ secrets.DO_SSH_USER }}
+
+jobs:
+  triage:
+    # Only run when the p0-outage label is applied.
+    if: github.event.label.name == 'p0-outage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify secrets present
+        run: |
+          missing=()
+          [ -z "$DO_DROPLET_HOST" ] && missing+=("DO_DROPLET_HOST")
+          [ -z "$DO_SSH_USER" ] && missing+=("DO_SSH_USER")
+          [ -z "${{ secrets.DO_SSH_KEY }}" ] && missing+=("DO_SSH_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing secrets: ${missing[*]} — cannot attempt auto-triage"
+            echo "::error::Add needs-human label manually and SSH to investigate."
+            exit 1
+          fi
+
+      - name: Install SSH key
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/do_deploy
+          chmod 600 ~/.ssh/do_deploy
+          ssh-keyscan -t ed25519,rsa "$DO_DROPLET_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Capture pre-restart diag
+        id: prediag
+        run: |
+          diag=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>&1; \
+               echo '---'; \
+               docker compose -f /opt/workflow/deploy/compose.yml ps 2>&1 | head -20; \
+               echo '---'; \
+               journalctl -u workflow-daemon --no-pager -n 20 2>&1 || true" \
+              2>&1 || echo "(SSH failed)")
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "diag<<${_delim}"
+            echo "$diag"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== pre-restart diag ==="
+          echo "$diag"
+
+      - name: Attempt compose restart
+        id: restart
+        run: |
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "docker compose -f /opt/workflow/deploy/compose.yml \
+                 --env-file /etc/workflow/env \
+                 up -d --force-recreate daemon" 2>&1
+          echo "restart_attempted=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for daemon startup
+        run: sleep 30
+
+      - name: Re-probe canonical URL
+        id: reprobe
+        run: |
+          set +e
+          output=$(python scripts/mcp_public_canary.py \
+              --url "${CANARY_URL}" --verbose 2>&1)
+          code=$?
+          set -e
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "code=$code"
+            echo "output<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+            if [ "$code" = "0" ]; then
+              echo "color=green"
+            else
+              echo "color=red"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          echo "=== re-probe exit=$code ==="
+          echo "$output"
+
+      - name: Comment + close on auto-recovery
+        if: steps.reprobe.outputs.color == 'green'
+        uses: actions/github-script@v7
+        env:
+          PREDIAG: ${{ steps.prediag.outputs.diag }}
+          REPROBE_OUTPUT: ${{ steps.reprobe.outputs.output }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        with:
+          script: |
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const body = [
+              `**AUTO-RECOVERED** via compose restart @ ${new Date().toISOString()}`,
+              ``,
+              `The daemon was non-destructively restarted (\`docker compose up -d --force-recreate daemon\`).`,
+              `Canonical probe returned green after 30s.`,
+              ``,
+              `<details><summary>Pre-restart diagnostics</summary>`,
+              ``,
+              '```',
+              (process.env.PREDIAG || '(empty)').trim(),
+              '```',
+              ``,
+              `</details>`,
+              ``,
+              `<details><summary>Re-probe output</summary>`,
+              ``,
+              '```',
+              (process.env.REPROBE_OUTPUT || '(empty)').trim(),
+              '```',
+              ``,
+              `</details>`,
+              ``,
+              `Run: ${runUrl}`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body,
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              state: 'closed',
+              state_reason: 'completed',
+            });
+            console.log(`closed issue #${process.env.ISSUE_NUMBER} as auto-recovered`);
+
+      - name: Add needs-human label on persistent red
+        if: steps.reprobe.outputs.color == 'red'
+        uses: actions/github-script@v7
+        env:
+          PREDIAG: ${{ steps.prediag.outputs.diag }}
+          REPROBE_OUTPUT: ${{ steps.reprobe.outputs.output }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        with:
+          script: |
+            const label = 'needs-human';
+            // Ensure label exists.
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'e4e669',
+                  description: 'Auto-triage attempted; daemon still red. Manual SSH required.',
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const body = [
+              `**AUTO-TRIAGE FAILED** — daemon still red after compose restart @ ${new Date().toISOString()}`,
+              ``,
+              `Compose restart was attempted but canonical probe is still red.`,
+              `Manual SSH investigation required.`,
+              ``,
+              `<details><summary>Pre-restart diagnostics</summary>`,
+              ``,
+              '```',
+              (process.env.PREDIAG || '(empty)').trim(),
+              '```',
+              ``,
+              `</details>`,
+              ``,
+              `<details><summary>Re-probe output (still red)</summary>`,
+              ``,
+              '```',
+              (process.env.REPROBE_OUTPUT || '(empty)').trim(),
+              '```',
+              ``,
+              `</details>`,
+              ``,
+              `Run: ${runUrl}`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body,
+            });
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              labels: [label],
+            });
+            console.log(`added ${label} to #${process.env.ISSUE_NUMBER}`);
+            // Exit non-zero so GHA marks the run as failed — surfacing it
+            // prominently in the Actions tab for human attention.
+            process.exitCode = 1;
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### P0 auto-triage result"
+            echo ""
+            echo "- **Issue:** #${{ github.event.issue.number }}"
+            echo "- **Restart attempted:** \`${{ steps.restart.outcome }}\`"
+            echo "- **Re-probe:** \`${{ steps.reprobe.outputs.color }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
