@@ -6,16 +6,16 @@ Coverage:
   - Missing BACKUP_DEST exits 1 when DRY_RUN is not set
   - backup-restore.sh DRY_RUN=1 exits 0 after identifying target archive
   - backup-restore.sh missing BACKUP_DEST exits 1
-  - Retention-policy logic: Python port of the awk window to verify
+  - Retention-policy logic: validated via scripts/backup_prune.py (canonical)
     daily-7 / weekly-4 / monthly-6 boundaries
 """
 
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -24,6 +24,11 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 BACKUP_SH = REPO / "deploy" / "backup.sh"
 RESTORE_SH = REPO / "deploy" / "backup-restore.sh"
+PRUNE_PY = REPO / "scripts" / "backup_prune.py"
+
+# Import the canonical retention logic directly from the script.
+sys.path.insert(0, str(REPO / "scripts"))
+from backup_prune import _apply_retention  # noqa: E402
 
 _SHELLCHECK = shutil.which("shellcheck")
 _BASH = shutil.which("bash")
@@ -204,62 +209,23 @@ def test_restore_exits_1_when_backup_dest_missing():
 
 
 # ---------------------------------------------------------------------------
-# Retention-policy logic (Python port of the awk window)
+# Retention-policy logic (delegates to scripts/backup_prune.py — canonical)
 # ---------------------------------------------------------------------------
-
-def _apply_retention(
-    names: list[str], keep_daily: int, keep_weekly: int, keep_monthly: int
-) -> set[str]:
-    """Python port of backup.sh's awk retention window.
-
-    Returns the set of archive names that SHOULD BE DELETED.
-    """
-    keep: set[str] = set()
-    week_seen: dict[str, bool] = {}
-    month_seen: dict[str, bool] = {}
-    daily_count = 0
-    weekly_count = 0
-    monthly_count = 0
-
-    for name in sorted(names, reverse=True):
-        if not re.match(r"^workflow-data-\d.*\.tar\.gz$", name):
-            continue
-        daily_count += 1
-        if daily_count <= keep_daily:
-            keep.add(name)
-            continue
-        m = re.search(r"(\d{4}-\d{2}-\d{2})", name)
-        if not m:
-            continue
-        date_str = m.group(1)
-        day = int(date_str[8:10])
-        week_bucket = date_str[:7] + f"-W{(day + 6) // 7}"
-        if week_bucket not in week_seen:
-            week_seen[week_bucket] = True
-            weekly_count += 1
-            if weekly_count <= keep_weekly:
-                keep.add(name)
-                continue
-        month_bucket = date_str[:7]
-        if month_bucket not in month_seen:
-            month_seen[month_bucket] = True
-            monthly_count += 1
-            if monthly_count <= keep_monthly:
-                keep.add(name)
-                continue
-
-    return set(names) - keep
 
 
 def _make_archives(dates: list[str]) -> list[str]:
     return [f"workflow-data-{d}T02-00-00Z.tar.gz" for d in dates]
 
 
+def _retention_set(names: list[str], **kwargs: int) -> set[str]:
+    return set(_apply_retention(names, **kwargs))
+
+
 def test_retention_keeps_last_7_daily():
     """With 10 archives and daily=7, most recent 7 must never be deleted."""
     dates = [f"2026-04-{d:02d}" for d in range(1, 11)]
     names = _make_archives(dates)
-    to_delete = _apply_retention(names, keep_daily=7, keep_weekly=4, keep_monthly=6)
+    to_delete = _retention_set(names, keep_daily=7, keep_weekly=4, keep_monthly=6)
     recent_7 = set(_make_archives(dates[-7:]))
     assert recent_7.isdisjoint(to_delete), (
         f"Recent 7 should never be deleted: {to_delete & recent_7}"
@@ -271,7 +237,7 @@ def test_retention_keeps_weekly_anchors():
     # 14 days across 2 weeks
     dates = [f"2026-04-{d:02d}" for d in range(1, 15)]
     names = _make_archives(dates)
-    to_delete = _apply_retention(names, keep_daily=7, keep_weekly=2, keep_monthly=6)
+    to_delete = _retention_set(names, keep_daily=7, keep_weekly=2, keep_monthly=6)
     # Apr 8 is first of week 2 (days 8-14)
     week2_anchor = "workflow-data-2026-04-08T02-00-00Z.tar.gz"
     assert week2_anchor not in to_delete, f"Week anchor should be kept: {week2_anchor}"
@@ -281,7 +247,7 @@ def test_retention_all_recent_no_pruning():
     """Fewer archives than daily window means nothing is pruned."""
     dates = [f"2026-04-{d:02d}" for d in range(1, 6)]
     names = _make_archives(dates)
-    to_delete = _apply_retention(names, keep_daily=7, keep_weekly=4, keep_monthly=6)
+    to_delete = _retention_set(names, keep_daily=7, keep_weekly=4, keep_monthly=6)
     assert to_delete == set(), f"Nothing should be pruned: {to_delete}"
 
 
@@ -295,8 +261,31 @@ def test_retention_monthly_anchor_kept():
     march = [f"2026-03-{d:02d}" for d in range(1, 32) if d <= 31]
     april = [f"2026-04-{d:02d}" for d in range(1, 5)]
     names = _make_archives(march + april)
-    to_delete = _apply_retention(names, keep_daily=7, keep_weekly=4, keep_monthly=2)
+    to_delete = _retention_set(names, keep_daily=7, keep_weekly=4, keep_monthly=2)
     # At least one March archive must survive (the monthly anchor is newest-first,
     # so Mar 31 is kept as the March monthly representative).
     march_kept = [n for n in names if "2026-03-" in n and n not in to_delete]
     assert march_kept, f"At least one March archive should be kept; all deleted: {to_delete}"
+
+
+def test_prune_script_subprocess_emits_deletions():
+    """backup_prune.py via subprocess: 10 archives, daily=7 → correct prune set.
+
+    Policy: daily=7 keeps Apr 04-10. Apr 03 is the weekly anchor for week 1
+    (days 1-7). Apr 02 is the monthly anchor for 2026-04. Only Apr 01 is pruned.
+    """
+    dates = [f"2026-04-{d:02d}" for d in range(1, 11)]
+    names = _make_archives(dates)
+    cmd = [sys.executable, str(PRUNE_PY),
+           "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "6"]
+    proc = subprocess.run(
+        cmd,
+        input="\n".join(names) + "\n",
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"backup_prune.py failed:\n{proc.stderr}"
+    deleted = [line for line in proc.stdout.strip().splitlines() if line]
+    assert deleted == ["workflow-data-2026-04-01T02-00-00Z.tar.gz"], (
+        f"Expected only Apr 01 pruned; got: {deleted}"
+    )

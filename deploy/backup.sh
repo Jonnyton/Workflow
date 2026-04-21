@@ -117,37 +117,18 @@ rm -f "${TAR_PATH}"
 #   - first archive of each week for last BACKUP_RETAIN_WEEKLY weeks
 #   - first archive of each month for last BACKUP_RETAIN_MONTHLY months
 # Prune is best-effort; failure is non-fatal.
+#
+# Python replaces awk here: mawk (Debian default) lacks the 3-arg match()
+# and gensub() extensions used by GNU awk. Python 3 is guaranteed present
+# on the droplet (disk_watch.py depends on it).
 log "pruning retention (daily=${BACKUP_RETAIN_DAILY} weekly=${BACKUP_RETAIN_WEEKLY} monthly=${BACKUP_RETAIN_MONTHLY})..."
+PRUNE_SCRIPT="$(dirname "$(realpath "$0")")/../scripts/backup_prune.py"
 set +e
-rclone lsf --format tp "${BACKUP_DEST}/" 2>/dev/null \
-    | sort -r \
-    | awk -F';' \
-        -v keep_daily="${BACKUP_RETAIN_DAILY}" \
-        -v keep_weekly="${BACKUP_RETAIN_WEEKLY}" \
-        -v keep_monthly="${BACKUP_RETAIN_MONTHLY}" '
-        {
-          name = $2
-          if (name !~ /^workflow-data-[0-9].*\.tar\.gz$/) next
-          daily_count++
-          if (daily_count <= keep_daily) { keep[name]=1; next }
-          if (match(name, /([0-9]{4}-[0-9]{2}-[0-9]{2})/, d)) {
-            date_str = d[1]
-          } else next
-          week_bucket = substr(date_str, 1, 7) "-W" int((substr(date_str, 9, 2) + 6) / 7)
-          if (!(week_bucket in week_seen)) {
-            week_seen[week_bucket] = 1
-            weekly_count++
-            if (weekly_count <= keep_weekly) { keep[name] = 1; next }
-          }
-          month_bucket = substr(date_str, 1, 7)
-          if (!(month_bucket in month_seen)) {
-            month_seen[month_bucket] = 1
-            monthly_count++
-            if (monthly_count <= keep_monthly) { keep[name] = 1; next }
-          }
-          if (!(name in keep)) print name
-        }
-    ' \
+rclone lsf --format n "${BACKUP_DEST}/" 2>/dev/null \
+    | python3 "${PRUNE_SCRIPT}" \
+        --keep-daily "${BACKUP_RETAIN_DAILY}" \
+        --keep-weekly "${BACKUP_RETAIN_WEEKLY}" \
+        --keep-monthly "${BACKUP_RETAIN_MONTHLY}" \
     | while read -r victim; do
         log "  prune: ${victim}"
         rclone deletefile "${BACKUP_DEST}/${victim}" || \
