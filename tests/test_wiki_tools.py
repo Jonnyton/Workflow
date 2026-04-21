@@ -522,6 +522,82 @@ class TestWikiDispatch:
         assert (root / "log.md").is_file()
 
 
+class TestWikiFileBugDispatch:
+    """Dispatch-level tests for wiki(action='file_bug', ...).
+
+    Exercises the wiki() router path — not the helper directly — so that
+    the dispatch table wiring is independently verified.
+    """
+
+    def test_missing_title_returns_error(self, wiki_dir):
+        out = json.loads(
+            wiki("file_bug", component="extensions.core", severity="major", title="")
+        )
+        assert "error" in out
+
+    def test_missing_component_returns_error(self, wiki_dir):
+        out = json.loads(
+            wiki("file_bug", component="", severity="major", title="Some bug")
+        )
+        assert "error" in out
+
+    def test_invalid_severity_returns_error(self, wiki_dir):
+        out = json.loads(
+            wiki("file_bug", component="extensions.core", severity="critical-ish", title="t")
+        )
+        assert "error" in out
+
+    def test_valid_call_returns_bug_id_and_path(self, wiki_dir):
+        (wiki_dir / "pages" / "bugs").mkdir(parents=True, exist_ok=True)
+        (wiki_dir / "drafts" / "bugs").mkdir(parents=True, exist_ok=True)
+        out = json.loads(
+            wiki(
+                "file_bug",
+                component="extensions.patch_branch",
+                severity="major",
+                title="Widget explodes on save",
+                repro="Click save",
+                observed="500 error",
+                expected="200 ok",
+            )
+        )
+        assert out["status"] == "filed"
+        assert "bug_id" in out
+        assert out["bug_id"].startswith("BUG-")
+        assert "path" in out
+
+    def test_id_collision_retry_via_dispatch(self, wiki_dir):
+        """Collision retry is end-to-end via the wiki() router."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        (wiki_dir / "pages" / "bugs").mkdir(parents=True, exist_ok=True)
+        (wiki_dir / "drafts" / "bugs").mkdir(parents=True, exist_ok=True)
+
+        real_open = open
+        first_call = {"fired": False}
+
+        def fake_open(path, mode="r", *args, **kwargs):
+            p = Path(path) if not isinstance(path, Path) else path
+            if mode == "x" and "BUG-001" in p.name and not first_call["fired"]:
+                first_call["fired"] = True
+                real_open(path, "w", *args, **kwargs).close()
+                raise FileExistsError(path)
+            return real_open(path, mode, *args, **kwargs)
+
+        with patch("workflow.universe_server.open", side_effect=fake_open, create=True):
+            out = json.loads(
+                wiki(
+                    "file_bug",
+                    component="x",
+                    severity="minor",
+                    title="collision test",
+                )
+            )
+        assert out["status"] == "filed"
+        assert out["bug_id"] == "BUG-002"
+
+
 class TestWikiMCPRegistration:
     def test_wiki_tool_registered(self):
         tools = asyncio.run(mcp.list_tools(run_middleware=False))

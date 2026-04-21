@@ -63,7 +63,7 @@ wrangler deploy
 
 The deployed Worker must contain both `env.CF_ACCESS_CLIENT_ID` and
 `env.CF_ACCESS_CLIENT_SECRET` reads in `proxyToTunnel()`. The pre-commit invariant
-in `scripts/pre_commit_worker_access_headers.py` guards against these being removed in
+in `scripts/pre_commit_invariant_worker.py` guards against these being removed in
 future commits; the CI workflow (`deploy-worker.yml`) ensures a push to main always deploys
 before the gate can be activated.
 
