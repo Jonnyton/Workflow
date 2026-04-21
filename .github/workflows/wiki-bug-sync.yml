@@ -1,0 +1,56 @@
+name: Wiki bug sync
+
+# Polls the wiki every 15 min for new BUG-NNN entries and opens a GH Issue
+# for each. Cursor lives in .agents/.wiki_bug_sync_cursor (committed to repo).
+# Uses GITHUB_TOKEN — no additional secrets needed.
+#
+# Idempotency: the cursor prevents duplicate issues across runs. Each run
+# reads HEAD's cursor, syncs, and commits the updated cursor back.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # to commit updated cursor
+  issues: write     # to create GH Issues
+
+concurrency:
+  group: wiki-bug-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run wiki bug sync
+        id: sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/wiki_bug_sync.py \
+            --url https://tinyassets.io/mcp \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Commit updated cursor
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet .agents/.wiki_bug_sync_cursor; then
+            echo "Cursor unchanged — nothing to commit."
+          else
+            git add .agents/.wiki_bug_sync_cursor
+            git commit -m "chore: wiki-bug-sync cursor update [skip ci]"
+            git push
+          fi
