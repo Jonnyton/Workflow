@@ -163,6 +163,70 @@ _ACTION_PATTERN = re.compile(
     r"paused|stopped|continued|discovered|found|noticed|saw|heard)",
 )
 
+# Sentence-initial stopwords that Title-Case-at-sentence-start. The
+# regex patterns above match these as proper-noun candidates because
+# any capitalized word-class looks identical at the start of a sentence
+# ("If Kael opened the pod." bundled "If Kael" as one name). Filter
+# them out post-match instead of complicating the regex. (Task #20 /
+# Mission 26 #B3 diagnosis.)
+#
+# Kept in near-lockstep with ``commit.py``'s ``_NAME_STOPWORDS`` so
+# both NER surfaces agree on what's a name. Divergence risk is low —
+# they target the same regex pattern — but if one grows, grow the
+# other in the same commit.
+_NER_SENTENCE_STOPWORDS: frozenset[str] = frozenset({
+    # Articles / determiners.
+    "The", "A", "An",
+    # Personal / possessive pronouns.
+    "She", "He", "Her", "His", "They", "Their", "It", "Its",
+    "We", "Our", "Us", "Me", "My", "You", "Your", "I",
+    # Demonstratives / wh-words.
+    "This", "That", "These", "Those",
+    "When", "Then", "What", "Where", "How", "Who", "Why", "Which",
+    "Now", "Once", "Here", "There",
+    # Conjunctions + sentence-starters observed in Mission 26.
+    "But", "And", "Not", "Or", "So", "Yet", "If", "Though", "Because",
+    "While", "Although", "Since", "Unless", "After", "Before", "As",
+    # Prepositions + motion/target markers.
+    "From", "Into", "With", "For", "By", "At", "On", "In", "Of",
+    "Without", "Within", "Through", "Across", "Against", "Around",
+    "Upon", "Under", "Over", "Between", "Beyond", "To",
+    # Meta-narrative tokens from the fiction corpus.
+    "Scene", "Chapter", "Book", "Prologue", "Epilogue",
+    # Common capitalized nouns previously captured as "characters"
+    # (Mission 26 evidence).
+    "Manual", "Oxygen", "Stasis",
+})
+
+
+def _filter_sentence_starts(matches: list[str]) -> list[str]:
+    """Drop NER matches that are (or begin with) a sentence stopword.
+
+    Accepts a list of raw regex captures and returns the subset that
+    is unlikely to be a sentence-initial stopword masquerading as a
+    proper noun. Two rejection rules:
+
+    1. The whole match equals a stopword (``"The"``, ``"If"``).
+    2. The first whitespace-delimited token is a stopword — catches
+       greedy multi-word captures like ``"If Kael"`` where the regex
+       bundled a connective with a real name.
+
+    Returns a new list; does not mutate the input. Never drops a
+    capitalized non-stopword even when followed by a stopword (so
+    ``"Kael Oxygen"`` survives, since only the leading token is checked).
+    """
+    out: list[str] = []
+    for m in matches:
+        if not m:
+            continue
+        if m in _NER_SENTENCE_STOPWORDS:
+            continue
+        first = m.split(None, 1)[0] if m else ""
+        if first in _NER_SENTENCE_STOPWORDS:
+            continue
+        out.append(m)
+    return out
+
 
 def extract_facts_regex(
     prose: str,
@@ -193,10 +257,14 @@ def extract_facts_regex(
     facts: list[FactWithContext] = []
     fact_counter = 0
 
-    # Extract character actions
+    # Extract character actions. Drop matches whose "subject" token is
+    # a sentence-initial stopword ("If", "The", "He") that the regex
+    # can't distinguish from a real proper noun. (Task #20.)
     for match in _ACTION_PATTERN.finditer(prose):
         char_name = match.group(1)
         action = match.group(2)
+        if not _filter_sentence_starts([char_name]):
+            continue
         fact_counter += 1
         facts.append(FactWithContext(
             fact_id=f"{scene_id}_fact_{fact_counter}",
@@ -211,10 +279,13 @@ def extract_facts_regex(
             valid_from_chapter=chapter_number,
         ))
 
-    # Extract locations
+    # Extract locations. Same stopword-drop as actions; the greedy
+    # multi-word capture bundles "If Kael" style strings otherwise.
     seen_locations: set[str] = set()
     for match in _LOCATION_PATTERN.finditer(prose):
         location = match.group(1)
+        if not _filter_sentence_starts([location]):
+            continue
         if location not in seen_locations and len(location) > 2:
             seen_locations.add(location)
             fact_counter += 1
