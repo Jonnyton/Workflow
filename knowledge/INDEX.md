@@ -21,4 +21,4 @@ knowledge store.
 
 ## Current Pages
 
-- Add the first real page here.
+- [scientific-computing.md](pages/scientific-computing.md) — `maxnet` (R, Phillips 2017) vs Java MaxEnt GUI (Phillips 2006) disambiguation; output formats, seed handling, feature-class defaults.
