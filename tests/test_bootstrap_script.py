@@ -133,3 +133,32 @@ def test_swappiness_idempotent_guard():
     assert re.search(r'if \[\[.*SYSCTL_SWAP', text, re.MULTILINE), (
         "vm.swappiness write must be inside an idempotency guard"
     )
+
+
+# ── Task #61 — mkdir -p /opt/workflow/deploy pre-git-clone ───────────
+
+
+def test_deploy_dir_mkdir_present():
+    text = _text()
+    assert "mkdir -p" in text and "/deploy" in text, (
+        "hetzner-bootstrap.sh must mkdir -p the deploy dir before git-clone"
+    )
+
+
+def test_deploy_dir_mkdir_before_git_clone():
+    text = _text()
+    mkdir_pos = text.find("mkdir -p")
+    # Find the position of the actual git clone command.
+    clone_pos = text.find("git clone")
+    assert mkdir_pos != -1 and clone_pos != -1, "both mkdir and git clone must be present"
+    assert mkdir_pos < clone_pos, (
+        "mkdir -p deploy dir must appear before the git clone step"
+    )
+
+
+def test_deploy_dir_mkdir_uses_workflow_home_var():
+    text = _text()
+    # Should use the ${WORKFLOW_HOME} variable, not a hardcoded path.
+    assert re.search(r'mkdir -p.*WORKFLOW_HOME.*deploy', text), (
+        "deploy dir mkdir should use ${WORKFLOW_HOME}/deploy, not a hardcoded path"
+    )

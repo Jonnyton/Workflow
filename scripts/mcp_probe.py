@@ -28,6 +28,14 @@ from typing import Any
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
 
+# Set to True by --verbose at parse time; read by helpers.
+_VERBOSE = False
+
+
+def _vlog(msg: str) -> None:
+    if _VERBOSE:
+        print(f"[probe] {msg}", file=sys.stderr)
+
 
 def _mcp_call(url: str, sid: str | None, payload: dict[str, Any]) -> tuple[dict | None, str | None]:
     headers = {
@@ -55,6 +63,7 @@ def _mcp_call(url: str, sid: str | None, payload: dict[str, Any]) -> tuple[dict 
 
 def _initialize(url: str) -> tuple[str | None, int]:
     """Run MCP initialize + notifications/initialized. Returns (sid, exit_code)."""
+    _vlog(f"initialize → {url}")
     init_resp, sid = _mcp_call(
         url,
         None,
@@ -73,11 +82,14 @@ def _initialize(url: str) -> tuple[str | None, int]:
         print("initialize failed", file=sys.stderr)
         print(init_resp, file=sys.stderr)
         return None, 1
+    _vlog(f"session-id: {sid}")
     _mcp_call(url, sid, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    _vlog("notifications/initialized sent")
     return sid, 0
 
 
 def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bool) -> int:
+    _vlog(f"tools/call {tool} args={tool_args}")
     resp, _ = _mcp_call(
         url,
         sid,
@@ -152,6 +164,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--url", default=DEFAULT_URL, help="MCP endpoint URL")
     p.add_argument("--raw", action="store_true", help="print full JSON response")
+    p.add_argument("--verbose", action="store_true",
+                   help="log initialize/tool-call progress to stderr")
 
     sub = p.add_subparsers(dest="subcommand")
 
@@ -173,8 +187,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    global _VERBOSE
     p = _build_parser()
     args = p.parse_args()
+    _VERBOSE = bool(args.verbose)
     url = args.url
     raw = args.raw
 

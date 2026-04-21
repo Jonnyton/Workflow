@@ -139,6 +139,11 @@ if ! id -nG "${WORKFLOW_USER}" | grep -qw docker; then
     usermod -aG docker "${WORKFLOW_USER}"
 fi
 
+# ----- 4a. ensure deploy dir exists before any SCP / git-clone step --------
+# DR drill SCPs backup-restore.sh into /opt/workflow/deploy/ before git-clone
+# runs; the target must exist independently of the clone completing first.
+mkdir -p "${WORKFLOW_HOME}/deploy"
+
 # ----- 4. repo checkout at /opt/workflow ----------------------------------
 
 if [[ ! -d "${WORKFLOW_HOME}/.git" ]]; then

@@ -440,3 +440,68 @@ class TestSubcommands:
         assert rc == 0
         parsed = json.loads(out)
         assert "result" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Task #61 — --verbose flag
+# ---------------------------------------------------------------------------
+
+class TestVerboseFlag:
+    """--verbose logs initialize + tool-call progress to stderr without
+    breaking the normal stdout output or exit codes."""
+
+    def _run(self, argv, side_effects):
+        mcp_probe._VERBOSE = False
+        with patch("mcp_probe.urllib.request.urlopen", side_effect=side_effects), \
+             patch("sys.argv", ["mcp_probe"] + argv):
+            return mcp_probe.main()
+
+    def test_verbose_flag_accepted_without_error(self, capsys):
+        effects = _seq(
+            (_INIT_RESP, "s1"),
+            (_NOTIF_RESP, None),
+            (_STATUS_RESP, None),
+        )
+        rc = self._run(["--url", "http://fake", "--verbose", "status"], effects)
+        assert rc == 0
+
+    def test_verbose_logs_to_stderr(self, capsys):
+        effects = _seq(
+            (_INIT_RESP, "s1"),
+            (_NOTIF_RESP, None),
+            (_STATUS_RESP, None),
+        )
+        self._run(["--url", "http://fake/mcp", "--verbose", "status"], effects)
+        err = capsys.readouterr().err
+        assert "initialize" in err.lower() or "probe" in err.lower()
+
+    def test_verbose_does_not_pollute_stdout(self, capsys):
+        effects = _seq(
+            (_INIT_RESP, "s1"),
+            (_NOTIF_RESP, None),
+            (_STATUS_RESP, None),
+        )
+        self._run(["--url", "http://fake", "--verbose", "status"], effects)
+        out = capsys.readouterr().out
+        # stderr content must NOT appear in stdout.
+        assert "[probe]" not in out
+
+    def test_no_verbose_produces_no_stderr(self, capsys):
+        effects = _seq(
+            (_INIT_RESP, "s1"),
+            (_NOTIF_RESP, None),
+            (_STATUS_RESP, None),
+        )
+        self._run(["--url", "http://fake", "status"], effects)
+        err = capsys.readouterr().err
+        assert err == ""
+
+    def test_verbose_flag_in_parser(self):
+        p = mcp_probe._build_parser()
+        args = p.parse_args(["--verbose", "status"])
+        assert args.verbose is True
+
+    def test_no_verbose_default_is_false(self):
+        p = mcp_probe._build_parser()
+        args = p.parse_args(["status"])
+        assert args.verbose is False

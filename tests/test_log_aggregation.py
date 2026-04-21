@@ -11,6 +11,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = REPO_ROOT / "deploy" / "compose.yml"
 VECTOR_YAML = REPO_ROOT / "deploy" / "vector.yaml"
+VECTOR_BETTERSTACK_YAML = REPO_ROOT / "deploy" / "vector-betterstack.yaml"
+VECTOR_ENTRYPOINT = REPO_ROOT / "deploy" / "vector-entrypoint.sh"
 SHIP_LOGS = REPO_ROOT / "deploy" / "ship-logs.sh"
 
 
@@ -113,23 +115,70 @@ def test_vector_has_stdout_sink():
     assert console_sinks, "vector.yaml must have a console/stdout sink (always-on fallback)"
 
 
-def test_vector_has_betterstack_http_sink():
+def test_vector_base_has_no_betterstack_sink():
+    """Base vector.yaml must NOT contain the betterstack sink — it lives in the
+    separate vector-betterstack.yaml fragment to silence 401 errors when the
+    token is unset."""
     data = _load_vector()
     sinks = data.get("sinks", {})
     http_sinks = [v for v in sinks.values() if v.get("type") == "http"]
-    assert http_sinks, "vector.yaml must have an HTTP sink for Better Stack"
+    assert not http_sinks, (
+        "base vector.yaml must not contain an http sink — betterstack belongs "
+        "in vector-betterstack.yaml (loaded conditionally by vector-entrypoint.sh)"
+    )
 
 
-def test_vector_betterstack_uses_token_env():
-    data = _load_vector()
+def test_vector_betterstack_fragment_exists():
+    assert VECTOR_BETTERSTACK_YAML.exists(), (
+        "deploy/vector-betterstack.yaml must exist (conditional betterstack sink)"
+    )
+
+
+def test_vector_betterstack_fragment_has_http_sink():
+    yaml = pytest.importorskip("yaml")
+    data = yaml.safe_load(VECTOR_BETTERSTACK_YAML.read_text(encoding="utf-8"))
+    sinks = data.get("sinks", {})
+    http_sinks = [v for v in sinks.values() if v.get("type") == "http"]
+    assert http_sinks, "vector-betterstack.yaml must have an HTTP sink"
+
+
+def test_vector_betterstack_fragment_uses_token_env():
+    yaml = pytest.importorskip("yaml")
+    data = yaml.safe_load(VECTOR_BETTERSTACK_YAML.read_text(encoding="utf-8"))
     sinks = data.get("sinks", {})
     http_sinks = [v for v in sinks.values() if v.get("type") == "http"]
     assert http_sinks
-    sink = http_sinks[0]
-    auth_header = sink.get("request", {}).get("headers", {}).get("Authorization", "")
-    assert "BETTERSTACK_SOURCE_TOKEN" in auth_header, (
-        "Better Stack sink must interpolate BETTERSTACK_SOURCE_TOKEN"
-    )
+    auth_header = http_sinks[0].get("request", {}).get("headers", {}).get("Authorization", "")
+    assert "BETTERSTACK_SOURCE_TOKEN" in auth_header
+
+
+def test_vector_entrypoint_exists():
+    assert VECTOR_ENTRYPOINT.exists(), "deploy/vector-entrypoint.sh must exist"
+
+
+def test_vector_entrypoint_conditional_betterstack():
+    text = VECTOR_ENTRYPOINT.read_text(encoding="utf-8")
+    assert "BETTERSTACK_SOURCE_TOKEN" in text
+    assert "vector-betterstack.yaml" in text
+
+
+def test_vector_entrypoint_exec_vector():
+    text = VECTOR_ENTRYPOINT.read_text(encoding="utf-8")
+    assert "exec vector" in text
+
+
+def test_compose_mounts_entrypoint():
+    data = _load_compose()
+    volumes = data["services"]["logs"].get("volumes", [])
+    entrypoint_mounts = [v for v in volumes if "vector-entrypoint.sh" in str(v)]
+    assert entrypoint_mounts, "compose must mount vector-entrypoint.sh"
+
+
+def test_compose_mounts_betterstack_fragment():
+    data = _load_compose()
+    volumes = data["services"]["logs"].get("volumes", [])
+    bs_mounts = [v for v in volumes if "vector-betterstack.yaml" in str(v)]
+    assert bs_mounts, "compose must mount vector-betterstack.yaml"
 
 
 def test_vector_yaml_parses_cleanly():
