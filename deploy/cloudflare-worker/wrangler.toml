@@ -7,7 +7,7 @@
 #
 # Reference: https://developers.cloudflare.com/workers/wrangler/configuration/
 
-name = "workflow-mcp-router"
+name = "tinyassets-mcp-proxy"
 main = "worker.js"
 
 # Pin the compat date so upstream runtime changes don't silently alter
@@ -33,8 +33,10 @@ enabled = true
 head_sampling_rate = 1.0
 
 # No bindings (KV, D1, Queues) — this Worker is a pure proxy.
-# No secrets — no API tokens, no upstream auth. The tunnel origin is
-# public via the subdomain.
+# Secrets (set via dashboard or wrangler secret put, NOT committed here):
+#   CF_ACCESS_CLIENT_ID     — CF Access service-token client ID
+#   CF_ACCESS_CLIENT_SECRET — CF Access service-token client secret
+# These let the Worker reach the Access-gated mcp.tinyassets.io tunnel origin.
 
 # Local dev:
 #   wrangler dev --local

@@ -90,7 +90,7 @@ If you'd rather click than CLI:
 
 1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → `tinyassets.io` zone.
 2. **Workers & Pages** → **Create Application** → **Create Worker**.
-3. Name: `workflow-mcp-router`. Click **Deploy** (default "Hello World"
+3. Name: `tinyassets-mcp-proxy`. Click **Deploy** (default "Hello World"
    placeholder is fine at this step).
 4. Open the new Worker → **Edit code** → replace the entire editor
    contents with the body of `worker.js` from this directory → **Save and deploy**.
@@ -202,8 +202,9 @@ Worker lands; for now the test runs locally.
   Fly) is a Row D concern, not Row Worker. When that lands, this
   Worker's `TUNNEL_ORIGIN` grows into an ordered list + retry logic.
 
-- **Deploy is host-action.** Dev ships the code; host (or whoever has
-  Wrangler / Cloudflare dashboard access) publishes. See paths A + B
-  above. If you want me to drive the dashboard deploy via the shared
-  CDP browser + `godaddy-ops` skill, say so — read-only discovery was
-  authorized earlier; a write-path deploy needs explicit greenlight.
+- **CI deploy is automated.** Any push to `main` that touches
+  `deploy/cloudflare-worker/**` triggers `.github/workflows/deploy-worker.yml`,
+  which runs Wrangler + a post-deploy canary. PRs get a dry-run only.
+  Required repo secret: `CLOUDFLARE_API_TOKEN` with scopes
+  `Account:Workers Scripts:Edit`, `Zone:Workers Routes:Edit`,
+  `Zone:Zone:Read`. Also set `CLOUDFLARE_ACCOUNT_ID` as a repo secret.

@@ -1,0 +1,152 @@
+name: Deploy Cloudflare Worker
+
+# Fires whenever deploy/cloudflare-worker/** changes on main (live deploy)
+# or on a pull request touching those files (dry-run only).
+#
+# Why a separate workflow from deploy-prod.yml:
+#   Worker deploy is instant + idempotent via Wrangler. Hetzner daemon deploy
+#   needs SSH keys + a running droplet. Keeping them separate avoids coupling
+#   a fast edge-publish to a slow infra-deploy gate.
+#
+# Token scope required (CLOUDFLARE_API_TOKEN repo secret):
+#   Account → Workers Scripts: Edit
+#   Zone → Workers Routes: Edit    (required for route binding in wrangler.toml)
+#   Zone → Zone: Read              (required for zone lookup by name)
+#
+# Mint a narrow deploy-only API token at:
+#   dash.cloudflare.com/profile/api-tokens → Create Token → Custom Token
+# Add it as a repo secret: Settings → Secrets and variables → Actions →
+#   New repository secret → name: CLOUDFLARE_API_TOKEN
+#
+# CLOUDFLARE_ACCOUNT_ID is also required (no secret for this — it's not
+# sensitive; stored as a repo variable or in wrangler.toml if preferred).
+# Add it as a repo secret too for consistency.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/cloudflare-worker/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'deploy/cloudflare-worker/**'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run only (no live deploy)'
+        required: false
+        default: 'false'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@latest
+
+      - name: Verify secrets present
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set."
+            echo "::error::Required scope: Account:Workers Scripts:Edit + Zone:Workers Routes:Edit + Zone:Zone:Read"
+            echo "::error::Mint at: dash.cloudflare.com/profile/api-tokens → Custom Token"
+            exit 1
+          fi
+          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID secret is not set."
+            echo "::error::Find it at: dash.cloudflare.com → right-side Account ID widget"
+            exit 1
+          fi
+
+      - name: Run Worker unit tests
+        working-directory: deploy/cloudflare-worker
+        run: node --test worker.test.js
+
+      - name: Wrangler dry-run (PRs and explicit dry-run)
+        if: >
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true')
+        working-directory: deploy/cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "=== dry-run — validating wrangler config + worker bundle ==="
+          wrangler deploy --dry-run --outdir /tmp/wrangler-out
+          echo "=== dry-run passed ==="
+          ls -lh /tmp/wrangler-out/
+
+      - name: Wrangler live deploy (push to main)
+        if: >
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')
+        working-directory: deploy/cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "=== deploying Worker tinyassets-mcp-proxy ==="
+          wrangler deploy
+          echo "=== deploy complete ==="
+
+      - name: Post-deploy canary
+        if: >
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Probe canonical URL after deploy
+        if: >
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')
+        run: |
+          # Allow up to 60s for edge propagation before probing.
+          for i in $(seq 1 12); do
+            if python scripts/mcp_public_canary.py \
+                 --url https://tinyassets.io/mcp --timeout 10 >/dev/null 2>&1; then
+              echo "canary green after ${i} poll(s)"
+              break
+            fi
+            sleep 5
+            if [ "$i" = "12" ]; then
+              echo "::error::canary still red 60s after Worker deploy"
+              exit 1
+            fi
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Worker deploy result"
+            echo ""
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "- **mode:** dry-run (PR)"
+            else
+              echo "- **mode:** live deploy"
+            fi
+            echo "- **worker:** tinyassets-mcp-proxy"
+            echo "- **ref:** \`${{ github.ref }}\`"
+            echo "- **sha:** \`${{ github.sha }}\`"
+            echo "- **overall:** \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
