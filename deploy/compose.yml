@@ -90,17 +90,22 @@ services:
   # via the Docker socket. Ships to Better Stack when
   # BETTERSTACK_SOURCE_TOKEN is set in /etc/workflow/env; otherwise
   # logs are captured by compose stdout (journald) only.
+  #
+  # vector-entrypoint.sh builds /run/vector-config/ at startup:
+  #   - vector.yaml always loaded (sources + transforms + stdout)
+  #   - vector-betterstack.yaml loaded only when token is non-empty
+  # This prevents 401 error noise when the token is unset.
   logs:
     image: timberio/vector:0.40.0-alpine
     container_name: workflow-logs
     restart: unless-stopped
     env_file:
       - /etc/workflow/env
-    # Vector reads its config from /etc/vector/vector.yaml. Mount
-    # deploy/vector.yaml as the source; the config env-interpolates
-    # ${BETTERSTACK_SOURCE_TOKEN} at load time.
+    entrypoint: ["/bin/sh", "/etc/vector/vector-entrypoint.sh"]
     volumes:
       - /opt/workflow/deploy/vector.yaml:/etc/vector/vector.yaml:ro
+      - /opt/workflow/deploy/vector-betterstack.yaml:/etc/vector/vector-betterstack.yaml:ro
+      - /opt/workflow/deploy/vector-entrypoint.sh:/etc/vector/vector-entrypoint.sh:ro
       # Docker socket access so vector's docker_logs source can tail
       # container stdout. Read-only — we never modify containers.
       - /var/run/docker.sock:/var/run/docker.sock:ro

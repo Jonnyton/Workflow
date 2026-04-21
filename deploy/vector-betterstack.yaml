@@ -1,0 +1,26 @@
+# Better Stack HTTP sink — loaded ONLY when BETTERSTACK_SOURCE_TOKEN is set.
+#
+# deploy/vector-entrypoint.sh copies this file into the config dir when
+# the token env var is non-empty. When unset, this file is never loaded
+# and no 401 errors appear in the vector container logs.
+#
+# Token set: logs flow to Better Stack. Token cleared: restart compose,
+# logs stay in stdout only.
+
+sinks:
+  betterstack:
+    type: http
+    inputs: [enriched]
+    uri: https://in.logs.betterstack.com
+    encoding:
+      codec: json
+    compression: gzip
+    request:
+      headers:
+        Authorization: "Bearer ${BETTERSTACK_SOURCE_TOKEN}"
+    healthcheck:
+      enabled: false
+    buffer:
+      type: memory
+      max_events: 1000
+      when_full: drop_newest

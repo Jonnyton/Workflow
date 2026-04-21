@@ -1,20 +1,15 @@
-# Vector config — ship daemon + cloudflared container stdout to
-# Better Stack (or /dev/null when BETTERSTACK_SOURCE_TOKEN is unset).
+# Vector config — base: sources, transforms, stdout sink.
 #
 # Self-host migration Row K per
 # docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
 #
-# Mounted read-only into the vector container at
-# /etc/vector/vector.yaml. The container tails Docker's container-log
-# socket + forwards to the configured sink.
+# Loaded via the vector entrypoint wrapper (deploy/vector-entrypoint.sh)
+# which also conditionally loads deploy/vector-betterstack.yaml when
+# BETTERSTACK_SOURCE_TOKEN is non-empty. Without the token, only this
+# file is loaded — no betterstack sink, no 401 error noise.
 #
-# Default sink (BETTERSTACK_SOURCE_TOKEN unset): log events land in
-# the vector container's stdout, which compose captures + journald
-# stores. Equivalent to not running a sidecar at all, but keeps the
-# wiring in place for easy flip-on.
-#
-# Configured sink (token set): HTTP push to Better Stack's ingest
-# endpoint. Free tier = 3 GB/mo retention; plenty for a single daemon.
+# To enable Better Stack: set BETTERSTACK_SOURCE_TOKEN in
+# /etc/workflow/env and restart compose. No config change needed.
 
 # ---------------------------------------------------------------------
 # Sources: Docker container logs
@@ -73,26 +68,3 @@ sinks:
     inputs: [enriched]
     encoding:
       codec: json
-
-  # Optional: Better Stack HTTP ingest. Vector auto-retries + buffers
-  # on network failure. Token comes from env — empty = no-op config
-  # that still loads but issues 401s (so missing-token = no wiring).
-  # When the token is a real value, logs flow.
-  betterstack:
-    type: http
-    inputs: [enriched]
-    uri: https://in.logs.betterstack.com
-    encoding:
-      codec: json
-    compression: gzip
-    request:
-      headers:
-        Authorization: "Bearer ${BETTERSTACK_SOURCE_TOKEN:-dummy-missing}"
-    # Short acks so lost events show up fast in ops monitoring.
-    # If Better Stack is slow, stdout still has everything.
-    healthcheck:
-      enabled: false  # better-stack may not expose a health endpoint we can use
-    buffer:
-      type: memory
-      max_events: 1000
-      when_full: drop_newest

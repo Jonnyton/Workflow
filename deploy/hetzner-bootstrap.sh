@@ -89,6 +89,34 @@ else
     log "Docker already installed: $(docker --version)"
 fi
 
+# ----- 2b. Docker log-rotation --------------------------------------------
+
+# Without log-rotation docker containers write unbounded JSON logs to
+# /var/lib/docker/containers/*/. On a 960 MB / 25 GB droplet this fills
+# disk within days of normal daemon activity. Matches live prod config
+# applied 2026-04-21.
+DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+DOCKER_LOG_CONFIG='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}'
+if [[ ! -f "${DOCKER_DAEMON_JSON}" ]] || \
+   ! python3 -c "
+import json, sys
+d = json.load(open('${DOCKER_DAEMON_JSON}'))
+lo = d.get('log-opts', {})
+assert d.get('log-driver') == 'json-file'
+assert lo.get('max-size') == '10m'
+assert lo.get('max-file') == '3'
+" 2>/dev/null; then
+    log "writing ${DOCKER_DAEMON_JSON} (log-rotation: 10m × 3)..."
+    echo "${DOCKER_LOG_CONFIG}" > "${DOCKER_DAEMON_JSON}"
+    # Reload Docker to pick up the new log config. Skip if daemon not yet
+    # running (first-boot before `systemctl enable --now docker` above).
+    if systemctl is-active --quiet docker; then
+        systemctl reload-or-restart docker
+    fi
+else
+    log "${DOCKER_DAEMON_JSON} already configured correctly"
+fi
+
 # ----- 3. workflow user ---------------------------------------------------
 
 if ! id -u "${WORKFLOW_USER}" >/dev/null 2>&1; then
@@ -229,7 +257,73 @@ else
     log "workflow-backup service + timer already current"
 fi
 
-# ----- 7. final checks + instructions -------------------------------------
+# Weekly docker image prune — prevents disk fill from accumulated image
+# tags (each deploy pulls ~1.78 GB; without pruning 20 deploys fills
+# a 25 GB Droplet).
+PRUNE_UNIT="/etc/systemd/system/workflow-prune.service"
+PRUNE_TIMER="/etc/systemd/system/workflow-prune.timer"
+prune_changed=0
+if [[ ! -f "${PRUNE_UNIT}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-prune.service" "${PRUNE_UNIT}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-prune.service" "${PRUNE_UNIT}"
+    prune_changed=1
+fi
+if [[ ! -f "${PRUNE_TIMER}" ]] \
+   || ! cmp -s "${WORKFLOW_HOME}/deploy/workflow-prune.timer" "${PRUNE_TIMER}"; then
+    cp "${WORKFLOW_HOME}/deploy/workflow-prune.timer" "${PRUNE_TIMER}"
+    prune_changed=1
+fi
+if [[ "${prune_changed}" -eq 1 ]]; then
+    log "installed workflow-prune service + timer"
+    systemctl daemon-reload
+    systemctl enable --now workflow-prune.timer
+else
+    log "workflow-prune service + timer already current"
+fi
+
+# ----- 7. swap file -------------------------------------------------------
+
+# 960 MB RAM droplets OOM-kill under peak load without swap. 2 GB swapfile
+# at /swapfile with vm.swappiness=10 matches live prod config applied
+# 2026-04-21. Idempotent: skips each step whose end-state is already reached.
+SWAPFILE="/swapfile"
+SWAP_SIZE_MB=2048
+
+if [[ ! -f "${SWAPFILE}" ]]; then
+    log "creating ${SWAPFILE} (${SWAP_SIZE_MB} MB)..."
+    fallocate -l "${SWAP_SIZE_MB}M" "${SWAPFILE}" || \
+        dd if=/dev/zero of="${SWAPFILE}" bs=1M count="${SWAP_SIZE_MB}" status=none
+    chmod 600 "${SWAPFILE}"
+    mkswap "${SWAPFILE}"
+    swapon "${SWAPFILE}"
+    log "  swap active: $(free -h | grep Swap)"
+else
+    log "swapfile already exists ($(du -sh "${SWAPFILE}" | cut -f1))"
+    # Activate if not already on (e.g. if box rebooted without fstab entry).
+    if ! swapon --show | grep -q "${SWAPFILE}"; then
+        swapon "${SWAPFILE}"
+        log "  swapon ${SWAPFILE} (was off)"
+    fi
+fi
+
+# Persist in /etc/fstab — idempotent guard prevents duplicate lines.
+FSTAB_ENTRY="${SWAPFILE} none swap sw 0 0"
+if ! grep -qF "${FSTAB_ENTRY}" /etc/fstab; then
+    log "adding swap entry to /etc/fstab..."
+    echo "${FSTAB_ENTRY}" >> /etc/fstab
+else
+    log "/etc/fstab swap entry already present"
+fi
+
+# Reduce swappiness so RAM is preferred. Write to sysctl.d for persistence.
+SYSCTL_SWAP="/etc/sysctl.d/99-workflow-swap.conf"
+if [[ ! -f "${SYSCTL_SWAP}" ]]; then
+    echo "vm.swappiness=10" > "${SYSCTL_SWAP}"
+    sysctl -p "${SYSCTL_SWAP}" >/dev/null
+    log "vm.swappiness=10 set + persisted"
+else
+    log "vm.swappiness already configured"
+fi
 
 log "bootstrap complete."
 cat <<EOF
