@@ -269,13 +269,14 @@ class TestWikiWrite:
         assert result.get("status") in {"drafted", "updated"}, result
 
     def test_wiki_categories_enum_matches_expanded_taxonomy(self):
-        """Lock-in: the module constant carries all nine categories in
+        """Lock-in: the module constant carries all ten categories in
         the canonical order."""
         from workflow.universe_server import _WIKI_CATEGORIES
 
         assert _WIKI_CATEGORIES == (
             "projects", "concepts", "people", "research",
             "recipes", "workflows", "notes", "references", "plans",
+            "bugs",
         )
 
 
@@ -489,10 +490,36 @@ class TestWikiDispatch:
         assert "error" in result
         assert "available_actions" in result
 
-    def test_wiki_missing_root(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("WIKI_PATH", str(tmp_path / "nonexistent"))
+    def test_wiki_missing_root_auto_scaffolds(self, monkeypatch, tmp_path):
+        """Post-Task-#6: a nonexistent wiki root auto-scaffolds on first
+        call and returns the empty-wiki list rather than an error.
+
+        Pre-#6 contract was ``{"error": "Wiki not found at ..."}``. The
+        droplet-seeding task flipped this so fresh deploys (empty
+        ``/data/wiki``) don't face a broken read path — the scaffold
+        writes pages/, drafts/, raw/, log/, plus anchor ``index.md`` /
+        ``WIKI.md`` / ``log.md`` files.
+        """
+        root = tmp_path / "nonexistent"
+        assert not root.exists()
+        monkeypatch.setenv("WIKI_PATH", str(root))
         result = json.loads(wiki("list"))
-        assert "error" in result
+        assert "error" not in result, (
+            f"wiki list errored instead of auto-scaffolding: {result!r}"
+        )
+        # The new contract: list returns page-collection keys; for a
+        # freshly-scaffolded empty wiki both are empty lists.
+        assert result.get("promoted") == []
+        assert result.get("drafts") == []
+        assert result.get("promoted_count") == 0
+        assert result.get("drafts_count") == 0
+        # Scaffold landed on disk.
+        assert root.is_dir()
+        assert (root / "pages").is_dir()
+        assert (root / "drafts").is_dir()
+        assert (root / "index.md").is_file()
+        assert (root / "WIKI.md").is_file()
+        assert (root / "log.md").is_file()
 
 
 class TestWikiMCPRegistration:

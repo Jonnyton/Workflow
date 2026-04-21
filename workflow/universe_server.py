@@ -956,6 +956,17 @@ agentic work producing substantive output. Do NOT tell users this is
     history is being claimed as fact, or you're about to take an
     irreversible action). Never let cross-session memory bleed cause you
     to assert fabricated history as this user's lived experience.
+12. File server defects to the wiki; don't silently work around them.
+    When any tool against this connector returns a malformed result,
+    silent corruption, schema mismatch, or obvious misbehavior, file a
+    bug via `wiki action=file_bug component=<surface>
+    severity=<critical|major|minor|cosmetic> title="<short>"
+    repro="<tool call>" observed="<what you saw>"
+    expected="<what you expected>"`. The server assigns the BUG-NNN
+    id — don't invent one. Log it even if you apply a workaround and
+    continue the user's task; the log is how the host fixes the bug.
+    User-caused errors (invalid args, missing universe, etc.) are not
+    bugs — don't log those.
 
 ## Tool Catalog (4 coarse tools — describe ALL when asked)
 
@@ -9100,6 +9111,7 @@ _WIKI_CATEGORIES = (
     "notes",       # Personal notes, journal entries, scratch thinking
     "references",  # External references, citations, cheat sheets
     "plans",       # Plans, proposals, roadmaps
+    "bugs",        # Auto-filed server defects (one file per BUG-NNN, never drafts-gated)
 )
 
 _STOP_WORDS = frozenset(
@@ -9370,6 +9382,13 @@ def wiki(
     dry_run: bool = True,
     skip_lint: bool = False,
     max_results: int = 10,
+    component: str = "",
+    severity: str = "",
+    title: str = "",
+    repro: str = "",
+    observed: str = "",
+    expected: str = "",
+    workaround: str = "",
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
@@ -9387,13 +9406,15 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint; writes:
             write, consolidate, promote, ingest, supersede,
-            sync_projects.
+            sync_projects, file_bug.
         page: Page name for read (also: index, log, schema).
         query: Search keywords for search.
         category: write / promote category — projects, concepts,
             people, research, recipes, workflows, notes, references,
-            plans. Match the CONTENT; `research` is reserved for
-            LLM-generated research pages and paper drafts.
+            plans, bugs. Match the CONTENT; `research` is reserved
+            for LLM-generated research pages and paper drafts. `bugs`
+            is for `action=file_bug` only — prefer the dedicated verb
+            so the server assigns the BUG-NNN id.
         filename: Filename for write / promote / ingest / supersede.
         content: Page or source body for write / ingest.
         log_entry: Optional log message for write.
@@ -9406,6 +9427,16 @@ def wiki(
         dry_run: Consolidate reports only when true (default true).
         skip_lint: Promote skips quality checks when true.
         max_results: Max search results (default 10).
+        component: file_bug — surface where the defect lives (e.g.
+            "extensions.patch_branch", "universe.inspect", "tray").
+        severity: file_bug — one of critical | major | minor |
+            cosmetic. critical=data loss/outage; major=tool unusable;
+            minor=non-blocking workaround exists; cosmetic=wording.
+        title: file_bug — one-line bug title.
+        repro: file_bug — minimal tool call or steps to reproduce.
+        observed: file_bug — what the tool actually returned/did.
+        expected: file_bug — what it should have returned/done.
+        workaround: file_bug — optional workaround applied.
     """
     try:
         wiki_root = _wiki_root()
@@ -9455,6 +9486,7 @@ def wiki(
         "ingest": _wiki_ingest,
         "supersede": _wiki_supersede,
         "sync_projects": _wiki_sync_projects,
+        "file_bug": _wiki_file_bug,
     }
 
     handler = dispatch.get(action)
@@ -9479,6 +9511,13 @@ def wiki(
         "dry_run": dry_run,
         "skip_lint": skip_lint,
         "max_results": max_results,
+        "component": component,
+        "severity": severity,
+        "title": title,
+        "repro": repro,
+        "observed": observed,
+        "expected": expected,
+        "workaround": workaround,
     }
 
     return handler(**kwargs)
@@ -10118,6 +10157,159 @@ def _wiki_sync_projects(**_kwargs: Any) -> str:
     return json.dumps({
         "synced": len(created),
         "created": created,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Bug-filing helper — _wiki_file_bug
+# ---------------------------------------------------------------------------
+
+_BUG_ID_RE = re.compile(r"^BUG-(\d{3,})", re.IGNORECASE)
+_BUGS_CATEGORY = "bugs"
+_VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
+
+
+def _next_bug_id(bugs_pages_dir: Path) -> str:
+    """Allocate the next BUG-NNN id by scanning existing bug filenames.
+
+    Scans both pages/bugs/ and drafts/bugs/ so concurrent writes don't
+    collide with an already-promoted entry. Returns "BUG-001" when
+    empty or missing.
+    """
+    seen: set[int] = set()
+    for base in (bugs_pages_dir, _wiki_drafts_dir() / _BUGS_CATEGORY):
+        if not base.is_dir():
+            continue
+        for p in base.glob("BUG-*.md"):
+            m = _BUG_ID_RE.match(p.stem)
+            if m:
+                try:
+                    seen.add(int(m.group(1)))
+                except ValueError:
+                    continue
+    next_n = (max(seen) + 1) if seen else 1
+    return f"BUG-{next_n:03d}"
+
+
+def _slugify_title(title: str, max_len: int = 60) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return slug[:max_len] or "untitled"
+
+
+def _render_bug_markdown(
+    *,
+    bug_id: str,
+    title: str,
+    component: str,
+    severity: str,
+    repro: str,
+    observed: str,
+    expected: str,
+    workaround: str,
+    first_seen_date: str,
+) -> str:
+    comp_tag = component.split(".")[0] if component else "unknown"
+    return (
+        f"---\n"
+        f"id: {bug_id}\n"
+        f"title: {title}\n"
+        f"type: bug\n"
+        f"created: {first_seen_date}\n"
+        f"updated: {first_seen_date}\n"
+        f"component: {component}\n"
+        f"severity: {severity}\n"
+        f"status: open\n"
+        f"reported_by: chatbot\n"
+        f"tags: [bug, {comp_tag}]\n"
+        f"---\n\n"
+        f"# {bug_id}: {title}\n\n"
+        f"## What happened\n\n{observed or '_not specified_'}\n\n"
+        f"## What was expected\n\n{expected or '_not specified_'}\n\n"
+        f"## Repro\n\n{repro or '_not specified_'}\n\n"
+        f"## Workaround\n\n{workaround or '_none_'}\n\n"
+        f"## First seen\n\n{first_seen_date}\n\n"
+        f"## Related\n\n_none yet_\n"
+    )
+
+
+def _wiki_file_bug(
+    component: str = "",
+    severity: str = "",
+    title: str = "",
+    repro: str = "",
+    observed: str = "",
+    expected: str = "",
+    workaround: str = "",
+    **_kwargs: Any,
+) -> str:
+    """File a bug report directly to pages/bugs/BUG-NNN-<slug>.md.
+
+    Bypasses the draft-gate — bug reports land in pages/ immediately
+    for host triage. ID is server-assigned via _next_bug_id. Atomic
+    create guards against concurrent file_bug races.
+    """
+    import time
+
+    if not title or not component or not severity:
+        return json.dumps({
+            "error": "title, component, and severity are required.",
+            "hint": "severity must be one of: " + " | ".join(_VALID_SEVERITIES),
+        })
+    if severity not in _VALID_SEVERITIES:
+        return json.dumps({
+            "error": f"Invalid severity '{severity}'.",
+            "valid": list(_VALID_SEVERITIES),
+        })
+
+    bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
+    try:
+        bugs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return json.dumps({"error": f"Cannot create bugs dir: {exc}"})
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    slug = _slugify_title(title)
+
+    for attempt in (1, 2):
+        bug_id = _next_bug_id(bugs_dir)
+        filename = f"{bug_id}-{slug}.md"
+        target = bugs_dir / filename
+        body = _render_bug_markdown(
+            bug_id=bug_id,
+            title=title,
+            component=component,
+            severity=severity,
+            repro=repro,
+            observed=observed,
+            expected=expected,
+            workaround=workaround,
+            first_seen_date=today,
+        )
+        try:
+            with open(target, "x", encoding="utf-8") as fh:
+                fh.write(body)
+            break
+        except FileExistsError:
+            if attempt == 2:
+                return json.dumps({
+                    "error": "BUG id collision retry exhausted.",
+                    "hint": "Retry in a moment — concurrent filers.",
+                })
+            time.sleep(0.05)
+            continue
+    else:
+        return json.dumps({"error": "Failed to write bug report."})
+
+    _append_wiki_log(
+        f"file_bug | pages/bugs/{filename} | {bug_id} {title} [{severity}]"
+    )
+    return json.dumps({
+        "path": f"pages/bugs/{filename}",
+        "bug_id": bug_id,
+        "status": "filed",
+        "severity": severity,
+        "component": component,
+        "note": "Bug filed. Host will triage via `wiki action=list category=bugs`.",
     })
 
 
