@@ -1,0 +1,20 @@
+# Workflow disk pressure watchdog timer — fires daily.
+#
+# Self-host migration Row K (ops hardening) per
+# docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md.
+
+[Unit]
+Description=Timer for workflow disk pressure watchdog (daily)
+Requires=workflow-disk-watch.service
+
+[Timer]
+# 04:30 UTC daily — after nightly backup (02:00) completes, before
+# the 07:17 tier-3 OSS clone. Low-traffic window.
+OnCalendar=04:30 UTC
+AccuracySec=10min
+# Persistent=true so a missed check fires on next boot.
+Persistent=true
+Unit=workflow-disk-watch.service
+
+[Install]
+WantedBy=timers.target

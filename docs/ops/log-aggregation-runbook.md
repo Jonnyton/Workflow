@@ -49,20 +49,27 @@ LOG_DEST=sftp:storagebox/workflow-logs
 # LOG_DEST=s3:workflow-logs/logs
 ```
 
-Install the systemd units:
+Install the systemd units (ship-logs + disk-watch together):
 
 ```bash
-cp /opt/workflow/deploy/ship-logs.service /etc/systemd/system/
-cp /opt/workflow/deploy/ship-logs.timer /etc/systemd/system/
+cp /opt/workflow/deploy/workflow-ship-logs.service  /etc/systemd/system/
+cp /opt/workflow/deploy/workflow-ship-logs.timer    /etc/systemd/system/
+cp /opt/workflow/deploy/workflow-disk-watch.service /etc/systemd/system/
+cp /opt/workflow/deploy/workflow-disk-watch.timer   /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now ship-logs.timer
+systemctl enable --now workflow-ship-logs.timer workflow-disk-watch.timer
 ```
 
-Verify the timer is scheduled:
+Verify the timers are scheduled:
 
 ```bash
-systemctl list-timers ship-logs.timer
+systemctl list-timers workflow-ship-logs.timer workflow-disk-watch.timer
 ```
+
+**Disk-watch** (`scripts/disk_watch.py`) fires daily at 04:30 UTC and opens a
+`disk-pressure` GH Issue when `/var/lib/docker` exceeds `DISK_WARN_PCT` (default
+80%). Requires `GITHUB_TOKEN` in `/etc/workflow/env` with `issues: write` scope.
+Optional env vars: `DISK_WATCH_PATH`, `DISK_WARN_PCT`, `GITHUB_REPOSITORY`.
 
 ---
 
