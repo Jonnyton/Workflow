@@ -30,6 +30,9 @@ FROM python:3.11-slim AS builder
 
 # Native build-deps for lancedb (rust), clingo (cmake), spacy (cython),
 # and general C extensions. Removed from the final image.
+# Node.js 20 LTS via nodesource — Debian's default apt nodejs is too old
+# (Node 12/18) for @openai/codex which requires Node ≥ 18; nodesource 20
+# is the smallest LTS that's known-compatible and widely battle-tested.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
@@ -37,6 +40,8 @@ RUN apt-get update && \
         curl \
         git \
         pkg-config \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install rust toolchain for lancedb wheels that lack pre-built linux
@@ -46,6 +51,13 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal
+
+# Install codex CLI globally. npm puts the binary at
+# /usr/local/bin/codex (or /usr/bin/codex on some distros); we locate it
+# at build time and copy the resolved path to the final stage.
+# Pin to the latest published version; bump here to upgrade.
+RUN npm install -g @openai/codex && \
+    codex --version
 
 WORKDIR /build
 
@@ -67,14 +79,26 @@ FROM python:3.11-slim
 # Runtime-only deps. No build-essential here.
 # libgomp1 is a common transitive native dep for numpy/scipy-backed
 # packages (spacy, lancedb); include it proactively.
+# Node.js 20 LTS via nodesource — same version as builder so the copied
+# codex binary's native addons are ABI-compatible. No npm needed at
+# runtime; the codex module tree is COPY'd from the builder.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libgomp1 \
         ca-certificates \
+        curl \
+        libgomp1 \
         tini \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs \
+    && apt-get purge -y curl \
     && rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1001 workflow && \
     useradd --system --uid 1001 --gid workflow --home /app --shell /bin/bash workflow
+
+# Copy the codex CLI and its Node module tree from the builder stage.
+# npm global prefix is /usr/local; the codex wrapper script + lib live there.
+COPY --from=builder /usr/local/bin/codex /usr/local/bin/codex
+COPY --from=builder /usr/local/lib/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
 
 WORKDIR /app
 

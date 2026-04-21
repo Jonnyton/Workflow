@@ -62,6 +62,17 @@ WORKFLOW_MCP_CANARY_URL=https://tinyassets.io/mcp
 
 
 # ---------------------------------------------------------------------
+# OpenAI / Codex provider
+# ---------------------------------------------------------------------
+
+# API key for the codex CLI (used by workflow/providers/codex_provider.py).
+# The codex CLI reads OPENAI_API_KEY from the environment at runtime.
+# Leave blank to disable the Codex provider — the daemon will fall back
+# to Claude or other configured providers.
+OPENAI_API_KEY=
+
+
+# ---------------------------------------------------------------------
 # Supabase (Row A — runtime dependency)
 # ---------------------------------------------------------------------
 
