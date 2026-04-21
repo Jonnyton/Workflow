@@ -10,15 +10,15 @@
 
 ## 0. Canonical URL (2026-04-20 post host Option-A pick)
 
-Three URLs, three roles. Named here once so every subsequent row + the docs-sweep follow-up land on the same shape.
+Two URLs, two roles. Named here once so every subsequent row + the docs-sweep follow-up land on the same shape.
 
 | URL | Role | Notes |
 |---|---|---|
-| `https://tinyassets.io/mcp` | **User-facing canonical.** The URL that ships in Claude.ai connector configs, README, onboarding docs, and any tier-1 / tier-2 UX copy. | Served via a Cloudflare Worker at the apex that routes `/mcp*` → tunnel origin → daemon. Worker is an independent Cloudflare edge layer; predates Fly/Hetzner cutover. |
-| `https://mcp.tinyassets.io/mcp` | **Direct tunnel origin.** Debugging + canary probing + anything that needs to bypass the Worker. | This is the cloudflared tunnel hostname that points at the daemon. The Worker forwards here internally; users don't reach this. Layer-1 canary probes BOTH so we can localize a regression to Worker vs tunnel vs daemon. |
-| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event was exactly this: a record that had been briefly managed and then lost). Any doc containing `api.tinyassets.io` is stale and should be corrected during the docs-sweep follow-up (Row G). |
+| `https://tinyassets.io/mcp` | **User-facing canonical. Single public entry point.** The URL that ships in Claude.ai connector configs, README, onboarding docs, and any tier-1 / tier-2 UX copy. Also the URL probed by all canaries. | Served via a Cloudflare Worker at the apex that routes `/mcp*` → tunnel origin → daemon. Worker is an independent Cloudflare edge layer. |
+| `https://mcp.tinyassets.io/mcp` | **Access-gated internal tunnel origin. Not user-facing.** | cloudflared tunnel hostname. Protected by Cloudflare Access (service-token, host directive 2026-04-20): direct requests without CF service-token headers return 401/403. Only the Worker injects those headers. Do not document or share in user-facing contexts; do not add to canary configs. |
+| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event). Any doc containing `api.tinyassets.io` is stale and should be corrected during Row G. |
 
-**Interaction rule.** If a future tunnel reconfig (Cloudflare dash work) touches either `tinyassets.io/mcp` or `mcp.tinyassets.io/mcp`, Hard Rule 10 fires — run `scripts/uptime_canary.py --once` post-change and confirm green BOTH routes before marking the change complete.
+**Interaction rule.** If a future tunnel reconfig (Cloudflare dash work) touches `tinyassets.io/mcp`, Hard Rule 10 fires — run `scripts/uptime_canary.py --once` post-change and confirm green before marking the change complete.
 
 ---
 

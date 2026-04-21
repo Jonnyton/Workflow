@@ -2,16 +2,27 @@
 //
 // Problem:
 //   - tinyassets.io apex serves GoDaddy Website Builder (landing page).
-//   - mcp.tinyassets.io serves the Cloudflare Tunnel → workflow daemon MCP.
+//   - mcp.tinyassets.io is the Cloudflare Tunnel → workflow daemon MCP
+//     (internal tunnel origin, Access-gated — not a public user-facing URL).
 //   - Installed Claude.ai connectors point at https://tinyassets.io/mcp.
 //   - Without this Worker, tinyassets.io/mcp falls through to GoDaddy's
 //     404 handler → "Session terminated" in Claude.ai (the 2026-04-19 P0).
 //
 // Fix:
 //   This Worker runs on route `tinyassets.io/mcp*`. Any request whose
-//   path begins with `/mcp` is forwarded to the tunnel origin at
-//   `mcp.tinyassets.io` (same path). All other paths are left untouched
-//   by this Worker — they hit the GoDaddy origin as before.
+//   path begins with `/mcp` is forwarded to the internal tunnel origin at
+//   `mcp.tinyassets.io` (same path), authenticated via Cloudflare Access
+//   service-token headers. All other paths are left untouched by this
+//   Worker — they hit the GoDaddy origin as before.
+//
+// Security model (host directive 2026-04-20):
+//   - `tinyassets.io/mcp` is the ONLY public user-facing URL.
+//   - `mcp.tinyassets.io` exists in DNS as the tunnel origin but is
+//     Access-gated: direct requests without CF-Access service-token headers
+//     return 401/403. Only this Worker can reach it, via the secret headers
+//     injected below from Cloudflare Worker env secrets (CF_ACCESS_CLIENT_ID
+//     + CF_ACCESS_CLIENT_SECRET — set in Cloudflare dashboard, never in git).
+//   - Do not document or share mcp.tinyassets.io in user-facing contexts.
 //
 // Design constraints:
 //   - MCP streamable-http emits SSE (text/event-stream) for long
@@ -25,8 +36,8 @@
 //     the original P0; explicit status here.
 //   - Pure proxy: no response-body rewriting.
 //
-// Canonical URL post-deploy: https://tinyassets.io/mcp  (apex + path).
-// Direct-tunnel URL (kept for canary + debug): https://mcp.tinyassets.io/mcp.
+// Canonical URL: https://tinyassets.io/mcp  (apex + path, user-facing).
+// Tunnel origin: https://mcp.tinyassets.io  (Access-gated, internal only).
 
 const TUNNEL_ORIGIN = 'https://mcp.tinyassets.io';
 
@@ -62,8 +73,12 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
  * Preserves method, body stream, and all non-hop-by-hop headers.
  * Rewrites Host to `mcp.tinyassets.io` (Cloudflare's edge routes the
  * subrequest to the tunnel based on hostname, so this is load-bearing).
+ *
+ * Injects CF Access service-token headers so the Access-gated tunnel
+ * origin accepts the subrequest. `env` carries the secret values from
+ * the Cloudflare Worker environment (set via dashboard, never in git).
  */
-async function proxyToTunnel(request) {
+async function proxyToTunnel(request, env) {
     const incoming = new URL(request.url);
     const upstream = new URL(TUNNEL_ORIGIN);
     upstream.pathname = incoming.pathname;
@@ -76,6 +91,16 @@ async function proxyToTunnel(request) {
         }
     }
     forwardedHeaders.set('Host', upstream.host);
+
+    // CF Access service-token headers — authenticate this Worker as the
+    // authorised caller. mcp.tinyassets.io rejects requests without them.
+    // Values come from Worker env secrets (Cloudflare dashboard only).
+    if (env && env.CF_ACCESS_CLIENT_ID) {
+        forwardedHeaders.set('CF-Access-Client-Id', env.CF_ACCESS_CLIENT_ID);
+    }
+    if (env && env.CF_ACCESS_CLIENT_SECRET) {
+        forwardedHeaders.set('CF-Access-Client-Secret', env.CF_ACCESS_CLIENT_SECRET);
+    }
 
     // Preserve X-Forwarded-* so the upstream can log + rate-limit by
     // real client IP rather than Cloudflare's edge.
@@ -179,7 +204,7 @@ function shouldProxy(pathname) {
 }
 
 export default {
-    async fetch(request) {
+    async fetch(request, env) {
         const url = new URL(request.url);
 
         if (!shouldProxy(url.pathname)) {
@@ -191,7 +216,7 @@ export default {
         }
 
         // OPTIONS + POST + GET + everything-else: all proxied identically.
-        return proxyToTunnel(request);
+        return proxyToTunnel(request, env);
     },
 };
 

@@ -86,8 +86,8 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting. ("Author" → "daemon" rename in flight; agent-runtime concept is `daemon_id`, content-authorship concept stays `author_id` + `author_kind` discriminator. See `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` §1.5.)
 - **Branch-first collaboration.** Branches are first-class, long-lived, public-forkable. Reconciliation optional, no fixed mainline.
 - **Swarm runtime.** No universe-wide single active daemon. Runtime capacity and daemon identity are separate resources.
-- **GitHub as canonical shared state — under host review (Q1 in `docs/design-notes/2026-04-18-full-platform-architecture.md`).** Current shape: public catalog of Goals, Branches, Nodes lives in the repo; users clone, run locally, contribute via PR. The full-platform architecture proposes Postgres-canonical with GitHub as export — a one-way-door decision flagged for host approval. Until Q1 resolves, both shapes are documented and neither is built into.
-- **Local-first execution, git-native sync (current).** Each user runs Workflow Server against their cloned repo. MCP actions read/write files under the repo. Push + PR is how public contribution happens. Likely superseded by Postgres-canonical pending Q1.
+- **GitHub is an export sink, not the canonical store.** Canonical state lives in Postgres (Supabase-hosted at launch). GitHub receives a periodic flat-YAML export of public goals/branches/nodes; contributions via GitHub PR are accepted via a round-trip YAML → webhook → Postgres import path. One-way-door decision (host-approved 2026-04-18, `docs/design-notes/2026-04-18-full-platform-architecture.md §4`) — reverting after realtime collaboration is active requires data migration.
+- **Local-first execution, git-native sync (bridge state).** The DO Droplet self-host migration (2026-04-20) is the current bridge. Postgres-canonical replaces local-first when the control-plane backend ships.
 - **User-controllable state architecture.** Users should eventually inspect, steer, and redesign workflow/state structure conversationally.
 - **Multi-host is the destination.** Local-host is important, but end-state is a network of hosts contributing model capacity to shared projects.
 - **The system must evolve itself.** Stagnation is the worst failure mode. Workflow, memory policy, retrieval, evaluation, naming should all learn from research and outcomes over time.
@@ -124,6 +124,14 @@ Harness / Traces / Tests / Coordination
 
 The daemon writes autonomously. MCP clients and the host dashboard are the user-facing interfaces. Communication is file- and artifact-based: daemon writes to disk, API/MCP expose state and actions, harness inspects artifacts and traces. AGENTS.md, PLAN.md, STATUS.md, notes.json, checkpoints, logs, tests are part of the same design philosophy.
 
+**Backend stack (target):** Supabase — Postgres (catalog + ledger + inbox), Realtime broadcast (presence + change broadcast), Auth (GitHub OAuth + sessions), Row-Level Security (visibility + sensitivity at DB layer), Storage (S3-compatible canon uploads). One stack covers five concerns otherwise requiring separate glue. Postgres exit path is self-hostable without application rewrite. Rejected: Convex (TypeScript lock-in), Firebase (pay-per-read unpredictable, no Postgres), custom realtime on small VPS (negative ROI at current scale). (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §3.2`.)
+
+**Auth + identity:** GitHub OAuth as the single identity primitive at launch, covering all three tiers without account stitching. OAuth 2.1 + PKCE at the MCP edge (MCP spec 2025-11-25 mandate). Session tokens scoped per user; RLS enforces per-user visibility at the DB layer. Native accounts (email/passkey) added when >~15% of sign-up attempts bounce at the GitHub wall. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §7`.)
+
+**Real-time strategy — versioned rows + broadcast, NOT CRDT.** User collaboration is coarse-grained: users edit different nodes concurrently, or edit the same node with last-write-wins + update-since-you-viewed conflicts. Comments are append-only. Versioned Postgres rows + Supabase Realtime + presence channels covers this at a fraction of CRDT's complexity. CRDT is an escalation path for any specific artifact needing it later, not a baseline requirement. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §2.2`.)
+
+**Single canonical public entry point.** The daemon surface has exactly one public URL: `https://tinyassets.io/mcp`. Debug/diagnostic access is via Cloudflare Worker observability + tunnel logs, NOT a second public DNS record. Tradeoff explicitly accepted: losing the cheap dual-probe URL localization trick in exchange for a smaller attack surface and zero ambiguity about what users should connect to. The 2026-04-19 P0 outage (`api.tinyassets.io` appearing then disappearing) is additional evidence against multiple public entry points. Implementation caveat: the Cloudflare Worker requires a `mcp.tinyassets.io` hostname for internal tunnel-routing subrequests; this record is retained as Access-gated internal plumbing, not a second public surface. The principle is "one URL users connect to"; the implementation allows an Access-protected internal record that is functionally unreachable from the public internet. (Host directive 2026-04-20; options analysis: `docs/design-notes/2026-04-20-single-entry-execution-options.md`; cutover runbook: `docs/ops/dns-tunnel-single-entry-cutover.md`.)
+
 ---
 
 ## Multiplayer Daemon Platform
@@ -133,6 +141,10 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 **Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers and models.
 
 Defaults: host-run server with named accounts; private per-user MCP sessions; shared tool contract; per-universe host dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; future multi-host participation.
+
+**Zero daemons required for authoring.** Node/branch/goal creation, editing, forking, and collaboration work with no daemon running anywhere. Daemon hosting is opt-in for execution work. This is a load-bearing requirement — any architecture where authoring depends on a running daemon violates it. (The phased plan was rejected on this basis; see `docs/design-notes/2026-04-18-full-platform-architecture.md §1`.)
+
+**Host pool registry.** Every daemon host declares capabilities (node types, LLM models, price), visibility (`self` / `network` / `paid`), and heartbeat state to the control plane. Daemons are execution-tier, not control-plane. The control plane dispatches paid work to hosts and settles via the ledger; daemons poll outbound. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §5`.)
 
 ---
 

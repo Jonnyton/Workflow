@@ -18,14 +18,14 @@ Rules:
 
 - Do not put card numbers, recovery codes, API tokens, or invoice PDFs in git.
 - If a billing action changes production reachability, run the public canary:
-  `python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp --verbose`.
+  `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --verbose` (canonical apex — `mcp.tinyassets.io` is an Access-gated internal tunnel origin per host directive 2026-04-20, not a public URL).
 - If a vendor dashboard has no prepay option, record the exact limitation and
   the next review date in `STATUS.md` as a concern.
 
 ## 2. Emergency DNS
 
 Primary `/mcp` independence is the Row E Cloudflare Worker. This Row N DNS
-tool covers the residual cases: `mcp.tinyassets.io`, future subdomains, MX,
+tool covers residual cases: retiring `mcp.tinyassets.io` DNS records, future subdomains, MX,
 TXT/SPF/DKIM, and emergency Worker route removal/restoration when the lead
 explicitly asks for it.
 
@@ -59,7 +59,7 @@ gh workflow run emergency-dns.yml `
   -f content=fallback.example.net `
   -f proxied=true `
   -f apply=true `
-  -f canary_url=https://mcp.tinyassets.io/mcp
+  -f canary_url=https://tinyassets.io/mcp
 ```
 
 The workflow runs `scripts/mcp_public_canary.py` after any applied change.
@@ -89,7 +89,7 @@ python scripts/emergency_dns_flip.py `
   --content fallback.example.net `
   --proxied true `
   --apply
-python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp --verbose
+python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --verbose
 ```
 
 Supported script actions:

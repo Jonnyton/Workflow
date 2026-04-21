@@ -4,7 +4,7 @@
 //   - shouldProxy: path matching (only /mcp* matches).
 //   - proxyToTunnel: header preservation, hop-by-hop stripping, streaming
 //     pass-through, 5xx → 502 translation, network-error → 502, X-Forwarded-*
-//     addition, Host rewrite.
+//     addition, Host rewrite, CF Access service-token injection.
 //
 // Uses a stub for globalThis.fetch so we don't actually hit the tunnel.
 //
@@ -180,6 +180,60 @@ describe('proxyToTunnel — headers preserved', () => {
         });
         await proxyToTunnel(req);
         assert.equal(lastUpstreamRequest.headers.get('X-Forwarded-For'), '198.51.100.1');
+    });
+});
+
+// ------- proxyToTunnel: CF Access service-token injection ------------------
+
+describe('proxyToTunnel — CF Access headers', () => {
+    it('injects CF-Access-Client-Id and CF-Access-Client-Secret from env', async () => {
+        const req = new Request('https://tinyassets.io/mcp', { method: 'GET' });
+        const env = {
+            CF_ACCESS_CLIENT_ID: 'test-client-id.access',
+            CF_ACCESS_CLIENT_SECRET: 'test-secret-value',
+        };
+        await proxyToTunnel(req, env);
+        assert.equal(
+            lastUpstreamRequest.headers.get('CF-Access-Client-Id'),
+            'test-client-id.access',
+        );
+        assert.equal(
+            lastUpstreamRequest.headers.get('CF-Access-Client-Secret'),
+            'test-secret-value',
+        );
+    });
+
+    it('does not inject CF-Access headers when env is missing', async () => {
+        const req = new Request('https://tinyassets.io/mcp', { method: 'GET' });
+        await proxyToTunnel(req, undefined);
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Id'), null);
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Secret'), null);
+    });
+
+    it('does not inject CF-Access headers when secrets are absent from env', async () => {
+        const req = new Request('https://tinyassets.io/mcp', { method: 'GET' });
+        await proxyToTunnel(req, {});
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Id'), null);
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Secret'), null);
+    });
+
+    it('CF Access headers are present alongside preserved request headers', async () => {
+        const req = new Request('https://tinyassets.io/mcp', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer user-token', 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        const env = {
+            CF_ACCESS_CLIENT_ID: 'cid',
+            CF_ACCESS_CLIENT_SECRET: 'csecret',
+        };
+        await proxyToTunnel(req, env);
+        // Existing headers still present.
+        assert.equal(lastUpstreamRequest.headers.get('Authorization'), 'Bearer user-token');
+        assert.equal(lastUpstreamRequest.headers.get('Content-Type'), 'application/json');
+        // CF Access headers injected alongside.
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Id'), 'cid');
+        assert.equal(lastUpstreamRequest.headers.get('CF-Access-Client-Secret'), 'csecret');
     });
 });
 

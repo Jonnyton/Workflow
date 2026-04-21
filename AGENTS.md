@@ -230,7 +230,7 @@ useful concurrency, not waiting.
 7. **Python 3.11+** required.
 8. **Fail loudly, never silently.** Mock fallbacks that look like real output are worse than crashes.
 9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
-10. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io` / `mcp.tinyassets.io`, run `python scripts/mcp_public_canary.py` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe before considering the change complete. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class.
+10. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe before considering the change complete. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
 
 ---
 
@@ -299,7 +299,7 @@ Each flag reads as a string; truthy = `"on"`, `"1"`, `"true"`, `"yes"` (case-ins
 
 | Var | Purpose | Default |
 |-----|---------|---------|
-| `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. Canary-specific — keeps the `mcp.` direct-tunnel URL so a Worker outage is distinguishable from tunnel/daemon outage. | `https://mcp.tinyassets.io/mcp`. |
+| `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. | `https://tinyassets.io/mcp` (canonical apex; `mcp.tinyassets.io` is an Access-gated internal tunnel origin, not user-facing — host directive 2026-04-20). |
 | `WORKFLOW_DEPRECATIONS` | Set to `1` / `true` / `yes` to surface deprecation warnings for legacy env vars + import shims. | Unset (silent). |
 | `TAB_WATCHDOG_INTERVAL_S` | Interval (seconds) for the tray tab-watchdog's polling. `scripts/tab_watchdog.py`. | `60`. |
 | `WORKFLOW_CLAUDE_CHAT_SCREENSHOTS` | User-sim skill flag — capture a screenshot on every `claude_chat.py` response settle. Cost: ~200 KB per response. | Unset (off). |

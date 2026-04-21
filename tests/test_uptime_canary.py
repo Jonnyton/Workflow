@@ -38,6 +38,21 @@ def tmp_log_env(tmp_path, monkeypatch):
     return {"uptime": uptime_log, "alarm": alarm_log, "state": alarm_state}
 
 
+# ---- canonical URL assertion -------------------------------------------------
+
+
+def test_default_url_is_canonical():
+    """DEFAULT_URL must be the single canonical public endpoint.
+
+    Host directive 2026-04-20: retire mcp.tinyassets.io/mcp as a public URL.
+    Only tinyassets.io/mcp (via Cloudflare Worker) is the canonical entry point.
+    """
+    assert uptime_canary.DEFAULT_URL == "https://tinyassets.io/mcp", (
+        "DEFAULT_URL must be the canonical apex URL, not the direct tunnel. "
+        "Host directive 2026-04-20 retired mcp.tinyassets.io/mcp as a public URL."
+    )
+
+
 # ---- uptime_canary.run_probe ----------------------------------------------
 
 
@@ -95,6 +110,85 @@ def test_rotate_when_over_limit(tmp_log_env, monkeypatch):
     new_text = tmp_log_env["uptime"].read_text(encoding="utf-8")
     assert new_text.count("\n") == 1
     assert "GREEN" in new_text
+
+
+# ---- --format=gha + --once CLI flags -------------------------------------
+
+
+def test_gha_format_green_emits_status_zero(tmp_log_env, monkeypatch, capsys):
+    monkeypatch.setattr(uptime_canary, "probe_result", lambda url, timeout: None)
+    code = uptime_canary.run_probe("https://example/mcp", 5.0, fmt="gha")
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "status=0" in out
+    assert "msg=" in out
+
+
+def test_gha_format_red_emits_nonzero_status(tmp_log_env, monkeypatch, capsys):
+    def boom(url, timeout):
+        raise mcp_public_canary.CanaryError(2, "HTTP 503 from server")
+    monkeypatch.setattr(uptime_canary, "probe_result", boom)
+    code = uptime_canary.run_probe("https://x/mcp", 5.0, fmt="gha")
+    assert code == 2
+    out = capsys.readouterr().out
+    assert "status=2" in out
+    assert "msg=" in out
+    assert "HTTP 503" in out
+
+
+def test_gha_format_unexpected_error(tmp_log_env, monkeypatch, capsys):
+    def boom(url, timeout):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(uptime_canary, "probe_result", boom)
+    code = uptime_canary.run_probe("https://x/mcp", 5.0, fmt="gha")
+    assert code == 99
+    out = capsys.readouterr().out
+    assert "status=99" in out
+    assert "msg=" in out
+
+
+def test_gha_format_still_writes_log(tmp_log_env, monkeypatch, capsys):
+    monkeypatch.setattr(uptime_canary, "probe_result", lambda url, timeout: None)
+    uptime_canary.run_probe("https://example/mcp", 5.0, fmt="gha")
+    assert tmp_log_env["uptime"].is_file()
+    assert "GREEN" in tmp_log_env["uptime"].read_text(encoding="utf-8")
+
+
+def test_gha_multiline_reason_uses_heredoc(tmp_log_env, monkeypatch, capsys):
+    def boom(url, timeout):
+        raise mcp_public_canary.CanaryError(1, "line1\nline2")
+    monkeypatch.setattr(uptime_canary, "probe_result", boom)
+    uptime_canary.run_probe("https://x/mcp", 5.0, fmt="gha")
+    out = capsys.readouterr().out
+    # Delimiter is now random (EOF_<hex>) — just check that heredoc syntax is present.
+    assert "msg<<EOF_" in out
+    assert "line1" in out
+    assert "line2" in out
+
+
+def test_once_flag_is_accepted(tmp_log_env, monkeypatch):
+    monkeypatch.setattr(uptime_canary, "probe_result", lambda url, timeout: None)
+    code = uptime_canary.main(["--url", "https://example/mcp", "--once"])
+    assert code == 0
+
+
+def test_format_gha_via_cli(tmp_log_env, monkeypatch, capsys):
+    monkeypatch.setattr(uptime_canary, "probe_result", lambda url, timeout: None)
+    code = uptime_canary.main([
+        "--url", "https://example/mcp",
+        "--once",
+        "--format", "gha",
+    ])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "status=0" in out
+
+
+def test_format_log_default_no_stdout(tmp_log_env, monkeypatch, capsys):
+    monkeypatch.setattr(uptime_canary, "probe_result", lambda url, timeout: None)
+    uptime_canary.run_probe("https://example/mcp", 5.0, fmt="log")
+    out = capsys.readouterr().out
+    assert out == ""
 
 
 # ---- uptime_alarm.evaluate ------------------------------------------------
@@ -214,6 +308,60 @@ def test_malformed_log_lines_ignored(tmp_log_env):
     ])
     uptime_alarm.evaluate()
     assert len(_alarm_lines(tmp_log_env)) == 1
+
+
+# ---- heredoc delimiter hardening -------------------------------------------
+
+
+def test_emit_gha_kv_delimiter_is_randomized(tmp_log_env, monkeypatch, capsys):
+    """Each _emit_gha_kv call must use a distinct delimiter."""
+    delimiters = []
+
+    def boom(url, timeout):
+        raise mcp_public_canary.CanaryError(1, "a\nb")
+
+    monkeypatch.setattr(uptime_canary, "probe_result", boom)
+
+    # Collect delimiters from two separate probe calls.
+    for _ in range(2):
+        uptime_canary.run_probe("https://x/mcp", 5.0, fmt="gha")
+        out = capsys.readouterr().out
+        for line in out.splitlines():
+            if line.startswith("msg<<EOF_"):
+                delimiters.append(line[len("msg<<"):])
+
+    assert len(delimiters) == 2, "expected one heredoc delimiter per call"
+    assert delimiters[0] != delimiters[1], "delimiters must differ across calls"
+
+
+def test_emit_gha_kv_literal_canary_eof_in_msg_does_not_truncate(
+    tmp_log_env, monkeypatch, capsys
+):
+    """Probe output containing a bare CANARY_EOF line must not corrupt the output."""
+    # The message contains the old static delimiter as a literal string.
+    poisoned_msg = "start\nCANARY_EOF\nend"
+
+    def boom(url, timeout):
+        raise mcp_public_canary.CanaryError(1, poisoned_msg)
+
+    monkeypatch.setattr(uptime_canary, "probe_result", boom)
+    uptime_canary.run_probe("https://x/mcp", 5.0, fmt="gha")
+    out = capsys.readouterr().out
+
+    # All three payload lines must be present in the output.
+    assert "start" in out
+    assert "CANARY_EOF" in out  # literal string — OK inside random-delimited heredoc
+    assert "end" in out
+
+    # The delimiter that opened the block must also close it.
+    lines = out.splitlines()
+    open_line = next((ln for ln in lines if ln.startswith("msg<<EOF_")), None)
+    assert open_line is not None, "heredoc open line not found"
+    delim = open_line[len("msg<<"):]
+    # The bare delimiter (close marker) must appear exactly once as a standalone line.
+    assert lines.count(delim) == 1, (
+        f"closing delimiter {delim!r} should appear exactly once as a standalone line"
+    )
 
 
 # Defensive: make sure re-importing clears module-level sys.path shim cleanly.
