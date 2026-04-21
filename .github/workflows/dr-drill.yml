@@ -1,0 +1,413 @@
+name: DR drill
+
+# Scripted disaster-recovery test — provision a fresh Droplet, restore from
+# backup, probe for parity, then destroy. Manual dispatch only — never
+# auto-runs. Run quarterly or after major compose/bootstrap changes.
+#
+# Docs: docs/ops/dr-drill-runbook.md
+#
+# Required secrets:
+#   DIGITALOCEAN_TOKEN   — DO API token (create/destroy Droplets)
+#   DO_SSH_KEY           — private key PEM (authorized on new Droplet via cloud-init)
+#   DO_DROPLET_HOST      — primary Droplet IP (for backup transfer)
+#   DO_SSH_USER          — SSH user on both Droplets
+#
+# Exit codes / outcomes:
+#   success  — parity check passed; drill Droplet destroyed; log appended
+#   failure  — parity check failed; drill Droplet LEFT UP for inspection;
+#              dr-failed issue opened
+
+on:
+  workflow_dispatch:
+    inputs:
+      drill_droplet_size:
+        description: 'DO Droplet size slug (default: s-1vcpu-1gb)'
+        required: false
+        default: 's-1vcpu-1gb'
+        type: string
+      backup_source:
+        description: 'Backup tarball path on primary (default: latest in /var/backups/workflow/)'
+        required: false
+        default: ''
+        type: string
+      destroy_on_failure:
+        description: 'Destroy drill Droplet even on failure (default: false — leave up for inspection)'
+        required: false
+        default: 'false'
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: dr-drill
+  cancel-in-progress: false
+
+env:
+  DO_SSH_USER: ${{ secrets.DO_SSH_USER }}
+  DO_DROPLET_HOST: ${{ secrets.DO_DROPLET_HOST }}
+  CANARY_URL: https://tinyassets.io/mcp
+  DRILL_REGION: nyc3
+  DRILL_IMAGE: debian-12-x64
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify secrets present
+        run: |
+          missing=()
+          [ -z "${{ secrets.DIGITALOCEAN_TOKEN }}" ] && missing+=("DIGITALOCEAN_TOKEN")
+          [ -z "${{ secrets.DO_SSH_KEY }}" ] && missing+=("DO_SSH_KEY")
+          [ -z "$DO_DROPLET_HOST" ] && missing+=("DO_DROPLET_HOST")
+          [ -z "$DO_SSH_USER" ] && missing+=("DO_SSH_USER")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Install SSH key
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/do_deploy
+          chmod 600 ~/.ssh/do_deploy
+          # Add primary Droplet to known_hosts.
+          ssh-keyscan -t ed25519,rsa "$DO_DROPLET_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # Extract the public key from the private key so we can register it with
+      # the DO API and add it to the drill Droplet's authorized_keys.
+      - name: Derive SSH public key
+        id: pubkey
+        run: |
+          pub=$(ssh-keygen -y -f ~/.ssh/do_deploy)
+          echo "pub=${pub}" >> "$GITHUB_OUTPUT"
+
+      - name: Find latest backup on primary
+        id: backup
+        env:
+          BACKUP_SOURCE: ${{ inputs.backup_source }}
+        run: |
+          if [ -n "${BACKUP_SOURCE}" ]; then
+            echo "path=${BACKUP_SOURCE}" >> "$GITHUB_OUTPUT"
+            echo "Using specified backup: ${BACKUP_SOURCE}"
+          else
+            latest=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "ls -t /var/backups/workflow/workflow-data-*.tar.gz 2>/dev/null | head -1" \
+                2>&1 || echo '')
+            if [ -z "$latest" ]; then
+              echo "::error::No backup found on primary at /var/backups/workflow/"
+              exit 1
+            fi
+            echo "path=${latest}" >> "$GITHUB_OUTPUT"
+            echo "Latest backup: ${latest}"
+          fi
+
+      - name: Provision drill Droplet
+        id: droplet
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DRILL_SIZE: ${{ inputs.drill_droplet_size }}
+          PUB_KEY: ${{ steps.pubkey.outputs.pub }}
+        run: |
+          # Register the SSH key with DO API (idempotent by fingerprint).
+          fingerprint=$(ssh-keygen -E md5 -lf ~/.ssh/do_deploy | awk '{print $2}' | sed 's/MD5://')
+          existing_key_id=$(curl -sf -X GET \
+              -H "Authorization: Bearer ${DO_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.digitalocean.com/v2/account/keys" \
+              | python3 -c "
+          import json,sys
+          keys=json.load(sys.stdin).get('ssh_keys',[])
+          for k in keys:
+              if '${fingerprint}' in k.get('fingerprint',''):
+                  print(k['id'])
+                  break
+          " 2>/dev/null || echo '')
+
+          if [ -z "$existing_key_id" ]; then
+            key_resp=$(curl -sf -X POST \
+                -H "Authorization: Bearer ${DO_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\":\"workflow-drill-key\",\"public_key\":\"${PUB_KEY}\"}" \
+                "https://api.digitalocean.com/v2/account/keys")
+            key_id=$(echo "$key_resp" | python3 -c "import json,sys; print(json.load(sys.stdin)['ssh_key']['id'])")
+          else
+            key_id="$existing_key_id"
+          fi
+          echo "key_id=${key_id}" >> "$GITHUB_OUTPUT"
+
+          # Cloud-init: install bootstrap prereqs + place authorized_keys.
+          user_data="#!/bin/bash
+          mkdir -p /root/.ssh
+          echo '${PUB_KEY}' >> /root/.ssh/authorized_keys
+          chmod 700 /root/.ssh
+          chmod 600 /root/.ssh/authorized_keys"
+
+          # Create the drill Droplet.
+          droplet_resp=$(curl -sf -X POST \
+              -H "Authorization: Bearer ${DO_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"name\": \"workflow-dr-drill\",
+                \"region\": \"${DRILL_REGION}\",
+                \"size\": \"${DRILL_SIZE}\",
+                \"image\": \"${DRILL_IMAGE}\",
+                \"ssh_keys\": [${key_id}],
+                \"user_data\": $(echo "$user_data" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+                \"tags\": [\"dr-drill\", \"workflow\"]
+              }" \
+              "https://api.digitalocean.com/v2/droplets")
+          droplet_id=$(echo "$droplet_resp" | python3 -c "import json,sys; print(json.load(sys.stdin)['droplet']['id'])")
+          echo "droplet_id=${droplet_id}" >> "$GITHUB_OUTPUT"
+          echo "Drill Droplet ID: ${droplet_id}"
+
+      - name: Wait for drill Droplet IP
+        id: drillip
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+        run: |
+          for i in $(seq 1 30); do
+            ip=$(curl -sf \
+                -H "Authorization: Bearer ${DO_TOKEN}" \
+                "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}" \
+                | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['droplet']
+          nets=d.get('networks',{}).get('v4',[])
+          for n in nets:
+              if n.get('type')=='public':
+                  print(n['ip_address'])
+                  break
+          " 2>/dev/null || echo '')
+            if [ -n "$ip" ]; then
+              echo "ip=${ip}" >> "$GITHUB_OUTPUT"
+              echo "Drill Droplet IP: ${ip}"
+              # Add to known_hosts.
+              ssh-keyscan -t ed25519,rsa "$ip" >> ~/.ssh/known_hosts 2>/dev/null || true
+              break
+            fi
+            echo "Waiting for IP (attempt ${i}/30)..."
+            sleep 10
+          done
+          if [ -z "$ip" ]; then
+            echo "::error::Drill Droplet never got an IP"
+            exit 1
+          fi
+
+      - name: Wait for SSH ready on drill Droplet
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+        run: |
+          for i in $(seq 1 24); do
+            if ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                   -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+                   "root@${DRILL_IP}" "echo ready" 2>/dev/null; then
+              echo "SSH ready after ${i} attempt(s)"
+              break
+            fi
+            echo "SSH not ready yet (${i}/24)..."
+            sleep 10
+            if [ "$i" = "24" ]; then
+              echo "::error::Drill Droplet SSH never became ready"
+              exit 1
+            fi
+          done
+
+      - name: Bootstrap drill Droplet
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+        run: |
+          # Send the bootstrap script and run it. Timeout 10 min for apt + Docker install.
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/hetzner-bootstrap.sh \
+              "root@${DRILL_IP}:/tmp/bootstrap.sh"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "root@${DRILL_IP}" \
+              "bash /tmp/bootstrap.sh" 2>&1 | tail -50
+
+      - name: Transfer backup to drill Droplet
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+          BACKUP_PATH: ${{ steps.backup.outputs.path }}
+        run: |
+          tarball=$(basename "${BACKUP_PATH}")
+          # Stream backup from primary directly to drill via SSH pipe.
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "cat '${BACKUP_PATH}'" \
+              | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                    "root@${DRILL_IP}" \
+                    "mkdir -p /var/backups/workflow && \
+                     cat > /var/backups/workflow/${tarball}"
+          echo "Transferred: ${tarball}"
+
+      - name: Restore on drill Droplet
+        id: restore
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+        run: |
+          # Copy the restore script and run it.
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/backup-restore.sh \
+              "root@${DRILL_IP}:/opt/workflow/deploy/backup-restore.sh"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "root@${DRILL_IP}" \
+              "BACKUP_DEST=/var/backups/workflow DRY_RUN=0 \
+               bash /opt/workflow/deploy/backup-restore.sh" 2>&1
+
+      - name: Start compose on drill Droplet
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+        run: |
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "root@${DRILL_IP}" \
+              "docker compose -f /opt/workflow/deploy/compose.yml up -d" 2>&1
+          sleep 30
+
+      - name: Probe drill Droplet directly
+        id: drillprobe
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+        run: |
+          set +e
+          output=$(python scripts/mcp_probe.py \
+              --url "http://${DRILL_IP}:8001/mcp" --verbose 2>&1)
+          code=$?
+          set -e
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "code=$code"
+            echo "output<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+            if [ "$code" = "0" ]; then
+              echo "color=green"
+            else
+              echo "color=red"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          echo "=== drill probe exit=$code ==="
+          echo "$output"
+
+      - name: Append drill result to log
+        if: steps.drillprobe.outputs.color == 'green'
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+          BACKUP_PATH: ${{ steps.backup.outputs.path }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+        run: |
+          LOG_FILE="docs/ops/dr-drill-log.md"
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          {
+            echo ""
+            echo "## ${now} — PASS"
+            echo ""
+            echo "- **Backup source:** \`$(basename ${BACKUP_PATH})\`"
+            echo "- **Drill Droplet:** ID \`${DROPLET_ID}\`, IP \`${DRILL_IP}\`"
+            echo "- **Size:** \`${{ inputs.drill_droplet_size }}\`"
+            echo "- **Probe:** green (direct HTTP to drill Droplet port 8001)"
+            echo "- **Run:** ${run_url}"
+          } >> "${LOG_FILE}"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add "${LOG_FILE}"
+          git commit -m "ops: dr-drill PASS ${now} [skip ci]" || true
+          git push || true
+
+      - name: Open dr-failed issue on failure
+        if: steps.drillprobe.outputs.color == 'red'
+        uses: actions/github-script@v7
+        env:
+          DRILL_IP: ${{ steps.drillip.outputs.ip }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+          PROBE_OUTPUT: ${{ steps.drillprobe.outputs.output }}
+          BACKUP_PATH: ${{ steps.backup.outputs.path }}
+        with:
+          script: |
+            const label = 'dr-failed';
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: label, color: 'b60205',
+                  description: 'DR drill failed — drill Droplet left up for inspection.',
+                });
+              }
+            }
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `DR drill FAILED — ${new Date().toISOString()}`,
+              labels: [label],
+              body: [
+                `Auto-opened by the DR drill workflow.`,
+                ``,
+                `- **Backup:** \`${process.env.BACKUP_PATH}\``,
+                `- **Drill Droplet IP:** \`${process.env.DRILL_IP}\` (LEFT UP for inspection)`,
+                `- **Droplet ID:** \`${process.env.DROPLET_ID}\``,
+                `- **Run:** ${runUrl}`,
+                ``,
+                `<details><summary>Probe output</summary>`,
+                ``,
+                '```',
+                (process.env.PROBE_OUTPUT || '(empty)').trim(),
+                '```',
+                ``,
+                `</details>`,
+                ``,
+                `SSH to inspect: \`ssh root@${process.env.DRILL_IP}\``,
+                `Destroy when done: \`doctl compute droplet delete ${process.env.DROPLET_ID} --force\``,
+              ].join('\n'),
+            });
+
+      - name: Destroy drill Droplet on success
+        if: steps.drillprobe.outputs.color == 'green'
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+        run: |
+          curl -sf -X DELETE \
+              -H "Authorization: Bearer ${DO_TOKEN}" \
+              "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}"
+          echo "Drill Droplet ${DROPLET_ID} destroyed."
+
+      - name: Destroy drill Droplet on failure (if requested)
+        if: steps.drillprobe.outputs.color == 'red' && inputs.destroy_on_failure == 'true'
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DROPLET_ID: ${{ steps.droplet.outputs.droplet_id }}
+        run: |
+          curl -sf -X DELETE \
+              -H "Authorization: Bearer ${DO_TOKEN}" \
+              "https://api.digitalocean.com/v2/droplets/${DROPLET_ID}"
+          echo "Drill Droplet ${DROPLET_ID} destroyed (destroy_on_failure=true)."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### DR drill result"
+            echo ""
+            echo "- **Drill Droplet ID:** \`${{ steps.droplet.outputs.droplet_id }}\`"
+            echo "- **Drill Droplet IP:** \`${{ steps.drillip.outputs.ip }}\`"
+            echo "- **Backup used:** \`${{ steps.backup.outputs.path }}\`"
+            echo "- **Probe result:** \`${{ steps.drillprobe.outputs.color }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
