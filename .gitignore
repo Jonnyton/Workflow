@@ -20,6 +20,8 @@ lancedb/
 .claude/projects/
 .claude/settings.json
 .claude/settings.local.json
+.claude/.dev_idle.mark
+deploy/cloudflare-worker/.wrangler/
 .claude/worktrees/
 .claude/agent-memory/
 
@@ -66,3 +68,4 @@ env/
 # Personal docs (not part of the engine)
 BettaFish_Deep_Dive_Research.docx
 Community_Branches_Plan.docx
+.hetzner-credentials

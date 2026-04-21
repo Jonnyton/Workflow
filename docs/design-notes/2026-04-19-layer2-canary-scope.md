@@ -132,6 +132,64 @@ Implementation:
 
 **Minimum signal-to-alarm latency in P0 conditions:** 3 hours (3 consecutive hourly reds with Layer 1 staying green). That's slower than Layer 1's 4-min target but matches the different failure class — connector-auth regressions are typically slower to cascade than infra outages.
 
+### 2.6 Fabrication-mode soft-threshold (exit=8) — amendment 2026-04-20
+
+**Source evidence:** `docs/audits/user-chat-intelligence/2026-04-20-do-cutover-acceptance.md` §2.2.
+
+Two paired observations from the same probe shape:
+- 2026-04-19 fabrication-mode (P0, MCP unreachable): settle >180,000 ms. Chatbot generated a 6-node workflow JSON from imagination — fabrication is slow because it's producing content, not narrating tool output.
+- 2026-04-20 green (post-cutover, tool cycle working): settle 116,000 ms.
+
+**Signal:** `tool_called=true AND settle_ms > 150,000` is a soft-yellow compound state. The tool was invoked (Layer 2 would call this green by its current logic), but the time budget suggests the chatbot may have fallen into a mixed mode — tool called, then fabrication layered on top to fill a gap. Not a definitive red; a diagnostic flag worth logging.
+
+**Proposed: exit=8 (SOFT_YELLOW) for Layer-2 log lines**
+
+New log-line state between GREEN and RED:
+
+```
+2026-04-20T22:15:00-07:00 SOFT_YELLOW layer=2 url=https://claude.ai/new exit=8 rtt_ms=163000 tool_called=get_status reason='settle_time_exceeded_150s'
+```
+
+**Compound condition (both must be true):**
+1. Tool was invoked (`tool_called=get_status` confirmed in transcript).
+2. `settle_ms > 150,000` (response took longer than 150 seconds).
+
+If only (1): GREEN. If neither (tool not invoked + slow): RED exit=10, not exit=8.
+
+**Alarm behavior for exit=8:**
+- Does NOT fire `CONNECTOR_DEGRADED` alarm alone.
+- Does NOT count toward the "3+ consecutive reds" threshold for alarming.
+- DOES write the SOFT_YELLOW line to `.agents/uptime.log` for human review.
+- Alarm rule: **2 consecutive SOFT_YELLOW lines with Layer-1 green** → write a SOFT_YELLOW entry to `.agents/uptime_alarms.log` with fingerprint `FABRICATION_MODE_SUSPECTED|<chatbot_url>`. Not a page; a breadcrumb for the next human who checks the log.
+
+**Why not make this a hard RED?** Two reasons. First, legitimate long-thinking responses exist — a chatbot that invokes get_status and then gives a detailed 3-paragraph analysis of the result is not fabricating, just verbose. Second, the 150s calibration comes from one paired observation; it may need tuning as the probe runs longer. Soft-yellow preserves the signal without crying wolf.
+
+**Implementation touch-points (for dev):**
+
+In `scripts/uptime_canary_layer2.py` (not yet created — §4 shape):
+- After parsing the transcript for tool-called + field-match (green criteria), add a settle-time check.
+- If green criteria met AND `settle_ms > 150_000`: log SOFT_YELLOW exit=8 instead of GREEN.
+- `_format_soft_yellow(ts, url, rtt_ms, reason)` → `f"{ts} SOFT_YELLOW layer=2 url={url} exit=8 rtt_ms={rtt_ms} reason={reason!r}"`.
+- Return value: treat exit=8 as 0 for process exit code (caller sees success — it's a soft signal, not a failure). Log the line; that's sufficient.
+
+In `scripts/uptime_alarm.py`:
+- `_parse_line` already accepts arbitrary `key=value` tokens — no change needed.
+- Add a `SOFT_YELLOW` state enum alongside `GREEN` / `RED` / `SKIP`.
+- Add consecutive-soft-yellow counter alongside the existing consecutive-red counter.
+- Alarm at 2 consecutive SOFT_YELLOW, fingerprint `FABRICATION_MODE_SUSPECTED`.
+
+**Updated exit-code table (amends §2.3):**
+
+- 0 = GREEN — tool called, field matched, settle ≤ 150s
+- 8 = SOFT_YELLOW — tool called, field matched, settle > 150s (fabrication-mode suspected; log only)
+- 10 = RED — tool not invoked
+- 11 = RED — tool invoked but response empty
+- 12 = RED — tool invoked but response doesn't match expected field
+- 13 = RED — browser couldn't load Claude.ai
+- 14 = SKIP — browser lock unavailable
+- 15 = RED — persona auth expired / login loop
+- 99 = RED — unexpected failure
+
 ---
 
 ## 3. What Layer 2 does NOT decide (out of scope)

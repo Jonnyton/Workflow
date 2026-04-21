@@ -89,6 +89,76 @@ jobs:
           # alarm-sink uses prior-run conclusion to detect consecutive reds.
           exit $code
 
+  layer2-probe:
+    # Layer-2: Claude.ai connector liveness. Runs headless via injectable
+    # _probe_fn — in GHA there is no real browser, so this step detects the
+    # absence of a real browser and exits SKIP (14, treated as 0).
+    # SOFT_YELLOW signals (fabrication-mode suspected) write to the alarm log
+    # and are echoed to stdout via GHA-mode in uptime_alarm.py; they do NOT
+    # open GH issues (that path is Layer-1 only).
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      l2_status: ${{ steps.l2probe.outputs.l2_status }}
+      l2_semantic: ${{ steps.l2probe.outputs.l2_semantic }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Layer-2 connector probe
+        id: l2probe
+        continue-on-error: true
+        env:
+          GITHUB_ACTIONS: "true"
+        run: |
+          set +e
+          python scripts/uptime_canary_layer2.py --once 2>&1
+          code=$?
+          set -e
+          # Map exit code to human-readable semantic.
+          case "$code" in
+            0)  semantic="GREEN_OR_SOFT_YELLOW" ;;
+            10) semantic="RED_tool_not_invoked" ;;
+            12) semantic="RED_field_not_matched" ;;
+            13) semantic="RED_browser_load_error" ;;
+            14) semantic="SKIP_lock_unavailable" ;;
+            15) semantic="RED_auth_expired" ;;
+            *)  semantic="RED_unexpected_exit_${code}" ;;
+          esac
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "l2_status=$code"
+            echo "l2_semantic<<${_delim}"
+            echo "$semantic"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== layer-2 probe exit=$code semantic=$semantic ==="
+          # SKIP (14) and GREEN/SOFT_YELLOW (0) are both non-failure for GHA.
+          # RED exits (10/12/13/15/99) make this step fail.
+          if [ "$code" != "0" ] && [ "$code" != "14" ]; then
+            exit $code
+          fi
+
+      - name: Layer-2 alarm evaluation (GHA mode)
+        if: always()
+        env:
+          GITHUB_ACTIONS: "true"
+        run: |
+          # GITHUB_ACTIONS=true: uptime_alarm.py mirrors new alarm lines to
+          # stdout so they appear in workflow output without fetching the file.
+          python scripts/uptime_alarm.py --verbose
+
+      - name: Layer-2 Summary
+        if: always()
+        run: |
+          echo "### Layer-2 connector probe" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **exit** → \`${{ steps.l2probe.outputs.l2_status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **semantic** → ${{ steps.l2probe.outputs.l2_semantic }}" >> "$GITHUB_STEP_SUMMARY"
+
   alarm-sink:
     # Runs on every tick so it can close issues after recovery too.
     # `if: always()` because the probe job intentionally exits non-zero

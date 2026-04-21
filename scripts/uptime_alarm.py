@@ -41,6 +41,9 @@ ALARM_STATE = _REPO_ROOT / ".agents" / ".uptime_alarm_state.json"
 
 # Minimum consecutive reds before we alarm. Design-note §3.
 ALARM_THRESHOLD = 2
+# Minimum consecutive SOFT_YELLOW lines before writing a fabrication-mode
+# breadcrumb. §2.6 amendment 2026-04-20.
+SOFT_YELLOW_THRESHOLD = 2
 # Scan window — don't scan more than this many lines; protects against
 # runaway log file state.
 TAIL_LINES = 200
@@ -62,15 +65,15 @@ def _read_tail(path: Path, n: int) -> list[str]:
 
 
 def _parse_line(line: str) -> dict[str, str] | None:
-    """Parse ``<ts> GREEN|RED layer=1 url=... [exit=N] [reason=...]``.
+    """Parse ``<ts> GREEN|RED|SOFT_YELLOW|SKIP layer=N url=... [exit=N] [reason=...]``.
 
-    Returns a dict with keys status, url, exit (when RED). None if the
-    line doesn't match the canary format.
+    Returns a dict with keys status, url, exit (when RED/SOFT_YELLOW). None if
+    the line doesn't match the canary format.
     """
     parts = line.split()
     if len(parts) < 3:
         return None
-    if parts[1] not in ("GREEN", "RED"):
+    if parts[1] not in ("GREEN", "RED", "SOFT_YELLOW", "SKIP"):
         return None
     out: dict[str, str] = {"ts": parts[0], "status": parts[1]}
     for token in parts[2:]:
@@ -97,16 +100,36 @@ def _save_state(state: dict[str, object]) -> None:
         pass  # best-effort; next run re-derives from log tail
 
 
+def _is_gha() -> bool:
+    """True when running inside a GitHub Actions runner (GITHUB_ACTIONS=true)."""
+    import os
+    return os.environ.get("GITHUB_ACTIONS", "").lower() in ("true", "1")
+
+
 def _append_alarm(line: str) -> None:
     ALARM_LOG.parent.mkdir(parents=True, exist_ok=True)
     with ALARM_LOG.open("a", encoding="utf-8") as fp:
         fp.write(line + "\n")
+    # Mirror to stdout in GHA so the alarm line appears in workflow output.
+    if _is_gha():
+        print(f"[uptime-alarm] {line}", flush=True)
 
 
 def _count_trailing_reds(parsed: list[dict[str, str]]) -> int:
     count = 0
     for entry in reversed(parsed):
         if entry.get("status") == "RED":
+            count += 1
+        else:
+            break
+    return count
+
+
+def _count_trailing_soft_yellows(parsed: list[dict[str, str]]) -> int:
+    """Count consecutive SOFT_YELLOW lines at the tail of parsed entries."""
+    count = 0
+    for entry in reversed(parsed):
+        if entry.get("status") == "SOFT_YELLOW":
             count += 1
         else:
             break
@@ -164,6 +187,38 @@ def evaluate() -> int:
             written += 1
         # else: dedupe — same outage already alarmed, do not re-alarm.
         return written
+
+    # Check for consecutive SOFT_YELLOW (fabrication-mode breadcrumb).
+    # Does NOT count as RED; does NOT fire CONNECTOR_DEGRADED.
+    # Fires a soft breadcrumb after SOFT_YELLOW_THRESHOLD consecutive lines.
+    trailing_soft_yellows = _count_trailing_soft_yellows(parsed)
+    if trailing_soft_yellows >= SOFT_YELLOW_THRESHOLD:
+        latest_sy = parsed[-1]
+        url = latest_sy.get("url", "?")
+        fingerprint = f"SOFT_YELLOW|{url}"
+        last_sy_fingerprint = state.get("last_soft_yellow_fingerprint")
+        last_sy_status = state.get("last_soft_yellow_status")
+
+        if fingerprint != last_sy_fingerprint or last_sy_status != "soft_yellow":
+            ts = _now_local_iso()
+            rtt_ms = latest_sy.get("rtt_ms", "?")
+            _append_alarm(
+                f"{ts} FABRICATION_MODE_SUSPECTED "
+                f"consecutive_soft_yellows={trailing_soft_yellows} "
+                f"url={url} rtt_ms={rtt_ms} "
+                f"log={UPTIME_LOG.as_posix()}"
+            )
+            state["last_soft_yellow_fingerprint"] = fingerprint
+            state["last_soft_yellow_status"] = "soft_yellow"
+            _save_state(state)
+            written += 1
+        return written
+
+    # Clear soft-yellow state if the tail is no longer soft-yellow.
+    if state.get("last_soft_yellow_status") == "soft_yellow" and trailing_soft_yellows == 0:
+        state.pop("last_soft_yellow_fingerprint", None)
+        state.pop("last_soft_yellow_status", None)
+        _save_state(state)
 
     # Trailing green. If we were in a red-alarmed state, emit a RECOVERED line.
     if last_alarm_status == "red":
