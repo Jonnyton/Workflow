@@ -124,7 +124,11 @@ rm -f "${TAR_PATH}"
 log "pruning retention (daily=${BACKUP_RETAIN_DAILY} weekly=${BACKUP_RETAIN_WEEKLY} monthly=${BACKUP_RETAIN_MONTHLY})..."
 PRUNE_SCRIPT="$(dirname "$(realpath "$0")")/../scripts/backup_prune.py"
 set +e
-rclone lsf --format n "${BACKUP_DEST}/" 2>/dev/null \
+set +o pipefail
+# rclone lsf default output is filename-per-line — no --format flag needed
+# (prior --format n was invalid; 'n' isn't a valid format char and made
+# rclone exit 1, which pipefail propagated → systemd marked service failed).
+rclone lsf "${BACKUP_DEST}/" 2>/dev/null \
     | python3 "${PRUNE_SCRIPT}" \
         --keep-daily "${BACKUP_RETAIN_DAILY}" \
         --keep-weekly "${BACKUP_RETAIN_WEEKLY}" \
@@ -135,7 +139,7 @@ rclone lsf --format n "${BACKUP_DEST}/" 2>/dev/null \
             log "    WARN: delete failed for ${victim}"
     done
 prune_status=$?
-set -e
+set -eo pipefail
 
 if [[ "${prune_status}" -ne 0 ]]; then
     log "WARN: retention prune exited ${prune_status} (backup itself succeeded)"
