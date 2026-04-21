@@ -37,6 +37,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 from mcp_public_canary import CanaryError, probe_result  # noqa: E402
+from verify_llm_binding import VerifyError, check_llm_binding  # noqa: E402
 
 CANONICAL_URL = "https://tinyassets.io/mcp"
 TUNNEL_URL = "https://mcp.tinyassets.io/mcp"
@@ -176,7 +177,13 @@ def assert_parity(
         raise SmokeError(3, "parity failure:\n  " + "\n  ".join(errors))
 
 
-def run(canonical: str, tunnel: str, timeout: float) -> int:
+def run(
+    canonical: str,
+    tunnel: str,
+    timeout: float,
+    *,
+    llm_check_fn=None,  # injection seam: (url, timeout) -> dict; raises VerifyError on fail
+) -> int:
     try:
         canonical_tools, canonical_status = probe_url(canonical, timeout, "canonical")
         tunnel_tools, tunnel_status = probe_url(tunnel, timeout, "tunnel")
@@ -189,6 +196,16 @@ def run(canonical: str, tunnel: str, timeout: float) -> int:
         f"[smoke] PASS — {len(canonical_tools)} tools in parity, "
         f"get_status structure matches"
     )
+
+    # LLM-binding gate (HD-3): smoke fails if canonical daemon has no LLM bound.
+    _llm_check = llm_check_fn or check_llm_binding
+    try:
+        _llm_check(canonical, timeout)
+        print("[smoke] LLM binding check PASS")
+    except VerifyError as exc:
+        print(f"[smoke] LLM binding FAIL (exit {exc.code}): {exc.msg}", file=sys.stderr)
+        return exc.code
+
     return 0
 
 

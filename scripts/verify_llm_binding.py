@@ -97,37 +97,6 @@ def _post(
     return result, new_sid
 
 
-def _initialize(url: str, timeout: float) -> str | None:
-    resp, sid = _post(url, None, _INIT_PAYLOAD, timeout)
-    if not resp or "result" not in resp:
-        raise VerifyError(1, f"MCP initialize failed: {resp!r}")
-    _post(url, sid, _INITIALIZED_NOTIF, timeout)
-    return sid
-
-
-def _call_tool(
-    url: str,
-    sid: str | None,
-    tool: str,
-    args: dict[str, Any],
-    timeout: float,
-) -> dict[str, Any]:
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 10,
-        "method": "tools/call",
-        "params": {"name": tool, "arguments": args},
-    }
-    resp, _ = _post(url, sid, payload, timeout)
-    if resp is None or "result" not in resp:
-        raise VerifyError(1, f"tools/call {tool!r} got no result: {resp!r}")
-    if resp["result"].get("isError"):
-        content = resp["result"].get("content", [])
-        text = next((c["text"] for c in content if c.get("type") == "text"), "")
-        raise VerifyError(4, f"tools/call {tool!r} returned isError: {text[:300]}")
-    return resp["result"]
-
-
 def _parse_status(result: dict[str, Any]) -> dict[str, Any]:
     for item in result.get("content", []):
         if item.get("type") == "text":

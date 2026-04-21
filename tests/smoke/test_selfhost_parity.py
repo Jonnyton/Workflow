@@ -17,6 +17,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 import selfhost_smoke as smoke  # noqa: E402
+from verify_llm_binding import VerifyError  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # assert_parity
@@ -73,7 +74,10 @@ def test_run_exit_0_when_parity_holds(monkeypatch):
     tools = {"get_status", "universe"}
     status = {"phase": "idle"}
     monkeypatch.setattr(smoke, "probe_url", lambda url, timeout, label: (tools, status))
-    rc = smoke.run(smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10)
+    rc = smoke.run(
+        smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10,
+        llm_check_fn=lambda url, timeout: {"llm_endpoint_bound": "anthropic"},
+    )
     assert rc == 0
 
 
@@ -120,3 +124,68 @@ def test_main_passes_custom_urls_to_run(monkeypatch):
     assert seen["canonical"] == "https://example.com/mcp"
     assert seen["tunnel"] == "https://tunnel.example.com/mcp"
     assert seen["timeout"] == 5.0
+
+
+# ---------------------------------------------------------------------------
+# LLM-binding integration in run()
+# ---------------------------------------------------------------------------
+
+_TOOLS = {"get_status", "universe"}
+_STATUS = {"phase": "idle"}
+
+
+def test_run_exit_0_when_parity_and_llm_bound(monkeypatch):
+    monkeypatch.setattr(smoke, "probe_url", lambda url, timeout, label: (_TOOLS, _STATUS))
+    rc = smoke.run(
+        smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10,
+        llm_check_fn=lambda url, timeout: {"llm_endpoint_bound": "anthropic"},
+    )
+    assert rc == 0
+
+
+def test_run_fails_when_llm_unbound(monkeypatch):
+    monkeypatch.setattr(smoke, "probe_url", lambda url, timeout, label: (_TOOLS, _STATUS))
+
+    def _unbound(url, timeout):
+        raise VerifyError(3, "llm_endpoint_bound is 'unset'")
+
+    rc = smoke.run(
+        smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10,
+        llm_check_fn=_unbound,
+    )
+    assert rc == 3
+
+
+def test_run_fails_when_llm_network_error(monkeypatch):
+    monkeypatch.setattr(smoke, "probe_url", lambda url, timeout, label: (_TOOLS, _STATUS))
+
+    def _net_err(url, timeout):
+        raise VerifyError(2, "network error")
+
+    rc = smoke.run(
+        smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10,
+        llm_check_fn=_net_err,
+    )
+    assert rc == 2
+
+
+def test_run_parity_fail_skips_llm_check(monkeypatch):
+    """Parity gate fires before LLM check — LLM fn must not be called."""
+    called = []
+
+    def _probe(url, timeout, label):
+        if label == "canonical":
+            return ({"get_status", "wiki"}, _STATUS)
+        return ({"get_status"}, _STATUS)
+
+    def _llm(url, timeout):
+        called.append(True)
+        return {"llm_endpoint_bound": "anthropic"}
+
+    monkeypatch.setattr(smoke, "probe_url", _probe)
+    rc = smoke.run(
+        smoke.CANONICAL_URL, smoke.TUNNEL_URL, 10,
+        llm_check_fn=_llm,
+    )
+    assert rc == 3
+    assert called == [], "LLM check should not run when parity fails"
