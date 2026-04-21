@@ -116,6 +116,7 @@ COPY --from=builder /build/pyproject.toml /app/pyproject.toml
 # surface. Copied directly (not via the builder stage) because the
 # script is pure stdlib — no compilation needed.
 COPY scripts/mcp_public_canary.py /app/scripts/mcp_public_canary.py
+COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
 
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -126,14 +127,18 @@ ENV PATH=/opt/venv/bin:$PATH \
 # on-disk state. For now, /data is the expected bind-mount target;
 # operators supply it via `-v /host/path:/data` + the env var below.
 ENV WORKFLOW_DATA_DIR=/data
-RUN mkdir -p /data && chown -R workflow:workflow /data /app
+RUN mkdir -p /data && \
+    chmod +x /app/docker-entrypoint.sh && \
+    chown -R workflow:workflow /data /app
 
 USER workflow
 
 EXPOSE 8001
 
-# tini as PID 1 handles signal forwarding + zombie reaping cleanly.
-ENTRYPOINT ["/usr/bin/tini", "--"]
+# tini as PID 1 handles signal forwarding + zombie reaping.
+# docker-entrypoint.sh runs codex login on first start if auth is missing,
+# then execs the CMD.
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker-entrypoint.sh"]
 
 # Default command — the FastMCP streamable-http server on 0.0.0.0:8001.
 # Matches `if __name__ == "__main__": main()` in workflow/universe_server.py.

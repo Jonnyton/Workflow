@@ -317,6 +317,12 @@ def _build_prompt_template_node(
                     f"Provider call failed in node '{node.node_id}': {exc}"
                 ) from exc
 
+        if not response:
+            raise CompilerError(
+                f"Node '{node.node_id}': LLM returned empty response — "
+                f"check provider availability and credentials"
+            )
+
         if event_sink is not None:
             try:
                 event_sink(

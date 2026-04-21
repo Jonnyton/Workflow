@@ -55,7 +55,7 @@ class CodexProvider(BaseProvider):
         full_input = f"{system}\n\n{prompt}" if system else prompt
 
         base_cmd, use_shell = _resolve_codex_cmd()
-        cmd = [*base_cmd, "exec", "--full-auto"]
+        cmd = [*base_cmd, "exec", "--full-auto", "--skip-git-repo-check"]
 
         win_kw = _no_window_kwargs()
         if use_shell:
@@ -104,6 +104,25 @@ class CodexProvider(BaseProvider):
             )
 
         text = stdout.decode("utf-8", errors="replace").strip()
+        stderr_text = stderr.decode("utf-8", errors="replace")
+
+        if not text:
+            # codex v0.122+ exits 0 on auth failure (401) but emits nothing to
+            # stdout. Detect the silent-auth-failure pattern and surface it as a
+            # hard error rather than returning an empty response that cascades
+            # silently through downstream nodes.
+            _auth_patterns = ("401", "Unauthorized", "Reconnecting", "auth")
+            stderr_lower = stderr_text.lower()
+            if any(p.lower() in stderr_lower for p in _auth_patterns):
+                excerpt = stderr_text[:300].strip()
+                raise ProviderError(
+                    f"codex returned empty stdout with auth-error signal in stderr "
+                    f"(exit={proc.returncode}): {excerpt}"
+                )
+            raise ProviderError(
+                f"codex returned empty response (exit={proc.returncode}); "
+                f"stderr: {stderr_text[:200].strip() or '(empty)'}"
+            )
 
         return ProviderResponse(
             text=text,

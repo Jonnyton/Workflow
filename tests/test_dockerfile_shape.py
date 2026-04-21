@@ -19,6 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = REPO_ROOT / "Dockerfile"
 COMPOSE = REPO_ROOT / "deploy" / "compose.yml"
 ENV_TEMPLATE = REPO_ROOT / "deploy" / "workflow-env.template"
+ENTRYPOINT = REPO_ROOT / "deploy" / "docker-entrypoint.sh"
+CODEX_PROVIDER = REPO_ROOT / "workflow" / "providers" / "codex_provider.py"
 
 
 # ---------------------------------------------------------------------------
@@ -132,3 +134,89 @@ def test_compose_env_file_covers_daemon_service():
     assert any("/etc/workflow/env" in v for v in env_file_values), (
         "daemon service env_file must include /etc/workflow/env"
     )
+
+
+# ---------------------------------------------------------------------------
+# codex_provider.py — --skip-git-repo-check flag (BUG-004 fix A)
+# ---------------------------------------------------------------------------
+
+
+def test_codex_provider_has_skip_git_repo_check():
+    """codex exec must pass --skip-git-repo-check so it works outside a git repo."""
+    text = CODEX_PROVIDER.read_text(encoding="utf-8")
+    assert "--skip-git-repo-check" in text, (
+        "codex_provider.py must pass --skip-git-repo-check to 'codex exec'; "
+        "without it codex v0.122+ refuses to run in /app (not a git repo)"
+    )
+
+
+def test_codex_provider_flag_is_on_exec_command():
+    """--skip-git-repo-check must be on the exec invocation, not a separate call."""
+    text = CODEX_PROVIDER.read_text(encoding="utf-8")
+    # The flag must appear on the same logical line as "exec" + "--full-auto"
+    for line in text.splitlines():
+        if "--skip-git-repo-check" in line:
+            assert "exec" in line or "--full-auto" in line, (
+                "--skip-git-repo-check should be on the 'codex exec' command line"
+            )
+            break
+
+
+# ---------------------------------------------------------------------------
+# docker-entrypoint.sh — codex login baked in (BUG-004 fix B)
+# ---------------------------------------------------------------------------
+
+
+def test_entrypoint_script_exists():
+    assert ENTRYPOINT.exists(), f"Missing: {ENTRYPOINT}"
+
+
+def test_entrypoint_runs_codex_login():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "codex login" in text, (
+        "docker-entrypoint.sh must run 'codex login' to authenticate codex CLI"
+    )
+
+
+def test_entrypoint_uses_with_api_key_flag():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "--with-api-key" in text, (
+        "codex login must use --with-api-key flag to authenticate via OPENAI_API_KEY env var"
+    )
+
+
+def test_entrypoint_guards_on_openai_key_present():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" in text, (
+        "entrypoint must guard codex login on OPENAI_API_KEY being set"
+    )
+
+
+def test_entrypoint_guards_on_auth_missing():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "auth.json" in text or ".codex" in text, (
+        "entrypoint must skip codex login when auth already exists (idempotent)"
+    )
+
+
+def test_entrypoint_execs_cmd():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'exec "$@"' in text, (
+        "entrypoint must end with exec \"$@\" to preserve tini PID-1 signal forwarding"
+    )
+
+
+def test_dockerfile_copies_entrypoint():
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "docker-entrypoint.sh" in text, (
+        "Dockerfile must COPY docker-entrypoint.sh into the image"
+    )
+
+
+def test_dockerfile_entrypoint_uses_entrypoint_script():
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "docker-entrypoint.sh" in text, (
+        "Dockerfile ENTRYPOINT must invoke docker-entrypoint.sh"
+    )
+    # tini must still be PID 1
+    assert "tini" in text, "tini must remain as PID 1 in ENTRYPOINT"

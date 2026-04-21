@@ -513,6 +513,77 @@ class TestCodexProvider:
             with pytest.raises(ProviderError):
                 await provider.complete("prompt", "system", ModelConfig())
 
+    @pytest.mark.asyncio
+    async def test_empty_stdout_raises_provider_error(self):
+        """Empty stdout with exit 0 must raise ProviderError, not return ''."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
+            provider = CodexProvider()
+            with pytest.raises(ProviderError, match="empty response"):
+                await provider.complete("prompt", "system", ModelConfig())
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_exit_0_raises_provider_error(self):
+        """codex v0.122 exits 0 on 401 but emits Unauthorized in stderr."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(
+            b"",
+            b"Error: 401 Unauthorized - Reconnecting...",
+        ))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
+            provider = CodexProvider()
+            with pytest.raises(ProviderError, match="auth-error"):
+                await provider.complete("prompt", "system", ModelConfig())
+
+    @pytest.mark.asyncio
+    async def test_skip_git_repo_check_in_command(self):
+        """codex exec must include --skip-git-repo-check."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        captured_cmd = []
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"hello", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _fake_exec(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        ):
+            provider = CodexProvider()
+            await provider.complete("prompt", "system", ModelConfig())
+
+        assert "--skip-git-repo-check" in captured_cmd, (
+            f"Expected --skip-git-repo-check in command: {captured_cmd}"
+        )
+
 
 # =====================================================================
 # OllamaProvider (HTTP mock)
