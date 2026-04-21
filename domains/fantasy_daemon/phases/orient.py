@@ -1,3 +1,12 @@
+# Graph entry point: node "orient" in domains/fantasy_daemon/graphs/scene.py
+#   Topology: orient -> plan -> draft -> commit
+#   Registered via: graph.add_node("orient", orient); graph.set_entry_point("orient")
+# Reads:  SceneState fields — universe_id, book_number, chapter_number, scene_number,
+#         _universe_path, _db_path, workflow_instructions
+# Writes: SceneState fields — orient_result (dict), quality_trace (appended)
+# Sibling phases to read next: plan.py (LLM scene planner), draft.py (writer),
+#         commit.py (accept/revise gate)
+
 """Orient node -- deterministic forward-projection.
 
 Queries the world state database for overdue promises, pacing flags,
