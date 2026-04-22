@@ -19,6 +19,14 @@ on:
         description: "Message body (will be prefixed with [TEST])"
         required: false
         default: "One-shot validation from GitHub Actions."
+      priority:
+        description: "Pushover priority (1 = high/bypass quiet hours; 2 = emergency/bypass silent, requires ack)"
+        required: false
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
 
 permissions:
   contents: read
@@ -38,24 +46,31 @@ jobs:
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
           TEST_MESSAGE: ${{ inputs.message }}
+          TEST_PRIORITY: ${{ inputs.priority }}
         run: |
           python - <<'PY'
           import os, sys
           sys.path.insert(0, "scripts")
-          from pushover_page import send_pushover
+          from pushover_page import send_pushover, P0_RETRY_S, P0_EXPIRE_S
 
           if not os.environ.get("PUSHOVER_USER_KEY") or not os.environ.get("PUSHOVER_APP_TOKEN"):
               print("::error::PUSHOVER_USER_KEY or PUSHOVER_APP_TOKEN not set in repo secrets")
               sys.exit(1)
 
+          priority = int(os.environ.get("TEST_PRIORITY") or "1")
+          kwargs = {"priority": priority}
+          if priority == 2:
+              kwargs["retry"] = P0_RETRY_S
+              kwargs["expire"] = P0_EXPIRE_S
+
           ok, body = send_pushover(
-              title="[TEST] Workflow paging",
+              title=f"[TEST p{priority}] Workflow paging",
               message=os.environ.get("TEST_MESSAGE") or "One-shot validation.",
-              priority=1,
+              **kwargs,
           )
           print(f"ok={ok} body={body}")
           if not ok:
               print("::error::Pushover delivery failed — check keys + app token validity")
               sys.exit(1)
-          print("::notice::Pushover delivered — check your phone.")
+          print(f"::notice::Pushover delivered at priority={priority} — check your phone.")
           PY
