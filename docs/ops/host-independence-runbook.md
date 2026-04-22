@@ -445,16 +445,63 @@ When `uptime-canary.yml` opens a `p0-outage` issue, `.github/workflows/p0-outage
 fires automatically:
 
 1. SSHs into the Droplet using `DO_SSH_KEY` / `DO_DROPLET_HOST` / `DO_SSH_USER` secrets.
-2. Captures pre-restart diagnostics (`docker ps`, compose status, journalctl tail).
-3. Runs `docker compose up -d --force-recreate daemon` (non-destructive; data volume untouched).
-4. Waits 30s, re-probes `https://tinyassets.io/mcp`.
-5. **Green**: comments auto-recovered + closes the issue.
-6. **Still red**: comments diag output + adds `needs-human` label. GHA run marked failed.
+2. Captures pre-restart diagnostics (`docker ps`, compose status, journalctl tail, `df -h`, `systemctl status`, cloudflared logs).
+3. Runs `scripts/triage_classify.py` over the diag to identify the outage class.
+4. Fires the matching repair branch (see table below).
+5. Runs `docker compose up -d --force-recreate daemon` as belt-and-suspenders (skipped for `watchdog_hotloop` and `tunnel_token` classes — both have their own paths).
+6. Waits 30s, re-probes `https://tinyassets.io/mcp`.
+7. **Green**: comments auto-recovered + closes the issue.
+8. **Still red**: comments diag output + adds `needs-human` label. GHA run marked failed.
 
 Required secrets (same set as `deploy-prod.yml`): `DO_SSH_KEY`, `DO_DROPLET_HOST`, `DO_SSH_USER`.
 
 If secrets are missing, the workflow comments and exits 1 — the `p0-outage` issue stays open
 for manual response.
+
+### Auto-triage classes
+
+Each class is detected by a single regex against the diag bundle. First-match-wins in priority order. Full implementation + tests: `scripts/triage_classify.py` + `tests/test_triage_classify.py`.
+
+| Class | Anchor regex match | Repair | Manual-only? |
+|---|---|---|---|
+| `env_unreadable` | `ENV-UNREADABLE` token emitted from systemd ExecStartPre / entrypoint / sed sites | `chown root:workflow && chmod 640 /etc/workflow/env` | No |
+| `tunnel_token` | `UnauthorizedError` / `authentication failed` / `Invalid tunnel secret` in cloudflared logs | **None** — detection opens `tunnel-token-rotation` issue, pages priority=2 | **Yes** |
+| `oom` | Kernel `Out of memory:` / `oom-killer` / container `OOMKilled` | `docker compose restart daemon` (memory cap **not** auto-bumped) | No |
+| `disk_full` | `df -h` shows ≥90% on `/`, `/data`, or `/var/lib/docker` | `docker system prune -af` + `journalctl --vacuum-time=3d` | No |
+| `image_pull_failure` | `manifest not found` / `pull access denied` / `ImagePullBackOff` | Fall back to `WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:latest` (loses SHA pin until next deploy) | No |
+| `watchdog_hotloop` | systemd `start-limit-hit` / `Start request repeated too quickly` | `systemctl stop → sleep 60 → reset-failed → start` | No |
+| `unknown` | Fall-through when no class matches | Generic compose restart (legacy behavior) | No |
+
+**Memory-cap ratchet for repeated OOMs (host action, not auto):**
+If `oom` class recurs 2+ times in a week, bump the memory cap once in `deploy/compose.yml` under the `daemon` service:
+
+```yaml
+services:
+  daemon:
+    # ...
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # up from default 1G; bump again only after another recurrence
+```
+
+Don't ratchet faster — each OOM is signal about a real memory leak worth preserving in GH issue history before papering over.
+
+**Image-pull fallback recovery:**
+When auto-triage falls the daemon off the SHA pin to `:latest`, the next `deploy-prod.yml` run re-pins to a new short-SHA. If you want to pin manually in the interim:
+
+```bash
+ssh ... "sudo sed -i 's|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:<sha>|' /etc/workflow/env && \
+         sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env && \
+         sudo systemctl restart workflow-daemon"
+```
+
+**Tunnel-token rotation (manual):**
+See `#cloudflare-api-token` / `#pushover-app-token` for the general rotation pattern. Tunnel-token specifics:
+1. Cloudflare Zero Trust → Networks → Tunnels → `workflow-daemon-prod` → rotate token → copy new value.
+2. `gh secret set CLOUDFLARE_TUNNEL_TOKEN --body "<new token>"`.
+3. Trigger `.github/workflows/deploy-prod.yml` or edit `/etc/workflow/env` directly on the droplet (maintains ENV-UNREADABLE invariant — chown + chmod after sed).
+4. Close the auto-opened `tunnel-token-rotation` issue with a resolution comment.
 
 ---
 

@@ -75,13 +75,22 @@ jobs:
       - name: Capture pre-restart diag
         id: prediag
         run: |
+          # Bundle docker + compose + journalctl + df + systemctl status
+          # so the classifier sees all signals at once. df is needed for
+          # disk-full detection; systemctl status for watchdog-hotloop.
           diag=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>&1; \
                echo '---'; \
                docker compose -f /opt/workflow/deploy/compose.yml ps 2>&1 | head -20; \
-               echo '---'; \
-               journalctl -u workflow-daemon --no-pager -n 50 2>&1 || true" \
+               echo '--- journalctl workflow-daemon ---'; \
+               journalctl -u workflow-daemon --no-pager -n 80 2>&1 || true; \
+               echo '--- df -h ---'; \
+               df -h 2>&1 || true; \
+               echo '--- systemctl status workflow-daemon ---'; \
+               systemctl status workflow-daemon --no-pager 2>&1 | head -30 || true; \
+               echo '--- cloudflared logs ---'; \
+               docker logs workflow-tunnel --tail 30 2>&1 || true" \
               2>&1 || echo "(SSH failed)")
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
@@ -92,28 +101,183 @@ jobs:
           echo "=== pre-restart diag ==="
           echo "$diag"
 
-      # Navigator 2026-04-22 §a: auto-repair the known ENV-UNREADABLE class
-      # (/etc/workflow/env perms regressed to 600, user=workflow can't read).
-      # We grep the canonical marker we emit from systemd ExecStartPre, the
-      # deploy-prod sed sites, and the container entrypoint — all use the
-      # same `ENV-UNREADABLE` token. If found, run the fixed chown+chmod.
-      # Deliberately narrow: only this one known class. Don't generalize.
-      - name: Auto-repair ENV-UNREADABLE class if detected
-        id: env_repair
+      # Narrow-by-design classifier — each class has ONE regex, priority
+      # ordered (root-cause classes beat cascading symptoms). Delegates
+      # to scripts/triage_classify.py so regex logic is unit-testable
+      # without firing a real drill. Classes (task #11 spec):
+      #   env_unreadable       — chown+chmod repair (Task #3 class)
+      #   tunnel_token         — MANUAL ONLY (token rotation); opens
+      #                          dedicated issue + pages priority=2
+      #   oom                  — compose restart (memory ratchet NOT auto)
+      #   disk_full            — docker system prune -af
+      #   image_pull_failure   — fall back to :latest in /etc/workflow/env
+      #   watchdog_hotloop     — stop → sleep 60 → start (reset limit)
+      #   unknown              — generic compose restart (legacy behavior)
+      - name: Classify outage
+        id: classify
         run: |
-          if echo "${{ steps.prediag.outputs.diag }}" | grep -q 'ENV-UNREADABLE'; then
-            echo "detected ENV-UNREADABLE marker in journalctl — applying perm repair"
-            ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-                "sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env && sudo -u workflow test -r /etc/workflow/env && echo 'env perms repaired' && sudo ls -l /etc/workflow/env"
-            echo "repaired=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "no ENV-UNREADABLE marker found — proceeding to generic compose restart"
-            echo "repaired=false" >> "$GITHUB_OUTPUT"
-          fi
+          result=$(printf '%s' "${{ steps.prediag.outputs.diag }}" \
+              | python scripts/triage_classify.py)
+          echo "classifier output: ${result}"
+          klass=$(printf '%s' "${result}" | python -c "import json,sys; print(json.load(sys.stdin)['class'])")
+          auto=$(printf '%s' "${result}" | python -c "import json,sys; print(str(json.load(sys.stdin)['auto_repairable']).lower())")
+          manual=$(printf '%s' "${result}" | python -c "import json,sys; print(str(json.load(sys.stdin)['manual_only']).lower())")
+          evidence=$(printf '%s' "${result}" | python -c "import json,sys; print(json.load(sys.stdin)['evidence'])")
+          {
+            echo "class=${klass}"
+            echo "auto_repairable=${auto}"
+            echo "manual_only=${manual}"
+            _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+            echo "evidence<<${_delim}"
+            echo "${evidence}"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
 
+      # --- Repair branch 1: ENV-UNREADABLE -----------------------------
+      - name: Repair — ENV-UNREADABLE (chown + chmod)
+        id: repair_env
+        if: steps.classify.outputs.class == 'env_unreadable'
+        run: |
+          echo "::notice::ENV-UNREADABLE detected — applying perm repair"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo chown root:workflow /etc/workflow/env && \
+               sudo chmod 640 /etc/workflow/env && \
+               sudo -u workflow test -r /etc/workflow/env && \
+               echo 'env perms repaired' && \
+               sudo ls -l /etc/workflow/env"
+
+      # --- Repair branch 2: OOM ----------------------------------------
+      # Narrow repair: compose restart, no memory-cap ratchet. Infinite
+      # ratchet would mask an actual memory leak; each OOM event is a
+      # signal worth preserving in GH issue history. If OOMs recur, host
+      # bumps the memory cap by hand (one-shot bump, documented in
+      # docs/ops/host-independence-runbook.md — not auto-applied here).
+      - name: Repair — OOM (compose restart; memory cap NOT auto-bumped)
+        id: repair_oom
+        if: steps.classify.outputs.class == 'oom'
+        run: |
+          echo "::notice::OOM detected — compose restart (no memory ratchet)"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "docker compose -f /opt/workflow/deploy/compose.yml \
+                 --env-file /etc/workflow/env \
+                 restart daemon" 2>&1
+
+      # --- Repair branch 3: disk full ----------------------------------
+      # docker system prune -af reclaims dangling images/containers/cache.
+      # workflow-prune.timer runs this weekly, but P0 disk-full is an
+      # emergency fire. Journalctl vacuum trims old log state too.
+      - name: Repair — disk full (docker prune + journalctl vacuum)
+        id: repair_disk
+        if: steps.classify.outputs.class == 'disk_full'
+        run: |
+          echo "::notice::disk-full detected — emergency prune"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo docker system prune -af 2>&1 | tail -20; \
+               sudo journalctl --vacuum-time=3d 2>&1 | tail -5; \
+               df -h / /var/lib/docker 2>&1" 2>&1
+
+      # --- Repair branch 4: image pull failure -------------------------
+      # Fall back to :latest. Log loudly: we've come off the pinned SHA,
+      # which loses deterministic-deploy guarantees until the next
+      # deploy-prod.yml run re-pins.
+      - name: Repair — image pull failure (fall back to :latest)
+        id: repair_pull
+        if: steps.classify.outputs.class == 'image_pull_failure'
+        run: |
+          echo "::warning::image-pull failed — falling back to :latest (lose SHA pin)"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo sed -i 's|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:latest|' /etc/workflow/env && \
+               sudo chown root:workflow /etc/workflow/env && \
+               sudo chmod 640 /etc/workflow/env && \
+               sudo -u workflow test -r /etc/workflow/env || { \
+                 echo 'ENV-UNREADABLE: fallback sed left /etc/workflow/env unreadable' >&2; \
+                 exit 1; \
+               }"
+
+      # --- Repair branch 5: watchdog hot-loop --------------------------
+      # stop → sleep 60 → start lets the systemd start-limit counter
+      # reset. StartLimitIntervalSec=300 (5min) / StartLimitBurst=5 per
+      # the unit file; sleeping 60s won't fully clear the 5-min window
+      # but gives enough headroom for the next start to succeed if the
+      # underlying issue was transient.
+      - name: Repair — watchdog hot-loop (stop + sleep 60 + start)
+        id: repair_watchdog
+        if: steps.classify.outputs.class == 'watchdog_hotloop'
+        run: |
+          echo "::notice::watchdog hot-loop detected — stop+sleep+start"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo systemctl stop workflow-daemon && \
+               sleep 60 && \
+               sudo systemctl reset-failed workflow-daemon && \
+               sudo systemctl start workflow-daemon" 2>&1
+
+      # --- Manual-only branch: tunnel token ----------------------------
+      # Detection only — we can't auto-rotate the Cloudflare tunnel token
+      # (host action). Open a distinct `tunnel-token-rotation` issue so
+      # the rotation is tracked separately from the P0 umbrella issue,
+      # and page priority=2 so the host knows to act.
+      - name: Manual-triage — tunnel token rotation needed
+        id: triage_tunnel
+        if: steps.classify.outputs.class == 'tunnel_token'
+        uses: actions/github-script@v7
+        env:
+          EVIDENCE: ${{ steps.classify.outputs.evidence }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        with:
+          script: |
+            const label = 'tunnel-token-rotation';
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: label, color: 'b60205',
+                  description: 'Cloudflare tunnel token rotation required (manual).',
+                });
+              } else { throw e; }
+            }
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `TUNNEL TOKEN: rotation required — ${new Date().toISOString()}`,
+              labels: [label, 'needs-human'],
+              body: [
+                `**Auto-triage detected tunnel-token failure** — cloudflared rejected the configured token.`,
+                ``,
+                `**Evidence:** \`${process.env.EVIDENCE}\``,
+                ``,
+                `This class is MANUAL-ONLY — auto-triage cannot rotate Cloudflare tunnel tokens.`,
+                ``,
+                `**Rotation runbook:** Cloudflare dashboard → Zero Trust → Networks → Tunnels → workflow-daemon-prod → rotate token → copy new value → update in:`,
+                `  - GH secret: \`gh secret set CLOUDFLARE_TUNNEL_TOKEN --body "<new>"\``,
+                `  - Droplet env: update \`/etc/workflow/env\` via \`.github/workflows/deploy-prod.yml\` next deploy`,
+                `  - 1Password vault: per \`docs/design-notes/2026-04-22-secrets-vault-integration.md\``,
+                ``,
+                `**Upstream P0 issue:** #${process.env.ISSUE_NUMBER}`,
+                `**Triage run:** ${runUrl}`,
+              ].join('\n'),
+            });
+            console.log('opened tunnel-token-rotation issue + paged priority=2 via umbrella P0');
+
+      # Generic compose restart — belt-and-suspenders for every repair
+      # branch except watchdog_hotloop (which already did its own start
+      # sequence with a start-limit reset) and tunnel_token (which a
+      # restart can't fix; host rotation required). Runs unconditionally
+      # for `unknown` too, preserving the legacy behavior that was the
+      # entire triage contract before classification existed.
       - name: Attempt compose restart
         id: restart
+        if: >
+          steps.classify.outputs.class != 'watchdog_hotloop' &&
+          steps.classify.outputs.class != 'tunnel_token'
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
@@ -155,13 +319,18 @@ jobs:
           PREDIAG: ${{ steps.prediag.outputs.diag }}
           REPROBE_OUTPUT: ${{ steps.reprobe.outputs.output }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          CLASS: ${{ steps.classify.outputs.class }}
+          EVIDENCE: ${{ steps.classify.outputs.evidence }}
         with:
           script: |
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const klass = process.env.CLASS || 'unknown';
+            const evidence = process.env.EVIDENCE || '';
             const body = [
-              `**AUTO-RECOVERED** via compose restart @ ${new Date().toISOString()}`,
+              `**AUTO-RECOVERED** via \`${klass}\` class repair @ ${new Date().toISOString()}`,
               ``,
-              `The daemon was non-destructively restarted (\`docker compose up -d --force-recreate daemon\`).`,
+              `Detected class: \`${klass}\``,
+              evidence ? `Evidence: \`${evidence}\`` : '',
               `Canonical probe returned green after 30s.`,
               ``,
               `<details><summary>Pre-restart diagnostics</summary>`,
@@ -205,9 +374,11 @@ jobs:
           PREDIAG: ${{ steps.prediag.outputs.diag }}
           REPROBE_OUTPUT: ${{ steps.reprobe.outputs.output }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          CLASS: ${{ steps.classify.outputs.class }}
         with:
           script: |
             const label = 'needs-human';
+            const klass = process.env.CLASS || 'unknown';
             // Ensure label exists.
             try {
               await github.rest.issues.getLabel({
@@ -231,9 +402,10 @@ jobs:
 
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const body = [
-              `**AUTO-TRIAGE FAILED** — daemon still red after compose restart @ ${new Date().toISOString()}`,
+              `**AUTO-TRIAGE FAILED** — daemon still red after \`${klass}\` repair @ ${new Date().toISOString()}`,
               ``,
-              `Compose restart was attempted but canonical probe is still red.`,
+              `Detected class: \`${klass}\``,
+              `Repair was attempted but canonical probe is still red.`,
               `Manual SSH investigation required.`,
               ``,
               `<details><summary>Pre-restart diagnostics</summary>`,
@@ -279,7 +451,16 @@ jobs:
             echo "### P0 auto-triage result"
             echo ""
             echo "- **Issue:** #${{ github.event.issue.number }}"
-            echo "- **ENV-UNREADABLE auto-repaired:** \`${{ steps.env_repair.outputs.repaired }}\`"
-            echo "- **Restart attempted:** \`${{ steps.restart.outcome }}\`"
+            echo "- **Class:** \`${{ steps.classify.outputs.class }}\`"
+            echo "- **Auto-repairable:** \`${{ steps.classify.outputs.auto_repairable }}\`"
+            echo "- **Manual-only:** \`${{ steps.classify.outputs.manual_only }}\`"
+            echo "- **Repair branch outcomes:**"
+            echo "  - env_unreadable: \`${{ steps.repair_env.outcome }}\`"
+            echo "  - oom: \`${{ steps.repair_oom.outcome }}\`"
+            echo "  - disk_full: \`${{ steps.repair_disk.outcome }}\`"
+            echo "  - image_pull: \`${{ steps.repair_pull.outcome }}\`"
+            echo "  - watchdog_hotloop: \`${{ steps.repair_watchdog.outcome }}\`"
+            echo "  - tunnel_token: \`${{ steps.triage_tunnel.outcome }}\`"
+            echo "- **Generic restart attempted:** \`${{ steps.restart.outcome }}\`"
             echo "- **Re-probe:** \`${{ steps.reprobe.outputs.color }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

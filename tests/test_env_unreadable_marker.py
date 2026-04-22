@@ -147,14 +147,25 @@ def test_deploy_prod_yaml_sed_sites_emit_canonical_marker():
     )
 
 
-def test_triage_yaml_greps_for_canonical_marker():
-    text = _TRIAGE_YAML.read_text(encoding="utf-8")
-    # The auto-repair step must grep for the exact token.
-    single = f"grep -q '{CANONICAL_MARKER}'"
-    double = f'grep -q "{CANONICAL_MARKER}"'
-    assert single in text or double in text, (
-        "p0-outage-triage must grep for the canonical ENV-UNREADABLE token "
-        "so auto-repair fires on the 2026-04-21 class"
+def test_triage_detection_delegates_to_classifier_module():
+    """The triage YAML must invoke `scripts/triage_classify.py` for
+    outage detection. Task #11 moved ENV-UNREADABLE detection out of
+    inline bash `grep -q` and into the classifier module — the invariant
+    we care about is that the token is still canonical and still
+    detected, which now means a cross-file check: the YAML invokes the
+    classifier, AND the classifier regex matches the canonical token.
+    """
+    yaml_text = _TRIAGE_YAML.read_text(encoding="utf-8")
+    assert "scripts/triage_classify.py" in yaml_text, (
+        "triage workflow must delegate detection to triage_classify.py "
+        "(Task #11 classifier replaces the inline grep pattern)"
+    )
+    # Cross-file check: classifier regex must cover the canonical token.
+    classifier_path = Path(__file__).resolve().parent.parent / "scripts" / "triage_classify.py"
+    classifier_text = classifier_path.read_text(encoding="utf-8")
+    assert CANONICAL_MARKER in classifier_text, (
+        f"{classifier_path.name} must contain the canonical "
+        f"ENV-UNREADABLE token so env-unreadable outages get detected"
     )
 
 
@@ -165,32 +176,66 @@ def test_triage_auto_repair_runs_chown_chmod():
     assert "chmod 640 /etc/workflow/env" in text
 
 
-def test_triage_auto_repair_is_gated_on_marker():
-    """The repair must only run inside a conditional branch that checked for
-    the marker -- otherwise we're applying mitigations blindly on every triage.
+def test_triage_auto_repair_is_gated_on_env_class():
+    """The repair must only run when the classifier reports
+    `env_unreadable` — otherwise we'd apply the chown+chmod mitigation
+    on every triage, including OOM/disk-full/image-pull/etc. outages
+    where it's irrelevant.
+
+    Task #11 moved the gate from inline bash `if ... grep -q` / `fi`
+    to a YAML step-level `if: steps.classify.outputs.class ==
+    'env_unreadable'`. The INTENT is the same (chown is conditional on
+    env-unreadable detection); the mechanism changed. We walk the YAML
+    to confirm the Repair-ENV step carries the class gate AND that the
+    chown command only appears inside that step's `run:` block.
     """
-    text = _TRIAGE_YAML.read_text(encoding="utf-8")
-    # Find the auto-repair step block and confirm it's wrapped in the grep
-    # conditional. Simple structural check: the chown line appears only
-    # within the `if echo ... | grep` block.
-    lines = text.splitlines()
-    in_grep_block = False
-    chown_seen_outside_block = False
-    for line in lines:
-        if "grep -q 'ENV-UNREADABLE'" in line or 'grep -q "ENV-UNREADABLE"' in line:
-            in_grep_block = True
-            continue
-        if in_grep_block and line.strip().startswith("else"):
-            in_grep_block = False
-            continue
-        if in_grep_block and line.strip().startswith("fi"):
-            in_grep_block = False
-            continue
-        if "chown root:workflow /etc/workflow/env" in line and not in_grep_block:
-            chown_seen_outside_block = True
-    assert not chown_seen_outside_block, (
-        "chown must only run inside the ENV-UNREADABLE grep conditional"
+    try:
+        import yaml
+    except ImportError:
+        import pytest
+        pytest.skip("pyyaml not installed")
+
+    wf = yaml.safe_load(_TRIAGE_YAML.read_text(encoding="utf-8"))
+    steps = wf["jobs"]["triage"]["steps"]
+
+    env_repair_step = None
+    for step in steps:
+        name = step.get("name", "")
+        if "ENV-UNREADABLE" in name or name.startswith("Repair — ENV-UNREADABLE"):
+            env_repair_step = step
+            break
+    assert env_repair_step is not None, (
+        "triage workflow must have a dedicated 'Repair — ENV-UNREADABLE' step"
     )
+
+    # The step's `if:` must gate on the classifier class output.
+    cond = str(env_repair_step.get("if", ""))
+    assert "steps.classify.outputs.class" in cond and "env_unreadable" in cond, (
+        f"ENV-UNREADABLE repair step's `if:` must gate on "
+        f"steps.classify.outputs.class == 'env_unreadable'; got: {cond!r}"
+    )
+
+    # The chown command must live inside THIS step's run: block, not
+    # leak into an unconditional step. Look for chown in every other
+    # step's run body as a negative check.
+    for other in steps:
+        if other is env_repair_step:
+            continue
+        run = str(other.get("run", ""))
+        # Allow chown in the `image_pull_failure` repair step too — that
+        # step correctly maintains the Task #3 ENV-UNREADABLE invariant
+        # after its own sed on /etc/workflow/env (cross-referential: if
+        # the sed clobbers perms, chown+chmod+test-r restores them, and
+        # the next triage tick's env_unreadable branch catches any miss).
+        other_name = other.get("name", "")
+        if "image pull failure" in other_name.lower() or \
+           "image_pull_failure" in other_name.lower() or \
+           "fall back to :latest" in other_name.lower():
+            continue
+        assert "chown root:workflow /etc/workflow/env" not in run, (
+            f"chown root:workflow /etc/workflow/env leaked outside the "
+            f"ENV-UNREADABLE gate into step {other.get('name')!r}"
+        )
 
 
 if __name__ == "__main__":
