@@ -1,0 +1,417 @@
+"""Tests for workflow/cloud_worker.py — supervisor loop + helpers.
+
+The supervisor is subprocess-based; tests avoid real spawns via the
+``spawn_fn`` + ``sleep_fn`` injection seams on ``run_supervisor``. A
+``FakeProc`` stands in for ``subprocess.Popen`` with scripted exit
+codes so we can exercise clean-exit, crash, and stop-signal paths
+without touching the OS process table.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+_WORKFLOW = Path(__file__).resolve().parent.parent / "workflow"
+if str(_WORKFLOW.parent) not in sys.path:
+    sys.path.insert(0, str(_WORKFLOW.parent))
+
+import workflow.cloud_worker as cw  # noqa: E402
+
+# ---- FakeProc: scripted subprocess stand-in ------------------------------
+
+
+class FakeProc:
+    """Scripted Popen stand-in. ``poll()`` returns None until ``steps_until_exit``
+    calls have been made, then returns ``returncode``."""
+
+    def __init__(self, returncode: int = 0, steps_until_exit: int = 0):
+        self._target_rc = returncode
+        self._remaining = steps_until_exit
+        self.returncode: int | None = None
+        self.terminate_called = False
+        self.kill_called = False
+        self.wait_called = False
+
+    def poll(self):
+        if self._remaining > 0:
+            self._remaining -= 1
+            return None
+        self.returncode = self._target_rc
+        return self._target_rc
+
+    def terminate(self):
+        self.terminate_called = True
+        self.returncode = -15
+
+    def kill(self):
+        self.kill_called = True
+        self.returncode = -9
+
+    def wait(self, timeout=None):
+        self.wait_called = True
+        if self.returncode is None:
+            self.returncode = self._target_rc
+        return self.returncode
+
+
+def _make_sleep_recorder() -> tuple[list, callable]:
+    calls: list[float] = []
+
+    def sleep(delay):
+        calls.append(delay)
+    return calls, sleep
+
+
+# ---- _compute_backoff ----------------------------------------------------
+
+
+def test_compute_backoff_first_crash_is_base():
+    assert cw._compute_backoff(1, base=5.0, mult=2.0, ceiling=300.0) == 5.0
+
+
+def test_compute_backoff_second_crash_doubles():
+    assert cw._compute_backoff(2, base=5.0, mult=2.0, ceiling=300.0) == 10.0
+
+
+def test_compute_backoff_third_crash_doubles_again():
+    assert cw._compute_backoff(3, base=5.0, mult=2.0, ceiling=300.0) == 20.0
+
+
+def test_compute_backoff_respects_ceiling():
+    """Exponential growth must cap at ceiling; 10 consecutive crashes
+    with base=5, mult=2 would be 2560s without the cap — clamp to 300."""
+    assert cw._compute_backoff(10, base=5.0, mult=2.0, ceiling=300.0) == 300.0
+
+
+def test_compute_backoff_zero_crash_count_is_zero():
+    assert cw._compute_backoff(0, base=5.0, mult=2.0, ceiling=300.0) == 0.0
+
+
+def test_compute_backoff_negative_crash_count_is_zero():
+    assert cw._compute_backoff(-1, base=5.0, mult=2.0, ceiling=300.0) == 0.0
+
+
+# ---- SupervisorState ------------------------------------------------------
+
+
+def test_state_clean_exit_resets_crash_counter():
+    state = cw.SupervisorState()
+    state.record_exit(1)
+    state.record_exit(1)
+    assert state.crash_count == 2
+    state.record_exit(0)
+    assert state.crash_count == 0, "clean exit resets crash counter"
+    assert state.total_clean_exits == 1
+    assert state.total_crashes == 2
+    assert state.total_spawns == 3
+
+
+def test_state_summary_includes_counters():
+    state = cw.SupervisorState()
+    state.record_exit(0)
+    state.record_exit(1)
+    summary = state.summary()
+    assert "spawns=2" in summary
+    assert "clean=1" in summary
+    assert "crashes=1" in summary
+    assert "consec=1" in summary
+
+
+# ---- run_supervisor — happy path + backoff paths -------------------------
+
+
+def test_supervisor_clean_exit_uses_idle_backoff(tmp_path):
+    """Subprocess exits 0 → sleep = idle_backoff (not crash_backoff)."""
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+
+    def spawn(universe):
+        return FakeProc(returncode=0, steps_until_exit=0)
+
+    state = cw.run_supervisor(
+        tmp_path,
+        idle_backoff=7.0,
+        crash_backoff=999.0,  # would be visible if used
+        max_iterations=2,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+    assert state.total_clean_exits == 2
+    assert state.total_crashes == 0
+    # Both iterations sleep idle_backoff after clean exit.
+    assert 7.0 in sleep_calls
+    assert 999.0 not in sleep_calls
+
+
+def test_supervisor_crash_uses_exponential_backoff(tmp_path):
+    """Consecutive crashes trigger doubling backoff."""
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+
+    def spawn(universe):
+        return FakeProc(returncode=1, steps_until_exit=0)
+
+    state = cw.run_supervisor(
+        tmp_path,
+        idle_backoff=1.0,
+        crash_backoff=4.0,
+        backoff_mult=2.0,
+        max_backoff=100.0,
+        max_iterations=3,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+    assert state.total_crashes == 3
+    # Expected delays: 4, 8, 16.
+    # sleep_calls may include the poll-interval sleeps too; filter to
+    # only the backoff magnitudes we expect.
+    backoff_sleeps = [d for d in sleep_calls if d in (4.0, 8.0, 16.0)]
+    assert backoff_sleeps == [4.0, 8.0, 16.0]
+
+
+def test_supervisor_crash_followed_by_clean_resets_backoff(tmp_path):
+    """Crash → clean → crash → sleeps should be: base, idle, base (not 2x)."""
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    rc_sequence = [1, 0, 1]
+    iter_idx = {"i": 0}
+
+    def spawn(universe):
+        rc = rc_sequence[iter_idx["i"]]
+        iter_idx["i"] += 1
+        return FakeProc(returncode=rc, steps_until_exit=0)
+
+    state = cw.run_supervisor(
+        tmp_path,
+        idle_backoff=2.0,
+        crash_backoff=5.0,
+        backoff_mult=2.0,
+        max_backoff=100.0,
+        max_iterations=3,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+    assert state.total_crashes == 2
+    assert state.total_clean_exits == 1
+    # The 3rd spawn is a crash after a clean. crash_count should reset
+    # to 1, so backoff should be base (5.0), NOT 2x base (10.0).
+    relevant = [d for d in sleep_calls if d in (2.0, 5.0, 10.0)]
+    assert 10.0 not in relevant, (
+        "after a clean exit, crash backoff must reset to base, not "
+        "continue doubling from before"
+    )
+
+
+def test_supervisor_max_iterations_honored(tmp_path):
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+
+    def spawn(universe):
+        return FakeProc(returncode=0, steps_until_exit=0)
+
+    state = cw.run_supervisor(
+        tmp_path, max_iterations=5,
+        spawn_fn=spawn, sleep_fn=sleep_fn,
+    )
+    assert state.total_spawns == 5
+
+
+def test_supervisor_spawn_failure_counted_as_crash(tmp_path):
+    """OSError on spawn (e.g. python binary missing) counts as a crash
+    + incurs backoff. We don't want spawn failures to loop-hot."""
+    sleep_calls, sleep_fn = _make_sleep_recorder()
+    spawn_count = {"n": 0}
+
+    def spawn_fails(universe):
+        spawn_count["n"] += 1
+        raise OSError("simulated spawn failure")
+
+    state = cw.run_supervisor(
+        tmp_path,
+        crash_backoff=3.0,
+        backoff_mult=2.0,
+        max_backoff=50.0,
+        max_iterations=3,
+        spawn_fn=spawn_fails,
+        sleep_fn=sleep_fn,
+    )
+    assert spawn_count["n"] == 3
+    assert state.total_crashes == 3
+    # Backoff magnitudes: 3, 6, 12.
+    assert [d for d in sleep_calls if d in (3.0, 6.0, 12.0)] == [3.0, 6.0, 12.0]
+
+
+# ---- env construction ---------------------------------------------------
+
+
+def test_subprocess_env_sets_cloud_droplet_host_user(monkeypatch):
+    monkeypatch.delenv("UNIVERSE_SERVER_HOST_USER", raising=False)
+    env = cw._build_subprocess_env()
+    assert env["UNIVERSE_SERVER_HOST_USER"] == "cloud-droplet"
+
+
+def test_subprocess_env_honors_explicit_host_user_override(monkeypatch):
+    """Operator override via env var wins over the default — preserves
+    multi-tenant identity flexibility (memory: daemons are multi-tenant
+    by design)."""
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "cloud-droplet-us-east-1")
+    env = cw._build_subprocess_env()
+    assert env["UNIVERSE_SERVER_HOST_USER"] == "cloud-droplet-us-east-1"
+
+
+def test_subprocess_env_forces_unified_execution(monkeypatch):
+    """Dispatcher pick is gated on WORKFLOW_UNIFIED_EXECUTION — cloud
+    worker must ensure it's on so the subprocess actually claims tasks."""
+    monkeypatch.delenv("WORKFLOW_UNIFIED_EXECUTION", raising=False)
+    env = cw._build_subprocess_env()
+    assert env["WORKFLOW_UNIFIED_EXECUTION"] == "1"
+
+
+def test_subprocess_env_preserves_operator_unified_execution_setting(monkeypatch):
+    """If operator explicitly sets WORKFLOW_UNIFIED_EXECUTION=0 (to
+    bisect a bug), cloud worker shouldn't override it."""
+    monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "0")
+    env = cw._build_subprocess_env()
+    assert env["WORKFLOW_UNIFIED_EXECUTION"] == "0"
+
+
+def test_subprocess_env_inherits_openai_api_key(monkeypatch):
+    """The cloud worker delegates LLM routing to /etc/workflow/env's
+    OPENAI_API_KEY. Must survive env construction."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-xyz")
+    env = cw._build_subprocess_env()
+    assert env["OPENAI_API_KEY"] == "sk-fake-test-key-xyz"
+
+
+# ---- _cloud_host_user ----------------------------------------------------
+
+
+def test_cloud_host_user_default(monkeypatch):
+    monkeypatch.delenv("UNIVERSE_SERVER_HOST_USER", raising=False)
+    assert cw._cloud_host_user() == "cloud-droplet"
+
+
+def test_cloud_host_user_whitespace_falls_back(monkeypatch):
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "   ")
+    assert cw._cloud_host_user() == "cloud-droplet"
+
+
+def test_cloud_host_user_override_honored(monkeypatch):
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "edge-node-42")
+    assert cw._cloud_host_user() == "edge-node-42"
+
+
+# ---- _resolve_universe_path ---------------------------------------------
+
+
+def test_resolve_universe_explicit_override(tmp_path, monkeypatch):
+    explicit = tmp_path / "my-universe"
+    explicit.mkdir()
+    monkeypatch.setenv("WORKFLOW_UNIVERSE", str(explicit))
+    resolved = cw._resolve_universe_path()
+    assert resolved == explicit
+
+
+def test_resolve_universe_default_subdir(tmp_path, monkeypatch):
+    (tmp_path / "my-default").mkdir()
+    monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+    monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
+    with patch("workflow.storage.data_dir", return_value=tmp_path):
+        resolved = cw._resolve_universe_path()
+    assert resolved == tmp_path / "my-default"
+
+
+def test_resolve_universe_auto_picks_first_with_program_md(tmp_path, monkeypatch):
+    # Create two candidates; one has PROGRAM.md, one doesn't. The auto-
+    # pick should land on the one with PROGRAM.md.
+    empty = tmp_path / "empty-candidate"
+    empty.mkdir()
+    with_premise = tmp_path / "has-premise"
+    with_premise.mkdir()
+    (with_premise / "PROGRAM.md").write_text("premise text", encoding="utf-8")
+
+    monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+    monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+    with patch("workflow.storage.data_dir", return_value=tmp_path):
+        resolved = cw._resolve_universe_path()
+    # Sorted order → `empty-candidate` comes first alphabetically,
+    # but it doesn't have PROGRAM.md so should be skipped.
+    assert resolved == with_premise
+
+
+def test_resolve_universe_falls_back_to_default_universe_name(tmp_path, monkeypatch):
+    """Empty data dir with nothing — falls back to 'default-universe'
+    under data_dir so fantasy_daemon creates it on first run."""
+    monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+    monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+    with patch("workflow.storage.data_dir", return_value=tmp_path):
+        resolved = cw._resolve_universe_path()
+    assert resolved == tmp_path / "default-universe"
+
+
+# ---- _spawn_fantasy_daemon argv shape -----------------------------------
+
+
+def test_spawn_argv_includes_no_tray_and_universe(tmp_path, monkeypatch):
+    """Supervisor must pass --no-tray so fantasy_daemon doesn't try to
+    init a system tray (no GUI on the droplet). Also must pass
+    --universe pointing at the resolved path."""
+    captured = {}
+
+    class _FakePopen:
+        def __init__(self, args, env=None, **kw):
+            captured["args"] = list(args)
+            captured["env"] = dict(env) if env else {}
+
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    cw._spawn_fantasy_daemon(tmp_path / "my-uni")
+    assert "--no-tray" in captured["args"]
+    assert "--universe" in captured["args"]
+    idx = captured["args"].index("--universe")
+    assert captured["args"][idx + 1] == str(tmp_path / "my-uni")
+
+
+def test_spawn_argv_uses_fantasy_daemon_module(tmp_path, monkeypatch):
+    captured = {}
+
+    class _FakePopen:
+        def __init__(self, args, env=None, **kw):
+            captured["args"] = list(args)
+
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    cw._spawn_fantasy_daemon(tmp_path / "x")
+    # argv shape: python -m fantasy_daemon --universe ... --no-tray
+    assert "-m" in captured["args"]
+    idx = captured["args"].index("-m")
+    assert captured["args"][idx + 1] == "fantasy_daemon"
+
+
+# ---- main() smoke -------------------------------------------------------
+
+
+def test_main_exits_zero_after_max_iterations(tmp_path, monkeypatch):
+    """Main() with scripted spawn + zero backoff must return 0 after
+    hitting max_iterations. Guards against regressions where the loop
+    stops respecting max_iterations or main() returns non-zero on clean
+    supervisor exit."""
+    universe = tmp_path / "test-universe"
+    universe.mkdir()
+    (universe / "PROGRAM.md").write_text("x", encoding="utf-8")
+
+    # Patch the module-level _spawn_fantasy_daemon so run_supervisor
+    # uses our FakeProc instead of a real subprocess. `run_supervisor`
+    # dereferences `spawn_fn=_spawn_fantasy_daemon` at call-time (via
+    # default arg evaluated each call), so monkeypatching the module
+    # attribute is enough.
+    def fake_spawn(u):
+        return FakeProc(returncode=0, steps_until_exit=0)
+
+    monkeypatch.setattr(cw, "_spawn_fantasy_daemon", fake_spawn)
+    # Stub time.sleep so the loop has zero wall-clock cost.
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    rc = cw.main([
+        "--universe", str(universe),
+        "--max-iterations", "2",
+        "--idle-backoff", "0",
+        "--crash-backoff", "0",
+    ])
+    assert rc == 0

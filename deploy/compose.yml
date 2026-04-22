@@ -115,6 +115,43 @@ services:
       org.workflow.component: logs
       org.workflow.role: log-forwarder
 
+  # Task #14 — cloud-side node-executor worker. Closes the uptime gap
+  # where MCP surface + canary + paging + DR all work 24/7 but node
+  # execution depended on the host's laptop. Supervisor process spawns
+  # `python -m fantasy_daemon --universe ... --no-tray` and restarts
+  # on exit with exponential backoff on crashes.
+  #
+  # Identity: sets UNIVERSE_SERVER_HOST_USER=cloud-droplet so activity
+  # log entries distinguish cloud-executed work from host/laptop work.
+  # Concurrency safety: branch_tasks.claim_task is file-locked — two
+  # fantasy_daemon processes on different hosts claiming tasks in the
+  # same universe file race for the lock; loser sees status != pending
+  # and returns None. No double-claim possible.
+  #
+  # Shares the workflow-data volume + /etc/workflow/env with `daemon`
+  # so state persists across deploys and secrets are centralized.
+  worker:
+    image: ${WORKFLOW_IMAGE:-ghcr.io/jonnyton/workflow-daemon:latest}
+    container_name: workflow-worker
+    restart: unless-stopped
+    command: ["python", "-m", "workflow.cloud_worker"]
+    environment:
+      WORKFLOW_DATA_DIR: /data
+      # Cloud-side identity — distinguishes activity-log entries from
+      # the host's `host` identity so multi-tenant ops can tell who
+      # did what.
+      UNIVERSE_SERVER_HOST_USER: cloud-droplet
+    env_file:
+      - /etc/workflow/env
+    volumes:
+      - workflow-data:/data
+    depends_on:
+      daemon:
+        condition: service_healthy
+    labels:
+      org.workflow.component: worker
+      org.workflow.role: node-executor
+
 volumes:
   workflow-data:
     name: workflow-data
