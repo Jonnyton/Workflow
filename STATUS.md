@@ -24,13 +24,11 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 | Spec | Status |
 |---|---|
 | Structured JSON output for multi-output + typed prompt nodes | claimed:dev |
-| Strict input_keys isolation for prompt_template nodes | in-progress:dev (uncommitted diff) |
-| Expose conditional_edges on build_branch + patch_branch | dev-dispatchable |
-| list_branches node_count double-counts graph.nodes + node_defs | dev-dispatchable (trivial) |
-| describe_branch / get_branch surface related wiki pages | dev-dispatchable |
 | Per-node llm_policy override | dev-dispatchable |
-| In-flight run recovery surface — part 1 (document v1 contract) | dev-dispatchable |
-| In-flight run recovery — part 2 (SqliteSaver-keyed resume) | **strategy-open:needs-host** |
+| In-flight run recovery surface — part 1 (document v1 contract) | claimed:dev |
+| In-flight run recovery — part 2 (SqliteSaver-keyed resume, node-escrow aware) | dev-dispatchable |
+| Node checkpoints — partial-credit boundaries authored into node_def | dev-dispatchable |
+| Gate bonuses — staked payouts attached to gate milestones | dev-dispatchable |
 | Concurrency budget + observability for fan-out nodes | dev-dispatchable |
 | Loud sandbox-unavailable surface for dev/checker exec nodes | dev-dispatchable |
 | Sub-branch invocation primitive | dev-dispatchable |
@@ -39,6 +37,10 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 | Project-scope persistent memory primitive | dev-dispatchable |
 | file_bug is the feature-request verb — docstring + optional kind field | dev-dispatchable |
 | Prompt_template literal-brace escape + build-time missing-key validation | dev-dispatchable |
+| [deferred] Daemon roster + soul.md authoring surface | deferred:needs-scoping |
+| [deferred] Per-node soul_policy field on NodeDefinition | deferred:needs-scoping |
+| [deferred] Branch-contribution ledger | deferred:needs-scoping |
+| [deferred] Claim-time soul-fingerprint (anti-spoof) | deferred:needs-scoping |
 
 ---
 

@@ -34,6 +34,8 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 **Tests:** pinned preferred used when available; fallback fires on each trigger class; difficulty override routes correctly; branch-default applies when node-level unset; unset = role-routing backward-compat.
 
+**Sibling per-node policy** (`project_daemon_souls_and_summoning` host directive 2026-04-22): a `soul_policy` field will land alongside `llm_policy` as a second per-node authoring decision (deferred; see deferred section below). When `soul_policy` ships, coordinate the build/patch-branch authoring UX so both fields are surfaced together — they're conceptual siblings (both shape how the daemon behaves on that node) and should share the same spec_json authoring shape.
+
 **Vetted:** 2026-04-22 by navigator.
 
 ---
@@ -128,6 +130,8 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 **Invariants:** inputs_mapping + output_mapping validated at build time (keys must exist on parent state_schema + child); recursion depth capped (default 5) to avoid infinite nesting; child run links to parent run_id in runs table; `await_branch_run` default timeout 300s (matches existing NodeDefinition.timeout_seconds default); await on a nonexistent run_id raises at run time with clear error (not silent hang).
 
 **Tests:** blocking invoke populates output mapping; async invoke returns run_id; await reads run_id and populates output; await with timeout raises; fork/join pattern (two async invokes → two awaits in parallel) works end-to-end; recursion cap raises; invalid mapping rejected at build.
+
+**Overlap with branch-contribution ledger** (`project_daemon_souls_and_summoning` host directive 2026-04-22): invoke_branch already tracks `child run_id linked to parent run_id` in the runs table — that linkage is the plumbing the deferred branch-contribution ledger will build on. When the ledger spec lands, expect the child-parent linkage schema here to extend with `(daemon_id, step_count, earned_fraction)` rows for proportional bonus distribution. No change to this spec; implementation should ensure the linkage is schema-friendly to future ledger rows (not collapsed into opaque parent_run_id string).
 
 **Vetted:** 2026-04-22 by navigator (re-tightened: pulled in the `await_branch_run` companion per lead correction on two-halves audit — filer named it in the expected-behavior, I had originally deferred it).
 
@@ -235,22 +239,81 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 
 ---
 
-## Gate bonuses — staked payouts attached to gate milestones
+## Gate bonuses — staked payouts attached to gate milestones (node-scoped variant)
 
 **Strategy rationale:** `project_node_escrow_and_abandonment` introduces gate bonuses as "quality-vs-speed lever built into the economy." Base stake pays for the node reaching completion; gate bonus pays extra for passing declared gate milestones. Slow daemon hitting all gates earns more than fast daemon missing them. Pairs with the existing `gates` surface (flag-gated behind `GATES_ENABLED`) — extending that primitive rather than inventing a parallel one. Aligns with `project_evaluation_layers_unifying_frame`: gates are one face of the unified Evaluator primitive, staked bonuses turn them into economic feedback loops.
 
+**Two attachment scopes (per `project_daemon_souls_and_summoning`):** gates can attach to **a single node** (this spec — single-daemon bonus on gate pass, as specced below) OR to **a whole branch** (follow-up spec `branch-scoped gate bonuses with multi-daemon distribution` — deferred, depends on the branch-contribution ledger in the deferred section below). This spec covers the node-scoped variant only.
+
 **Scope:** Extend gate claims with an optional bonus stake. `gates action=claim {goal_id, branch_def_id, node_id, milestone, bonus_stake?}`. When `bonus_stake > 0` and the Paid-Market flag is on, stake is locked from the claimer's budget alongside the node's base stake. On gate pass (claim marked satisfied by the gate's configured verifier — human-attested, automated-metric-passed, or chatbot-judged per goal config), bonus releases to the daemon that held the node's last claim at pass-time. On gate fail (verifier rejects) or gate-stale (pass timeout exceeded), bonus refunds to the claimer who staked it — stake is at-risk for the claimer if the gate never resolves, defaulting to refund after a configurable `gate_stake_timeout_days` (default 30).
 
-**Schema addition:** `gate_claims.bonus_stake` column (int, smallest currency unit — matches existing stake precision) + `gate_claims.bonus_refund_after` timestamp. Existing gate claim rows without bonuses unchanged (default 0). The **node** the bonus is attached to must be in the same branch_def as the gate's scope — prevents cross-branch bonus attachments that would complicate escrow tracking.
+**Schema addition:** `gate_claims.bonus_stake` column (int, smallest currency unit — matches existing stake precision) + `gate_claims.bonus_refund_after` timestamp + `gate_claims.attachment_scope: Literal['node','branch']` (this spec only ships `node`; branch variant lands in the follow-up). Existing gate claim rows without bonuses unchanged (default attachment_scope='node', bonus_stake=0). The **node** the bonus is attached to must be in the same branch_def as the gate's scope — prevents cross-branch bonus attachments that would complicate escrow tracking.
 
 **Multi-tenant invariants:** only the original bonus-staker can unstake (before gate resolves); bonus release goes to whoever holds the node's last claim at gate-pass-time (not necessarily the original claimer — this is intentional; encourages daemons to pick up abandoned high-gate-value nodes); refund on timeout goes to staker, not to any daemon. Paid-market flag must be on; gate bonuses silently unavailable (zero-cost default) when `WORKFLOW_PAID_MARKET=off`.
 
-**Files:** `workflow/gates/` (schema migration for bonus_stake column, claim/unstake/release helpers), `workflow/universe_server.py` (`gates` action extensions: bonus_stake arg on claim, unstake action), `workflow/payments/` or wherever escrow ledger lives (add bonus-release path distinct from base-stake), tests.
+**Files:** `workflow/gates/` (schema migration for bonus_stake + attachment_scope columns, claim/unstake/release helpers), `workflow/universe_server.py` (`gates` action extensions: bonus_stake arg on claim, unstake action), `workflow/payments/` or wherever escrow ledger lives (add bonus-release path distinct from base-stake), tests.
 
-**Invariants:** bonus_stake only locked when `GATES_ENABLED=on` AND `WORKFLOW_PAID_MARKET=on`; bonus release goes to node's last-claimer at gate-pass-time (may differ from bonus-attacher — abandonment-reward dynamic); unstake allowed only by original staker and only while gate is unresolved; refund-on-timeout fires deterministically at `bonus_refund_after`; gate failure or retraction refunds bonus to staker; bonus_stake precision matches base-stake (same currency unit, no rounding ambiguity).
+**Invariants:** bonus_stake only locked when `GATES_ENABLED=on` AND `WORKFLOW_PAID_MARKET=on`; `attachment_scope='node'` bonus release goes to node's last-claimer at gate-pass-time (may differ from bonus-attacher — abandonment-reward dynamic); `attachment_scope='branch'` rejected at claim time in this spec (returns "branch-scope gate bonuses not yet implemented; see deferred spec"); unstake allowed only by original staker and only while gate is unresolved; refund-on-timeout fires deterministically at `bonus_refund_after`; gate failure or retraction refunds bonus to staker; bonus_stake precision matches base-stake (same currency unit, no rounding ambiguity).
 
-**Tests:** claim + bonus_stake locks budget correctly; gate pass releases bonus to last-claimer; gate fail refunds bonus to staker; unstake by non-staker rejected; unstake after gate resolves rejected; cross-branch bonus attachment rejected at claim; PAID_MARKET=off silently ignores bonus_stake (zero-cost default); gate timeout refunds correctly.
+**Tests:** claim + bonus_stake locks budget correctly; gate pass releases bonus to node's last-claimer; gate fail refunds bonus to staker; unstake by non-staker rejected; unstake after gate resolves rejected; cross-branch bonus attachment rejected at claim; attachment_scope='branch' rejected with clear not-yet-implemented error; PAID_MARKET=off silently ignores bonus_stake (zero-cost default); gate timeout refunds correctly.
 
-**Deferred follow-up:** chatbot-judged gate verification (separate spec — `project_evaluation_layers_unifying_frame` Evaluator primitive lands that); bonus-splitting across multiple daemons that shared a node via checkpoints (open design Q — probably pro-rata by earned fractions).
+**Deferred follow-ups (separate specs, not this one):**
+- **Branch-scoped gate bonuses with multi-daemon distribution** — attachment_scope='branch'; payout splits across all daemons that contributed to the branch, proportional to step-count or earned-fraction per `project_daemon_souls_and_summoning`. Depends on the branch-contribution ledger (deferred, see below).
+- Chatbot-judged gate verification (separate spec — `project_evaluation_layers_unifying_frame` Evaluator primitive lands that).
+- Bonus-splitting across multiple daemons that shared a single node via checkpoints (open design Q — probably pro-rata by earned fractions).
 
-**Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment` — not originally in the wiki bug queue; navigator-generated to support the paid-market quality-vs-speed lever.
+**Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment`; attachment_scope field added per `project_daemon_souls_and_summoning` to preserve forward-compat with branch-scoped variant.
+
+---
+
+# Deferred specs — needs scoping before dev-dispatchable
+
+The four rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22). Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
+
+---
+
+## [deferred] Daemon roster + soul.md authoring surface
+
+**One-line:** Tray UX + backend for host-authored named daemons, each with a persistent soul.md identity file. Creating a soul = creating an inactive daemon. Summoning activates a specific named daemon.
+
+**Foundational.** The three specs below all depend on this one being scoped first — daemon-as-persistent-named-object is the substrate. Touches `workflow_tray.py` (new daemon list + editor UX), `workflow/daemon/` likely new submodule (daemon registry, soul persistence, activation lifecycle), `workflow/storage/` (soul path resolution under `$WORKFLOW_DATA_DIR/daemons/<name>/soul.md`), MCP surface (new actions: `daemons action=list | create | edit_soul | summon | banish`).
+
+**Open scoping questions:** tray interaction pattern for soul editor (external editor vs embedded); live-daemon soul-edit semantics (hot-reload vs require-banish-resummon); soul versioning schema; default-soul shape for users who never author one; migration path from today's generic `UNIVERSE_SERVER_HOST_USER` identity to named-daemons; relationship to `cloud-droplet` executor identity (is cloud-worker a single default-souled daemon, or multiple?).
+
+**Needs scoping with:** host (UX + identity model), dev team (tray + storage), navigator (strategy + security of soul-spoof attacks).
+
+---
+
+## [deferred] Per-node soul_policy field on NodeDefinition
+
+**One-line:** Add `soul_policy: Literal['allow_host_soul', 'append_node_header', 'insist_node_soul', 'hybrid']` + optional `node_soul: str` to NodeDefinition. Sibling to the (also-queued) `llm_policy` field — both are per-node authoring decisions that shape how the daemon behaves on that node.
+
+**Depends on:** Daemon roster + soul.md authoring surface (the "host soul" referent must exist first).
+
+**Open scoping questions:** hybrid-merge semantics (who wins on conflict); validation of node-provided souls (are they user-writable untrusted content that navigator must vet?); precedence at run time (how `_build_prompt_template_node` composes host soul + node header + node soul); does claim-time filter match on policy (daemon with incompatible policy can't claim).
+
+**Shares authoring surface with:** per-node llm_policy (dev-dispatchable) — when that lands, coordinate UX so both fields are surfaced together in the build/patch-branch spec flow.
+
+---
+
+## [deferred] Branch-contribution ledger
+
+**One-line:** Track `(daemon_id, node_id, step_count, earned_fraction)` across a multi-node branch run so branch-level bonuses can distribute proportionally across daemons that contributed (not just the finisher).
+
+**Depends on:** Daemon roster + soul.md (daemon_id as first-class persistent identity).
+
+**Overlaps with:** (1) existing `Sub-branch invocation primitive` spec (queued) — sub-branch invocation already needs to track which daemons executed which child-run steps; ledger plumbing is probably shared. (2) `Node checkpoints` spec (queued) — per-node earned-fraction already exists for node-level partial credit; branch ledger aggregates those upward. (3) `project_node_escrow_and_abandonment` — branch ledger is the escrow-tier above node-level. When both are implemented, there's one ledger with (daemon, node_id, earned_fraction) rows and a branch-level aggregator view.
+
+**Open scoping questions:** step-count definition (langgraph step ≠ node if fan-out nodes have multiple inner steps); proportional distribution weighting (equal-per-step vs earned-fraction-weighted vs hybrid); privacy (branch ledger is claims-visibility vs contributor-visibility); partial-credit handling when a daemon contributes + abandons before checkpoint (probably zero per escrow rule, but interacts with aggregation).
+
+---
+
+## [deferred] Claim-time soul-fingerprint (anti-spoof)
+
+**One-line:** Cryptographic primitive that lets a claiming daemon prove their soul is what they say it is, without the dispatcher having to trust claimer-asserted metadata.
+
+**Depends on:** Daemon roster + soul.md (souls are stable addressable entities).
+
+**Open scoping questions:** fingerprint scheme (sha256 of soul.md content vs keyed HMAC with a platform-side secret vs on-chain signature once crypto ledger lands); enforcement level (advisory display in claim UX vs hard match against a registry); key management for hosts (every host needs to sign their souls — keypair management burden); interaction with soul-editing (does a soul edit invalidate outstanding claims with the old fingerprint?); whether fingerprint is required OR opt-in per node (probably opt-in: `node_def.requires_verified_soul: bool`).
+
+**Important but not urgent:** spoofing matters once daemon identity drives gate-bonus payouts. Today with no paid-market live, the threat model is thin. Spec when Paid-Market flag comes on AND gate-bonus primitive lands.
