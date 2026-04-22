@@ -1,0 +1,61 @@
+name: Pushover test page
+
+# Manual workflow for validating the PUSHOVER_USER_KEY + PUSHOVER_APP_TOKEN
+# secrets wiring end-to-end. Fires one Priority-1 page through the same code
+# path the uptime canary uses. Does NOT touch the incident-state JSON or
+# escalation ladder — pure one-shot delivery test.
+#
+# Use when:
+#   - Secrets just seeded, want to confirm they work.
+#   - Migrating phones / revoking app tokens.
+#   - Pre-flight before relying on paging for real.
+#
+# Run via Actions tab → "Pushover test page" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Message body (will be prefixed with [TEST])"
+        required: false
+        default: "One-shot validation from GitHub Actions."
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fire Pushover test page
+        env:
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          TEST_MESSAGE: ${{ inputs.message }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "scripts")
+          from pushover_page import send_pushover
+
+          if not os.environ.get("PUSHOVER_USER_KEY") or not os.environ.get("PUSHOVER_APP_TOKEN"):
+              print("::error::PUSHOVER_USER_KEY or PUSHOVER_APP_TOKEN not set in repo secrets")
+              sys.exit(1)
+
+          ok, body = send_pushover(
+              title="[TEST] Workflow paging",
+              message=os.environ.get("TEST_MESSAGE") or "One-shot validation.",
+              priority=1,
+          )
+          print(f"ok={ok} body={body}")
+          if not ok:
+              print("::error::Pushover delivery failed — check keys + app token validity")
+              sys.exit(1)
+          print("::notice::Pushover delivered — check your phone.")
+          PY
