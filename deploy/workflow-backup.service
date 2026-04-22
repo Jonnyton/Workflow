@@ -19,7 +19,7 @@
 
 [Unit]
 Description=Workflow daemon state backup (nightly snapshot to Hetzner Storage Box)
-Documentation=https://github.com/jfarnsworth/workflow/blob/main/deploy/HETZNER-DEPLOY.md
+Documentation=https://github.com/Jonnyton/Workflow/blob/main/deploy/HETZNER-DEPLOY.md
 After=docker.service network-online.target
 Wants=network-online.target
 

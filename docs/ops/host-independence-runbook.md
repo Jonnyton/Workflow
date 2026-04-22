@@ -196,7 +196,7 @@ journalctl -u workflow-watchdog -f
 tail -f /opt/workflow/.agents/uptime_alarms.log | grep WATCHDOG_RESTART
 
 # GitHub issues opened by the watchdog
-gh issue list --label watchdog --repo jfarnsworth/workflow
+gh issue list --label watchdog --repo Jonnyton/Workflow
 ```
 
 ### Suppressing restarts during maintenance

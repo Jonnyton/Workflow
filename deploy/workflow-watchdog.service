@@ -15,7 +15,7 @@
 
 [Unit]
 Description=Workflow daemon watchdog (probe + restart on 3 consecutive reds)
-Documentation=https://github.com/jfarnsworth/workflow/blob/main/deploy/HETZNER-DEPLOY.md
+Documentation=https://github.com/Jonnyton/Workflow/blob/main/deploy/HETZNER-DEPLOY.md
 After=workflow-daemon.service
 # Don't race the daemon's own startup at boot. Give daemon 60s to bind.
 

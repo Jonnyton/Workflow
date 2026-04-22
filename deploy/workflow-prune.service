@@ -13,7 +13,7 @@
 
 [Unit]
 Description=Workflow docker image prune (weekly cleanup)
-Documentation=https://github.com/jfarnsworth/workflow/blob/main/deploy/hetzner-bootstrap.sh
+Documentation=https://github.com/Jonnyton/Workflow/blob/main/deploy/hetzner-bootstrap.sh
 After=docker.service
 
 [Service]

@@ -16,7 +16,7 @@ What `packaging/` exists for:
 |---|---|---|---|---|
 | `packaging/mcpb/` | Builds `workflow-universe-server.mcpb` — the MCPB extension artifact users install via Claude Desktop / compatible MCP hosts. | `build_bundle.py:32` copies from `fantasy_author/universe_server.py`. | `python packaging/mcpb/build_bundle.py --pack` | End users installing the MCP bundle. |
 | `packaging/claude-plugin/` | Claude plugin marketplace package — validated with `claude plugin validate`. Per `docs/distribution_validation.md:6-14`. | Staged copy of `fantasy_author/universe_server.py` at `packaging/claude-plugin/plugins/workflow-universe-server/runtime/fantasy_author/universe_server.py`. | **No build script.** Hand-copied once. | Claude plugin marketplace submissions. |
-| `packaging/registry/` | Generates `server.json` for MCP Registry submission per the official schema at `static.modelcontextprotocol.io/.../server.schema.json`. | Derived from the built `.mcpb` bundle (sha256 + version). | `python packaging/registry/generate_server_json.py` | MCP Registry listing at `io.github.jfarnsworth/workflow-universe-server`. |
+| `packaging/registry/` | Generates `server.json` for MCP Registry submission per the official schema at `static.modelcontextprotocol.io/.../server.schema.json`. | Derived from the built `.mcpb` bundle (sha256 + version). | `python packaging/registry/generate_server_json.py` | MCP Registry listing at `io.github.jonnyton/workflow-universe-server`. |
 | `packaging/dist/` | Build output. Not a source. | — | Produced by build scripts. | — |
 | `packaging/conway/` | Speculative Conway panel metadata per INDEX.md. | — (experimental) | — | Future Conway UI. |
 
@@ -102,7 +102,7 @@ Stop shipping an MCPB bundle. Users install by cloning the repo. Delete `packagi
 - Removes a concept that's been broken for months without anyone noticing — implying demand is low.
 
 **Risks:**
-- **Loses the distribution story.** MCP Registry listing at `io.github.jfarnsworth/workflow-universe-server` goes away. Claude plugin marketplace submission goes away. The "how do external users install this?" question has no answer.
+- **Loses the distribution story.** MCP Registry listing at `io.github.jonnyton/workflow-universe-server` goes away. Claude plugin marketplace submission goes away. The "how do external users install this?" question has no answer.
 - PLAN.md §Distribution And Discoverability is explicitly a principle. Retiring packaging contradicts it.
 - If MVP launch is on the roadmap (I'd need to confirm with host — not a planner memory I have), this becomes an emergency rebuild later.
 
@@ -166,7 +166,7 @@ Same shape extends to a new `build_plugin.py` for `packaging/claude-plugin/` —
 
 - **Does the bundle actually need the whole `workflow/` package, or can we scope to the MCP-relevant subset?** Current shape suggests whole-package is simplest — daemon internals that `universe_server` imports aren't safe to cherry-pick without dependency analysis. Ship whole-package in v1; prune later if bundle size matters.
 - **`fantasy_author/` shim deletion:** explorer confirms 2 internal callers depend on the shim (`fantasy_author/__main__.py:2103` daemon entrypoint, `universe_tray.py:334` tray process spawn). Neither is a packaging consumer — both are runtime entry points that happen to route through the shim. Shim deletion is gated on updating both callers to `from workflow.universe_server import ...`, which falls under the "Author → Daemon mass-rename" Work row already in STATUS.md.
-- **Releases:** `packaging/registry/server.json` expects a GitHub release at `github.com/jfarnsworth/workflow/releases/download/v0.1.0/...` (per `distribution_validation.md:39`). That release **does not exist yet**. The registry draft is valid-but-unpublishable until the host decides to cut a release. Out of scope for this task; flagged for host.
+- **Releases:** `packaging/registry/server.json` expects a GitHub release at `github.com/Jonnyton/Workflow/releases/download/v0.1.0/...` (per `distribution_validation.md:39`). That release **does not exist yet**. The registry draft is valid-but-unpublishable until the host decides to cut a release. Out of scope for this task; flagged for host.
 - **CI:** no CI currently runs the build scripts. Adding `python packaging/mcpb/build_bundle.py --validate` to CI would have caught this break. Recommend as a separate follow-up.
 
 ## 5. Blast-radius check (Option 1)
@@ -176,7 +176,7 @@ Consumers that assume the current packaging layout (explorer-verified 2026-04-15
 1. `docs/mcpb_packaging.md` + `docs/distribution_validation.md` — describe the current (broken) shape. Update in this commit.
 2. `packaging/registry/generate_server_json.py:19` — reads `packaging/mcpb/manifest.json`. Unchanged by Option 1.
 3. `packaging/claude-plugin/plugins/workflow-universe-server/runtime/server.py` — hand-copied, **no build script exists for this mirror** (explorer confirmed). Replaced by new `build_plugin.py` output.
-4. **External: zero consumers.** Explorer confirmed: no GitHub release (no tags, no release assets), no CI (`.github/workflows/` does not exist), no CD pipeline, no npm/PyPI publish. The registry `server.json` points at a URL (`github.com/jfarnsworth/workflow/releases/download/v0.1.0/...`) that does not exist and has never existed. `distribution_validation.md:41-42` already describes the registry file as a "schema-valid publishing draft rather than a fully publishable listing."
+4. **External: zero consumers.** Explorer confirmed: no GitHub release (no tags, no release assets), no CI (`.github/workflows/` does not exist), no CD pipeline, no npm/PyPI publish. The registry `server.json` points at a URL (`github.com/Jonnyton/Workflow/releases/download/v0.1.0/...`) that does not exist and has never existed. `distribution_validation.md:41-42` already describes the registry file as a "schema-valid publishing draft rather than a fully publishable listing."
 5. Obsidian hub / INDEX files reference `packaging/` as a directory — not file-specific, not broken by internal reorg.
 6. **Shim has 2 internal callers, none in packaging.** `fantasy_author/__main__.py:2103` (daemon entrypoint) and `universe_tray.py:334` (tray process spawn) both import from `fantasy_author.universe_server`. No test imports it. These are runtime entry points, not packaging consumers — the packaging change doesn't touch them. The shim stays live until those two call sites migrate (part of the pending mass-rename).
 

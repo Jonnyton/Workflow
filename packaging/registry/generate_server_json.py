@@ -9,11 +9,11 @@ from pathlib import Path
 SCHEMA_URL = (
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 )
-REGISTRY_NAME = "io.github.jfarnsworth/workflow-universe-server"
+REGISTRY_NAME = "io.github.jonnyton/workflow-universe-server"
 TITLE = "Workflow Server"
 DESCRIPTION = "Inspect and steer Workflow universes through a host-run daemon MCP server."
-REPOSITORY_URL = "https://github.com/jfarnsworth/workflow"
-ICON_URL = "https://raw.githubusercontent.com/jfarnsworth/workflow/main/assets/icon.png"
+REPOSITORY_URL = "https://github.com/Jonnyton/Workflow"
+ICON_URL = "https://raw.githubusercontent.com/Jonnyton/Workflow/main/assets/icon.png"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MCPB_MANIFEST_PATH = REPO_ROOT / "packaging" / "mcpb" / "manifest.json"
@@ -40,7 +40,7 @@ def _sha256(path: Path) -> str:
 def _release_url(version: str) -> str:
     filename = f"workflow-universe-server-{version}.mcpb"
     return (
-        "https://github.com/jfarnsworth/workflow/releases/download/"
+        "https://github.com/Jonnyton/Workflow/releases/download/"
         f"v{version}/{filename}"
     )
 

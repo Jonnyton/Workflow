@@ -148,7 +148,7 @@ Then bootstrap:
 
 ```bash
 ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
-    'curl -fsSL https://raw.githubusercontent.com/jfarnsworth/workflow/main/deploy/hetzner-bootstrap.sh | sudo bash'
+    'curl -fsSL https://raw.githubusercontent.com/Jonnyton/Workflow/main/deploy/hetzner-bootstrap.sh | sudo bash'
 # Expected trailing line: "[bootstrap] bootstrap complete."
 ```
 
@@ -161,7 +161,7 @@ Once all MUST items arrive I compose `/etc/workflow/env`:
 ```bash
 ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
     'sudo tee /etc/workflow/env > /dev/null' <<'EOF'
-WORKFLOW_IMAGE=ghcr.io/jfarnsworth/workflow-daemon:latest
+WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:latest
 CLOUDFLARE_TUNNEL_TOKEN=<your paste>
 WORKFLOW_MCP_CANARY_URL=https://tinyassets.io/mcp
 SUPABASE_DB_URL=<your paste>

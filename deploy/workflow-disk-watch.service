@@ -20,7 +20,7 @@
 
 [Unit]
 Description=Workflow disk pressure watchdog (daily /var/lib/docker alert)
-Documentation=https://github.com/jfarnsworth/workflow/blob/main/docs/ops/log-aggregation-runbook.md
+Documentation=https://github.com/Jonnyton/Workflow/blob/main/docs/ops/log-aggregation-runbook.md
 After=network-online.target
 Wants=network-online.target
 

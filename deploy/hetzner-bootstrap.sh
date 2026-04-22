@@ -20,7 +20,7 @@
 # /etc/workflow content is preserved.
 #
 # Usage (on the target box, as root):
-#   curl -fsSL https://raw.githubusercontent.com/jfarnsworth/workflow/main/deploy/hetzner-bootstrap.sh -o /tmp/bootstrap.sh
+#   curl -fsSL https://raw.githubusercontent.com/Jonnyton/Workflow/main/deploy/hetzner-bootstrap.sh -o /tmp/bootstrap.sh
 #   sudo bash /tmp/bootstrap.sh
 #
 # OR (local-clone):
@@ -45,7 +45,7 @@ WORKFLOW_USER="workflow"
 WORKFLOW_UID=1001
 WORKFLOW_HOME="/opt/workflow"
 ENV_DIR="/etc/workflow"
-REPO_URL="https://github.com/jfarnsworth/workflow.git"
+REPO_URL="https://github.com/Jonnyton/Workflow.git"
 REPO_REF="main"
 
 log() { echo "[bootstrap] $*"; }

@@ -99,7 +99,7 @@ def test_entrypoint_passes_through_when_one_sentinel_set():
     """At least one sentinel non-empty -> entrypoint proceeds past the check."""
     result = _run_entrypoint_via_stdin(
         exec_replacement='echo "[harness] would-exec: $@"',
-        extra_env={"WORKFLOW_IMAGE": "ghcr.io/jfarnsworth/workflow-daemon:abc123"},
+        extra_env={"WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123"},
     )
     assert result.returncode == 0, (
         f"expected happy-path exit 0; got {result.returncode}. "

@@ -34,8 +34,8 @@
 # GHCR image reference. Default in compose.yml is `latest`; pin to a
 # short-SHA tag in production for deterministic deploys + easy rollback.
 # Short-SHA tags are emitted by .github/workflows/build-image.yml.
-# Example: ghcr.io/jfarnsworth/workflow-daemon:a1b2c3d4e5f6
-WORKFLOW_IMAGE=ghcr.io/jfarnsworth/workflow-daemon:latest
+# Example: ghcr.io/jonnyton/workflow-daemon:a1b2c3d4e5f6
+WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:latest
 
 
 # ---------------------------------------------------------------------

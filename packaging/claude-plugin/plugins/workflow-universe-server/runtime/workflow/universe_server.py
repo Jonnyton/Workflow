@@ -145,7 +145,7 @@ is at <code>/mcp</code>.</p>
 
 <h2>Links</h2>
 <ul>
-<li><a href="https://github.com/jfarnsworth/workflow">GitHub repository</a>
+<li><a href="https://github.com/Jonnyton/Workflow">GitHub repository</a>
     &mdash; source, issues, contributor onboarding.</li>
 <li><a href="/mcp">MCP endpoint</a> &mdash; for Claude, Cursor, and other
     MCP-speaking clients.</li>
