@@ -113,34 +113,77 @@ jobs:
           echo "=== tool canary (${PROBE_URL}) exit=$code ==="
           echo "$output"
 
-      # Combine handshake + tool canary results into the single
-      # probe.outputs.overall the alarm-sink reads. Red if either step
-      # failed. `status` reports the worst of the two so downstream
-      # paging messages surface the meaningful exit code.
+      # Layer-1c: last_activity canary (Task #15). Proves node
+      # execution is 24/7, not just MCP surface. Reads daemon.
+      # last_activity_at from `universe action=inspect` and pages
+      # if it's older than WORKFLOW_LAST_ACTIVITY_THRESHOLD_MIN
+      # (default 30min). Closes the "MCP is green but node execution
+      # is stalled" gap — exactly the state seen live 2026-04-22
+      # before Task #14 landed the cloud-side worker.
+      #
+      # Only runs when both handshake AND tool-canary are green — if
+      # the daemon isn't speaking MCP or its tool handler crashed,
+      # last_activity_at is meaningless to check.
+      - name: Last-activity canary (node execution 24/7)
+        id: activity_probe
+        continue-on-error: true
+        if: >
+          steps.probe.outputs.handshake_status == '0' &&
+          steps.tool_probe.outputs.tool_status == '0'
+        run: |
+          set +e
+          output=$(python scripts/last_activity_canary.py \
+              --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
+          code=$?
+          set -e
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "activity_status=$code"
+            echo "activity_msg<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== last-activity canary (${PROBE_URL}) exit=$code ==="
+          echo "$output"
+
+      # Combine handshake + tool + last_activity canary results into
+      # the single probe.outputs.overall the alarm-sink reads. Red if
+      # ANY step failed. `status` reports the worst exit code so
+      # downstream paging messages surface the meaningful signal.
       - name: Combine canary results
         id: combine
         run: |
           handshake="${{ steps.probe.outputs.handshake_status }}"
           tool="${{ steps.tool_probe.outputs.tool_status }}"
-          # If tool step was skipped (handshake red), tool_status is empty.
-          # Report the real handshake exit code rather than a synthetic
-          # sentinel so operator-facing paging carries the documented
-          # 0/2/3/4/5 ladder exactly. Priority: handshake-red wins because
-          # if the handshake failed, the tool step never ran meaningfully.
+          activity="${{ steps.activity_probe.outputs.activity_status }}"
+          # If a downstream step was skipped (because an upstream went
+          # red), its *_status is empty. Report the real upstream exit
+          # code rather than a synthetic sentinel so operator-facing
+          # paging carries documented ladder codes. Priority: handshake
+          # > tool > activity (upstream-wins; if handshake failed the
+          # downstream steps never ran meaningfully).
           if [ "${handshake}" != "0" ]; then
             worst="${handshake}"
           elif [ -n "${tool}" ] && [ "${tool}" != "0" ]; then
             worst="${tool}"
+          elif [ -n "${activity}" ] && [ "${activity}" != "0" ]; then
+            worst="${activity}"
           else
             worst="0"
           fi
-          # Display-only: if tool was skipped, say so in the combined msg.
+          # Display-only: if a step was skipped, label the display so
+          # the combined msg in the paging issue is clear about what
+          # ran vs. what didn't.
           if [ -z "${tool}" ]; then
             tool="(skipped — handshake red)"
+          fi
+          if [ -z "${activity}" ]; then
+            activity="(skipped — upstream red)"
           fi
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           msg_handshake="${{ steps.probe.outputs.handshake_msg }}"
           msg_tool="${{ steps.tool_probe.outputs.tool_msg }}"
+          msg_activity="${{ steps.activity_probe.outputs.activity_msg }}"
           {
             echo "status=${worst}"
             echo "msg<<${_delim}"
@@ -149,18 +192,29 @@ jobs:
             echo ""
             echo "--- tool-canary (exit ${tool}) ---"
             echo "${msg_tool}"
+            echo ""
+            echo "--- last-activity (exit ${activity}) ---"
+            echo "${msg_activity}"
             echo "${_delim}"
-            if [ "${handshake}" = "0" ] && [ "${tool}" = "0" ]; then
+            if [ "${handshake}" = "0" ] && [ "${tool}" = "0" ] \
+               && ([ "${activity}" = "0" ] \
+                   || [ "${activity}" = "(skipped — upstream red)" ]); then
               echo "overall=green"
             else
               echo "overall=red"
             fi
           } >> "$GITHUB_OUTPUT"
-          echo "=== combined: handshake=${handshake} tool=${tool} worst=${worst} ==="
+          echo "=== combined: handshake=${handshake} tool=${tool} activity=${activity} worst=${worst} ==="
           # Exit non-zero on red so the run conclusion reflects canary
           # color — alarm-sink uses prior-run conclusion to detect
           # consecutive reds.
-          if [ "${handshake}" != "0" ] || [ "${tool}" != "0" ]; then
+          _activity_is_red="0"
+          case "${activity}" in
+            0|"(skipped"*) _activity_is_red="0" ;;
+            *) _activity_is_red="1" ;;
+          esac
+          if [ "${handshake}" != "0" ] || [ "${tool}" != "0" ] \
+             || [ "${_activity_is_red}" = "1" ]; then
             exit "${worst}"
           fi
 
