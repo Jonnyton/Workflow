@@ -41,11 +41,18 @@ jobs:
       - name: Install actionlint
         id: install
         run: |
-          # Upstream rhysd install script — pinned by version to avoid
-          # supply-chain drift. Bump deliberately; don't track HEAD.
+          # Upstream rhysd release — pinned by version AND SHA256 to
+          # prevent supply-chain drift at both the DNS and the bytes
+          # level. Bump deliberately: update both ACTIONLINT_VERSION
+          # and ACTIONLINT_SHA256 at the same time. The SHA256 can be
+          # read from the release's actionlint_<version>_checksums.txt
+          # and independently verified by downloading + sha256sum-ing
+          # the tarball.
           ACTIONLINT_VERSION="1.7.7"
+          ACTIONLINT_SHA256="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
           curl -fsSL -o /tmp/actionlint.tgz \
               "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tgz" | sha256sum -c -
           mkdir -p /tmp/actionlint
           tar -xzf /tmp/actionlint.tgz -C /tmp/actionlint
           sudo install -m 0755 /tmp/actionlint/actionlint /usr/local/bin/actionlint

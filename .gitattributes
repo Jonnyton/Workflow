@@ -19,6 +19,11 @@
 *.ini  text eol=lf
 *.txt  text eol=lf
 
+# Systemd unit files MUST be LF — systemd rejects CRLF + the units
+# are copied to /etc/systemd/system/ on the droplet as-is.
+*.service text eol=lf
+*.timer   text eol=lf
+
 # Binary / generated — never munge.
 *.png  binary
 *.jpg  binary

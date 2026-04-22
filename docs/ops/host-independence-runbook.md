@@ -159,13 +159,151 @@ gh workflow run secrets-expiry-check.yml `
 
 Known secret metadata table:
 
-| Name | Provider | Expiry source | Rotation notes |
+| Name | Provider | Expiry source | Rotation runbook anchor |
 |---|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare | API verify endpoint when token exposes `expires_on`; otherwise metadata JSON. | Replace in GitHub secrets and succession vault. |
-| `CLOUDFLARE_ZONE_ID` | Cloudflare | Non-secret identifier; no expiry. | Rotate only if zone is recreated. |
-| `HETZNER_API_TOKEN` | Hetzner | Metadata JSON. | Create replacement token, update GitHub secret, revoke old token after green deploy check. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase | Metadata JSON. | Rotate during low traffic; verify app can connect before revoking old key. |
-| `GITHUB_OAUTH_CLIENT_SECRET` | GitHub | Metadata JSON. | Create new client secret, update consumers, then delete old secret. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare | API verify endpoint when token exposes `expires_on`; otherwise metadata JSON. | [#cloudflare-api-token](#cloudflare-api-token) |
+| `CLOUDFLARE_ZONE_ID` | Cloudflare | Non-secret identifier; no expiry. | [#cloudflare-zone-id](#cloudflare-zone-id) |
+| `DIGITALOCEAN_TOKEN` | DigitalOcean | Metadata JSON. | [#digitalocean-token](#digitalocean-token) |
+| `DO_SSH_KEY` | DigitalOcean | Non-expiring ed25519 keypair. | [#do-ssh-key](#do-ssh-key) |
+| `DO_DROPLET_HOST` | DigitalOcean | Non-secret IP identifier. | [#do-droplet-host](#do-droplet-host) |
+| `DO_SSH_USER` | DigitalOcean | Non-secret username. | [#do-ssh-user](#do-ssh-user) |
+| `OPENAI_API_KEY` | OpenAI | Metadata JSON. | [#openai-api-key](#openai-api-key) |
+| `PUSHOVER_USER_KEY` | Pushover | Non-expiring account identifier. | [#pushover-user-key](#pushover-user-key) |
+| `PUSHOVER_APP_TOKEN` | Pushover | Non-expiring application token. | [#pushover-app-token](#pushover-app-token) |
+
+### Per-secret rotation runbooks
+
+Anchors below match the `runbook:` field in
+`.github/workflows/secrets-expiry-check.yml`'s `DEFAULT_METADATA`. Any
+rename here must update the metadata too, or expiry issues will link to
+a 404. Regression test in
+`tests/test_host_independence_runbook.py` enforces this.
+
+#### cloudflare-api-token
+
+**What:** Bearer token used by `deploy/cloudflare-worker/worker.js` to
+inject `CF-Access-Client-Id` / `CF-Access-Client-Secret` headers and by
+the emergency-DNS workflow to edit zone records.
+
+**Rotate:**
+1. Cloudflare → My Profile → API Tokens → "workflow-zone-rw" → Roll.
+2. `gh secret set CLOUDFLARE_API_TOKEN --body "<new token>"`.
+3. Update local vault (1Password "CLOUDFLARE_API_TOKEN" item) per
+   `docs/design-notes/2026-04-22-secrets-vault-integration.md`.
+4. Verify: trigger `.github/workflows/emergency-dns.yml` dry-run OR wait
+   for next `deploy-prod.yml` run.
+5. Revoke the prior token in the same Cloudflare UI.
+
+#### cloudflare-zone-id
+
+**What:** Non-secret identifier for `tinyassets.io`. Included in the
+expiry-check metadata only so the workflow knows about it; tagged
+`non_expiring: true`.
+
+**Rotate:** Only if the zone is recreated in Cloudflare. Fetch the new
+zone ID from Cloudflare dashboard → Overview → right sidebar. Update
+`gh secret set CLOUDFLARE_ZONE_ID --body "<new id>"` and
+`scripts/secrets_keys.txt` (if local ops need it).
+
+#### digitalocean-token
+
+**What:** DO API token used by `.github/workflows/dr-drill.yml` to
+create + destroy drill droplets, and by `bootstrap_add_second_ssh_key.py`
+to register backup SSH keys with the account.
+
+**Rotate:**
+1. DO Console → API → Tokens → "workflow-ops" → Regenerate (scope:
+   read + write; expires in 1 year).
+2. `gh secret set DIGITALOCEAN_TOKEN --body "<new token>"`.
+3. Update 1Password ("DIGITALOCEAN_TOKEN").
+4. Verify: `.github/workflows/dr-drill.yml` dry-dispatch, or
+   `curl -H "Authorization: Bearer $TOKEN" https://api.digitalocean.com/v2/account`.
+5. Delete the prior token via DO Console.
+6. Update `expires_on` in `SECRETS_EXPIRY_METADATA_JSON` to reflect the
+   new 1-year window.
+
+#### do-ssh-key
+
+**What:** Private ed25519 key for droplet SSH access. Primary at
+`~/.ssh/workflow_deploy_ed25519`; backup at
+`~/.ssh/workflow_deploy_backup_ed25519` (see §5b).
+
+**Rotate primary (normal):**
+1. `ssh-keygen -t ed25519 -f ~/.ssh/workflow_deploy_ed25519_new -N ""`.
+2. SSH in with old primary + append new pubkey to
+   `/root/.ssh/authorized_keys`.
+3. Update `gh secret set DO_SSH_KEY --body "$(cat ~/.ssh/workflow_deploy_ed25519_new)"`.
+4. Replace local file: `mv ~/.ssh/workflow_deploy_ed25519{_new,}`.
+5. Test `.github/workflows/deploy-prod.yml` → dry SSH step.
+6. SSH in, remove the old pubkey line from `authorized_keys`.
+7. Re-run `bootstrap_add_second_ssh_key.py` to mint a fresh backup.
+
+**Primary lost or compromised (break-glass):**
+See §5b "Using the backup key when the primary is gone" — retrieve
+backup from 1Password, SSH in, rotate primary as above.
+
+#### do-droplet-host
+
+**What:** Non-secret IPv4 of the production droplet. Stored in GH
+Actions so every uptime-canary / deploy-prod / dr-drill reference
+stays consistent.
+
+**Rotate:** Only when the droplet is actually recreated (DR recovery,
+resize requiring rebuild). After the new droplet has a public IP:
+`gh secret set DO_DROPLET_HOST --body "<new IPv4>"`. Update DNS
+(`tinyassets-mcp-proxy` Worker's origin, if bypassing the tunnel —
+normally unchanged because cloudflared connects outbound).
+
+#### do-ssh-user
+
+**What:** Non-secret username for droplet SSH. Typically `root` for
+bootstrap, `deploy` for routine ops.
+
+**Rotate:** Change via `gh secret set DO_SSH_USER --body "<new user>"`.
+Ensure the user exists in `/etc/passwd` on the droplet + has the
+expected entry in `authorized_keys`.
+
+#### openai-api-key
+
+**What:** Codex CLI credential. Required by the daemon container so
+`workflow.providers.codex_provider` can route LLM calls. Without it,
+`llm_endpoint_bound` reports `unset` and the LLM-binding canary goes
+red.
+
+**Rotate:**
+1. platform.openai.com → Settings → API Keys → "workflow-daemon" →
+   Create new → copy once.
+2. `gh secret set OPENAI_API_KEY --body "<new key>"`.
+3. SSH to droplet, edit `/etc/workflow/env`:
+   `sudo sed -i 's|^OPENAI_API_KEY=.*|OPENAI_API_KEY=<new key>|' /etc/workflow/env`
+   then `sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env`
+   (ENV-UNREADABLE invariant per Task #3).
+4. `sudo systemctl restart workflow-daemon`.
+5. Wait for `.github/workflows/llm-binding-canary.yml` next tick (6h)
+   or trigger manually. Confirm `llm_endpoint_bound: codex`.
+6. Revoke prior key in OpenAI dashboard.
+
+#### pushover-user-key
+
+**What:** Pushover account identifier. Non-secret in the strict sense
+but required for P0 paging; rotating means all paged incidents after
+the rotation go to a different device.
+
+**Rotate:** Only if the host changes phones or revokes the Pushover
+account. Get the new user key from pushover.net → Your User Key.
+`gh secret set PUSHOVER_USER_KEY --body "<new key>"`.
+
+#### pushover-app-token
+
+**What:** Pushover application token identifying "Workflow" as the
+source app.
+
+**Rotate:**
+1. pushover.net → Your Applications → Workflow → Edit → Generate new
+   token (or create replacement app if revoking the app entirely).
+2. `gh secret set PUSHOVER_APP_TOKEN --body "<new token>"`.
+3. Fire `.github/workflows/pushover-test.yml` to confirm delivery with
+   the new token before revoking the old.
 
 ## 4. Acceptance Checks
 
@@ -217,6 +355,87 @@ DRY_RUN=1 python /opt/workflow/scripts/watchdog.py
 # or
 python /opt/workflow/scripts/watchdog.py --dry-run
 ```
+
+---
+
+## 5b. Backup SSH key (bus factor = 2)
+
+The Droplet accepts a backup ed25519 key in addition to the primary
+`~/.ssh/workflow_deploy_ed25519`. If the primary is lost, corrupted, or
+revoked, the backup gets you in without a DO Console rescue.
+
+### Provisioning the backup key (one-time, host action)
+
+`scripts/bootstrap_add_second_ssh_key.py` generates + distributes the key.
+Default mode writes to `~/.ssh/workflow_deploy_backup_ed25519`; host then
+pipes the private key into 1Password (Task #7 vault-first) and shreds the
+local copy.
+
+```bash
+# 1. Set DO_TOKEN so the pubkey also registers with the DO account
+#    (required to reference the key at droplet-creation time, e.g. DR drill).
+export DIGITALOCEAN_TOKEN="$(op read 'op://workflow/DIGITALOCEAN_TOKEN/password')"
+
+# 2. Generate + distribute:
+python scripts/bootstrap_add_second_ssh_key.py \
+    --host "$DO_DROPLET_HOST" \
+    --primary-key ~/.ssh/workflow_deploy_ed25519 \
+    --do-token "$DIGITALOCEAN_TOKEN"
+
+# 3. Store the private key in 1Password:
+op document create ~/.ssh/workflow_deploy_backup_ed25519 \
+    --title "DO Droplet backup SSH key (private)" --vault workflow
+
+# 4. Store the pubkey offsite too (so you can re-add it if the droplet
+#    is ever rebuilt without vault access — belt + suspenders).
+op document create ~/.ssh/workflow_deploy_backup_ed25519.pub \
+    --title "DO Droplet backup SSH key (public)" --vault workflow
+
+# 5. Shred the local private copy:
+shred -u ~/.ssh/workflow_deploy_backup_ed25519
+
+# 6. Verify both keys work:
+ssh -i ~/.ssh/workflow_deploy_ed25519 root@"$DO_DROPLET_HOST" 'echo primary OK'
+# Retrieve backup private key from vault, then:
+ssh -i /tmp/backup_key root@"$DO_DROPLET_HOST" 'echo backup OK'
+rm -f /tmp/backup_key
+```
+
+Alternatively, `--print-only` emits the PEM to stdout for direct vault
+piping without ever touching disk:
+
+```bash
+python scripts/bootstrap_add_second_ssh_key.py \
+    --host "$DO_DROPLET_HOST" --primary-key ~/.ssh/workflow_deploy_ed25519 \
+    --do-token "$DIGITALOCEAN_TOKEN" --print-only \
+    | op document create --title "DO Droplet backup SSH key (private)" \
+          --vault workflow -
+```
+
+### Using the backup key when the primary is gone
+
+1. Retrieve the private key from 1Password:
+   ```bash
+   op read "op://workflow/DO Droplet backup SSH key (private)/document" \
+       > /tmp/backup_key
+   chmod 600 /tmp/backup_key
+   ```
+2. SSH in with it:
+   ```bash
+   ssh -i /tmp/backup_key root@"$DO_DROPLET_HOST"
+   ```
+3. Rotate: generate a new primary via `ssh-keygen`, append to
+   `/root/.ssh/authorized_keys`, remove the old primary's pubkey, update
+   `DO_SSH_KEY` in GH Actions secrets, re-run
+   `bootstrap_add_second_ssh_key.py` to mint a fresh backup.
+4. Shred the retrieved backup copy:
+   ```bash
+   shred -u /tmp/backup_key
+   ```
+
+The backup key is a break-glass credential. Don't use it for routine
+operations — the whole point is that it only sees daylight when the
+primary is compromised or lost, so rotations can focus there.
 
 ---
 

@@ -3,13 +3,21 @@
 Raises bus factor from 1 to 2 for Droplet SSH access (HD-1 close action).
 
 What it does (idempotent):
-  1. Generates a new ed25519 keypair in a temp dir.
+  1. Generates a new ed25519 keypair. By default writes the private key to
+     ``~/.ssh/workflow_deploy_backup_ed25519`` so the host can pipe it
+     into 1Password (Task #7 vault-first). Pass ``--out-dir /tmp/...``
+     to land the key elsewhere, or ``--print-only`` to emit the PEM to
+     stdout for direct ``op item create`` piping.
   2. SSHes into the Droplet using the existing primary key and appends the
      new public key to /root/.ssh/authorized_keys (skip if already present).
-  3. Seeds the new private key as a GH Actions secret (DO_SSH_KEY_BACKUP)
-     using the gh_seed_secret pattern (git credential token; skip if secret
-     already set).
-  4. Erases the local ephemeral key files.
+  3. Optional: registers the pubkey with the DigitalOcean account via
+     ``/v2/account/keys`` when ``--do-token`` / ``DIGITALOCEAN_TOKEN`` is
+     set. Required for the backup key to be selectable at droplet-creation
+     time (e.g. during DR drill Droplet provisioning).
+  4. Optional legacy path: seeds the new private key as GH Actions secret
+     ``DO_SSH_KEY_BACKUP`` when ``--gh-secret`` is passed. Disabled by
+     default; the vault-first pattern from Task #7 replaces this for
+     local-secret storage.
 
 Exit codes
 ----------
@@ -18,12 +26,30 @@ Exit codes
 2   ssh-keygen failed.
 3   SSH upload to Droplet failed.
 4   GH secret seeding failed.
+5   DigitalOcean account-keys registration failed.
 
 Usage
 -----
+    # Vault-first default — write the private key to disk for the host to
+    # pipe into 1Password:
     python scripts/bootstrap_add_second_ssh_key.py \\
         --host 161.35.237.133 \\
         --primary-key ~/.ssh/workflow_deploy_ed25519 \\
+        --do-token "$DIGITALOCEAN_TOKEN"
+
+    # Then (host action):
+    op document create ~/.ssh/workflow_deploy_backup_ed25519 \\
+        --title "DO Droplet backup SSH key (private)" --vault workflow
+    shred -u ~/.ssh/workflow_deploy_backup_ed25519
+
+    # Print-only mode (pipe directly to 1Password without touching disk):
+    python scripts/bootstrap_add_second_ssh_key.py \\
+        --host ... --primary-key ... --print-only \\
+        | op document create --title "DO backup SSH key" --vault workflow -
+
+    # Legacy GH-secret mode:
+    python scripts/bootstrap_add_second_ssh_key.py \\
+        --host ... --primary-key ... --gh-secret \\
         --repo Jonnyton/Workflow
 
 Environment (override CLI for CI use):
@@ -31,6 +57,8 @@ Environment (override CLI for CI use):
     PRIMARY_SSH_KEY_PATH  Path to the existing private key for initial SSH.
     GH_REPO               GitHub repo slug (owner/name).
     GH_TOKEN              GitHub token (falls back to git credential helper).
+    DIGITALOCEAN_TOKEN    DO API token for registering the pubkey with the
+                          DO account (enables droplet-creation referencing).
     DRY_RUN               Set to "1" to skip mutations (useful for CI plan).
 
 Stdlib + subprocess only — no third-party deps.
@@ -52,6 +80,9 @@ from pathlib import Path
 DEFAULT_REPO = "Jonnyton/Workflow"
 SECRET_NAME = "DO_SSH_KEY_BACKUP"
 AUTHORIZED_KEYS = "/root/.ssh/authorized_keys"
+DEFAULT_KEY_NAME = "workflow_deploy_backup_ed25519"
+DEFAULT_DO_KEY_LABEL = "workflow-deploy-backup"
+DO_API_KEYS = "https://api.digitalocean.com/v2/account/keys"
 
 
 # ── GH helpers (mirrors gh_seed_secret.py pattern) ───────────────────
@@ -150,6 +181,67 @@ def _seed_secret(token: str, repo: str, private_key_pem: str) -> None:
             raise RuntimeError(f"secret PUT returned {resp.status}")
 
 
+# ── DigitalOcean account-keys helpers ────────────────────────────────
+#
+# Registering the pubkey with the DO account is distinct from adding it
+# to the running droplet's authorized_keys. Account-keys are referenced
+# by ID at droplet-creation time (`ssh_keys: [<id>]` in the
+# POST /v2/droplets body). Without this step, the backup key works for
+# existing droplets but can't be used to spin up a fresh one in a DR
+# scenario — which is when bus-factor matters most.
+
+
+def _do_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "workflow-second-key/1.0",
+    }
+
+
+def _do_key_exists(token: str, public_key: str) -> bool:
+    """Return True if the pubkey (or its fingerprint) is already registered.
+
+    DO compares by key material, so we submit and let the API tell us
+    via 422 'SSH key is already in use on your account' if duplicate.
+    For the pre-flight check we walk the list and match on the material.
+    """
+    req = urllib.request.Request(DO_API_KEYS, headers=_do_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"DO /v2/account/keys GET failed: HTTP {exc.code}",
+        ) from exc
+    # Match on the key body (middle field of `type key comment`).
+    want_body = public_key.strip().split()[1] if len(public_key.split()) >= 2 else ""
+    for entry in data.get("ssh_keys", []):
+        existing = (entry.get("public_key") or "").strip().split()
+        if len(existing) >= 2 and existing[1] == want_body:
+            return True
+    return False
+
+
+def _do_register_key(
+    token: str, public_key: str, label: str,
+    *, opener=urllib.request.urlopen,
+) -> dict:
+    """POST the pubkey to DO. Returns the created key record (with id)."""
+    body = json.dumps({"name": label, "public_key": public_key.strip()}).encode()
+    req = urllib.request.Request(
+        DO_API_KEYS, data=body, method="POST", headers=_do_headers(token),
+    )
+    try:
+        with opener(req, timeout=30) as resp:
+            return json.loads(resp.read().decode()).get("ssh_key", {})
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise RuntimeError(
+            f"DO /v2/account/keys POST failed: HTTP {exc.code}: {detail}",
+        ) from exc
+
+
 # ── SSH helpers ───────────────────────────────────────────────────────
 
 def _ssh_run(host: str, primary_key: str, command: str) -> subprocess.CompletedProcess:
@@ -190,23 +282,44 @@ def run(
     repo: str,
     dry_run: bool = False,
     gh_token: str | None = None,
+    *,
+    gh_secret: bool = False,
+    do_token: str | None = None,
+    do_label: str = DEFAULT_DO_KEY_LABEL,
+    out_dir: str | None = None,
+    print_only: bool = False,
 ) -> None:
-    token = _gh_token(gh_token)
+    """Generate + distribute the backup SSH key.
 
-    print(f"[second-key] host:    {host}")
-    print(f"[second-key] repo:    {repo}")
-    print(f"[second-key] secret:  {SECRET_NAME}")
+    Modes (mutually exclusive on the private-key destination):
+      - ``print_only=True``: emit private PEM to stdout, no file written.
+        Caller is expected to pipe to a vault (e.g. ``op document create``).
+      - ``out_dir`` set: write private + public to that directory using
+        DEFAULT_KEY_NAME. Default when no other mode flag is set.
+      - ``gh_secret=True``: seed GH Actions secret (legacy path, opt-in).
 
-    # Check if secret already seeded (idempotency).
-    if _secret_exists(token, repo):
-        print(f"[second-key] {SECRET_NAME} already exists in GH Actions — skipping.")
-        return
+    Droplet authorized_keys upload always happens (the task's headline).
+    DO account-keys registration runs when ``do_token`` is provided.
+    """
+    # Legacy path idempotency — only applies when opting into gh-secret mode.
+    if gh_secret:
+        token = _gh_token(gh_token)
+        if _secret_exists(token, repo):
+            print(f"[second-key] {SECRET_NAME} already exists in GH Actions — "
+                  f"legacy-mode skipping.")
+            return
 
+    print(f"[second-key] host:         {host}")
+    print(f"[second-key] gh-secret:    {gh_secret}")
+    print(f"[second-key] do-register:  {bool(do_token)}")
+    print(f"[second-key] print-only:   {print_only}")
+    if out_dir and not print_only:
+        print(f"[second-key] out-dir:      {out_dir}")
     if dry_run:
-        print("[second-key] DRY_RUN=1 — would generate keypair, upload, seed secret.")
+        print("[second-key] DRY_RUN=1 — would generate keypair + upload + register.")
         return
 
-    # Generate keypair in temp dir.
+    # Generate keypair in a tmpdir; copy out afterward if requested.
     with tempfile.TemporaryDirectory() as tmpdir:
         key_path = Path(tmpdir) / "second_key"
         pub_path = Path(tmpdir) / "second_key.pub"
@@ -223,9 +336,9 @@ def run(
         pubkey_line = pub_path.read_text().strip()
         private_pem = key_path.read_text()
 
-        print(f"[second-key] generated key: {pubkey_line[:50]}...")
+        print(f"[second-key] generated pubkey: {pubkey_line[:50]}...")
 
-        # Upload to Droplet authorized_keys.
+        # --- Droplet authorized_keys append ---
         if _pubkey_already_present(host, primary_key, pubkey_line.split()[1]):
             print("[second-key] pubkey already in authorized_keys — skipping SSH upload.")
         else:
@@ -237,16 +350,66 @@ def run(
                 sys.exit(3)
             print("[second-key] pubkey uploaded OK.")
 
-        # Seed GH secret.
-        print(f"[second-key] seeding {SECRET_NAME} in {repo}...")
-        try:
-            _seed_secret(token, repo, private_pem)
-        except RuntimeError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            sys.exit(4)
-        print(f"[second-key] {SECRET_NAME} seeded OK.")
+        # --- DO account registration ---
+        if do_token:
+            if _do_key_exists(do_token, pubkey_line):
+                print("[second-key] pubkey already registered with DO account — skipping.")
+            else:
+                print(f"[second-key] registering pubkey with DO account as "
+                      f"'{do_label}'...")
+                try:
+                    record = _do_register_key(do_token, pubkey_line, do_label)
+                except RuntimeError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    sys.exit(5)
+                print(f"[second-key] DO registered OK: key_id={record.get('id')}, "
+                      f"fingerprint={record.get('fingerprint')}")
+        else:
+            print("[second-key] DIGITALOCEAN_TOKEN not set — skipping DO "
+                  "account-keys registration. Backup key works on the existing "
+                  "droplet only.")
 
-        # Private key is automatically erased when tmpdir exits context.
+        # --- Private key destination ---
+        if gh_secret:
+            print(f"[second-key] seeding {SECRET_NAME} in {repo}...")
+            try:
+                _seed_secret(_gh_token(gh_token), repo, private_pem)
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                sys.exit(4)
+            print(f"[second-key] {SECRET_NAME} seeded OK.")
+        elif print_only:
+            # Emit to stdout for piping to a vault. Nothing left on disk.
+            sys.stdout.write(private_pem)
+            sys.stdout.flush()
+            print("[second-key] private key emitted to stdout (pipe to vault).",
+                  file=sys.stderr)
+        else:
+            # Default: write to ~/.ssh/ for the host to pipe into 1Password.
+            dest_dir = Path(out_dir).expanduser() if out_dir else (
+                Path.home() / ".ssh"
+            )
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_priv = dest_dir / DEFAULT_KEY_NAME
+            dest_pub = dest_dir / f"{DEFAULT_KEY_NAME}.pub"
+            dest_priv.write_text(private_pem)
+            dest_pub.write_text(pubkey_line + "\n")
+            try:
+                os.chmod(dest_priv, 0o600)
+                os.chmod(dest_pub, 0o644)
+            except OSError:
+                # Windows filesystems ignore chmod; cosmetic only.
+                pass
+            print(f"[second-key] private key written: {dest_priv}")
+            print(f"[second-key] public key written:  {dest_pub}")
+            print("[second-key] NEXT — host action:")
+            print(f"             op document create {dest_priv} \\")
+            print("                 --title 'DO Droplet backup SSH key (private)' \\")
+            print("                 --vault workflow")
+            print(f"             shred -u {dest_priv}  # after vault confirms")
+            print("             # Stash the .pub offsite too (e.g. password-manager notes).")
+
+        # tmpdir auto-erases ephemeral copies when the context exits.
 
     print("[second-key] done. Bus factor = 2.")
 
@@ -267,6 +430,26 @@ def main() -> None:
     p.add_argument("--gh-token",
                    default=os.environ.get("GH_TOKEN", ""),
                    help="GitHub token (default: git credential helper)")
+    p.add_argument("--do-token",
+                   default=os.environ.get("DIGITALOCEAN_TOKEN", ""),
+                   help="DO API token for account-keys registration. "
+                        "Without this, the backup key works only on the "
+                        "existing droplet (not for future droplet-creation).")
+    p.add_argument("--do-label",
+                   default=DEFAULT_DO_KEY_LABEL,
+                   help=f"Label shown in DO dashboard (default: {DEFAULT_DO_KEY_LABEL})")
+    p.add_argument("--gh-secret", action="store_true",
+                   help="Legacy: also seed the private key as GH Actions "
+                        "secret DO_SSH_KEY_BACKUP. Off by default — "
+                        "vault-first per Task #7 supersedes this path.")
+    p.add_argument("--print-only", action="store_true",
+                   help="Emit private PEM to stdout (for piping to vault CLI). "
+                        "Mutually exclusive with --out-dir; bypasses disk write.")
+    p.add_argument("--out-dir",
+                   default="",
+                   help="Directory to write private + public key files. "
+                        "Default: ~/.ssh/. Ignored when --print-only is set "
+                        "or --gh-secret is the only destination.")
     args = p.parse_args()
 
     if not args.host:
@@ -274,6 +457,10 @@ def main() -> None:
         sys.exit(1)
     if not args.primary_key:
         print("ERROR: --primary-key or PRIMARY_SSH_KEY_PATH required", file=sys.stderr)
+        sys.exit(1)
+    if args.print_only and args.gh_secret:
+        print("ERROR: --print-only and --gh-secret are mutually exclusive",
+              file=sys.stderr)
         sys.exit(1)
 
     dry_run = os.environ.get("DRY_RUN", "0").strip() == "1"
@@ -283,6 +470,11 @@ def main() -> None:
         repo=args.repo,
         dry_run=dry_run,
         gh_token=args.gh_token or None,
+        gh_secret=args.gh_secret,
+        do_token=args.do_token or None,
+        do_label=args.do_label,
+        out_dir=args.out_dir or None,
+        print_only=args.print_only,
     )
 
 

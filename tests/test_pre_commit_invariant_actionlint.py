@@ -133,6 +133,33 @@ def test_ci_workflow_installs_pinned_actionlint():
     )
 
 
+def test_ci_workflow_verifies_tarball_sha256():
+    """Supply-chain hardening: the download must be sha256-verified,
+    not just version-pinned. Version-pin protects against HEAD drift,
+    SHA256 protects against the release tarball being replaced on
+    the CDN / an MITM injecting a different byte stream."""
+    text = _CI_WORKFLOW.read_text(encoding="utf-8")
+    assert "ACTIONLINT_SHA256" in text, (
+        "declare ACTIONLINT_SHA256 alongside ACTIONLINT_VERSION"
+    )
+    assert "sha256sum -c" in text, (
+        "verify the tarball against ACTIONLINT_SHA256 via `sha256sum -c`"
+    )
+    # The 1.7.7 linux_amd64 checksum is a hard invariant — if someone
+    # bumps the version without updating the hash, this test fails.
+    # Update both together; the release's
+    # `actionlint_<version>_checksums.txt` is the authoritative source.
+    if 'ACTIONLINT_VERSION="1.7.7"' in text:
+        assert (
+            'ACTIONLINT_SHA256="023070a287cd8cccd71515fedc843f1985bf96c'
+            '436b7effaecce67290e7e0757"'
+        ) in text, (
+            "if pinned to 1.7.7, SHA256 must be the upstream-published "
+            "checksum 023070a287cd8cccd71515fedc843f1985bf96c436b7effae"
+            "cce67290e7e0757"
+        )
+
+
 def test_ci_workflow_uses_merge_base_for_pr_diff():
     """PRs should only lint files the PR actually touched — not the whole
     repo — so pre-existing issues don't block unrelated PRs."""
