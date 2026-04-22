@@ -77,11 +77,12 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Editorial feedback, not scoring.** Natural-language notes about what works, what's concerning, and whether a concern is provably wrong. No numeric rubric in the core loop.
 - **Graph hierarchy is scaffolding.** Structure should emerge from the daemon's choices wherever possible, not fixed counters.
 - **Two review gates, one target registry.** Foundation review hard-blocks on unsynthesized uploads; authorial review may choose any justified work.
-- **Workflow Server, not single-user daemon.** One host runs the server with its own subscriptions and local models; many named users connect through MCP clients. (Renamed from "Universe Server" — the platform-name rebrand. The MCP namespace is currently `workflow-universe-server` pending the layer-3 plugin-dir rename per `docs/design-notes/2026-04-19-universe-to-workflow-server-rename.md`.)
+- **Workflow Server, not single-user daemon.** The control plane runs in the cloud (currently the DO Droplet, formerly a host laptop); many named users connect through MCP clients. (Renamed from "Universe Server" — the platform-name rebrand. The MCP namespace is currently `workflow-universe-server` pending the layer-3 plugin-dir rename per `docs/design-notes/2026-04-19-universe-to-workflow-server-rename.md`.)
+- **Multi-tenant by design, single-tenant today as N=1.** Every daemon-related design — dispatcher, claim-lock, identity, heartbeat, host pool registry, cloud-worker supervisor — must scale from `(user, daemon)` to `(N users, M daemons per user)` without rewrite. Today's live system is one user + a small handful of daemons; that is the degenerate case of the general shape, not its target. Any architecture that would require a migration to multi-user is rejected. (Host directive 2026-04-22; memory `project_daemons_are_multi_tenant_by_design.md`.)
 - **Workflow-first, domain-agnostic identity.** Fantasy authoring is an early benchmark domain, not the trunk.
 - **Open workflow playground.** Open-source, social, remixable, viral enough to spread. Playful surface, serious utility.
 - **MCP clients + local host dashboard.** MCP is the shared collaborative surface; host operational controls live in a local dashboard.
-- **One host tray, many dashboards.** The tray is a lightweight entry point; each live universe gets its own dashboard window.
+- **Two coexisting executors, one file-locked claim.** Node execution runs on the cloud-side `cloud_worker` supervisor (distinct identity `cloud-droplet`) *and* on any host-side tray (identity `host`). Both call `branch_tasks.claim_task`; the file-lock sidecar guarantees no double-claim. The cloud worker closes the "MCP reachable but nothing executes" gap — `last_activity_canary` is the proof signal. Host-tray remains valid for users who want local-model runs with their own keys. (Cloud-worker shipped in 4d1265c; supervises `fantasy_daemon` subprocess, inherits `/etc/workflow/env`.) Per-universe dashboards are orthogonal to executor identity.
 - **Private chats, public actions.** Conversations stay private; any universe-affecting action is publicly attributable.
 - **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting. ("Author" → "daemon" rename in flight; agent-runtime concept is `daemon_id`, content-authorship concept stays `author_id` + `author_kind` discriminator. See `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` §1.5.)
 - **Branch-first collaboration.** Branches are first-class, long-lived, public-forkable. Reconciliation optional, no fixed mainline.
@@ -136,11 +137,11 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 ## Multiplayer Daemon Platform
 
-**Goal:** A host-run workflow platform where many users and daemons collaborate without collapsing into one shared chat or one hidden runtime.
+**Goal:** A multi-tenant workflow platform where many users and daemons collaborate without collapsing into one shared chat or one hidden runtime.
 
-**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers and models.
+**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape.
 
-Defaults: host-run server with named accounts; private per-user MCP sessions; shared tool contract; per-universe host dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; future multi-host participation.
+Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
 **Zero daemons required for authoring.** Node/branch/goal creation, editing, forking, and collaboration work with no daemon running anywhere. Daemon hosting is opt-in for execution work. This is a load-bearing requirement — any architecture where authoring depends on a running daemon violates it. (The phased plan was rejected on this basis; see `docs/design-notes/2026-04-18-full-platform-architecture.md §1`.)
 
@@ -289,6 +290,31 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 **Privacy default:** Per-piece, chatbot-judged. Concept-public by default; instance-private when user data is involved. Chatbot makes per-piece visibility decisions dynamically. (See `docs/design-notes/2026-04-18-full-platform-architecture.md` §17 + memory `project_privacy_per_piece_chatbot_judged.md`.) The earlier "public-by-default; users can mark a branch private for drafting" framing has been refined to per-piece granularity.
 
 **Non-goals for now:** account system MVP scope under Q1; monetization scoped to 1% crypto fee on paid-market bids only; moderation = community-flagged with volunteer-mod review (Q10-host RESOLVED).
+
+---
+
+## Uptime And Alarm Path
+
+**Goal:** The complete system — MCP surface + node execution + collaboration surfaces + paid-market + moderation — stays up 24/7 with zero hosts online. The host machine being asleep for 24h must not extend any outage window past the pager's escalation ladder.
+
+**Principle:** Defense in depth *and* the alarm path itself is host-independent. Every self-heal layer assumes the layers below it will fail; the alarm ladder assumes every self-heal layer will fail. None run on a host machine.
+
+**Three self-heal layers, each catches a different class:**
+
+1. **Container restart (`systemd Restart=always` + `workflow-watchdog.timer`).** Catches transient crashes, OOM-recovery, and hung-but-not-crashed processes. Blind to filesystem-bricked states by design; those fall through to layer 2.
+2. **GHA `p0-outage-triage.yml` auto-repair.** Triggered by the `p0-outage` issue label. Before attempting restart, inspects `journalctl` for known-class markers and applies the canonical repair. Six classes covered (5a6b645): OOM, disk-full, image-pull, watchdog-hot-loop, tunnel-token-manual, env-unreadable (the `ENV-UNREADABLE` marker shipped in a62ae30). Self-repair is encoded, not generalized — each class is a witnessed failure with a known remedy. New classes are added as they are witnessed.
+3. **Deploy-side invariants.** `deploy-prod.yml` asserts `/etc/workflow/env` is readable by the daemon user immediately after every `sudo sed -i` mutation and independently post-restart (0217175). Prevents the 2026-04-21 perm-regression class at the source.
+
+**Alarm ladder, host-phone-independent:** Pushover paging from the GHA `alarm-sink` step at threshold-cross (2 consecutive reds = ~10 min outage), `priority=2` + vibrate-tier for the initial page, escalating re-page at 1h / 4h / 24h if the `p0-outage` issue remains open with no human comment (19c2261). The probe (uptime-canary at 5-min GHA cron) is the signal source; Pushover is the delivery. Neither runs on a host. The 2026-04-21 P0 (~18h dark) exposed that probe-without-paging is not an alarm path — the canary had fired every tick for 18 hours; nothing paged.
+
+**DR validated end-to-end 2026-04-22.** The drill provisions a fresh Debian VM, bootstraps via `hetzner-bootstrap.sh`, restores `/etc/workflow/env` from offsite (GH release backup assets), restores the data volume from offsite, starts the daemon, and asserts canonical canary-green within SLA. Decoupling of restore + start steps (a8fdb97) + owner-path sweep (9ef6c3d) + exit-code propagation (4f936fe) + SSH-tunnel probe (c50b6e8) together make the drill honest — no host keystrokes bridge any step. Weekly recurrence is the always-on regression check.
+
+**What is explicitly *not* in this layer:**
+- On-box pagers (share host-fate with the daemon).
+- Third-party uptime monitors (probe is not the gap; delivery is).
+- "Restart will fix it" as a universal remedy (witnessed to fail when the fault is on the filesystem, not in memory).
+
+**Testable assumption:** If the host's phone is off for 24h, a secondary paging path (email / desktop / secondary device subscribed to the Pushover channel) still fires at the 4h escalation tick. Unvalidated today; validation depends on host's secondary-device setup.
 
 ---
 
