@@ -330,7 +330,10 @@ jobs:
           fi
           # Give the forward a moment to become ready.
           sleep 2
-          output=$(python scripts/mcp_probe.py \
+          # mcp_probe.py needs a subcommand: `status` calls get_status,
+          # which exercises initialize + session + tool-call end-to-end —
+          # the right ground-truth for "daemon is alive and serving MCP."
+          output=$(python scripts/mcp_probe.py status \
               --url "http://localhost:8001/mcp" --verbose 2>&1)
           code=$?
           # Tear down the tunnel. `-O exit` asks the master to close; any
