@@ -62,6 +62,7 @@ jobs:
           if priority == 2:
               kwargs["retry"] = P0_RETRY_S
               kwargs["expire"] = P0_EXPIRE_S
+              kwargs["sound"] = "vibrate"
 
           ok, body = send_pushover(
               title=f"[TEST p{priority}] Workflow paging",

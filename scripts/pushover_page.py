@@ -167,6 +167,7 @@ def send_pushover(
     *,
     retry: int | None = None,
     expire: int | None = None,
+    sound: str | None = None,
     user_key: str | None = None,
     app_token: str | None = None,
     _opener=urllib.request.urlopen,
@@ -210,6 +211,8 @@ def send_pushover(
             )
         form["retry"] = str(retry)
         form["expire"] = str(expire)
+    if sound:
+        form["sound"] = sound
     if url:
         form["url"] = url
         if url_title:
@@ -291,6 +294,7 @@ def main(argv: list[str]) -> int:
         title, message,
         url=args.run_url, url_title="Failing run",
         priority=2, retry=P0_RETRY_S, expire=P0_EXPIRE_S,
+        sound="vibrate",
     )
     if ok:
         print(f"[pushover-page] POST ok body={body}")
