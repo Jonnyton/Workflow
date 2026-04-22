@@ -114,6 +114,15 @@ jobs:
           echo "previous=${prev}" >> "$GITHUB_OUTPUT"
           echo "Previous: ${prev}"
 
+      # INVARIANT — /etc/workflow/env must stay root:workflow 640.
+      # Every `sudo sed -i` on it MUST be followed by `sudo chown
+      # root:workflow ... && sudo chmod 640 ...`. `sed -i` writes to a
+      # temp file and renames, which drops group ownership + resets
+      # perms to umask (often 600). The systemd unit runs as
+      # user=workflow, which cannot read 600 root files → docker
+      # compose silently crash-loops → cloudflared never starts →
+      # public endpoint dark. Root cause of the 2026-04-21 P0 outage.
+      #
       # BUG-002 (2026-04-19): host's Windows WIKI_PATH leaked to the
       # droplet env file, making wiki_path() resolve to /app/C:\Users\...
       # Strip any legacy WIKI_PATH / WORKFLOW_WIKI_PATH lines so the
@@ -122,7 +131,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env"
+              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env && sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env"
 
       - name: Deploy new image
         id: deploy
@@ -134,11 +143,36 @@ jobs:
             set -e
             # Pin the new tag in /etc/workflow/env.
             sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${NEW_IMAGE}|" /etc/workflow/env
+            # Restore owner/perms that sed -i clobbers (see P0 RCA comment above).
+            sudo chown root:workflow /etc/workflow/env
+            sudo chmod 640 /etc/workflow/env
+            # Assert the systemd unit's user can actually read the file.
+            # Without this, a perms regression silently bricks cloudflared.
+            if ! sudo -u workflow test -r /etc/workflow/env; then
+              echo "ENV PERM REGRESSION: /etc/workflow/env not readable by user 'workflow'" >&2
+              sudo ls -l /etc/workflow/env >&2
+              exit 1
+            fi
             # Pull + restart via the systemd unit (which runs docker
             # compose down + up with the new env).
             sudo docker pull "${NEW_IMAGE}"
             sudo systemctl restart workflow-daemon
           EOF
+
+      # Independent of the in-deploy assertion above: re-verify after the
+      # systemd restart has settled. Catches any out-of-band perm drift
+      # between the sed-and-restore and the post-restart steady state.
+      - name: Assert /etc/workflow/env readable by daemon user
+        run: |
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              'sudo -u workflow test -r /etc/workflow/env' || {
+            echo "::error::ENV PERM REGRESSION — /etc/workflow/env not readable by user 'workflow' after restart. cloudflared will silently fail to start."
+            ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                'sudo ls -l /etc/workflow/env' || true
+            exit 1
+          }
 
       - name: Wait for daemon health
         run: |
@@ -191,6 +225,14 @@ jobs:
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" <<EOF
             set -e
             sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${{ steps.prev.outputs.previous }}|" /etc/workflow/env
+            # Restore owner/perms that sed -i clobbers (see P0 RCA comment above).
+            sudo chown root:workflow /etc/workflow/env
+            sudo chmod 640 /etc/workflow/env
+            if ! sudo -u workflow test -r /etc/workflow/env; then
+              echo "ENV PERM REGRESSION during rollback: /etc/workflow/env not readable by user 'workflow'" >&2
+              sudo ls -l /etc/workflow/env >&2
+              exit 1
+            fi
             sudo docker pull "${{ steps.prev.outputs.previous }}" || true
             sudo systemctl restart workflow-daemon
           EOF
