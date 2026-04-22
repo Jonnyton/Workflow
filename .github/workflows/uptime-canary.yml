@@ -50,9 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      status: ${{ steps.probe.outputs.status }}
-      msg: ${{ steps.probe.outputs.msg }}
-      overall: ${{ steps.probe.outputs.overall }}
+      # Combined outputs across handshake + tool-invocation sub-probes.
+      # alarm-sink reads these same keys as before.
+      status: ${{ steps.combine.outputs.status }}
+      msg: ${{ steps.combine.outputs.msg }}
+      overall: ${{ steps.combine.outputs.overall }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +62,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Probe canonical URL
+      # Layer-1a: MCP handshake. Proves the daemon answers `initialize`.
+      - name: Probe canonical URL (handshake)
         id: probe
         continue-on-error: true
         run: |
@@ -73,21 +76,86 @@ jobs:
           # cannot close the heredoc early and corrupt $GITHUB_OUTPUT.
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
-            echo "status=$code"
-            echo "msg<<${_delim}"
+            echo "handshake_status=$code"
+            echo "handshake_msg<<${_delim}"
             echo "$output"
             echo "${_delim}"
-            if [ "$code" = "0" ]; then
+          } >> "$GITHUB_OUTPUT"
+          echo "=== handshake probe (${PROBE_URL}) exit=$code ==="
+          echo "$output"
+          # DO NOT exit here — we want to still run the tool canary if
+          # handshake passed, and combine results in the summary step
+          # below. continue-on-error=true ensures the step doesn't fail
+          # the job on its own.
+
+      # Layer-1b: tool-invocation canary. Proves a real tool handler
+      # executes end-to-end — closes the "handshake-green, tool-handler-
+      # crashed" gap. Only runs if handshake was green (if the daemon
+      # isn't answering initialize, the tool canary can't progress past
+      # step 1 anyway — skip to save log noise).
+      - name: Tool-invocation canary (universe inspect)
+        id: tool_probe
+        continue-on-error: true
+        if: steps.probe.outputs.handshake_status == '0'
+        run: |
+          set +e
+          output=$(python scripts/mcp_tool_canary.py \
+              --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
+          code=$?
+          set -e
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "tool_status=$code"
+            echo "tool_msg<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== tool canary (${PROBE_URL}) exit=$code ==="
+          echo "$output"
+
+      # Combine handshake + tool canary results into the single
+      # probe.outputs.overall the alarm-sink reads. Red if either step
+      # failed. `status` reports the worst of the two so downstream
+      # paging messages surface the meaningful exit code.
+      - name: Combine canary results
+        id: combine
+        run: |
+          handshake="${{ steps.probe.outputs.handshake_status }}"
+          tool="${{ steps.tool_probe.outputs.tool_status }}"
+          # If tool step was skipped (handshake red), treat tool as red
+          # so combined-overall reflects reality.
+          if [ -z "${tool}" ]; then
+            tool="99"
+          fi
+          worst="${handshake}"
+          if [ "${tool}" != "0" ] && [ "${tool}" -gt "${worst}" 2>/dev/null ]; then
+            worst="${tool}"
+          fi
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          msg_handshake="${{ steps.probe.outputs.handshake_msg }}"
+          msg_tool="${{ steps.tool_probe.outputs.tool_msg }}"
+          {
+            echo "status=${worst}"
+            echo "msg<<${_delim}"
+            echo "--- handshake (exit ${handshake}) ---"
+            echo "${msg_handshake}"
+            echo ""
+            echo "--- tool-canary (exit ${tool}) ---"
+            echo "${msg_tool}"
+            echo "${_delim}"
+            if [ "${handshake}" = "0" ] && [ "${tool}" = "0" ]; then
               echo "overall=green"
             else
               echo "overall=red"
             fi
           } >> "$GITHUB_OUTPUT"
-          echo "=== probe (${PROBE_URL}) exit=$code ==="
-          echo "$output"
-          # Exit non-zero on red so run conclusion reflects canary color.
-          # alarm-sink uses prior-run conclusion to detect consecutive reds.
-          exit $code
+          echo "=== combined: handshake=${handshake} tool=${tool} worst=${worst} ==="
+          # Exit non-zero on red so the run conclusion reflects canary
+          # color — alarm-sink uses prior-run conclusion to detect
+          # consecutive reds.
+          if [ "${handshake}" != "0" ] || [ "${tool}" != "0" ]; then
+            exit "${worst}"
+          fi
 
   layer2-probe:
     # Layer-2: Claude.ai connector liveness. Runs headless via injectable
