@@ -128,7 +128,7 @@ jobs:
               return [
                 `**${kind}** @ ${now}`,
                 ``,
-                '<details><summary>pytest output</summary>',
+                '<details><summary>resolver output</summary>',
                 ``,
                 '```',
                 msg.trim() || '(empty)',

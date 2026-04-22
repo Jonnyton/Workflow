@@ -56,6 +56,13 @@ def _step_names(wf: dict) -> list[str]:
     return [(s.get("name") or "").lower() for s in _steps(wf)]
 
 
+def _bootstrap_step_run() -> str:
+    for step in _steps(_load()):
+        if step.get("name") == "Bootstrap drill Droplet":
+            return step.get("run", "")
+    raise AssertionError("Bootstrap drill Droplet step missing")
+
+
 # ---------------------------------------------------------------------------
 # (a) YAML parses
 # ---------------------------------------------------------------------------
@@ -247,11 +254,50 @@ def test_bootstrap_step_uses_pipefail():
     )
 
 
-def test_bootstrap_step_uses_tee_not_tail_pipe():
-    """tail -50 after pipe swallows exit; tee preserves it."""
-    text = _text()
-    # Old pattern was `| tail -50` alone; new pattern is `| tee /tmp/bootstrap.log`
-    assert "tee" in text, "Bootstrap step should pipe to tee, not tail alone"
+def test_bootstrap_step_does_not_pipe_ssh_to_tee():
+    """2026-04-22 Task #66 follow-up: the `ssh ... | tee` pattern itself
+    swallowed the bootstrap exit code on two drill runs because a following
+    `tail` command always exits 0 and masked the pipeline result. Fix is
+    to redirect to a file, capture $?, surface last lines, then propagate.
+    """
+    run = _bootstrap_step_run()
+    assert "| tee /tmp/bootstrap.log" not in run, (
+        "ssh | tee bootstrap.log is the anti-pattern — replace with "
+        "redirect + explicit exit-code capture"
+    )
+
+
+def test_bootstrap_step_captures_exit_code_explicitly():
+    run = _bootstrap_step_run()
+    assert "bootstrap_code=$?" in run, (
+        "bootstrap step must capture ssh exit code into a variable"
+    )
+    assert ('exit "${bootstrap_code}"' in run
+            or "exit ${bootstrap_code}" in run), (
+        "captured bootstrap exit code must be propagated so a failed "
+        "bootstrap fails the step"
+    )
+
+
+def test_bootstrap_step_redirects_instead_of_piping():
+    run = _bootstrap_step_run()
+    assert ">/tmp/bootstrap.log" in run or "> /tmp/bootstrap.log" in run, (
+        "bootstrap output must be captured via redirect, not pipe"
+    )
+
+
+def test_bootstrap_step_surfaces_tail_before_exit():
+    """The last-50-lines dump must run before the exit so operators see
+    what failed, even on a red drill run."""
+    run = _bootstrap_step_run()
+    tail_idx = run.find("tail -50 /tmp/bootstrap.log")
+    assert tail_idx >= 0, "tail of bootstrap.log must be surfaced"
+    after = run[tail_idx:]
+    assert ('if [ "${bootstrap_code}" -ne 0 ]' in after
+            or "if [ ${bootstrap_code} -ne 0 ]" in after), (
+        "exit-on-failure check must come AFTER tail so the operator "
+        "sees the log before the step aborts"
+    )
 
 
 def test_default_drill_size_is_not_1gb():

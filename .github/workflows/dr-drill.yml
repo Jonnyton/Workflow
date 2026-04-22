@@ -235,12 +235,23 @@ jobs:
           scp -i ~/.ssh/do_deploy -o BatchMode=yes \
               deploy/hetzner-bootstrap.sh \
               "root@${DRILL_IP}:/tmp/bootstrap.sh"
-          # tee to stdout for GHA log; pipefail propagates bootstrap exit code.
+          # Run bootstrap without piping — piping to `tee` let two prior
+          # drill runs fail silently (pipefail coverage was ambiguous across
+          # runner-image versions, and `tail` on the next line always exits
+          # 0, masking a failed ssh). Capture to file, surface last 50
+          # lines, then propagate the real exit code explicitly.
+          set +e
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "root@${DRILL_IP}" \
-              "bash /tmp/bootstrap.sh" 2>&1 | tee /tmp/bootstrap.log
+              "bash /tmp/bootstrap.sh" >/tmp/bootstrap.log 2>&1
+          bootstrap_code=$?
+          set -e
           echo "=== bootstrap last 50 lines ==="
-          tail -50 /tmp/bootstrap.log
+          tail -50 /tmp/bootstrap.log || true
+          if [ "${bootstrap_code}" -ne 0 ]; then
+            echo "::error::bootstrap exited ${bootstrap_code} on ${DRILL_IP}"
+            exit "${bootstrap_code}"
+          fi
 
       - name: Transfer backup to drill Droplet
         env:
