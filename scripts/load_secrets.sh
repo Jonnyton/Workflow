@@ -122,9 +122,21 @@ _load_bitwarden() {
     _fail 10 "Bitwarden CLI 'bw' not installed. Install: https://bitwarden.com/help/cli/"
     return $?
   fi
+  # Detect Python. On fresh Windows installs, `python3` resolves to a
+  # Microsoft Store shim that errors instead of running Python; probe
+  # with `-c 'import sys'` to confirm. Fall back to `python`.
+  local _py=""
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1; then
+    _py=python3
+  elif command -v python >/dev/null 2>&1 && python -c "import sys" >/dev/null 2>&1; then
+    _py=python
+  else
+    _fail 10 "No usable python interpreter on PATH (need python3 or python)"
+    return $?
+  fi
   # `bw status` returns JSON with a "status" field.
   local status
-  status=$(bw status 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status",""))' 2>/dev/null || echo "")
+  status=$(bw status 2>/dev/null | "$_py" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status",""))' 2>/dev/null || echo "")
   if [ "$status" != "unlocked" ]; then
     _fail 11 "Bitwarden vault not unlocked. Run: export BW_SESSION=\$(bw unlock --raw)"
     return $?
