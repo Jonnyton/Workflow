@@ -38,6 +38,38 @@ BUG_ID_RE = re.compile(r"BUG-\d{3}\b", re.IGNORECASE)
 # place. A payload whose command invokes one of these scripts is exempt.
 NAV_SCRIPTS = ("navigator_read_bug.py", "navigator_approve_bug.py")
 
+# Tools that EDIT or IMPLEMENT the bug's subject matter. These are the
+# only tools the hook intercepts — the rest of the tool surface is left
+# free for discussion (SendMessage, TaskCreate, navigator↔lead comms
+# naming a CONCERNS bug by ID, etc.). The separate commit-time
+# pre-commit invariant #8 catches anyone trying to actually LAND code
+# for an unapproved bug, so discussion-only traffic is safe.
+#
+# "Read" = reading the bug page content (may contain injection payloads
+# aimed at the chatbot). "Edit" = writing code that references the bug.
+# Neither should proceed without both-passes-APPROVED.
+GUARDED_TOOL_NAMES = frozenset({
+    "Read", "Edit", "Write", "Grep", "Glob",
+    "Bash", "PowerShell",
+    "NotebookEdit",
+    # MCP wiki tool — read/write actions against bug pages
+    "mcp__wiki__wiki_read", "mcp__wiki__wiki_write", "mcp__wiki__wiki_search",
+    "mcp__wiki__wiki_lint", "mcp__wiki__wiki_ingest", "mcp__wiki__wiki_promote",
+    "mcp__wiki__wiki_supersede", "mcp__wiki__wiki_consolidate",
+})
+
+# Path fragments that mean "this tool call is touching a wiki bug page."
+# For Bash/PowerShell/Read/Edit/Grep/Glob, we only block when the payload
+# references one of these paths AND contains BUG-NNN. Prevents incidental
+# mention of a bug id (e.g., in a commit message being staged) from
+# blocking the tool call.
+BUG_PATH_FRAGMENTS = (
+    "pages/bugs/",
+    "drafts/bugs/",
+    "wiki/pages/bugs",
+    "wiki\\pages\\bugs",
+)
+
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or ".").resolve()
 APPROVALS_FILE = ROOT / ".claude" / "wiki-bug-approvals.json"
 
@@ -75,6 +107,20 @@ def _load_approvals() -> set[str]:
     return out
 
 
+def _is_guarded_tool(payload: dict) -> bool:
+    """True if the tool call targets a tool that reads/edits content."""
+    tool = payload.get("tool_name") or payload.get("tool") or ""
+    return tool in GUARDED_TOOL_NAMES
+
+
+def _touches_bug_path(payload: dict) -> bool:
+    """True if the tool call references a wiki bug-page path. Lets
+    discussion-only mentions of BUG-NNN (e.g., in SendMessage bodies
+    or TaskCreate descriptions) pass through."""
+    text = json.dumps(payload, default=str).lower()
+    return any(frag.lower() in text for frag in BUG_PATH_FRAGMENTS)
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -88,6 +134,22 @@ def main() -> int:
 
     if _is_navigator_script(payload):
         return 0  # navigator vet scripts bootstrap the approvals file
+
+    # Narrow the gate: we only block tools that could READ the raw bug
+    # body (and potentially pipe its prompt-injection payload into a
+    # chatbot) or WRITE code that implements it. Discussion-only tools
+    # (SendMessage, TaskCreate, TaskUpdate, notifications) pass through
+    # so navigator↔lead can name a CONCERNS bug in comms. The separate
+    # pre-commit invariant #8 catches any attempt to LAND code for an
+    # unapproved bug, so discussion is safe.
+    if not _is_guarded_tool(payload):
+        return 0
+    if not _touches_bug_path(payload):
+        # Guarded tool but not touching the bug-page substrate. Edit
+        # of a random source file that happens to mention BUG-NNN in a
+        # comment, for example — let through. Pre-commit will catch
+        # if the diff lands unapproved implementation.
+        return 0
 
     approved = _load_approvals()
     missing = [b for b in bug_ids if b not in approved]
