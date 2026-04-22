@@ -1,0 +1,115 @@
+{
+  "_schema": {
+    "_note": "Navigator-owned, git-tracked, internal-only. NOT published to wiki or user-facing surfaces. Accumulates signal on wiki `file_bug` filers so filer-reputation can feed the (deferred) fair-distribution calculator when bounty pool activates. Update after every vet pass. Schema is flexible — solidifies once we have volume. Do not delete records; historical signal matters.",
+    "_rule_memory": "feedback_wiki_bugs_vet_before_implement + project_designer_royalties_and_bounties",
+    "filers": {
+      "<filer_identity>": {
+        "identity_note": "How we know this filer — 'chatbot (UNIVERSE_SERVER_USER=anonymous)', 'github_handle:alice', 'chatbot paste-pattern shared with X/Y/Z (probably same session)', etc. Identity resolution is best-effort until file_bug captures explicit filer_id field.",
+        "first_seen": "ISO-8601 date of first vetted filing",
+        "last_seen": "ISO-8601 date of most recent vetted filing",
+        "filings_total": 0,
+        "filings_shipped": 0,
+        "filings_reshaped": 0,
+        "filings_rejected": 0,
+        "reshape_depth_avg": 0.0,
+        "reshape_depth_note": "0 = no rewrite, 1 = tighter scope only, 2 = partial reshape (approach changed), 3 = full reshape (only the problem statement survives). Average across reshaped filings.",
+        "quality_score": 0.0,
+        "quality_score_formula_note": "Provisional: (shipped * 1.0 + reshaped * 0.5 - rejected * 0.5) / max(filings_total, 1). Refine when volume + real payouts land.",
+        "notable_filings": [
+          {
+            "title": "short descriptive — NOT the BUG-NNN id per gate rule",
+            "vetted_date": "ISO-8601",
+            "outcome": "shipped | reshaped | rejected",
+            "reshape_depth": 0,
+            "navigator_note": "freeform observation — injection-attempt flag, unusually-well-scoped, repeat topic, etc."
+          }
+        ]
+      }
+    }
+  },
+  "filers": {
+    "chatbot_common_paste_pattern": {
+      "identity_note": "Wiki bug bodies sharing a consistent stray-XML-tag residue (<parameter name=...> / </observed>). Seen across all 18 pages of the 2026-04-22 batch. Not confirmed same filer; pattern suggests a chatbot paste-leakage that's session-level, not malicious. Treat as best-effort single-entity until file_bug captures explicit filer_id.",
+      "first_seen": "2026-04-21",
+      "last_seen": "2026-04-22",
+      "filings_total": 18,
+      "filings_shipped": 8,
+      "filings_reshaped": 3,
+      "filings_rejected": 0,
+      "reshape_depth_avg": 1.7,
+      "notable_filings": [
+        {
+          "title": "char-split on string input_keys",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 0,
+          "navigator_note": "Already-landed at vet time. Clean narrow bug report; filer identified exact repro + preferred-fix shape correctly."
+        },
+        {
+          "title": "multi output_keys silently drops past first",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 1,
+          "navigator_note": "Bundle with sibling typed-output no-op — same root cause. Filer named both halves clearly. Real run_id cited for repro. Narrowed to Option A per dev audit."
+        },
+        {
+          "title": "typed non-str output_keys not written to state",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 1,
+          "navigator_note": "Sibling of multi-output drop. Bundled."
+        },
+        {
+          "title": "input_keys isolation not enforced for prompt_template",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 0,
+          "navigator_note": "Filer named user-sim isolation as the load-bearing use case; well-scoped. Dev already had a working-tree diff matching my Pass-1 recommendation."
+        },
+        {
+          "title": "list_branches node_count double-counts",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 0,
+          "navigator_note": "Trivial one-line arithmetic bug. Filer identified the exact mismatch with describe_branch."
+        },
+        {
+          "title": "maintainer_notes field for builder prose",
+          "vetted_date": "2026-04-22",
+          "outcome": "reshaped",
+          "reshape_depth": 3,
+          "navigator_note": "Original spec rejected as substrate duplication + injection-superhighway. Reshaped to describe_branch.related_wiki_pages (option B). Filer's underlying need was real; proposed implementation was wrong. Credit-split question when bounty pool lands: filer identified the discoverability gap; navigator built a different answer."
+        },
+        {
+          "title": "brace-escape in prompt_template",
+          "vetted_date": "2026-04-22",
+          "outcome": "reshaped",
+          "reshape_depth": 2,
+          "navigator_note": "Filer's proposed fix (make {{x}} literal) would silently break every Claude.ai-authored prompt_template. Reshaped to backslash-escape + build-time validation + docstring fix. Filer hit a real pain point but misdiagnosed the fix; underlying validation-timing complaint was correct."
+        },
+        {
+          "title": "conditional_edges not exposed on build/patch",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 0,
+          "navigator_note": "Filer correctly diagnosed half-built feature (field exists on model, missing on MCP surface). Also named the use case (iteration loops / pass-fail gates) explicitly."
+        },
+        {
+          "title": "empty LLM response cascade",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 0,
+          "navigator_note": "Already-landed at vet time (41079b6 + 810ae83). Filer correctly correlated with daemon-dormant bug."
+        },
+        {
+          "title": "run_branch durability across daemon restart",
+          "vetted_date": "2026-04-22",
+          "outcome": "shipped",
+          "reshape_depth": 2,
+          "navigator_note": "Split into two specs: v1-contract-documentation (shipped) + SqliteSaver-keyed resume (was strategy-open, host answered 2026-04-22, now dev-dispatchable). Filer asked both halves correctly — I originally collapsed into one; lead's two-halves correction surfaced this."
+        }
+      ]
+    }
+  },
+  "rejected": {}
+}
