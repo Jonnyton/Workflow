@@ -312,6 +312,31 @@ the precedence logic elsewhere — call the resolver.
 **Container deploys:** set `WORKFLOW_DATA_DIR=/data` + bind-mount the
 host path to `/data`. See `deploy/README.md` for the full pattern.
 
+### Local secrets — vault-first
+
+Local operator secrets (Cloudflare tokens, DigitalOcean token, Hetzner creds, OpenAI key) load from a password manager, not a plaintext file. Vendor is chosen via `WORKFLOW_SECRETS_VENDOR` — `1password` (default), `bitwarden`, or `plaintext` (migration-period opt-out, to be retired after cutover).
+
+Bootstrap on a fresh machine:
+
+```bash
+# 1. install vendor CLI (see docs/design-notes/2026-04-22-secrets-vault-integration.md)
+# 2. sign in:
+eval $(op signin)                       # 1Password
+# or: bw login && export BW_SESSION=$(bw unlock --raw)   # Bitwarden
+# 3. load into current shell:
+set -a; source scripts/load_secrets.sh; set +a
+```
+
+One-shot migration from the legacy `$HOME/workflow-secrets.env`:
+
+```bash
+python scripts/migrate_secrets_to_vault.py --vendor 1password --dry-run
+python scripts/migrate_secrets_to_vault.py --vendor 1password
+# verify, then shred ~/workflow-secrets.env
+```
+
+Canonical list of keys: `scripts/secrets_keys.txt` (edit there, not in shell profiles). Full rationale + vendor comparison + bootstrap runbook: `docs/design-notes/2026-04-22-secrets-vault-integration.md`. GitHub Actions secrets are out of scope — they stay in repo settings.
+
 ---
 
 ## Project Files
