@@ -333,8 +333,11 @@ jobs:
           # mcp_probe.py needs a subcommand: `status` calls get_status,
           # which exercises initialize + session + tool-call end-to-end —
           # the right ground-truth for "daemon is alive and serving MCP."
-          output=$(python scripts/mcp_probe.py status \
-              --url "http://localhost:8001/mcp" --verbose 2>&1)
+          # Note: --url + --verbose are top-level args, must come BEFORE
+          # the subcommand per argparse ordering.
+          output=$(python scripts/mcp_probe.py \
+              --url "http://localhost:8001/mcp" --verbose \
+              status 2>&1)
           code=$?
           # Tear down the tunnel. `-O exit` asks the master to close; any
           # failure here is cosmetic (runner will reap the process anyway).
