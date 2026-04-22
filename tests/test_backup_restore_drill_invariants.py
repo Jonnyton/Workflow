@@ -174,12 +174,79 @@ def test_drill_start_compose_does_not_start_cloudflared():
 
 
 def test_drill_probe_still_hits_daemon_port():
-    """Sanity: the probe step probes port 8001 directly — if someone
-    'fixes' step 14 by routing probe through cloudflared, drill mode
-    stops working."""
+    """Sanity: the probe still targets port 8001 (whether via external
+    IP, SSH tunnel, or curl-over-ssh). Protects against regressions
+    where someone routes the probe through cloudflared or a different
+    port — drill mode stops working if the probe doesn't go to 8001."""
     text = _DR_DRILL.read_text(encoding="utf-8")
-    # The probe URL should target port 8001 directly on the drill IP.
-    assert ":8001/mcp" in text, (
-        "drill probe must target daemon port 8001 directly, not the "
-        "tunnel URL (which wouldn't work without cloudflared anyway)"
+    assert ":8001" in text, (
+        "drill probe must target daemon port 8001; regressions here "
+        "break the whole drill end-to-end"
     )
+
+
+@pytestmark_yaml
+def test_drill_probe_uses_ssh_tunnel_not_external_http():
+    """DR drill #4 (2026-04-22) surfaced: compose.yml binds daemon on
+    `127.0.0.1:8001:8001` (loopback only), so external HTTP to
+    `${DRILL_IP}:8001/mcp` gets connection-refused regardless of
+    daemon health. Task #13 fix: probe via SSH port-forward so the
+    probe hits the droplet's loopback.
+
+    This test pins the fix shape so someone doesn't accidentally
+    'fix by changing compose.yml to 0.0.0.0:8001' — that would work
+    for the drill but unnecessarily exposes the prod daemon port on
+    the public IP. The correct fix is probe-side (SSH tunnel), not
+    compose-side (binding change).
+    """
+    for step in _drill_yaml()["jobs"]["drill"]["steps"]:
+        if step.get("name") == "Probe drill Droplet directly":
+            run = step.get("run", "")
+            break
+    else:
+        raise AssertionError("'Probe drill Droplet directly' step missing")
+
+    # The probe must use SSH port-forward (`ssh -L ... -f -N`) or
+    # an inline `ssh ... curl ...` invocation — NOT a bare external
+    # HTTP probe to ${DRILL_IP}:8001.
+    has_port_forward = "-L 8001:" in run
+    has_ssh_curl = "ssh " in run and "curl" in run and "127.0.0.1:8001" in run
+    assert has_port_forward or has_ssh_curl, (
+        "drill probe must use SSH tunnel or ssh-curl to reach the daemon's "
+        "loopback binding; external ${DRILL_IP}:8001 is connection-refused"
+    )
+
+    # Negative check: the probe URL, if it's localhost-based, must be
+    # `localhost` or `127.0.0.1` — not the external drill IP.
+    # Catches the "revert the fix by pointing at DRILL_IP again" class.
+    if "mcp_probe.py" in run and "--url" in run:
+        # Extract the URL argument. It should be localhost/127.0.0.1.
+        assert "http://localhost:8001" in run or "http://127.0.0.1:8001" in run, (
+            "mcp_probe.py invocation must point at localhost/127.0.0.1 "
+            "(SSH-forwarded port), not the external drill IP"
+        )
+
+
+@pytestmark_yaml
+def test_drill_does_not_require_0_0_0_0_binding():
+    """Regression guard: the drill must NOT depend on compose.yml being
+    edited to bind daemon on 0.0.0.0 instead of 127.0.0.1. If someone
+    'fixes' the drill by changing the compose binding, that'd expose
+    prod's daemon port on the public IP unnecessarily.
+
+    This check walks every drill step and confirms none of them sed/edit
+    the compose.yml port binding. The drill's responsibility is to work
+    around the loopback binding (via SSH tunnel), not to change it.
+    """
+    wf = _drill_yaml()
+    for step in wf["jobs"]["drill"]["steps"]:
+        run = str(step.get("run", ""))
+        # Catch any sed/awk edit that changes the port mapping.
+        assert "0.0.0.0:8001" not in run, (
+            f"drill step {step.get('name')!r} attempts to rebind daemon "
+            f"on 0.0.0.0:8001 — prod-unsafe. Use SSH tunnel instead."
+        )
+        # Catch any sed rewrite of the existing loopback binding.
+        assert "127.0.0.1:8001:8001" not in run or "compose.yml" not in run, (
+            "drill must not sed/edit compose.yml's port binding"
+        )

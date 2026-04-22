@@ -303,10 +303,39 @@ jobs:
         env:
           DRILL_IP: ${{ steps.drillip.outputs.ip }}
         run: |
+          # compose.yml binds daemon on 127.0.0.1:8001 (loopback only).
+          # External HTTP probe to ${DRILL_IP}:8001 gets connection-refused
+          # regardless of daemon health. Fix via SSH port-forward: open a
+          # local tunnel to the droplet's loopback, run the probe against
+          # localhost, tear down the tunnel afterward.
+          #
+          # Explicit ControlPath (`-S`) is required for `-O exit` to find
+          # the master socket at teardown; without it the forward stays
+          # backgrounded until the GHA runner terminates. That's harmless
+          # (runners are ephemeral) but messier than clean teardown.
           set +e
+          _ctrl=/tmp/drill-ssh-ctrl-$$
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              -o ExitOnForwardFailure=yes \
+              -S "${_ctrl}" -M -f -N \
+              -L 8001:127.0.0.1:8001 \
+              "root@${DRILL_IP}"
+          forward_rc=$?
+          if [ "${forward_rc}" -ne 0 ]; then
+            echo "::error::failed to open SSH port-forward to drill droplet (rc=${forward_rc})"
+            echo "code=98" >> "$GITHUB_OUTPUT"
+            echo "color=red" >> "$GITHUB_OUTPUT"
+            echo "output=port-forward setup failed" >> "$GITHUB_OUTPUT"
+            exit 98
+          fi
+          # Give the forward a moment to become ready.
+          sleep 2
           output=$(python scripts/mcp_probe.py \
-              --url "http://${DRILL_IP}:8001/mcp" --verbose 2>&1)
+              --url "http://localhost:8001/mcp" --verbose 2>&1)
           code=$?
+          # Tear down the tunnel. `-O exit` asks the master to close; any
+          # failure here is cosmetic (runner will reap the process anyway).
+          ssh -S "${_ctrl}" -O exit "root@${DRILL_IP}" 2>/dev/null || true
           set -e
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
@@ -320,7 +349,7 @@ jobs:
               echo "color=red"
             fi
           } >> "$GITHUB_OUTPUT"
-          echo "=== drill probe exit=$code ==="
+          echo "=== drill probe exit=$code (via ssh port-forward) ==="
           echo "$output"
 
       - name: Append drill result to log
