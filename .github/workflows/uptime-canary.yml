@@ -122,14 +122,21 @@ jobs:
         run: |
           handshake="${{ steps.probe.outputs.handshake_status }}"
           tool="${{ steps.tool_probe.outputs.tool_status }}"
-          # If tool step was skipped (handshake red), treat tool as red
-          # so combined-overall reflects reality.
-          if [ -z "${tool}" ]; then
-            tool="99"
-          fi
-          worst="${handshake}"
-          if [ "${tool}" != "0" ] && [ "${tool}" -gt "${worst}" 2>/dev/null ]; then
+          # If tool step was skipped (handshake red), tool_status is empty.
+          # Report the real handshake exit code rather than a synthetic
+          # sentinel so operator-facing paging carries the documented
+          # 0/2/3/4/5 ladder exactly. Priority: handshake-red wins because
+          # if the handshake failed, the tool step never ran meaningfully.
+          if [ "${handshake}" != "0" ]; then
+            worst="${handshake}"
+          elif [ -n "${tool}" ] && [ "${tool}" != "0" ]; then
             worst="${tool}"
+          else
+            worst="0"
+          fi
+          # Display-only: if tool was skipped, say so in the combined msg.
+          if [ -z "${tool}" ]; then
+            tool="(skipped — handshake red)"
           fi
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           msg_handshake="${{ steps.probe.outputs.handshake_msg }}"
