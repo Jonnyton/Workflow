@@ -5,6 +5,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; C
 ## Concerns
 
 - [2026-04-20] **Option 1 LIVE 01:50 UTC** 976ba1c. `tinyassets.io/mcp` → 200 canonical; `mcp.tinyassets.io/mcp` → 403 gated. Worker `tinyassets-mcp-proxy` deployed w/ CF Access headers. **Host: rotate Global API Key** (used in session + terminal history).
+- [2026-04-22] **P0 resolved 01:03 UTC** — `/etc/workflow/env` mode regressed 600 root:workflow on 2026-04-21 07:22; unit runs as user=workflow → EnvironmentFile unreadable → compose crash-loop (67 restarts) → cloudflared down → `tinyassets.io/mcp` 502 for ~18h. Fix: `chmod 640`. Root cause of mode flip unknown — `deploy-prod.yml` or bootstrap path may be overwriting w/ 600; needs audit so this doesn't recur silently overnight again.
 - [2026-04-20] `test_node_eval::test_record_and_get_stats_roundtrip` pre-existing flake. Passes in isolation, flaky in full suite. Surface, not block.
 - [2026-04-17] 589e1fb REST changes need tests: `/votes/{id}/resolve` forced; `/votes/{id}/ballots` now `{"vote": ...}`.
 - [2026-04-17] Privacy mode note landed: `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md`; 3 host Qs remain.
@@ -16,18 +17,25 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; C
 
 ---
 
+## Approved bugs (navigator-vetted snapshots)
+
+Navigator writes vetted bug specs here after both safety + strategy passes APPROVED. Dev reads from this section — never from the wiki. Lead dispatches off these entries. Deleted when the fix merges (commit is the record). No BUG-NNN cross-reference; titles are descriptive.
+
+*Empty pending navigator sweep.*
+
+---
+
 ## Work
 
 Claim by setting Status to `claimed:yourname`. Files is the collision boundary. All Row-X tasks live in `docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md`.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Row D — DO deploy (unstick prod) | SSH to DO Droplet; seed GH secrets | host-ops | pending:host |
-| Row F — 48h smoke + acceptance | `scripts/selfhost_smoke.py` | Row D | pending |
-| Row G — canonical-URL docs sweep | specs/audits/SUCCESSION/ui-test | Row F green | pending |
-| Row J — state backup | `deploy/backup.sh`; systemd timer | Row D | pending |
-| Row K — log aggregation | `deploy/compose.yml` log-sidecar | Row D | pending |
-| Layer-2 canary script | `scripts/uptime_canary_layer2.py` + `uptime_alarm.py` SOFT_YELLOW | — | pending |
+| Pushover priority=2 upgrade (Task #8) | `scripts/pushover_page.py` | delivery validated 2026-04-22 02:07 UTC | claimed:dev |
+| Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | #4 merged (4f936fe) | in-progress: run 24756582461 |
+| Row F — 48h smoke + acceptance | `scripts/selfhost_smoke.py` | 48h green window | monitoring |
+| HD-2 secrets.env password-manager backup | host-only action | — | pending:host |
+| HD-4 Cloudflare Global Key rotation | host dashboard | — | pending:host |
 | Mission 10 retest | user-sim | host scope call | claimed:user |
 | #19 Memory-scope Stage 2c flag | — | 30d clean | monitoring |
 
@@ -35,8 +43,9 @@ Claim by setting Status to `claimed:yourname`. Files is the collision boundary. 
 
 ## Next
 
-1. **Host-ops (blocking):** (a) SSH to DO Droplet + run `docker compose pull && up -d` to unstick prod — BUG-002 fix is in origin but CI never deployed (Hetzner secrets were absent; now fixed via Task #20). (b) Seed `DO_DROPLET_HOST` / `DO_SSH_USER` / `DO_SSH_KEY` as GH repo secrets to unblock CI auto-deploy. (c) Rotate Cloudflare Global API Key (exposed in terminal history this session).
-2. **Option 1 cutover LIVE** (976ba1c, 3b8c216) — `tinyassets.io/mcp` → 200; `mcp.tinyassets.io` → 403 Access-gated. Three-check green confirmed.
-3. **Mission queue** when host at visible browser: Priya L1 → Devin M27 → Maya S2.
-4. **Layer-2 canary script** — dev-claimable; spec in `docs/design-notes/2026-04-19-layer2-canary-scope.md §2.6` (SOFT_YELLOW exit=8, 2-consecutive alarm).
-5. Subordinated: rename-end-state, #11 API asks, Row N verifier gates. Not blocking 24/7 uptime.
+1. **Host:** seed Pushover secrets (`PUSHOVER_USER_KEY`, `PUSHOVER_APP_TOKEN`) then lead fires one-shot validation RED.
+2. **Host or lead-with-PAT:** fire DR drill #3 via `workflow_dispatch`. Needs GH token w/ `actions:write` scope (none in `$HOME/workflow-secrets.env`). Host dashboard click works too.
+3. **In flight (dev):** Task #6 MCP tool-invocation canary — closes "handshake-green, tool-broken" gap. Task #5 actionlint hook+CI pending verifier. SHA256-pin followup queued behind #6.
+4. **Stack live:** canonical `tinyassets.io/mcp` 200 + tools/list works (verified 01:09 UTC via MCP initialize); DO Droplet auto-restart + nightly backup + offsite GH Release + 6 timers. P0 RCA hardening landed: 0217175 (perm restore) + 19c2261 (Pushover paging) + a62ae30 (ENV-UNREADABLE 4-surface marker + auto-triage) + 4f936fe (DR drill exit-code propagation).
+5. **Host-only remaining:** HD-2 secrets.env password-manager backup; HD-4 Global API Key rotation. Non-uptime-blocking but close for bus factor.
+6. Subordinated: rename-end-state, #11 API asks, mission retests. Not blocking 24/7 uptime.
