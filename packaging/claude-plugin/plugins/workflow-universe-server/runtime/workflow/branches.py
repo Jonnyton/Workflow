@@ -25,10 +25,43 @@ Graph topology JSON follows LangGraph's native API shape:
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+# Placeholder-extraction regex pair — kept in sync with
+# ``workflow/graph_compiler.py`` (_PLACEHOLDER_RE + _DOUBLE_PLACEHOLDER_RE
+# + _ESCAPED_PLACEHOLDER_RE). Duplicated here so ``validate()`` can run
+# the build-time missing-key check without creating a circular import
+# (graph_compiler already imports BranchDefinition at module load).
+# If either copy changes, update both.
+_VALIDATE_PLACEHOLDER_RE = re.compile(
+    r"(?<!\\){([a-zA-Z_][a-zA-Z0-9_]*)}"
+)
+_VALIDATE_DOUBLE_PLACEHOLDER_RE = re.compile(
+    r"{{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}"
+)
+
+
+def _template_placeholders(template: str) -> list[str]:
+    """Return deduped list of placeholder identifiers in a template.
+
+    Handles Jinja ``{{ident}}`` by normalizing to ``{ident}`` before
+    scanning. Escaped ``\\{ident\\}`` forms are excluded via the
+    lookbehind in ``_VALIDATE_PLACEHOLDER_RE``.
+    """
+    if not template:
+        return []
+    normalized = _VALIDATE_DOUBLE_PLACEHOLDER_RE.sub(r"{\1}", template)
+    seen: set[str] = set()
+    out: list[str] = []
+    for k in _VALIDATE_PLACEHOLDER_RE.findall(normalized):
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 # ═══════════════════════════════════════════════════════════════════════════
 # State Schema (Phase 3 — formal validation deferred)
@@ -643,6 +676,26 @@ class BranchDefinition:
                 if name in field_names:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
+
+        # Build-time placeholder validation: every ``{ident}`` in a
+        # node's prompt_template must resolve via the node's
+        # input_keys OR the branch-level state_schema. Runtime
+        # ``CompilerError`` is the second layer; this is the first.
+        # Escaped ``\\{ident\\}`` forms are literal output and are
+        # excluded by the regex lookbehind in ``_template_placeholders``.
+        for n in self.node_defs:
+            if not n.prompt_template:
+                continue
+            declared = set(n.input_keys or []) | field_names
+            for placeholder in _template_placeholders(n.prompt_template):
+                if placeholder not in declared:
+                    errors.append(
+                        f"Node '{n.node_id}' prompt_template references "
+                        f"'{{{placeholder}}}' but it is not declared in "
+                        f"input_keys or state_schema. Add it to one, or "
+                        f"escape it as '\\{{{placeholder}\\}}' for a "
+                        f"literal brace."
+                    )
 
         return errors
 

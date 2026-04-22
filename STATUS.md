@@ -39,7 +39,8 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 | [deferred] Per-node soul_policy field on NodeDefinition | deferred:needs-scoping |
 | [deferred] Branch-contribution ledger | deferred:needs-scoping |
 | [deferred] Claim-time soul-fingerprint (anti-spoof) | deferred:needs-scoping |
-| [deferred] Flexible escrow splits on node + branch posting | deferred:needs-scoping |
+| [deferred] Flexible escrow splits — arbitrary setter-declared distributions | deferred:needs-scoping |
+| [deferred] Minimum-royalty enforcement on NodeDefinition + BranchDefinition | deferred:needs-scoping |
 | [deferred] Attribution chain primitive (remix provenance) | deferred:needs-scoping |
 | [deferred] Real-world outcome evaluator hook | deferred:needs-scoping |
 | [deferred] Bug-bounty tracking + GitHub attribution | deferred:needs-scoping |

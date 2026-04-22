@@ -255,3 +255,29 @@ def test_runtime_still_raises_on_genuinely_missing_key():
     render still raises KeyError (mapped to CompilerError elsewhere)."""
     with pytest.raises(KeyError):
         _render_template("{topic}", {})
+
+
+def test_validate_and_compiler_placeholder_regexes_stay_in_sync():
+    """Belt-and-suspenders guard against drift between the two copies
+    of the placeholder regex.
+
+    ``branches.py`` duplicates ``graph_compiler.py``'s placeholder +
+    Jinja patterns to avoid a circular import (graph_compiler imports
+    BranchDefinition at module load). Both copies carry a "keep in
+    sync" comment, but discipline-based comments rot. This test
+    surfaces any one-sided edit regardless of whether the behavioral
+    tests happen to still pass.
+    """
+    from workflow.branches import (
+        _VALIDATE_DOUBLE_PLACEHOLDER_RE,
+        _VALIDATE_PLACEHOLDER_RE,
+    )
+    from workflow.graph_compiler import (
+        _DOUBLE_PLACEHOLDER_RE,
+        _PLACEHOLDER_RE,
+    )
+    assert _VALIDATE_PLACEHOLDER_RE.pattern == _PLACEHOLDER_RE.pattern
+    assert (
+        _VALIDATE_DOUBLE_PLACEHOLDER_RE.pattern
+        == _DOUBLE_PLACEHOLDER_RE.pattern
+    )

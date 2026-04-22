@@ -306,6 +306,24 @@ The four rows below trace from the `project_daemon_souls_and_summoning` architec
 
 ---
 
+## [deferred] Minimum-royalty enforcement on NodeDefinition + BranchDefinition
+
+**One-line:** Platform-provided knobs designers attach to their own work so escrow-setters can't post runs that free-ride past a declared floor. Adds `minimum_royalty: dict` field to NodeDefinition + BranchDefinition: `{default_percent: float, per_tier: {paid_market?: float, free_queue?: float, host_internal?: float}}`. Escrow-setup validates the setter's split against all referenced nodes'/branches' floors; rejects with structured error naming the violating node + floor if cut is insufficient.
+
+**Strategy rationale** (`project_designer_royalties_and_bounties` §"What designers control about their own work"): most designers who want broad adoption pick 0% default and earn via voluntary escrow cuts + attribution-chain decay. Designers who want to monetize directly set a floor. Per-tier lets public work enforce a paid-tier royalty without blocking free-tier adoption — a designer can publish for free-queue use while requiring paid-market posts to pay them X%.
+
+**Sibling designer knobs in the same memory** (either co-specced or called out as adjacent):
+- **Private / access-gated node:** only specific users can post escrow for it. Escape hatch for proprietary work. Likely a separate `visibility` / `access_control` field (may overlap with existing branch-visibility from Phase 6.2.2).
+- **Unpublished node:** exists only for the designer's own workspace. Simplest — a `published: bool` field; unpublished nodes cannot be escrow-posted by anyone but the designer.
+
+**Depends on:** Flexible escrow splits (above — enforcement fires at escrow-setup validation); Attribution chain primitive (below — floor applies to designer named in the artifact's author field, so author identity must be durable).
+
+**Open scoping questions:** floor-stacking when a branch references multiple nodes (sum of minimums vs independent per-node floors — probably independent, so setter must satisfy each); tier-naming (paid_market / free_queue / host_internal per memory — is there a catch-all `other` tier, or unnamed tier rejects); mid-life floor changes (designer raises floor after publishing — does that affect existing escrow setups with locked splits? Probably grandfathers existing escrows + applies to new setups only); interaction with remix — does a remix inherit the parent's floor, lower it, or reset it (memory is silent — probably remix is free to re-declare, but attribution-chain lineage cut still flows regardless, so setting 0% on remix doesn't escape lineage royalties); default shape for designers who never set a floor (default 0% = free commons matches memory §"Most designers who want broad adoption will pick 0% default").
+
+**Needs scoping with:** host (tier naming + grandfather rules + remix-inheritance policy), navigator (interaction with fair-distribution + remix-lineage), dev (field schema + validation at escrow-setup + error-shape for floor violations).
+
+---
+
 ## [deferred] Attribution chain primitive (remix provenance)
 
 **One-line:** Lineage metadata on branches + nodes preserved through fork/remix/patch_branch. Carries parent-id + author + source-hash through N generations; queryable for royalty distribution.
@@ -322,17 +340,19 @@ The four rows below trace from the `project_daemon_souls_and_summoning` architec
 
 ---
 
-## [deferred] Real-world outcome evaluator hook
+## [deferred] Real-world outcome evaluator hook (one escrow-template among many)
 
-**One-line:** Extends the Evaluator primitive with "external outcome" variants — verifies real-world signals like paper-published / MVP-shipped / contract-awarded / competition-won / revenue-threshold-hit. Evaluator pass releases real-world-outcome bonus escrow to the full contribution tree (daemons + designers + lineage).
+**One-line:** Extends the Evaluator primitive with "external outcome" variants that verify real-world signals (paper-published / MVP-shipped / contract-awarded / competition-won / revenue-threshold-hit). Used as **one common escrow-template** for setters who want to stake on external outcomes — not a canonical platform pattern.
 
-**Strategy rationale** (`project_designer_royalties_and_bounties` §"Real-world outcome bonuses" + `project_real_world_effect_engine`): real-world outcomes are the product soul. Staking money on external signals is the direct economic incentive to design workflows that actually deliver — "looks smart" vs "actually shipped" becomes a money question. Evaluator-pass releases bonus to the entire contribution tree (claimers, node authors, branch authors, remix lineage) weighted by navigator's fair-distribution calc.
+**Framing correction** (`project_designer_royalties_and_bounties` §"Escrow design is open-ended"): real-world-outcome stakes are what a setter chooses to stake on, not what the platform mandates. A setter who cares only about a finished draft stakes on completion; a setter who cares about peer-reviewed publication stakes on that external signal. This spec ships the primitive that makes the latter expressible — the Evaluator variants + release mechanics. The distribution of the released bonus is whatever the setter declared in their escrow split (see Flexible escrow splits — could be "only finisher" or "split across all contributors weighted by navigator's fair-distribution calc"). The spec doesn't impose a distribution shape.
 
-**Depends on:** `project_evaluation_layers_unifying_frame` Evaluator primitive spec (the base Evaluator type this extends — itself not yet scoped), Attribution chain (above — needed for tree-weighted distribution), Flexible escrow splits (above — the outcome-bonus slot).
+**Strategy rationale** (`project_real_world_effect_engine`): real-world outcomes are the product soul. Making external-signal-staking expressible is the direct economic incentive for setters who want to reward workflows that actually deliver. Setters who don't want to stake on externalities simply don't use this template. Platform supplies the template + ~5 common outcome-type evaluators; setters can author custom ones for niche cases.
 
-**Open scoping questions:** which signals are MVP-supported (peer-review status via DOI lookup? GitHub release published? self-attested + other-party-verified? on-chain contract awarded?); abuse vectors (how do we prevent self-attested "I published!" from draining escrow — probably requiring verifiable external signal OR multi-party-attested chatbot-judged claim); staker-defined vs platform-defined outcome types (probably both — platform ships ~5 common ones; stakers can author custom evaluators for niche cases); timeout + refund semantics (if outcome never arrives, does escrow refund after N months?); tax / legal implications of platform-initiated outcome-bonus payouts (deferred per memory §"Deferred / open questions").
+**Depends on:** `project_evaluation_layers_unifying_frame` Evaluator primitive spec (the base Evaluator type this extends — itself not yet scoped), Attribution chain (above — needed when setter's distribution references lineage), Flexible escrow splits (above — the outcome-bonus slot is declared by setter, not platform).
 
-**Needs scoping with:** host (outcome-type roster + staker-authored Evaluator policy), navigator (fair-distribution tree-weighting for bonus release), dev (external-signal plumbing — DOI APIs, GitHub-release webhooks, etc.).
+**Open scoping questions:** which outcome signals are MVP-supported (peer-review status via DOI lookup? GitHub release published? self-attested + other-party-verified? on-chain contract awarded?); abuse vectors (how do we prevent self-attested "I published!" from draining escrow — probably requiring verifiable external signal OR multi-party-attested chatbot-judged claim); staker-defined vs platform-defined outcome types (probably both — platform ships ~5 common ones; stakers can author custom evaluators for niche cases); timeout + refund semantics (if outcome never arrives, does escrow refund to setter after N months?); tax / legal implications of platform-initiated outcome-bonus payouts (deferred per memory §"Deferred / open questions").
+
+**Needs scoping with:** host (MVP outcome-type roster + staker-authored Evaluator policy), navigator (fair-distribution tree-weighting if setter chooses distributional shape), dev (external-signal plumbing — DOI APIs, GitHub-release webhooks, etc.).
 
 ---
 
@@ -352,7 +372,11 @@ The four rows below trace from the `project_daemon_souls_and_summoning` architec
 
 ## [deferred] Fair-distribution calculator (navigator-adjudicator tooling)
 
-**One-line:** Tool-assist for navigator's formal fair-distribution role. Given a bounty or outcome-bonus event, compute a default split across the contribution tree (reporter, navigator-reshape, daemon-claimers by step-count, node-authors, branch-authors, remix-lineage with decay weights). Navigator reviews + overrides; dispute path escalates to host.
+**One-line:** Tool-assist for navigator's formal fair-distribution role. Given a payout event, compute a default split **within the rules the escrow-setter declared for that event**. Navigator reviews + overrides; dispute path escalates to host.
+
+**Two distinct payout classes the calculator handles differently** (`project_designer_royalties_and_bounties` clarification):
+- **Per-run payouts (setter-declared):** operate on whatever rules the escrow-setter declared for THIS run. Same node run by two different requesters can have totally different distributions. Calculator's job is to apply the setter's declared rules (e.g. "split across all contributors") using observed contribution data (step-counts, earned-fractions, attribution lineage). If setter said "only finisher," calculator just routes to the finisher — no fair-weighting needed.
+- **Platform-set payouts (bug-bounty + navigator-reshape splits):** fully navigator-adjudicated from platform defaults. The 50%-of-1%-platform-take bounty pool routes by my fair-distribution heuristics — reporter vs navigator-reshape-cut vs (when applicable) dev-stipend. No escrow-setter involved; platform is the payer.
 
 **Strategy rationale** (`project_designer_royalties_and_bounties` §"Navigator's fair-distribution role"): navigator is the only role that sees all contribution layers (dev/verifier/lead don't see full economics tree); natural place to adjudicate. Tooling makes the default computation transparent + reproducible; navigator's override is auditable; dispute path keeps the system human-appealable. Fairness bias baked into defaults: over-credit originators, under-credit shallow-relay remixes, reward structural novelty.
 
