@@ -287,9 +287,15 @@ jobs:
         env:
           DRILL_IP: ${{ steps.drillip.outputs.ip }}
         run: |
+          # Drill-mode: only bring up the `daemon` service. Cloudflared
+          # + vector require real secrets (CLOUDFLARE_TUNNEL_TOKEN +
+          # BETTERSTACK_SOURCE_TOKEN) that don't exist on a fresh drill
+          # droplet, and their failure would mask a successful daemon
+          # start. The probe step hits `http://${DRILL_IP}:8001/mcp`
+          # directly — no tunnel needed to validate restore integrity.
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "root@${DRILL_IP}" \
-              "docker compose -f /opt/workflow/deploy/compose.yml up -d" 2>&1
+              "docker compose -f /opt/workflow/deploy/compose.yml up -d daemon" 2>&1
           sleep 30
 
       - name: Probe drill Droplet directly

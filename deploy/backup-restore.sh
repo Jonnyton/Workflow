@@ -23,12 +23,20 @@
 #   BACKUP_LOG       log file path (default: /var/log/workflow-backup.log)
 #
 # Exit codes:
-#   0  restore complete (or DRY_RUN=1).
+#   0  restore complete (or DRY_RUN=1). Data is extracted; caller is
+#      responsible for starting the daemon (normally `docker compose up
+#      -d daemon` or `systemctl restart workflow-daemon`). The restore
+#      script intentionally does NOT start services — the DR drill
+#      workflow's dedicated "Start compose on drill Droplet" step owns
+#      that with full retry + probe logic, and coupling them here caused
+#      the drill to abort early in the 2026-04-22 rehearsal.
 #   1  config missing or bad arguments.
 #   2  archive not found on remote.
 #   3  rclone download failed.
 #   4  tar extract failed.
-#   5  daemon restart failed (data restored, daemon did not come back up).
+#   5  RESERVED — legacy code emitted this when the in-script daemon
+#      restart failed. No longer used; kept in the exit-code doc so
+#      older callers checking for 5 don't regress silently.
 
 set -euo pipefail
 
@@ -142,13 +150,18 @@ fi
 rm -f "${TAR_PATH}"
 log "  extract OK"
 
-# ----- 8. restart daemon ------------------------------------------------
+# ----- 8. done — caller starts the daemon -------------------------------
+#
+# Restore's job is to put the data in the right place. Starting the
+# daemon is the caller's responsibility. This separation is load-bearing
+# for the DR drill: the drill's dedicated "Start compose on drill
+# Droplet" step owns start + retry + probe. Coupling them caused the
+# 2026-04-22 drill to abort at step 13 because cloudflared couldn't
+# initialize without a real CLOUDFLARE_TUNNEL_TOKEN — the daemon itself
+# was perfectly capable of starting.
 
-log "restarting workflow-daemon..."
-if ! docker start workflow-daemon 2>/dev/null; then
-    log "WARN: docker start failed — try: docker compose -f /opt/workflow/deploy/compose.yml up -d"
-    exit 5
-fi
-
-log "restore complete. daemon restarted."
+log "restore complete. Data extracted into ${VOLUME_DIR}."
+log "NEXT — start the daemon via one of:"
+log "  docker compose -f /opt/workflow/deploy/compose.yml up -d daemon"
+log "  systemctl restart workflow-daemon"
 exit 0
