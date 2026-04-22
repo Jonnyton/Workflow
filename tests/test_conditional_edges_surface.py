@@ -126,14 +126,27 @@ def test_patch_branch_add_conditional_edge_appends(branch_env):
 
 def test_patch_remove_conditional_edge_with_outcome_removes_mapping(branch_env):
     us, _ = branch_env
-    spec = _router_spec_no_regular_edges()
-    spec["conditional_edges"] = [
-        {"from": "router", "conditions": {"a": "left", "b": "right"}},
-    ]
-    bid = _call(us, "build_branch",
-                spec_json=json.dumps(spec))["branch_def_id"]
+    # Two outcomes route to the same leaf so removing one keeps the
+    # graph reachable (the other still points at ``leaf``).
+    spec = {
+        "name": "Router",
+        "node_defs": [
+            {"node_id": "router", "display_name": "Router",
+             "prompt_template": "decide"},
+            {"node_id": "leaf", "display_name": "Leaf",
+             "prompt_template": "L"},
+        ],
+        "edges": [{"from": "leaf", "to": "END"}],
+        "conditional_edges": [
+            {"from": "router", "conditions": {"a": "leaf", "b": "leaf"}},
+        ],
+        "entry_point": "router",
+    }
+    built = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert built["status"] == "built", built
+    bid = built["branch_def_id"]
 
-    _call(
+    patch_result = _call(
         us, "patch_branch",
         branch_def_id=bid,
         changes_json=json.dumps([{
@@ -142,10 +155,11 @@ def test_patch_remove_conditional_edge_with_outcome_removes_mapping(branch_env):
             "outcome": "a",
         }]),
     )
+    assert patch_result.get("status") == "patched", patch_result
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert _conditional_edges(got) == [
-        {"from": "router", "conditions": {"b": "right"}}
+        {"from": "router", "conditions": {"b": "leaf"}}
     ]
 
 
@@ -153,14 +167,30 @@ def test_patch_remove_conditional_edge_without_outcome_removes_entire_edge(
     branch_env,
 ):
     us, _ = branch_env
-    spec = _router_spec_no_regular_edges()
-    spec["conditional_edges"] = [
-        {"from": "router", "conditions": {"a": "left", "b": "right"}},
-    ]
-    bid = _call(us, "build_branch",
-                spec_json=json.dumps(spec))["branch_def_id"]
+    # Keep a regular router→leaf edge so the graph stays valid after
+    # the conditional edge is wiped entirely.
+    spec = {
+        "name": "Router",
+        "node_defs": [
+            {"node_id": "router", "display_name": "Router",
+             "prompt_template": "decide"},
+            {"node_id": "leaf", "display_name": "Leaf",
+             "prompt_template": "L"},
+        ],
+        "edges": [
+            {"from": "router", "to": "leaf"},
+            {"from": "leaf", "to": "END"},
+        ],
+        "conditional_edges": [
+            {"from": "router", "conditions": {"a": "leaf"}},
+        ],
+        "entry_point": "router",
+    }
+    built = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert built["status"] == "built", built
+    bid = built["branch_def_id"]
 
-    _call(
+    patch_result = _call(
         us, "patch_branch",
         branch_def_id=bid,
         changes_json=json.dumps([{
@@ -168,6 +198,7 @@ def test_patch_remove_conditional_edge_without_outcome_removes_entire_edge(
             "from": "router",
         }]),
     )
+    assert patch_result.get("status") == "patched", patch_result
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert _conditional_edges(got) == []
@@ -213,47 +244,58 @@ def test_add_conditional_edge_twice_merges_outcomes(branch_env):
     Callers often add outcomes incrementally. We keep one
     ConditionalEdge per `from` node and merge new outcomes in, so the
     stored shape mirrors LangGraph's routing semantics (one router → one
-    edge bundle).
+    edge bundle). To keep each intermediate state valid we route both
+    outcomes to the same leaf, then add a third outcome to the same
+    leaf in the second patch.
     """
     us, _ = branch_env
     bid = _call(us, "build_branch",
                 spec_json=json.dumps(_three_node_spec()))["branch_def_id"]
 
-    # Add a second leaf so both outcomes resolve.
-    _call(
-        us, "patch_branch", branch_def_id=bid,
-        changes_json=json.dumps([
-            {"op": "add_node", "node_id": "right", "display_name": "Right",
-             "prompt_template": "R"},
-            {"op": "add_edge", "from": "right", "to": "END"},
-            {"op": "add_conditional_edge",
-             "from": "router",
-             "conditions": {"a": "left"}},
-        ]),
-    )
-    _call(
+    first = _call(
         us, "patch_branch", branch_def_id=bid,
         changes_json=json.dumps([{
             "op": "add_conditional_edge",
             "from": "router",
-            "conditions": {"b": "right"},
+            "conditions": {"a": "left"},
         }]),
     )
+    assert first.get("status") == "patched", first
+    second = _call(
+        us, "patch_branch", branch_def_id=bid,
+        changes_json=json.dumps([{
+            "op": "add_conditional_edge",
+            "from": "router",
+            "conditions": {"b": "left"},
+        }]),
+    )
+    assert second.get("status") == "patched", second
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert _conditional_edges(got) == [
-        {"from": "router", "conditions": {"a": "left", "b": "right"}}
+        {"from": "router", "conditions": {"a": "left", "b": "left"}}
     ]
 
 
 def test_remove_conditional_edge_missing_outcome_errors(branch_env):
     us, _ = branch_env
-    spec = _router_spec_no_regular_edges()
-    spec["conditional_edges"] = [
-        {"from": "router", "conditions": {"a": "left"}},
-    ]
-    bid = _call(us, "build_branch",
-                spec_json=json.dumps(spec))["branch_def_id"]
+    spec = {
+        "name": "Router",
+        "node_defs": [
+            {"node_id": "router", "display_name": "Router",
+             "prompt_template": "decide"},
+            {"node_id": "leaf", "display_name": "Leaf",
+             "prompt_template": "L"},
+        ],
+        "edges": [{"from": "leaf", "to": "END"}],
+        "conditional_edges": [
+            {"from": "router", "conditions": {"a": "leaf"}},
+        ],
+        "entry_point": "router",
+    }
+    built = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert built["status"] == "built", built
+    bid = built["branch_def_id"]
 
     result = _call(
         us, "patch_branch",
@@ -282,3 +324,49 @@ def test_remove_conditional_edge_missing_from_errors(branch_env):
         }]),
     )
     assert result.get("status") != "patched"
+
+
+def test_self_loop_is_accepted_as_the_retry_primitive(branch_env):
+    """Self-loop happy path. Conditional edges are the loop/gate
+    primitive — a node routing back to itself is valid, not a reject.
+    Navigator re-tightened spec 2026-04-22 pinning this behavior."""
+    us, _ = branch_env
+    spec = {
+        "name": "Retry",
+        "node_defs": [
+            {"node_id": "N1", "display_name": "N1",
+             "prompt_template": "attempt"},
+        ],
+        "conditional_edges": [
+            {"from": "N1", "conditions": {"retry": "N1", "done": "END"}},
+        ],
+        "entry_point": "N1",
+    }
+    result = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert result["status"] == "built", result
+    bid = result["branch_def_id"]
+
+    got = _call(us, "get_branch", branch_def_id=bid)
+    assert _conditional_edges(got) == [
+        {"from": "N1", "conditions": {"retry": "N1", "done": "END"}}
+    ]
+
+
+def test_cycle_via_conditional_edge_is_accepted(branch_env):
+    """Cycles through conditional edges are the loop primitive too —
+    A→B→(conditional back to A or forward to END) must validate."""
+    us, _ = branch_env
+    spec = {
+        "name": "Loop",
+        "node_defs": [
+            {"node_id": "A", "display_name": "A", "prompt_template": "a"},
+            {"node_id": "B", "display_name": "B", "prompt_template": "b"},
+        ],
+        "edges": [{"from": "A", "to": "B"}],
+        "conditional_edges": [
+            {"from": "B", "conditions": {"loop": "A", "done": "END"}},
+        ],
+        "entry_point": "A",
+    }
+    result = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert result["status"] == "built", result

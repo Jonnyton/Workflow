@@ -37,6 +37,7 @@ from typing import Any, Callable
 from workflow.branches import BranchDefinition
 from workflow.graph_compiler import (
     CompilerError,
+    EmptyResponseError,
     NodeTimeoutError,
     UnapprovedNodeError,
     compile_branch,
@@ -1133,6 +1134,30 @@ def _invoke_graph(
                 run_id=run_id, status=RUN_STATUS_FAILED,
                 output={}, error=msg,
             )
+        empty_exc = _find_empty_response_exception(exc)
+        if empty_exc is not None:
+            msg = f"Empty LLM response: {empty_exc}"
+            step = execution_cursor["step"]
+            execution_cursor["step"] += 1
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=empty_exc.node_id or "(unknown)",
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
+                detail={"reason": "empty_response", "message": str(empty_exc)},
+            ))
+            update_run_status(
+                base_path, run_id,
+                status=RUN_STATUS_FAILED,
+                error=msg,
+                finished_at=_now(),
+            )
+            return RunOutcome(
+                run_id=run_id, status=RUN_STATUS_FAILED,
+                output={}, error=msg,
+            )
         logger.exception("Run %s failed at invoke", run_id)
         update_run_status(
             base_path, run_id,
@@ -1168,6 +1193,18 @@ def _is_cancel_exception(exc: BaseException) -> bool:
         seen.add(id(cur))
         cur = cur.__cause__ or cur.__context__
     return False
+
+
+def _find_empty_response_exception(exc: BaseException) -> EmptyResponseError | None:
+    """Walk the exception chain for an EmptyResponseError."""
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        if isinstance(cur, EmptyResponseError):
+            return cur
+        seen.add(id(cur))
+        cur = cur.__cause__ or cur.__context__
+    return None
 
 
 def _find_timeout_exception(exc: BaseException) -> NodeTimeoutError | None:
@@ -1377,9 +1414,13 @@ def recover_in_flight_runs(base_path: str | Path) -> int:
     Called at Workflow Server startup to clean up runs that were in
     flight when the server died. Returns the number of rows updated.
 
-    A follow-up could resume these via SqliteSaver checkpoint + thread_id,
-    but for v1 a clean terminal state is the product requirement — the
-    user can see what happened and choose to rerun.
+    v1 contract: ``interrupted`` is terminal. Callers rerun with the
+    same ``inputs_json`` to continue; the MCP surface exposes this via
+    ``get_run.resumable=false`` (see ``_compose_run_snapshot``). Mid-run
+    resume via SqliteSaver checkpoint + thread_id is a future extension
+    — not available today. Hard-rule #8 (fail loudly) is satisfied by
+    the descriptive error field + terminal status; do not silently
+    drop interrupted runs or loop a poll expecting them to re-run.
     """
     initialize_runs_db(base_path)
     now = _now()

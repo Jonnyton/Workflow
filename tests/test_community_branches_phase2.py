@@ -70,6 +70,44 @@ def test_list_branches_returns_summaries(branch_env):
     assert all("node_count" in b for b in listing["branches"])
 
 
+def test_list_branches_node_count_matches_node_defs_length(branch_env):
+    """list_branches.node_count must equal get_branch.node_defs length.
+
+    STATUS.md Approved-bugs 2026-04-22: the old formula
+    ``len(graph.nodes) + len(node_defs)`` double-counted because
+    graph.nodes is a compiled-topology view that overlaps with
+    node_defs. Fix makes list_branches agree with describe_branch's
+    canonical count (``len(branch.node_defs)``).
+    """
+    us, _ = branch_env
+    created = _call(us, "create_branch", name="Counted")
+    bid = created["branch_def_id"]
+
+    # Populate 3 distinct node_defs so the bug shape (double-count)
+    # would manifest as 6 instead of 3.
+    for nid in ("alpha", "beta", "gamma"):
+        _call(us, "add_node", branch_def_id=bid, node_id=nid,
+              display_name=nid, prompt_template=f"do {nid}")
+
+    # Truth: get_branch.node_defs length.
+    got = _call(us, "get_branch", branch_def_id=bid)
+    expected = len(got["node_defs"])
+    assert expected == 3, (
+        f"precondition: add_node should have created 3 node_defs; "
+        f"got {expected}"
+    )
+
+    # list_branches.node_count must match.
+    listing = _call(us, "list_branches")
+    entry = next(b for b in listing["branches"] if b["branch_def_id"] == bid)
+    assert entry["node_count"] == expected, (
+        f"list_branches.node_count ({entry['node_count']}) "
+        f"!= len(get_branch.node_defs) ({expected}). The old formula "
+        f"len(graph.nodes) + len(node_defs) double-counted; truthful "
+        f"count is len(node_defs)."
+    )
+
+
 def test_delete_branch(branch_env):
     us, _ = branch_env
     created = _call(us, "create_branch", name="Doomed")

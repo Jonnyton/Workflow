@@ -24,66 +24,6 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 ---
 
-## Strict input_keys isolation for prompt_template nodes
-
-**Status note:** in-progress — dev has already implemented matching approach in working tree per `workflow/branches.py` + `workflow/graph_compiler.py` uncommitted diff. Lead — delete this section + the STATUS.md pointer row when the commit lands.
-
-**Scope:** Extend code-node state-filter to prompt_template nodes. Add `strict_input_isolation: bool = False` on NodeDefinition. `_build_prompt_template_node` renders against input_keys-scoped state when strict; `collect_build_warnings` surfaces out-of-input-keys placeholders at build time regardless of flag.
-
-**Files:** `workflow/branches.py`, `workflow/graph_compiler.py`, tests.
-
-**Invariants:** flag default false (backward-compat); strict=true rejects at build AND run; warning is non-fatal and render-noop when strict=false.
-
-**Tests:** strict+valid ok; strict+out-of-keys raises; strict=false same refs warn+render; build-time static check catches before run.
-
-**Vetted:** 2026-04-22 by navigator.
-
----
-
-## Expose conditional_edges on build_branch + patch_branch
-
-**Use case the filer called out explicitly:** iteration loops + pass-fail gates as first-class in-graph control flow. Today these require an outer runner invoking run_branch repeatedly and threading state externally; this spec moves loop-and-gate logic inside the graph where it belongs.
-
-**Scope:** `ConditionalEdge` dataclass + `BranchDefinition.conditional_edges` + `graph_compiler` rendering already exist. MCP surface never exposes the field: `_staged_branch_from_spec` (universe_server.py:5293) doesn't read `spec["conditional_edges"]`; `_apply_patch_op` (line 5435) has no `add_conditional_edge` / `remove_conditional_edge` ops. Add: (a) `_apply_conditional_edge_spec(branch, raw)` mirroring `_apply_edge_spec`, parses `{from, conditions: {outcome: target}}` via `ConditionalEdge.from_dict`; (b) `_staged_branch_from_spec` iterates `spec.get("conditional_edges") or []` after regular edges; (c) patch_branch ops `add_conditional_edge` (takes `{from, conditions}`) and `remove_conditional_edge` (takes `from` plus optional `outcome` — removes the entire conditional edge if outcome unspecified, else just that outcome→target mapping).
-
-**Files:** `workflow/universe_server.py`, tests.
-
-**Invariants:** conditional_edges returned in `describe_branch` / `get_branch` already work unchanged; build from spec_json and patch ops round-trip to the same on-disk shape; validation rejects conditional edges referencing nonexistent nodes or empty conditions dict. **Cycles are allowed** (they're the point — iteration loops require them); validation only rejects unreachable targets and malformed condition maps. LangGraph runtime already caps iteration via its recursion limit, so the graph layer doesn't need a separate loop guard.
-
-**Tests:** build_branch with conditional_edges spec populates field; patch_branch add_conditional_edge appends; remove_conditional_edge with outcome removes mapping; remove_conditional_edge without outcome removes entire edge; validation rejects conditional edge referencing nonexistent target; validation ACCEPTS a self-loop via conditional edge (e.g. `gate → {loop: producer, done: END}` where producer ultimately routes back to gate — explicit loop test case).
-
-**Vetted:** 2026-04-22 by navigator (re-tightened with loop use case + cycle-allowed invariant after lead correction on two-halves audit).
-
----
-
-## list_branches node_count double-counts graph.nodes + node_defs
-
-**Scope:** `workflow/universe_server.py:4576` computes `node_count = len(graph.get("nodes", [])) + len(r.get("node_defs", []))`. Change to `len(r.get("node_defs", []))` — matches the source-of-truth `describe_branch` uses at line ~4924. Truthful count is node_defs length; graph.nodes is a compiled-topology view that overlaps.
-
-**Files:** `workflow/universe_server.py` + existing list_branches test.
-
-**Invariants:** list_branches.node_count == describe_branch node count for the same branch.
-
-**Tests:** regression test asserting count parity across list+describe for a branch with N node_defs.
-
-**Vetted:** 2026-04-22 by navigator.
-
----
-
-## describe_branch / get_branch surface related wiki pages
-
-**Scope:** Add `related_wiki_pages: [{path, title, summary, matched_via}]` section to `_ext_branch_describe` and `_ext_branch_get` responses. Compute by calling `_wiki_search` for the branch_def_id + each node_id; dedupe by path; rank by match-count (both-match beats single-match); cap top 20 with `truncated_count`; summary = first prose paragraph clipped to 140 chars else frontmatter `description` else empty; `matched_via` lists which query terms hit.
-
-**Files:** `workflow/universe_server.py` (add helper near `_ext_branch_describe`), tests.
-
-**Invariants:** no NodeDefinition/BranchDefinition schema change; no `graph_compiler` touch; no new at-rest storage; always-on (no flag).
-
-**Tests:** matches returned in describe+get; no matches returns empty list not missing key; summary 140-char cap; top-20 cap with truncated_count set; matched_via reflects actual term hits.
-
-**Vetted:** 2026-04-22 by navigator. Reshape of the maintainer-notes user-submitted spec per host direction option B (wiki is the substrate; don't duplicate). Full design rationale: `pages/plans/feature-describe-branch-related-wiki-pages.md` (navigator-authored).
-
----
-
 ## Per-node llm_policy override
 
 **Scope:** Today `NodeDefinition.model_hint` → `role` drives the role-based provider router. User ask: `(provider, model, reasoning_effort)` pinning + fallback chain + difficulty override — supersets role-routing without replacing it. Add `llm_policy: dict | None = None` on NodeDefinition. Shape: `{preferred: {provider, model, reasoning_effort?}, fallback_chain: [{provider, model, trigger: "unavailable"|"rate_limited"|"cost_exceeded"|"empty_response"}], difficulty_override: [{if_difficulty, use: {provider, model}}]}`. Runner resolves preferred → fallback_chain → difficulty_override at dispatch time. Branch-level `default_llm_policy` applies to nodes without their own. Emit actual provider served into activity log + get_node_output. When `llm_policy` unset, fall back to existing role-based routing (backward-compat).
@@ -114,21 +54,36 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 ---
 
-## In-flight run recovery — part 2 (SqliteSaver-keyed resume) — STRATEGY REVIEW NEEDED
+## In-flight run recovery — part 2 (SqliteSaver-keyed resume)
 
-**Status: strategy-open.** This is the feature-half of the durable-execution bug the filer named. Navigator's Pass 2 needs a host call before dev starts. The existing code (`runs.py:1417-1419`) comments the resume as a "follow-up" with "v1 product requirement = clean terminal state" — a deliberate deferral. Filer argues this was defensible before Temporal-style durable execution became 2026 industry standard, and now it's not.
+**Strategy decisions (host-answered 2026-04-22, baked into spec):** (a) **Temporal-parity YES** — override v1's "no resume" comment in `runs.py:1417-1419`. Industry has moved; durable execution is table stakes for 2026 agentic systems. (b) **Multi-tenant auth re-check YES, strict** — re-verify caller identity + quota at resume time (session tokens may have rotated, paid-market claim authority must re-validate). (c) **Idempotency step-level via SqliteSaver** — committed steps skip on resume; in-flight step re-executes from scratch. Within-step nodes must be authored to tolerate retry; keyed side effects by `run_id + step_id`. (d) **Cost-neutral** under the node-escrow model (memory `project_node_escrow_and_abandonment`): money locks on the node at claim, resume doesn't double-charge, abandoned work forfeits unearned segment to whoever picks it up. See "Economic semantics" below.
 
-**Candidate scope if approved:** Add `extensions action=resume_run {run_id}`. On INTERRUPTED runs, load the SqliteSaver checkpoint keyed by `run_id`, compile the branch, resume the LangGraph state from last-completed-node via `graph.astream(None, config={"configurable": {"thread_id": run_id}})`. Write resume event to runs.events. New run status `RESUMED` between INTERRUPTED and RUNNING.
+**Scope:** Add `extensions action=resume_run {run_id}`. Flow:
 
-**Strategy questions open to host:**
-1. **Is the 2026 Temporal-parity argument load-bearing enough to override the deliberate v1 product call?** Filer cites OpenAI Codex using Temporal in production. Counter: our workflows are user-ratified-rerun-tolerant; rerunning with same inputs_json is often the correct UX (fresh LLM call, chance to see if the problem is transient vs deterministic).
-2. **Multi-tenant implications:** resume assumes the original caller's identity is re-validated at resume time (not just "the checkpoint exists"). Needs auth re-check so a different user can't resume another user's interrupted run.
-3. **Failure-mode asymmetry:** resume-succeeds is cheap; resume-fails-halfway is expensive (partial state written with no way to distinguish from fresh-run state). Need idempotency guarantees or per-node "already completed" markers.
-4. **Cost implications:** resume skips provider calls for completed nodes. At paid-market prices this matters — ~10× cheaper than rerun on a 10-node branch that died at step 9. Aligns with `project_monetization_crypto_1pct` ledger honesty.
+1. **Identity gate.** `_current_actor()` must match run's `actor` field OR admin. Session token must be currently valid for that actor (re-check, not cached). Paid-market runs additionally re-verify the actor still has claim authority over the node escrow attached to this run. Auth failure → `403`-shaped error; no leak of whether run exists.
 
-**Recommendation:** Host direction needed before dev scopes this. My lean is "ship it — Temporal-parity is real and cost-savings at scale make this load-bearing" but the v1-was-deliberate comment in runs.py means this is a product call above navigator's pay grade.
+2. **Status gate.** Run must be in `INTERRUPTED` status. Any other status (`COMPLETED`, `FAILED`, `RUNNING`, `RESUMED` already) → structured error naming current status and the expected transition. Idempotency: resuming a `RESUMED` run returns the existing resumed run_id without spawning a second resume.
 
-**Vetted:** 2026-04-22 by navigator — **strategy pass OPEN pending host direction, NOT dev-dispatchable yet.** Bug filer was right to ask both; I originally absorbed this into a v1-lock that wasn't mine to make.
+3. **Checkpoint load.** Load SqliteSaver checkpoint keyed by `run_id` (thread_id = run_id). If missing (e.g. SqliteSaver storage evicted or pre-resume-feature run), return structured error directing caller to rerun with `run_branch` + same `inputs_json`.
+
+4. **Compile + resume.** Re-compile branch (branch defs may have been patched since original run — use the branch version pinned in runs.branch_version to compile the exact shape; reject resume if that version no longer exists). Call `graph.astream(None, config={"configurable": {"thread_id": run_id}})` — LangGraph resumes from last committed state.
+
+5. **State transitions.** Set status `RESUMED` at resume-call time; flip to `RUNNING` once first node emits; terminal states (`COMPLETED`/`FAILED`/`INTERRUPTED`) land same as fresh runs. Emit `resume_started` event to runs.events carrying `resume_actor`, `resumed_at`, `last_committed_step_id`.
+
+6. **Node-level retry semantics.** In-flight step at interrupt time re-executes from scratch. Document in spec + node-author guide: **any node that performs side effects (wiki writes, canon updates, external HTTP calls, paid-market escrow claims) MUST key side effects by `(run_id, step_id)` so retry is idempotent.** Provide a helper `workflow/idempotency.py` with `@idempotent_by_step` decorator for code-node authors. Prompt-template nodes are naturally idempotent (LLM call produces fresh output; SqliteSaver captures the commit).
+
+**Economic semantics (per `project_node_escrow_and_abandonment`):**
+- Resume within the abandonment grace window by the **original claimer** = same ownership, same earning path, no escrow change.
+- Resume after grace by a **different daemon** = treated as a new claim on the abandoned segment. Escrow stays on the node; new claimer earns the unearned segment on completion; original claimer forfeits unearned segment (earned segment from checkpoints already paid out, if any).
+- Resume does NOT amplify cost — the node-escrow unit is the node, not the attempt. Provider calls for already-committed steps are skipped; only the in-flight step's provider call re-runs, which is already paid for out of the node's escrow.
+
+**Files:** `workflow/runs.py` (resume_run helper, status transitions, idempotency key schema, branch_version pinning validation), `workflow/universe_server.py` (`_action_resume_run` + auth re-check + paid-market claim-authority re-verify), `workflow/idempotency.py` NEW module (decorator + helper for code-node side-effect keying), `workflow/graph_compiler.py` (ensure node callables tolerate SqliteSaver resume — read committed-steps-so-far to skip cleanly), tests.
+
+**Invariants:** resume requires strict auth re-check against current session token (no cached token reuse); resume rejects non-INTERRUPTED runs with a structured error naming current status; resume of RESUMED returns existing resumed-run_id (idempotent call); branch_version mismatch (branch patched since original run) rejects resume with clear error; side-effect nodes use `idempotent_by_step` keying — a helper-registry-lint fails pre-commit if a code-node with `requires_idempotent_retry=true` doesn't use the decorator; escrow ledger never double-credits a completed step.
+
+**Tests:** successful resume of INTERRUPTED run completes remaining nodes; resume by non-owner rejected 403-shaped; resume of COMPLETED rejected with status-mismatch error; resume-of-RESUMED returns same run_id no second resume; missing checkpoint (evicted SqliteSaver state) returns structured rerun-suggestion error; branch_version mismatch rejected; in-flight step re-executes from scratch (verified via provider_call spy); committed steps do NOT re-execute (spy shows zero additional calls for pre-checkpoint nodes); node with `@idempotent_by_step` side effect does not duplicate that effect on retry; escrow ledger shows no double-credit on resumed completion.
+
+**Vetted:** 2026-04-22 by navigator. Host answered all four strategy questions; spec now dev-dispatchable with economic semantics tied to `project_node_escrow_and_abandonment` memory. Supersedes the strategy-open state from the earlier pass.
 
 ---
 
@@ -194,15 +149,19 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 ## Scheduled + event-triggered branch invocation
 
-**Scope:** Two new primitives: (1) `extensions action=schedule_branch` `{branch_def_id, cron_or_interval, inputs_template}` registers a schedule; runner invokes `run_branch` per schedule; scheduled runs tag `actor=scheduler:<schedule_id>`. (2) `extensions action=subscribe_branch` `{branch_def_id, event_type, inputs_mapping}` registers an event subscription; events include `canon_change`, `branch_run_completed:{branch_def_id}`, `pr_open`, `canon_upload`. Runner emits these events internally + exposes event bus to external producers. Persistence: SQLite table per schedule/subscription; survives daemon restart. Uptime alignment: scheduled aggregators are core to always-on (forever-rule).
+**Strategy rationale (expanded per lead concern on depth of strategy pass):** The filer named three distinct use cases — scheduled aggregators, event-triggered runs (PR-open, deploy-failure, canon-upload, user-action), and upstream-dependency chaining (branch-run-completed → next-branch-run). All three are the **difference between "a daemon you call" and "a daemon that runs on its own"** — which is the core Forever-Rule ambition (`24/7 uptime with zero hosts online`, `project_always_up_auto_heal`: system always up and self-healing, host is just another contributor). Without this primitive there's no substrate for: (a) nightly stats-rollup branches; (b) PR-triggered review branches; (c) daemon-host-independence because nothing currently triggers work without a user imperative call. This is load-bearing for the always-up vision, not just a convenience.
 
-**Files:** `workflow/runs.py` (schedule table + event table), `workflow/universe_server.py` (actions), `workflow_tray.py` or `workflow/scheduler.py` new module (tick loop), tests.
+**Multi-tenant implications (named explicitly per lead flag):** A schedule or subscription is owned by a user (the actor who registered it). Invariants: (1) schedule rows carry `owner_actor`; only the owner + admin can unregister. (2) Event subscriptions fire the subscribed branch with `actor=subscriber:<owner>`, not `actor=event-source` — so the run is billed/attributed to the subscriber, not to whoever triggered the event. (3) Rate-limit per-owner on schedule count + subscription count (default 20 of each) to prevent one user filling the scheduler table. (4) Scheduled runs obey the same paid-market bid economics as manual runs — auto-scheduled expensive work still requires the owner to have budget; if not, schedule pauses with a clear state and notifies owner.
 
-**Invariants:** schedule fires on wall-clock regardless of in-flight runs (last-run can overlap next tick; configurable skip_if_running); event subscription fires exactly once per event; removal of a schedule is immediate (no orphan firings); inputs_template validates at registration time against branch's schema.
+**Scope:** Two new primitives: (1) `extensions action=schedule_branch` `{branch_def_id, cron_or_interval, inputs_template}` registers a schedule; runner invokes `run_branch` per schedule; scheduled runs tag `actor=scheduler:<schedule_id>` with `owner_actor=<registrar>`. (2) `extensions action=subscribe_branch` `{branch_def_id, event_type, inputs_mapping}` registers an event subscription; events include `canon_change`, `branch_run_completed:{branch_def_id}`, `pr_open`, `canon_upload`. Runner emits these events internally + exposes event bus to external producers. Persistence: SQLite tables for schedules + subscriptions; survives daemon restart via restart recovery loop.
 
-**Tests:** cron schedule fires at expected times (fake clock); interval schedule respects skip_if_running; event subscription fires on emitted event; subscription unregister stops firings.
+**Files:** `workflow/runs.py` (schedule table + event table + recovery), `workflow/universe_server.py` (actions + owner-gated unregister), `workflow/scheduler.py` new module (tick loop), tests.
 
-**Vetted:** 2026-04-22 by navigator.
+**Invariants:** schedule fires on wall-clock regardless of in-flight runs (last-run can overlap next tick; configurable `skip_if_running`); event subscription fires exactly once per event (idempotency keyed on event_id); removal of a schedule/subscription is immediate + only by owner/admin (no orphan firings); inputs_template validates at registration time against branch's schema; rate-limit 20 active schedules + 20 subscriptions per owner_actor (configurable); scheduler survives daemon restart via recovery hook.
+
+**Tests:** cron schedule fires at expected times (fake clock); interval schedule respects skip_if_running; event subscription fires on emitted event; subscription unregister by non-owner rejected; rate-limit rejects 21st active schedule per owner; daemon restart recovers schedule table + resumes ticking; scheduled run carries owner_actor correctly for billing attribution.
+
+**Vetted:** 2026-04-22 by navigator (re-expanded strategy + multi-tenant invariants per lead concern on depth of original pass).
 
 ---
 
@@ -251,3 +210,47 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 **Tests:** backslash-escape renders literal; single-brace substitutes; double-brace normalized+substitutes; build-time catches undeclared ref; build-time does NOT flag escaped refs; JSON `{"key": "val"}` passes through.
 
 **Vetted:** 2026-04-22 by navigator. Reshape of user-submitted "double-braces should be literal" ask — filer's proposed fix would silently break every existing Claude.ai-authored template. Full design rationale: `pages/plans/feature-prompt-template-literal-braces-and-build-time-validation.md` (navigator-authored).
+
+---
+
+## Node checkpoints — partial-credit boundaries authored into node_def
+
+**Strategy rationale:** `project_node_escrow_and_abandonment` makes the node the unit of money. All-or-nothing at the node boundary is fine for small nodes but gets brutal on 6-hour nodes where a crash at the 5th hour forfeits everything. Host directive 2026-04-22: user-authored checkpoints are the partial-credit lever. A daemon that runs 2h on a 6h node + hits checkpoint = paid for that segment, forfeits only post-checkpoint. Ships alongside the gate-bonus primitive as a pair — checkpoints handle within-node partial credit, gate bonuses handle cross-node milestone incentives. Both are load-bearing for the paid-market incentive design to be humane to honest daemon hosts.
+
+**Scope:** Extend `NodeDefinition` with `checkpoints: list[dict] = field(default_factory=list)`. Each entry shape: `{checkpoint_id: str (unique within node), earns_fraction: float (0.0-1.0, cumulative sum must not exceed 1.0 across all checkpoints), reached_when: dict}` where `reached_when` is a predicate authored declaratively over state — initial shape `{"state_key": "...", "value": <any>}` or `{"state_key": "...", "exists": true}` meaning "this checkpoint fires when that state field is present / matches". Prompt-template node authors place checkpoints at meaningful prose-output milestones; code-node authors can emit explicit `__checkpoint__("ckpt_id")` calls that map to the declared entries (decorator helper in `workflow/idempotency.py`).
+
+**Runtime:** When the node is running, after each step-commit via SqliteSaver, runner evaluates `reached_when` against committed state. Matching checkpoints fire once; runs.events gets `checkpoint_reached {node_id, checkpoint_id, earns_fraction, at_step}`. Escrow ledger credits `earns_fraction * node_stake` to the running claimer (persistent even on subsequent abandonment). Default (no checkpoints declared) = all-or-nothing = current behavior.
+
+**Abandonment + resume interaction:** post-checkpoint abandonment = claimer keeps earned fraction, next claimer starts from the remaining escrow + earns from future checkpoints + completion. Resume by original claimer within grace = no ledger change, continues earning. `project_node_escrow_and_abandonment` "crash-between-checkpoints" rule: unearned segment forfeits.
+
+**Files:** `workflow/branches.py` (checkpoints field + validation — cumulative_earns_fraction ≤ 1.0, unique checkpoint_ids within node), `workflow/graph_compiler.py` (post-step checkpoint evaluator), `workflow/runs.py` (checkpoint_reached event emission, ledger credit hook), `workflow/idempotency.py` (checkpoint decorator helper for code nodes), tests.
+
+**Invariants:** checkpoints fire at most once per run; cumulative earns_fraction across a node's checkpoints ≤ 1.0 (validation error if exceeded); checkpoint ledger credit is transactional with the step commit that fires it (never credit without commit); abandoned runs preserve already-credited fractions; resume within grace does not re-credit already-fired checkpoints.
+
+**Tests:** node with two 0.5 checkpoints fires both on completion and credits fully; node with 0.3 + 0.3 + 0.4 credits progressively; checkpoint does not fire twice if state matches again after resume; cumulative > 1.0 rejected at build; abandonment between checkpoints = claimer keeps credited, forfeits uncredited; cumulative = 0.0 (no checkpoints) = all-or-nothing current behavior.
+
+**Deferred follow-up questions** (from memory, not this spec): grace-window duration; whether all-or-nothing stays default vs shifts to "at least one mandatory checkpoint per node." Ship opt-in checkpoints first; iterate on defaults once usage data exists.
+
+**Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment` — not originally in the wiki bug queue; navigator-generated to support the resume-run part-2 economic semantics.
+
+---
+
+## Gate bonuses — staked payouts attached to gate milestones
+
+**Strategy rationale:** `project_node_escrow_and_abandonment` introduces gate bonuses as "quality-vs-speed lever built into the economy." Base stake pays for the node reaching completion; gate bonus pays extra for passing declared gate milestones. Slow daemon hitting all gates earns more than fast daemon missing them. Pairs with the existing `gates` surface (flag-gated behind `GATES_ENABLED`) — extending that primitive rather than inventing a parallel one. Aligns with `project_evaluation_layers_unifying_frame`: gates are one face of the unified Evaluator primitive, staked bonuses turn them into economic feedback loops.
+
+**Scope:** Extend gate claims with an optional bonus stake. `gates action=claim {goal_id, branch_def_id, node_id, milestone, bonus_stake?}`. When `bonus_stake > 0` and the Paid-Market flag is on, stake is locked from the claimer's budget alongside the node's base stake. On gate pass (claim marked satisfied by the gate's configured verifier — human-attested, automated-metric-passed, or chatbot-judged per goal config), bonus releases to the daemon that held the node's last claim at pass-time. On gate fail (verifier rejects) or gate-stale (pass timeout exceeded), bonus refunds to the claimer who staked it — stake is at-risk for the claimer if the gate never resolves, defaulting to refund after a configurable `gate_stake_timeout_days` (default 30).
+
+**Schema addition:** `gate_claims.bonus_stake` column (int, smallest currency unit — matches existing stake precision) + `gate_claims.bonus_refund_after` timestamp. Existing gate claim rows without bonuses unchanged (default 0). The **node** the bonus is attached to must be in the same branch_def as the gate's scope — prevents cross-branch bonus attachments that would complicate escrow tracking.
+
+**Multi-tenant invariants:** only the original bonus-staker can unstake (before gate resolves); bonus release goes to whoever holds the node's last claim at gate-pass-time (not necessarily the original claimer — this is intentional; encourages daemons to pick up abandoned high-gate-value nodes); refund on timeout goes to staker, not to any daemon. Paid-market flag must be on; gate bonuses silently unavailable (zero-cost default) when `WORKFLOW_PAID_MARKET=off`.
+
+**Files:** `workflow/gates/` (schema migration for bonus_stake column, claim/unstake/release helpers), `workflow/universe_server.py` (`gates` action extensions: bonus_stake arg on claim, unstake action), `workflow/payments/` or wherever escrow ledger lives (add bonus-release path distinct from base-stake), tests.
+
+**Invariants:** bonus_stake only locked when `GATES_ENABLED=on` AND `WORKFLOW_PAID_MARKET=on`; bonus release goes to node's last-claimer at gate-pass-time (may differ from bonus-attacher — abandonment-reward dynamic); unstake allowed only by original staker and only while gate is unresolved; refund-on-timeout fires deterministically at `bonus_refund_after`; gate failure or retraction refunds bonus to staker; bonus_stake precision matches base-stake (same currency unit, no rounding ambiguity).
+
+**Tests:** claim + bonus_stake locks budget correctly; gate pass releases bonus to last-claimer; gate fail refunds bonus to staker; unstake by non-staker rejected; unstake after gate resolves rejected; cross-branch bonus attachment rejected at claim; PAID_MARKET=off silently ignores bonus_stake (zero-cost default); gate timeout refunds correctly.
+
+**Deferred follow-up:** chatbot-judged gate verification (separate spec — `project_evaluation_layers_unifying_frame` Evaluator primitive lands that); bonus-splitting across multiple daemons that shared a node via checkpoints (open design Q — probably pro-rata by earned fractions).
+
+**Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment` — not originally in the wiki bug queue; navigator-generated to support the paid-market quality-vs-speed lever.

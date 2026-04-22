@@ -21,6 +21,7 @@ Design rules (from `docs/specs/community_branches_phase3.md`):
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import logging
 import operator
 import re
@@ -339,11 +340,156 @@ def collect_build_warnings(branch: BranchDefinition) -> list[dict[str, Any]]:
     return warnings
 
 
+_JSON_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _state_type_map(state_schema: list[dict[str, Any]]) -> dict[str, str]:
+    """Index ``state_schema`` entries by name for quick type lookup.
+
+    Unknown entries resolve to ``str`` via the caller's fallback. Empty
+    schemas yield an empty map — every caller defaults to ``str``.
+    """
+    types: dict[str, str] = {}
+    for field in state_schema or []:
+        name = (field.get("name") or "").strip()
+        if not name:
+            continue
+        ftype = (field.get("type") or "str").strip().lower() or "str"
+        types[name] = ftype
+    return types
+
+
+def _needs_json_contract(
+    node: NodeDefinition, state_types: dict[str, str],
+) -> bool:
+    """True when the node's outputs require structured JSON.
+
+    Two triggers, matching the sibling-bug framing in the navigator
+    spec: (1) >=2 output_keys — single-key plain-string write drops
+    siblings; (2) any declared output_key has a non-``str`` type in
+    ``state_schema`` — prose output can't satisfy a typed slot.
+    """
+    keys = list(node.output_keys or [])
+    if len(keys) >= 2:
+        return True
+    for k in keys:
+        if state_types.get(k, "str") != "str":
+            return True
+    return False
+
+
+def _json_contract_suffix(
+    node: NodeDefinition, state_types: dict[str, str],
+) -> str:
+    """Deterministic JSON-schema-style suffix to append to the prompt.
+
+    Kept as a plain ``str`` append (no f-string in the caller) so the
+    rendered prompt is still copy-pasteable into other tools. We do not
+    use ``response_format`` — 3/6 providers are CLI-wrapped (claude,
+    codex, ollama) where no native structured-output hook is wirable.
+    """
+    lines = [
+        "",
+        "",
+        "RESPONSE FORMAT",
+        "---------------",
+        "Respond with a single JSON object, no prose, no fences. "
+        "Each declared field is required:",
+    ]
+    for k in node.output_keys:
+        t = state_types.get(k, "str")
+        lines.append(f"  - {k!r}: {t}")
+    lines.append(
+        "Do not wrap the object in ``` fences. Do not include any text "
+        "before or after the JSON object."
+    )
+    return "\n".join(lines)
+
+
+def _coerce_value(raw: Any, t: str) -> Any:
+    """Coerce ``raw`` into the declared state_schema type or raise.
+
+    Caller turns failures into ``CompilerError`` with node context. The
+    bool/int/float parsers accept common LLM shapes (``"true"`` etc.)
+    since the LLM is producing JSON but may emit strings for scalar
+    fields.
+    """
+    if t == "str":
+        return str(raw)
+    if t == "int":
+        if isinstance(raw, bool):
+            raise TypeError("bool is not int for this schema")
+        return int(raw)
+    if t == "float":
+        if isinstance(raw, bool):
+            raise TypeError("bool is not float for this schema")
+        return float(raw)
+    if t == "bool":
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        if isinstance(raw, str):
+            v = raw.strip().lower()
+            if v in ("true", "yes", "1"):
+                return True
+            if v in ("false", "no", "0"):
+                return False
+            raise TypeError(f"cannot parse {raw!r} as bool")
+        raise TypeError(f"cannot parse {type(raw).__name__} as bool")
+    if t == "list":
+        if not isinstance(raw, list):
+            raise TypeError(f"expected list, got {type(raw).__name__}")
+        return raw
+    if t == "dict":
+        if not isinstance(raw, dict):
+            raise TypeError(f"expected dict, got {type(raw).__name__}")
+        return raw
+    # any / unknown — pass through.
+    return raw
+
+
+def _extract_json_object(response: str) -> dict[str, Any]:
+    """Parse ``response`` as a JSON object.
+
+    Tolerates a code-fenced object (```json {...}```), a bare object,
+    or an object embedded in prose. Raises ValueError on failure so
+    the caller can wrap with node context.
+    """
+    text = response.strip()
+    if not text:
+        raise ValueError("empty response")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        fence = _JSON_CODE_FENCE_RE.search(text)
+        if fence:
+            try:
+                parsed = json.loads(fence.group(1))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"fenced JSON malformed: {exc}") from exc
+        else:
+            match = _JSON_OBJECT_RE.search(text)
+            if not match:
+                raise ValueError("no JSON object found in response")
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"embedded JSON malformed: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"expected JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
+
 def _build_prompt_template_node(
     node: NodeDefinition,
     *,
     provider_call: Callable[..., str] | None,
     event_sink: Callable[..., None] | None,
+    state_schema: list[dict[str, Any]] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Return a node function that fills the prompt template and calls an
     LLM. Output is stored under the node's first ``output_keys`` entry
@@ -357,6 +503,9 @@ def _build_prompt_template_node(
     timeout_s = float(node.timeout_seconds or 300.0)
     strict_isolation = bool(getattr(node, "strict_input_isolation", False))
     declared_inputs = list(node.input_keys)
+    state_types = _state_type_map(state_schema or [])
+    needs_json = _needs_json_contract(node, state_types)
+    json_suffix = _json_contract_suffix(node, state_types) if needs_json else ""
 
     def _fn(state: dict[str, Any]) -> dict[str, Any]:
         # Normalize Jinja-style ``{{var}}`` into Python's ``{var}``.
@@ -422,6 +571,13 @@ def _build_prompt_template_node(
                 f"missing state key {exc}"
             ) from exc
 
+        # Multi-output or typed-output nodes get a JSON contract
+        # appended. Providers stay untouched — the contract is plain
+        # text so every provider (including CLI-wrapped ones) sees the
+        # same prompt shape (hard-rule #8: no divergent silent-drop).
+        if needs_json:
+            prompt = prompt + json_suffix
+
         # Emit a "starting" event BEFORE the provider call so long-running
         # LLM nodes don't look frozen to a polling client (#60). The
         # matching "ran" event fires after the call completes.
@@ -474,6 +630,39 @@ def _build_prompt_template_node(
                 if _is_cancel_exception(exc):
                     raise
                 logger.exception("event_sink raised in %s", node.node_id)
+
+        # JSON-contract path: parse response, assign EVERY declared
+        # output_key from the parsed object, coerce types. Missing
+        # key / wrong type / malformed JSON all raise CompilerError
+        # (hard-rule #8). Fixes the multi-output silent-drop + typed
+        # no-op bugs at the same layer.
+        if needs_json:
+            try:
+                parsed = _extract_json_object(response)
+            except ValueError as exc:
+                raise CompilerError(
+                    f"Node '{node.node_id}' expected JSON object response "
+                    f"for output_keys {list(node.output_keys)!r}: {exc}. "
+                    f"Raw response: {response[:400]!r}"
+                ) from exc
+            result: dict[str, Any] = {}
+            for key in node.output_keys:
+                if key not in parsed:
+                    raise CompilerError(
+                        f"Node '{node.node_id}' JSON response missing "
+                        f"declared output_key '{key}'. Got keys: "
+                        f"{sorted(parsed.keys())!r}."
+                    )
+                t = state_types.get(key, "str")
+                try:
+                    result[key] = _coerce_value(parsed[key], t)
+                except (TypeError, ValueError) as exc:
+                    raise CompilerError(
+                        f"Node '{node.node_id}' output_key '{key}' type "
+                        f"coercion to '{t}' failed: {exc}. "
+                        f"Got: {parsed[key]!r}."
+                    ) from exc
+            return result
 
         return {output_key: response}
 
@@ -642,6 +831,7 @@ def _build_node(
     provider_call: Callable[..., str] | None,
     event_sink: Callable[..., None] | None,
     domain_id: str = "",
+    state_schema: list[dict[str, Any]] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Dispatch a NodeDefinition to the right adapter.
 
@@ -665,6 +855,7 @@ def _build_node(
     if has_template:
         return _build_prompt_template_node(
             node, provider_call=provider_call, event_sink=event_sink,
+            state_schema=state_schema,
         )
     if domain_id:
         opaque = resolve_domain_callable(domain_id, node.node_id)
@@ -819,6 +1010,7 @@ def compile_branch(
             provider_call=provider_call,
             event_sink=event_sink,
             domain_id=branch.domain_id,
+            state_schema=branch.state_schema,
         )
         graph.add_node(gn.id, fn)
 

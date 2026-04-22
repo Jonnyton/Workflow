@@ -6597,6 +6597,19 @@ def _ensure_runs_recovery() -> None:
 
 
 def _action_run_branch(kwargs: dict[str, Any]) -> str:
+    """Execute a branch once.
+
+    Durability guarantee (v1): runs are *terminal-on-restart*. If the
+    daemon exits while a run is in flight, the row is marked
+    ``interrupted`` on next startup (see
+    ``workflow.runs.recover_in_flight_runs``) and ``get_run`` returns
+    ``resumable=false`` with ``resumable_reason="v1 terminal-on-restart"``.
+    To continue, re-invoke ``run_branch`` with the same ``branch_def_id``
+    and ``inputs_json`` — a new ``run_id`` is returned. Mid-run resume
+    from a SqliteSaver checkpoint is a future extension and is not
+    available today; do not poll an ``interrupted`` run expecting it to
+    flip back to ``running``.
+    """
     from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
     from workflow.runs import execute_branch_async
@@ -6745,7 +6758,7 @@ def _compose_run_snapshot(
         mermaid,
     ])
 
-    return {
+    snapshot: dict[str, Any] = {
         "text": summary,
         "run_id": run_record["run_id"],
         "branch_def_id": run_record["branch_def_id"],
@@ -6759,6 +6772,15 @@ def _compose_run_snapshot(
         "mermaid": mermaid,
         "summary": summary,
     }
+    # INTERRUPTED runs are terminal in v1 (durability guarantee — see
+    # ``_action_run_branch`` docstring + ``runs.recover_in_flight_runs``).
+    # The client must rerun with the same ``inputs_json``; it cannot be
+    # polled to recovery. Surface this explicitly so chatbots don't
+    # busy-wait forever.
+    if run_record["status"] == "interrupted":
+        snapshot["resumable"] = False
+        snapshot["resumable_reason"] = "v1 terminal-on-restart"
+    return snapshot
 
 
 def _action_get_run(kwargs: dict[str, Any]) -> str:
