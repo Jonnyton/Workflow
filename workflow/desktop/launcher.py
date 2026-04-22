@@ -22,10 +22,21 @@ import shutil
 import subprocess
 import sys
 import threading
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
 from typing import Any, Callable
+
+# tkinter requires libtk (system lib). Headless Docker containers
+# don't ship it; the cloud_worker's fantasy_daemon subprocess imports
+# the desktop tree at load time before --no-tray is parsed. Tolerate
+# ImportError so the module surface stays loadable; call-time use
+# (host laptop only) errors with a clear NoneType.
+try:
+    import tkinter as tk  # type: ignore[assignment]
+    from tkinter import filedialog, ttk  # type: ignore[assignment]
+except Exception:  # pragma: no cover — headless environments
+    tk = None  # type: ignore[assignment]
+    filedialog = None  # type: ignore[assignment]
+    ttk = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
