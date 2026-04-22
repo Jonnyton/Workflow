@@ -33,7 +33,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PIL import Image, ImageDraw
-from pystray import Icon, Menu, MenuItem
+# pystray requires a display; tolerate ImportError in headless
+# containers (cloud_worker's fantasy_daemon subprocess) so modules
+# that import workflow.desktop don't blow up at load time.
+try:
+    from pystray import Icon, Menu, MenuItem  # type: ignore[assignment]
+except Exception:  # pragma: no cover — headless environments
+    Icon = None  # type: ignore[assignment]
+    Menu = None  # type: ignore[assignment]
+    MenuItem = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 

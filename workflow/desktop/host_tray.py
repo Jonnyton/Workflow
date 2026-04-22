@@ -15,7 +15,17 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from pystray import Menu, MenuItem
+# pystray requires a display (X server / DWM / WindowServer). In
+# headless container environments (e.g. the cloud_worker's
+# fantasy_daemon subprocess on the DO droplet), the import fails.
+# Defer + tolerate ImportError so the module still loads for its
+# non-tray API surface. Any code that actually instantiates the tray
+# will get a clear error at call-time.
+try:
+    from pystray import Menu, MenuItem  # type: ignore[assignment]
+except Exception:  # pragma: no cover — headless environments
+    Menu = None  # type: ignore[assignment]
+    MenuItem = None  # type: ignore[assignment]
 
 from workflow.desktop.tray import TrayApp
 
