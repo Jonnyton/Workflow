@@ -261,6 +261,84 @@ def _missing_state_keys(template: str, state: dict[str, Any]) -> list[str]:
     return [k for k in refs if k not in state]
 
 
+def _placeholder_keys(template: str) -> list[str]:
+    """Return the set of placeholder identifiers referenced by a template.
+
+    Static analysis — no state lookup, no rendering. Used by
+    ``collect_build_warnings`` + the strict-isolation pre-check.
+    """
+    normalized = _normalize_placeholders(template or "")
+    # de-dupe while preserving first-occurrence order for stable warnings
+    seen: set[str] = set()
+    out: list[str] = []
+    for k in _PLACEHOLDER_RE.findall(normalized):
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def _out_of_input_keys(node: NodeDefinition) -> list[str]:
+    """Return placeholder identifiers that reference state keys outside
+    the node's declared ``input_keys``.
+
+    Empty list when no input_keys are declared (the node opted out of
+    static isolation) or when every placeholder is covered.
+    """
+    if not node.prompt_template:
+        return []
+    if not node.input_keys:
+        # Node didn't declare an input contract — nothing to check.
+        return []
+    declared = set(node.input_keys)
+    return [k for k in _placeholder_keys(node.prompt_template) if k not in declared]
+
+
+def collect_build_warnings(branch: BranchDefinition) -> list[dict[str, Any]]:
+    """Return non-fatal warnings detected at compile time.
+
+    Currently surfaces one warning per prompt_template node placeholder
+    that references a state key outside the node's declared
+    ``input_keys``. These leaks are often unintentional and almost
+    always reduce the portability of a branch (it implicitly depends on
+    producers upstream whose output_keys happen to match the reference).
+
+    Warning shape::
+
+        {
+          "kind": "input_keys_leak",
+          "node_id": "<id>",
+          "placeholder": "<state_key>",
+          "declared_input_keys": ["..."],
+          "message": "<human-readable>",
+        }
+
+    Non-fatal regardless of ``strict_input_isolation`` — the flag
+    controls *runtime* rejection. Build-time warnings always surface
+    so authors see the leak whether they've opted into strict or not.
+    """
+    warnings: list[dict[str, Any]] = []
+    for node in branch.node_defs:
+        leaks = _out_of_input_keys(node)
+        for placeholder in leaks:
+            warnings.append({
+                "kind": "input_keys_leak",
+                "node_id": node.node_id,
+                "placeholder": placeholder,
+                "declared_input_keys": list(node.input_keys),
+                "message": (
+                    f"Node '{node.node_id}' prompt_template references "
+                    f"state key '{placeholder}' which is not in declared "
+                    f"input_keys {sorted(node.input_keys)!r}. This is "
+                    f"an implicit cross-node dependency that reduces "
+                    f"branch portability. Add '{placeholder}' to "
+                    f"input_keys, or set strict_input_isolation=true "
+                    f"to reject such references at runtime."
+                ),
+            })
+    return warnings
+
+
 def _build_prompt_template_node(
     node: NodeDefinition,
     *,
@@ -277,6 +355,8 @@ def _build_prompt_template_node(
     role = (node.model_hint or "writer").strip().lower() or "writer"
     template = node.prompt_template or ""
     timeout_s = float(node.timeout_seconds or 300.0)
+    strict_isolation = bool(getattr(node, "strict_input_isolation", False))
+    declared_inputs = list(node.input_keys)
 
     def _fn(state: dict[str, Any]) -> dict[str, Any]:
         # Normalize Jinja-style ``{{var}}`` into Python's ``{var}``.
@@ -284,14 +364,58 @@ def _build_prompt_template_node(
         # by convention; without this the braces are passed through to
         # the LLM as literal text.
         rendered_template = _normalize_placeholders(template)
-        missing = _missing_state_keys(template, state)
+
+        # Strict input-keys isolation: filter the state view to just
+        # the declared input_keys BEFORE rendering. Out-of-input-keys
+        # placeholders then trip the missing-state-keys check below
+        # and raise CompilerError — never silently read leaked state.
+        if strict_isolation and declared_inputs:
+            render_state: dict[str, Any] = {
+                k: state[k] for k in declared_inputs if k in state
+            }
+        else:
+            render_state = state
+
+        # Non-strict path: emit a warning event per out-of-input-keys
+        # reference so the warning shows up in the per-run event log
+        # even when the author hasn't opted into strict mode. Run-time
+        # warnings mirror the build-time ones from collect_build_warnings.
+        if not strict_isolation and declared_inputs and event_sink is not None:
+            for placeholder in _out_of_input_keys(node):
+                try:
+                    event_sink(
+                        node_id=node.node_id,
+                        phase="warning",
+                        kind="input_keys_leak",
+                        placeholder=placeholder,
+                        declared_input_keys=declared_inputs,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    if _is_cancel_exception(exc):
+                        raise
+                    logger.exception(
+                        "event_sink raised emitting input_keys_leak "
+                        "warning for %s", node.node_id,
+                    )
+
+        missing = _missing_state_keys(template, render_state)
         if missing:
+            if strict_isolation:
+                # Distinguish the isolation-specific failure so the
+                # operator sees WHY the key was unavailable (filtered
+                # out, not absent from state).
+                raise CompilerError(
+                    f"Node '{node.node_id}' (strict_input_isolation=true) "
+                    f"prompt references state keys {missing} outside "
+                    f"declared input_keys {sorted(declared_inputs)!r}. "
+                    f"Add the keys to input_keys or clear the flag."
+                )
             raise CompilerError(
                 f"Node '{node.node_id}' prompt references missing "
                 f"state keys: {missing}"
             )
         try:
-            prompt = _render_template(rendered_template, state)
+            prompt = _render_template(rendered_template, render_state)
         except KeyError as exc:
             raise CompilerError(
                 f"Node '{node.node_id}' prompt format failed: "
@@ -647,6 +771,29 @@ def compile_branch(
         raise CompilerError(
             "Cannot compile invalid branch:\n  - " + "\n  - ".join(errors)
         )
+
+    # Build-time warnings (input_keys leaks, etc.) — emit through the
+    # event_sink so callers' per-run event logs see them before the
+    # first node runs. Warnings are non-fatal regardless of strict
+    # isolation; strict mode only gates *runtime* behavior.
+    if event_sink is not None:
+        for warning in collect_build_warnings(branch):
+            try:
+                event_sink(
+                    node_id=warning["node_id"],
+                    phase="warning",
+                    kind=warning["kind"],
+                    placeholder=warning.get("placeholder", ""),
+                    declared_input_keys=warning.get("declared_input_keys", []),
+                    message=warning.get("message", ""),
+                )
+            except Exception as exc:  # noqa: BLE001
+                if _is_cancel_exception(exc):
+                    raise
+                logger.exception(
+                    "event_sink raised emitting build-time warning for %s",
+                    warning.get("node_id", "?"),
+                )
 
     state_type = _build_state_typeddict(branch.state_schema or [])
     graph: StateGraph = StateGraph(state_type)
