@@ -67,6 +67,10 @@ WORKDIR /build
 COPY pyproject.toml ./
 COPY workflow/ ./workflow/
 COPY domains/ ./domains/
+# fantasy_daemon is the node-execution runtime invoked by
+# workflow.cloud_worker. Without it in the image, the cloud worker
+# supervisor crash-loops with `No module named fantasy_daemon`.
+COPY fantasy_daemon/ ./fantasy_daemon/
 
 # Install into a venv that we'll copy to the final stage. Keeps the
 # final image free of pip metadata + build tools.
@@ -108,6 +112,7 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /build/workflow /app/workflow
 COPY --from=builder /build/domains /app/domains
+COPY --from=builder /build/fantasy_daemon /app/fantasy_daemon
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
 
 # Stdlib-only MCP canary — reused across Layer-1 (local), tier-3 GHA,
