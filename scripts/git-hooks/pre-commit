@@ -349,4 +349,66 @@ if git diff --cached --name-only | grep -qE '^\.github/workflows/.+\.ya?ml$'; th
   fi
 fi
 
+# --- 8. Wiki BUG approval gate ---
+#
+# Host directive 2026-04-22: wiki BUG-* pages are user-submitted and could
+# contain malicious designs disguised as fixes. Before code that references
+# a BUG-NNN ID can land, the navigator must have vetted that bug via
+# scripts/navigator_approve_bug.py (which writes .claude/wiki-bug-approvals.json).
+#
+# This invariant scans staged content for BUG-NNN references and blocks
+# the commit if any referenced ID is not in the approvals file.
+#
+# Override with --no-verify only for navigator's own approvals-file commits
+# (if they ever become tracked) or for bugs you intentionally cite without
+# implementing (e.g., docstrings explaining the existence of a known bug).
+
+STAGED_TEXT_FILES=$(git diff --cached --name-only --diff-filter=ACMR | \
+  grep -vE '^(\.claude/wiki-bug-approvals\.json|scripts/hooks/wiki_bug_gate\.py|scripts/navigator_(read|approve)_bug\.py|ideas/|docs/audits/|\.agents/activity\.log)' || true)
+
+if [ -n "${STAGED_TEXT_FILES}" ]; then
+  BUG_IDS=$(echo "${STAGED_TEXT_FILES}" | xargs -I {} git diff --cached -- {} 2>/dev/null | \
+    grep -oE '\bBUG-[0-9]{3}\b' | sort -u || true)
+  if [ -n "${BUG_IDS}" ]; then
+    APPROVALS_FILE=".claude/wiki-bug-approvals.json"
+    if [ ! -f "${APPROVALS_FILE}" ]; then
+      echo "${RED}pre-commit: BUG-NNN references in staged diff but ${APPROVALS_FILE} is missing.${RESET}" >&2
+      echo "Referenced: ${BUG_IDS}" >&2
+      echo "Navigator must approve via scripts/navigator_approve_bug.py before code lands." >&2
+      exit 1
+    fi
+    # Use python to do a proper JSON lookup.
+    UNAPPROVED=""
+    if command -v python >/dev/null 2>&1 && python -c "import sys" >/dev/null 2>&1; then
+      PY_BIN=python
+    elif command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1; then
+      PY_BIN=python3
+    else
+      echo "${YELLOW}pre-commit: no python available to verify BUG approvals; skipping gate${RESET}" >&2
+      PY_BIN=""
+    fi
+    if [ -n "${PY_BIN}" ]; then
+      UNAPPROVED=$(echo "${BUG_IDS}" | ${PY_BIN} -c "
+import json, sys
+bugs = [line.strip().upper() for line in sys.stdin if line.strip()]
+try:
+    data = json.load(open('${APPROVALS_FILE}'))
+except Exception:
+    print(' '.join(bugs)); sys.exit(0)
+approved = {k.upper() for k in (data.get('approved') or {}).keys()}
+missing = [b for b in bugs if b not in approved]
+print(' '.join(missing))
+")
+      if [ -n "${UNAPPROVED}" ]; then
+        echo "${RED}pre-commit: staged diff references unapproved bug(s): ${UNAPPROVED}${RESET}" >&2
+        echo "Navigator vet required. Flow:" >&2
+        echo "  python scripts/navigator_read_bug.py <BUG-ID>" >&2
+        echo "  python scripts/navigator_approve_bug.py <BUG-ID> 'proof'" >&2
+        echo "Override with --no-verify if intentional (e.g., reference in docs)." >&2
+        exit 1
+      fi
+    fi
+  fi
+fi
+
 exit 0
