@@ -407,7 +407,9 @@ jobs:
       # Pushover paging — navigator 2026-04-22 §c P0 fix.
       # Today's 18h outage: canary probe was green→red correctly, alarm-sink
       # opened issue correctly, but host learned ~18h later (email+GH only).
-      # Pushover app push arrives on phone; priority=1 bypasses quiet hours.
+      # Pushover app push arrives on phone; priority=2 (emergency) forces
+      # sound even on silent mode + retries until the host acknowledges,
+      # with retry/expire set by pushover_page.py's P0_RETRY_S / P0_EXPIRE_S.
       # Re-pages at 1h / 4h / 24h while the incident stays open without a
       # host comment (escalation ladder in scripts/pushover_page.py).
       #

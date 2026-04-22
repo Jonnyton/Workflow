@@ -41,6 +41,22 @@ PUSHOVER_API = "https://api.pushover.net/1/messages.json"
 # 1h / 4h / 24h per navigator §c.
 ESCALATION_LADDER_S: tuple[int, ...] = (3600, 4 * 3600, 24 * 3600)
 
+# Priority-2 (emergency) params — per Pushover API, priority=2 REQUIRES
+# retry + expire or the API rejects the POST. These are applied to every
+# P0 page fired by this module. Not for test-fire workflows (pushover-
+# test.yml keeps priority=1 so a validation page doesn't wake the host at
+# 3am).
+#
+#   retry  — seconds between Pushover's re-notify attempts until the host
+#            acknowledges. Minimum allowed by the API is 30; we use 60 to
+#            balance persistence vs. phone-side noise.
+#   expire — seconds the retry loop keeps running before Pushover gives
+#            up. Maximum allowed by the API is 10800. We use 3600 (1h) —
+#            after that window, our own ESCALATION_LADDER_S takes over
+#            with a fresh priority=2 page at the 4h rung, then 24h.
+P0_RETRY_S = 60
+P0_EXPIRE_S = 3600
+
 # Marker prefix we embed in our own issue comments so we can identify them
 # on the next tick. Kept machine-readable so `_extract_paged_markers` can
 # parse without HTML/markdown fragility.
@@ -149,15 +165,30 @@ def send_pushover(
     url_title: str | None = None,
     priority: int = 1,
     *,
+    retry: int | None = None,
+    expire: int | None = None,
     user_key: str | None = None,
     app_token: str | None = None,
     _opener=urllib.request.urlopen,
 ) -> tuple[bool, str]:
     """POST to Pushover. Returns (ok, body_or_error).
 
-    priority: -2..2. 1 = high (bypass quiet hours). 2 = emergency (requires
-    ack). We use 1 for P0 — bypasses Do Not Disturb without requiring the
-    host to manually ack every page. Escalations at 4h/24h stay priority=1.
+    priority: -2..2.
+      1 = high (bypass quiet hours, no ack required).
+      2 = emergency — forces sound even on silent mode, re-notifies until
+          the host acknowledges. REQUIRES retry + expire or the API rejects
+          the POST.
+
+    P0 pages fired by ``main()`` use priority=2 so a real outage wakes the
+    host at 3am. Test-fire workflows (``.github/workflows/pushover-test.yml``)
+    intentionally stay at priority=1 — a validation page shouldn't wake
+    the host.
+
+    When priority=2, this function requires retry + expire either via the
+    named args or by the caller falling back to the module constants
+    ``P0_RETRY_S`` / ``P0_EXPIRE_S``. Per Pushover API: retry minimum 30s
+    (we default 60); expire maximum 10800s (we default 3600 — after that
+    the ESCALATION_LADDER_S fires a fresh priority=2 page anyway).
     """
     user_key = user_key or os.environ.get("PUSHOVER_USER_KEY")
     app_token = app_token or os.environ.get("PUSHOVER_APP_TOKEN")
@@ -171,6 +202,14 @@ def send_pushover(
         "message": message[:1024],
         "priority": str(priority),
     }
+    if priority == 2:
+        if retry is None or expire is None:
+            return False, (
+                "priority=2 requires retry + expire (Pushover API enforces); "
+                "pass retry=P0_RETRY_S, expire=P0_EXPIRE_S or explicit values"
+            )
+        form["retry"] = str(retry)
+        form["expire"] = str(expire)
     if url:
         form["url"] = url
         if url_title:
@@ -245,8 +284,14 @@ def main(argv: list[str]) -> int:
         print(f"[pushover-page] DRY-RUN title={title!r} message={message!r}")
         return 0
 
-    ok, body = send_pushover(title, message, url=args.run_url,
-                             url_title="Failing run", priority=1)
+    # Priority=2 (emergency): forces sound through silent mode + retries
+    # until the host acknowledges. Required for real P0 — the host needs
+    # to wake at 3am for a true outage, not sleep through it.
+    ok, body = send_pushover(
+        title, message,
+        url=args.run_url, url_title="Failing run",
+        priority=2, retry=P0_RETRY_S, expire=P0_EXPIRE_S,
+    )
     if ok:
         print(f"[pushover-page] POST ok body={body}")
         # Emit the marker line the workflow posts back as an issue comment.

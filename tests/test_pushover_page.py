@@ -289,3 +289,121 @@ def test_parse_iso_handles_z_suffix():
 def test_parse_iso_returns_none_on_junk():
     assert pushover_page._parse_iso("not-a-date") is None
     assert pushover_page._parse_iso("") is None
+
+
+# ---- priority=2 (emergency) form params -----------------------------------
+
+
+def _capture_opener():
+    """Return (captured_dict, fake_opener) for inspecting the POST body."""
+    captured: dict = {}
+
+    class _FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def read(self):
+            return b'{"status":1}'
+
+    def fake_opener(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["data"] = req.data
+        return _FakeResp()
+
+    return captured, fake_opener
+
+
+def test_priority_2_requires_retry_and_expire():
+    """Pushover API rejects priority=2 without retry+expire. We pre-empt
+    that server-side rejection with a client-side guard returning a clear
+    error so the caller never hits a mysterious 400 from the API.
+    """
+    ok, msg = pushover_page.send_pushover(
+        title="t", message="m", priority=2,
+        user_key="u", app_token="a",
+    )
+    assert ok is False
+    assert "priority=2" in msg
+    assert "retry" in msg
+    assert "expire" in msg
+
+
+def test_priority_2_with_both_params_sends_retry_and_expire():
+    captured, opener = _capture_opener()
+    ok, _ = pushover_page.send_pushover(
+        title="P0", message="outage",
+        priority=2,
+        retry=pushover_page.P0_RETRY_S,
+        expire=pushover_page.P0_EXPIRE_S,
+        user_key="u", app_token="a",
+        _opener=opener,
+    )
+    assert ok is True
+    decoded = captured["data"].decode("ascii")
+    assert "priority=2" in decoded
+    assert f"retry={pushover_page.P0_RETRY_S}" in decoded
+    assert f"expire={pushover_page.P0_EXPIRE_S}" in decoded
+
+
+def test_priority_2_missing_only_retry_fails():
+    ok, msg = pushover_page.send_pushover(
+        title="t", message="m", priority=2,
+        expire=3600,  # retry omitted
+        user_key="u", app_token="a",
+    )
+    assert ok is False
+    assert "retry" in msg
+
+
+def test_priority_2_missing_only_expire_fails():
+    ok, msg = pushover_page.send_pushover(
+        title="t", message="m", priority=2,
+        retry=60,  # expire omitted
+        user_key="u", app_token="a",
+    )
+    assert ok is False
+    assert "expire" in msg
+
+
+def test_priority_1_does_not_require_retry_or_expire():
+    """Priority=1 path must stay working without retry/expire — the
+    pushover-test.yml workflow uses it deliberately."""
+    captured, opener = _capture_opener()
+    ok, _ = pushover_page.send_pushover(
+        title="test", message="m", priority=1,
+        user_key="u", app_token="a",
+        _opener=opener,
+    )
+    assert ok is True
+    decoded = captured["data"].decode("ascii")
+    assert "priority=1" in decoded
+    assert "retry=" not in decoded
+    assert "expire=" not in decoded
+
+
+def test_priority_1_ignores_retry_and_expire_if_passed():
+    """retry+expire should only land on the wire for priority=2. If a
+    caller accidentally passes them for priority=1, don't leak them into
+    the form (Pushover ignores them at priority=1 but it's cleaner to
+    keep the body minimal)."""
+    captured, opener = _capture_opener()
+    ok, _ = pushover_page.send_pushover(
+        title="test", message="m", priority=1,
+        retry=60, expire=3600,
+        user_key="u", app_token="a",
+        _opener=opener,
+    )
+    assert ok is True
+    decoded = captured["data"].decode("ascii")
+    assert "priority=1" in decoded
+    assert "retry=" not in decoded
+    assert "expire=" not in decoded
+
+
+def test_p0_constants_satisfy_pushover_api_bounds():
+    """Pushover API: retry >= 30s; expire <= 10800s. Guard against future
+    constant edits drifting outside the API-enforced range."""
+    assert pushover_page.P0_RETRY_S >= 30
+    assert pushover_page.P0_EXPIRE_S <= 10800
+    assert pushover_page.P0_EXPIRE_S > pushover_page.P0_RETRY_S
