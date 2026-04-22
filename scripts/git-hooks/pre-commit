@@ -315,4 +315,38 @@ if git diff --cached --name-only | grep -q '^deploy/cloudflare-worker/worker\.js
   fi
 fi
 
+# --- 7. actionlint on staged workflow files -------------------------
+#
+# Dev flagged "actionlint not available locally" 3 consecutive tasks
+# before this invariant landed — workflow-file bugs were only caught by
+# verifier/CI or by production breaking. Run actionlint against staged
+# `.github/workflows/*.yml` changes. Delegates to
+# scripts/pre_commit_invariant_actionlint.py so the logic is Python-
+# testable. No-ops when actionlint binary is missing locally — CI
+# (.github/workflows/actionlint.yml) is the authoritative gate.
+
+if git diff --cached --name-only | grep -qE '^\.github/workflows/.+\.ya?ml$'; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v py >/dev/null 2>&1; then
+    PYTHON_BIN="py -3"
+  else
+    echo "${YELLOW}pre-commit: python not available; skipping actionlint invariant${RESET}" >&2
+    PYTHON_BIN=""
+  fi
+
+  if [ -n "${PYTHON_BIN}" ]; then
+    if [ ! -f scripts/pre_commit_invariant_actionlint.py ]; then
+      echo "${YELLOW}pre-commit: scripts/pre_commit_invariant_actionlint.py missing; skipping${RESET}" >&2
+    elif ! ${PYTHON_BIN} scripts/pre_commit_invariant_actionlint.py; then
+      echo "" >&2
+      echo "${RED}pre-commit: actionlint invariant failed.${RESET}" >&2
+      echo "See findings above. Override with --no-verify if intentional." >&2
+      exit 1
+    fi
+  fi
+fi
+
 exit 0

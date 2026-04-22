@@ -238,6 +238,7 @@ useful concurrency, not waiting.
 
 - `pytest` for the full suite. `ruff check` before committing.
 - Every module must have tests. Nodes must never crash.
+- `actionlint` for GH Actions workflow edits. Install: `choco install actionlint -y` (Windows) / `brew install actionlint` (macOS) / `go install github.com/rhysd/actionlint/cmd/actionlint@latest` (Go). Pre-commit invariant #7 runs it on staged `.github/workflows/*.yml`; CI (`.github/workflows/actionlint.yml`) is the authoritative gate.
 
 ---
 

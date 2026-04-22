@@ -1,0 +1,97 @@
+name: actionlint
+
+# Fail-the-PR gate for GH Actions workflow changes. Complements the
+# scripts/git-hooks/pre-commit invariant #7 — local hook is fast-feedback,
+# this is the authoritative gate. Dev has flagged actionlint as missing
+# locally on 3 consecutive tasks; this closes that gap.
+#
+# Scope: only runs when a PR or push touches .github/workflows/*.yml
+# (including this file). Does NOT scan the whole repo on unrelated PRs.
+# Does NOT bulk-lint pre-existing issues outside touched files — the
+# `-filter` flag scopes findings to changed lines only via the reviewdog
+# integration. Without that, we'd block every PR on unrelated pre-
+# existing warnings.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**.yml"
+      - ".github/workflows/**.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**.yml"
+      - ".github/workflows/**.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install actionlint
+        id: install
+        run: |
+          # Upstream rhysd install script — pinned by version to avoid
+          # supply-chain drift. Bump deliberately; don't track HEAD.
+          ACTIONLINT_VERSION="1.7.7"
+          curl -fsSL -o /tmp/actionlint.tgz \
+              "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          mkdir -p /tmp/actionlint
+          tar -xzf /tmp/actionlint.tgz -C /tmp/actionlint
+          sudo install -m 0755 /tmp/actionlint/actionlint /usr/local/bin/actionlint
+          actionlint --version
+
+      - name: Resolve changed workflow files
+        id: changed
+        run: |
+          # For pull_request events, diff against the merge base so we
+          # only lint the files this PR actually touched.
+          # For push-to-main and manual dispatch, lint all workflow files
+          # (small set — ~15 files).
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            changed=$(git diff --name-only --diff-filter=ACMR \
+                "${base}" "${head}" \
+                | grep -E '^\.github/workflows/.+\.ya?ml$' || true)
+          else
+            changed=$(ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null || true)
+          fi
+          if [ -z "${changed}" ]; then
+            echo "no workflow files to lint"
+            echo "paths=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Emit as space-separated single-line list.
+          paths=$(echo "${changed}" | tr '\n' ' ' | sed 's/ *$//')
+          echo "paths=${paths}" >> "$GITHUB_OUTPUT"
+          echo "will lint:"
+          echo "${changed}"
+
+      - name: Run actionlint
+        if: steps.changed.outputs.paths != ''
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 — intentional word-splitting on paths.
+          actionlint ${{ steps.changed.outputs.paths }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### actionlint result"
+            echo ""
+            echo "- **Event:** \`${{ github.event_name }}\`"
+            echo "- **Paths:** \`${{ steps.changed.outputs.paths }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
