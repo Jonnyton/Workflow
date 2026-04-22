@@ -17,11 +17,28 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; C
 
 ---
 
-## Approved bugs (navigator-vetted snapshots)
+## Approved specs (navigator-vetted)
 
-Navigator writes vetted bug specs here after both safety + strategy passes APPROVED. Dev reads from this section — never from the wiki. Lead dispatches off these entries. Deleted when the fix merges (commit is the record). No BUG-NNN cross-reference; titles are descriptive.
+Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never wiki. On land, delete row + H2 section together.
 
-*Empty pending navigator sweep.*
+| Spec | Status |
+|---|---|
+| Structured JSON output for multi-output + typed prompt nodes | claimed:dev |
+| Strict input_keys isolation for prompt_template nodes | in-progress:dev (uncommitted diff) |
+| Expose conditional_edges on build_branch + patch_branch | dev-dispatchable |
+| list_branches node_count double-counts graph.nodes + node_defs | dev-dispatchable (trivial) |
+| describe_branch / get_branch surface related wiki pages | dev-dispatchable |
+| Per-node llm_policy override | dev-dispatchable |
+| In-flight run recovery surface — part 1 (document v1 contract) | dev-dispatchable |
+| In-flight run recovery — part 2 (SqliteSaver-keyed resume) | **strategy-open:needs-host** |
+| Concurrency budget + observability for fan-out nodes | dev-dispatchable |
+| Loud sandbox-unavailable surface for dev/checker exec nodes | dev-dispatchable |
+| Sub-branch invocation primitive | dev-dispatchable |
+| Cross-run state query primitive | dev-dispatchable |
+| Scheduled + event-triggered branch invocation | dev-dispatchable |
+| Project-scope persistent memory primitive | dev-dispatchable |
+| file_bug is the feature-request verb — docstring + optional kind field | dev-dispatchable |
+| Prompt_template literal-brace escape + build-time missing-key validation | dev-dispatchable |
 
 ---
 

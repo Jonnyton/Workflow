@@ -4555,6 +4555,9 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
     else:
         branch["gate_claims"] = []
         branch["gate_status"] = "gates_disabled"
+    related = _related_wiki_pages(branch)
+    branch["related_wiki_pages"] = related["items"]
+    branch["related_wiki_pages_truncated"] = related["truncated_count"]
     return json.dumps(branch, default=str)
 
 
@@ -4572,8 +4575,12 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
     )
     summaries = []
     for r in rows:
-        graph = r.get("graph", {})
-        node_count = len(graph.get("nodes", [])) + len(r.get("node_defs", []))
+        # node_count MUST match describe_branch's count
+        # (``len(branch.node_defs)`` at line ~4924) — that's the
+        # source of truth. The old formula added ``graph.nodes +
+        # node_defs`` which double-counted because graph.nodes is a
+        # compiled-topology view that overlaps with node_defs.
+        node_count = len(r.get("node_defs", []))
         summaries.append({
             "branch_def_id": r.get("branch_def_id"),
             "name": r.get("name"),
@@ -4877,6 +4884,96 @@ def _branch_mermaid(branch: Any) -> str:
     return "\n".join(lines)
 
 
+# STATUS.md Approved-bugs 2026-04-22 reshape of BUG-018 (maintainer-notes).
+# The wiki already carries the cross-reference surface this feature needs —
+# instead of adding a per-node `related_notes` field to NodeDefinition,
+# surface wiki pages whose text mentions the branch_def_id or any of its
+# node_ids. Always-on (no flag); always-bounded (top 20, summary ≤140 chars).
+_RELATED_WIKI_CAP = 20
+_RELATED_SUMMARY_MAX = 140
+
+
+def _related_summary(body: str, meta: dict[str, str]) -> str:
+    """First prose paragraph of ``body`` clipped to ``_RELATED_SUMMARY_MAX``.
+
+    Skips heading-only lines (``#`` prefix) when picking the first
+    paragraph. Falls back to the frontmatter ``description`` field if
+    no prose is found; empty string if neither exists.
+    """
+    paragraph: list[str] = []
+    for raw_line in body.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            if paragraph:
+                break
+            continue
+        if line.startswith("#"):
+            if paragraph:
+                break
+            continue
+        paragraph.append(line)
+    text = " ".join(paragraph).strip()
+    if not text:
+        text = (meta.get("description", "") or "").strip()
+    if len(text) > _RELATED_SUMMARY_MAX:
+        # Reserve one char for the ellipsis so total stays ≤ cap.
+        return text[: _RELATED_SUMMARY_MAX - 1].rstrip() + "…"
+    return text
+
+
+def _related_wiki_pages(branch: dict[str, Any]) -> dict[str, Any]:
+    """Find wiki pages that mention this branch's id or any node id.
+
+    Returns ``{"items": [...], "truncated_count": int}``. Each item has
+    ``path``, ``title``, ``summary``, ``matched_via``. Sorted by
+    (matched_via count desc, title asc). Capped at ``_RELATED_WIKI_CAP``.
+    """
+    bid = (branch.get("branch_def_id") or "").strip()
+    node_ids: list[str] = []
+    for n in branch.get("node_defs", []) or []:
+        nid = (n.get("node_id") or "").strip() if isinstance(n, dict) else ""
+        if nid and nid not in node_ids:
+            node_ids.append(nid)
+
+    terms: list[tuple[str, str]] = []
+    if bid:
+        terms.append(("branch_def_id", bid.lower()))
+    for nid in node_ids:
+        terms.append((f"node:{nid}", nid.lower()))
+    if not terms:
+        return {"items": [], "truncated_count": 0}
+
+    pages = (
+        _find_all_pages(_wiki_pages_dir()) + _find_all_pages(_wiki_drafts_dir())
+    )
+    scored: list[dict[str, Any]] = []
+    for p in pages:
+        raw = _read_text(p)
+        if not raw:
+            continue
+        meta, body = _parse_frontmatter(raw)
+        title = meta.get("title", p.stem)
+        haystack = (title + "\n" + body).lower()
+        matched_via: list[str] = []
+        for label, needle in terms:
+            if needle and needle in haystack:
+                matched_via.append(label)
+        if not matched_via:
+            continue
+        scored.append({
+            "path": _page_rel_path(p),
+            "title": title,
+            "summary": _related_summary(body, meta),
+            "matched_via": matched_via,
+        })
+
+    scored.sort(key=lambda x: (-len(x["matched_via"]), x["title"].lower()))
+    total = len(scored)
+    top = scored[:_RELATED_WIKI_CAP]
+    truncated = total - len(top) if total > _RELATED_WIKI_CAP else 0
+    return {"items": top, "truncated_count": truncated}
+
+
 def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
@@ -4939,12 +5036,15 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "Note: run this branch with action='run_branch' once validated. "
         "Pass state field values via inputs_json.",
     ])
+    related = _related_wiki_pages(source_dict)
     return json.dumps({
         "branch_def_id": bid,
         "summary": summary,
         "mermaid": mermaid,
         "valid": not errors,
         "error_count": len(errors),
+        "related_wiki_pages": related["items"],
+        "related_wiki_pages_truncated": related["truncated_count"],
     })
 
 
@@ -5263,6 +5363,39 @@ def _apply_edge_spec(branch: Any, raw: dict[str, Any]) -> str:
     return ""
 
 
+def _apply_conditional_edge_spec(branch: Any, raw: dict[str, Any]) -> str:
+    from workflow.branches import ConditionalEdge
+
+    src = (raw.get("from") or raw.get("from_node") or "").strip()
+    if not src:
+        return "conditional edge spec missing 'from'"
+    conditions_raw = raw.get("conditions")
+    if not isinstance(conditions_raw, dict) or not conditions_raw:
+        return (
+            "conditional edge spec requires a non-empty 'conditions' "
+            "object mapping outcome strings to target node ids"
+        )
+    conditions: dict[str, str] = {}
+    for outcome, target in conditions_raw.items():
+        outcome_str = str(outcome).strip()
+        target_str = str(target).strip()
+        if not outcome_str or not target_str:
+            return (
+                "conditional edge outcome/target must be non-empty strings"
+            )
+        conditions[outcome_str] = target_str
+    # Merge onto any existing edge from the same source so callers can
+    # add one outcome at a time without wiping siblings.
+    for existing in branch.conditional_edges:
+        if existing.from_node == src:
+            existing.conditions.update(conditions)
+            return ""
+    branch.conditional_edges.append(
+        ConditionalEdge(from_node=src, conditions=conditions)
+    )
+    return ""
+
+
 def _apply_state_field_spec(branch: Any, raw: dict[str, Any]) -> str:
     fname = (raw.get("name") or raw.get("field_name") or "").strip()
     if not fname:
@@ -5314,6 +5447,11 @@ def _staged_branch_from_spec(
         err = _apply_edge_spec(branch, raw)
         if err:
             errors.append(f"edge[{idx}]: {err}")
+
+    for idx, raw in enumerate(spec.get("conditional_edges") or []):
+        err = _apply_conditional_edge_spec(branch, raw)
+        if err:
+            errors.append(f"conditional_edge[{idx}]: {err}")
 
     for idx, raw in enumerate(spec.get("state_schema") or []):
         err = _apply_state_field_spec(branch, raw)
@@ -5484,6 +5622,29 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
         if len(branch.edges) == before:
             return f"remove_edge: {src}->{dst} not found"
         return ""
+    if name == "add_conditional_edge":
+        return _apply_conditional_edge_spec(branch, op)
+    if name == "remove_conditional_edge":
+        src = (op.get("from") or op.get("from_node") or "").strip()
+        if not src:
+            return "remove_conditional_edge requires 'from'"
+        outcome = (op.get("outcome") or "").strip()
+        for i, ce in enumerate(branch.conditional_edges):
+            if ce.from_node != src:
+                continue
+            if not outcome:
+                del branch.conditional_edges[i]
+                return ""
+            if outcome not in ce.conditions:
+                return (
+                    f"remove_conditional_edge: outcome '{outcome}' not "
+                    f"found on edge from '{src}'"
+                )
+            del ce.conditions[outcome]
+            if not ce.conditions:
+                del branch.conditional_edges[i]
+            return ""
+        return f"remove_conditional_edge: no conditional edge from '{src}'"
     if name == "remove_state_field":
         fname = (op.get("name") or op.get("field_name") or "").strip()
         if not fname:
