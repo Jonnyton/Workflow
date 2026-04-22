@@ -81,7 +81,7 @@ jobs:
                echo '---'; \
                docker compose -f /opt/workflow/deploy/compose.yml ps 2>&1 | head -20; \
                echo '---'; \
-               journalctl -u workflow-daemon --no-pager -n 20 2>&1 || true" \
+               journalctl -u workflow-daemon --no-pager -n 50 2>&1 || true" \
               2>&1 || echo "(SSH failed)")
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
@@ -91,6 +91,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "=== pre-restart diag ==="
           echo "$diag"
+
+      # Navigator 2026-04-22 §a: auto-repair the known ENV-UNREADABLE class
+      # (/etc/workflow/env perms regressed to 600, user=workflow can't read).
+      # We grep the canonical marker we emit from systemd ExecStartPre, the
+      # deploy-prod sed sites, and the container entrypoint — all use the
+      # same `ENV-UNREADABLE` token. If found, run the fixed chown+chmod.
+      # Deliberately narrow: only this one known class. Don't generalize.
+      - name: Auto-repair ENV-UNREADABLE class if detected
+        id: env_repair
+        run: |
+          if echo "${{ steps.prediag.outputs.diag }}" | grep -q 'ENV-UNREADABLE'; then
+            echo "detected ENV-UNREADABLE marker in journalctl — applying perm repair"
+            ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env && sudo -u workflow test -r /etc/workflow/env && echo 'env perms repaired' && sudo ls -l /etc/workflow/env"
+            echo "repaired=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no ENV-UNREADABLE marker found — proceeding to generic compose restart"
+            echo "repaired=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Attempt compose restart
         id: restart
@@ -259,6 +279,7 @@ jobs:
             echo "### P0 auto-triage result"
             echo ""
             echo "- **Issue:** #${{ github.event.issue.number }}"
+            echo "- **ENV-UNREADABLE auto-repaired:** \`${{ steps.env_repair.outputs.repaired }}\`"
             echo "- **Restart attempted:** \`${{ steps.restart.outcome }}\`"
             echo "- **Re-probe:** \`${{ steps.reprobe.outputs.color }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

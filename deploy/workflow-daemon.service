@@ -35,6 +35,15 @@ Group=workflow
 WorkingDirectory=/opt/workflow
 EnvironmentFile=/etc/workflow/env
 
+# Pre-check: the compose env_file lives at /etc/workflow/env and must be
+# readable by this unit's User=workflow. If not, docker compose fails
+# silently and cloudflared never starts — the 2026-04-21 P0 class.
+# Emit a canonical `ENV-UNREADABLE` marker to stderr (→ journald) so
+# p0-outage-triage.yml can grep journalctl and self-repair without an
+# SSH shell. ExecStartPre= with a leading `-` would tolerate failure;
+# we do NOT use `-` so systemd refuses to start with the marker logged.
+ExecStartPre=/bin/sh -c 'test -r /etc/workflow/env || { echo "ENV-UNREADABLE: /etc/workflow/env not readable by user workflow (uid $$(id -u))" >&2; ls -l /etc/workflow/env >&2 || true; exit 1; }'
+
 # docker compose up runs in foreground; systemd watches the PID.
 # The image's own tini PID-1 handles SIGTERM cleanly (Row A Dockerfile).
 ExecStart=/usr/bin/docker compose -f /opt/workflow/compose.yml up

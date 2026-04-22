@@ -131,7 +131,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env && sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env"
+              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env && sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env && (sudo -u workflow test -r /etc/workflow/env || { echo 'ENV-UNREADABLE: scrub step left /etc/workflow/env unreadable by user workflow' >&2; sudo ls -l /etc/workflow/env >&2; exit 1; })"
 
       - name: Deploy new image
         id: deploy
@@ -149,7 +149,10 @@ jobs:
             # Assert the systemd unit's user can actually read the file.
             # Without this, a perms regression silently bricks cloudflared.
             if ! sudo -u workflow test -r /etc/workflow/env; then
-              echo "ENV PERM REGRESSION: /etc/workflow/env not readable by user 'workflow'" >&2
+              # Canonical marker — greppable from journalctl, watchdog, and
+              # p0-outage-triage so auto-triage can self-repair this class
+              # without an SSH shell.
+              echo "ENV-UNREADABLE: deploy step left /etc/workflow/env unreadable by user workflow" >&2
               sudo ls -l /etc/workflow/env >&2
               exit 1
             fi
@@ -167,7 +170,7 @@ jobs:
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               'sudo -u workflow test -r /etc/workflow/env' || {
-            echo "::error::ENV PERM REGRESSION — /etc/workflow/env not readable by user 'workflow' after restart. cloudflared will silently fail to start."
+            echo "::error::ENV-UNREADABLE — /etc/workflow/env not readable by user 'workflow' after restart. cloudflared will silently fail to start."
             ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
                 "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
                 'sudo ls -l /etc/workflow/env' || true
@@ -229,7 +232,8 @@ jobs:
             sudo chown root:workflow /etc/workflow/env
             sudo chmod 640 /etc/workflow/env
             if ! sudo -u workflow test -r /etc/workflow/env; then
-              echo "ENV PERM REGRESSION during rollback: /etc/workflow/env not readable by user 'workflow'" >&2
+              # Canonical marker — greppable from journalctl + p0-outage-triage.
+              echo "ENV-UNREADABLE: rollback step left /etc/workflow/env unreadable by user workflow" >&2
               sudo ls -l /etc/workflow/env >&2
               exit 1
             fi
