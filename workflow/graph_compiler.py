@@ -9,8 +9,13 @@ The compiler synthesizes a dynamic TypedDict from ``state_schema`` with
 and (host-approved) source_code nodes, and wires simple + conditional edges.
 
 Design rules (from `docs/specs/community_branches_phase3.md`):
-- prompt_template nodes are always safe — rendered with ``str.format_map``,
-  sent via the role-based provider router.
+- prompt_template nodes are always safe — rendered via a custom regex
+  substitution (see ``_render_template`` + ``_PLACEHOLDER_RE``), NOT
+  ``str.format_map``. Single ``{``/``}`` characters are literal; only
+  ``{ident}`` matching a valid Python identifier is substituted. Jinja
+  ``{{ident}}`` is normalized to ``{ident}`` first. Authors escape
+  literal placeholders as ``\\{ident\\}``. Rendered output is sent via
+  the role-based provider router.
 - source_code nodes require ``approved=True`` on the NodeDefinition.
   Unapproved code raises ``UnapprovedNodeError`` at compile time, not
   runtime, so ``run_branch`` can refuse cleanly.
@@ -212,11 +217,20 @@ def _build_state_typeddict(schema: list[dict[str, Any]]) -> type:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_PLACEHOLDER_RE = re.compile(r"{([a-zA-Z_][a-zA-Z0-9_]*)}")
+# Placeholder match: ``{ident}`` NOT preceded by a backslash. The
+# negative lookbehind is what implements the literal-brace escape —
+# templates that want a literal ``{foo}`` in output write ``\{foo\}`` and
+# the leading backslash keeps the substitution regex from biting.
+_PLACEHOLDER_RE = re.compile(r"(?<!\\){([a-zA-Z_][a-zA-Z0-9_]*)}")
 # Matches Jinja/Handlebars-style {{ident}} placeholders. Claude.ai and many
 # MCP clients emit this form by convention. We normalize to `{ident}` so
 # the single regex-driven substitution below handles both forms.
 _DOUBLE_PLACEHOLDER_RE = re.compile(r"{{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}")
+# Matches ``\{ident\}`` — an explicitly-escaped placeholder. After
+# substitution runs (skipping these thanks to ``_PLACEHOLDER_RE``'s
+# lookbehind), we strip the backslashes so the rendered output contains
+# ``{ident}`` verbatim.
+_ESCAPED_PLACEHOLDER_RE = re.compile(r"\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
 
 
 def _normalize_placeholders(template: str) -> str:
@@ -226,20 +240,38 @@ def _normalize_placeholders(template: str) -> str:
     convention. We do the substitution ourselves (see ``_render_template``)
     so non-identifier braces — JSON examples like ``{"doc": "X"}``, code
     fences, math expressions — pass through as literal text.
+
+    ``\\{ident\\}`` (escaped form) is untouched here — the normalizer only
+    handles the Jinja→Python alias; the escape handling lives in
+    ``_render_template`` + ``_PLACEHOLDER_RE``'s lookbehind.
     """
     if not template:
         return template
     return _DOUBLE_PLACEHOLDER_RE.sub(r"{\1}", template)
 
 
+def _unescape_literal_braces(template: str) -> str:
+    """Strip backslashes from ``\\{ident\\}`` so rendered output carries
+    ``{ident}`` as literal text. Runs after placeholder substitution so
+    the escape survives the lookbehind-gated rewrite."""
+    if not template:
+        return template
+    return _ESCAPED_PLACEHOLDER_RE.sub(r"{\1}", template)
+
+
 def _render_template(template: str, state: dict[str, Any]) -> str:
     """Substitute ``{ident}`` placeholders with ``state[ident]`` values.
 
-    Unlike ``str.format_map`` we do not treat single ``{`` / ``}`` as
-    special. Literal braces in JSON examples, code fences, and math
-    expressions survive verbatim. Only substrings matching a valid
-    identifier placeholder (``{name}``) are replaced; everything else is
-    left alone.
+    Unlike Python's ``str.format``/``str.format_map`` we do not treat
+    single ``{`` / ``}`` as special. Literal braces in JSON examples,
+    code fences, and math expressions survive verbatim. Only substrings
+    matching a valid identifier placeholder (``{name}``) are replaced;
+    everything else is left alone.
+
+    Authors who need a literal ``{ident}`` (for example, documenting
+    the substitution syntax itself) escape it as ``\\{ident\\}`` — the
+    placeholder regex skips escaped forms and the unescape pass strips
+    the backslashes after substitution.
 
     Raises ``KeyError`` if a valid placeholder references a state key
     that is not present — caller maps that to a ``CompilerError``.
@@ -253,7 +285,9 @@ def _render_template(template: str, state: dict[str, Any]) -> str:
             raise KeyError(key)
         return str(state[key])
 
-    return _PLACEHOLDER_RE.sub(_sub, template)
+    normalized = _normalize_placeholders(template)
+    substituted = _PLACEHOLDER_RE.sub(_sub, normalized)
+    return _unescape_literal_braces(substituted)
 
 
 def _missing_state_keys(template: str, state: dict[str, Any]) -> list[str]:
@@ -267,6 +301,8 @@ def _placeholder_keys(template: str) -> list[str]:
 
     Static analysis — no state lookup, no rendering. Used by
     ``collect_build_warnings`` + the strict-isolation pre-check.
+    Escaped ``\\{ident\\}`` forms are NOT placeholders — they render
+    literally — so the lookbehind-gated regex naturally excludes them.
     """
     normalized = _normalize_placeholders(template or "")
     # de-dupe while preserving first-occurrence order for stable warnings

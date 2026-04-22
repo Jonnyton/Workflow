@@ -23,9 +23,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Spec | Status |
 |---|---|
-| Structured JSON output for multi-output + typed prompt nodes | claimed:dev |
 | Per-node llm_policy override | dev-dispatchable |
-| In-flight run recovery surface — part 1 (document v1 contract) | claimed:dev |
 | In-flight run recovery — part 2 (SqliteSaver-keyed resume, node-escrow aware) | dev-dispatchable |
 | Node checkpoints — partial-credit boundaries authored into node_def | dev-dispatchable |
 | Gate bonuses — staked payouts attached to gate milestones | dev-dispatchable |
@@ -36,11 +34,16 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 | Scheduled + event-triggered branch invocation | dev-dispatchable |
 | Project-scope persistent memory primitive | dev-dispatchable |
 | file_bug is the feature-request verb — docstring + optional kind field | dev-dispatchable |
-| Prompt_template literal-brace escape + build-time missing-key validation | dev-dispatchable |
+| Prompt_template literal-brace escape + build-time missing-key validation | claimed:dev |
 | [deferred] Daemon roster + soul.md authoring surface | deferred:needs-scoping |
 | [deferred] Per-node soul_policy field on NodeDefinition | deferred:needs-scoping |
 | [deferred] Branch-contribution ledger | deferred:needs-scoping |
 | [deferred] Claim-time soul-fingerprint (anti-spoof) | deferred:needs-scoping |
+| [deferred] Flexible escrow splits on node + branch posting | deferred:needs-scoping |
+| [deferred] Attribution chain primitive (remix provenance) | deferred:needs-scoping |
+| [deferred] Real-world outcome evaluator hook | deferred:needs-scoping |
+| [deferred] Bug-bounty tracking + GitHub attribution | deferred:needs-scoping |
+| [deferred] Fair-distribution calculator (navigator-adjudicator tooling) | deferred:needs-scoping |
 
 ---
 

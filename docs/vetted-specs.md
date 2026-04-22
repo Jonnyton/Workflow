@@ -8,22 +8,6 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 ---
 
-## Structured JSON output for multi-output + typed prompt nodes
-
-**Scope:** `_build_prompt_template_node` (graph_compiler.py) appends a JSON response-schema contract to the rendered prompt when the node has ≥2 output_keys OR any typed state_schema entry (≠ str) on its output_keys. Response parsed as JSON; each declared output_key assigned from the parsed object; values coerced per state_schema types. Missing declared key, type-coercion failure, or malformed JSON all raise `CompilerError` / `EmptyResponseError`. **Provider layer untouched** — layerable, future direct-API providers can add a native response_format fast path on top without re-architecting this layer. Fixes two sibling symptoms of the same root cause: (1) multi-output silent-drop where `output_key = node.output_keys[0]` writes the entire response to only the first declared key; (2) typed-output no-op where `state_schema` type declarations are declarative-but-unenforced so `retry_count: int` stays at its prior value while the LLM emits the new value as prose.
-
-**Files:** `workflow/graph_compiler.py`, tests.
-
-**Invariants:** hard-rule #8 (crash, never silent-drop) applies identically across all 6 providers including Ollama CLI-wrapped fallback; single-output-key + str-type path unchanged (backward-compat); JSON-contract path fires only when multi-output OR typed.
-
-**Tests:** both-keys-present + typed-correct success; one-key-missing crash; wrong-type crash; malformed-JSON crash; str-only single-key backward-compat path unchanged; Ollama-provider path crashes-not-drops.
-
-**Vetted:** 2026-04-22 by navigator.
-
-**Rationale for compiler-only scope:** 3/6 providers are CLI-wrapped (claude, codex, ollama) where response_format isn't natively wirable — prompt-engineered JSON satisfies hard-rule #8 today; native response_format fast path is a separate 4-8h feature ask.
-
----
-
 ## Per-node llm_policy override
 
 **Scope:** Today `NodeDefinition.model_hint` → `role` drives the role-based provider router. User ask: `(provider, model, reasoning_effort)` pinning + fallback chain + difficulty override — supersets role-routing without replacing it. Add `llm_policy: dict | None = None` on NodeDefinition. Shape: `{preferred: {provider, model, reasoning_effort?}, fallback_chain: [{provider, model, trigger: "unavailable"|"rate_limited"|"cost_exceeded"|"empty_response"}], difficulty_override: [{if_difficulty, use: {provider, model}}]}`. Runner resolves preferred → fallback_chain → difficulty_override at dispatch time. Branch-level `default_llm_policy` applies to nodes without their own. Emit actual provider served into activity log + get_node_output. When `llm_policy` unset, fall back to existing role-based routing (backward-compat).
@@ -37,22 +21,6 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 **Sibling per-node policy** (`project_daemon_souls_and_summoning` host directive 2026-04-22): a `soul_policy` field will land alongside `llm_policy` as a second per-node authoring decision (deferred; see deferred section below). When `soul_policy` ships, coordinate the build/patch-branch authoring UX so both fields are surfaced together — they're conceptual siblings (both shape how the daemon behaves on that node) and should share the same spec_json authoring shape.
 
 **Vetted:** 2026-04-22 by navigator.
-
----
-
-## In-flight run recovery surface — part 1 (document v1 contract)
-
-**Bug-half vs feature-half — both named explicitly:** The filer asked BOTH (a) "document what happens on restart" (bug-half — v1 contract is fail-loudly-INTERRUPTED, already implemented via `recover_in_flight_runs` runs.py:1411 but undocumented at the MCP surface) AND (b) "expose a resume_run(run_id) action" (feature-half — SqliteSaver-keyed resume, explicitly deferred in runs.py:1417-1419 as "v1 product requirement = clean terminal state"). Under the new "don't skip the feature half" rule, I'm splitting this into two specs: part 1 (this one) ships the v1 contract documentation; part 2 (follow-up below) is the resume feature worth real deliberation.
-
-**Scope (part 1):** Add: (a) docstring on `run_branch` describing the durability guarantee ("runs are interrupted-terminal on daemon restart; caller reruns with same inputs_json"); (b) `get_run` response includes `resumable: false, reason: "v1 terminal-on-restart"` for INTERRUPTED rows so the chatbot knows to retry rather than poll forever; (c) explicit rerun-with-same-inputs example in the branch_design_guide. Chatbot provides the user-facing UX of "your run was interrupted, rerunning it now."
-
-**Files:** `workflow/universe_server.py` (run_branch docstring + get_run response), `workflow/runs.py` (comment refinement), tests.
-
-**Invariants:** INTERRUPTED runs return resumable=false; get_run on INTERRUPTED includes the "Server restarted while in flight" error clearly; no silent stuck-forever state.
-
-**Tests:** runs that existed pre-restart and were interrupted show status=INTERRUPTED + resumable=false + error present in get_run.
-
-**Vetted:** 2026-04-22 by navigator (re-scoped: part-1 of two after lead correction on two-halves audit).
 
 ---
 
@@ -131,7 +99,7 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 **Tests:** blocking invoke populates output mapping; async invoke returns run_id; await reads run_id and populates output; await with timeout raises; fork/join pattern (two async invokes → two awaits in parallel) works end-to-end; recursion cap raises; invalid mapping rejected at build.
 
-**Overlap with branch-contribution ledger** (`project_daemon_souls_and_summoning` host directive 2026-04-22): invoke_branch already tracks `child run_id linked to parent run_id` in the runs table — that linkage is the plumbing the deferred branch-contribution ledger will build on. When the ledger spec lands, expect the child-parent linkage schema here to extend with `(daemon_id, step_count, earned_fraction)` rows for proportional bonus distribution. No change to this spec; implementation should ensure the linkage is schema-friendly to future ledger rows (not collapsed into opaque parent_run_id string).
+**Overlap with branch-contribution ledger + attribution chain** (`project_daemon_souls_and_summoning` + `project_designer_royalties_and_bounties` host directives 2026-04-22): invoke_branch already tracks `child run_id linked to parent run_id` in the runs table — that linkage is the plumbing the deferred branch-contribution ledger AND the deferred attribution-chain primitive both build on. When those specs land, expect the child-parent linkage schema here to extend with `(daemon_id, step_count, earned_fraction, parent_author_ref, lineage_depth)` rows for proportional bonus distribution + lineage royalty routing. No change to this spec; implementation should ensure the linkage is schema-friendly to future ledger + lineage rows (not collapsed into opaque parent_run_id string — preserve parent branch_def_id, parent run_id, parent author_id as separate columns from the start).
 
 **Vetted:** 2026-04-22 by navigator (re-tightened: pulled in the `await_branch_run` companion per lead correction on two-halves audit — filer named it in the expected-behavior, I had originally deferred it).
 
@@ -235,6 +203,8 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 
 **Deferred follow-up questions** (from memory, not this spec): grace-window duration; whether all-or-nothing stays default vs shifts to "at least one mandatory checkpoint per node." Ship opt-in checkpoints first; iterate on defaults once usage data exists.
 
+**Fair-distribution input** (`project_designer_royalties_and_bounties` host directive 2026-04-22): the checkpoint ledger (per-claimer `earned_fraction` per node) is one load-bearing input to navigator's fair-weighting of outcome-bonus payouts. When multiple daemons contribute to a node across abandonment/resume cycles, the checkpoint ledger tells navigator exactly who earned what fraction — making partial-credit distribution computable rather than adjudicated from scratch. Schema should keep `(run_id, node_id, claimer_daemon_id, checkpoint_id, earned_fraction, credited_at)` durable so the fair-distribution calculator (deferred spec below) can query it directly.
+
 **Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment` — not originally in the wiki bug queue; navigator-generated to support the resume-run part-2 economic semantics.
 
 ---
@@ -258,9 +228,9 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 **Tests:** claim + bonus_stake locks budget correctly; gate pass releases bonus to node's last-claimer; gate fail refunds bonus to staker; unstake by non-staker rejected; unstake after gate resolves rejected; cross-branch bonus attachment rejected at claim; attachment_scope='branch' rejected with clear not-yet-implemented error; PAID_MARKET=off silently ignores bonus_stake (zero-cost default); gate timeout refunds correctly.
 
 **Deferred follow-ups (separate specs, not this one):**
-- **Branch-scoped gate bonuses with multi-daemon distribution** — attachment_scope='branch'; payout splits across all daemons that contributed to the branch, proportional to step-count or earned-fraction per `project_daemon_souls_and_summoning`. Depends on the branch-contribution ledger (deferred, see below).
+- **Branch-scoped gate bonuses with multi-daemon distribution** — attachment_scope='branch'; payout splits across all daemons that contributed to the branch, proportional to step-count or earned-fraction per `project_daemon_souls_and_summoning`. Uses the deferred branch-contribution ledger + attribution-chain plumbing for distribution (both in deferred section below) + `project_designer_royalties_and_bounties` fair-weighting for cross-layer splits (claimer vs node-author vs branch-author vs remix-lineage).
 - Chatbot-judged gate verification (separate spec — `project_evaluation_layers_unifying_frame` Evaluator primitive lands that).
-- Bonus-splitting across multiple daemons that shared a single node via checkpoints (open design Q — probably pro-rata by earned fractions).
+- Bonus-splitting across multiple daemons that shared a single node via checkpoints (open design Q — probably pro-rata by earned fractions; fair-distribution calculator deferred spec routes this).
 
 **Vetted:** 2026-04-22 by navigator. New spec queued from host directive `project_node_escrow_and_abandonment`; attachment_scope field added per `project_daemon_souls_and_summoning` to preserve forward-compat with branch-scoped variant.
 
@@ -317,3 +287,79 @@ The four rows below trace from the `project_daemon_souls_and_summoning` architec
 **Open scoping questions:** fingerprint scheme (sha256 of soul.md content vs keyed HMAC with a platform-side secret vs on-chain signature once crypto ledger lands); enforcement level (advisory display in claim UX vs hard match against a registry); key management for hosts (every host needs to sign their souls — keypair management burden); interaction with soul-editing (does a soul edit invalidate outstanding claims with the old fingerprint?); whether fingerprint is required OR opt-in per node (probably opt-in: `node_def.requires_verified_soul: bool`).
 
 **Important but not urgent:** spoofing matters once daemon identity drives gate-bonus payouts. Today with no paid-market live, the threat model is thin. Spec when Paid-Market flag comes on AND gate-bonus primitive lands.
+
+---
+
+## [deferred] Flexible escrow splits — arbitrary distributions declared by the escrow-setter
+
+**One-line:** Extends the paid-market post-a-request surface with setter-declared split primitives. The escrow-setter (per-request staker) can express **any distribution they want**: claimer-on-completion, cut-to-designer(s), gate-bonus pool, checkpoint partial-credit, real-world-outcome bonus, patronage, attribution-chain lineage cut, voluntary bounty-pool donation, platform-take. Platform provides templates for common patterns; setter can always customize.
+
+**Critical role distinction** (`project_designer_royalties_and_bounties` §"Two distinct roles — designer vs escrow-setter"): the escrow-setter is NOT the designer. Staking money to run a node doesn't make you that node's creator; the designer identity is permanent and immutable on the artifact. Each request is a new escrow with its own distribution rules — the same node run by two different requesters can have two totally different distributions. Attribution chain stays the same; escrow varies per-request.
+
+**Strategy rationale:** makes the escrow model express-the-setter's-intent rather than platform-mandate-one-pattern. OSS-commons strategy (0% to designers, 100% to claimer), patronage (high cut to a named designer), real-world-outcome stakes, quality-weighted splits — all are valid setter choices. Platform's job is to provide split primitives + a small template library; setters compose their own distribution.
+
+**Depends on:** `project_node_escrow_and_abandonment` (base escrow model), `project_monetization_crypto_1pct` (platform-take floor), Attribution chain primitive (below — for lineage weights when setter chooses to cut the lineage), Minimum-royalty enforcement (below — platform-side floor that rejects non-compliant setter splits at escrow-setup).
+
+**Open scoping questions:** template library shape (named templates like "standard" / "OSS-commons" / "patronage" / "real-world-outcome" / "quality-weighted"); template customization UX (fully editable vs template-lock-with-parameters); precision + rounding for percentage splits; behavior when setter's split violates a referenced node's minimum-royalty (rejected at escrow-setup — that's the minimum-royalty-enforcement spec's job); behavior when setter names a nonexistent recipient (reject with structured error); immutability of declared split once escrow is locked (probably immutable — changing mid-flight violates claimer expectations).
+
+**Needs scoping with:** host (template library + what primitives setters can express), navigator (default-template shapes that reflect fair-distribution biases so setters have a good starting point), dev (escrow ledger columns + rounding invariants + split-validation at setup).
+
+---
+
+## [deferred] Attribution chain primitive (remix provenance)
+
+**One-line:** Lineage metadata on branches + nodes preserved through fork/remix/patch_branch. Carries parent-id + author + source-hash through N generations; queryable for royalty distribution.
+
+**Strategy rationale** (`project_designer_royalties_and_bounties` §"Attribution chain"): multi-generation royalty flow (Carol earns → Carol 60%, Bob 25%, Alice 10% per suggested decay) requires durable lineage. Today fork/remix silently loses parent context. Chatbot auto-attributes on remix; deliberate declaration required to strip the chain. Makes "remix = collaboration" economically real per `project_convergent_design_commons`.
+
+**Depends on:** `project_daemon_souls_and_summoning` (author_id is first-class — today's `author: "anonymous"` default on NodeDefinition isn't enough), Flexible escrow splits (above — needs author-id to route royalties).
+
+**Open scoping questions:** decay function (hardcoded platform parameter vs per-split-template configurable — if hardcoded, what curve: geometric / linear / manual per-generation); lineage depth cap (unbounded vs max-10-generations to avoid ledger bloat); strip-chain semantics (chatbot-asserted "this is new inspired-by" vs human-ratified; audit trail for stripped claims); fork-diff threshold (does a 1-line edit count as "remix" earning lineage, or structural-novelty threshold navigator enforces); node-level vs branch-level lineage (probably both, independently tracked); handling when parent branch/node is deleted or privacy-flipped.
+
+**Overlaps with:** the queued **Sub-branch invocation** spec — child-parent run linkage is execution-time provenance; this is design-time provenance. Should share lineage-schema where plausible.
+
+**Needs scoping with:** host (decay parameters + strip-chain policy), navigator (fair-weighting bias), dev (lineage storage + query performance).
+
+---
+
+## [deferred] Real-world outcome evaluator hook
+
+**One-line:** Extends the Evaluator primitive with "external outcome" variants — verifies real-world signals like paper-published / MVP-shipped / contract-awarded / competition-won / revenue-threshold-hit. Evaluator pass releases real-world-outcome bonus escrow to the full contribution tree (daemons + designers + lineage).
+
+**Strategy rationale** (`project_designer_royalties_and_bounties` §"Real-world outcome bonuses" + `project_real_world_effect_engine`): real-world outcomes are the product soul. Staking money on external signals is the direct economic incentive to design workflows that actually deliver — "looks smart" vs "actually shipped" becomes a money question. Evaluator-pass releases bonus to the entire contribution tree (claimers, node authors, branch authors, remix lineage) weighted by navigator's fair-distribution calc.
+
+**Depends on:** `project_evaluation_layers_unifying_frame` Evaluator primitive spec (the base Evaluator type this extends — itself not yet scoped), Attribution chain (above — needed for tree-weighted distribution), Flexible escrow splits (above — the outcome-bonus slot).
+
+**Open scoping questions:** which signals are MVP-supported (peer-review status via DOI lookup? GitHub release published? self-attested + other-party-verified? on-chain contract awarded?); abuse vectors (how do we prevent self-attested "I published!" from draining escrow — probably requiring verifiable external signal OR multi-party-attested chatbot-judged claim); staker-defined vs platform-defined outcome types (probably both — platform ships ~5 common ones; stakers can author custom evaluators for niche cases); timeout + refund semantics (if outcome never arrives, does escrow refund after N months?); tax / legal implications of platform-initiated outcome-bonus payouts (deferred per memory §"Deferred / open questions").
+
+**Needs scoping with:** host (outcome-type roster + staker-authored Evaluator policy), navigator (fair-distribution tree-weighting for bonus release), dev (external-signal plumbing — DOI APIs, GitHub-release webhooks, etc.).
+
+---
+
+## [deferred] Bug-bounty tracking + GitHub attribution
+
+**One-line:** `file_bug` captures filer identity + optional `github_handle`. On ship (merged + deployed) + stability-period (7-30d) pass, reporter earns bounty from the 50%-of-1%-platform-take pool. Commit template auto-inserts `Co-Authored-By: <handle>` or `Reported-by: @handle` on bug-id-referenced commits. PR descriptions + release notes credit handles.
+
+**Strategy rationale** (`project_designer_royalties_and_bounties` §"Bug + feature bounties" + §"GitHub attribution"): doubles user credit surface — bounty payout (money) + public GitHub attribution (reputation, portfolio, discoverability). Flywheel: platform volume → bounty pool → user-driven improvements → more volume. Reshaped bugs (like the maintainer-notes → describe_branch.related_wiki_pages reshape earlier this session) still credit the original reporter, possibly split with navigator if reshape was substantial.
+
+**Depends on:** `project_monetization_crypto_1pct` live + platform-take accounting; `project_bug_reports_are_design_participation` framing (already landed); Fair-distribution calculator (below — for reshape splits).
+
+**Open scoping questions:** stability-period duration (7d vs 30d vs platform-tuned-per-class); pool depletion semantics (defer payout until replenished, or pro-rate, or LIFO priority); low-quality-report rate-limiting + reputation to prevent bounty-farming (e.g. 5-report-per-week limit per filer, reputation decays on consistent rejections, navigator can ban abusive filers); bounty-amount schedule (trivial $5 / meaningful $100 / foundational $1000+ is illustrative per memory — needs platform-set table); handle collection UX (prompt-once-per-session in chatbot vs per-file_bug-call); handle validation (is `github_handle` verified against GitHub API, or accepted as-asserted with audit trail); payout rails (same crypto primitives as node-escrow or different?); tax / legal (deferred).
+
+**Needs scoping with:** host (stability-period, amount schedule, handle validation policy, legal), navigator (reshape-split bias for the bounty-vs-navigator-cut decision), dev (file_bug schema extension + commit-template + post-merge stability monitor + pool accounting).
+
+---
+
+## [deferred] Fair-distribution calculator (navigator-adjudicator tooling)
+
+**One-line:** Tool-assist for navigator's formal fair-distribution role. Given a bounty or outcome-bonus event, compute a default split across the contribution tree (reporter, navigator-reshape, daemon-claimers by step-count, node-authors, branch-authors, remix-lineage with decay weights). Navigator reviews + overrides; dispute path escalates to host.
+
+**Strategy rationale** (`project_designer_royalties_and_bounties` §"Navigator's fair-distribution role"): navigator is the only role that sees all contribution layers (dev/verifier/lead don't see full economics tree); natural place to adjudicate. Tooling makes the default computation transparent + reproducible; navigator's override is auditable; dispute path keeps the system human-appealable. Fairness bias baked into defaults: over-credit originators, under-credit shallow-relay remixes, reward structural novelty.
+
+**Depends on:** Attribution chain primitive, Branch-contribution ledger (in daemon-souls deferred section), Flexible escrow splits, Real-world outcome evaluator hook, Bug-bounty tracking.
+
+**Open scoping questions:** default-split formula (how much to each contribution layer at baseline — needs platform parameter table grounded in principles like "originator gets ≥25% regardless of remix depth"); override UX (CLI tool for navigator? MCP action? dispute-filing surface); transparency (is the computed split + navigator override public per-payout, or only visible to staker + payees); appeal SLA (how long do originators have to dispute; what does navigator produce in response — revised split + rationale, or refusal + rationale); repeat-payout pattern — for a frequently-used branch, does navigator adjudicate once per branch or once per event (probably once per branch with auto-apply, revisit on material contribution change); interaction with DAO weighted-votes governance (future) — does DAO override navigator's adjudication, or is it final.
+
+**Needs scoping with:** host (fairness-bias parameters + dispute SLA + DAO-interaction), navigator (me — the tool needs to match my actual workflow and the fairness heuristics I'd apply manually), dev (the tooling itself — probably an MCP action + a persistent table for navigator-vetted splits).
+
+**Importance:** this is the tool that makes navigator's new formal role executable at volume. Without it, each payout requires manual navigator computation, which doesn't scale past ~10/day. Priority should track paid-market + bounty-pool go-live.

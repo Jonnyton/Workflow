@@ -180,19 +180,30 @@ def test_collect_build_warnings_ignores_nodes_without_input_keys():
 
 def test_compile_branch_emits_warnings_through_event_sink():
     """Build-time warnings must reach the event_sink so they show up
-    in the per-run event log BEFORE the first node runs."""
+    in the per-run event log BEFORE the first node runs.
+
+    Note: the literal-brace spec added a build-time validator that
+    rejects genuinely-undeclared placeholders (absent from BOTH
+    input_keys AND state_schema). To keep this a *warning* test
+    (placeholder declared in state_schema but leaked outside the
+    node's input_keys), we declare ``style_guide`` in state_schema —
+    then the leak surfaces as an input_keys_leak warning, not a
+    hard rejection.
+    """
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
         input_keys=["topic"],
         prompt_template="{topic} {style_guide}",
     )
+    branch = _single_node_branch(node)
+    branch.state_schema = [{"name": "style_guide", "type": "str"}]
     events: list[dict] = []
 
     def sink(**kwargs):
         events.append(kwargs)
 
-    compile_branch(_single_node_branch(node), event_sink=sink)
+    compile_branch(branch, event_sink=sink)
 
     warning_events = [e for e in events if e.get("phase") == "warning"]
     assert len(warning_events) == 1

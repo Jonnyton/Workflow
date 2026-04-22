@@ -263,34 +263,29 @@ def test_prompt_template_multiple_double_brace_occurrences():
 
 
 def test_prompt_template_missing_key_raises():
-    """Referencing a state key that's not defined is still a clean error."""
-    from workflow.graph_compiler import compile_branch
+    """Referencing a state key that's not defined is caught at
+    compile time by BranchDefinition.validate() — the build-time
+    layer added in the literal-brace spec. Runtime raise remains as
+    the second layer if the validator is bypassed."""
+    from workflow.graph_compiler import CompilerError, compile_branch
 
     branch = _single_node_branch("Write about {missing}")
     branch.state_schema = [{"name": "out", "type": "str"}]  # no 'missing'
-    compiled = compile_branch(branch, provider_call=lambda *a, **kw: "[mock]")
-    from langgraph.checkpoint.memory import InMemorySaver
-
-    app = compiled.graph.compile(checkpointer=InMemorySaver())
-    with pytest.raises(Exception) as exc_info:
-        app.invoke({"out": ""}, config={"configurable": {"thread_id": "t"}})
-    # LangGraph wraps the CompilerError but the message is preserved.
+    with pytest.raises(CompilerError) as exc_info:
+        compile_branch(branch, provider_call=lambda *a, **kw: "[mock]")
     assert "missing" in str(exc_info.value).lower()
 
 
 def test_prompt_template_missing_key_detected_for_double_brace():
-    """Bug #44 cousin: {{missing}} must also trigger missing-key detection
-    so clients can't silently leak placeholders into the LLM."""
-    from workflow.graph_compiler import compile_branch
+    """Bug #44 cousin: ``{{missing}}`` is normalized to ``{missing}``
+    before the build-time validator checks declaration, so clients
+    can't silently leak Jinja-form placeholders into the LLM."""
+    from workflow.graph_compiler import CompilerError, compile_branch
 
     branch = _single_node_branch("Write about {{missing}}")
     branch.state_schema = [{"name": "out", "type": "str"}]
-    compiled = compile_branch(branch, provider_call=lambda *a, **kw: "[mock]")
-    from langgraph.checkpoint.memory import InMemorySaver
-
-    app = compiled.graph.compile(checkpointer=InMemorySaver())
-    with pytest.raises(Exception) as exc_info:
-        app.invoke({"out": ""}, config={"configurable": {"thread_id": "t"}})
+    with pytest.raises(CompilerError) as exc_info:
+        compile_branch(branch, provider_call=lambda *a, **kw: "[mock]")
     assert "missing" in str(exc_info.value).lower()
 
 
