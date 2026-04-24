@@ -112,6 +112,8 @@ jobs:
       #   disk_full            — docker system prune -af
       #   image_pull_failure   — fall back to :latest in /etc/workflow/env
       #   watchdog_hotloop     — stop → sleep 60 → start (reset limit)
+      #   provider_exhaustion  — stop worker + write .pause sentinel;
+      #                          page host priority=2 (Lane 4b)
       #   unknown              — generic compose restart (legacy behavior)
       - name: Classify outage
         id: classify
@@ -216,6 +218,37 @@ jobs:
                sudo systemctl reset-failed workflow-daemon && \
                sudo systemctl start workflow-daemon" 2>&1
 
+      # --- Repair branch 6: provider exhaustion (Lane 4b) --------------
+      # Daemon is alive + writing, but every draft is failing because
+      # every provider in the fallback chain is cooling / quota-capped /
+      # broken. The 2026-04-23 P0 shape: 67 consecutive revert attempts
+      # on the concordance universe, producing empty prose.
+      #
+      # Auto-repair is narrow: stop the worker (halt the loop) + write
+      # a `.pause` sentinel into the affected universe (idempotent on
+      # resume) + page the host priority=2 because provider routing
+      # requires human intervention (rotate API keys, bump quota, or
+      # adjust tier_routing_policy). Distinct from disk_full: no volume
+      # pressure; distinct from generic restart because a restart just
+      # re-enters the loop on broken providers.
+      #
+      # If the universe_id can't be inferred from the diag, the sentinel
+      # is written into every universe dir under /data — over-broad but
+      # safe (pause is idempotent and reversible).
+      - name: Repair — provider exhaustion (stop worker + pause universe)
+        id: repair_provider_exhaustion
+        if: steps.classify.outputs.class == 'provider_exhaustion'
+        run: |
+          echo "::warning::provider-exhaustion detected — stopping worker + pausing universe"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "docker stop workflow-worker 2>&1 || true; \
+               for udir in /var/lib/docker/volumes/workflow-data/_data/*/; do \
+                 [ -d \"\$udir\" ] && touch \"\$udir.pause\" && \
+                   echo \"paused \$udir\"; \
+               done; \
+               ls -la /var/lib/docker/volumes/workflow-data/_data/*/.pause 2>&1" 2>&1
+
       # --- Manual-only branch: tunnel token ----------------------------
       # Detection only — we can't auto-rotate the Cloudflare tunnel token
       # (host action). Open a distinct `tunnel-token-rotation` issue so
@@ -277,7 +310,8 @@ jobs:
         id: restart
         if: >
           steps.classify.outputs.class != 'watchdog_hotloop' &&
-          steps.classify.outputs.class != 'tunnel_token'
+          steps.classify.outputs.class != 'tunnel_token' &&
+          steps.classify.outputs.class != 'provider_exhaustion'
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
@@ -461,6 +495,7 @@ jobs:
             echo "  - image_pull: \`${{ steps.repair_pull.outcome }}\`"
             echo "  - watchdog_hotloop: \`${{ steps.repair_watchdog.outcome }}\`"
             echo "  - tunnel_token: \`${{ steps.triage_tunnel.outcome }}\`"
+            echo "  - provider_exhaustion: \`${{ steps.repair_provider_exhaustion.outcome }}\`"
             echo "- **Generic restart attempted:** \`${{ steps.restart.outcome }}\`"
             echo "- **Re-probe:** \`${{ steps.reprobe.outputs.color }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

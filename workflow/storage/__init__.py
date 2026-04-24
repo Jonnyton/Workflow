@@ -290,6 +290,151 @@ def author_server_db_path(base_path: str | Path) -> Path:
     return Path(base_path) / DB_FILENAME
 
 
+# -------------------------------------------------------------------
+# Storage utilization observability (BUG-023 Phase 1)
+# -------------------------------------------------------------------
+
+
+# Per-subsystem paths, relative to data_dir(). Each path may be either
+# a file (size from stat) or a directory (recursive walk). Missing paths
+# resolve to 0 bytes rather than error — observability must never break
+# the probe surface it rides on.
+_SUBSYSTEM_PATHS: tuple[tuple[str, str, bool], ...] = (
+    # (name, relative path, is_directory)
+    ("run_transcripts", "runs", True),
+    ("knowledge_db",   "knowledge.db", False),
+    ("story_db",       "story.db", False),
+    ("lance_indexes",  "lance", True),
+    ("checkpoint_db",  "checkpoints.db", False),
+    ("wiki",           "wiki", True),
+    ("activity_log",   "activity.log", False),
+    ("universe_outputs", "output", True),
+)
+
+_PRESSURE_WARN_THRESHOLD = 0.80
+_PRESSURE_CRITICAL_THRESHOLD = 0.95
+
+
+def _path_size_bytes(path: Path) -> int:
+    """Return the on-disk size of ``path`` in bytes.
+
+    - Missing paths → 0 (not an error; a subsystem may be uninitialized).
+    - Files → ``stat().st_size``.
+    - Directories → recursive sum of regular-file sizes; OSError on a
+      single child does not abort the walk.
+    """
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    if not path.is_dir():
+        return 0
+    total = 0
+    for child in path.rglob("*"):
+        try:
+            if child.is_file():
+                total += child.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _pressure_level_from_percent(percent: float) -> str:
+    """Classify ``percent`` (0.0-1.0) into an alert tier."""
+    if percent >= _PRESSURE_CRITICAL_THRESHOLD:
+        return "critical"
+    if percent >= _PRESSURE_WARN_THRESHOLD:
+        return "warn"
+    return "ok"
+
+
+def inspect_storage_utilization() -> dict[str, Any]:
+    """Return a snapshot of daemon storage state.
+
+    Phase-1 surface for BUG-023: gives an MCP-reachable operator a way
+    to see per-subsystem byte counts + root-volume pressure before the
+    wall is hit. Pairs with ``get_status.storage_utilization`` so the
+    uptime canary can page on ``pressure_level`` in {warn, critical}.
+
+    Shape (stable contract — consumed by get_status + tests):
+        {
+          volume_percent: float,  # 0.0-1.0, root volume usage
+          volume_bytes_total: int,
+          volume_bytes_free: int,
+          per_subsystem: {
+            <name>: {bytes: int, path: str},
+            ...
+          },
+          growth_estimate: {
+            bytes_per_day_recent: int,
+            days_until_full_at_recent_rate: float | null
+          } | null,
+          pressure_level: 'ok' | 'warn' | 'critical'
+        }
+
+    Invariants:
+      - Read-only; no writes.
+      - Missing subsystem paths yield ``bytes=0``, never raise.
+      - Windows-path-on-POSIX guard inherited from ``data_dir()``.
+    """
+    import shutil as _shutil
+
+    root = data_dir()
+
+    try:
+        usage = _shutil.disk_usage(str(root if root.exists() else root.parent))
+        volume_bytes_total = int(usage.total)
+        volume_bytes_free = int(usage.free)
+        volume_percent = (
+            0.0 if volume_bytes_total == 0
+            else 1.0 - (volume_bytes_free / volume_bytes_total)
+        )
+    except OSError:
+        volume_bytes_total = 0
+        volume_bytes_free = 0
+        volume_percent = 0.0
+
+    per_subsystem: dict[str, dict[str, Any]] = {}
+    for name, rel_path, _is_dir in _SUBSYSTEM_PATHS:
+        abs_path = root / rel_path
+        per_subsystem[name] = {
+            "bytes": _path_size_bytes(abs_path),
+            "path": str(abs_path),
+        }
+
+    # Phase-3 subsystem cap snapshot — consumers (uptime canary, alert
+    # rules) can see which caps are configured + where each subsystem
+    # sits relative to its soft/hard thresholds. Inspect-level subsystem
+    # names map to cap-level ones (caps owns its own vocabulary:
+    # checkpoints / logs / run_artifacts; inspect uses file-path names).
+    try:
+        from workflow.storage.caps import subsystem_cap_snapshot
+        cap_input = {
+            "checkpoints": per_subsystem.get("checkpoint_db", {}).get("bytes", 0),
+            "logs": per_subsystem.get("activity_log", {}).get("bytes", 0),
+            "run_artifacts": per_subsystem.get("run_transcripts", {}).get("bytes", 0),
+        }
+        subsystem_caps = subsystem_cap_snapshot(cap_input)
+    except Exception:  # noqa: BLE001 — observability must not break probe
+        subsystem_caps = {}
+
+    return {
+        "volume_percent": round(volume_percent, 4),
+        "volume_bytes_total": volume_bytes_total,
+        "volume_bytes_free": volume_bytes_free,
+        "per_subsystem": per_subsystem,
+        "subsystem_caps": subsystem_caps,
+        # No historical timeseries store yet — growth_estimate lands in a
+        # later phase when run-transcript rotation emits size-at-time
+        # samples. Null is the spec-mandated shape for the no-data case.
+        "growth_estimate": None,
+        "pressure_level": _pressure_level_from_percent(volume_percent),
+    }
+
+
 def base_path_from_universe(universe_path: str | Path) -> Path:
     return Path(universe_path).resolve().parent
 
@@ -342,6 +487,7 @@ __all__ = [
     "author_server_db_path",
     "base_path_from_universe",
     "data_dir",
+    "inspect_storage_utilization",
     "universe_id_from_path",
     "wiki_path",
     "_connect",

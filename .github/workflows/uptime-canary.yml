@@ -146,16 +146,50 @@ jobs:
           echo "=== last-activity canary (${PROBE_URL}) exit=$code ==="
           echo "$output"
 
-      # Combine handshake + tool + last_activity canary results into
-      # the single probe.outputs.overall the alarm-sink reads. Red if
-      # ANY step failed. `status` reports the worst exit code so
-      # downstream paging messages surface the meaningful signal.
+      # Layer-1d — revert-loop canary (BUG-023 Lane 4a). Catches the
+      # "daemon is writing but every draft fails" class — distinct from
+      # dark daemon (handshake red), broken tool handler (tool red), and
+      # stalled worker (activity red). 2026-04-23 P0 signature: 67
+      # consecutive REVERT verdicts on concordance while MCP stayed green.
+      #
+      # Runs only when handshake + tool are green; revert-loop is a
+      # work-quality signal, meaningful only when MCP itself is healthy.
+      # Does NOT require activity_probe green — activity can be fresh
+      # (new writes happening) WHILE all those writes are failing; that
+      # is the exact state this canary targets.
+      - name: Revert-loop canary (work-quality 24/7)
+        id: revert_loop_probe
+        continue-on-error: true
+        if: >
+          steps.probe.outputs.handshake_status == '0' &&
+          steps.tool_probe.outputs.tool_status == '0'
+        run: |
+          set +e
+          output=$(python scripts/revert_loop_canary.py \
+              --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
+          code=$?
+          set -e
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "revert_status=$code"
+            echo "revert_msg<<${_delim}"
+            echo "$output"
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+          echo "=== revert-loop canary (${PROBE_URL}) exit=$code ==="
+          echo "$output"
+
+      # Combine handshake + tool + last_activity + revert-loop canary
+      # results into the single probe.outputs.overall the alarm-sink
+      # reads. Red if ANY step failed. `status` reports the worst exit
+      # code so downstream paging messages surface the meaningful signal.
       - name: Combine canary results
         id: combine
         run: |
           handshake="${{ steps.probe.outputs.handshake_status }}"
           tool="${{ steps.tool_probe.outputs.tool_status }}"
           activity="${{ steps.activity_probe.outputs.activity_status }}"
+          revert="${{ steps.revert_loop_probe.outputs.revert_status }}"
           # If a downstream step was skipped (because an upstream went
           # red), its *_status is empty. Report the real upstream exit
           # code rather than a synthetic sentinel so operator-facing
@@ -168,6 +202,8 @@ jobs:
             worst="${tool}"
           elif [ -n "${activity}" ] && [ "${activity}" != "0" ]; then
             worst="${activity}"
+          elif [ -n "${revert}" ] && [ "${revert}" != "0" ]; then
+            worst="${revert}"
           else
             worst="0"
           fi
@@ -180,10 +216,14 @@ jobs:
           if [ -z "${activity}" ]; then
             activity="(skipped — upstream red)"
           fi
+          if [ -z "${revert}" ]; then
+            revert="(skipped — upstream red)"
+          fi
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           msg_handshake="${{ steps.probe.outputs.handshake_msg }}"
           msg_tool="${{ steps.tool_probe.outputs.tool_msg }}"
           msg_activity="${{ steps.activity_probe.outputs.activity_msg }}"
+          msg_revert="${{ steps.revert_loop_probe.outputs.revert_msg }}"
           {
             echo "status=${worst}"
             echo "msg<<${_delim}"
@@ -195,16 +235,21 @@ jobs:
             echo ""
             echo "--- last-activity (exit ${activity}) ---"
             echo "${msg_activity}"
+            echo ""
+            echo "--- revert-loop (exit ${revert}) ---"
+            echo "${msg_revert}"
             echo "${_delim}"
             if [ "${handshake}" = "0" ] && [ "${tool}" = "0" ] \
                && ([ "${activity}" = "0" ] \
-                   || [ "${activity}" = "(skipped — upstream red)" ]); then
+                   || [ "${activity}" = "(skipped — upstream red)" ]) \
+               && ([ "${revert}" = "0" ] \
+                   || [ "${revert}" = "(skipped — upstream red)" ]); then
               echo "overall=green"
             else
               echo "overall=red"
             fi
           } >> "$GITHUB_OUTPUT"
-          echo "=== combined: handshake=${handshake} tool=${tool} activity=${activity} worst=${worst} ==="
+          echo "=== combined: handshake=${handshake} tool=${tool} activity=${activity} revert=${revert} worst=${worst} ==="
           # Exit non-zero on red so the run conclusion reflects canary
           # color — alarm-sink uses prior-run conclusion to detect
           # consecutive reds.
@@ -213,8 +258,14 @@ jobs:
             0|"(skipped"*) _activity_is_red="0" ;;
             *) _activity_is_red="1" ;;
           esac
+          _revert_is_red="0"
+          case "${revert}" in
+            0|"(skipped"*) _revert_is_red="0" ;;
+            *) _revert_is_red="1" ;;
+          esac
           if [ "${handshake}" != "0" ] || [ "${tool}" != "0" ] \
-             || [ "${_activity_is_red}" = "1" ]; then
+             || [ "${_activity_is_red}" = "1" ] \
+             || [ "${_revert_is_red}" = "1" ]; then
             exit "${worst}"
           fi
 

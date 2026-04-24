@@ -236,6 +236,216 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 
 ---
 
+# Navigator-promoted 2026-04-23
+
+Eight specs promoted in one pass from plan-page mentions to formally-vetted, dev-dispatchable specs. Source: navigator's 2026-04-23 full-corpus synthesis (`docs/audits/2026-04-23-navigator-full-corpus-synthesis.md`). These were already implicitly ratified in `strategic-synthesis-2026-04-24`, `tier-1-investigation-routing-resolver`, `chatbot-builder-behaviors`, and user-sim mission drafts — promoted here so dev can claim them individually. Dispatch-order notes per spec; internal dependencies surfaced in each.
+
+---
+
+## dry_inspect_node — preview a build/patch before it commits
+
+**Strategy rationale:** Chatbot-builder-behaviors page already demands "show work before running" as a trust primitive. User-sim mission drafts (Priya L1 §2, Devin M27 §2) both fail-bar on "dry-inspect before mutation." Today the chatbot has to reconstruct what would change by reading state and re-inferring — a fragile pattern. First-class `dry_inspect_node` makes the preview architectural rather than emergent behavior, and lets the chatbot narrate what will change with structured evidence.
+
+**Scope:** Add MCP action `extensions action=dry_inspect_node` accepting `{branch_def_id, node_id?}` OR `{branch_spec_json, node_id?}` (latter lets chatbot preview a would-be-built node before calling `build_branch`). Returns `{node_def: {...}, resolved_prompt_template: str, declared_input_keys: [...], declared_output_keys: [...], state_schema_refs: [...], placeholder_validation: {missing: [], extra: [], escaped: []}, policy_resolution: {llm_role, fallback_chain, effective_policy}, warnings: [...]}`. No state writes, no side effects. Companion verb `dry_inspect_patch` accepts `{branch_def_id, changes_json}` and returns the same shape post-hypothetical-patch so the chatbot can show "before/after" diffs to the user before committing the real patch.
+
+**Files:** `workflow/universe_server.py` (two new action handlers), `workflow/graph_compiler.py` (extract existing-prompt-resolution + placeholder-validation into a side-effect-free helper callable outside run context), `workflow/branches.py` (factor out node-policy-resolution into a dry-callable), tests.
+
+**Invariants:** zero state writes, zero wiki writes, zero provider calls (pure structural preview); works on branches that have never been run; works on spec_json that hasn't been built yet; placeholder_validation surfaces the same messages build-time `_missing_state_keys` would emit; policy_resolution output matches what the runtime router would pick at dispatch time (run the same resolver helper, don't re-implement).
+
+**Tests:** dry_inspect of existing node returns full envelope; dry_inspect of non-existent node_id returns structured 404; dry_inspect_patch on add_node op returns the would-be node without mutating; dry_inspect surfaces missing placeholder in validation block; no provider calls observed via spy during dry_inspect; tests cover the spec_json pre-build path (branch that doesn't exist yet).
+
+**Vetted:** 2026-04-23 by navigator. Promoted from plan-page mentions in `chatbot-builder-behaviors` + user-sim mission draft chain-break risks (Priya L1 §2, Devin M27 §2). Substantially the "self-auditing-tools pattern" (design-note `docs/design-notes/2026-04-19-self-auditing-tools.md`) extended to mutation-verb previews.
+
+---
+
+## recursion_limit_override — expose LangGraph recursion cap on run_branch
+
+**Strategy rationale:** `tier-1-investigation-routing-resolver` Step 6 names this as an independent ship-even-if-routing-investigation-finds-nothing. Evidence from runs `9a7329466c774732` + `16c543c154c94a54`: LangGraph's default `recursion_limit=25` is too tight for modern iterative agent graphs — even single-pass conditional-edge graphs hit it. The routing investigation may reduce per-iteration step consumption; but the cap being un-exposed makes any retry_budget > 2 unusable regardless of fix quality.
+
+**Scope:** Add optional `recursion_limit_override: int | None = None` param on `extensions action=run_branch`. When set, passes through to LangGraph's `config={"configurable": {"thread_id": ...}, "recursion_limit": N}`. When unset, uses new default = 100 (raised from 25). Valid range: 10-1000 (guardrail against absurd values). Emit the applied limit in `runs.events` as `recursion_limit_applied: N` so the chatbot can see what was actually used. `get_run` response includes `recursion_limit` so post-hoc analysis can see it. `GraphRecursionError` at runtime produces a structured error carrying the limit + recommendation to raise it.
+
+**Files:** `workflow/universe_server.py` (run_branch action param), `workflow/graph_compiler.py` or wherever `graph.astream` is called (thread config assembly), `workflow/runs.py` (event emission + get_run surfacing), tests.
+
+**Invariants:** unset = default 100 (raised from 25 = intentional baseline bump); value outside 10-1000 rejected at dispatch with clear error; recursion_limit_applied event fires once per run; GraphRecursionError surfaces structured error naming the limit; no change to existing retry_budget semantics.
+
+**Tests:** unset uses 100; override=50 uses 50; override=5 rejected (below min); override=2000 rejected (above max); GraphRecursionError structured with limit value; recursion_limit visible on get_run; event emitted in runs.events.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from `tier-1-investigation-routing-resolver` Step 6 — independent of routing investigation findings. Ships standalone; compose with Tier 1 fix when that lands.
+
+---
+
+## storage_inspect — per-subsystem disk observability surface
+
+**Strategy rationale:** 2026-04-23T20:30Z P0 (disk full, 18h dark before that class) + BUG-023 re-authored. Forever rule (24/7 uptime, zero hosts online) requires that the daemon know its own storage state and surface it to operators before the wall is hit. Today `get_status` exposes no disk info — operator cannot tell from an MCP probe whether the volume is at 50% or 98%. Phase-1 of the BUG-023 fix scope.
+
+**Scope:** Extend `get_status` with a `storage_utilization` block:
+
+```
+storage_utilization: {
+  volume_percent: float,  # 0.0-1.0, root volume usage
+  volume_bytes_total: int,
+  volume_bytes_free: int,
+  per_subsystem: {
+    run_transcripts: {bytes: int, path: str, rotation_policy?: str},
+    knowledge_db: {bytes: int, path: str},
+    story_db: {bytes: int, path: str},
+    lance_indexes: {bytes: int, path: str},
+    checkpoint_db: {bytes: int, path: str},
+    wiki: {bytes: int, path: str},
+    activity_log: {bytes: int, path: str},
+    universe_outputs: {bytes: int, path: str}
+  },
+  growth_estimate: {
+    bytes_per_day_recent: int,  # from last 24h
+    days_until_full_at_recent_rate: float | null  # null if growth=0
+  },
+  pressure_level: Literal['ok','warn','critical']  # warn >=80%, critical >=95%
+}
+```
+
+Composable: uptime-canary can probe `get_status.storage_utilization.pressure_level` and page on warn/critical. Pushover priority=0 at warn, priority=2 at critical (pairs with existing paging ladder).
+
+**Files:** `workflow/universe_server.py` (`get_status` extension), `workflow/storage/__init__.py` (helpers to walk subsystem paths + aggregate bytes + compute growth rate from activity-log timestamps), tests.
+
+**Invariants:** inspect is read-only (no writes); aggregation walk tolerates missing subsystem paths (returns 0 bytes, not error); growth-rate computation falls back to null when no historical data exists; pressure_level thresholds are hard-coded at this spec level, tunable in later iterations; per_subsystem byte counts are approximate at single-digit MB precision (acceptable for observability).
+
+**Tests:** get_status includes storage_utilization block; missing subsystem path returns 0 bytes not error; pressure_level=warn at 80-94%; pressure_level=critical at >=95%; pressure_level=ok below 80%; growth_estimate=null with no historical data; synthetic-fs test manipulating fake volume_percent exercises all three pressure levels.
+
+**Vetted:** 2026-04-23 by navigator. Phase-1 of BUG-023 (re-authored body). Unblocks Phase-2 rotation, Phase-3 auto-prune, Phase-4 hard-cap (all per BUG-023 proposed-fix scope); can ship independently and compose.
+
+---
+
+## publish_version — content-addressed immutable branch snapshots
+
+**Strategy rationale:** Strategic-synthesis Pillar 1 names `publish_version` as Phase-1 substrate. The forkable-Goals story depends on it: forks without content-addressing are moving targets; a fork published today must be citable verbatim by a gate event two years from now. Today `patch_branch` mutates in-place; there is no primitive for "mint an immutable snapshot of this branch at this moment."
+
+**Scope:** Add MCP action `extensions action=publish_version {branch_def_id, notes?}`. Returns `{branch_version_id: str, content_hash: str, published_at: str, publisher: str, parent_version_id: str?}`. `branch_version_id` is a content-addressed ID (e.g. `<branch_def_id>@<hash_prefix>` or a UUID keyed to content hash — pick one form consistently). Snapshots the full branch (node_defs, edges, conditional_edges, state_schema, entry_point) as a write-once record. `patch_branch` on the underlying branch continues to work on the working version, not the published one. `run_branch` accepts EITHER `branch_def_id` (runs working version) OR `branch_version_id` (runs snapshot version) — caller decides. `describe_branch` + `get_branch` surface both the working version and a `published_versions: [...]` list.
+
+**Companion:** `fork_from: branch_version_id` field on `BranchDefinition` — when set, lineage-tracks which published-version this branch forked from. Paired with `canonical_branch` marker on Goals (separate spec). The three together (publish_version + fork_from + canonical_branch) constitute the forkable-Goals primitive stack.
+
+**Files:** `workflow/branches.py` (new Published-Version storage, hash computation, lineage field), `workflow/storage/` or wherever branches persist (immutable-record table), `workflow/universe_server.py` (publish_version action + branch_version_id handling on run_branch/describe_branch/get_branch), tests.
+
+**Invariants:** published versions are immutable (no update verb; any change is a new publish); content_hash deterministic over canonical serialization of branch; parent_version_id optional and validated to exist when set; run_branch with branch_version_id runs the snapshot verbatim (patches to working version don't affect it); describe_branch distinguishes working-vs-published state clearly.
+
+**Tests:** publish_version mints new branch_version_id; re-publishing same content returns same hash (determinism); post-publish patch_branch on working version does not mutate published snapshot; run_branch on branch_version_id runs the snapshot; fork_from references validate; describe_branch lists published_versions; get_branch on branch_version_id returns the snapshot shape.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 1 (Phase-1 substrate). Blocks meaningful gate-event attribution and fork lineage — Pillar 1 + Pillar 2 both depend on it. Ships BEFORE gate-event spec (attribution has nothing to attribute to without published versions). Ships AFTER Tier 1 routing investigation (published versions of a broken-routing branch are useless).
+
+---
+
+## canonical_branch — marker on Goals naming the first-experience fork target
+
+**Strategy rationale:** Strategic-synthesis Pillar 1: "Each Goal needs a **canonical starter branch** — the first-experience fork target for new users. Today multiple branches can bind to one Goal with no canonical designation. Missing primitive." Without it, a new user arriving at a Goal has no way to pick a starting point — they're shown all branches bound to the Goal and must guess which represents the best current approach. The Goal library cannot have a meaningful "here's how to start" experience.
+
+**Scope:** Add `canonical_branch_version_id: str | None = None` field on `Goal`. Set via new action `goals action=set_canonical {goal_id, branch_version_id}` (host + goal-author can set; branch must be bound to the Goal + must be a published version, not a working version). `goals action=get` response surfaces canonical; `goals action=list` includes canonical summary per goal. Unset = "no canonical yet" — natural for new Goals; chatbot-side UX treats as "no starter branch recommended yet."
+
+**Invariants surrounding authority:** only Goal-authors + host may set canonical (identity re-check at set time, paid-market compatible); canonical must point to a `branch_version_id` (content-addressed — see `publish_version` spec), not a working `branch_def_id` (enforces "canonical is stable; updates to canonical are deliberate version-bumps, not silent patches"); a Goal may have at most one canonical at a time; changing canonical records the previous canonical in `canonical_branch_history: [{version_id, set_at, set_by, unset_at}]` so lineage survives updates.
+
+**Files:** `workflow/goals.py` or goals storage module (field + history + authority check + set action), `workflow/universe_server.py` (new action handler), tests.
+
+**Invariants:** only published versions valid as canonical (rejects working branch_def_id with structured error); set_canonical re-verifies caller authority; unauthorized set rejected 403-shaped; history preserved across unset/reset; `goals action=get` always returns canonical key (null-valued when unset).
+
+**Tests:** set_canonical by Goal author succeeds; set by non-author rejected; set with branch_version_id that isn't bound to goal rejected; set with working branch_def_id rejected (not a version); history preserved across re-set; unset returns to null; goals action=list surfaces canonical summaries correctly.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 1 (Goals-as-first-class-coordination-unit). Depends on `publish_version` (canonical must reference a version). Does NOT depend on gate events (canonical can exist before gates fire). Ships after `publish_version` as the next Pillar-1 primitive.
+
+---
+
+## fork_from — content-addressed lineage tracking on branches
+
+**Strategy rationale:** Strategic-synthesis Pillar 1: "**Fork lineage** — who forked from what, tracked automatically so compounding is visible, not silent reinvention." Without it, the library cannot show "branch X was forked by 12 users and improved in 4 directions" — the compounding story that makes the forkable-Goals proposition work. Ships as a thin addition to `BranchDefinition` once `publish_version` is in; the combined feature is the actual Pillar-1 primitive.
+
+**Scope:** Add `fork_from: str | None = None` field on `BranchDefinition`. Value is a `branch_version_id` (content-addressed per `publish_version` spec) — the published version this branch was forked from. Set at branch creation via new optional arg on `build_branch` (`fork_from_version: str | None`) or via `patch_branch` op `set_fork_from`. Immutable-after-set by default (preserves lineage integrity); admin-only override for correction. `describe_branch` + `get_branch` surface `fork_from` + `fork_descendants: [{branch_def_id, author, published_versions_count}]` (descendants computed as branches whose `fork_from` points at any published version of this branch). `goals action=get` includes per-bound-branch fork-count so the leaderboard can surface forking activity.
+
+**Fork descendants visibility:** a new MCP action `extensions action=fork_tree {branch_def_id}` returns the lineage graph — ancestors via `fork_from` chain + descendants via reverse-index. Respects universe isolation (only lineage within the caller's visible universes). Shows fork counts, contributor counts, published-version counts. This is the discovery surface for the forkable-Goals story.
+
+**Files:** `workflow/branches.py` (field, validation), `workflow/universe_server.py` (build_branch arg, patch_branch op, describe_branch + get_branch enrichment, fork_tree action), `workflow/storage/` (reverse-index on fork_from for efficient descendant queries), tests.
+
+**Invariants:** fork_from must point to a valid `branch_version_id` (rejects branch_def_id or non-existent version); fork_from is immutable after set by default (admin override via dedicated flag); fork_tree respects universe isolation (no leakage); descendant counts are eventually-consistent with published versions (indexed); cycles in fork chain rejected at set time.
+
+**Tests:** build_branch with fork_from sets lineage; patch_branch set_fork_from on existing branch adds lineage; set_fork_from pointing at branch_def_id rejected; set_fork_from pointing at non-existent version rejected; fork_tree returns ancestors + descendants; fork_tree respects universe isolation; descendants count matches actual forking activity; cycle-in-chain rejected.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 1. Depends on `publish_version`. Independent of `canonical_branch` (they're sibling Pillar-1 primitives, not sequential). Ships in the Phase-1 substrate triad (publish_version + canonical_branch + fork_from) — that's the forkable-Goals primitive stack.
+
+---
+
+## gate_event — real-world outcome attestation primitive
+
+**Strategy rationale:** Strategic-synthesis Pillar 2 names real-world gate events as the engine's measurement substrate: "real-world gates are not inline LLM evals. They are world events that declare the work successful." The primitive makes the engine's core claim auditable — a prosecutor filed, a book sold, a paper was peer-reviewed, and this branch's output was cited in that event. Without it, quality is LLM-judged (cluster drift) and attribution is hand-waved (claim-not-cause). With it, the engine becomes the first AI-workflow platform where quality feedback comes from the real world.
+
+**Scope:** New first-class record class (Layer-3 substrate — see Layer-3 design session agenda). Schema:
+
+```
+gate_event {
+  id: str (server-owned, immutable),
+  goal_id: str (which Goal this event attests),
+  event_type: str (defined per goal's gate_spec — see deferred schema below),
+  event_date: date,
+  evidence_urls: [str],
+  cites: [{branch_version_id: str, run_id: str?, contribution_summary: str}],
+  attested_by: user_id,
+  attested_at: timestamp,
+  verification_status: Literal['attested','verified','disputed','retracted'],
+  verified_by: user_id?,
+  verified_at: timestamp?,
+  notes: str
+}
+```
+
+MCP actions: `gate_events action=attest {goal_id, event_type, cites, evidence_urls, ...}`; `gate_events action=verify {event_id}` (requires different user than attester, verified_status transitions); `gate_events action=dispute {event_id, reason}`; `gate_events action=list {goal_id?, branch_version_id?}`. Attribution language is load-bearing — UI + API must say "this branch's output was cited in this gate event," never "this branch caused the outcome." Causality is for historians.
+
+**Integration with Pillar 1:** `cites.branch_version_id` is content-addressed per `publish_version`. This is why `publish_version` ships first — long-horizon attribution survival depends on content-addressing. A run from today cited by a gate event two years from now still resolves to the exact branch state that was published.
+
+**Integration with Pillar 2:** `Goal.gate_spec` (separate spec) declares allowed event_types + required evidence fields per Goal. Civic accountability Goal: event_types = [filed_charges, conviction, sentence, policy_change]. Fantasy writing Goal: event_types = [copies_sold, publisher_signed, award_nominated, award_won, translated, adapted]. Paper Goal: event_types = [peer_review_accepted, citation, trial_launched, industry_adoption, replication]. attest validates event_type + evidence shape against the Goal's gate_spec.
+
+**Files:** new module `workflow/gate_events/` (schema, storage, record class), `workflow/universe_server.py` (four new actions), `workflow/goals.py` (gate_spec field — ships in companion spec), tests.
+
+**Invariants:** gate_events are append-only; event_id is server-owned + immutable; verification requires different user than attester (prevents self-verify); disputed events surface in list queries with verification_status; retracted events remain visible with retraction record (audit trail); cites.branch_version_id must resolve to a published version (content-addressed validation); attestation attribution uses "cited by" / "contributed to" language, never causal.
+
+**Tests:** attest creates record; verify by same user rejected; verify by different user succeeds; dispute transitions status; list by goal filters correctly; list by branch_version shows attribution; retracted event still listable with retraction marker; invalid cites.branch_version_id rejected at attest; event_type not in Goal's gate_spec rejected.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 2. DEPENDS on Layer-3 substrate decision (design session output — storage backend decides how this record class persists; MVP may prototype on wiki-plumbed Layer-3 before Layer-3 substrate lands, but that's explicit-prototype not production-ship). DEPENDS on `publish_version` (cites must resolve to content-addressed versions). Does NOT depend on Gate-bonus payout surface (gate events are evidence records; bonuses are an orthogonal economic layer that consumes them).
+
+---
+
+## gate-based leaderboard — rank branches by attributed gate-event attribution
+
+**Strategy rationale:** Strategic-synthesis Pillar 2: "gate-based leaderboard ranks branches by attributed gate events, not run count or LLM scores. This replaces/augments primitive #6 from `next-level-primitives-roadmap`." LLM-judge and upvote-style rankings are both game-able by agents at scale; real-world-gate-event attribution is not. This is the ranking primitive that makes the library's canonical branches rise organically.
+
+**Scope:** Per-Goal leaderboard computed from gate_event.cites. New MCP action `goals action=leaderboard {goal_id, window?: 'all'|'30d'|'90d'|'1y', limit?: int}` returning ranked branches:
+
+```
+{
+  goal_id: str,
+  window: str,
+  ranked: [{
+    branch_version_id: str,
+    branch_def_id: str,
+    author: user_id,
+    gate_event_count: int,
+    gate_event_types: {event_type: count, ...},  # breakdown
+    verified_event_count: int,  # verified-status only
+    most_recent_event_date: date,
+    score: float  # weighted per gate_spec
+  }],
+  total_events_in_window: int
+}
+```
+
+Scoring starts dumb (count of verified gate events weighted per `Goal.gate_spec.event_weights`, if set; uniform weight otherwise) and evolves. Navigator-adjudicator tooling (deferred) can later re-weight. Leaderboards query gate-events by window, aggregate by `cites.branch_version_id`, sort by score desc.
+
+**User-facing framing:** the leaderboard surfaces "here are the branches on this Goal whose output has been cited in the most real-world gate events." Not a popularity contest; not an LLM-grade. Users forking from top-ranked branches get a meaningful "this is working for people" signal.
+
+**Files:** `workflow/goals.py` (leaderboard action + scoring helper), `workflow/gate_events/` (query-by-goal-and-window, aggregation), `workflow/universe_server.py` (action wiring), tests.
+
+**Invariants:** leaderboard is deterministic given a gate_event set + window (reproducible); disputed/retracted events excluded from score; verified events weighted more than attested-only (factor configurable in gate_spec, default 2x); rank ties broken by most_recent_event_date desc then branch_version_id asc (stable); windows computed against `event_date` not `attested_at` (real-world date, not bureaucratic date).
+
+**Tests:** leaderboard with 0 gate events returns empty ranked list; single gate event ranks single branch; two branches with same event count ordered by recent-date; disputed events excluded; verified events weighted 2x by default; custom gate_spec weights applied correctly; window filters correctly; limit caps output.
+
+**Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 2. DEPENDS on `gate_event` spec (this is the consumer). DEPENDS on `publish_version` (ranks by branch_version_id). Ships naturally alongside `gate_event` spec — they form the Pillar-2 ranking surface together.
+
+---
+
 # Deferred specs — needs scoping before dev-dispatchable
 
 The four rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22). Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.

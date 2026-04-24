@@ -4,6 +4,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; C
 
 ## Concerns
 
+- [2026-04-23] **P0 revert-loop — daemon PAUSED**. 3 auto-recoveries (#51/#52/#53) but generator outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`. Task #8/#9 retire symptom/cause.
 - [2026-04-20] **Option 1 LIVE 01:50 UTC** 976ba1c. `tinyassets.io/mcp` → 200 canonical; `mcp.tinyassets.io/mcp` → 403 gated. Worker `tinyassets-mcp-proxy` deployed w/ CF Access headers. **Host: rotate Global API Key** (used in session + terminal history).
 - [2026-04-22] **P0 resolved 01:03 UTC** — `/etc/workflow/env` mode regressed 600 root:workflow on 2026-04-21 07:22; unit runs as user=workflow → EnvironmentFile unreadable → compose crash-loop (67 restarts) → cloudflared down → `tinyassets.io/mcp` 502 for ~18h. Fix: `chmod 640`. Root cause of mode flip unknown — `deploy-prod.yml` or bootstrap path may be overwriting w/ 600; needs audit so this doesn't recur silently overnight again.
 - [2026-04-20] `test_node_eval::test_record_and_get_stats_roundtrip` pre-existing flake. Passes in isolation, flaky in full suite. Surface, not block.
@@ -35,6 +36,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 | Project-scope persistent memory primitive | dev-dispatchable |
 | file_bug is the feature-request verb — docstring + optional kind field | dev-dispatchable |
 | Prompt_template literal-brace escape + build-time missing-key validation | claimed:dev |
+| 8 navigator-promoted specs 2026-04-23 — see `docs/vetted-specs.md` §Navigator-promoted 2026-04-23 | dev-dispatchable |
 | [deferred] Daemon roster + soul.md authoring surface | deferred:needs-scoping |
 | [deferred] Per-node soul_policy field on NodeDefinition | deferred:needs-scoping |
 | [deferred] Branch-contribution ledger | deferred:needs-scoping |
@@ -54,11 +56,13 @@ Claim by setting Status to `claimed:yourname`. Files is the collision boundary. 
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Pushover priority=2 upgrade (Task #8) | `scripts/pushover_page.py` | delivery validated 2026-04-22 02:07 UTC | claimed:dev |
+| Bundle ship (#2+#3+#5+#6) | 10 files listed in task #9 handoff | #6 verifier SHIP | claimed:team-lead |
+| Tier 1 routing investigation (BUG-019/021/022) | `workflow/graph_compiler.py`, tests | bundle landed | claimed:dev |
+| Lane 2: BUG-023 storage observability | TBD | BUG-023 body re-authored | claimed:dev (queued) |
+| Lane 4: GH Actions auto-recovery.yml | `.github/workflows/auto-recovery.yml` | DO_API_TOKEN minted | claimed:team-lead |
+| Layer-3 design session | `docs/design-notes/...` | host schedules | claimed:navigator (agenda draft) |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | #4 merged (4f936fe) | in-progress: run 24756582461 |
 | Row F — 48h smoke + acceptance | `scripts/selfhost_smoke.py` | 48h green window | monitoring |
-| HD-2 secrets.env password-manager backup | host-only action | — | pending:host |
-| HD-4 Cloudflare Global Key rotation | host dashboard | — | pending:host |
 | Mission 10 retest | user-sim | host scope call | claimed:user |
 | #19 Memory-scope Stage 2c flag | — | 30d clean | monitoring |
 
@@ -66,9 +70,8 @@ Claim by setting Status to `claimed:yourname`. Files is the collision boundary. 
 
 ## Next
 
-1. **Host:** seed Pushover secrets (`PUSHOVER_USER_KEY`, `PUSHOVER_APP_TOKEN`) then lead fires one-shot validation RED.
-2. **Host or lead-with-PAT:** fire DR drill #3 via `workflow_dispatch`. Needs GH token w/ `actions:write` scope (none in `$HOME/workflow-secrets.env`). Host dashboard click works too.
-3. **In flight (dev):** Task #6 MCP tool-invocation canary — closes "handshake-green, tool-broken" gap. Task #5 actionlint hook+CI pending verifier. SHA256-pin followup queued behind #6.
-4. **Stack live:** canonical `tinyassets.io/mcp` 200 + tools/list works (verified 01:09 UTC via MCP initialize); DO Droplet auto-restart + nightly backup + offsite GH Release + 6 timers. P0 RCA hardening landed: 0217175 (perm restore) + 19c2261 (Pushover paging) + a62ae30 (ENV-UNREADABLE 4-surface marker + auto-triage) + 4f936fe (DR drill exit-code propagation).
-5. **Host-only remaining:** HD-2 secrets.env password-manager backup; HD-4 Global API Key rotation. Non-uptime-blocking but close for bus factor.
-6. Subordinated: rename-end-state, #11 API asks, mission retests. Not blocking 24/7 uptime.
+1. **Stack live:** canonical `tinyassets.io/mcp` 200 verified 2026-04-23 session start; DO Droplet auto-restart + nightly backup + offsite GH Release + 6 timers green. P0 RCA hardening fully landed (0217175/19c2261/a62ae30/4f936fe). Pushover priority=2 validated end-to-end; Bitwarden vault migration complete; CF Global Key rotated.
+2. **Host or lead-with-PAT:** fire DR drill #3 via `workflow_dispatch`. Needs GH token w/ `actions:write` scope. Host dashboard click works too.
+3. **Dev priority cascade:** pick next from approved-specs dev-dispatchable list (top: per-node llm_policy override, in-flight run recovery part 2, node checkpoints). Full specs in `docs/vetted-specs.md`.
+4. **User-sim:** Mission 10 retest when host is watching browser. Until then user-sim runs offline persona work.
+5. Subordinated: rename-end-state, #11 API asks, modularity-audit seams. Not blocking 24/7 uptime.

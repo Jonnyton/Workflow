@@ -10757,6 +10757,20 @@ def get_status(universe_id: str = "") -> str:
             "action=list."
         )
 
+    # BUG-023 Phase 1 — surface per-subsystem disk observability so
+    # operators can see a storage-pressure signal via the same MCP probe
+    # that carries routing evidence. Uptime canary pages on
+    # pressure_level in {warn, critical}; this block never raises so a
+    # bad stat call can't break the status probe.
+    try:
+        from workflow.storage import inspect_storage_utilization
+        storage_utilization = inspect_storage_utilization()
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        storage_utilization = {
+            "error": "inspect_failed",
+            "detail": str(exc),
+        }
+
     response = {
         "active_host": policy_payload["active_host"],
         "tier_routing_policy": tier_routing_policy,
@@ -10770,6 +10784,7 @@ def get_status(universe_id: str = "") -> str:
         "evidence_caveats": evidence_caveats,
         "caveats": caveats,
         "actionable_next_steps": actionable_next_steps,
+        "storage_utilization": storage_utilization,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }

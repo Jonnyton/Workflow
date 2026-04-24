@@ -69,6 +69,7 @@ class TriageClass:
     IMAGE_PULL_FAILURE = "image_pull_failure"
     TUNNEL_TOKEN = "tunnel_token"
     WATCHDOG_HOTLOOP = "watchdog_hotloop"
+    PROVIDER_EXHAUSTION = "provider_exhaustion"
     UNKNOWN = "unknown"
 
 
@@ -155,6 +156,27 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         True,
         False,
         "systemd start-limit-hit on workflow-daemon; stop + sleep + start",
+    ),
+    # 7. Provider exhaustion — daemon is alive + writing, but every
+    #    draft fails because every provider in the fallback chain is
+    #    cooling / quota-capped / broken. The 2026-04-23 P0 signature:
+    #    workflow-worker looped through 67 revert attempts producing
+    #    empty prose because ollama+codex+claude were all degraded.
+    #    Distinct from disk_full (different root cause, different
+    #    repair): here we stop the worker + pause the universe so the
+    #    loop can't burn more cycles, then page host to fix providers.
+    (
+        TriageClass.PROVIDER_EXHAUSTION,
+        re.compile(
+            r"(?:All providers exhausted|"
+            r"AllProvidersExhaustedError|"
+            r"score\s+0\.0{1,2}\s*--\s*REVERT|"
+            r"Draft:\s*FAILED)",
+            re.IGNORECASE,
+        ),
+        True,   # auto-pause is the repair — safe to invoke without host
+        False,  # not manual-only: the pause action is automatable
+        "daemon alive but every provider cooling — pause worker + page host",
     ),
 ]
 

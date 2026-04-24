@@ -64,3 +64,15 @@ class ContextBundleOverflowError(FantasyAuthorError):
     the bundle is unsafe for LLM dispatch (rather than silently passing
     an over-budget payload that the model will truncate mid-stream).
     """
+
+
+class StorageCapExceeded(FantasyAuthorError):
+    """Per-subsystem storage hard cap reached; new writes refused.
+
+    Raised by ``workflow.storage.caps.enforce_write_cap`` when a
+    subsystem's on-disk size meets or exceeds its configured hard cap.
+    Surfaces loudly (Hard Rule #8) so the 2026-04-23 silent-fill class
+    cannot recur under the Phase-3 cap regime: write-site callers must
+    either handle the raise (e.g. rotate older artifacts first) or
+    propagate it to operator paging.
+    """
