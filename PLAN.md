@@ -211,6 +211,10 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** Pick the best provider per role, then use fallback chains and parallel diversity where they improve resilience. Error loudly when the remaining provider can't produce acceptable work. Fake success is worse than failure.
 
+**Principle (fallback chain correctness is a first-class invariant):** Every provider named in a fallback chain must be either registered AND reachable at startup, or explicitly excluded at startup with a logged reason. Phantom chain entries are a bug. A chain that reads `[claude-code, codex, gemini-free, ...]` but whose first entry's CLI binary is absent from the container silently degrades the whole chain — operators reading config see one chain; the runtime iterates a different one. Register-and-probe at startup; emit structured evidence of the effective chain via `get_status`; refuse to advertise unreachable providers as available. (Corroborated by BUG-025 + 2026-04-21 prod-LLM-binding incident; Gemini/Groq unregistered in prod fallback plus claude-code phantom registration together produced the 2026-04-23 revert-loop P0.)
+
+**Principle (required files must be probed at startup and fail loud if missing):** When code declares a required on-disk artifact (ASP rule files, schema definitions, seeded fixtures, vendored configs), startup must probe for it and refuse to start if absent — not log a WARNING and continue with an empty fallback. Silent substrate-degradation from missing artifacts produces runs that report success while behaving as no-ops; that violates Hard Rule #8 (fail loudly, never silently) at an earlier lifecycle phase. Deploy-pipeline discipline extends to runtime file probes, not just image-layer contents. (Corroborated by BUG-026: `data/world_rules.lp` absent from container image silently reduced the ASP constraint engine to a no-op; BUG-027 proposes the general startup-probe invariant.)
+
 ---
 
 ## API And MCP Interface
