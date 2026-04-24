@@ -921,15 +921,28 @@ def _build_conditional_router(
 ) -> Callable[[dict[str, Any]], str]:
     """Return a LangGraph-compatible router function.
 
-    Reads a single declared output_key from state, maps its string value
-    through ``conditions``. Fallback to the first conditional target if the
-    key is missing — avoids hanging the graph on a bad node.
+    LangGraph's ``add_conditional_edges(source, router, path_map)``
+    contract: the router returns a KEY into ``path_map``, and LangGraph
+    looks up the target node via ``self.ends[router_result]``. Returning
+    a target node directly makes LangGraph raise ``KeyError`` (the
+    target isn't a path_map key). Conditions IS the path_map here, so
+    the router reads the state's output_key and returns it verbatim
+    when it's a valid label; otherwise falls back to the first declared
+    label so the graph cannot hang on a missing/malformed output.
+
+    Rationale for returning-label-not-target: matches
+    ``graph.add_conditional_edges(..., path_map=conditions)`` semantics.
+    Prior shape returned ``conditions[value]`` (a target) which LangGraph
+    then tried to look up as a path_map KEY — always KeyError for any
+    non-empty conditions dict. BUG-019/021/022 root cause (Tier-1
+    investigation, 2026-04-23).
     """
     output_key = ""
     if source_node and source_node.output_keys:
         output_key = source_node.output_keys[0]
 
-    fallback = next(iter(conditions.values()), END)
+    # Fallback must be a LABEL (path_map key), not a target.
+    fallback = next(iter(conditions.keys()), END)
 
     def _route(state: dict[str, Any]) -> str:
         if not output_key:
@@ -937,7 +950,12 @@ def _build_conditional_router(
         value = state.get(output_key, "")
         if not isinstance(value, str):
             value = str(value)
-        return conditions.get(value, fallback)
+        # Return the label when it's a valid path_map key; otherwise
+        # fall back to the first declared label so the graph advances
+        # rather than KeyError-ing.
+        if value in conditions:
+            return value
+        return fallback
 
     return _route
 

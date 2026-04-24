@@ -83,6 +83,13 @@ try:
     except Exception:
         logger.debug("GroqProvider not available")
 
+    try:
+        from workflow.providers.grok_provider import GrokProvider
+        _real_router.register(GrokProvider())
+        logger.info("Registered GrokProvider")
+    except Exception:
+        logger.debug("GrokProvider not available")
+
     logger.info(
         "ProviderRouter ready with providers: %s",
         _real_router.available_providers,
