@@ -159,10 +159,20 @@ def resolve_promise(
     conn.commit()
 
 
+#: Upper bound on how many promises / characters flow into the context
+#: bundle. Defense-in-depth after BUG-024 — even if a universe accrues
+#: hundreds of active entities, the bundle stays under the 15k-token
+#: CoreMemory budget. Top-N by importance / recency is still the most
+#: useful slice for planning + drafting.
+_MAX_WORLD_STATE_ENTITIES = 25
+
+
 def get_active_promises(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Return all active (unresolved) promises."""
+    """Return the top-N active (unresolved) promises by importance."""
     rows = conn.execute(
-        "SELECT * FROM promises WHERE status = 'active' ORDER BY importance DESC"
+        "SELECT * FROM promises WHERE status = 'active' "
+        "ORDER BY importance DESC LIMIT ?",
+        (_MAX_WORLD_STATE_ENTITIES,),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -231,8 +241,15 @@ def get_character(conn: sqlite3.Connection, character_id: str) -> dict[str, Any]
 
 
 def get_all_characters(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Return all tracked characters."""
-    rows = conn.execute("SELECT * FROM character_states").fetchall()
+    """Return the top-N most recently updated tracked characters.
+
+    Ordered by SQLite's ROWID (which INSERT OR REPLACE bumps on upsert),
+    so the character who appeared most recently in a scene sorts first.
+    """
+    rows = conn.execute(
+        "SELECT * FROM character_states ORDER BY ROWID DESC LIMIT ?",
+        (_MAX_WORLD_STATE_ENTITIES,),
+    ).fetchall()
     results = []
     for row in rows:
         r = dict(row)

@@ -258,22 +258,10 @@ def _render_world_state_from_context(world_state: dict[str, Any]) -> str:
         if promise_lines:
             parts.append("Active promises:\n" + "\n".join(promise_lines))
 
-    characters = world_state.get("characters", []) or []
-    if characters:
-        char_lines = []
-        for char in characters[:6]:
-            if not isinstance(char, dict):
-                continue
-            name = char.get("name") or char.get("character_id") or char.get("id")
-            if not name:
-                continue
-            location = char.get("location")
-            emotion = char.get("emotional_state")
-            details = [part for part in (location, emotion) if part and part != "unknown"]
-            suffix = f": {', '.join(details)}" if details else ""
-            char_lines.append(f"- {name}{suffix}")
-        if char_lines:
-            parts.append("Tracked characters:\n" + "\n".join(char_lines))
+    # Characters intentionally NOT rendered from world_state — they live in
+    # memory_context.active_characters and are rendered by
+    # _render_story_memory_from_context. Rendering them from both places
+    # duplicated token cost downstream (BUG-024).
 
     recent_scenes = world_state.get("recent_scenes", []) or []
     if recent_scenes:
@@ -318,8 +306,20 @@ def _render_story_memory_from_context(memory_ctx: dict[str, Any]) -> str:
         char_lines = []
         for name, info in list(chars.items())[:8]:
             if isinstance(info, dict):
-                desc = info.get("description", info.get("role", ""))
-                char_lines.append(f"- {name}: {desc}" if desc else f"- {name}")
+                display_name = info.get("name") or name
+                location = info.get("location")
+                emotion = info.get("emotional_state")
+                details = [
+                    part for part in (location, emotion)
+                    if part and part != "unknown" and part != "neutral"
+                ]
+                if details:
+                    char_lines.append(f"- {display_name}: {', '.join(details)}")
+                else:
+                    desc = info.get("description", info.get("role", ""))
+                    char_lines.append(
+                        f"- {display_name}: {desc}" if desc else f"- {display_name}"
+                    )
             elif isinstance(info, str):
                 char_lines.append(f"- {name}: {info}")
         if char_lines:

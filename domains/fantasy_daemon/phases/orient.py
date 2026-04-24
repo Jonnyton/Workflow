@@ -664,12 +664,19 @@ def _build_world_state_snapshot(
     recent_scenes: list[dict[str, Any]],
     chapter_avg_words: int | None,
 ) -> dict[str, Any]:
-    """Assemble a deterministic world-state snapshot for planning and memory."""
+    """Assemble a deterministic world-state snapshot for planning and memory.
+
+    `characters` is intentionally NOT embedded here — MemoryManager
+    loads them separately via `load_characters(orient_result["characters"])`
+    at `workflow/memory/manager.py:_assemble_orient`. Storing them inside
+    world_state caused CoreMemory to count each character twice (the
+    48535-token fixed-overflow, BUG-024).
+    """
+    del characters  # kept in signature for call-site stability
     return {
         "chapter_number": chapter_number,
         "scene_number": scene_number,
         "chapter_avg_words": chapter_avg_words,
-        "characters": characters,
         "active_promises": active_promises,
         "recent_scenes": recent_scenes,
     }

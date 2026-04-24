@@ -76,7 +76,7 @@ COPY fantasy_daemon/ ./fantasy_daemon/
 # final image free of pip metadata + build tools.
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -e ".[mcp]"
+    /opt/venv/bin/pip install --no-cache-dir -e ".[mcp,gemini,groq]"
 
 # ---------- Stage 2: final ----------
 

@@ -69,6 +69,20 @@ try:
     except Exception:
         logger.debug("OllamaProvider not available")
 
+    try:
+        from workflow.providers.gemini_provider import GeminiProvider
+        _real_router.register(GeminiProvider())
+        logger.info("Registered GeminiProvider")
+    except Exception:
+        logger.debug("GeminiProvider not available")
+
+    try:
+        from workflow.providers.groq_provider import GroqProvider
+        _real_router.register(GroqProvider())
+        logger.info("Registered GroqProvider")
+    except Exception:
+        logger.debug("GroqProvider not available")
+
     logger.info(
         "ProviderRouter ready with providers: %s",
         _real_router.available_providers,
