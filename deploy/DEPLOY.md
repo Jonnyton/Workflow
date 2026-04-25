@@ -157,14 +157,7 @@ Expect `[canary] OK`. **This is the pass gate.** Once green, the
 Hetzner box is serving the canonical URL; your home tunnel can stay
 off permanently.
 
-Also verify direct-tunnel parity:
-
-```bash
-python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp --verbose
-```
-
-Expect `[canary] OK`. If apex is green but `mcp.` is red (or vice versa),
-see the **Diagnosis split** section below.
+If the canary returns red, see the **Diagnosis** section below.
 
 ## Step 6 — Power off the host tunnel (optional, only after you've watched green for 10+ min)
 
@@ -189,7 +182,7 @@ If step 4 or 5 fails:
 
 ```bash
 sudo systemctl stop workflow-daemon
-# Investigate via journalctl; see Diagnosis split below.
+# Investigate via journalctl; see Diagnosis section below.
 # To fully revert:
 sudo systemctl disable workflow-daemon
 sudo rm /etc/systemd/system/workflow-daemon.service
@@ -205,16 +198,16 @@ off the home tunnel at Step 6.
 
 ---
 
-## Diagnosis split (when things go red)
+## Diagnosis (when things go red)
 
-Two URLs gives us two signals. The color asymmetry names the broken layer.
-
-| `tinyassets.io/mcp` | `mcp.tinyassets.io/mcp` | Diagnosis |
-|---|---|---|
-| green | green | All healthy. |
-| red | green | **Cloudflare Worker or route broken.** The `tinyassets-mcp-proxy` Worker either isn't deployed or its route `tinyassets.io/mcp*` isn't live. Check Cloudflare dashboard → Workers → Triggers. |
-| green | red | Worker is caching / returning stale responses; tunnel origin is down. Check `systemctl status workflow-daemon` on Hetzner. |
-| red | red | **Tunnel or daemon down.** `systemctl status workflow-daemon` on Hetzner; `docker logs workflow-daemon` + `docker logs workflow-tunnel`. |
+**Single-URL architecture (2026-04-20).** Per Hard Rule #10, the canonical
+public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io`
+is an Access-gated internal tunnel origin that returns 401/403 to
+unauthenticated probes — the former dual-URL color-asymmetry diagnosis
+is retired. Layer diagnosis now uses Cloudflare Worker logs +
+cloudflared tunnel logs. See
+`docs/ops/dns-tunnel-single-entry-cutover.md` § Observability after
+cutover for the post-cutover playbook.
 
 ## Common failure modes
 
