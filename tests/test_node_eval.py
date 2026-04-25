@@ -30,9 +30,15 @@ from workflow.node_eval import (
 
 
 @pytest.fixture
-def evaluator(tmp_path):
+def evaluator(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     db = tmp_path / "node_eval.db"
-    return NodeEvaluator(db_path=db)
+    ev = NodeEvaluator(db_path=db)
+    yield ev
+    import sqlite3
+    conn = sqlite3.connect(str(db))
+    conn.execute("PRAGMA wal_checkpoint(FULL)")
+    conn.close()
 
 
 def _record(

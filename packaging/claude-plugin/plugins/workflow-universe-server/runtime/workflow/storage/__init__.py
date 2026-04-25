@@ -291,6 +291,63 @@ def author_server_db_path(base_path: str | Path) -> Path:
 
 
 # -------------------------------------------------------------------
+# Bootstrap env-readability probe (closes 2026-04-22 Concern)
+# -------------------------------------------------------------------
+
+_WORKFLOW_ENV_PATH = Path("/etc/workflow/env")
+
+_logger = __import__("logging").getLogger(__name__)
+
+
+def probe_env_readability(
+    env_path: Path = _WORKFLOW_ENV_PATH,
+) -> bool:
+    """Check that the operator env file is readable by the current process.
+
+    Returns True when the file is readable (or absent — absent is fine,
+    the env file is only provisioned in cloud/container deploys). Returns
+    False when the file exists but cannot be read, and emits a WARNING
+    log with the observed mode bits and the fix command so the operator
+    can recover without hunting through docs.
+
+    This is a non-crashing probe — degraded operation with a visible
+    warning is preferable to a dead daemon. Callers should invoke this
+    once at startup so the warning appears in the initial log burst where
+    operators are most likely to see it.
+    """
+    if not env_path.exists():
+        return True
+
+    try:
+        env_path.open("r").close()
+        return True
+    except PermissionError:
+        try:
+            import stat as _stat
+            mode = env_path.stat().st_mode
+            mode_str = _stat.filemode(mode)
+        except OSError:
+            mode_str = "(unknown)"
+        _logger.warning(
+            "Bootstrap env file %s exists but is NOT readable by the current "
+            "process (mode=%s). Daemon will start in degraded mode — secrets "
+            "from env file are unavailable. Fix: chmod 644 %s",
+            env_path,
+            mode_str,
+            env_path,
+        )
+        return False
+    except OSError as exc:
+        _logger.warning(
+            "Bootstrap env file %s could not be opened: %s. "
+            "Daemon will start in degraded mode.",
+            env_path,
+            exc,
+        )
+        return False
+
+
+# -------------------------------------------------------------------
 # Storage utilization observability (BUG-023 Phase 1)
 # -------------------------------------------------------------------
 
@@ -315,7 +372,7 @@ _PRESSURE_WARN_THRESHOLD = 0.80
 _PRESSURE_CRITICAL_THRESHOLD = 0.95
 
 
-def _path_size_bytes(path: Path) -> int:
+def path_size_bytes(path: Path) -> int:
     """Return the on-disk size of ``path`` in bytes.
 
     - Missing paths → 0 (not an error; a subsystem may be uninitialized).
@@ -401,7 +458,7 @@ def inspect_storage_utilization() -> dict[str, Any]:
     for name, rel_path, _is_dir in _SUBSYSTEM_PATHS:
         abs_path = root / rel_path
         per_subsystem[name] = {
-            "bytes": _path_size_bytes(abs_path),
+            "bytes": path_size_bytes(abs_path),
             "path": str(abs_path),
         }
 

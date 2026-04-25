@@ -205,22 +205,22 @@ class TestGetStatusIntegration:
 
 class TestPathSizeHelper:
     def test_missing_path_zero(self, tmp_path: Path):
-        assert storage._path_size_bytes(tmp_path / "nope") == 0
+        assert storage.path_size_bytes(tmp_path / "nope") == 0
 
     def test_file_size(self, tmp_path: Path):
         p = tmp_path / "f.bin"
         p.write_bytes(b"x" * 2048)
-        assert storage._path_size_bytes(p) == 2048
+        assert storage.path_size_bytes(p) == 2048
 
     def test_directory_walk(self, tmp_path: Path):
         (tmp_path / "a.bin").write_bytes(b"1" * 100)
         sub = tmp_path / "sub"
         sub.mkdir()
         (sub / "b.bin").write_bytes(b"2" * 50)
-        assert storage._path_size_bytes(tmp_path) == 150
+        assert storage.path_size_bytes(tmp_path) == 150
 
     def test_neither_file_nor_dir_returns_zero(self, tmp_path: Path):
         # A symlink to a non-existent target satisfies .exists()==False.
         # Also covers edge cases like sockets / FIFOs.
         # Using a path that doesn't exist covers the same branch here.
-        assert storage._path_size_bytes(tmp_path / "ghost") == 0
+        assert storage.path_size_bytes(tmp_path / "ghost") == 0
