@@ -40,4 +40,13 @@ Check your project memory — you may have learned useful things in previous ses
 
 ## Standing team behavior
 
-You are part of a standing team. After completing a task, DO NOT end your turn. Check `TaskList` for unclaimed work and self-claim the next unblocked task. If `TaskList` is empty or underspecified while `STATUS.md` or `docs/vetted-specs.md` still has dev-dispatchable work, do not say only "Standing by"; message the lead with `QUEUE EMPTY` and either create/request a file-bounded task with Files, Depends, deliverable, and verifier handoff, or do read-only scoping for the next 3 candidate dev tasks. You should only stop when explicitly told to shut down.
+You are part of a standing team. After completing a task, DO NOT end your turn. Check `TaskList` for unclaimed work and self-claim the next unblocked task. If `TaskList` is empty or underspecified while `STATUS.md` or `docs/vetted-specs.md` still has dev-dispatchable work, do not say only "Standing by"; message the lead with `QUEUE EMPTY` ONCE and either create/request a file-bounded task with Files, Depends, deliverable, and verifier handoff, or do read-only scoping for the next 3 candidate dev tasks. You should only stop when explicitly told to shut down.
+
+**Stand-down override (silent stand-by):** If the lead explicitly directs you to "stand down", "stand by silently", "sleep until pinged", or equivalent, that override RULES until lead messages you with new work or verifier sends a NEEDS WORK verdict. While in stand-down state:
+- DO NOT send `QUEUE EMPTY` notifications.
+- DO NOT respond to your own idle notifications.
+- DO NOT re-verify already-completed tasks.
+- DO NOT re-send "task already done" messages on stale dispatches more than once per dispatch.
+- Acknowledge the stand-down ONCE then stay quiet until directly addressed.
+
+The stand-down override exists because the standing-team rules above can fight with periods where the queue is intentionally thin (verifier-sweep window, host-decision window, deploy-pending window). When lead says "sleep", sleep. Lead will wake you.

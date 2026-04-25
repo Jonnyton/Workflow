@@ -17,6 +17,11 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [2026-04-19] Navigator follow-up: modularity audit flags `universe_server`, discovery, and `daemon_server` seams.
 - [2026-04-24] Task #9 host Qs: are GROQ/GEMINI/XAI in GH Actions secrets? Host validates rotation e2e after deploy step ships.
 - [2026-04-25] ChatGPT publish blocked in current login: `Workflow DEV` is connected as Plus/private app, not workspace admin.
+- [2026-04-25] ChatGPT connector approval bug: Update Node approval errored; retry saved node v2.
+- [2026-04-25] ChatGPT Run Branch approval stalled after access grant; no run ID rendered.
+- [2026-04-25] BUG-030 filed: rename approval stalled; friendly workflow name did not save.
+- [2026-04-25] ChatGPT UX: normal users need name-based workflow refs, not raw branch IDs.
+- [2026-04-25] BUG-029 filed: `extract_claims` empty LLM response gives no clear user action.
 
 ## Approved Specs
 
@@ -24,27 +29,20 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Spec | Status |
 |---|---|
-| Continue branch - workspace-memory continuity primitive | claimed:dev (Task #37 in_progress) |
-| Gate bonuses MCP wiring - claim/unstake/release with bonus_stake | claimed:dev (Task #38) |
-| Payments escrow MCP wiring - extensions action=escrow_* | claimed:dev (Task #41) |
-| patch_branch docstring batch-ops example + control_station hint | claimed:dev-2 (Task #39) |
-| Maya LIVE-F3 vocabulary leak - control_station prompt discipline | claimed:dev-2 (Task #40) |
-| teammate_message - inter-node messaging primitive | dev-dispatchable |
-| In-flight run recovery - part 2 | dev-dispatchable |
-| publish_version + canonical_branch + fork_from + gate_event + gate-leaderboard | dev-dispatchable (multi-day) |
 | [deferred] Daemon roster + node soul/ledger/attribution/royalty/outcome/bounty/fair-distribution items | needs-scoping |
 
 ## Work
 
-Active dev queue: #37/#38/#41 on dev; #39/#40 on dev-2. All on writable-now main; additive-only constraint lifted.
+Both devs idle. ~7 bundles awaiting verifier SHIP. Host decisions outstanding: R7 storage split (gates rename end-state), Mark-branch-canonical (gates Task #33 file_bug auto-trigger), cloud daemon redeploy (gates Task #32 wiki migration), audit-doc review for #28/#29 implementation phases.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| continue_branch MCP handler (#37) | `universe_server.py` + mirror | - | in_progress:dev |
-| gate bonuses MCP wiring (#38) | `universe_server.py`, `gates/actions.py` | #37 | claimed:dev |
-| Payments escrow MCP wiring (#41) | `universe_server.py`, `payments/actions.py` | #38 | claimed:dev |
-| patch_branch batch docs (#39) | `universe_server.py` docstring + prompt | - | claimed:dev-2 |
-| Maya LIVE-F3 vocabulary leak (#40) | `_CONTROL_STATION_PROMPT` + grep test | #39 | claimed:dev-2 |
+| Cloud daemon redeploy — picks up BUG-028 + #30 + #14 + others | DO droplet | host | host-action |
+| R7 storage-split status confirmation | exec-plan: `docs/exec-plans/active/2026-04-19-rename-end-state.md` | host | host-decision |
+| Mark-branch canonical decision (Task #33 phase 0) | live MCP `goals action=propose/bind/set_canonical` | host | host-decision |
+| #28 + #29 audit-doc review | `docs/audits/2026-04-25-{engine-domain-api-separation,universe-server-decomposition}.md` | host | host-review |
+| Verifier SHIP sweep — 7 bundles (#2 #21 #22 #23 #24 #30 #31 #33-skel) | various | verifier | in-progress |
+| Wiki status migration (#32) — BUG-002/003/007/014A/015/016/018/020 + tier-1 page closing paragraph + BUG-003 dup cleanup | live wiki via `wiki action=write` | cloud-redeploy | post-deploy |
 | Arch audit #5/#6 + multi-week #9-#11 | `docs/design-notes/2026-04-24-architecture-audit.md` | host-review | host-review |
 | Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | - | host or lead-with-PAT |
