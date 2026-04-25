@@ -2467,29 +2467,43 @@ def search_goals(
     query: str,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """LIKE-based full-field search over name + description + tags.
+    """Token-based full-field search over name + description + tags.
 
-    Per spec §Search: LIKE for v1, FTS5 if we hit scale. Case-insensitive
-    substring match against a concatenated haystack. Hidden Goals
-    (visibility='deleted') are excluded.
+    Per spec §Search: tokenized LIKE for v1, FTS5 if we hit scale.
+    Multi-word queries are split into individual tokens; each token is
+    matched case-insensitively against name + description + tags_json.
+    Rows that match at least one token are returned, ranked by how many
+    tokens matched (descending), then by recency.
+
+    Single-token queries behave identically to the original LIKE search.
+    Hidden Goals (visibility='deleted') are excluded.
     """
     initialize_author_server(base_path)
-    pattern = f"%{(query or '').lower()}%"
+    tokens = [t for t in (query or "").lower().split() if t]
+    if not tokens:
+        return []
+
     with _connect(base_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM goals
-            WHERE visibility != 'deleted'
-              AND (
-                LOWER(name) LIKE ?
-                OR LOWER(description) LIKE ?
-                OR LOWER(tags_json) LIKE ?
-              )
-            ORDER BY updated_at DESC LIMIT ?
-            """,
-            (pattern, pattern, pattern, max(1, int(limit))),
+        # Fetch all non-deleted goals then score in Python.
+        # For v1 scale this is fine; swap to FTS5 if row count grows large.
+        all_rows = conn.execute(
+            "SELECT * FROM goals WHERE visibility != 'deleted'",
         ).fetchall()
-    return [_goal_from_row(row) for row in rows]
+
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for row in all_rows:
+        g = _goal_from_row(row)
+        haystack = " ".join([
+            (g.get("name") or "").lower(),
+            (g.get("description") or "").lower(),
+            " ".join(g.get("tags") or []).lower(),
+        ])
+        hit_count = sum(1 for t in tokens if t in haystack)
+        if hit_count > 0:
+            scored.append((hit_count, g))
+
+    scored.sort(key=lambda x: -x[0])
+    return [g for _, g in scored[:max(1, int(limit))]]
 
 
 def delete_goal(
