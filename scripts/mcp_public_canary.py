@@ -20,7 +20,7 @@ Exit codes
 Usage
 -----
     python scripts/mcp_public_canary.py
-    python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp
+    python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp
     python scripts/mcp_public_canary.py --timeout 15
 
 All output on failure goes to stderr so tray can stream it. stdout
@@ -38,7 +38,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-DEFAULT_URL = "https://mcp.tinyassets.io/mcp"
+DEFAULT_URL = "https://tinyassets.io/mcp"
 DEFAULT_TIMEOUT = 10.0
 
 _INIT_PAYLOAD = {
