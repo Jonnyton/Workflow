@@ -212,7 +212,7 @@ class TestFileBugCollisionRetry:
             p = Path(path) if not isinstance(path, Path) else path
             if (
                 mode == "x"
-                and "BUG-002" in p.name
+                and "bug-002" in p.name.lower()
                 and not first_call["fired"]
             ):
                 first_call["fired"] = True
@@ -354,3 +354,72 @@ def test_render_bug_markdown_kind_and_extra_tags():
     assert "feature" in tags_line
     assert "ux" in tags_line
     assert "roadmap" in tags_line
+
+
+# ── BUG-028: slug-case roundtrip ─────────────────────────────────────────────
+# file_bug must create lowercase filenames so that wiki action=write can
+# resolve the same slug without a case mismatch (BUG-001-... vs bug-001-...).
+
+
+class TestBug028SlugCaseRoundtrip:
+    def test_file_bug_creates_lowercase_filename(self, wiki_dir):
+        """file_bug must produce an all-lowercase filename (no BUG-NNN prefix)."""
+        result = json.loads(wiki(
+            action="file_bug",
+            title="Slug Case Test",
+            component="wiki",
+            severity="minor",
+        ))
+        assert result.get("status") == "filed"
+        path_str = result["path"]
+        filename = path_str.split("/")[-1]
+        assert filename == filename.lower(), (
+            f"file_bug produced a non-lowercase filename: {filename!r}. "
+            "BUG-028: write action uses _sanitize_slug which lowercases; "
+            "filenames must match."
+        )
+
+    def test_file_bug_then_write_roundtrips(self, wiki_dir):
+        """file_bug followed by wiki write to the same slug updates, not duplicates."""
+        filed = json.loads(wiki(
+            action="file_bug",
+            title="Roundtrip Test Bug",
+            component="wiki",
+            severity="minor",
+            observed="broken",
+            expected="works",
+        ))
+        assert filed.get("status") == "filed"
+        path_str = filed["path"]
+        filename = path_str.split("/")[-1]  # e.g. bug-001-roundtrip-test-bug.md
+
+        # Write an update to the same file using the same filename.
+        updated_content = "---\nid: BUG-001\ntitle: Updated\n---\n# Updated\n"
+        write_result = json.loads(wiki(
+            action="write",
+            category="bugs",
+            filename=filename,
+            content=updated_content,
+        ))
+        assert write_result.get("status") in ("updated", "drafted", "draft-update"), (
+            f"Expected an update, got: {write_result}"
+        )
+        # Verify only one file exists for this bug (no duplicate).
+        bugs_dir = wiki_dir / "pages" / "bugs"
+        bug_files = list(bugs_dir.glob("*.md"))
+        assert len(bug_files) == 1, (
+            f"Expected exactly 1 bug file, got {[f.name for f in bug_files]}. "
+            "BUG-028: write must update in-place, not create a duplicate."
+        )
+
+    def test_next_bug_id_finds_lowercase_files(self, wiki_dir):
+        """_next_bug_id must find lowercase bug-NNN-... files written by file_bug."""
+        bugs_dir = wiki_dir / "pages" / "bugs"
+        (bugs_dir / "bug-003-some-title.md").write_text("x", encoding="utf-8")
+        assert _next_bug_id(bugs_dir) == "BUG-004"
+
+    def test_next_bug_id_finds_uppercase_files_too(self, wiki_dir):
+        """_next_bug_id must also find legacy uppercase BUG-NNN-... files."""
+        bugs_dir = wiki_dir / "pages" / "bugs"
+        (bugs_dir / "BUG-007-legacy.md").write_text("x", encoding="utf-8")
+        assert _next_bug_id(bugs_dir) == "BUG-008"

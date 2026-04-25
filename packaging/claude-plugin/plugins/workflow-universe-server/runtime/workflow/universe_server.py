@@ -1491,6 +1491,37 @@ def _action_inspect_universe(universe_id: str = "", **_kwargs: Any) -> str:
         if pending:
             result["pending_requests"] = len(pending)
 
+    # Cross-surface hint — helps chatbots discover cross-domain work even
+    # when the active universe is themed (e.g. fantasy). The workspace is
+    # one container; goals, branches, and wiki span all domains.
+    result["cross_surface_hint"] = {
+        "note": (
+            "This workspace is one container; cross-domain branches and Goals "
+            "live at extensions + goals + wiki regardless of this workspace's theme."
+        ),
+        "paths": [
+            {
+                "action": "extensions action=list_branches",
+                "purpose": "All workflows across all domains",
+            },
+            {
+                "action": "goals action=list",
+                "purpose": (
+                    "Domain-agnostic intents "
+                    "(research, software, science, fantasy, etc.)"
+                ),
+            },
+            {
+                "action": "wiki action=search",
+                "purpose": "Cross-domain notes, bugs, and design plans",
+            },
+            {
+                "action": "universe action=list",
+                "purpose": "Other workspaces if multiple exist",
+            },
+        ],
+    }
+
     return json.dumps(result, default=str)
 
 
@@ -3752,6 +3783,24 @@ def extensions(
     verifier_id: str = "",
     disputed_by: str = "",
     retracted_by: str = "",
+    schedule_id: str = "",
+    cron_expr: str = "",
+    interval_seconds: float = 0.0,
+    owner_actor: str = "",
+    inputs_template_json: str = "",
+    skip_if_running: bool = False,
+    subscription_id: str = "",
+    active_only: bool = True,
+    outcome_id: str = "",
+    evidence_url: str = "",
+    gate_event_id: str = "",
+    outcome_payload_json: str = "",
+    outcome_note: str = "",
+    parent_branch_def_id: str = "",
+    child_branch_def_id: str = "",
+    contribution_kind: str = "remix",
+    credit_share: float = 0.0,
+    max_depth: int = 10,
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -4043,6 +4092,52 @@ def extensions(
         }
         return inspect_dry_handler(di_kwargs)
 
+    # ── Scheduler ──────────────────────────────────────────────────────────
+    scheduler_handler = _SCHEDULER_ACTIONS.get(action)
+    if scheduler_handler is not None:
+        sched_kwargs: dict[str, Any] = {
+            "branch_def_id": branch_def_id,
+            "cron_expr": cron_expr,
+            "interval_seconds": interval_seconds,
+            "owner_actor": owner_actor,  # empty = "all" for list; write handlers default to anon
+            "inputs_template_json": inputs_template_json,
+            "skip_if_running": skip_if_running,
+            "schedule_id": schedule_id,
+            "subscription_id": subscription_id,
+            "event_type": event_type,
+            "active_only": active_only,
+        }
+        return scheduler_handler(sched_kwargs)
+
+    # ── Outcome events ─────────────────────────────────────────────────────
+    outcome_handler = _OUTCOME_ACTIONS.get(action)
+    if outcome_handler is not None:
+        oc_kwargs: dict[str, Any] = {
+            "branch_def_id": branch_def_id,
+            "run_id": run_id,
+            "outcome_id": outcome_id,
+            "outcome_type": event_type,  # reuse event_type param
+            "evidence_url": evidence_url,
+            "gate_event_id": gate_event_id,
+            "payload_json": outcome_payload_json,
+            "note": outcome_note,
+            "limit": limit,
+        }
+        return outcome_handler(oc_kwargs)
+
+    # ── Attribution chain ──────────────────────────────────────────────────
+    attribution_handler = _ATTRIBUTION_ACTIONS.get(action)
+    if attribution_handler is not None:
+        attr_kwargs: dict[str, Any] = {
+            "parent_branch_def_id": parent_branch_def_id,
+            "child_branch_def_id": child_branch_def_id,
+            "contribution_kind": contribution_kind,
+            "credit_share": credit_share,
+            "max_depth": max_depth,
+            "actor_id": _current_actor(),
+        }
+        return attribution_handler(attr_kwargs)
+
     return json.dumps({
         "error": f"Unknown action '{action}'.",
         "available_actions": [
@@ -4067,6 +4162,10 @@ def extensions(
             "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
             "attest_gate_event", "verify_gate_event", "dispute_gate_event",
             "retract_gate_event", "get_gate_event", "list_gate_events",
+            "schedule_branch", "unschedule_branch", "list_schedules",
+            "subscribe_branch", "unsubscribe_branch",
+            "record_outcome", "list_outcomes", "get_outcome",
+            "record_remix", "get_provenance",
         ],
     })
 
@@ -4412,10 +4511,34 @@ def _ext_branch_create(kwargs: dict[str, Any]) -> str:
     })
 
 
+def _resolve_branch_id(bid_or_name: str, base_path: str) -> str:
+    """Return branch_def_id for either a branch_def_id or a branch name.
+
+    Tries exact ID match first (fast path via get_branch_definition).
+    Falls back to case-insensitive name search via list_branch_definitions.
+    Returns the original string unchanged if no match is found — the caller's
+    KeyError handler will surface the "not found" error as usual.
+    """
+    from workflow.daemon_server import get_branch_definition, list_branch_definitions
+
+    if not bid_or_name:
+        return bid_or_name
+    try:
+        get_branch_definition(base_path, branch_def_id=bid_or_name)
+        return bid_or_name
+    except KeyError:
+        pass
+    needle = bid_or_name.lower()
+    for b in list_branch_definitions(base_path, viewer=_current_actor()):
+        if (b.get("name") or "").lower() == needle:
+            return b["branch_def_id"]
+    return bid_or_name
+
+
 def _ext_branch_get(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import get_branch_definition, list_gate_claims
 
-    bid = kwargs.get("branch_def_id", "").strip()
+    bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
         return json.dumps({"error": "branch_def_id is required."})
     try:
@@ -4442,6 +4565,13 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
     related = _related_wiki_pages(branch)
     branch["related_wiki_pages"] = related["items"]
     branch["related_wiki_pages_truncated"] = related["truncated_count"]
+    unapproved_sc = [
+        {"node_id": nd.get("node_id", ""), "display_name": nd.get("display_name", "")}
+        for nd in branch.get("node_defs", [])
+        if nd.get("source_code") and not nd.get("approved", False)
+    ]
+    branch["unapproved_source_code_nodes"] = unapproved_sc
+    branch["runnable"] = not unapproved_sc
     return json.dumps(branch, default=str)
 
 
@@ -4903,7 +5033,7 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
     from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
 
-    bid = kwargs.get("branch_def_id", "").strip()
+    bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
         return json.dumps({"error": "branch_def_id is required."})
     try:
@@ -4913,6 +5043,12 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
 
     branch = BranchDefinition.from_dict(source_dict)
     errors = branch.validate()
+
+    unapproved_sc = [
+        {"node_id": nd.get("node_id", ""), "display_name": nd.get("display_name", "")}
+        for nd in source_dict.get("node_defs", [])
+        if nd.get("source_code") and not nd.get("approved", False)
+    ]
 
     node_lines = [
         f"  - {n.node_id}: {n.display_name}"
@@ -4930,6 +5066,13 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         for f in branch.state_schema
     ] or ["  (no state fields yet)"]
 
+    approval_warning_lines = [
+        f"  - APPROVAL REQUIRED: node '{n['node_id']}' ({n['display_name']}) has"
+        " unapproved source_code — host must run extensions action=approve_source_code"
+        " before this branch can run."
+        for n in unapproved_sc
+    ]
+
     problem_lines = (
         [f"  - {err}" for err in errors]
         if errors
@@ -4938,7 +5081,7 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
 
     mermaid = _branch_mermaid(branch)
 
-    summary = "\n".join([
+    summary_parts = [
         f"Branch: {branch.name or '(unnamed)'}  [{branch.branch_def_id}]",
         f"Author: {branch.author}   Domain: {branch.domain_id}",
         f"Entry point: {branch.entry_point or '(not set)'}",
@@ -4954,13 +5097,19 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "",
         "Open problems:",
         *problem_lines,
+    ]
+    if approval_warning_lines:
+        summary_parts += ["", "Approval warnings (branch NOT runnable):"]
+        summary_parts += approval_warning_lines
+    summary_parts += [
         "",
         "Graph:",
         mermaid,
         "",
         "Note: run this branch with action='run_branch' once validated. "
         "Pass state field values via inputs_json.",
-    ])
+    ]
+    summary = "\n".join(summary_parts)
     related = _related_wiki_pages(source_dict)
 
     # Lineage: expose fork_from + compute fork_descendants.
@@ -4988,6 +5137,8 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "mermaid": mermaid,
         "valid": not errors,
         "error_count": len(errors),
+        "runnable": not errors and not unapproved_sc,
+        "unapproved_source_code_nodes": unapproved_sc,
         "fork_from": fork_from,
         "fork_descendants": fork_descendants,
         "related_wiki_pages": related["items"],
@@ -5810,12 +5961,31 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
 
     saved = save_branch_definition(_base_path(), branch_def=staging.to_dict())
     persisted = BranchDefinition.from_dict(saved)
+
+    _SKIP_DIFF = {"updated_at", "created_at", "node_defs", "edges",
+                  "conditional_edges", "graph_nodes", "state_schema", "stats"}
+    patched_fields = [
+        k for k in source
+        if k not in _SKIP_DIFF and source.get(k) != saved.get(k)
+    ]
+
+    post_patch = {
+        "branch_def_id": persisted.branch_def_id,
+        "name": persisted.name,
+        "entry_point": persisted.entry_point,
+        "node_count": len(persisted.node_defs),
+        "edge_count": len(persisted.edges),
+        "visibility": persisted.visibility,
+    }
+
     truncated = len(persisted.node_defs) > 12
     text_lines = [
         f"**Patched branch '{persisted.name}'**: applied {len(changes)} op(s). "
         f"{len(persisted.node_defs)} nodes, {len(persisted.edges)} edges, "
         f"entry=`{persisted.entry_point}`.",
     ]
+    if patched_fields:
+        text_lines += ["", f"Changed fields: {', '.join(patched_fields)}."]
     if truncated:
         text_lines += [
             "",
@@ -5830,6 +6000,8 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "ops_applied": len(changes),
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
+        "patched_fields": patched_fields,
+        "post_patch": post_patch,
         "branch": saved,
     }, default=str)
 
@@ -6859,6 +7031,73 @@ def _ensure_runs_recovery() -> None:
     _RUNS_RECOVERY_DONE = True
 
 
+_FAILURE_TAXONOMY: list[tuple[type, str, str]] = []
+
+
+def _build_failure_taxonomy() -> list[tuple[type, str, str]]:
+    """Build the (exc_type, failure_class, suggested_action) table lazily."""
+    rows: list[tuple[type, str, str]] = []
+    try:
+        from workflow.graph_compiler import EmptyResponseError
+        rows.append((
+            EmptyResponseError,
+            "empty_llm_response",
+            "Check provider config or try a different model via the llm_type param.",
+        ))
+    except ImportError:
+        pass
+    rows.append((
+        RecursionError,
+        "recursion_limit",
+        "Branch loop may be too deep; raise recursion_limit_override param or simplify loop.",
+    ))
+    rows.append((
+        TimeoutError,
+        "timeout",
+        "Branch run timed out; try a shorter branch or increase timeout param.",
+    ))
+    return rows
+
+
+def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
+    for exc_type, failure_class, suggested_action in _build_failure_taxonomy():
+        if isinstance(exc, exc_type):
+            return {
+                "status": "error",
+                "error": f"Run failed: {exc}",
+                "failure_class": failure_class,
+                "suggested_action": suggested_action,
+            }
+    msg = str(exc).lower()
+    if "provider" in msg or "api key" in msg or "auth" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "provider_unavailable",
+            "suggested_action": (
+                "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys."
+            ),
+        }
+    if "approv" in msg or "source_code" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "node_not_approved",
+            "suggested_action": (
+                "Ask host to approve the source_code node via extensions"
+                " action=approve_source_code before running."
+            ),
+        }
+    return {
+        "status": "error",
+        "error": f"Run failed: {exc}",
+        "failure_class": "unknown",
+        "suggested_action": (
+            f"Inspect the run transcript with get_run for branch '{bid}' details."
+        ),
+    }
+
+
 def _action_run_branch(kwargs: dict[str, Any]) -> str:
     """Execute a branch once.
 
@@ -6879,7 +7118,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
 
     _ensure_runs_recovery()
 
-    bid = kwargs.get("branch_def_id", "").strip()
+    bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
         return json.dumps({"error": "branch_def_id is required."})
 
@@ -6949,7 +7188,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
         )
     except Exception as exc:
         logger.exception("run_branch failed for %s", bid)
-        return json.dumps({"error": f"Run failed: {exc}"})
+        return json.dumps(_classify_run_error(exc, bid))
 
     # Write-ack per tool_return_shapes.md §Write actions. Phase 3.5 async:
     # the graph is running in a background worker, so the MCP call returns
@@ -8140,6 +8379,490 @@ _MESSAGING_ACTIONS: dict[str, Any] = {
     "messaging_send": _action_messaging_send,
     "messaging_receive": _action_messaging_receive,
     "messaging_ack": _action_messaging_ack,
+}
+
+
+# ── Scheduler MCP actions ─────────────────────────────────────────────────
+
+
+def _action_schedule_branch(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import initialize_runs_db
+    from workflow.scheduler import CronParseError, register_schedule
+
+    branch_def_id = (kwargs.get("branch_def_id") or "").strip()
+    if not branch_def_id:
+        return json.dumps({"error": "branch_def_id is required."})
+    cron_expr = (kwargs.get("cron_expr") or "").strip()
+    interval_seconds = kwargs.get("interval_seconds") or 0.0
+    try:
+        interval_seconds = float(interval_seconds)
+    except (TypeError, ValueError):
+        interval_seconds = 0.0
+    if not cron_expr and interval_seconds <= 0:
+        return json.dumps({"error": "one of cron_expr or interval_seconds must be provided."})
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    raw_inputs = kwargs.get("inputs_template_json") or "{}"
+    try:
+        inputs_template = json.loads(raw_inputs) if isinstance(raw_inputs, str) else raw_inputs
+    except (json.JSONDecodeError, TypeError):
+        inputs_template = {}
+    skip_if_running = bool(kwargs.get("skip_if_running", False))
+    base = _base_path()
+    initialize_runs_db(base)
+    try:
+        schedule_id = register_schedule(
+            base,
+            branch_def_id=branch_def_id,
+            owner_actor=owner_actor,
+            cron_expr=cron_expr,
+            interval_seconds=interval_seconds,
+            inputs_template=inputs_template,
+            skip_if_running=skip_if_running,
+        )
+    except CronParseError as exc:
+        return json.dumps({"error": f"Invalid cron_expr: {exc}"})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({
+        "status": "scheduled",
+        "schedule_id": schedule_id,
+        "branch_def_id": branch_def_id,
+        "cron_expr": cron_expr,
+        "interval_seconds": interval_seconds,
+    })
+
+
+def _action_unschedule_branch(kwargs: dict[str, Any]) -> str:
+    from workflow.scheduler import unregister_schedule
+
+    schedule_id = (kwargs.get("schedule_id") or "").strip()
+    if not schedule_id:
+        return json.dumps({"error": "schedule_id is required."})
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    base = _base_path()
+    try:
+        removed = unregister_schedule(base, schedule_id, requesting_actor=owner_actor)
+    except PermissionError as exc:
+        return json.dumps({"error": str(exc)})
+    if not removed:
+        return json.dumps({"error": f"schedule_id '{schedule_id}' not found."})
+    return json.dumps({"status": "unscheduled", "schedule_id": schedule_id})
+
+
+def _action_list_schedules(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import initialize_runs_db
+    from workflow.scheduler import list_schedules
+
+    owner_actor = (kwargs.get("owner_actor") or "").strip()
+    active_only = bool(kwargs.get("active_only", True))
+    base = _base_path()
+    initialize_runs_db(base)
+    rows = list_schedules(base, owner_actor=owner_actor, active_only=active_only)
+    return json.dumps({"schedules": rows, "count": len(rows)})
+
+
+def _action_subscribe_branch(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import initialize_runs_db
+    from workflow.scheduler import VALID_EVENT_TYPES, register_subscription
+
+    branch_def_id = (kwargs.get("branch_def_id") or "").strip()
+    if not branch_def_id:
+        return json.dumps({"error": "branch_def_id is required."})
+    event_type = (kwargs.get("event_type") or "").strip()
+    if not event_type:
+        return json.dumps({"error": "event_type is required."})
+    if event_type not in VALID_EVENT_TYPES:
+        return json.dumps({
+            "error": f"Unknown event_type '{event_type}'.",
+            "valid": sorted(VALID_EVENT_TYPES),
+        })
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    base = _base_path()
+    initialize_runs_db(base)
+    try:
+        sub_id = register_subscription(
+            base,
+            branch_def_id=branch_def_id,
+            owner_actor=owner_actor,
+            event_type=event_type,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({
+        "status": "subscribed",
+        "subscription_id": sub_id,
+        "branch_def_id": branch_def_id,
+        "event_type": event_type,
+    })
+
+
+def _action_unsubscribe_branch(kwargs: dict[str, Any]) -> str:
+    from workflow.scheduler import unregister_subscription
+
+    subscription_id = (kwargs.get("subscription_id") or "").strip()
+    if not subscription_id:
+        return json.dumps({"error": "subscription_id is required."})
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    base = _base_path()
+    try:
+        removed = unregister_subscription(base, subscription_id, requesting_actor=owner_actor)
+    except PermissionError as exc:
+        return json.dumps({"error": str(exc)})
+    if not removed:
+        return json.dumps({"error": f"subscription_id '{subscription_id}' not found."})
+    return json.dumps({"status": "unsubscribed", "subscription_id": subscription_id})
+
+
+_SCHEDULER_ACTIONS: dict[str, Any] = {
+    "schedule_branch": _action_schedule_branch,
+    "unschedule_branch": _action_unschedule_branch,
+    "list_schedules": _action_list_schedules,
+    "subscribe_branch": _action_subscribe_branch,
+    "unsubscribe_branch": _action_unsubscribe_branch,
+}
+
+
+# ── Outcome event MCP actions ─────────────────────────────────────────────
+
+
+def _outcome_db_path(base_path: "Path") -> "Path":
+    return base_path / ".runs.db"
+
+
+def _outcome_connect(base_path: "Path") -> Any:
+    import sqlite3 as _sqlite3
+
+    from workflow.outcomes.schema import migrate_outcome_schema
+    db = _outcome_db_path(base_path)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(db), timeout=30.0)
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    migrate_outcome_schema(conn)
+    conn.commit()
+    return conn
+
+
+def _outcome_row_to_dict(row: Any) -> dict:
+    return {
+        "outcome_id": row["outcome_id"],
+        "run_id": row["run_id"],
+        "outcome_type": row["outcome_type"],
+        "evidence_url": row["evidence_url"],
+        "verified_at": row["verified_at"],
+        "verified_by": row["verified_by"],
+        "claim_run_id": row["claim_run_id"],
+        "payload": json.loads(row["payload"] or "{}"),
+        "recorded_at": row["recorded_at"],
+        "note": row["note"] or "",
+    }
+
+
+def _action_record_outcome(kwargs: dict[str, Any]) -> str:
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from workflow.outcomes.schema import OUTCOME_TYPES
+
+    run_id = (kwargs.get("run_id") or "").strip()
+    outcome_type = (kwargs.get("outcome_type") or "").strip()
+    if not run_id:
+        return json.dumps({"error": "run_id is required."})
+    if not outcome_type:
+        return json.dumps({"error": "outcome_type is required."})
+    if outcome_type not in OUTCOME_TYPES:
+        return json.dumps({
+            "error": f"Unknown outcome_type '{outcome_type}'.",
+            "valid": sorted(OUTCOME_TYPES),
+        })
+    evidence_url = (kwargs.get("evidence_url") or "").strip() or None
+    gate_event_id = (kwargs.get("gate_event_id") or "").strip() or None
+    note = (kwargs.get("note") or "").strip()
+    raw_payload = kwargs.get("payload_json") or "{}"
+    try:
+        payload = json.dumps(
+            json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        )
+    except (json.JSONDecodeError, TypeError):
+        payload = "{}"
+    outcome_id = str(_uuid.uuid4())
+    recorded_at = datetime.now(timezone.utc).isoformat()
+    base = _base_path()
+    with _outcome_connect(base) as conn:
+        conn.execute(
+            """
+            INSERT INTO outcome_event
+                (outcome_id, run_id, outcome_type, evidence_url,
+                 claim_run_id, payload, recorded_at, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (outcome_id, run_id, outcome_type, evidence_url,
+             gate_event_id, payload, recorded_at, note),
+        )
+    return json.dumps({
+        "status": "recorded",
+        "outcome_id": outcome_id,
+        "run_id": run_id,
+        "outcome_type": outcome_type,
+        "recorded_at": recorded_at,
+    })
+
+
+def _action_list_outcomes(kwargs: dict[str, Any]) -> str:
+    branch_def_id = (kwargs.get("branch_def_id") or "").strip()
+    run_id = (kwargs.get("run_id") or "").strip()
+    outcome_type = (kwargs.get("outcome_type") or "").strip()
+    try:
+        limit = min(int(kwargs.get("limit") or 50), 200)
+    except (TypeError, ValueError):
+        limit = 50
+
+    base = _base_path()
+
+    # If filtering by branch_def_id, resolve matching run_ids first.
+    if branch_def_id and not run_id:
+        try:
+            from workflow.runs import initialize_runs_db, query_runs
+            initialize_runs_db(base)
+            runs = query_runs(base, branch_def_id=branch_def_id, limit=1000)
+            run_ids = [r["run_id"] for r in runs]
+            if not run_ids:
+                return json.dumps({"outcomes": [], "count": 0})
+        except Exception:
+            return json.dumps({"outcomes": [], "count": 0})
+    else:
+        run_ids = [run_id] if run_id else []
+
+    with _outcome_connect(base) as conn:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_ids:
+            placeholders = ",".join("?" * len(run_ids))
+            clauses.append(f"run_id IN ({placeholders})")
+            params.extend(run_ids)
+        if outcome_type:
+            clauses.append("outcome_type = ?")
+            params.append(outcome_type)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM outcome_event {where} ORDER BY recorded_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+    outcomes = [_outcome_row_to_dict(r) for r in rows]
+    return json.dumps({"outcomes": outcomes, "count": len(outcomes)})
+
+
+def _action_get_outcome(kwargs: dict[str, Any]) -> str:
+    outcome_id = (kwargs.get("outcome_id") or "").strip()
+    if not outcome_id:
+        return json.dumps({"error": "outcome_id is required."})
+    base = _base_path()
+    with _outcome_connect(base) as conn:
+        row = conn.execute(
+            "SELECT * FROM outcome_event WHERE outcome_id = ?",
+            (outcome_id,),
+        ).fetchone()
+    if row is None:
+        return json.dumps({"error": f"outcome_id '{outcome_id}' not found."})
+    return json.dumps(_outcome_row_to_dict(row))
+
+
+_OUTCOME_ACTIONS: dict[str, Any] = {
+    "record_outcome": _action_record_outcome,
+    "list_outcomes": _action_list_outcomes,
+    "get_outcome": _action_get_outcome,
+}
+
+
+# ── Attribution chain ──────────────────────────────────────────────────────
+
+def _attribution_connect(base_path: "Path") -> Any:
+    import sqlite3 as _sqlite3
+
+    from workflow.attribution.schema import migrate_attribution_schema
+
+    db = base_path / ".runs.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(db), timeout=30.0)
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    migrate_attribution_schema(conn)
+    conn.commit()
+    return conn
+
+
+_VALID_CONTRIBUTION_KINDS = frozenset({"original", "remix", "patch", "template"})
+
+
+def _action_record_remix(kwargs: dict[str, Any]) -> str:
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    parent_id = (kwargs.get("parent_branch_def_id") or "").strip()
+    child_id = (kwargs.get("child_branch_def_id") or "").strip()
+    if not parent_id:
+        return json.dumps({"error": "parent_branch_def_id is required."})
+    if not child_id:
+        return json.dumps({"error": "child_branch_def_id is required."})
+    if parent_id == child_id:
+        return json.dumps({"error": "parent_branch_def_id and child_branch_def_id must differ."})
+
+    contribution_kind = (kwargs.get("contribution_kind") or "remix").strip()
+    if contribution_kind not in _VALID_CONTRIBUTION_KINDS:
+        return json.dumps({
+            "error": f"Unknown contribution_kind '{contribution_kind}'.",
+            "valid": sorted(_VALID_CONTRIBUTION_KINDS),
+        })
+
+    try:
+        credit_share = float(kwargs.get("credit_share") or 0.0)
+    except (TypeError, ValueError):
+        credit_share = 0.0
+    credit_share = max(0.0, min(1.0, credit_share))
+
+    actor_id = (kwargs.get("actor_id") or "anonymous").strip() or "anonymous"
+    base = _base_path()
+
+    with _attribution_connect(base) as conn:
+        # Cycle guard: reject if child already appears as an ancestor of parent.
+        # Walk attribution_edge parents of parent_id up to 50 hops.
+        ancestors: set[str] = set()
+        frontier = [parent_id]
+        for _ in range(50):
+            if not frontier:
+                break
+            placeholders = ",".join("?" * len(frontier))
+            rows = conn.execute(
+                f"SELECT parent_id FROM attribution_edge WHERE child_id IN ({placeholders})",
+                frontier,
+            ).fetchall()
+            frontier = []
+            for r in rows:
+                pid = r["parent_id"]
+                if pid not in ancestors:
+                    ancestors.add(pid)
+                    frontier.append(pid)
+        if child_id in ancestors or child_id == parent_id:
+            return json.dumps({
+                "error": "Cycle detected: child is already an ancestor of parent."
+            })
+
+        # Compute generation_depth = max depth of parent + 1 (minimum 1).
+        row = conn.execute(
+            "SELECT MAX(generation_depth) AS d FROM attribution_edge WHERE child_id = ?",
+            (parent_id,),
+        ).fetchone()
+        parent_depth = int(row["d"] or 0) if row and row["d"] is not None else 0
+        generation_depth = parent_depth + 1
+
+        edge_id = str(_uuid.uuid4())
+        created_at = datetime.now(timezone.utc).isoformat()
+        try:
+            conn.execute(
+                """
+                INSERT INTO attribution_edge
+                    (edge_id, parent_id, child_id, parent_kind, child_kind,
+                     generation_depth, contribution_kind, created_at)
+                VALUES (?, ?, ?, 'branch', 'branch', ?, ?, ?)
+                """,
+                (edge_id, parent_id, child_id, generation_depth, contribution_kind, created_at),
+            )
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                return json.dumps({"error": f"Edge {parent_id} → {child_id} already exists."})
+            raise
+
+        # Record credit for the remixing actor on the child artifact.
+        if credit_share > 0.0:
+            credit_id = str(_uuid.uuid4())
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO attribution_credit
+                    (credit_id, artifact_id, artifact_kind, actor_id,
+                     credit_share, royalty_share, generation_depth,
+                     contribution_kind, recorded_at)
+                VALUES (?, ?, 'branch', ?, ?, 0.0, ?, ?, ?)
+                """,
+                (credit_id, child_id, actor_id, credit_share,
+                 generation_depth, contribution_kind, created_at),
+            )
+
+    return json.dumps({
+        "status": "recorded",
+        "edge_id": edge_id,
+        "parent_branch_def_id": parent_id,
+        "child_branch_def_id": child_id,
+        "contribution_kind": contribution_kind,
+        "generation_depth": generation_depth,
+        "credit_share": credit_share,
+        "actor_id": actor_id,
+        "created_at": created_at,
+    })
+
+
+def _action_get_provenance(kwargs: dict[str, Any]) -> str:
+    child_id = (kwargs.get("child_branch_def_id") or "").strip()
+    if not child_id:
+        return json.dumps({"error": "child_branch_def_id is required."})
+    try:
+        max_depth = max(1, min(50, int(kwargs.get("max_depth") or 10)))
+    except (TypeError, ValueError):
+        max_depth = 10
+
+    base = _base_path()
+    chain: list[dict[str, Any]] = []
+
+    with _attribution_connect(base) as conn:
+        frontier = [child_id]
+        visited: set[str] = {child_id}
+        depth = 0
+        while frontier and depth < max_depth:
+            placeholders = ",".join("?" * len(frontier))
+            rows = conn.execute(
+                f"""
+                SELECT e.parent_id, e.child_id, e.generation_depth,
+                       e.contribution_kind, e.edge_id, e.created_at,
+                       c.actor_id, c.credit_share
+                FROM attribution_edge e
+                LEFT JOIN attribution_credit c
+                    ON c.artifact_id = e.child_id AND c.artifact_kind = 'branch'
+                WHERE e.child_id IN ({placeholders})
+                ORDER BY e.generation_depth ASC
+                """,
+                frontier,
+            ).fetchall()
+            next_frontier: list[str] = []
+            for r in rows:
+                chain.append({
+                    "edge_id": r["edge_id"],
+                    "parent_branch_def_id": r["parent_id"],
+                    "child_branch_def_id": r["child_id"],
+                    "generation_depth": r["generation_depth"],
+                    "contribution_kind": r["contribution_kind"],
+                    "actor_id": r["actor_id"],
+                    "credit_share": r["credit_share"],
+                    "created_at": r["created_at"],
+                })
+                pid = r["parent_id"]
+                if pid not in visited:
+                    visited.add(pid)
+                    next_frontier.append(pid)
+            frontier = next_frontier
+            depth += 1
+
+    return json.dumps({
+        "child_branch_def_id": child_id,
+        "chain": chain,
+        "count": len(chain),
+    })
+
+
+_ATTRIBUTION_ACTIONS: dict[str, Any] = {
+    "record_remix": _action_record_remix,
+    "get_provenance": _action_get_provenance,
 }
 
 
@@ -10441,7 +11164,7 @@ def _action_verify_gate_event(kwargs: dict[str, Any]) -> str:
         return json.dumps({"error": str(exc)})
     return json.dumps({"status": "verified", "event_id": evt.event_id,
                        "verification_status": evt.verification_status,
-                       "verifier_id": evt.verifier_id})
+                       "verified_by": evt.verified_by})
 
 
 def _action_dispute_gate_event(kwargs: dict[str, Any]) -> str:
@@ -10495,7 +11218,7 @@ def _action_get_gate_event(kwargs: dict[str, Any]) -> str:
         "attested_by": evt.attested_by,
         "attested_at": evt.attested_at,
         "verification_status": evt.verification_status,
-        "verifier_id": evt.verifier_id,
+        "verified_by": evt.verified_by,
         "notes": evt.notes,
         "cites": [
             {"branch_version_id": c.branch_version_id, "run_id": c.run_id,
@@ -10704,6 +11427,9 @@ _STOP_WORDS = frozenset(
     "with about against between through during before after above below to from in "
     "on of that this these those it its not no nor so very just also".split()
 )
+
+
+_logger_wiki = logging.getLogger(__name__ + ".wiki")
 
 
 def _wiki_root() -> Path:
@@ -10973,6 +11699,9 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
+    force_new: bool = False,
+    bug_id: str = "",
+    reporter_context: str = "",
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
@@ -10990,7 +11719,7 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint; writes:
             write, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug.
+            sync_projects, file_bug, cosign_bug.
         page: Page name for read (also: index, log, schema).
         query: Search keywords for search.
         category: write / promote category — projects, concepts,
@@ -11029,6 +11758,12 @@ def wiki(
         tags: file_bug — optional comma-separated free-form labels
             (e.g. "ux,performance"). Added to the frontmatter tags list
             alongside the auto-generated component tag and kind tag.
+        force_new: file_bug — skip the similarity check and always mint a
+            new id. Use when the symptom is materially different from any
+            suggested similar bug.
+        bug_id: cosign_bug — id of the bug to cosign (e.g. "BUG-042").
+        reporter_context: cosign_bug — free-form context from the reporter
+            (what they observed, their environment, etc.).
 
     Design-participation note: ``file_bug`` is the single verb for bugs,
     feature requests, design proposals, and primitive asks. Navigator vets
@@ -11084,6 +11819,7 @@ def wiki(
         "supersede": _wiki_supersede,
         "sync_projects": _wiki_sync_projects,
         "file_bug": _wiki_file_bug,
+        "cosign_bug": _wiki_cosign_bug,
     }
 
     handler = dispatch.get(action)
@@ -11115,6 +11851,9 @@ def wiki(
         "observed": observed,
         "expected": expected,
         "workaround": workaround,
+        "force_new": force_new,
+        "bug_id": bug_id,
+        "reporter_context": reporter_context,
     }
 
     return handler(**kwargs)
@@ -11256,6 +11995,25 @@ def _wiki_write(
 
     slug = _sanitize_slug(filename)
     promoted_path = _wiki_pages_dir() / category / (slug + ".md")
+
+    # Alias-resolution: if the lowercase slug doesn't match an existing file
+    # but a wrong-case variant does (e.g. BUG-001-... vs bug-001-...), resolve
+    # to the existing file and warn so the operator can clean up the duplicate.
+    if not promoted_path.exists() and category == _BUGS_CATEGORY:
+        parent = _wiki_pages_dir() / category
+        if parent.is_dir():
+            for candidate in parent.glob("*.md"):
+                if candidate.stem.lower() == slug:
+                    _logger_wiki.warning(
+                        "BUG-028 slug-case alias: '%s' resolved to '%s'. "
+                        "Rename '%s' → '%s' to eliminate the duplicate.",
+                        slug,
+                        candidate.name,
+                        candidate.name,
+                        slug + ".md",
+                    )
+                    promoted_path = candidate
+                    break
 
     if promoted_path.exists():
         try:
@@ -11771,13 +12529,13 @@ def _next_bug_id(bugs_pages_dir: Path) -> str:
 
     Scans both pages/bugs/ and drafts/bugs/ so concurrent writes don't
     collide with an already-promoted entry. Returns "BUG-001" when
-    empty or missing.
+    empty or missing. Glob is case-insensitive via *.md + regex filter.
     """
     seen: set[int] = set()
     for base in (bugs_pages_dir, _wiki_drafts_dir() / _BUGS_CATEGORY):
         if not base.is_dir():
             continue
-        for p in base.glob("BUG-*.md"):
+        for p in base.glob("*.md"):
             m = _BUG_ID_RE.match(p.stem)
             if m:
                 try:
@@ -11837,6 +12595,152 @@ def _render_bug_markdown(
 
 
 _VALID_BUG_KINDS = frozenset({"bug", "feature", "design"})
+_BUG_DEDUP_THRESHOLD = 0.5
+
+
+def _bug_token_set(text: str) -> set[str]:
+    """Return a lowercase word set from text, ignoring short tokens."""
+    return {w for w in re.sub(r"[^a-z0-9]+", " ", text.lower()).split() if len(w) > 2}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a and not b:
+        return 1.0
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def _scan_existing_bugs(bugs_dir: Path) -> list[dict[str, Any]]:
+    """Return a list of {bug_id, title, status, haystack_tokens} for all existing bugs.
+
+    Haystack uses only frontmatter title + "What happened" section to avoid
+    dilution from markdown scaffolding tokens (dates, template headings, etc.).
+    """
+    if not bugs_dir.is_dir():
+        return []
+    results = []
+    for p in bugs_dir.glob("*.md"):
+        m = _BUG_ID_RE.match(p.stem)
+        if not m:
+            continue
+        try:
+            raw = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fm_title = ""
+        fm_status = "open"
+        in_fm = False
+        observed_text = ""
+        in_observed = False
+        for i, line in enumerate(raw.splitlines()):
+            if i == 0 and line.strip() == "---":
+                in_fm = True
+                continue
+            if in_fm:
+                if line.strip() == "---":
+                    in_fm = False
+                    continue
+                if line.startswith("title:"):
+                    fm_title = line[6:].strip()
+                elif line.startswith("status:"):
+                    fm_status = line[7:].strip()
+            else:
+                if line.startswith("## What happened"):
+                    in_observed = True
+                    continue
+                if in_observed:
+                    if line.startswith("##"):
+                        in_observed = False
+                    else:
+                        observed_text += " " + line
+                if len(observed_text) > 300:
+                    break
+        haystack = _bug_token_set(fm_title + " " + observed_text[:300])
+        results.append({
+            "bug_id": p.stem.split("-", 2)[0].upper() + "-" + p.stem.split("-", 2)[1],
+            "title": fm_title,
+            "status": fm_status,
+            "haystack_tokens": haystack,
+            "path": str(p),
+        })
+    return results
+
+
+def _wiki_cosign_bug(
+    bug_id: str = "",
+    reporter_context: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Append a cosign to an existing bug report.
+
+    Reads pages/bugs/BUG-NNN-*.md, appends a ## Cosigns section (or
+    extends existing), and increments the cosign_count frontmatter field.
+    Returns {status: "cosigned", bug_id, cosign_count}.
+    """
+    if not bug_id:
+        return json.dumps({"error": "bug_id is required for cosign_bug."})
+    if not reporter_context:
+        return json.dumps({"error": "reporter_context is required for cosign_bug."})
+
+    bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
+    # Find the matching file (case-insensitive prefix match)
+    bid_upper = bug_id.upper()
+    matches = [
+        p for p in bugs_dir.glob("*.md")
+        if _BUG_ID_RE.match(p.stem)
+        and (p.stem.split("-", 2)[0].upper() + "-" + p.stem.split("-", 2)[1]) == bid_upper
+    ]
+    if not matches:
+        return json.dumps({
+            "error": f"Bug not found: {bug_id}",
+            "hint": "Check bug_id format (e.g. BUG-042).",
+        })
+
+    target = matches[0]
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        return json.dumps({"error": f"Cannot read bug file: {exc}"})
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Increment cosign_count in frontmatter
+    cosign_count = 1
+    if "cosign_count:" in raw:
+        for line in raw.splitlines():
+            if line.startswith("cosign_count:"):
+                try:
+                    cosign_count = int(line.split(":", 1)[1].strip()) + 1
+                except ValueError:
+                    cosign_count = 1
+        raw = re.sub(r"cosign_count:\s*\d+", f"cosign_count: {cosign_count}", raw)
+    else:
+        # Insert cosign_count into frontmatter (before closing ---)
+        raw = re.sub(
+            r"^(---\n(?:.|\n)*?)\n---",
+            rf"\1\ncosign_count: {cosign_count}\n---",
+            raw, count=1,
+        )
+
+    # Append or extend ## Cosigns section
+    cosign_entry = f"\n- [{today}] {reporter_context}"
+    if "## Cosigns" in raw:
+        raw = raw.rstrip() + cosign_entry + "\n"
+    else:
+        raw = raw.rstrip() + f"\n\n## Cosigns\n{cosign_entry}\n"
+
+    try:
+        target.write_text(raw, encoding="utf-8")
+    except OSError as exc:
+        return json.dumps({"error": f"Cannot write bug file: {exc}"})
+
+    _append_wiki_log(f"cosign_bug | {target.name} | {bug_id} cosign_count={cosign_count}")
+    return json.dumps({
+        "status": "cosigned",
+        "bug_id": bid_upper,
+        "cosign_count": cosign_count,
+        "path": f"pages/bugs/{target.name}",
+    })
 
 
 def _wiki_file_bug(
@@ -11849,6 +12753,7 @@ def _wiki_file_bug(
     workaround: str = "",
     kind: str = "bug",
     tags: str = "",
+    force_new: bool = False,
     **_kwargs: Any,
 ) -> str:
     """File a bug / feature request / design proposal to pages/bugs/.
@@ -11860,6 +12765,10 @@ def _wiki_file_bug(
     Bypasses the draft-gate — filings land in pages/ immediately
     for host triage. ID is server-assigned via _next_bug_id. Atomic
     create guards against concurrent file_bug races.
+
+    ``force_new`` skips the similarity check and always mints a new id.
+    When omitted, a Jaccard similarity ≥ 0.5 against an existing bug's
+    title+body returns {status: "similar_found"} instead of filing.
     """
     import time
 
@@ -11889,9 +12798,41 @@ def _wiki_file_bug(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     slug = _slugify_title(title)
 
+    # Dedup check: scan existing bugs for Jaccard similarity ≥ threshold.
+    # Skip when force_new=True.
+    if not force_new:
+        query_tokens = _bug_token_set(title + " " + (observed or ""))
+        existing = _scan_existing_bugs(bugs_dir)
+        scored = []
+        for entry in existing:
+            sim = _jaccard(query_tokens, entry["haystack_tokens"])
+            if sim >= _BUG_DEDUP_THRESHOLD:
+                scored.append((sim, entry))
+        if scored:
+            scored.sort(key=lambda x: -x[0])
+            top3 = [
+                {
+                    "bug_id": e["bug_id"],
+                    "title": e["title"],
+                    "similarity": round(s, 3),
+                    "status": e["status"],
+                }
+                for s, e in scored[:3]
+            ]
+            return json.dumps({
+                "status": "similar_found",
+                "bug_id": None,
+                "similar": top3,
+                "hint": (
+                    "Similar bugs exist. Use cosign_bug to add your context to "
+                    "the top match, or set force_new=true if the symptom is "
+                    "materially different."
+                ),
+            })
+
     for attempt in (1, 2):
         bug_id = _next_bug_id(bugs_dir)
-        filename = f"{bug_id}-{slug}.md"
+        filename = f"{bug_id.lower()}-{slug}.md"
         target = bugs_dir / filename
         body = _render_bug_markdown(
             bug_id=bug_id,
@@ -12240,8 +13181,20 @@ def get_status(universe_id: str = "") -> str:
     # pressure_level in {warn, critical}; this block never raises so a
     # bad stat call can't break the status probe.
     try:
-        from workflow.storage import inspect_storage_utilization
+        from workflow.storage import inspect_storage_utilization, path_size_bytes
         storage_utilization = inspect_storage_utilization()
+        # BUG-032 — activity_log + universe_outputs live inside the universe
+        # directory, not at data_dir() root; patch the per-subsystem byte
+        # counts using the already-resolved udir.
+        if "per_subsystem" in storage_utilization:
+            storage_utilization["per_subsystem"]["activity_log"] = {
+                "bytes": path_size_bytes(udir / "activity.log"),
+                "path": str(udir / "activity.log"),
+            }
+            storage_utilization["per_subsystem"]["universe_outputs"] = {
+                "bytes": path_size_bytes(udir / "output"),
+                "path": str(udir / "output"),
+            }
     except Exception as exc:  # noqa: BLE001 — best-effort observability
         storage_utilization = {
             "error": "inspect_failed",

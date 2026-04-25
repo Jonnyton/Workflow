@@ -1,0 +1,188 @@
+"""Tests for BUG-031: describe_branch / get_branch surface unapproved source_code nodes."""
+import json
+from unittest.mock import patch  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_node(node_id="n1", display_name="My Node", source_code="", approved=False):
+    return {
+        "node_id": node_id,
+        "display_name": display_name,
+        "source_code": source_code,
+        "approved": approved,
+        "phase": "custom",
+        "input_keys": [],
+        "output_keys": [],
+        "description": "",
+        "dependencies": [],
+        "author": "anon",
+        "registered_at": "",
+        "enabled": True,
+    }
+
+
+def _make_branch_dict(node_defs=None, branch_def_id="b1", name="TestBranch"):
+    nodes = node_defs or []
+    entry_point = nodes[0]["node_id"] if nodes else ""
+    return {
+        "branch_def_id": branch_def_id,
+        "name": name,
+        "author": "tester",
+        "domain_id": "fantasy",
+        "entry_point": entry_point,
+        "node_defs": nodes,
+        "edges": [],
+        "state_schema": [],
+        "visibility": "public",
+        "fork_from": None,
+    }
+
+
+def _call_describe(branch_dict, validate_errors=None):
+    from workflow.universe_server import _ext_branch_describe
+
+    if validate_errors is None:
+        validate_errors = []
+
+    with (
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch(
+            "workflow.universe_server._related_wiki_pages",
+            return_value={"items": [], "truncated_count": 0},
+        ),
+        patch("workflow.branch_versions.list_branch_versions", return_value=[]),
+        patch("workflow.daemon_server.list_branch_definitions", return_value=[]),
+        patch("workflow.branches.BranchDefinition.validate", return_value=validate_errors),
+    ):
+        result = _ext_branch_describe({"branch_def_id": branch_dict["branch_def_id"]})
+    return json.loads(result)
+
+
+def _call_get(branch_dict):
+    from workflow.universe_server import _ext_branch_get
+
+    with (
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.universe_server._current_actor", return_value="tester"),
+        patch("workflow.universe_server._gates_enabled", return_value=False),
+        patch(
+            "workflow.universe_server._related_wiki_pages",
+            return_value={"items": [], "truncated_count": 0},
+        ),
+        patch("workflow.author_server.list_gate_claims", return_value=[]),
+    ):
+        result = _ext_branch_get({"branch_def_id": branch_dict["branch_def_id"]})
+    return json.loads(result)
+
+
+# ---------------------------------------------------------------------------
+# describe_branch tests
+# ---------------------------------------------------------------------------
+
+class TestDescribeBranchApproval:
+    def test_no_source_code_nodes_runnable(self):
+        """Branch with no source_code nodes is runnable with no approval warnings."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_describe(branch)
+
+        assert result["runnable"] is True
+        assert result["unapproved_source_code_nodes"] == []
+        assert "APPROVAL REQUIRED" not in result["summary"]
+
+    def test_approved_source_code_node_runnable(self):
+        """Branch with an approved source_code node is runnable."""
+        node = _make_node(source_code="def run(state): return state", approved=True)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_describe(branch)
+
+        assert result["runnable"] is True
+        assert result["unapproved_source_code_nodes"] == []
+
+    def test_unapproved_source_code_node_not_runnable(self):
+        """Branch with an unapproved source_code node is NOT runnable; warning surfaces."""
+        node = _make_node(
+            node_id="sc1",
+            display_name="Custom Runner",
+            source_code="def run(state): return state",
+            approved=False,
+        )
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_describe(branch)
+
+        assert result["runnable"] is False
+        assert len(result["unapproved_source_code_nodes"]) == 1
+        unapp = result["unapproved_source_code_nodes"][0]
+        assert unapp["node_id"] == "sc1"
+        assert unapp["display_name"] == "Custom Runner"
+        assert "APPROVAL REQUIRED" in result["summary"]
+        assert "approve_source_code" in result["summary"]
+
+    def test_unapproved_node_still_valid_structurally(self):
+        """valid reflects structural errors only; approval is separate via runnable."""
+        node = _make_node(source_code="code", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_describe(branch)
+
+        # No structural errors — valid should be True
+        assert result["valid"] is True
+        # But not runnable due to approval gate
+        assert result["runnable"] is False
+
+    def test_multiple_unapproved_nodes_all_listed(self):
+        """All unapproved source_code nodes appear in the list."""
+        nodes = [
+            _make_node(node_id="n1", display_name="Node A", source_code="code", approved=False),
+            _make_node(node_id="n2", display_name="Node B", source_code="code", approved=True),
+            _make_node(node_id="n3", display_name="Node C", source_code="code", approved=False),
+        ]
+        branch = _make_branch_dict(node_defs=nodes)
+        result = _call_describe(branch)
+
+        assert result["runnable"] is False
+        ids = {n["node_id"] for n in result["unapproved_source_code_nodes"]}
+        assert ids == {"n1", "n3"}
+        assert "n2" not in str(result["unapproved_source_code_nodes"])
+
+
+# ---------------------------------------------------------------------------
+# get_branch tests
+# ---------------------------------------------------------------------------
+
+class TestGetBranchApproval:
+    def test_no_source_code_nodes_runnable(self):
+        """get_branch: no source_code nodes → runnable True, list empty."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_get(branch)
+
+        assert result["runnable"] is True
+        assert result["unapproved_source_code_nodes"] == []
+
+    def test_unapproved_source_code_node_not_runnable(self):
+        """get_branch: unapproved source_code node → runnable False, node listed."""
+        node = _make_node(
+            node_id="sc1",
+            display_name="Script Node",
+            source_code="def run(state): ...",
+            approved=False,
+        )
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_get(branch)
+
+        assert result["runnable"] is False
+        assert len(result["unapproved_source_code_nodes"]) == 1
+        assert result["unapproved_source_code_nodes"][0]["node_id"] == "sc1"
+
+    def test_approved_source_code_node_runnable(self):
+        """get_branch: approved source_code node → runnable True."""
+        node = _make_node(source_code="code", approved=True)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_get(branch)
+
+        assert result["runnable"] is True
+        assert result["unapproved_source_code_nodes"] == []

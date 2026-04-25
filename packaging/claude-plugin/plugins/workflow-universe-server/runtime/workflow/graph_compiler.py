@@ -46,6 +46,10 @@ class CompilerError(Exception):
     """Raised when the compiler cannot produce a runnable graph."""
 
 
+class BranchValidationError(CompilerError, ValueError):
+    """Raised when branch structure fails compile-time validation."""
+
+
 class UnapprovedNodeError(CompilerError):
     """Raised when a source_code node lacks host approval."""
 
@@ -1613,3 +1617,88 @@ def compile_branch(
         node_ids_in_order=node_ids_in_order,
         concurrency_tracker=concurrency_tracker,
     )
+
+
+# ── Teammate messaging primitives ─────────────────────────────────────────────
+# These are graph-compiler-level helpers that nodes call at runtime to send /
+# receive teammate messages.  They are thin wrappers around workflow.runs so
+# that graph_compiler owns the dispatch contract.
+
+
+def compile_send_message_spec(
+    base_path: "Path | str",
+    *,
+    run_id: str,
+    to_node_id: str,
+    message_type: str,
+    body: "dict[str, Any]",
+    reply_to_id: str = "",
+) -> "dict[str, Any]":
+    """Send a teammate message from a running node.
+
+    Calls post_teammate_message and returns the persisted record dict.
+    Raises KeyError if run_id does not exist; raises ValueError on invalid args.
+    """
+    from workflow.runs import post_teammate_message
+
+    record = post_teammate_message(
+        base_path,
+        from_run_id=run_id,
+        to_node_id=to_node_id,
+        message_type=message_type,
+        body=body,
+        reply_to_id=reply_to_id or None,
+    )
+    return record
+
+
+def compile_receive_messages_spec(
+    base_path: "Path | str",
+    *,
+    node_id: str,
+    timeout: int = 0,
+    run_id: str = "",
+    message_types: "list[str] | None" = None,
+    since: "str | None" = None,
+    limit: int = 50,
+) -> "dict[str, Any]":
+    """Receive queued teammate messages for a node.
+
+    Non-blocking (timeout=0 is the contract; positive timeout ignored for now).
+    When run_id is given, returns only messages sent from that run (cross-run
+    isolation).  Returns ``{"messages": [...], "count": N}``.
+    """
+    from workflow.runs import read_teammate_messages
+
+    rows = read_teammate_messages(
+        base_path,
+        node_id=node_id,
+        since=since,
+        message_types=message_types,
+        limit=limit,
+    )
+    if run_id:
+        rows = [r for r in rows if r.get("from_run_id") == run_id]
+    return {"messages": rows, "count": len(rows)}
+
+
+def validate_message_recipients(
+    branch: "BranchDefinition",
+    send_message_specs: "list[dict[str, Any]]",
+) -> None:
+    """Compile-time validation: every to_node_id must exist in the branch.
+
+    Raises BranchValidationError (subclass of ValueError) listing all unknown
+    recipients so the caller gets a single actionable error.
+    """
+    known_node_ids = {n.node_id for n in branch.node_defs}
+    unknown = [
+        spec["to_node_id"]
+        for spec in send_message_specs
+        if spec.get("to_node_id") and spec["to_node_id"] not in known_node_ids
+    ]
+    if unknown:
+        raise BranchValidationError(
+            "send_message_spec recipient(s) not found in branch: "
+            + ", ".join(repr(u) for u in unknown)
+        )

@@ -421,3 +421,71 @@ def test_rule_13_specifies_no_matching_run_response():
         "rule 13 must specify the honest-disclosure path when no run matches: "
         "'say so and offer to start fresh'"
     )
+
+
+# 2026-04-26 visuals-first rule pinned after Maya LIVE-F3 + Devin LIVE-F7 showed
+# chatbots describing structure in prose where a diagram would match the user's
+# mental model. Rule 14 must enforce lead-with-visual for all multi-part artifacts.
+
+
+def _rule_14_block(body: str) -> str:
+    m = re.search(
+        r"14\.\s*Visuals.*?(?=^\s*\d+\.|^## )",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert m, "could not locate rule 14 block in control_station prompt"
+    return m.group(0)
+
+
+def test_rule_14_is_present():
+    """Hard rule 14 (visuals-first) must exist as a numbered rule."""
+    body = _prompt_text()
+    assert re.search(
+        r"^\s*14\.\s*Visuals",
+        body,
+        re.MULTILINE,
+    ), "Hard rule 14 (visuals-first) missing from control_station prompt"
+
+
+def test_rule_14_in_hard_rules_block():
+    """Rule 14 must sit inside the ## Hard Rules section, before ## Tool Catalog."""
+    body = _prompt_text()
+    hard_rules_start = body.find("## Hard Rules")
+    tool_catalog_start = body.find("## Tool Catalog")
+    assert hard_rules_start != -1
+    assert tool_catalog_start != -1
+    hard_rules_block = body[hard_rules_start:tool_catalog_start]
+    assert "Visuals" in hard_rules_block, "rule 14 escaped the Hard Rules block"
+
+
+def test_rule_14_contains_visuals_first_trigger():
+    """Rule 14 must contain the 'Visuals-first' trigger phrase."""
+    rule = _rule_14_block(_prompt_text())
+    assert "Visuals-first" in rule, (
+        "rule 14 must contain the trigger phrase 'Visuals-first'"
+    )
+
+
+def test_rule_14_names_mermaid():
+    """Rule 14 must name 'mermaid' as a required visual format."""
+    rule = _rule_14_block(_prompt_text())
+    assert "mermaid" in rule.lower(), (
+        "rule 14 must name 'mermaid' as a required diagram format"
+    )
+
+
+def test_rule_14_names_table():
+    """Rule 14 must name 'table' as a required visual format."""
+    rule = _rule_14_block(_prompt_text())
+    assert "table" in rule.lower(), (
+        "rule 14 must name 'table' (markdown table) as a required visual format"
+    )
+
+
+def test_rule_14_names_diagram():
+    """Rule 14 must reference 'diagram' as a visual deliverable."""
+    rule = _rule_14_block(_prompt_text())
+    assert "diagram" in rule.lower(), (
+        "rule 14 must reference 'diagram' as a visual deliverable"
+    )
