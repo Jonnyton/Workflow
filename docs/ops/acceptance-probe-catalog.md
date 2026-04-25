@@ -115,8 +115,104 @@ Are you there? Call get_status and tell me the llm_endpoint_bound value.
 
 ### When to use
 
-- Automated hourly Layer-2 canary (once `scripts/uptime_canary.py` Layer-2 path is implemented).
+- Automated hourly Layer-2 canary (Windows Task Scheduler entry `Workflow-Canary-L2` invokes `scripts/uptime_canary_layer2.py`).
 - Quick manual liveness check when Layer-1 is green but something feels wrong.
+
+---
+
+## PROBE-003 — Wiki write-roundtrip (auto-heal pipeline integrity)
+
+**Validated:** wiki canary script live since 2026-04-22; logs roundtripped probes to `.agents/uptime.log`.
+**Source script:** `scripts/wiki_canary.py`
+**Persona:** `wiki-canary` (automated; client name `wiki-canary/1.0`)
+**Connector URL under test:** `https://tinyassets.io/mcp`
+
+### Invocation
+
+```
+python scripts/wiki_canary.py
+python scripts/wiki_canary.py --url http://127.0.0.1:8001/mcp --verbose
+python scripts/wiki_canary.py --once --format=gha
+```
+
+### What it exercises
+
+| Layer | What's tested |
+|---|---|
+| System | MCP `initialize` handshake reaches the daemon. |
+| System | `wiki action=write` persists a known body to `drafts/canary/uptime-probe.md`. |
+| System | `wiki action=read` returns that body verbatim. |
+| User-impact | Auto-heal pipeline integrity — chatbots filing bugs depend on wiki writes succeeding. |
+
+### Green criteria
+
+- Exit code 0.
+- `wiki action=write` succeeds without `isError`.
+- `wiki action=read` returns body matching `_CANARY_BODY` byte-for-byte.
+
+### Red signals
+
+- Exit 2 — MCP handshake failed (initialize or session establishment).
+- Exit 6 — wiki write failed (`isError=true` or network error).
+- Exit 7 — wiki read failed or roundtrip content mismatched.
+- Exit 99 — unexpected error.
+
+### Why this probe earns a catalog slot
+
+BUG-028 demonstrated that a slug-normalization bug could silently break bug filing while the Layer-1 MCP handshake stayed green. PROBE-001 (full-stack smoke) and PROBE-002 (handshake liveness) would not catch this class of regression. Wiki-write failure is P0 per the Forever Rule (24/7 uptime, auto-heal pipeline).
+
+### When to use
+
+- After any change to wiki write/read tool handlers, slug normalization, or wiki storage backend.
+- After any deploy that touches `_wiki_file_bug` or related tools.
+- As a continuous P0 canary alongside PROBE-002.
+
+---
+
+## PROBE-004 — MCP tool-invocation end-to-end (handshake-vs-handler gap)
+
+**Validated:** mcp_tool_canary script live since 2026-04-22; closes the gap flagged in canary task #6.
+**Source script:** `scripts/mcp_tool_canary.py`
+**Persona:** `mcp-tool-canary` (automated; client name `mcp-tool-canary/1.0`)
+**Connector URL under test:** `https://tinyassets.io/mcp`
+
+### Invocation
+
+```
+python scripts/mcp_tool_canary.py
+python scripts/mcp_tool_canary.py --url http://127.0.0.1:8001/mcp
+python scripts/mcp_tool_canary.py --verbose --timeout 20
+```
+
+### What it exercises
+
+| Layer | What's tested |
+|---|---|
+| System | `initialize` handshake (same as PROBE-002). |
+| System | `notifications/initialized` (MCP-protocol mandatory before tool calls). |
+| System | `tools/list` returns a non-empty tools array. |
+| System | `tools/call` for `universe action=inspect` returns valid JSON carrying a `universe_id` field. |
+
+### Green criteria
+
+- Exit code 0 — all four steps passed.
+
+### Red signals
+
+- Exit 2 — handshake failed (initialize error, network, TLS, non-200).
+- Exit 3 — session establishment failed (no `mcp-session-id` header, or `notifications/initialized` POST errored).
+- Exit 4 — `tools/list` failed or returned an empty tools array.
+- Exit 5 — `tools/call universe action=inspect` failed or returned an invalid response (no `universe_id`, `isError` set, etc.).
+
+### Why this probe earns a catalog slot
+
+`mcp_public_canary.py` (PROBE-001/002 layer) only probes `initialize`, which proves the daemon answers the MCP handshake but NOT that any tool handler actually works. The "handshake green, tool handler crashed" failure class would go undetected without this probe. Catches a distinct failure mode: handshake passes but a tool handler raises uncaught, an export is broken, or `universe_server.py` boot succeeds but a registered tool fails on first call.
+
+### When to use
+
+- After any code change to `universe_server.py` tool registration or handler bodies.
+- After any deploy that adds/renames/removes MCP tools.
+- As a continuous Layer-1.5 canary between handshake-only and full chatbot probes.
 
 ---
 
