@@ -79,9 +79,20 @@ def _build_provider_router() -> ProviderRouter:
     """Instantiate a ProviderRouter with all available providers."""
     router = ProviderRouter()
 
-    # Subprocess providers (always attempt registration).
-    router.register(ClaudeProvider())
-    router.register(CodexProvider())
+    # Subprocess providers — skip registration when the binary is absent
+    # (cloud hosts). Constructors never raise; binary probe happens here
+    # so the router doesn't waste 30s+ cooldown on a missing CLI.
+    if ClaudeProvider.is_available():
+        router.register(ClaudeProvider())
+        logger.info("Registered ClaudeProvider")
+    else:
+        logger.info("claude binary not found — ClaudeProvider skipped")
+
+    if CodexProvider.is_available():
+        router.register(CodexProvider())
+        logger.info("Registered CodexProvider")
+    else:
+        logger.info("codex binary not found — CodexProvider skipped")
 
     # Local provider.
     try:

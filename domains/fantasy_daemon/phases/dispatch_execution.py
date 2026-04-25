@@ -1,4 +1,4 @@
-"""Dispatch the selected work target into an execution path."""
+"""Dispatch-execution node -- universe graph; entry after authorial_priority_review, routes work."""
 
 from __future__ import annotations
 

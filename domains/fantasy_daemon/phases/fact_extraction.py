@@ -1,12 +1,4 @@
-"""Fact extraction pipeline with FactWithContext dataclass.
-
-Extracts structured facts from generated prose using LLM-based extraction
-with regex fallback.  Every fact carries truth-value typing, temporal bounds,
-and narrative function metadata.
-
-The FactWithContext dataclass is the canonical representation consumed by
-the commit node, world state tracker, and (later) the knowledge graph.
-"""
+"""Fact-extraction helper -- called by commit node (scene graph) to extract facts from prose."""
 
 from __future__ import annotations
 

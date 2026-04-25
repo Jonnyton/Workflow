@@ -1,9 +1,10 @@
-"""Tests for workflow/bug_investigation.py — Task #33 Phase 1 skeleton."""
+"""Tests for workflow/bug_investigation.py — Task #33 Phase 1 + Phase 2 helpers."""
 
 from __future__ import annotations
 
 import importlib
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -155,3 +156,119 @@ class TestFormatPatchPacketComment:
         assert "### Root Cause" in result
         assert "### Test Plan" in result
         assert "### Implementation Sketch" in result
+
+
+# ---------------------------------------------------------------------------
+# Task #37: attach_patch_packet_comment
+# ---------------------------------------------------------------------------
+
+_SAMPLE_PACKET = {
+    "root_cause": "off-by-one in loop",
+    "test_plan": "add regression test",
+}
+
+_SAMPLE_PAGE = """\
+---
+bug_id: BUG-042
+title: Widget explodes
+---
+
+## Description
+
+Widget explodes on click.
+
+## Steps
+
+1. Click widget
+"""
+
+
+def _make_bugs_dir(tmp_path: Path) -> Path:
+    bugs_dir = tmp_path / "pages" / "bugs"
+    bugs_dir.mkdir(parents=True)
+    return bugs_dir
+
+
+def _write_bug_page(bugs_dir: Path, filename: str, content: str = _SAMPLE_PAGE) -> Path:
+    p = bugs_dir / filename
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+class TestAttachPatchPacketComment:
+    def _call(self, bug_id: str, patch_packet: dict, wiki_root: Path) -> dict:
+        from workflow.bug_investigation import attach_patch_packet_comment
+        with patch("workflow.storage.wiki_path", return_value=wiki_root):
+            return attach_patch_packet_comment(bug_id, patch_packet)
+
+    def test_successful_attach(self, tmp_path):
+        """Bug page exists → attach succeeds and written content includes packet."""
+        bugs_dir = _make_bugs_dir(tmp_path)
+        page = _write_bug_page(bugs_dir, "bug-042-widget-explodes.md")
+
+        result = self._call("BUG-042", _SAMPLE_PACKET, tmp_path)
+
+        assert result["status"] == "attached"
+        assert result["bug_id"] == "BUG-042"
+        assert result["patch_packet_size_bytes"] > 0
+        written = page.read_text(encoding="utf-8")
+        assert "## Patch Packet" in written
+        assert "off-by-one in loop" in written
+
+    def test_nonexistent_bug_returns_error(self, tmp_path):
+        """Bug page does not exist → structured error, no crash."""
+        _make_bugs_dir(tmp_path)
+
+        result = self._call("BUG-999", _SAMPLE_PACKET, tmp_path)
+
+        assert result["status"] == "error"
+        assert result["bug_id"] == "BUG-999"
+        assert "not found" in result["error"]
+
+    def test_reattach_replaces_not_duplicates(self, tmp_path):
+        """Second attach replaces the existing Patch Packet section."""
+        bugs_dir = _make_bugs_dir(tmp_path)
+        initial_page = _SAMPLE_PAGE + "\n\n## Patch Packet\n\n### Root Cause\n\nold cause\n"
+        page = _write_bug_page(bugs_dir, "bug-042-widget-explodes.md", initial_page)
+
+        result = self._call("BUG-042", {"root_cause": "new cause"}, tmp_path)
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert written.count("## Patch Packet") == 1
+        assert "new cause" in written
+        assert "old cause" not in written
+
+    def test_empty_patch_packet_returns_error(self, tmp_path):
+        """Empty patch_packet → error returned, no write attempted."""
+        bugs_dir = _make_bugs_dir(tmp_path)
+        page = _write_bug_page(bugs_dir, "bug-042-widget-explodes.md")
+        mtime_before = page.stat().st_mtime
+
+        result = self._call("BUG-042", {}, tmp_path)
+
+        assert result["status"] == "error"
+        assert page.stat().st_mtime == mtime_before  # file untouched
+
+    def test_slug_case_alias_resolution(self, tmp_path):
+        """File named BUG-042-*.md (uppercase) resolves via lowercase slug match."""
+        bugs_dir = _make_bugs_dir(tmp_path)
+        # Filename uses uppercase BUG prefix — simulates pre-BUG-028-fix files
+        page = _write_bug_page(bugs_dir, "BUG-042-widget-explodes.md")
+
+        result = self._call("BUG-042", _SAMPLE_PACKET, tmp_path)
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "## Patch Packet" in written
+
+    def test_lowercase_bug_id_also_resolves(self, tmp_path):
+        """bug-042 (lowercase) finds file named bug-042-*.md."""
+        bugs_dir = _make_bugs_dir(tmp_path)
+        page = _write_bug_page(bugs_dir, "bug-042-widget-explodes.md")
+
+        result = self._call("bug-042", _SAMPLE_PACKET, tmp_path)
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "## Patch Packet" in written

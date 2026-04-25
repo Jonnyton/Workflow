@@ -247,7 +247,7 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Goal:** Make the system operable, testable, replayable, and improvable across both product runtime and AI-to-AI development.
 
-**Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — the **Three Living Files** (AGENTS.md / PLAN.md / STATUS.md, see `AGENTS.md`) and the verifier/navigator/dev/user agent roles separate process truth, design truth, live state, quality, direction, and live-mission validation. That's not just process; it's part of the theory of durable agentic work.
+**Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — the **Three Living Files** (AGENTS.md / PLAN.md / STATUS.md, see `AGENTS.md`) and the verifier/navigator/dev/user-sim roles separate process truth, design truth, live state, quality, direction, and live-mission validation. These roles are architectural capabilities; each provider implements them through its available harness rather than one universal team mechanism. That's not just process; it's part of the theory of durable agentic work.
 
 ---
 

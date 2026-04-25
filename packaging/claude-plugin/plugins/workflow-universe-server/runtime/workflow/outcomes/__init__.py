@@ -8,8 +8,12 @@ Evaluators (evaluators.py): Evaluator-protocol-conformant adapters for
 from __future__ import annotations
 
 from workflow.outcomes.evaluators import (
+    ConferenceAcceptedEvaluator,
     DeployedAppEvaluator,
+    HyperparameterImportanceEvaluator,
+    MentionedInPublicationEvaluator,
     MergedPREvaluator,
+    PeerReviewAcceptedEvaluator,
     PublishedPaperEvaluator,
 )
 from workflow.outcomes.schema import (
@@ -26,7 +30,11 @@ __all__ = [
     "OutcomeEvent",
     "migrate_outcome_schema",
     # evaluators.py
+    "ConferenceAcceptedEvaluator",
     "DeployedAppEvaluator",
+    "HyperparameterImportanceEvaluator",
+    "MentionedInPublicationEvaluator",
     "MergedPREvaluator",
+    "PeerReviewAcceptedEvaluator",
     "PublishedPaperEvaluator",
 ]

@@ -1,15 +1,4 @@
-"""Universe-cycle node -- end-of-cycle maintenance.
-
-Updates health metrics, calls MemoryManager cleanup, and clears the
-completed execution. The daemon loops indefinitely; stopping is driven
-externally (API stop, SIGINT, .pause file) OR by the cycle-level no-op
-streak guardrail below.
-
-Contract
---------
-Input:  UniverseState after a task (write/worldbuild/reflect) completes.
-Output: Partial UniverseState with updated health and counters.
-"""
+"""Universe-cycle node -- universe graph; final node each cycle, loops back or terminates."""
 
 from __future__ import annotations
 

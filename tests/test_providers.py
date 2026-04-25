@@ -398,6 +398,42 @@ class TestProviderRegistration:
         router.register(FakeProvider("p", "f2", "v2"))
         assert len(router.available_providers) == 1
 
+    def test_claude_provider_not_registered_when_binary_absent(self):
+        """claude-code must not appear in available_providers when 'claude' binary is missing."""
+        from workflow.providers.claude_provider import ClaudeProvider
+
+        with patch("shutil.which", return_value=None):
+            assert not ClaudeProvider.is_available()
+            router = ProviderRouter()
+            if ClaudeProvider.is_available():
+                router.register(ClaudeProvider())
+            assert "claude-code" not in router.available_providers
+
+    def test_codex_provider_not_registered_when_binary_absent(self):
+        """codex must not appear in available_providers when 'codex' binary is missing."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        with patch("shutil.which", return_value=None):
+            assert not CodexProvider.is_available()
+            router = ProviderRouter()
+            if CodexProvider.is_available():
+                router.register(CodexProvider())
+            assert "codex" not in router.available_providers
+
+    def test_claude_provider_registered_when_binary_present(self):
+        """claude-code is registered when 'claude' binary is found."""
+        from workflow.providers.claude_provider import ClaudeProvider
+
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            assert ClaudeProvider.is_available()
+
+    def test_codex_provider_registered_when_binary_present(self):
+        """codex is registered when 'codex' binary is found."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        with patch("shutil.which", return_value="/usr/local/bin/codex"):
+            assert CodexProvider.is_available()
+
 
 # =====================================================================
 # ClaudeProvider (subprocess mock)

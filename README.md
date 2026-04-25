@@ -1,6 +1,6 @@
 # Workflow
 
-**A global goals engine. Fully self-hostable, open-source (MIT platform / CC0 catalog), runs on your own infrastructure.** Humanity declares shared Goals — research breakthroughs, great novels, successful prosecutions, cures, open datasets, whatever people actually want done — and a legion of diverse AI-augmented workflows pursues each Goal in parallel. Branches evolve, cross-pollinate, and get ranked by how far their outputs advance up each Goal's real-world outcome-gate ladder. `fantasy_author/` is the first benchmark branch; the system is built for everything people collectively care about next.
+**A global goals engine. Fully self-hostable, open-source (MIT platform / CC0 catalog), runs on your own infrastructure.** Humanity declares shared Goals — research breakthroughs, great novels, successful prosecutions, cures, open datasets, whatever people actually want done — and a legion of diverse AI-augmented workflows pursues each Goal in parallel. Branches evolve, cross-pollinate, and get ranked by how far their outputs advance up each Goal's real-world outcome-gate ladder. `fantasy_daemon/` is the first benchmark branch; the system is built for everything people collectively care about next.
 
 This repo already contains substantial architecture and implementation work. These starter surfaces exist to make that work easier to navigate, extend, and connect in Obsidian.
 

@@ -191,3 +191,248 @@ def rotate_run_transcripts(
             logger.exception("rotate_run_transcripts: unexpected on %s", src)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Activity-log rotation (BUG-023 Phase 3)
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_LOG_SOFT_CAP_ENV = "WORKFLOW_CAP_ACTIVITY_LOG_BYTES"
+_ACTIVITY_LOG_FILENAME = "activity.log"
+
+
+def _activity_log_soft_cap_bytes() -> int:
+    raw = os.environ.get(_ACTIVITY_LOG_SOFT_CAP_ENV, "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r is not an integer; activity_log rotation disabled",
+            _ACTIVITY_LOG_SOFT_CAP_ENV, raw,
+        )
+        return 0
+    return max(0, value)
+
+
+def rotate_activity_log(
+    log_path: Path | None = None,
+    *,
+    soft_cap_bytes: int | None = None,
+) -> bool:
+    """Rotate activity.log when it exceeds the soft cap.
+
+    When the log file's size >= ``soft_cap_bytes``, renames it to
+    ``activity.log.1``. The live file is then absent so subsequent
+    writes start fresh.
+
+    Parameters
+    ----------
+    log_path
+        Path to the log file. Defaults to ``data_dir() / "activity.log"``.
+    soft_cap_bytes
+        Size threshold in bytes. When 0 or None, reads
+        ``WORKFLOW_CAP_ACTIVITY_LOG_BYTES`` from env; if still 0, rotation
+        is disabled and the function returns False.
+
+    Returns
+    -------
+    bool
+        True if rotation happened, False otherwise.
+    """
+    if log_path is None:
+        log_path = data_dir() / _ACTIVITY_LOG_FILENAME
+    if soft_cap_bytes is None:
+        soft_cap_bytes = _activity_log_soft_cap_bytes()
+    if soft_cap_bytes <= 0:
+        return False
+
+    try:
+        size = log_path.stat().st_size if log_path.exists() else 0
+    except OSError:
+        return False
+
+    if size < soft_cap_bytes:
+        return False
+
+    rotated = log_path.with_name(log_path.name + ".1")
+    try:
+        log_path.replace(rotated)
+    except OSError as exc:
+        logger.warning("rotate_activity_log: rename failed: %s", exc)
+        return False
+
+    logger.info(
+        "rotate_activity_log: rotated %s -> %s (was %d bytes, cap %d)",
+        log_path, rotated, size, soft_cap_bytes,
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Universe-outputs pruning (BUG-023 Phase 3)
+# ---------------------------------------------------------------------------
+
+_UNIVERSE_OUTPUTS_HARD_CAP_ENV = "WORKFLOW_CAP_UNIVERSE_OUTPUTS_BYTES"
+_OUTPUT_DIRNAME = "output"
+
+
+def _universe_outputs_hard_cap_bytes() -> int:
+    raw = os.environ.get(_UNIVERSE_OUTPUTS_HARD_CAP_ENV, "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r is not an integer; universe_outputs pruning disabled",
+            _UNIVERSE_OUTPUTS_HARD_CAP_ENV, raw,
+        )
+        return 0
+    return max(0, value)
+
+
+def prune_universe_outputs(
+    outputs_dir: Path | None = None,
+    *,
+    hard_cap_bytes: int | None = None,
+) -> list[str]:
+    """Prune oldest files from universe outputs until under the soft cap.
+
+    When total bytes in ``outputs_dir`` exceeds ``hard_cap_bytes``, deletes
+    the oldest files (by mtime) until the directory is back under 80% of
+    the hard cap. Audit-logs every deletion with path + reason.
+
+    Parameters
+    ----------
+    outputs_dir
+        Directory to prune. Defaults to ``data_dir() / "output"``.
+    hard_cap_bytes
+        Hard cap in bytes. When 0 or None, reads
+        ``WORKFLOW_CAP_UNIVERSE_OUTPUTS_BYTES`` from env; if still 0,
+        pruning is disabled and an empty list is returned.
+
+    Returns
+    -------
+    list[str]
+        Paths of files deleted, in deletion order (oldest first).
+    """
+    if outputs_dir is None:
+        outputs_dir = data_dir() / _OUTPUT_DIRNAME
+    if hard_cap_bytes is None:
+        hard_cap_bytes = _universe_outputs_hard_cap_bytes()
+    if hard_cap_bytes <= 0:
+        return []
+
+    if not outputs_dir.is_dir():
+        return []
+
+    soft_cap = int(hard_cap_bytes * 0.80)
+
+    candidates: list[tuple[float, int, Path]] = []
+    total_bytes = 0
+    for child in outputs_dir.rglob("*"):
+        try:
+            if not child.is_file():
+                continue
+            st = child.stat()
+            candidates.append((st.st_mtime, st.st_size, child))
+            total_bytes += st.st_size
+        except OSError:
+            continue
+
+    if total_bytes <= hard_cap_bytes:
+        return []
+
+    candidates.sort(key=lambda t: t[0])
+
+    deleted: list[str] = []
+    for mtime, size, path in candidates:
+        if total_bytes <= soft_cap:
+            break
+        try:
+            path.unlink()
+            total_bytes -= size
+            deleted.append(str(path))
+            logger.info(
+                "prune_universe_outputs: deleted %s (mtime=%s, size=%d) "
+                "reason=hard_cap_exceeded",
+                path, mtime, size,
+            )
+        except OSError as exc:
+            logger.warning("prune_universe_outputs: unlink %s failed: %s", path, exc)
+
+    return deleted
+
+
+# ---------------------------------------------------------------------------
+# Startup storage probe (BUG-023 Phase 3)
+# ---------------------------------------------------------------------------
+
+
+def startup_storage_probe(
+    *,
+    log_path: Path | None = None,
+    outputs_dir: Path | None = None,
+) -> dict[str, object]:
+    """Run storage enforcement at daemon startup.
+
+    Checks activity_log and universe_outputs immediately; runs rotation
+    or pruning if over cap.
+
+    Returns
+    -------
+    dict with keys:
+        activity_log_rotated: bool
+        universe_outputs_pruned: list[str]
+    """
+    activity_rotated = rotate_activity_log(log_path)
+    outputs_pruned = prune_universe_outputs(outputs_dir)
+    return {
+        "activity_log_rotated": activity_rotated,
+        "universe_outputs_pruned": outputs_pruned,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Required data-file probe (BUG-027)
+# ---------------------------------------------------------------------------
+
+_REQUIRED_DATA_FILES: list[str] = [
+    "data/world_rules.lp",
+]
+
+
+def startup_file_probe(package_root: Path | None = None) -> list[str]:
+    """Check that required static data files are present under package_root.
+
+    Returns a list of relative paths (relative to package_root) that are
+    missing.  An empty list means all required files are present.
+
+    Parameters
+    ----------
+    package_root:
+        Root directory to search (defaults to the repo/package root derived
+        from this module's location: parents[3] of rotation.py puts us at
+        the checkout root where data/ lives).
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    if package_root is None:
+        package_root = Path(__file__).resolve().parents[2]
+
+    missing: list[str] = []
+    for rel in _REQUIRED_DATA_FILES:
+        full = package_root / rel
+        if not full.exists():
+            missing.append(rel)
+            _log.warning(
+                "Required data file missing: %s (expected at %s). "
+                "Cloud image may be missing COPY data/world_rules.lp.",
+                rel,
+                full,
+            )
+    return missing

@@ -19,6 +19,7 @@ def test_fantasy_author_imports_still_work():
     """Test that existing code importing from fantasy_author.* still works."""
     # These are the import paths used by existing tests and __main__.py
     from domains.fantasy_author.state import SceneState, UniverseState
+
     from workflow.exceptions import CheckpointError, ProviderError
     from workflow.memory.manager import MemoryManager
     from workflow.providers.base import BaseProvider, ModelConfig
@@ -54,8 +55,9 @@ def test_workflow_imports_work():
 def test_domain_imports_work():
     """Test that new domains.fantasy_author.* imports work."""
     from domains.fantasy_author.graphs import build_universe_graph
-    from domains.fantasy_author.phases import commit, draft, orient, plan
     from domains.fantasy_author.state import SceneState, UniverseState
+
+    from domains.fantasy_author.phases import commit, draft, orient, plan
 
     assert SceneState is not None
     assert UniverseState is not None
@@ -180,3 +182,59 @@ def test_work_targets_import_from_workflow():
     from workflow.work_targets import WorkTarget
 
     assert WorkTarget is not None
+
+
+def test_fantasy_daemon_author_server_is_daemon_server_module():
+    """fantasy_daemon.author_server must be the same module object as workflow.daemon_server.
+
+    Verifies the sys.modules rebind in fantasy_daemon/author_server.py — not a snapshot copy.
+    """
+    import warnings
+
+    import workflow.daemon_server as canonical
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        import fantasy_daemon.author_server as alias
+
+    # sys.modules rebind means the alias IS the canonical module, not a copy.
+    assert alias is canonical, (
+        "fantasy_daemon.author_server must be the same object as workflow.daemon_server; "
+        "got a snapshot copy instead of a sys.modules rebind"
+    )
+
+
+def test_fantasy_daemon_author_server_state_shared():
+    """Writes through the alias must be visible via the canonical module and vice versa.
+
+    The old ``from workflow.daemon_server import *`` pattern produced a snapshot;
+    mutations would be invisible across the boundary. This test fails if that
+    pattern is ever reintroduced.
+    """
+    import warnings
+
+    import workflow.daemon_server as canonical
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        import fantasy_daemon.author_server as alias
+
+    sentinel = "_test_author_server_shared_sentinel"
+    try:
+        # write through alias, read through canonical
+        setattr(alias, sentinel, "written_via_alias")
+        assert getattr(canonical, sentinel) == "written_via_alias", (
+            "Write via alias not visible on canonical module"
+        )
+
+        # write through canonical, read through alias
+        setattr(canonical, sentinel, "written_via_canonical")
+        assert getattr(alias, sentinel) == "written_via_canonical", (
+            "Write via canonical not visible on alias module"
+        )
+    finally:
+        for mod in (alias, canonical):
+            try:
+                delattr(mod, sentinel)
+            except AttributeError:
+                pass

@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PIL import Image, ImageDraw
+
 # pystray requires a display; tolerate ImportError in headless
 # containers (cloud_worker's fantasy_daemon subprocess) so modules
 # that import workflow.desktop don't blow up at load time.

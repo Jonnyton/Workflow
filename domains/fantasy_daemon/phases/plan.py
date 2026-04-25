@@ -1,4 +1,4 @@
-"""Plan node -- generates beat sheet from orient warnings.
+"""Plan node -- scene graph; entry after orient, generates beat sheet before draft.
 
 Calls a single provider to generate 3-5 beat alternatives, then scores
 each alternative deterministically on: warning resolution, tension curve,

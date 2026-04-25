@@ -23,7 +23,9 @@ Target architecture:
 
 Work ordering: pick the task that unblocks the largest currently-broken
 uptime surface. Treat any surface outage as equal severity — tiered
-severity invites starvation. Any uptime-track feature ships with §14
+severity invites starvation. When multiple uptime surfaces are broken,
+break ties by largest shared dependency impact, then shortest path to
+verified recovery. Any uptime-track feature ships with the §14
 concurrency/load-test proof or it is not done.
 
 Subordinated work (bug sprints, rename phases, unrelated design notes)
@@ -39,15 +41,16 @@ it doesn't top the queue.
 ## Three Living Files
 
 All three are living documents. All three are updated immediately when
-anything changes — not batched, not deferred. After every user message,
+durable state changes — not batched, not deferred. After every user message,
 check: does this change any of the three? Multiple sessions from different
 providers may be reading these concurrently. They are the shared state.
+`STATUS.md` is a live coordination board, not a backlog.
 
 | File | What belongs here | What does NOT belong here |
 |------|-------------------|--------------------------|
 | **AGENTS.md** | How to work on this project. Behavior, norms, hard rules. | Architecture, design decisions, principles (→ PLAN.md) |
 | **PLAN.md** | How the system works and why. Architecture, principles, design decisions, module specs. | Live state, task tracking (→ STATUS.md). Behavioral norms (→ AGENTS.md) |
-| **STATUS.md** | What's happening now. Task board, concerns, next actions. ≤4 KB / 60 lines. | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). |
+| **STATUS.md** | What's happening now. Live task board, concerns, next actions. ≤4 KB / 60 lines. | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). Backlog parking. |
 
 If it's about the project's architecture or design → PLAN.md.
 If it's about how to work on the project → AGENTS.md.
@@ -59,7 +62,7 @@ If it's about what's happening right now → STATUS.md.
 
 ### Orient
 
-1. Read `STATUS.md` (live state, task board, concerns). **Trim check:** if you see resolved concerns, landing records, or entries marked DONE — delete them now. STATUS.md has a 4 KB / 60-line budget; every reader is a janitor.
+1. Read `STATUS.md` (live coordination board, concerns, current work). **Trim check:** when reading or writing it, delete resolved concerns, landing records, entries marked DONE, duplicated host asks, and rows no provider can act on. STATUS.md has a 4 KB / 60-line budget; every reader is a janitor.
 2. `PLAN.md` is the design reference (18 KB). Load it based on task scope:
    - **Full load** when: planning or scoping a new feature, making or evaluating
      a design decision, checking alignment with project principles, working on
@@ -93,6 +96,8 @@ If it's about what's happening right now → STATUS.md.
 - Work row landed? Delete the row. The commit is the record.
 - A concern became a Work row? Delete the concern — the task IS the resolution.
 - Accepted design decision? Move to PLAN.md, delete from STATUS.md.
+- Duplicate host ask? Coalesce to one smallest concrete ask.
+- No provider-actionable next step? Move detail to an artifact, or rewrite as a concrete `host-decision` / `host-action` row.
 - Session summary or landing narrative? Put it in `activity.log`, not STATUS.md.
 - Need detail on a concern? Link to the commit, spec, or `docs/concerns/` — STATUS.md entries stay ≤150 chars.
 
@@ -146,9 +151,9 @@ scoped reader at `python scripts/docview.py`.
 
 ## Team Norms
 
-- **Teammates communicate directly.** Dev messages verifier after finishing work. Use SendMessage by name, not broadcast.
-- **Verifier is proactive.** Runs tests and reviews diffs after every dev change without being asked. Runs as a background teammate.
-- **The team is always ready.** Teammates stay up, idle when not needed. "Standing by" is a valid state.
+- **Teammates communicate directly where the harness supports it.** Claude Code devs message verifier after finishing work. Use SendMessage by name, not broadcast.
+- **Verification is proactive.** Every substantive change gets independent verification before landing. Claude's persistent verifier is the background teammate implementation; other providers use focused tests plus independent diff/subagent review when available.
+- **Persistent teams stay ready.** Where the harness supports teammates, they stay up, idle when not needed. "Standing by" is a valid state.
 - **Iterate agent behavior.** If a teammate isn't performing well, refine its `.claude/agents/` definition and respawn.
 - **Broadcast sparingly.** Token cost scales with team size. Use direct messages for targeted coordination, broadcast only for team-wide state changes.
 - **Claim before working.** When self-claiming from the task list, claim first to prevent collisions. File locking handles races but claiming communicates intent.
@@ -158,11 +163,17 @@ scoped reader at `python scripts/docview.py`.
 
 Three patterns keep agent output trustworthy:
 
-**Verification is structural.** Verifier is a core teammate, not on-demand. Every `TaskCompleted` event triggers verifier — it runs tests then reviews the diff. The lead only acts on code that verifier has cleared (verdict: SHIP). If verifier flags critical issues, the task goes back to dev — it is not marked complete.
+**Verification is structural.** Every substantive change needs test/check evidence and an independent review path before it is treated as landed. Claude Code's `TaskCompleted` -> verifier loop is the preferred team implementation. Codex/Cowork satisfy the same invariant with focused tests plus independent diff/subagent review where available. Self-review alone is not enough for public-surface, storage, auth, migration, concurrency, or data-loss-risk changes.
+
+**Final chatbot-surface verification is live Claude.ai.** For changes affecting public MCP behavior, Claude.ai UX, connector tool descriptions, user-visible node/workflow state, or `tinyassets.io`, final acceptance must use the real Claude.ai chat state with the installed Universe Server MCP connector at `https://tinyassets.io/mcp`, following `ui-test`. Direct MCP calls, local scripts, tests, and canaries are supporting evidence, not final user-surface proof. The proof is rendered chatbot behavior in the live conversation, logged in `output/claude_chat_trace.md` and summarized in `output/user_sim_session.md`.
+
+**Post-fix clean-use evidence.** After the fix and `ui-test`, final verification must also look for evidence that actual users have used the affected feature cleanly since the fix landed. Use available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Freshness-stamp the evidence. If no post-fix real-user use is visible yet, say that explicitly and, for public-surface or high-risk changes, leave a short watch item in `STATUS.md` instead of claiming proven clean use.
 
 **Agent team loop guardrails with forced reflection.** If a teammate is stuck retrying the same approach, it must pause and reflect before the next attempt: "What failed? What specific change would fix it? Am I repeating the same approach?" If stuck for 3+ iterations on the same error, message the lead for reassignment or a fresh perspective. Don't loop forever. (Note: this is about dev agent stuck-loops, not daemon-level bounded reflection — see STATUS.md #6 for the daemon concern.)
 
 **REFLECTION.md for compound learning.** After completing a significant task, the teammate writes a short reflection: what surprised me, one pattern worth capturing, one thing I'd do differently. Save to `REFLECTION.md` in the working directory. The lead reviews and merges approved learnings into AGENTS.md or the agent's memory. This is how sessions make future sessions better — systematically, not ad hoc.
+
+**Scope-message before implementing self-found tasks.** Even when scope feels obvious, send the lead a one-line scope message and wait for approval before editing. The scope step exists to catch silent divergence from lead intent.
 
 ### Two Task Systems
 
@@ -224,13 +235,14 @@ useful concurrency, not waiting.
 1. **SqliteSaver only** -- not AsyncSqliteSaver (not production-safe).
 2. **LanceDB singleton** -- reuse connection objects, never recreate.
 3. **No API SDKs for primary writer** -- Claude/Codex use `claude -p` and `codex exec` subprocesses.
-4. **Never block on human input** -- every gate has an autonomous default.
+4. **Executable gates need autonomous defaults** -- never block a workflow gate on human input when a safe default exists. True host-only authority is allowed only as a concrete `host-decision` or `host-action` row with the smallest possible ask; it must not block unrelated autonomous work. If no safe default exists, route around it or pick another non-overlapping uptime task.
 5. **TypedDict + Annotated reducers** -- `Annotated[list, operator.add]` for accumulating fields.
 6. **FactWithContext with truth-value typing** -- every extracted fact needs source_type, reliability, temporal_bounds, language_type. Domain skills may extend these fields.
 7. **Python 3.11+** required.
 8. **Fail loudly, never silently.** Mock fallbacks that look like real output are worse than crashes.
 9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
-10. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe before considering the change complete. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
+10. **Contributor attribution uses `CONTRIBUTORS.md`.** When a branch or node ships and `attribution_credit` rows exist, read `CONTRIBUTORS.md` to map each `actor_id` to a GitHub handle and emit `Co-Authored-By:` lines in the commit message. Format: `Co-Authored-By: Display Name <handle@users.noreply.github.com>`. If an actor_id is not in the table, skip silently — never block a commit on missing attribution.
+11. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe. This canary is required evidence, not final chatbot-surface proof; MCP/chatbot-facing changes also require the live Claude.ai `ui-test` check above before final acceptance. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
 
 ---
 

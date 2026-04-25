@@ -1,4 +1,4 @@
-"""Foundation-priority review for the universe scheduler."""
+"""Foundation-priority-review node -- universe graph; cycle entry point, gates hard blockers."""
 
 from __future__ import annotations
 

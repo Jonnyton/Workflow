@@ -170,7 +170,7 @@ def test_configure_bootstraps_universes_from_filesystem(tmp_path):
     """
     from fantasy_author.api import configure
 
-    from workflow import author_server
+    import workflow.daemon_server as author_server
 
     # Fresh base dir with a universe directory (no prior configure).
     base = tmp_path / "fresh_base"
@@ -329,7 +329,7 @@ def test_propose_author_fork_signature_regression():
     ``author_server.propose_author_fork`` directly pins the kwargs."""
     import inspect
 
-    from workflow import author_server
+    import workflow.daemon_server as author_server
 
     sig = inspect.signature(author_server.propose_author_fork)
     params = sig.parameters

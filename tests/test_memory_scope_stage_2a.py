@@ -32,18 +32,18 @@ def base_path(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
-    from workflow.author_server import initialize_author_server
+    from workflow.daemon_server import initialize_author_server
     initialize_author_server(base)
     return base
 
 
 def test_universe_is_private_false_when_no_grants(base_path):
-    from workflow.author_server import universe_is_private
+    from workflow.daemon_server import universe_is_private
     assert universe_is_private(base_path, universe_id="u-public") is False
 
 
 def test_grant_then_private(base_path):
-    from workflow.author_server import grant_universe_access, universe_is_private
+    from workflow.daemon_server import grant_universe_access, universe_is_private
 
     grant_universe_access(
         base_path,
@@ -58,7 +58,7 @@ def test_grant_then_private(base_path):
 
 
 def test_grant_is_idempotent_and_updates_permission(base_path):
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         grant_universe_access,
         list_universe_acl,
     )
@@ -77,7 +77,7 @@ def test_grant_is_idempotent_and_updates_permission(base_path):
 
 
 def test_grant_rejects_unknown_permission(base_path):
-    from workflow.author_server import grant_universe_access
+    from workflow.daemon_server import grant_universe_access
 
     with pytest.raises(ValueError, match="Unknown permission"):
         grant_universe_access(
@@ -89,7 +89,7 @@ def test_grant_rejects_unknown_permission(base_path):
 
 
 def test_revoke_removes_grant(base_path):
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         grant_universe_access,
         revoke_universe_access,
         universe_is_private,
@@ -111,7 +111,7 @@ def test_revoke_removes_grant(base_path):
 def test_universe_access_permission_semantics(base_path):
     """Public universe returns 'read' for any actor; private returns
     exactly what was granted or '' if ungranted."""
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         grant_universe_access,
         universe_access_permission,
     )
@@ -134,7 +134,7 @@ def test_universe_access_permission_semantics(base_path):
 
 
 def test_list_universe_acl_ordered_by_granted_at(base_path):
-    from workflow.author_server import grant_universe_access, list_universe_acl
+    from workflow.daemon_server import grant_universe_access, list_universe_acl
 
     grant_universe_access(
         base_path, universe_id="u", actor_id="first", permission="read",

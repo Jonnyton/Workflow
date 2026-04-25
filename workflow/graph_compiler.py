@@ -1228,8 +1228,8 @@ def _build_invoke_branch_node(
     _base = Path(base_path)
 
     def _node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        from workflow.author_server import get_branch_definition
         from workflow.branches import BranchDefinition as _BD
+        from workflow.daemon_server import get_branch_definition
 
         raw = get_branch_definition(_base, child_branch_def_id)
         child_branch = _BD.from_dict(raw)

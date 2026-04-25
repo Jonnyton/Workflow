@@ -14,6 +14,14 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from workflow.api.helpers import (
+    _base_path,
+    _default_universe,
+    _read_json,
+    _read_text,
+    _universe_dir,
+)
+
 
 def create_app(registry: Any | None = None) -> FastAPI:
     """Return a bare FastAPI app shell.
@@ -25,4 +33,12 @@ def create_app(registry: Any | None = None) -> FastAPI:
     return FastAPI(title="Workflow Engine API")
 
 
-__all__ = ["create_app"]
+__all__ = [
+    "create_app",
+    # helpers (re-exported for submodule consumers)
+    "_base_path",
+    "_default_universe",
+    "_read_json",
+    "_read_text",
+    "_universe_dir",
+]

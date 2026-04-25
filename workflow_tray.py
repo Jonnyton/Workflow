@@ -371,7 +371,7 @@ class UniverseServerManager:
         self.mcp_proc = subprocess.Popen(
             [
                 sys.executable, "-c",
-                "from fantasy_author.universe_server import mcp; "
+                "from workflow.universe_server import mcp; "
                 f"mcp.run(transport='streamable-http', host='0.0.0.0', port={MCP_PORT})"
             ],
             cwd=str(PROJECT_DIR),

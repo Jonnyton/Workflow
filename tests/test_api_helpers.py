@@ -1,0 +1,178 @@
+"""Tests for workflow/api/helpers.py — extracted universe-server path helpers."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from workflow.api.helpers import (
+    _base_path,
+    _default_universe,
+    _read_json,
+    _read_text,
+    _universe_dir,
+)
+
+# ---------------------------------------------------------------------------
+# _base_path
+# ---------------------------------------------------------------------------
+
+class TestBasePath:
+    def test_returns_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        result = _base_path()
+        assert isinstance(result, Path)
+
+    def test_honours_workflow_data_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        assert _base_path() == tmp_path
+
+    def test_absolute(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        assert _base_path().is_absolute()
+
+
+# ---------------------------------------------------------------------------
+# _universe_dir
+# ---------------------------------------------------------------------------
+
+class TestUniverseDir:
+    def test_returns_child_of_base(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        result = _universe_dir("my-universe")
+        assert result.parent == tmp_path.resolve()
+
+    def test_correct_name(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        result = _universe_dir("my-universe")
+        assert result.name == "my-universe"
+
+    def test_path_traversal_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        with pytest.raises(ValueError, match="Invalid universe_id"):
+            _universe_dir("../../etc/passwd")
+
+    def test_path_traversal_absolute_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        # An absolute path that escapes base also raises
+        with pytest.raises(ValueError, match="Invalid universe_id"):
+            _universe_dir("/tmp/outside")
+
+    def test_nested_name_stays_inside(self, tmp_path, monkeypatch):
+        # A simple subdirectory within base is fine
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        result = _universe_dir("valid")
+        assert result.is_relative_to(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# _default_universe
+# ---------------------------------------------------------------------------
+
+class TestDefaultUniverse:
+    def test_env_var_overrides(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
+        assert _default_universe() == "my-default"
+
+    def test_first_subdir_if_no_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+        (tmp_path / "alpha").mkdir()
+        (tmp_path / "beta").mkdir()
+        assert _default_universe() == "alpha"
+
+    def test_skips_dotdirs(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+        (tmp_path / ".hidden").mkdir()
+        (tmp_path / "visible").mkdir()
+        assert _default_universe() == "visible"
+
+    def test_fallback_when_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+        assert _default_universe() == "default-universe"
+
+    def test_fallback_when_no_base(self, tmp_path, monkeypatch):
+        nonexistent = tmp_path / "nonexistent"
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(nonexistent))
+        monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+        assert _default_universe() == "default-universe"
+
+    def test_skips_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+        (tmp_path / "afile.txt").write_text("x")
+        (tmp_path / "zdir").mkdir()
+        # File is sorted before zdir alphabetically but must be skipped
+        assert _default_universe() == "zdir"
+
+
+# ---------------------------------------------------------------------------
+# _read_json
+# ---------------------------------------------------------------------------
+
+class TestReadJson:
+    def test_reads_dict(self, tmp_path):
+        p = tmp_path / "data.json"
+        p.write_text('{"key": "value"}', encoding="utf-8")
+        result = _read_json(p)
+        assert result == {"key": "value"}
+
+    def test_reads_list(self, tmp_path):
+        p = tmp_path / "data.json"
+        p.write_text('[1, 2, 3]', encoding="utf-8")
+        result = _read_json(p)
+        assert result == [1, 2, 3]
+
+    def test_returns_none_missing(self, tmp_path):
+        p = tmp_path / "nonexistent.json"
+        assert _read_json(p) is None
+
+    def test_returns_none_invalid_json(self, tmp_path):
+        p = tmp_path / "bad.json"
+        p.write_text("not json", encoding="utf-8")
+        assert _read_json(p) is None
+
+    def test_returns_none_empty_file(self, tmp_path):
+        p = tmp_path / "empty.json"
+        p.write_text("", encoding="utf-8")
+        assert _read_json(p) is None
+
+    def test_nested_structure(self, tmp_path):
+        data = {"a": {"b": [1, 2]}, "c": None}
+        p = tmp_path / "nested.json"
+        p.write_text(json.dumps(data), encoding="utf-8")
+        assert _read_json(p) == data
+
+
+# ---------------------------------------------------------------------------
+# _read_text
+# ---------------------------------------------------------------------------
+
+class TestReadText:
+    def test_reads_content(self, tmp_path):
+        p = tmp_path / "file.txt"
+        p.write_text("hello world", encoding="utf-8")
+        assert _read_text(p) == "hello world"
+
+    def test_returns_default_missing(self, tmp_path):
+        p = tmp_path / "nonexistent.txt"
+        assert _read_text(p) == ""
+
+    def test_custom_default(self, tmp_path):
+        p = tmp_path / "nonexistent.txt"
+        assert _read_text(p, default="fallback") == "fallback"
+
+    def test_empty_file(self, tmp_path):
+        p = tmp_path / "empty.txt"
+        p.write_text("", encoding="utf-8")
+        assert _read_text(p) == ""
+
+    def test_multiline(self, tmp_path):
+        content = "line1\nline2\nline3"
+        p = tmp_path / "multi.txt"
+        p.write_text(content, encoding="utf-8")
+        assert _read_text(p) == content

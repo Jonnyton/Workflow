@@ -170,7 +170,7 @@ class TestExplicitNodeRefCopiesCanonicalBody:
         assert result.get("status") == "added", result
 
         # Confirm the branch now carries the canonical body, not a hollow node.
-        from workflow.author_server import get_branch_definition
+        from workflow.daemon_server import get_branch_definition
         branch = get_branch_definition(base, branch_def_id=bid)
         nd = next(
             n for n in branch["node_defs"]
@@ -196,7 +196,7 @@ class TestExplicitNodeRefCopiesCanonicalBody:
             intent="copy",
         )
         assert result.get("status") == "added", result
-        from workflow.author_server import get_branch_definition
+        from workflow.daemon_server import get_branch_definition
         branch = get_branch_definition(base, branch_def_id=bid)
         nd = next(
             n for n in branch["node_defs"]
@@ -249,7 +249,7 @@ class TestExplicitNodeRefCopiesCanonicalBody:
         target = _call(us, "extensions", "build_branch",
                        spec_json=json.dumps(target_spec))
         assert target["status"] == "built", target
-        from workflow.author_server import get_branch_definition
+        from workflow.daemon_server import get_branch_definition
         branch = get_branch_definition(base, branch_def_id=target["branch_def_id"])
         nd = next(
             n for n in branch["node_defs"]

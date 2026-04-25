@@ -67,7 +67,7 @@ def base_path(tmp_path, monkeypatch):
     base.mkdir()
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
-    from workflow.author_server import initialize_author_server
+    from workflow.daemon_server import initialize_author_server
     initialize_author_server(base)
     from workflow import universe_server as us
     importlib.reload(us)

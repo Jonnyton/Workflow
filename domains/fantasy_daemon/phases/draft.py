@@ -1,4 +1,4 @@
-"""Draft node -- generates prose from beat sheet.
+"""Draft node -- scene graph; entry after plan (or on second_draft loop from commit).
 
 Calls a provider with the beat sheet, voice context, and recent prose for
 continuity.  On revision (second_draft_used), includes commit feedback

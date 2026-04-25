@@ -1,4 +1,4 @@
-"""Authorial-priority review for the universe scheduler."""
+"""Authorial-priority-review node -- universe graph; selects work target after foundation review."""
 
 from __future__ import annotations
 

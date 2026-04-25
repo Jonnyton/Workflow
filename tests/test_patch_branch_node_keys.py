@@ -77,7 +77,7 @@ def _patch(us, bid: str, ops: list) -> dict:
 
 
 def _load(us, base: Path, bid: str) -> dict:
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     return get_branch_definition(base, branch_def_id=bid)
 

@@ -115,6 +115,12 @@ COPY --from=builder /build/domains /app/domains
 COPY --from=builder /build/fantasy_daemon /app/fantasy_daemon
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
 
+# Static data files required at runtime.
+# world_rules.lp is the ASP constraint program; asp_engine.py resolves it
+# relative to the package root (parents[2]/data/). The *.db files in data/
+# are runtime state and live in WORKFLOW_DATA_DIR, not here.
+COPY data/world_rules.lp /app/data/world_rules.lp
+
 # Stdlib-only MCP canary — reused across Layer-1 (local), tier-3 GHA,
 # docker-build CI, cloud canary, and the compose.yml container-health
 # healthcheck. Single definition of "healthy MCP" across every probe

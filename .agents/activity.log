@@ -185,3 +185,20 @@ Deferred to host: rotate 4 API keys that crossed chat (GROQ/GEMINI/XAI/DO_API �
 2026-04-24T20:19:44-07:00 [codex] ChatGPT/Mara recovery confirmed rename did not save: "Town Climate Claim Checker" absent, old `mara_adaptation_claims_2step` still present. Filed BUG-030: "Rename approval leaves user uncertain and rename does not appear saved." STATUS updated.
 
 2026-04-24T20:21:03-07:00 [codex] ChatGPT/Mara normal-user status report succeeded: Workflow saved as `mara_adaptation_claims_2step`, findable in-chat as "my climate-claims workflow"; friendly rename not saved; run `ae8d92f18907459e` failed at `extract_claims` due empty LLM response; filed bugs confirmed: BUG-029, BUG-030.
+
+2026-04-25T05:18:00-07:00 [claude-code lead] Session in flight at rate-limit-incoming. State at wrap:
+
+8 commits landed: 2ee1b12 (#18 wiki canary), d06a6d7 (#33 skeleton), f1dd316 (#26 goals.search), d281cdf (storage #9+#16+#25), 174ccac (engine teammate_message+#14+#20), aee0478 (docs+nav-def+vetted-specs prune -697), 4aab860 (dev stand-down + STATUS), e819465 (universe-server mega +6260 LOC, 11 tasks).
+
+Mark shipped bug_to_patch_packet_v1 (0731a3122bd4) bound to Goal f10caea2e437 — vetted PASS. set_canonical 404s pre-redeploy.
+
+Host directives this session: visuals-first chatbot rule (rule 14), wiki uptime is Forever-Rule, file_bug dedup-at-filing, file_bug auto-triggers canonical investigation branch, bug_investigation backfills all unrun bugs, bug_investigation goes through general dispatcher queue (hosts configure priority).
+
+Devs in flight: dev on #36 author_server import migration; dev-2 on #47 dispatcher request type. Queue depth: #38 #40 #41 #45 #46 pending, plus #47 Phase 2 (rewire #33+#46 to dispatcher) coming after #47 ships.
+
+Verifier drained — all SHIPped or in-flight tasks cleared.
+
+Pending host actions (in priority order): cloud daemon redeploy from current main (unblocks set_canonical + ~10 other live fixes), R7 storage-split status, audit-doc review for #28+#29 implementation, MCP session may need re-reconnect later.
+
+Memories landed this session: 14 new entries indexed in MEMORY.md. Mark persona stub at .claude/agent-memory/user/personas/mark/.
+

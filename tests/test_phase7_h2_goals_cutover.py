@@ -179,13 +179,13 @@ def test_update_force_overrides_dirty(repo_env):
 
 def _seed_branch(us, name: str = "Demo branch") -> str:
     """Create a minimal branch via build_branch → return branch_def_id."""
-    from workflow.author_server import save_branch_definition
     from workflow.branches import (
         BranchDefinition,
         EdgeDefinition,
         GraphNodeRef,
         NodeDefinition,
     )
+    from workflow.daemon_server import save_branch_definition
 
     b = BranchDefinition(name=name, author="alice", entry_point="n1")
     b.node_defs = [NodeDefinition(node_id="n1", display_name="N1")]

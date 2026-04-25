@@ -225,7 +225,7 @@ def test_claim_persists_to_gate_claims_table(gates_env):
     _call(us, "gates", "claim",
           branch_def_id=bid, rung_key="submitted",
           evidence_url="https://example.com/subm")
-    from workflow.author_server import author_server_db_path
+    from workflow.daemon_server import author_server_db_path
     conn = sqlite3.connect(author_server_db_path(base))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -246,7 +246,7 @@ def test_claim_persists_to_gate_claims_table(gates_env):
 def test_schema_has_gate_ladder_column(gates_env):
     import sqlite3
     us, base = gates_env  # noqa: F841 — importlib reloads ensure init
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         author_server_db_path,
         initialize_author_server,
     )
@@ -262,7 +262,7 @@ def test_schema_has_gate_ladder_column(gates_env):
 def test_schema_has_gate_claims_table(gates_env):
     import sqlite3
     us, base = gates_env  # noqa: F841
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         author_server_db_path,
         initialize_author_server,
     )

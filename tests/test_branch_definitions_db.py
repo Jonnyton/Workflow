@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from workflow.author_server import (
+from workflow.branches import (
+    BranchDefinition,
+    ConditionalEdge,
+    EdgeDefinition,
+    GraphNodeRef,
+    NodeDefinition,
+)
+from workflow.daemon_server import (
     delete_branch_definition,
     fork_branch_definition,
     get_branch_definition,
@@ -14,13 +21,6 @@ from workflow.author_server import (
     list_branch_definitions,
     save_branch_definition,
     update_branch_definition,
-)
-from workflow.branches import (
-    BranchDefinition,
-    ConditionalEdge,
-    EdgeDefinition,
-    GraphNodeRef,
-    NodeDefinition,
 )
 
 
@@ -479,7 +479,7 @@ class TestGoalCommonNodesAll:
     """Cross-Goal variant of goal_common_nodes for #62."""
 
     def test_aggregates_across_goals(self, db_path: Path):
-        from workflow.author_server import goal_common_nodes_all
+        from workflow.daemon_server import goal_common_nodes_all
 
         rigor = {
             "node_id": "rigor_checker",
@@ -511,7 +511,7 @@ class TestGoalCommonNodesAll:
         assert set(rigor_entry["goal_ids"]) == {"goal-research", "goal-legal"}
 
     def test_threshold_filters_singletons(self, db_path: Path):
-        from workflow.author_server import goal_common_nodes_all
+        from workflow.daemon_server import goal_common_nodes_all
 
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
             "solo", [{"node_id": "unique_node", "display_name": "X"}],
@@ -527,7 +527,7 @@ class TestGoalCommonNodesAll:
         aggregate; their node's goal_ids list just stays empty for
         that contribution.
         """
-        from workflow.author_server import goal_common_nodes_all
+        from workflow.daemon_server import goal_common_nodes_all
 
         shared = {"node_id": "shared", "display_name": "S"}
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
@@ -549,7 +549,7 @@ class TestSearchNodes:
     """Free-text search across every Branch's NodeDefinitions for #62."""
 
     def test_empty_query_returns_all_nodes(self, db_path: Path):
-        from workflow.author_server import search_nodes
+        from workflow.daemon_server import search_nodes
 
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
             "b1", [{"node_id": "alpha"}, {"node_id": "beta"}],
@@ -559,7 +559,7 @@ class TestSearchNodes:
         assert {"alpha", "beta"}.issubset(ids)
 
     def test_query_ranks_matching_over_non_matching(self, db_path: Path):
-        from workflow.author_server import search_nodes
+        from workflow.daemon_server import search_nodes
 
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
             "b1", [
@@ -578,7 +578,7 @@ class TestSearchNodes:
         assert not any(r["node_id"] == "unrelated" for r in results)
 
     def test_reuse_count_counts_distinct_branches(self, db_path: Path):
-        from workflow.author_server import search_nodes
+        from workflow.daemon_server import search_nodes
 
         rigor = {"node_id": "rigor_checker", "display_name": "Rigor Checker"}
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
@@ -593,7 +593,7 @@ class TestSearchNodes:
         assert set(entry["goal_ids"]) == {"goal-research", "goal-legal"}
 
     def test_role_filter_restricts_by_phase(self, db_path: Path):
-        from workflow.author_server import search_nodes
+        from workflow.daemon_server import search_nodes
 
         save_branch_definition(db_path, branch_def=_branch_with_nodes(
             "b1", [
@@ -606,7 +606,7 @@ class TestSearchNodes:
         assert ids == {"reflect_one"}
 
     def test_prompt_template_preview_truncates(self, db_path: Path):
-        from workflow.author_server import search_nodes
+        from workflow.daemon_server import search_nodes
 
         long_template = "x " * 500  # 1000 chars of whitespace-separated x
         save_branch_definition(db_path, branch_def=_branch_with_nodes(

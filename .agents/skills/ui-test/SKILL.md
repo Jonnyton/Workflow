@@ -9,6 +9,24 @@ You simulate a real person chatting with Claude.ai on their phone or laptop, usi
 
 The human host is watching the browser tab. Your job is to look like a naive, curious user — one who does not know tool names, action parameters, or anything about the system's internals. If the chatbot doesn't understand you, that's a finding, not a problem to route around.
 
+## Driver routes
+
+- **Claude Code route:** use the host-visible Chrome profile through `scripts/claude_chat.py`. This remains the default route for Claude team user-sim.
+- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use it only to drive the same live Claude.ai session/profile that has the real Universe Server connector installed. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
+
+The verification target is the rendered Claude.ai conversation using the installed connector. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
+
+After `ui-test` passes, also look for post-fix clean-use evidence from actual users when the affected feature is public or high-risk. Check available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Record the timestamp, environment, and evidence source. If no real-user use is visible yet, say so plainly and leave a short watch item in `STATUS.md` rather than implying the feature has been proven clean for users.
+
+## Persona authenticity
+
+Codex is mechanically good at browser operation, but must not massage the chatbot toward the desired tool call. Prompts must stay naive and user-like:
+
+- Do not name internal actions, schemas, tool parameters, branch IDs, or implementation details unless the bot surfaced them first.
+- Do not over-specify a request just to force the right MCP call.
+- Do not coach the bot around a UX failure; log the failure.
+- Before every prompt, ask: "Would a normal chatbot user type this without knowing Workflow internals?" If no, rewrite it.
+
 ## Setup the host does once (not you)
 
 The host launches Chrome with:
@@ -59,7 +77,7 @@ If a mission stalls (no progress for >30s after an `ask` that should have trigge
 
 If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **do NOT self-initiate.** SendMessage the lead asking for a brief. Past work has shown self-initiated missions waste prompts and produce findings nobody wanted. Standing-by-without-brief is correct.
 
-## Your only driver
+## Claude Code driver
 
 ```bash
 python scripts/claude_chat.py ask "<prompt text>"       # type prompt, wait for response, print it
@@ -314,5 +332,6 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 
 - Never call `scripts/mcp_call.py` — that's the old invisible path; kept only for the lead's own debugging. You always go through the browser.
 - Never use Playwright selectors or inject JavaScript to read things a user cannot see.
+- Never treat hidden DOM state, direct MCP output, or an isolated browser profile as final proof.
 - Never reference the Custom GPT — legacy, retired.
 - Never claim a good outcome you didn't verify in the rendered response.

@@ -34,3 +34,10 @@
 - Use `python scripts/docview.py` before any raw whole-file read of large
   Markdown, text, or JSON artifacts.
 - If `docview.py` says a result is too large, narrow the query again.
+
+## MCP Actions Reference
+
+- New MCP actions and field additions are catalogued in `docs/mcp-actions/`.
+- When a chatbot encounters an unexpected response field or a new action verb,
+  check `docs/mcp-actions/` before assuming a schema error.
+- Index: `docs/mcp-actions/2026-04-25-session-additions.md`

@@ -79,7 +79,7 @@ def _seed_goal_with_ladder(us):
 
 
 def test_goal_gate_summary_empty_when_no_ladder(gates_on_env):
-    from workflow.author_server import goal_gate_summary
+    from workflow.daemon_server import goal_gate_summary
 
     us, base = gates_on_env
     g = _call(us, "goals", "propose", name="G", description="x")
@@ -94,7 +94,7 @@ def test_goal_gate_summary_empty_when_no_ladder(gates_on_env):
 
 
 def test_goal_gate_summary_ladder_length_reflects_rungs(gates_on_env):
-    from workflow.author_server import goal_gate_summary
+    from workflow.daemon_server import goal_gate_summary
 
     us, base = gates_on_env
     gid, _bid = _seed_goal_with_ladder(us)
@@ -106,7 +106,7 @@ def test_goal_gate_summary_ladder_length_reflects_rungs(gates_on_env):
 
 
 def test_goal_gate_summary_counts_across_multiple_branches(gates_on_env):
-    from workflow.author_server import goal_gate_summary
+    from workflow.daemon_server import goal_gate_summary
 
     us, base = gates_on_env
     gid, bid_a = _seed_goal_with_ladder(us)
@@ -129,7 +129,7 @@ def test_goal_gate_summary_counts_across_multiple_branches(gates_on_env):
 
 
 def test_goal_gate_summary_ignores_retracted(gates_on_env):
-    from workflow.author_server import goal_gate_summary
+    from workflow.daemon_server import goal_gate_summary
 
     us, base = gates_on_env
     gid, bid = _seed_goal_with_ladder(us)
@@ -146,7 +146,7 @@ def test_goal_gate_summary_ignores_retracted(gates_on_env):
 
 
 def test_goal_gate_summary_ignores_orphaned_rungs(gates_on_env):
-    from workflow.author_server import goal_gate_summary
+    from workflow.daemon_server import goal_gate_summary
 
     us, base = gates_on_env
     gid, bid = _seed_goal_with_ladder(us)

@@ -1,32 +1,4 @@
-"""Post-synthesis drift-KG + story-db cleanup (Task #17 Fix E).
-
-When a pre-synthesis draft cycle has contaminated the KG + world-state DB
-with facts seeded against placeholder-premise scenes (pattern:
-``{universe}-B*-C*-S*_chunk_*``), the first successful canon synthesis
-should wipe those rows universe-wide so future retrievals don't return
-hallucinated canon.
-
-**Knowledge-DB scope:** facts-only. Only ``facts`` carries
-``seeded_scene`` in the current schema
-(`workflow/knowledge/knowledge_graph.py:141-163`); entities and edges
-have no scene attribution. We intentionally do NOT sweep orphan
-entities: facts reference entities by string name (no FK), so a canon
-entity with facts but zero relationship edges would look "orphan" and
-get wiped — risking loss of real canon. Retrieval already down-weights
-orphan entities, so leaving them is low-signal, not contaminating.
-
-**Story-DB scope (added 2026-04-19 per task #49 / Mission 26 Probe B):**
-`scene_history` + `extracted_facts` + `character_states.last_updated_scene`
-+ `promises.created_scene` are all drift-attributed. Cleanup DELETEs
-rows matching the drift scene pattern across all four tables. This
-closes the Mission 26 finding: Fix E previously orphaned 80+
-extracted_facts rows + 3 scene_history tombstones + 9 character_states
-residuals keyed to drift scene_ids.
-
-**Follow-up:** full scene-scoped entity/edge cleanup on knowledge.db
-needs a schema expansion (add ``seeded_scene`` columns to ``entities``
-and ``edges``). Out of scope for this commit; tracked separately.
-"""
+"""Drift-cleanup helper -- called by worldbuild post-synthesis to purge placeholder-seeded facts."""
 
 from __future__ import annotations
 

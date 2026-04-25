@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from workflow.author_server import (
+from workflow.daemon_server import (
     grant_universe_access,
     initialize_author_server,
     list_universe_acl,

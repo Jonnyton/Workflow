@@ -1,8 +1,4 @@
-"""Execution-side helpers for target mutations.
-
-Execution nodes may create provisional targets directly and may mark targets
-for discard, but stronger lifecycle changes still belong to review.
-"""
+"""Target-action helpers -- called by chapter graph's run_scene to create/discard work targets."""
 
 from __future__ import annotations
 

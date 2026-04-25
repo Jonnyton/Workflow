@@ -104,7 +104,10 @@ def initialize_runs_db(base_path: str | Path) -> Path:
         error          TEXT NOT NULL DEFAULT '',
         last_node_id   TEXT NOT NULL DEFAULT '',
         started_at     REAL NOT NULL,
-        finished_at    REAL
+        finished_at    REAL,
+        provider_used  TEXT,
+        model          TEXT,
+        token_count    INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_runs_branch ON runs(branch_def_id);
@@ -213,6 +216,18 @@ def initialize_runs_db(base_path: str | Path) -> Path:
                 conn.execute(
                     f"ALTER TABLE node_edit_audit ADD COLUMN {col} {ddl}"
                 )
+        # Migration: add provider telemetry columns to runs (added 2026-04-25).
+        existing_runs = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(runs)")
+        }
+        for col, ddl in (
+            ("provider_used", "TEXT"),
+            ("model",         "TEXT"),
+            ("token_count",   "INTEGER"),
+        ):
+            if col not in existing_runs:
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {ddl}")
     return runs_db_path(base_path)
 
 
@@ -244,6 +259,7 @@ class RunStepEvent:
 
 
 def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
+    col_names = set(row.keys())
     return {
         "run_id": row["run_id"],
         "branch_def_id": row["branch_def_id"],
@@ -257,6 +273,9 @@ def _row_to_run(row: sqlite3.Row) -> dict[str, Any]:
         "last_node_id": row["last_node_id"],
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
+        "provider_used": row["provider_used"] if "provider_used" in col_names else None,
+        "model": row["model"] if "model" in col_names else None,
+        "token_count": row["token_count"] if "token_count" in col_names else None,
     }
 
 
@@ -318,6 +337,9 @@ def update_run_status(
     error: str | None = None,
     last_node_id: str | None = None,
     finished_at: float | None = None,
+    provider_used: str | None = None,
+    model: str | None = None,
+    token_count: int | None = None,
 ) -> None:
     sets: list[str] = []
     params: list[Any] = []
@@ -336,6 +358,15 @@ def update_run_status(
     if finished_at is not None:
         sets.append("finished_at = ?")
         params.append(finished_at)
+    if provider_used is not None:
+        sets.append("provider_used = ?")
+        params.append(provider_used)
+    if model is not None:
+        sets.append("model = ?")
+        params.append(model)
+    if token_count is not None:
+        sets.append("token_count = ?")
+        params.append(token_count)
     if not sets:
         return
     params.append(run_id)
@@ -1050,6 +1081,7 @@ def _invoke_graph(
     """
     thread_id = run_id
     execution_cursor = {"step": 0}
+    provider_tracker: dict[str, str | None] = {"last": None}
 
     def _on_node(node_id: str, **detail: Any) -> None:
         # #60: the compiler emits TWO events per node — phase="starting"
@@ -1077,6 +1109,9 @@ def _invoke_graph(
 
         if is_cancel_requested(base_path, run_id):
             raise RunCancelledError(f"Run {run_id} cancelled between nodes.")
+        served = detail.get("provider_served")
+        if served:
+            provider_tracker["last"] = str(served)
         record_event(base_path, RunStepEvent(
             run_id=run_id,
             step_index=step + _PENDING_OFFSET,
@@ -1273,6 +1308,7 @@ def _invoke_graph(
         status=RUN_STATUS_COMPLETED,
         output=output,
         finished_at=_now(),
+        provider_used=provider_tracker["last"],
     )
     return RunOutcome(
         run_id=run_id, status=RUN_STATUS_COMPLETED,
@@ -1695,11 +1731,16 @@ def _invoke_graph_resume(
 ) -> RunOutcome:
     """Compile branch + invoke with None inputs to resume from checkpoint."""
     execution_cursor = {"step": 1000}  # offset so resume events don't collide
+    provider_tracker: dict[str, str | None] = {"last": None}
 
     def _on_node(node_id: str, **detail: Any) -> None:
         phase = detail.pop("phase", "ran")
         step = execution_cursor["step"]
         execution_cursor["step"] += 1
+        if phase == "ran":
+            served = detail.get("provider_served")
+            if served:
+                provider_tracker["last"] = served
 
         if phase == "starting":
             record_event(base_path, RunStepEvent(
@@ -1797,6 +1838,7 @@ def _invoke_graph_resume(
         status=RUN_STATUS_COMPLETED,
         output=output,
         finished_at=_now(),
+        provider_used=provider_tracker["last"],
     )
     return RunOutcome(
         run_id=run_id, status=RUN_STATUS_COMPLETED,
@@ -2237,6 +2279,129 @@ def ack_teammate_message(
     return {"message_id": message_id, "acked_at": acked_at}
 
 
+_ROUTING_EVIDENCE_CAVEAT = (
+    "provider_used is populated for runs that used the policy router; "
+    "token_count and model are not yet collected (no LLM billing hooks). "
+    "latency_ms is derived from started_at / finished_at timestamps."
+)
+
+_ROUTING_EVIDENCE_LIMIT_CAP = 50
+_ROUTING_EVIDENCE_DEFAULT_LIMIT = 10
+
+
+def _classify_failure(run: dict) -> str:
+    """Return a short failure class string from a run record."""
+    error = run.get("error") or ""
+    status = run.get("status", "")
+    if status == RUN_STATUS_CANCELLED:
+        return "cancelled"
+    if status == RUN_STATUS_INTERRUPTED:
+        return "interrupted"
+    if not error:
+        return ""
+    lower = error.lower()
+    if "timeout" in lower:
+        return "timeout"
+    if "exhausted" in lower or "cooldown" in lower:
+        return "provider_exhausted"
+    if "sandbox" in lower or "bwrap" in lower:
+        return "sandbox_unavailable"
+    return "error"
+
+
+def _routing_evidence_text(run: dict, latency_ms: float | None) -> str:
+    """Render a 1-line chatbot-legible summary for a run record."""
+    rid = run.get("run_id", "?")
+    status = run.get("status", "?")
+    bid = run.get("branch_def_id", "?")
+    if latency_ms is not None:
+        lat = f"{latency_ms / 1000:.2f}s"
+        return f"{rid} — {status} in {lat} on {bid}"
+    return f"{rid} — {status} on {bid}"
+
+
+def list_recent_runs(
+    base_path: str | Path,
+    *,
+    branch_def_id: str = "",
+    limit: int = _ROUTING_EVIDENCE_DEFAULT_LIMIT,
+) -> list[dict]:
+    """Return last-N run records shaped for the get_routing_evidence MCP action.
+
+    Each record includes derived ``latency_ms`` (from timestamps), a
+    ``failure_class`` label, a ``suggested_action`` hint, and a ``caveat``
+    noting absent provider/token fields. Limit is capped at
+    ``_ROUTING_EVIDENCE_LIMIT_CAP`` to prevent token blowout.
+    """
+    effective_limit = min(max(1, int(limit)), _ROUTING_EVIDENCE_LIMIT_CAP)
+    raw = list_runs(base_path, branch_def_id=branch_def_id, limit=effective_limit)
+
+    results: list[dict] = []
+    for run in raw:
+        started = run.get("started_at")
+        finished = run.get("finished_at")
+        latency_ms: float | None = None
+        if started is not None and finished is not None:
+            try:
+                # started_at / finished_at may be Unix float or ISO string.
+                def _to_float(v: object) -> float | None:
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    s = str(v)
+                    if "T" in s:
+                        from datetime import datetime as _dt
+                        try:
+                            return _dt.fromisoformat(s).timestamp()
+                        except ValueError:
+                            return _dt.strptime(s, "%Y-%m-%dT%H:%M:%S.%f%z").timestamp()
+                    try:
+                        return float(s)
+                    except ValueError:
+                        return None
+                s_ts = _to_float(started)
+                f_ts = _to_float(finished)
+                if s_ts is not None and f_ts is not None:
+                    latency_ms = (f_ts - s_ts) * 1000
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+
+        failure_class = _classify_failure(run)
+        suggested_action = ""
+        if failure_class == "provider_exhausted":
+            suggested_action = "Wait for provider cooldown or add an alternative provider."
+        elif failure_class == "timeout":
+            suggested_action = "Increase node timeout or simplify the prompt."
+        elif failure_class == "sandbox_unavailable":
+            suggested_action = "Enable unprivileged user namespaces or run on a bwrap-capable host."
+        elif failure_class == "cancelled":
+            suggested_action = "Run was cancelled by request."
+        elif failure_class == "interrupted":
+            suggested_action = "Run was interrupted; use resume_run to continue."
+        elif failure_class == "error":
+            suggested_action = "Check error field for details; re-run after fixing root cause."
+
+        results.append({
+            "text": _routing_evidence_text(run, latency_ms),
+            "run_id": run.get("run_id"),
+            "branch_def_id": run.get("branch_def_id"),
+            "run_name": run.get("run_name"),
+            "status": run.get("status"),
+            "actor": run.get("actor"),
+            "started_at": started,
+            "finished_at": finished,
+            "latency_ms": latency_ms,
+            "error": run.get("error"),
+            "last_node_id": run.get("last_node_id"),
+            "failure_class": failure_class,
+            "suggested_action": suggested_action,
+            "provider_used": run.get("provider_used"),
+            "token_count": run.get("token_count"),
+            "caveat": _ROUTING_EVIDENCE_CAVEAT,
+        })
+
+    return results
+
+
 __all__ = [
     "RUN_STATUS_QUEUED",
     "RUN_STATUS_RUNNING",
@@ -2268,6 +2433,7 @@ __all__ = [
     "list_judgments",
     "list_node_edit_audits",
     "list_runs",
+    "list_recent_runs",
     "node_output_from_run",
     "record_event",
     "record_lineage",

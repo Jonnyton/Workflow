@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS branch_schedules (
     inputs_template_json TEXT NOT NULL DEFAULT '{}',
     skip_if_running      INTEGER NOT NULL DEFAULT 0,
     active               INTEGER NOT NULL DEFAULT 1,
+    paused               INTEGER NOT NULL DEFAULT 0,
     created_at           REAL NOT NULL,
     last_fired_at        REAL
 );
@@ -310,6 +311,93 @@ def list_schedules(
         if owner_actor:
             clauses.append("owner_actor=?")
             params.append(owner_actor)
+        if clauses:
+            q += " WHERE " + " AND ".join(clauses)
+        rows = conn.execute(q, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def pause_schedule(
+    base_path: str | Path,
+    schedule_id: str,
+    *,
+    requesting_actor: str,
+    admin: bool = False,
+) -> bool:
+    """Pause a schedule so it won't fire at next tick. Owner or admin only.
+
+    Returns True if paused, False if schedule not found. Idempotent.
+    """
+    db = _runs_db(base_path)
+    with _connect(db) as conn:
+        row = conn.execute(
+            "SELECT owner_actor FROM branch_schedules WHERE schedule_id=? AND active=1",
+            (schedule_id,),
+        ).fetchone()
+        if not row:
+            return False
+        if not admin and row["owner_actor"] != requesting_actor:
+            raise PermissionError(
+                f"{requesting_actor!r} is not the owner of schedule {schedule_id!r}"
+            )
+        conn.execute(
+            "UPDATE branch_schedules SET paused=1 WHERE schedule_id=?",
+            (schedule_id,),
+        )
+    return True
+
+
+def unpause_schedule(
+    base_path: str | Path,
+    schedule_id: str,
+    *,
+    requesting_actor: str,
+    admin: bool = False,
+) -> bool:
+    """Resume a paused schedule. Owner or admin only.
+
+    Returns True if unpaused, False if schedule not found. Idempotent.
+    """
+    db = _runs_db(base_path)
+    with _connect(db) as conn:
+        row = conn.execute(
+            "SELECT owner_actor FROM branch_schedules WHERE schedule_id=? AND active=1",
+            (schedule_id,),
+        ).fetchone()
+        if not row:
+            return False
+        if not admin and row["owner_actor"] != requesting_actor:
+            raise PermissionError(
+                f"{requesting_actor!r} is not the owner of schedule {schedule_id!r}"
+            )
+        conn.execute(
+            "UPDATE branch_schedules SET paused=0 WHERE schedule_id=?",
+            (schedule_id,),
+        )
+    return True
+
+
+def list_scheduler_subscriptions(
+    base_path: str | Path,
+    *,
+    owner_actor: str = "",
+    event_type: str = "",
+    active_only: bool = True,
+) -> list[dict[str, Any]]:
+    """List event subscriptions, optionally filtered by owner and/or event_type."""
+    db = _runs_db(base_path)
+    with _connect(db) as conn:
+        q = "SELECT * FROM branch_subscriptions"
+        params: list[Any] = []
+        clauses: list[str] = []
+        if active_only:
+            clauses.append("active=1")
+        if owner_actor:
+            clauses.append("owner_actor=?")
+            params.append(owner_actor)
+        if event_type:
+            clauses.append("event_type=?")
+            params.append(event_type)
         if clauses:
             q += " WHERE " + " AND ".join(clauses)
         rows = conn.execute(q, params).fetchall()
@@ -475,7 +563,7 @@ class Scheduler:
         try:
             with _connect(db) as conn:
                 rows = conn.execute(
-                    "SELECT * FROM branch_schedules WHERE active=1"
+                    "SELECT * FROM branch_schedules WHERE active=1 AND paused=0"
                 ).fetchall()
         except sqlite3.Error:
             logger.exception("scheduler: DB read failed")
@@ -661,6 +749,13 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
+    # Migrate: add paused column if not present (introduced after initial schema)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(branch_schedules)")}
+    if "paused" not in cols:
+        conn.execute(
+            "ALTER TABLE branch_schedules ADD COLUMN paused INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
     return conn
 
 
@@ -698,9 +793,12 @@ __all__ = [
     "emit_event",
     "get_or_create_scheduler",
     "list_schedules",
+    "list_scheduler_subscriptions",
+    "pause_schedule",
     "register_schedule",
     "register_subscription",
     "shutdown_scheduler",
+    "unpause_schedule",
     "unregister_schedule",
     "unregister_subscription",
 ]

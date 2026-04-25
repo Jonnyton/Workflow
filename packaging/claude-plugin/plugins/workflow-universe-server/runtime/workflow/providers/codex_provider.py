@@ -51,6 +51,10 @@ class CodexProvider(BaseProvider):
     name = "codex"
     family = "openai"
 
+    @classmethod
+    def is_available(cls) -> bool:
+        return shutil.which("codex") is not None
+
     async def complete(
         self,
         prompt: str,

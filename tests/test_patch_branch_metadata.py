@@ -4,6 +4,9 @@ Pre-#67: any branch-level label change forced delete-and-rebuild,
 destroying the branch_def_id (and therefore run history, judgments,
 and lineage). Post-#67: patch_branch accepts atomic metadata ops that
 preserve identity.
+
+BUG-030: rename response must include name_updated + new_name fields;
+patch_branch must accept branch name (not just ID) for bid resolution.
 """
 
 from __future__ import annotations
@@ -62,7 +65,7 @@ def _patch(us, bid: str, ops: list) -> dict:
 
 
 def _load(us, base: Path, bid: str) -> dict:
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     return get_branch_definition(base, branch_def_id=bid)
 
@@ -227,3 +230,63 @@ class TestPatchBranchMetadataCombined:
         # Original name must be intact.
         assert loaded["name"] == "original"
         assert loaded["tags"] == ["x"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUG-030: explicit rename confirmation + name-based bid resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPatchBranchRenameFeedback:
+    """BUG-030: chatbot must receive unambiguous rename confirmation."""
+
+    def test_rename_sets_name_updated_true(self, ext_env):
+        us, base = ext_env
+        bid = _build(us, name="before")
+        res = _patch(us, bid, [{"op": "set_name", "name": "after"}])
+        assert res.get("status") == "patched"
+        assert res.get("name_updated") is True
+        assert res.get("new_name") == "after"
+
+    def test_no_rename_sets_name_updated_false(self, ext_env):
+        us, base = ext_env
+        bid = _build(us, name="stable")
+        res = _patch(us, bid, [{"op": "set_tags", "tags": ["x"]}])
+        assert res.get("status") == "patched"
+        assert res.get("name_updated") is False
+        assert res.get("new_name") == "stable"
+
+    def test_name_updated_present_on_every_patched_response(self, ext_env):
+        us, base = ext_env
+        bid = _build(us, name="unchanged")
+        res = _patch(us, bid, [{"op": "set_description", "description": "d"}])
+        assert "name_updated" in res
+        assert "new_name" in res
+
+    def test_name_based_bid_resolves_correctly(self, ext_env):
+        """patch_branch must accept the branch's human name as branch_def_id."""
+        us, base = ext_env
+        bid = _build(us, name="my climate-claims workflow")
+        res = _call(
+            us,
+            "extensions",
+            "patch_branch",
+            branch_def_id="my climate-claims workflow",
+            changes_json=json.dumps([{"op": "set_name", "name": "renamed via name"}]),
+        )
+        assert res.get("status") == "patched", res
+        assert res.get("name_updated") is True
+        assert res.get("new_name") == "renamed via name"
+        assert _load(us, base, bid)["name"] == "renamed via name"
+
+    def test_name_based_bid_case_insensitive(self, ext_env):
+        us, base = ext_env
+        _build(us, name="Climate Checker")
+        res = _call(
+            us,
+            "extensions",
+            "patch_branch",
+            branch_def_id="climate checker",
+            changes_json=json.dumps([{"op": "set_tags", "tags": ["x"]}]),
+        )
+        assert res.get("status") == "patched", res

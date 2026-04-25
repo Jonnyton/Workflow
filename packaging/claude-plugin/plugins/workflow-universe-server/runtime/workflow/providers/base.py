@@ -142,6 +142,16 @@ class BaseProvider(abc.ABC):
     family: str = ""
     """Model family for judge diversity enforcement."""
 
+    @classmethod
+    def is_available(cls) -> bool:
+        """Return True if this provider's binary/dependency is present.
+
+        Subprocess-backed providers override this to probe the binary with
+        ``shutil.which`` so the router skips registration on cloud hosts
+        where the CLI is absent — avoiding 30s+ wasted cooldowns per call.
+        """
+        return True
+
     @abc.abstractmethod
     async def complete(
         self,

@@ -158,7 +158,7 @@ def test_runner_emits_node_timeout_event_and_marks_run_failed(
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         initialize_author_server,
         save_branch_definition,
     )
@@ -218,7 +218,7 @@ def test_runner_emits_node_empty_response_event_and_marks_run_failed(
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         initialize_author_server,
         save_branch_definition,
     )
@@ -275,7 +275,7 @@ def test_fast_provider_does_not_hit_timeout(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         initialize_author_server,
         save_branch_definition,
     )

@@ -1,4 +1,4 @@
-"""Storage utilization observability (BUG-023 Phase 1) tests.
+"""Storage utilization observability (BUG-023 Phase 1 + BUG-032) tests.
 
 Guards the `inspect_storage_utilization` surface + its wiring into
 `get_status`. Spec source: `docs/vetted-specs.md` §storage_inspect.
@@ -11,6 +11,8 @@ Covered:
 - Synthetic-fs: monkeypatched `shutil.disk_usage` exercises all three
   pressure levels deterministically without touching the real disk.
 - get_status response embeds `storage_utilization`.
+- BUG-032: get_status patches activity_log + universe_outputs bytes from
+  the universe directory (not data_dir root) when files are populated.
 """
 from __future__ import annotations
 
@@ -201,6 +203,49 @@ class TestGetStatusIntegration:
         assert "volume_percent" in su
         assert "per_subsystem" in su
         assert su["pressure_level"] in {"ok", "warn", "critical"}
+
+    def test_get_status_patches_activity_log_and_outputs_from_universe_dir(
+        self, isolated_data_dir, monkeypatch,
+    ):
+        """BUG-032: activity_log + universe_outputs bytes must come from the
+        universe dir (udir/activity.log, udir/output/), not data_dir root.
+        inspect_storage_utilization() looks at the root; get_status patches
+        them from the correct universe-scoped paths.
+        """
+        def fake_disk_usage(_path):
+            return _FakeUsage(total=100_000_000, used=10_000_000, free=90_000_000)
+        monkeypatch.setattr("shutil.disk_usage", fake_disk_usage)
+
+        # Create a universe with a populated activity.log and output dir.
+        udir = isolated_data_dir / "default-universe"
+        udir.mkdir()
+        activity_log = udir / "activity.log"
+        activity_log.write_bytes(b"log entry\n" * 100)  # 1000 bytes
+        out_dir = udir / "output"
+        out_dir.mkdir()
+        (out_dir / "chapter1.txt").write_bytes(b"content " * 64)  # 512 bytes
+
+        expected_log_bytes = activity_log.stat().st_size
+        expected_output_bytes = (out_dir / "chapter1.txt").stat().st_size
+
+        from workflow.universe_server import get_status
+        raw = get_status("default-universe")
+        payload = json.loads(raw)
+
+        su = payload["storage_utilization"]
+        assert "per_subsystem" in su
+
+        log_entry = su["per_subsystem"].get("activity_log", {})
+        assert log_entry.get("bytes", 0) == expected_log_bytes, (
+            f"activity_log bytes should be {expected_log_bytes} from udir, "
+            f"got {log_entry.get('bytes', 0)}"
+        )
+
+        output_entry = su["per_subsystem"].get("universe_outputs", {})
+        assert output_entry.get("bytes", 0) >= expected_output_bytes, (
+            f"universe_outputs bytes should be >= {expected_output_bytes} from udir, "
+            f"got {output_entry.get('bytes', 0)}"
+        )
 
 
 class TestPathSizeHelper:

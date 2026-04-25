@@ -1,13 +1,4 @@
-"""Learn node -- style rule lifecycle and craft improvement.
-
-Runs the LearningSystem at chapter boundaries to promote/decay style
-rules, generate craft cards, and discover new evaluation criteria.
-
-Contract
---------
-Input:  ChapterState after consolidation.
-Output: Partial ChapterState with learning accumulation fields.
-"""
+"""Learn node -- chapter graph; entry after consolidate, runs style/criteria analysis."""
 
 from __future__ import annotations
 

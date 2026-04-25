@@ -179,41 +179,15 @@ async def _landing_index(request):  # type: ignore[no-untyped-def]
 # Configuration
 # ---------------------------------------------------------------------------
 
-
-def _base_path() -> Path:
-    """Resolve the base directory containing all universe directories.
-
-    Delegates to ``workflow.storage.data_dir`` — canonical env var
-    ``WORKFLOW_DATA_DIR`` (legacy ``UNIVERSE_SERVER_BASE`` still honored
-    with deprecation warning). This replaces the earlier CWD-relative
-    ``"output"`` default which wrote to ``/app/output`` in containers
-    instead of the bind-mounted ``/data`` volume — the 2026-04-19
-    containerization bug class.
-    """
-    from workflow.storage import data_dir
-    return data_dir()
-
-
-def _universe_dir(universe_id: str) -> Path:
-    """Resolve a specific universe directory with path-traversal guard."""
-    base = _base_path()
-    result = (base / universe_id).resolve()
-    if not result.is_relative_to(base):
-        raise ValueError(f"Invalid universe_id: {universe_id}")
-    return result
-
-
-def _default_universe() -> str:
-    """Return the default universe ID, or first available."""
-    default = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
-    if default:
-        return default
-    base = _base_path()
-    if base.is_dir():
-        for child in sorted(base.iterdir()):
-            if child.is_dir() and not child.name.startswith("."):
-                return child.name
-    return "default-universe"
+# Shared path + I/O helpers extracted to workflow.api.helpers (Bundle 1 of #29).
+# Imported here so the rest of this module calls them unchanged.
+from workflow.api.helpers import (  # noqa: E402
+    _base_path,
+    _default_universe,
+    _read_json,
+    _read_text,
+    _universe_dir,
+)
 
 
 def _upload_whitelist_prefixes() -> list[Path] | None:
@@ -303,24 +277,7 @@ def _warn_if_no_upload_whitelist() -> None:
 _warn_if_no_upload_whitelist()
 
 
-def _read_json(path: Path) -> dict[str, Any] | list[Any] | None:
-    """Safely read a JSON file, returning None on any failure."""
-    try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to read %s: %s", path, exc)
-    return None
-
-
-def _read_text(path: Path, default: str = "") -> str:
-    """Safely read a text file."""
-    try:
-        if path.exists():
-            return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        logger.warning("Failed to read %s: %s", path, exc)
-    return default
+# _read_json and _read_text imported from workflow.api.helpers above.
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +608,7 @@ def _filter_claims_by_branch_visibility(
     """
     if not claims:
         return claims
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     visibility_cache: dict[str, tuple[str, str]] = {}
     filtered: list[dict[str, Any]] = []
@@ -691,7 +648,7 @@ def _filter_leaderboard_by_branch_visibility(
     """
     if not entries:
         return entries
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     filtered: list[dict[str, Any]] = []
     for entry in entries:
@@ -943,9 +900,9 @@ A user might register a "consistency-checker" node that:
 @mcp.tool(
     title="Universe Operations",
     tags={
-        "universe", "daemon", "fiction", "collaboration",
+        "universe", "daemon", "collaboration",
         "workflow", "workflow-builder", "custom-ai", "agent-workflow",
-        "ai-builder", "universe-builder",
+        "ai-builder", "universe-builder", "general-purpose",
     },
     annotations=ToolAnnotations(
         title="Universe Operations",
@@ -989,11 +946,24 @@ def universe(
     for operating guidance including universe-isolation rule.
 
     Args:
-        action: One of — reads: list, inspect, read_output, query_world,
+        action: One of —
+            reads: list, inspect, read_output, query_world,
             get_activity, get_recent_events, get_ledger, read_premise,
-            list_canon, read_canon; writes: submit_request,
-            give_direction, set_premise, add_canon, add_canon_from_path,
-            control_daemon, switch_universe, create_universe.
+            list_canon, read_canon;
+            writes: submit_request, give_direction, set_premise,
+            add_canon, add_canon_from_path, control_daemon,
+            switch_universe, create_universe;
+            queue ops: queue_list (list pending dispatch requests),
+            queue_cancel (cancel a queued request by request_id);
+            subscription ops: subscribe_goal (subscribe this universe
+            to a goal's run feed), unsubscribe_goal, list_subscriptions;
+            goal-pool / bid: post_to_goal_pool (publish a goal-scoped
+            work item), submit_node_bid (bid to fulfill an open node
+            request; requires bid + node_def_id + required_llm_type);
+            daemon: daemon_overview (compact daemon health + run
+            summary — use before inspect for quick status);
+            config: set_tier_config (enable/disable a named
+            dispatcher tier; requires tier + enabled).
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
             canon body, or daemon command: pause | resume | status).
@@ -2067,7 +2037,7 @@ def _action_daemon_overview(
 
     # Gates — best-effort; counts only (full gates data is expensive).
     try:
-        from workflow.author_server import list_gate_claims
+        from workflow.daemon_server import list_gate_claims
         claims = list_gate_claims(_base_path()) or []
         # Filter to claims whose branch lives in this universe — for v1
         # we report all claims and let the caller filter; universe-
@@ -3607,7 +3577,7 @@ def _ensure_standalone_branch(base_path: Path) -> None:
     If the branch doesn't exist and a legacy .node_registry.json file
     does, migrate its contents automatically.
     """
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         get_branch_definition,
         initialize_author_server,
         save_branch_definition,
@@ -3651,7 +3621,7 @@ def _ensure_standalone_branch(base_path: Path) -> None:
 
 def _load_nodes() -> list[dict[str, Any]]:
     """Load all registered nodes from SQLite."""
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     base = _base_path()
     _ensure_standalone_branch(base)
@@ -3667,7 +3637,7 @@ def _load_nodes() -> list[dict[str, Any]]:
 
 def _save_nodes(nodes: list[dict[str, Any]]) -> None:
     """Save the node registry to SQLite."""
-    from workflow.author_server import update_branch_definition
+    from workflow.daemon_server import update_branch_definition
 
     base = _base_path()
     _ensure_standalone_branch(base)
@@ -3817,6 +3787,7 @@ def extensions(
       get_run_output.
     - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
+    - Self-audit: get_routing_evidence, get_memory_scope_status.
 
     Node reuse across branches uses `node_ref_json`
     (`{"source": "standalone", "node_id": "..."}` or source=<branch_def_id>).
@@ -3890,9 +3861,12 @@ def extensions(
         force: override `local_edit_conflict` refusal on branch write
             actions (create_branch / add_node / connect_nodes /
             set_entry_point / add_state_field) when the target YAML has
-            uncommitted local edits. Default False — the conflict surfaces
-            as a structured response so the caller can commit / stash /
-            discard first.
+            uncommitted local edits. Default False — when a conflict
+            exists the server returns a structured envelope
+            `{"status": "local_edit_conflict", "conflicting_file": "...",
+            "options": ["commit", "stash", "discard", "force"]}` (not
+            an error). Present the options to the user, then retry with
+            `force=True` only if the user explicitly chooses "force".
     """
     if action == "register":
         return _ext_register(
@@ -4164,6 +4138,7 @@ def extensions(
             "retract_gate_event", "get_gate_event", "list_gate_events",
             "schedule_branch", "unschedule_branch", "list_schedules",
             "subscribe_branch", "unsubscribe_branch",
+            "pause_schedule", "unpause_schedule", "list_scheduler_subscriptions",
             "record_outcome", "list_outcomes", "get_outcome",
             "record_remix", "get_provenance",
         ],
@@ -4403,7 +4378,7 @@ def _ensure_author_server_db() -> None:
     Branch handlers read/write ``base_path/.author_server.db``. Calling this
     lazily keeps tests and first-use paths from needing a separate init step.
     """
-    from workflow.author_server import initialize_author_server
+    from workflow.daemon_server import initialize_author_server
 
     initialize_author_server(_base_path())
 
@@ -4536,7 +4511,7 @@ def _resolve_branch_id(bid_or_name: str, base_path: str) -> str:
 
 
 def _ext_branch_get(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition, list_gate_claims
+    from workflow.daemon_server import get_branch_definition, list_gate_claims
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -4623,7 +4598,7 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_delete(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import delete_branch_definition
+    from workflow.daemon_server import delete_branch_definition
 
     bid = kwargs.get("branch_def_id", "").strip()
     if not bid:
@@ -4635,10 +4610,11 @@ def _ext_branch_delete(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.identity import git_author
 
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
     nid = kwargs.get("node_id", "").strip()
     if not bid or not nid:
@@ -4687,18 +4663,26 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         )
     except CommitFailedError as exc:
         return json.dumps(_format_commit_failed(exc))
-    return json.dumps({
+    add_node_payload: dict[str, Any] = {
         "branch_def_id": bid,
         "node_id": final_nid,
         "status": "added",
-    })
+    }
+    if verbose:
+        added = next(
+            (n for n in branch.node_defs if n.node_id == final_nid), None
+        )
+        if added is not None:
+            add_node_payload["node_def"] = added.to_dict()
+    return json.dumps(add_node_payload, default=str)
 
 
 def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition, EdgeDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.identity import git_author
 
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
     src = kwargs.get("from_node", "").strip()
     dst = kwargs.get("to_node", "").strip()
@@ -4724,19 +4708,23 @@ def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
         )
     except CommitFailedError as exc:
         return json.dumps(_format_commit_failed(exc))
-    return json.dumps({
+    connect_payload: dict[str, Any] = {
         "branch_def_id": bid,
         "from_node": src,
         "to_node": dst,
         "status": "connected",
-    })
+    }
+    if verbose:
+        connect_payload["edge_count"] = len(branch.edges)
+    return json.dumps(connect_payload, default=str)
 
 
 def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.identity import git_author
 
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
     nid = kwargs.get("node_id", "").strip()
     if not (bid and nid):
@@ -4761,18 +4749,22 @@ def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
         )
     except CommitFailedError as exc:
         return json.dumps(_format_commit_failed(exc))
-    return json.dumps({
+    entry_payload: dict[str, Any] = {
         "branch_def_id": bid,
         "entry_point": nid,
         "status": "set",
-    })
+    }
+    if verbose:
+        entry_payload["node_count"] = len(branch.node_defs)
+    return json.dumps(entry_payload, default=str)
 
 
 def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.identity import git_author
 
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
     fname = kwargs.get("field_name", "").strip()
     ftype = kwargs.get("field_type", "").strip() or "str"
@@ -4814,16 +4806,19 @@ def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
         )
     except CommitFailedError as exc:
         return json.dumps(_format_commit_failed(exc))
-    return json.dumps({
+    state_payload: dict[str, Any] = {
         "branch_def_id": bid,
         "field_name": fname,
         "status": "added",
-    })
+    }
+    if verbose:
+        state_payload["field_count"] = len(branch.state_schema)
+    return json.dumps(state_payload, default=str)
 
 
 def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
 
     bid = kwargs.get("branch_def_id", "").strip()
     if not bid:
@@ -4835,6 +4830,15 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
 
     branch = BranchDefinition.from_dict(source_dict)
     errors = branch.validate()
+
+    # BUG-031: surface unapproved source_code nodes so the chatbot can warn
+    # the user before they attempt run_branch (which would fail with a
+    # permission-denied error and no clear remediation path).
+    unapproved_sc = [
+        {"node_id": nd.get("node_id", ""), "display_name": nd.get("display_name", "")}
+        for nd in source_dict.get("node_defs", [])
+        if nd.get("source_code") and not nd.get("approved", False)
+    ]
 
     # sandbox-compat warning: list any requires_sandbox=True nodes when
     # the host's bwrap probe says sandbox is unavailable. Non-fatal.
@@ -4865,6 +4869,8 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
         "branch_def_id": bid,
         "valid": not errors,
         "errors": errors,
+        "runnable": not errors and not unapproved_sc,
+        "unapproved_source_code_nodes": unapproved_sc,
         "sandbox_warnings": sandbox_warnings,
     })
 
@@ -5030,8 +5036,8 @@ def _related_wiki_pages(branch: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -5367,7 +5373,7 @@ def _lookup_node_body(
         }, ""
 
     # Otherwise treat `source` as a branch_def_id.
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     try:
         source_branch = get_branch_definition(
@@ -5592,8 +5598,9 @@ def _build_branch_text(branch: Any, *, truncated: bool) -> str:
 
 
 def _ext_branch_build(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import save_branch_definition
+    from workflow.daemon_server import save_branch_definition
 
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     raw = (kwargs.get("spec_json") or "").strip()
     if not raw:
         return json.dumps({
@@ -5668,14 +5675,19 @@ def _ext_branch_build(kwargs: dict[str, Any]) -> str:
     persisted = _BD.from_dict(saved)
     truncated = len(persisted.node_defs) > 12
     text = _build_branch_text(persisted, truncated=truncated)
-    return json.dumps({
+    payload: dict[str, Any] = {
         "text": text,
         "status": "built",
         "branch_def_id": persisted.branch_def_id,
+        "name": persisted.name,
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
-        "branch": saved,
-    }, default=str)
+        "entry_point": persisted.entry_point,
+        "validation_summary": "ok",
+    }
+    if verbose:
+        payload["branch"] = saved
+    return json.dumps(payload, default=str)
 
 
 def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
@@ -5866,13 +5878,16 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
 
 
 def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.branches import BranchDefinition
 
-    bid = (kwargs.get("branch_def_id") or "").strip()
+    verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
+    bid = _resolve_branch_id(
+        (kwargs.get("branch_def_id") or "").strip(), str(_base_path())
+    )
     if not bid:
         return json.dumps({
             "status": "rejected",
@@ -5906,6 +5921,7 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
             "error": f"Branch '{bid}' not found.",
         })
 
+    old_name = source.get("name", "")
     staging = BranchDefinition.from_dict(source)
 
     per_op_errors: list[dict[str, Any]] = []
@@ -5993,7 +6009,8 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         ]
     else:
         text_lines += ["", _branch_mermaid(persisted)]
-    return json.dumps({
+    name_updated = persisted.name != old_name
+    patch_payload: dict[str, Any] = {
         "text": "\n".join(text_lines),
         "status": "patched",
         "branch_def_id": persisted.branch_def_id,
@@ -6001,9 +6018,13 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
         "patched_fields": patched_fields,
+        "name_updated": name_updated,
+        "new_name": persisted.name,
         "post_patch": post_patch,
-        "branch": saved,
-    }, default=str)
+    }
+    if verbose:
+        patch_payload["branch"] = saved
+    return json.dumps(patch_payload, default=str)
 
 
 def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
@@ -6014,13 +6035,15 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
     name; this standalone action bumps BranchDefinition.version (+1)
     so downstream lineage can distinguish pre/post-edit runs.
     """
-    from workflow.author_server import (
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.branches import BranchDefinition
 
-    bid = (kwargs.get("branch_def_id") or "").strip()
+    bid = _resolve_branch_id(
+        (kwargs.get("branch_def_id") or "").strip(), str(_base_path())
+    )
     nid = (kwargs.get("node_id") or "").strip()
     if not bid or not nid:
         return json.dumps({
@@ -6241,7 +6264,7 @@ def _ext_branch_search_nodes(kwargs: dict[str, Any]) -> str:
     search_nodes → pick a hit → build_branch / add_node with
     ``node_ref={source, node_id}``.
     """
-    from workflow.author_server import search_nodes
+    from workflow.daemon_server import search_nodes
 
     query = (kwargs.get("query") or "").strip()
     role = (kwargs.get("role") or kwargs.get("phase") or "").strip()
@@ -6358,11 +6381,11 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
     ``node_ids`` (default: all nodes on the branch). Atomic — if any
     node rejects, nothing is written.
     """
-    from workflow.author_server import (
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.branches import BranchDefinition
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     if not bid:
@@ -6961,8 +6984,8 @@ def _run_mermaid_from_events(
     embeds this in the `summary` markdown and as a top-level field so
     Claude.ai auto-renders.
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
 
     try:
         source_dict = get_branch_definition(
@@ -7069,13 +7092,33 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
                 "suggested_action": suggested_action,
             }
     msg = str(exc).lower()
-    if "provider" in msg or "api key" in msg or "auth" in msg:
+    if "quota" in msg or "rate limit" in msg or "rate_limit" in msg or "ratelimit" in msg:
         return {
             "status": "error",
             "error": f"Run failed: {exc}",
-            "failure_class": "provider_unavailable",
+            "failure_class": "quota_exhausted",
             "suggested_action": (
-                "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys."
+                "Provider quota or rate limit hit; wait before retrying OR"
+                " switch providers via the llm_type param."
+            ),
+        }
+    if "auth expir" in msg or "token expir" in msg or "credential" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "permission_denied:auth_expired",
+            "suggested_action": (
+                "Provider credentials have expired; re-authenticate or rotate the API key."
+            ),
+        }
+    if "permission denied" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "permission_denied:approval_required",
+            "suggested_action": (
+                "Ask host to approve the source_code node via extensions"
+                " action=approve_source_code before running."
             ),
         }
     if "approv" in msg or "source_code" in msg:
@@ -7088,6 +7131,25 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
                 " action=approve_source_code before running."
             ),
         }
+    if "concurrent" in msg or "conflict" in msg or "modified" in msg or "stale" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "state_mutation_conflict",
+            "suggested_action": (
+                "Concurrent modification detected; re-fetch the branch state"
+                " with get_branch then reapply your edit."
+            ),
+        }
+    if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
+        return {
+            "status": "error",
+            "error": f"Run failed: {exc}",
+            "failure_class": "provider_unavailable",
+            "suggested_action": (
+                "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys."
+            ),
+        }
     return {
         "status": "error",
         "error": f"Run failed: {exc}",
@@ -7096,6 +7158,91 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             f"Inspect the run transcript with get_run for branch '{bid}' details."
         ),
     }
+
+
+def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
+    """Map a stored run-failure error string to (failure_class, suggested_action).
+
+    Called on RunOutcome objects whose error was recorded by the async runner,
+    so exception type is gone — only the serialised string remains.  Returns
+    None when the error does not match any known pattern (caller keeps raw
+    error string and omits failure_class / suggested_action).
+    """
+    msg = error_str.lower()
+    if "empty" in msg and ("llm" in msg or "response" in msg or "provider" in msg):
+        return (
+            "empty_llm_response",
+            "Check provider config or try a different model via the llm_type param.",
+        )
+    if "timed out" in msg or "timeout" in msg:
+        return (
+            "timeout",
+            "Branch run timed out; try a shorter branch or increase timeout param.",
+        )
+    if "quota" in msg or "rate limit" in msg or "rate_limit" in msg or "ratelimit" in msg:
+        return (
+            "quota_exhausted",
+            "Provider quota or rate limit hit; wait before retrying OR"
+            " switch providers via the llm_type param.",
+        )
+    if "overload" in msg or "503" in msg or "service unavailable" in msg or "server error" in msg:
+        return (
+            "provider_overloaded",
+            "Provider is temporarily overloaded; wait 30-60s then retry"
+            " or switch llm_type.",
+        )
+    if (
+        "maximum context length" in msg
+        or "context_length_exceeded" in msg
+        or "tokens exceeded" in msg
+        or "too many tokens" in msg
+    ):
+        return (
+            "context_length_exceeded",
+            "Input or accumulated state is too long for this provider;"
+            " try a branch with fewer nodes or a higher-context model.",
+        )
+    if "auth expir" in msg or "token expir" in msg or "credential" in msg:
+        return (
+            "permission_denied:auth_expired",
+            "Provider credentials have expired; re-authenticate or rotate the API key.",
+        )
+    if "approv" in msg or "source_code" in msg:
+        return (
+            "node_not_approved",
+            "Ask host to approve the source_code node via extensions"
+            " action=approve_source_code before running.",
+        )
+    if "permission denied" in msg:
+        return (
+            "permission_denied:approval_required",
+            "Ask host to approve the source_code node via extensions"
+            " action=approve_source_code before running.",
+        )
+    if "exit code" in msg or "subprocess failure" in msg or "api likely unavailable" in msg:
+        return (
+            "provider_subprocess_failed",
+            "Provider CLI process failed; check that claude/codex binary is"
+            " installed and reachable.",
+        )
+    if "concurrent" in msg or "conflict" in msg or "modified" in msg or "stale" in msg:
+        return (
+            "state_mutation_conflict",
+            "Concurrent modification detected; re-fetch the branch state"
+            " with get_branch then reapply your edit.",
+        )
+    if "provider" in msg or "api key" in msg or "api_key" in msg:
+        return (
+            "provider_unavailable",
+            "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys.",
+        )
+    if "call failed" in msg or "groq" in msg or "gemini" in msg or "grok" in msg:
+        return (
+            "provider_error",
+            "Provider returned an unexpected error; check provider logs"
+            " or try a different llm_type.",
+        )
+    return None
 
 
 def _action_run_branch(kwargs: dict[str, Any]) -> str:
@@ -7112,8 +7259,8 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     available today; do not poll an ``interrupted`` run expecting it to
     flip back to ``running``.
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import execute_branch_async
 
     _ensure_runs_recovery()
@@ -7195,23 +7342,33 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     # status=queued almost immediately. The text channel is phone-legible
     # (no raw IDs); the run_id lives in structuredContent for the next
     # tool call.
+    error_annotation = _classify_run_outcome_error(outcome.error) if outcome.error else None
+    error_lines: list[str] = []
+    if outcome.error:
+        error_lines.append(f"Error: {outcome.error}")
+    if error_annotation:
+        error_lines.append(f"Suggested action: {error_annotation[1]}")
     text = "\n".join([
         f"**Run {outcome.status}.** Workflow handed to the "
         "background executor.",
         "",
-        f"Error: {outcome.error}" if outcome.error else "",
+        *error_lines,
         "Use `get_run` to read a snapshot, `stream_run` to poll for "
         "progress, or `cancel_run` to stop. Each takes a `run_id` "
         "from the structured content of this response.",
     ]).strip()
 
-    return json.dumps({
+    result: dict[str, Any] = {
         "text": text,
         "run_id": outcome.run_id,
         "status": outcome.status,
         "output": outcome.output,
         "error": outcome.error,
-    })
+    }
+    if error_annotation:
+        result["failure_class"] = error_annotation[0]
+        result["suggested_action"] = error_annotation[1]
+    return json.dumps(result)
 
 
 def _branch_name_for_run(run_record: dict[str, Any]) -> str:
@@ -7220,8 +7377,8 @@ def _branch_name_for_run(run_record: dict[str, Any]) -> str:
     Text channels should surface names, never raw branch_def_id strings.
     Falls back to ``(unknown workflow)`` when the branch is missing.
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
 
     try:
         source_dict = get_branch_definition(
@@ -7239,8 +7396,8 @@ def _compose_run_snapshot(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Pack run metadata + node statuses + mermaid into a phone-legible dict."""
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import build_node_status_map
 
     declared_order: list[str] = []
@@ -7311,6 +7468,12 @@ def _compose_run_snapshot(
     if run_record["status"] == "interrupted":
         snapshot["resumable"] = False
         snapshot["resumable_reason"] = "v1 terminal-on-restart"
+    # BUG-029: enrich failed snapshots so chatbots have a user-actionable hint.
+    if run_record["status"] == "failed":
+        error_annotation = _classify_run_outcome_error(run_record.get("error", ""))
+        if error_annotation:
+            snapshot["failure_class"] = error_annotation[0]
+            snapshot["suggested_action"] = error_annotation[1]
     return snapshot
 
 
@@ -7609,8 +7772,8 @@ def _action_resume_run(kwargs: dict[str, Any]) -> str:
     the run. If the run is already in RESUMED status, the call is
     idempotent and returns the existing run_id.
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import ResumeError, resume_run
 
     _ensure_runs_recovery()
@@ -7680,8 +7843,8 @@ def _action_estimate_run_cost(kwargs: dict[str, Any]) -> str:
     - "medium": 1-4 prior completed runs exist (use average).
     - "high": 5+ prior completed runs exist (use median of sample).
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import RUN_STATUS_COMPLETED, list_runs
 
     bid = kwargs.get("branch_def_id", "").strip()
@@ -7896,6 +8059,117 @@ def _action_query_runs(kwargs: dict[str, Any]) -> str:
 _DEFAULT_QUERY_LIMIT = 100
 
 
+def _action_run_routing_evidence(kwargs: dict[str, Any]) -> str:
+    """Return recent run records shaped for provider/routing self-audit.
+
+    Answers "which LLM answered the last call?" and "why did the run fail?"
+    Each record includes derived latency_ms, failure_class, suggested_action,
+    and a caveat noting that provider_used / token_count fields are not yet
+    in the runs schema (pending schema migration).
+    """
+    from workflow.runs import list_recent_runs
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    raw_limit = kwargs.get("limit", 10)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = 10
+
+    records = list_recent_runs(_base_path(), branch_def_id=bid, limit=limit)
+    return json.dumps({
+        "runs": records,
+        "count": len(records),
+        "caveat": records[0]["caveat"] if records else (
+            "No runs found. Execute a branch first, then call get_routing_evidence."
+        ),
+    }, default=str)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# get_memory_scope_status — self-auditing primitive §4.1
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _action_get_memory_scope_status(kwargs: dict[str, Any]) -> str:
+    """Snapshot of memory-scope enforcement state for chatbot self-audit.
+
+    Self-auditing-tools pattern (§4.1). Answers: "Is tiered scope active?
+    Which tiers are being enforced? Have any scope mismatches been logged?"
+    Returns concrete evidence the chatbot can narrate; does not infer.
+
+    Shape (schema_version=1):
+        {
+          "schema_version": int,
+          "tiered_scope_enabled": bool,
+          "flag_state": str,
+          "active_enforcement_tiers": [str, ...],
+          "all_scope_tiers": [str, ...],
+          "retrieval_stats_by_tier": {},
+          "recent_scope_mismatch_warnings": [str, ...],
+          "caveats": [str, ...],
+          "actionable_next_steps": [str, ...],
+        }
+    """
+    import os as _os
+
+    from workflow.retrieval.router import tiered_scope_enabled
+
+    flag_on = tiered_scope_enabled()
+    flag_raw = _os.environ.get("WORKFLOW_TIERED_SCOPE", "off")
+    all_tiers = ["universe_id", "goal_id", "branch_id", "user_id"]
+    active_tiers = all_tiers if flag_on else ["universe_id"]
+
+    universe_id = (kwargs.get("universe_id") or "").strip() or _default_universe()
+    udir = _universe_dir(universe_id)
+    log_content = _read_text(udir / "activity.log")
+    mismatch_lines: list[str] = []
+    if log_content:
+        for line in log_content.strip().splitlines():
+            if "retrieval.scope_mismatch" in line:
+                mismatch_lines.append(line.strip())
+    recent_mismatches = mismatch_lines[-10:]
+
+    caveats: list[str] = [
+        "retrieval_stats_by_tier is not yet instrumented (Stage 2b.3);"
+        " per-tier drop counts will appear in Stage 2c.",
+    ]
+    if not flag_on:
+        caveats.append(
+            "WORKFLOW_TIERED_SCOPE=off: only universe_id is enforced."
+            " goal_id / branch_id / user_id isolation is NOT active."
+        )
+    if recent_mismatches:
+        caveats.append(
+            f"{len(recent_mismatches)} recent scope-mismatch warning(s) in"
+            " activity.log — inspect recent_scope_mismatch_warnings."
+        )
+
+    next_steps: list[str] = []
+    if not flag_on:
+        next_steps.append(
+            "Set WORKFLOW_TIERED_SCOPE=on to enable full four-tier"
+            " isolation (universe/goal/branch/user)."
+        )
+    next_steps.append(
+        "Check activity.log for 'retrieval.scope_mismatch' to diagnose"
+        " any cross-universe content bleed."
+    )
+
+    return json.dumps({
+        "schema_version": 1,
+        "tiered_scope_enabled": flag_on,
+        "flag_state": flag_raw,
+        "active_enforcement_tiers": active_tiers,
+        "all_scope_tiers": all_tiers,
+        "retrieval_stats_by_tier": {},
+        "recent_scope_mismatch_warnings": recent_mismatches,
+        "caveats": caveats,
+        "actionable_next_steps": next_steps,
+        "universe_id": universe_id,
+    })
+
+
 # ───────────────────────────────────────────────────────────────────────────
 # dry_inspect_node / dry_inspect_patch — zero-side-effect structural preview
 # ───────────────────────────────────────────────────────────────────────────
@@ -7922,7 +8196,7 @@ def _load_branch_for_inspect(
         return None, "branch_def_id or branch_spec_json is required."
 
     try:
-        from workflow.author_server import get_branch_definition
+        from workflow.daemon_server import get_branch_definition
         source = get_branch_definition(_base_path(), branch_def_id=branch_def_id)
         return _BD.from_dict(source), None
     except KeyError:
@@ -8157,6 +8431,8 @@ _RUN_ACTIONS: dict[str, Any] = {
     "resume_run": _action_resume_run,
     "estimate_run_cost": _action_estimate_run_cost,
     "query_runs": _action_query_runs,
+    "get_routing_evidence": _action_run_routing_evidence,
+    "get_memory_scope_status": _action_get_memory_scope_status,
 }
 
 _RUN_WRITE_ACTIONS: frozenset[str] = frozenset({"run_branch", "cancel_run", "resume_run"})
@@ -8513,12 +8789,64 @@ def _action_unsubscribe_branch(kwargs: dict[str, Any]) -> str:
     return json.dumps({"status": "unsubscribed", "subscription_id": subscription_id})
 
 
+def _action_pause_schedule(kwargs: dict[str, Any]) -> str:
+    from workflow.scheduler import pause_schedule
+
+    schedule_id = (kwargs.get("schedule_id") or "").strip()
+    if not schedule_id:
+        return json.dumps({"error": "schedule_id is required."})
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    base = _base_path()
+    try:
+        found = pause_schedule(base, schedule_id, requesting_actor=owner_actor)
+    except PermissionError as exc:
+        return json.dumps({"error": str(exc)})
+    if not found:
+        return json.dumps({"error": f"schedule_id '{schedule_id}' not found."})
+    return json.dumps({"status": "paused", "schedule_id": schedule_id})
+
+
+def _action_unpause_schedule(kwargs: dict[str, Any]) -> str:
+    from workflow.scheduler import unpause_schedule
+
+    schedule_id = (kwargs.get("schedule_id") or "").strip()
+    if not schedule_id:
+        return json.dumps({"error": "schedule_id is required."})
+    owner_actor = (kwargs.get("owner_actor") or "").strip() or "anonymous"
+    base = _base_path()
+    try:
+        found = unpause_schedule(base, schedule_id, requesting_actor=owner_actor)
+    except PermissionError as exc:
+        return json.dumps({"error": str(exc)})
+    if not found:
+        return json.dumps({"error": f"schedule_id '{schedule_id}' not found."})
+    return json.dumps({"status": "unpaused", "schedule_id": schedule_id})
+
+
+def _action_list_scheduler_subscriptions(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import initialize_runs_db
+    from workflow.scheduler import list_scheduler_subscriptions
+
+    owner_actor = (kwargs.get("owner_actor") or "").strip()
+    event_type = (kwargs.get("event_type") or "").strip()
+    active_only = bool(kwargs.get("active_only", True))
+    base = _base_path()
+    initialize_runs_db(base)
+    rows = list_scheduler_subscriptions(
+        base, owner_actor=owner_actor, event_type=event_type, active_only=active_only
+    )
+    return json.dumps({"subscriptions": rows, "count": len(rows)})
+
+
 _SCHEDULER_ACTIONS: dict[str, Any] = {
     "schedule_branch": _action_schedule_branch,
     "unschedule_branch": _action_unschedule_branch,
     "list_schedules": _action_list_schedules,
     "subscribe_branch": _action_subscribe_branch,
     "unsubscribe_branch": _action_unsubscribe_branch,
+    "pause_schedule": _action_pause_schedule,
+    "unpause_schedule": _action_unpause_schedule,
+    "list_scheduler_subscriptions": _action_list_scheduler_subscriptions,
 }
 
 
@@ -9090,8 +9418,8 @@ def _action_suggest_node_edit(kwargs: dict[str, Any]) -> str:
     Per spec: this does NOT call an LLM. It assembles context. The
     calling client proposes the edit.
     """
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import (
         list_judgments as _list_judgments,
     )
@@ -9298,8 +9626,8 @@ def _node_body_summary(node_def: dict[str, Any]) -> str:
 
 def _action_list_node_versions(kwargs: dict[str, Any]) -> str:
     """Return the version history for a single node on a branch."""
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import list_node_edit_audits
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -9413,11 +9741,11 @@ def _action_rollback_node(kwargs: dict[str, Any]) -> str:
     audit row with ``edit_kind="rollback"``. Forward history is never
     destroyed — the old body stays retrievable via list_node_versions.
     """
-    from workflow.author_server import (
+    from workflow.branches import BranchDefinition, NodeDefinition
+    from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.branches import BranchDefinition, NodeDefinition
     from workflow.runs import (
         find_node_snapshot,
         list_node_edit_audits,
@@ -9715,8 +10043,8 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_update(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_goal
-    from workflow.author_server import update_goal as _update
+    from workflow.daemon_server import get_goal
+    from workflow.daemon_server import update_goal as _update
     from workflow.identity import git_author
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -9800,7 +10128,7 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_bind(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         get_branch_definition,
         get_goal,
         update_branch_definition,
@@ -9888,7 +10216,7 @@ def _action_goal_bind(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_list(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import list_goals
+    from workflow.daemon_server import list_goals
 
     _ensure_author_server_db()
     rows = list_goals(
@@ -9917,7 +10245,7 @@ def _action_goal_list(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_get(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         branches_for_goal,
         get_goal,
         goal_gate_summary,
@@ -10001,7 +10329,7 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_search(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import search_goals
+    from workflow.daemon_server import search_goals
 
     query = (kwargs.get("query") or "").strip()
     if not query:
@@ -10042,7 +10370,7 @@ _ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS + _GATE_EVENT_LEADERBOARD_MET
 
 
 def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         get_goal,
         goal_leaderboard,
     )
@@ -10179,7 +10507,7 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         get_goal,
         goal_common_nodes,
         goal_common_nodes_all,
@@ -10554,8 +10882,8 @@ def _validate_evidence_url(url: str) -> str:
 
 
 def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_goal
     from workflow.catalog.layout import slugify
+    from workflow.daemon_server import get_goal
     from workflow.identity import git_author
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -10644,7 +10972,7 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_goal_ladder
+    from workflow.daemon_server import get_goal_ladder
 
     gid = (kwargs.get("goal_id") or "").strip()
     if not gid:
@@ -10668,13 +10996,13 @@ def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_claim(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.catalog.layout import slugify
+    from workflow.daemon_server import (
         get_branch_definition,
         get_gate_claim,
         get_goal,
         get_goal_ladder,
     )
-    from workflow.catalog.layout import slugify
     from workflow.identity import git_author
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -10747,7 +11075,7 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
             "error": "unknown_rung",
             "available_rungs": available,
         })
-    from workflow.author_server import BranchRebindError
+    from workflow.daemon_server import BranchRebindError
 
     goal_slug = slugify(goal.get("name") or goal_id)
     branch_slug = slugify(branch.get("name") or bid)
@@ -10788,12 +11116,12 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_retract(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.catalog.layout import slugify
+    from workflow.daemon_server import (
         get_branch_definition,
         get_gate_claim,
         get_goal,
     )
-    from workflow.catalog.layout import slugify
     from workflow.identity import git_author
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -10887,7 +11215,7 @@ _LIST_CLAIMS_LIMIT_CAP = 500
 
 
 def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import get_goal, list_gate_claims
+    from workflow.daemon_server import get_goal, list_gate_claims
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     gid = (kwargs.get("goal_id") or "").strip()
@@ -10942,7 +11270,7 @@ def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         gates_leaderboard,
         get_goal,
         get_goal_ladder,
@@ -11312,14 +11640,13 @@ def gates(
 
     Each Goal declares a ladder of rungs (draft → peer-reviewed → published
     → cited → breakthrough). Branches self-report which rungs they've
-    reached, with an evidence URL. Phase 6.3 lands git-commit
-    integration: every mutation writes a YAML under
-    `goals/<slug>.yaml` (ladder) or `gates/<goal_slug>/<branch_slug>__<rung>.yaml`
-    (claim/retract) and lands as one commit. `force=True` bypasses
-    the dirty-file guard; otherwise uncommitted local edits surface
-    as a `local_edit_conflict` envelope.
+    reached, with an evidence URL.
 
-    Actions:
+    All actions require GATES_ENABLED=1 on the server; the tool returns
+    {"status": "not_available"} when the flag is off. Bonus actions
+    additionally require WORKFLOW_PAID_MARKET=on.
+
+    Actions (all live when GATES_ENABLED=1):
       define_ladder Owner sets the rung list on a Goal. Needs goal_id
                     and `ladder` (JSON list of {rung_key, name,
                     description}).
@@ -11337,11 +11664,21 @@ def gates(
                     reached. Tiebreak: earliest claim wins. Also
                     callable as `goals leaderboard metric=outcome`.
 
+    Bonus actions (live when GATES_ENABLED=1 + WORKFLOW_PAID_MARKET=on):
+      stake_bonus   Lock a bonus stake on a claim. Needs claim_id,
+                    bonus_stake (int > 0), node_id. attachment_scope
+                    controls what the stake attaches to ("node" default).
+      unstake_bonus Remove a bonus stake and refund the staker. Needs
+                    claim_id. Only the original staker can unstake.
+      release_bonus Resolve a bonus payout via evaluator verdict. Needs
+                    claim_id, eval_verdict ("pass"|"fail"|"skip"),
+                    node_last_claimer (recipient on pass).
+
     Evidence URL must be http(s) with a host; content is not fetched
     (local-first). Social accountability handles fraud in v1.
 
     Args:
-      action: see above.
+      action: see Actions above.
       goal_id: Goal target for ladder / leaderboard / list_claims.
       branch_def_id: Branch that's claiming / retracting / listing.
       rung_key: matches a ladder entry's rung_key.
@@ -11354,6 +11691,19 @@ def gates(
       force: bypass the dirty-file guard on the target YAML when a
              user has uncommitted local edits. Same ergonomics as
              `goals propose/update/bind` and `branch` mutations.
+      claim_id: target claim for stake_bonus / unstake_bonus /
+                release_bonus.
+      bonus_stake: integer token amount for stake_bonus (must be > 0).
+                   Harmless when WORKFLOW_PAID_MARKET is off — the
+                   action returns not_available before reading this arg.
+      attachment_scope: what the stake attaches to; "node" (default)
+                        or "branch". Used by stake_bonus.
+      eval_verdict: evaluator decision for release_bonus —
+                    "pass" (payout to node_last_claimer), "fail"
+                    (refund to staker), or "skip" (no-op).
+      node_last_claimer: actor_id of the node fulfiller who receives
+                         payout on a "pass" release_bonus verdict.
+      node_id: node target for stake_bonus.
     """
     if not _gates_enabled():
         return json.dumps({
@@ -11719,7 +12069,13 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint; writes:
             write, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug, cosign_bug.
+            sync_projects (no args; scans sibling project directories
+            and creates stub pages/projects/*.md entries for any that
+            lack one — safe to run at any time), file_bug, cosign_bug
+            (add your context to an existing bug — use when file_bug
+            returns status="similar_found"; requires bug_id +
+            reporter_context; returns the updated bug page with your
+            context appended and the cosign_count incremented).
         page: Page name for read (also: index, log, schema).
         query: Search keywords for search.
         category: write / promote category — projects, concepts,
@@ -13269,6 +13625,14 @@ def get_status(universe_id: str = "") -> str:
     except Exception as exc:  # noqa: BLE001 — best-effort observability
         sandbox_status = {"bwrap_available": False, "reason": f"probe_error: {exc}"}
 
+    # BUG-027 — probe required static data files so operators can see which
+    # files are absent in the cloud image without waiting for ASP to fail.
+    try:
+        from workflow.storage.rotation import startup_file_probe
+        missing_data_files = startup_file_probe()
+    except Exception:  # noqa: BLE001 — best-effort observability
+        missing_data_files = []
+
     response = {
         "schema_version": 1,
         "active_host": policy_payload["active_host"],
@@ -13287,6 +13651,7 @@ def get_status(universe_id: str = "") -> str:
         "storage_utilization": storage_utilization,
         "per_provider_cooldown_remaining": per_provider_cooldown_remaining,
         "sandbox_status": sandbox_status,
+        "missing_data_files": missing_data_files,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }

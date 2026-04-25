@@ -148,3 +148,55 @@ def test_cast_vote_response_is_vote_wrapped(client: TestClient) -> None:
         f"/ballots response must be wrapped as {{'vote': ...}}; got {body!r}"
     )
     assert body["vote"] == sentinel
+
+
+def test_resolve_vote_returns_404_when_not_found(client: TestClient) -> None:
+    """When resolve_vote_if_due returns None, /resolve must 404."""
+    with patch(
+        "fantasy_daemon.author_server.resolve_vote_if_due",
+        return_value=None,
+    ):
+        response = client.post(
+            "/v1/votes/nonexistent/resolve",
+            headers=_host_headers(),
+        )
+    assert response.status_code == 404
+
+
+def test_resolve_vote_forbidden_for_non_host(client: TestClient) -> None:
+    """Non-host session token must not be able to resolve votes."""
+    user_token = _user_session(client, "bob")
+    response = client.post(
+        "/v1/votes/any-vote-id/resolve",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_cast_vote_requires_auth(client: TestClient) -> None:
+    """Unauthenticated /ballots requests must be rejected."""
+    response = client.post(
+        "/v1/votes/v-123/ballots",
+        json={"choice": "yes"},
+    )
+    assert response.status_code in (401, 403)
+
+
+def test_cast_vote_accepts_choice_field(client: TestClient) -> None:
+    """The /ballots body accepts the `choice` field (current schema)."""
+    user_token = _user_session(client, "charlie")
+    sentinel = {"ballot_id": "b-9", "vote_id": "v-456", "choice": "no"}
+
+    with patch(
+        "fantasy_daemon.author_server.cast_vote",
+        return_value=sentinel,
+    ):
+        response = client.post(
+            "/v1/votes/v-456/ballots",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"choice": "no"},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["vote"]["choice"] == "no"

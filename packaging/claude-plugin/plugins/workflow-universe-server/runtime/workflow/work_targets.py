@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from workflow import author_server
+from workflow import daemon_server as author_server
 from workflow.notes import add_note
 
 logger = logging.getLogger(__name__)

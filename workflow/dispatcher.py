@@ -106,6 +106,32 @@ def paid_market_enabled() -> bool:
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
+def get_request_type_priorities() -> list[str]:
+    """Read ``WORKFLOW_REQUEST_TYPE_PRIORITIES``.
+
+    Returns ordered list of request_type strings this daemon will claim.
+    Empty list = accept all types (no filtering, backward-compatible default).
+    Format: comma-separated, e.g. ``bug_investigation,paid_market,branch_run``.
+    """
+    raw = os.environ.get("WORKFLOW_REQUEST_TYPE_PRIORITIES", "").strip()
+    if not raw:
+        return []
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def prefers_request_type(request_type: str) -> bool:
+    """Return True if this daemon will claim tasks of the given request_type.
+
+    When ``WORKFLOW_REQUEST_TYPE_PRIORITIES`` is unset or empty, all
+    types are accepted (backward-compatible). When set, only listed
+    types are accepted.
+    """
+    priorities = get_request_type_priorities()
+    if not priorities:
+        return True
+    return request_type in priorities
+
+
 def _parse_iso(value: str) -> datetime | None:
     if not value:
         return None
@@ -235,6 +261,9 @@ def select_next_task(
             and config.served_llm_type
             and task.required_llm_type != config.served_llm_type
         ):
+            continue
+        # Request-type filter: only claim types this daemon prefers.
+        if not prefers_request_type(task.request_type):
             continue
         s = score_task(task, now_iso=now, config=config)
         eligible.append((s, task))

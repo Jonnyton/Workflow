@@ -1,19 +1,4 @@
-"""Select-task node -- routes the universe daemon to its next action.
-
-Inspects health signals, creative worldbuild signals, and workflow
-instructions to decide what task the daemon should run next.
-
-Worldbuilding is driven by author-like creative signals (new elements,
-contradictions, expansions discovered during writing) rather than timers
-or chapter-count thresholds.
-
-Contract
---------
-Input:  UniverseState with ``task_queue``, ``health``, and optionally
-        ``workflow_instructions`` and ``world_state_version``.
-Output: Partial UniverseState with ``task_queue`` updated to reflect
-        the selected task at position 0.
-"""
+"""Select-task node -- legacy universe graph; routes daemon to run_book/worldbuild/reflect."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Consolidate node -- chapter-level fact promotion and summary.
+"""Consolidate node -- chapter graph; entry after all scenes complete, promotes facts before learn.
 
 Promotes facts that have accumulated 3+ scene evidence via
 MemoryManager promotion gates, evicts old episodic data outside the

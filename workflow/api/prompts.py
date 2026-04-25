@@ -161,7 +161,7 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
    create/switch.
 2. **`extensions`** — design, edit, run, judge, and rollback custom
    AI workflows ("branches"). Largest action surface — node/edge
-   authoring, builds, runs, judgments, lineage.
+   builds, runs, judgments, lineage.
 3. **`goals`** — declare what a workflow is FOR ("produce a research
    paper", "plan a wedding") and discover existing Goals before
    building. Other people's Branches bind to the same Goal so you can
@@ -199,14 +199,14 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
    | Bind workflow to a Goal        | `goals action=bind branch_def_id=...    |
    |                                | goal_id=...`                            |
    | See who else built for a Goal  | `goals action=get goal_id=...` (lists   |
-   |                                | bound workflows + author + run counts)  |
+   |                                | bound workflows + daemon + run counts)  |
    | Compare workflows on a Goal    | `goals action=leaderboard goal_id=...   |
    |                                | metric=run_count`                       |
    | Find reusable nodes            | `goals action=common_nodes scope=all`   |
    |                                | (across all Goals) or                   |
    |                                | `extensions action=search_nodes`        |
    | Submit collaborative input     | `universe` action="submit_request"      |
-   | Give direct author guidance    | `universe` action="give_direction"      |
+   | Give direct daemon guidance    | `universe` action="give_direction"      |
    | Query world state              | `universe` action="query_world"         |
    | Read produced output           | `universe` action="read_output"         |
    | Browse source / canon docs     | `universe` action="list_canon"          |

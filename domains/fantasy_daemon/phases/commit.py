@@ -1,4 +1,4 @@
-"""Commit node -- evaluates draft and decides verdict.
+"""Commit node -- scene graph; entry after draft, decides accept/second_draft/revert verdict.
 
 Runs structural evaluation, editorial reading, fact/entity extraction,
 world state updates, and worldbuild signal generation. Returns a verdict

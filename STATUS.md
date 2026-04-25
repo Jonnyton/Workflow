@@ -6,22 +6,18 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 - [2026-04-23] **P0 revert-loop: daemon PAUSED.** Auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [2026-04-20] Canonical public MCP: `tinyassets.io/mcp` -> 200; `mcp.tinyassets.io/mcp` -> gated internal origin only.
-- [2026-04-22] `/etc/workflow/env` mode flip root cause unknown; audit deploy/bootstrap so compose does not lose readable env again.
+- [2026-04-22→25] `/etc/workflow/env` mode flip — RC audit landed (`docs/audits/2026-04-25-etc-workflow-env-mode-flip.md`); Fix A (`install -m 640` instead of `sed -i`) awaits host review.
 - [2026-04-20] `test_node_eval::test_record_and_get_stats_roundtrip` pre-existing flake. Passes alone, flaky in full suite.
-- [2026-04-17] REST vote changes need tests: `/votes/{id}/resolve`; `/votes/{id}/ballots` now `{"vote": ...}`.
 - [2026-04-17] Privacy mode note has 3 host Qs: `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md`.
 - [2026-04-18] `add_canon_from_path` sensitivity note has 3 host asks: `docs/design-notes/2026-04-18-add-canon-from-path-sensitivity.md`.
 - [2026-04-18] Claude.ai injection mitigation blocked on host-Q batch: `docs/design-notes/2026-04-18-claude-ai-injection-hallucination.md`.
-- [2026-04-18] `fantasy_daemon/author_server.py` alias risk: snapshot export, not `sys.modules` rebind.
 - [2026-04-18] Full-platform architecture supersedes phased plan; migrate candidate: `docs/design-notes/2026-04-18-full-platform-architecture.md`.
 - [2026-04-19] Navigator follow-up: modularity audit flags `universe_server`, discovery, and `daemon_server` seams.
 - [2026-04-24] Task #9 host Qs: are GROQ/GEMINI/XAI in GH Actions secrets? Host validates rotation e2e after deploy step ships.
 - [2026-04-25] ChatGPT publish blocked in current login: `Workflow DEV` is connected as Plus/private app, not workspace admin.
 - [2026-04-25] ChatGPT connector approval bug: Update Node approval errored; retry saved node v2.
 - [2026-04-25] ChatGPT Run Branch approval stalled after access grant; no run ID rendered.
-- [2026-04-25] BUG-030 filed: rename approval stalled; friendly workflow name did not save.
 - [2026-04-25] ChatGPT UX: normal users need name-based workflow refs, not raw branch IDs.
-- [2026-04-25] BUG-029 filed: `extract_claims` empty LLM response gives no clear user action.
 
 ## Approved Specs
 
@@ -33,7 +29,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 ## Work
 
-Both devs idle. ~7 bundles awaiting verifier SHIP. Host decisions outstanding: R7 storage split (gates rename end-state), Mark-branch-canonical (gates Task #33 file_bug auto-trigger), cloud daemon redeploy (gates Task #32 wiki migration), audit-doc review for #28/#29 implementation phases.
+Devs idle pending verifier sweep. ~14 SHIP requests queued (BUG-029/030/031/032/033, REST vote tests, schema migration, classifier gap, memory_scope action, routing_evidence, Dockerfile data/ COPY, provider binary probe, brand-pass copy, P0/P1/P2 MCP descriptions, design notes, runbook). Verifier 1 hung — respawning fresh + adding verifier-2 to drain. Host decisions outstanding: R7 storage split, Mark-branch-canonical, cloud daemon redeploy, audit-doc review for #28/#29.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
@@ -41,7 +37,6 @@ Both devs idle. ~7 bundles awaiting verifier SHIP. Host decisions outstanding: R
 | R7 storage-split status confirmation | exec-plan: `docs/exec-plans/active/2026-04-19-rename-end-state.md` | host | host-decision |
 | Mark-branch canonical decision (Task #33 phase 0) | live MCP `goals action=propose/bind/set_canonical` | host | host-decision |
 | #28 + #29 audit-doc review | `docs/audits/2026-04-25-{engine-domain-api-separation,universe-server-decomposition}.md` | host | host-review |
-| Verifier SHIP sweep — 7 bundles (#2 #21 #22 #23 #24 #30 #31 #33-skel) | various | verifier | in-progress |
 | Wiki status migration (#32) — BUG-002/003/007/014A/015/016/018/020 + tier-1 page closing paragraph + BUG-003 dup cleanup | live wiki via `wiki action=write` | cloud-redeploy | post-deploy |
 | Arch audit #5/#6 + multi-week #9-#11 | `docs/design-notes/2026-04-24-architecture-audit.md` | host-review | host-review |
 | Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |

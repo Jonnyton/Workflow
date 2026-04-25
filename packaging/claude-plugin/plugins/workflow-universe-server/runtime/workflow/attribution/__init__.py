@@ -1,12 +1,12 @@
 """workflow.attribution — Attribution chain and remix provenance primitives.
 
 Schema layer (schema.py): attribution_edge / attribution_credit DDL and dataclasses.
-Persistence, MCP surface, and share-calculation logic come in follow-ups once
-the spec is promoted from deferred status.
+Calculation layer (calc.py): compute_credit_shares + compute_payout_shares.
 """
 
 from __future__ import annotations
 
+from workflow.attribution.calc import compute_credit_shares, compute_payout_shares
 from workflow.attribution.schema import (
     ATTRIBUTION_SCHEMA,
     AttributionCredit,
@@ -22,5 +22,7 @@ __all__ = [
     "AttributionEdge",
     "ContributionKind",
     "RemixProvenance",
+    "compute_credit_shares",
+    "compute_payout_shares",
     "migrate_attribution_schema",
 ]

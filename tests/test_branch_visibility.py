@@ -29,7 +29,7 @@ def base_path(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("WORKFLOW_GATES_ENABLED", "1")
-    from workflow.author_server import initialize_author_server
+    from workflow.daemon_server import initialize_author_server
     initialize_author_server(base)
     from workflow import universe_server as us
     importlib.reload(us)
@@ -63,7 +63,7 @@ def _make_branch_row(**overrides) -> dict:
 
 
 def test_default_visibility_is_public(base_path):
-    from workflow.author_server import get_branch_definition, save_branch_definition
+    from workflow.daemon_server import get_branch_definition, save_branch_definition
 
     saved = save_branch_definition(
         base_path, branch_def=_make_branch_row(branch_def_id="b1"),
@@ -75,7 +75,7 @@ def test_default_visibility_is_public(base_path):
 
 
 def test_explicit_private_round_trips(base_path):
-    from workflow.author_server import get_branch_definition, save_branch_definition
+    from workflow.daemon_server import get_branch_definition, save_branch_definition
 
     saved = save_branch_definition(
         base_path,
@@ -86,7 +86,7 @@ def test_explicit_private_round_trips(base_path):
 
 
 def test_unknown_visibility_normalizes_to_public(base_path):
-    from workflow.author_server import save_branch_definition
+    from workflow.daemon_server import save_branch_definition
 
     saved = save_branch_definition(
         base_path,
@@ -99,7 +99,7 @@ def test_unknown_visibility_normalizes_to_public(base_path):
 
 
 def test_update_visibility_public_to_private(base_path):
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         save_branch_definition,
         update_branch_definition,
     )
@@ -119,7 +119,7 @@ def test_update_visibility_public_to_private(base_path):
 
 
 def test_list_branch_definitions_hides_others_private(base_path):
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         list_branch_definitions,
         save_branch_definition,
     )
@@ -170,7 +170,7 @@ def test_list_branch_definitions_hides_others_private(base_path):
 def _seed_claims_for_filter_tests(base_path: Path):
     """Seed a Goal + 2 Branches (1 public, 1 private-bob) + 1 claim
     each on the same rung. Returns (goal_id, bids, rung_key)."""
-    from workflow.author_server import claim_gate, save_branch_definition, save_goal
+    from workflow.daemon_server import claim_gate, save_branch_definition, save_goal
 
     goal_saved = save_goal(base_path, goal={
         "goal_id": "g-vis",
@@ -279,7 +279,7 @@ def test_private_branch_on_public_goal_is_visible_to_owner(
 ):
     """The collision case planner flagged: a private Branch bound to
     a public Goal. Owner sees their own claim; other users don't."""
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         claim_gate,
         get_goal,
         save_branch_definition,
@@ -345,7 +345,7 @@ def test_branch_create_accepts_visibility(base_path, monkeypatch):
 
 
 def test_branch_get_hides_private_from_non_owner(base_path, monkeypatch):
-    from workflow.author_server import save_branch_definition
+    from workflow.daemon_server import save_branch_definition
 
     save_branch_definition(
         base_path,
@@ -382,7 +382,7 @@ def test_goal_get_hides_private_branch_from_non_owner(
     `branches_for_goal`, non-owners must not see another user's
     private Branch on a shared public Goal.
     """
-    from workflow.author_server import save_branch_definition, save_goal
+    from workflow.daemon_server import save_branch_definition, save_goal
 
     goal_saved = save_goal(base_path, goal={
         "goal_id": "g-leak",
@@ -438,7 +438,7 @@ def test_goal_common_nodes_hides_private_branch_from_non_owner(
     node_ids across all Branches under a Goal. Without filtering,
     `first_seen_in` and `branch_ids` would leak private Branch IDs.
     """
-    from workflow.author_server import save_branch_definition, save_goal
+    from workflow.daemon_server import save_branch_definition, save_goal
 
     goal_saved = save_goal(base_path, goal={
         "goal_id": "g-cn",

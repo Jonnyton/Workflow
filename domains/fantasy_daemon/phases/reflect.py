@@ -1,4 +1,4 @@
-"""Reflect node -- cross-series coherence and creative direction review.
+"""Reflect node -- universe graph; invoked by dispatch_execution for cross-series coherence review.
 
 When a MemoryManager is present, runs the Reflexion engine to
 self-critique recent quality trends and update memory weights.

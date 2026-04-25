@@ -302,8 +302,8 @@ def test_leaderboard_run_count(p5_env):
 
     # B2 has 2 runs, B1 has 1. Run sync via execute_branch to avoid
     # background worker waits.
-    from workflow.author_server import get_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import execute_branch
 
     for _ in range(1):
@@ -358,8 +358,8 @@ def test_leaderboard_forks_counts_parent_chain(p5_env):
 
     # Create two "forks" — manually save branches with parent_def_id
     # pointing at parent.
-    from workflow.author_server import save_branch_definition
     from workflow.branches import BranchDefinition
+    from workflow.daemon_server import save_branch_definition
 
     parent = BranchDefinition.from_dict({"branch_def_id": parent_bid})
     for i in range(2):
@@ -596,7 +596,7 @@ def test_branch_from_pre_phase5_install_reads_cleanly(tmp_path):
     """An installation that existed before Phase 5 has no goal_id column.
     initialize_author_server adds the column; existing rows surface
     goal_id=None without errors."""
-    from workflow.author_server import (
+    from workflow.daemon_server import (
         _connect,
         get_branch_definition,
         initialize_author_server,

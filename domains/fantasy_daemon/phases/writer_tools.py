@@ -1,10 +1,4 @@
-"""Explicit writer tool surface for plan/draft context access.
-
-This module replaces ad hoc prompt stuffing with a small set of named tools.
-The current providers do not support interactive function calling, so the
-system runs a light tool-selection pass first, then executes the selected
-tools locally and injects only those results into the writer prompt.
-"""
+"""Writer-tools helper -- called by plan and draft nodes (scene graph) for context retrieval."""
 
 from __future__ import annotations
 

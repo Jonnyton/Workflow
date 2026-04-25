@@ -89,6 +89,8 @@ class BranchTask:
     evidence_url: str = ""
     error: str = ""
     cancel_requested: bool = False
+    request_type: str = "branch_run"
+    deadline: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

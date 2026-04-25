@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 import threading  # noqa: E402, F401  — tests patch workflow.__main__.threading
 
-import fantasy_author.__main__ as _fa_main  # noqa: E402
-from fantasy_author.__main__ import (  # noqa: E402, F401
+import fantasy_daemon.__main__ as _fa_main  # noqa: E402
+from fantasy_daemon.__main__ import (  # noqa: E402, F401
     DaemonController,
     _build_provider_router,
     _drain_tunnel_stderr,
@@ -170,7 +170,7 @@ def main() -> int:
         return 1
 
     try:
-        from fantasy_author.__main__ import DaemonController
+        from fantasy_daemon.__main__ import DaemonController
 
         controller = DaemonController(
             universe_path=args.universe,

@@ -87,7 +87,7 @@ class TestForkFromField:
             "edges": [{"from_node": "n1", "to_node": "END"}],
             "entry_point": "n1",
         })
-        result = json.loads(_ext_branch_build({"spec_json": spec}))
+        result = json.loads(_ext_branch_build({"spec_json": spec, "verbose": "true"}))
         assert result["status"] == "built"
         assert result["branch"]["fork_from"] == bvid
 
@@ -123,6 +123,7 @@ class TestSetForkFromPatchOp:
             "changes_json": json.dumps([
                 {"op": "set_fork_from", "branch_version_id": bvid}
             ]),
+            "verbose": "true",
         }))
         assert result["status"] == "patched"
         assert result["branch"]["fork_from"] == bvid

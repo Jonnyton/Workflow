@@ -1,12 +1,4 @@
-"""World state tracker -- SQLite-backed persistent state for the story universe.
-
-Maintains character states, promises, scene history, and extracted facts
-in a dedicated ``story.db`` database (separate from the LangGraph checkpoint
-database).
-
-This module is consumed by the orient node for deterministic forward-projection
-and by the commit node for world state updates after scene acceptance.
-"""
+"""World-state-db helper -- shared by orient (read) and commit (write) nodes in the scene graph."""
 
 from __future__ import annotations
 

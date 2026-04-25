@@ -31,7 +31,7 @@ def base_path(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     # Ensure author_server DB is live before the backend touches it.
-    from workflow.author_server import initialize_author_server
+    from workflow.daemon_server import initialize_author_server
 
     initialize_author_server(base)
     # Also reload universe_server so any @mcp decoration lands fresh
@@ -73,7 +73,7 @@ def test_sqlite_only_backend_persists_branch_via_author_server(base_path):
 
     assert saved["name"] == "Bulk-patch probe"
     # Round-trip via author_server directly — no YAML side-effect.
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
 
     row = get_branch_definition(
         base_path, branch_def_id=saved["branch_def_id"],
@@ -91,7 +91,7 @@ def test_sqlite_only_backend_persists_goal_via_author_server(base_path):
     })
     assert saved["name"] == "Produce academic paper"
 
-    from workflow.author_server import get_goal
+    from workflow.daemon_server import get_goal
 
     row = get_goal(base_path, goal_id=saved["goal_id"])
     assert row["name"] == saved["name"]
@@ -124,7 +124,7 @@ def test_cached_backend_writes_branch_yaml_and_sqlite(base_path, tmp_path):
     saved = backend.save_branch(_make_branch())
 
     # SQLite side intact.
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
     row = get_branch_definition(
         base_path, branch_def_id=saved["branch_def_id"],
     )
@@ -164,7 +164,7 @@ def test_cached_backend_writes_goal_yaml_and_sqlite(base_path, tmp_path):
         "tags": ["research"],
     })
 
-    from workflow.author_server import get_goal
+    from workflow.daemon_server import get_goal
     assert get_goal(base_path, goal_id=saved["goal_id"])["name"] == (
         "Produce academic paper"
     )

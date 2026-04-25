@@ -83,9 +83,9 @@ def test_recipe_tracker_builds_in_one_call(comp_env):
 def test_build_branch_returns_full_branch_in_structured(comp_env):
     us, _ = comp_env
     result = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
-    assert "branch" in result
-    assert result["branch"]["name"] == "Recipe tracker"
-    assert len(result["branch"]["node_defs"]) == 3
+    assert result["status"] == "built"
+    assert result["name"] == "Recipe tracker"
+    assert result["node_count"] == 3
 
 
 def test_build_branch_persists(comp_env):

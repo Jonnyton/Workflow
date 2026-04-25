@@ -125,3 +125,264 @@ class DeployedAppEvaluator:
             label=self.label,
             details={"app_url": app_url, "live": live},
         )
+
+
+class PeerReviewAcceptedEvaluator:
+    """Records peer-review acceptance for an academic paper.
+
+    state keys (required):
+      venue (str):         Journal or conference venue name.
+      decision (str):      Acceptance decision, e.g. "accepted", "accepted_with_revisions".
+      decision_date (str): ISO-8601 date string, e.g. "2026-04-01".
+    state keys (optional):
+      reviewers (int):     Anonymized reviewer count.
+    """
+
+    label = "peer_review_accepted"
+
+    def evaluate(self, state: dict[str, Any]) -> EvalResult:
+        missing = [k for k in ("venue", "decision", "decision_date") if not state.get(k)]
+        if missing:
+            return EvalResult(
+                score=0.0,
+                verdict="fail",
+                kind="custom",
+                label=self.label,
+                details={"reason": "missing required fields", "missing": missing},
+            )
+        decision = str(state["decision"]).lower()
+        accepted = "accept" in decision
+        details: dict[str, Any] = {
+            "venue": state["venue"],
+            "decision": state["decision"],
+            "decision_date": state["decision_date"],
+        }
+        if state.get("reviewers") is not None:
+            details["reviewers"] = state["reviewers"]
+        return EvalResult(
+            score=1.0 if accepted else 0.0,
+            verdict="pass" if accepted else "fail",
+            kind="custom",
+            label=self.label,
+            details=details,
+        )
+
+
+class ConferenceAcceptedEvaluator:
+    """Records conference-talk acceptance.
+
+    state keys (required):
+      conference_name (str): Conference name, e.g. "NeurIPS 2026".
+      talk_date (str):       ISO-8601 date of the talk.
+      accepted_at (str):     ISO-8601 date of the acceptance notification.
+    state keys (optional):
+      recording_url (str):   URL to the talk recording once available.
+    """
+
+    label = "conference_accepted"
+
+    def evaluate(self, state: dict[str, Any]) -> EvalResult:
+        missing = [k for k in ("conference_name", "talk_date", "accepted_at") if not state.get(k)]
+        if missing:
+            return EvalResult(
+                score=0.0,
+                verdict="fail",
+                kind="custom",
+                label=self.label,
+                details={"reason": "missing required fields", "missing": missing},
+            )
+        details: dict[str, Any] = {
+            "conference_name": state["conference_name"],
+            "talk_date": state["talk_date"],
+            "accepted_at": state["accepted_at"],
+        }
+        if state.get("recording_url"):
+            details["recording_url"] = state["recording_url"]
+        return EvalResult(
+            score=1.0,
+            verdict="pass",
+            kind="custom",
+            label=self.label,
+            details=details,
+        )
+
+
+def _load_hyperparameter_backends() -> tuple[Any, Any, str]:
+    """Lazy-import scientific deps for HyperparameterImportanceEvaluator.
+
+    Returns (RandomForestRegressor_or_None, spearmanr_or_None, error_message).
+    Empty error_message means both loaded; otherwise both backends are None
+    and error_message names the install hint.
+    """
+    try:
+        from scipy.stats import spearmanr  # type: ignore
+        from sklearn.ensemble import RandomForestRegressor  # type: ignore
+    except ImportError as exc:
+        return (
+            None,
+            None,
+            f"scikit-learn / scipy not installed ({exc}); pip install workflow[scientific]",
+        )
+    return RandomForestRegressor, spearmanr, ""
+
+
+class HyperparameterImportanceEvaluator:
+    """Ranks hyperparameter importance across sweep run results.
+
+    Implements the W&B-Sweeps parity gap surfaced by the Priya competitor
+    trial (2026-04-24). See `docs/design-notes/2026-04-25-hyperparameter-
+    importance-node.md` for the full spec.
+
+    state keys (required):
+      run_results (list[dict]): each entry shaped like {params: dict, metric: float}
+                                or {params: dict, <target_metric>: float}.
+    state keys (optional):
+      target_metric (str): metric key inside each run entry. Default "metric".
+      method (str):        "rf" (default) or "correlation".
+      top_n (int):         how many top params to surface. Default 5.
+      min_runs (int):      below this, returns verdict="skip". Default 10.
+
+    Output: EvalResult.score is the importance of the #1 param (high = sweep
+    was informative). details["importance_ranking"] is the full ordered list.
+
+    Categorical params are ordinal-encoded by sorted-unique-value index — see
+    design-note Q1; one-hot is phase 2.
+    """
+
+    label = "hyperparameter_importance"
+
+    def evaluate(self, state: dict[str, Any]) -> EvalResult:
+        runs = state.get("run_results") or []
+        if not runs:
+            return EvalResult(
+                score=-1.0,
+                verdict="skip",
+                kind="custom",
+                label=self.label,
+                details={"reason": "no run_results in state"},
+            )
+
+        min_runs = int(state.get("min_runs", 10))
+        if len(runs) < min_runs:
+            return EvalResult(
+                score=-1.0,
+                verdict="skip",
+                kind="custom",
+                label=self.label,
+                details={
+                    "reason": "n_runs below min_runs",
+                    "n_runs": len(runs),
+                    "min_runs": min_runs,
+                },
+            )
+
+        method = state.get("method", "rf")
+        top_n = int(state.get("top_n", 5))
+        metric_key = state.get("target_metric", "metric")
+
+        rf_cls, spearmanr_fn, err = _load_hyperparameter_backends()
+        if err:
+            return EvalResult(
+                score=-1.0,
+                verdict="skip",
+                kind="custom",
+                label=self.label,
+                details={"reason": err},
+            )
+
+        param_names = list(runs[0].get("params", {}).keys())
+        if not param_names:
+            return EvalResult(
+                score=-1.0,
+                verdict="skip",
+                kind="custom",
+                label=self.label,
+                details={"reason": "no params in first run"},
+            )
+
+        # Ordinal encoding for categoricals — see design note Q1; one-hot is phase 2.
+        encoders: dict[str, dict[Any, int]] = {}
+        for p in param_names:
+            values = [r.get("params", {}).get(p) for r in runs]
+            if any(not isinstance(v, (int, float)) for v in values):
+                uniq = sorted({str(v) for v in values})
+                encoders[p] = {v: i for i, v in enumerate(uniq)}
+
+        def _encode(p: str, v: Any) -> float:
+            if p in encoders:
+                return float(encoders[p][str(v)])
+            return float(v)
+
+        X = [[_encode(p, r.get("params", {}).get(p)) for p in param_names] for r in runs]
+        y = [float(r.get(metric_key, r.get("metric", 0.0))) for r in runs]
+
+        if method == "correlation":
+            scores = []
+            for i in range(len(param_names)):
+                col = [row[i] for row in X]
+                stat = spearmanr_fn(col, y).statistic
+                scores.append(0.0 if stat != stat else abs(float(stat)))  # NaN guard
+            method_used = "correlation"
+        else:
+            rf = rf_cls(n_estimators=100, random_state=42)
+            rf.fit(X, y)
+            scores = [float(s) for s in rf.feature_importances_]
+            method_used = "rf"
+
+        ranked = sorted(zip(param_names, scores), key=lambda t: -t[1])
+        ranking = [
+            {"param": p, "importance": s, "rank": i + 1}
+            for i, (p, s) in enumerate(ranked[:top_n])
+        ]
+
+        top_score = ranking[0]["importance"] if ranking else 0.0
+        return EvalResult(
+            score=float(top_score),
+            verdict="pass",
+            kind="custom",
+            label=self.label,
+            details={
+                "importance_ranking": ranking,
+                "method_used": method_used,
+                "n_runs_analyzed": len(runs),
+            },
+        )
+
+
+class MentionedInPublicationEvaluator:
+    """Records a citation or mention in a publication.
+
+    state keys (required):
+      publication (str):    Publication name, e.g. "Nature News", "TechCrunch".
+      mention_url (str):    URL to the article containing the mention.
+      mention_date (str):   ISO-8601 date of the mention.
+    state keys (optional):
+      context_snippet (str): Short excerpt showing the mention in context.
+    """
+
+    label = "mentioned_in_publication"
+
+    def evaluate(self, state: dict[str, Any]) -> EvalResult:
+        missing = [k for k in ("publication", "mention_url", "mention_date") if not state.get(k)]
+        if missing:
+            return EvalResult(
+                score=0.0,
+                verdict="fail",
+                kind="custom",
+                label=self.label,
+                details={"reason": "missing required fields", "missing": missing},
+            )
+        details: dict[str, Any] = {
+            "publication": state["publication"],
+            "mention_url": state["mention_url"],
+            "mention_date": state["mention_date"],
+        }
+        if state.get("context_snippet"):
+            details["context_snippet"] = state["context_snippet"]
+        return EvalResult(
+            score=1.0,
+            verdict="pass",
+            kind="custom",
+            label=self.label,
+            details=details,
+        )

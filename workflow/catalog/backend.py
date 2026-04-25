@@ -203,7 +203,7 @@ class SqliteOnlyBackend:
     def save_branch(
         self, branch: BranchDefinition, *, force: bool = False,  # noqa: ARG002
     ) -> dict[str, Any]:
-        from workflow.author_server import save_branch_definition
+        from workflow.daemon_server import save_branch_definition
 
         return save_branch_definition(
             self.base_path, branch_def=branch.to_dict(),
@@ -212,7 +212,7 @@ class SqliteOnlyBackend:
     def save_goal(
         self, goal: dict[str, Any], *, force: bool = False,  # noqa: ARG002
     ) -> dict[str, Any]:
-        from workflow.author_server import save_goal as _save_goal
+        from workflow.daemon_server import save_goal as _save_goal
 
         return _save_goal(self.base_path, goal=goal)
 
@@ -255,7 +255,7 @@ class SqliteOnlyBackend:
         force: bool = False,  # noqa: ARG002
     ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
         """SQLite-only path for a gate claim. No git seam."""
-        from workflow.author_server import claim_gate
+        from workflow.daemon_server import claim_gate
 
         saved = claim_gate(
             self.base_path,
@@ -281,7 +281,7 @@ class SqliteOnlyBackend:
         force: bool = False,  # noqa: ARG002
     ) -> tuple[dict[str, Any], git_bridge.CommitResult | None]:
         """SQLite-only path for a retract. No git seam."""
-        from workflow.author_server import retract_gate_claim
+        from workflow.daemon_server import retract_gate_claim
 
         saved = retract_gate_claim(
             self.base_path,
@@ -408,7 +408,7 @@ class SqliteCachedBackend:
         """Insert a row into ``unreconciled_writes`` so ``sync_commit``
         can replay the SQLite-accepted write to git later.
         """
-        from workflow.author_server import _connect
+        from workflow.daemon_server import _connect
 
         paths_json = json.dumps([str(p) for p in paths])
         recorded_at = datetime.now(timezone.utc).isoformat()
@@ -457,7 +457,7 @@ class SqliteCachedBackend:
     def save_branch(
         self, branch: BranchDefinition, *, force: bool = False,
     ) -> dict[str, Any]:
-        from workflow.author_server import save_branch_definition
+        from workflow.daemon_server import save_branch_definition
 
         branch_slug = slugify(branch.name or branch.branch_def_id)
         branch_payload, node_payloads = branch_to_yaml_payload(
@@ -564,7 +564,7 @@ class SqliteCachedBackend:
     def save_goal(
         self, goal: dict[str, Any], *, force: bool = False,
     ) -> dict[str, Any]:
-        from workflow.author_server import save_goal as _save_goal
+        from workflow.daemon_server import save_goal as _save_goal
 
         # Slug for dirty-check needs the goal's pre-save name/id. If the
         # goal is new (no id), the file cannot be dirty — skip check.
@@ -673,7 +673,7 @@ class SqliteCachedBackend:
         :class:`BranchRebindError` propagates unchanged — handler
         catches it; the rebind guard is not a local-edit-conflict.
         """
-        from workflow.author_server import claim_gate
+        from workflow.daemon_server import claim_gate
 
         claim_path = self.layout.gate_claim_path(
             goal_slug, branch_slug, rung_key,
@@ -726,7 +726,7 @@ class SqliteCachedBackend:
         YAML is rewritten with ``retracted_at`` populated rather than
         being deleted so git history keeps the retraction reason.
         """
-        from workflow.author_server import retract_gate_claim
+        from workflow.daemon_server import retract_gate_claim
 
         claim_path = self.layout.gate_claim_path(
             goal_slug, branch_slug, rung_key,
@@ -798,7 +798,7 @@ def list_unreconciled_writes(
     Most recent first. Each dict carries the id, recorded_at,
     helper_name, paths (parsed from paths_json), row_ref, git_error.
     """
-    from workflow.author_server import _connect
+    from workflow.daemon_server import _connect
 
     limit = max(1, min(limit, 500))
     with _connect(base_path) as conn:

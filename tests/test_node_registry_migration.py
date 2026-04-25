@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from workflow.author_server import (
+from workflow.daemon_server import (
     get_branch_definition,
     initialize_author_server,
 )

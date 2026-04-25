@@ -1,14 +1,4 @@
-"""Diagnose node -- stuck detection and recovery.
-
-Analyzes quality_trace for repeated reverts and recurring structural
-failures.  Generates recovery suggestions and only resets stuck_level
-when a concrete recovery action is taken.
-
-Contract
---------
-Input:  BookState with ``health`` showing elevated stuck_level.
-Output: Partial BookState with updated ``health``.
-"""
+"""Diagnose node -- book graph; entry when stuck_level elevated, generates recovery suggestions."""
 
 from __future__ import annotations
 

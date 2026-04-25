@@ -1,4 +1,4 @@
-"""SQLite-backed multiplayer Author-server substrate.
+"""SQLite-backed multiplayer daemon-server substrate.
 
 R7 split in progress. Shared helpers live in ``workflow/storage/``
 per the Module Layout commitment (PLAN.md §Module Layout). This
@@ -64,7 +64,7 @@ from workflow.storage import (  # noqa: F401  (re-exports for in-flight R7 split
 
 
 def initialize_author_server(base_path: str | Path) -> Path:
-    """Ensure the host-level Author-server database exists and is migrated."""
+    """Ensure the host-level daemon-server database exists and is migrated."""
     schema = """
     CREATE TABLE IF NOT EXISTS universes (
         universe_id TEXT PRIMARY KEY,
@@ -447,8 +447,8 @@ def ensure_default_author(base_path: str | Path) -> dict[str, Any]:
         return _author_from_row(existing)
     return register_author(
         base_path,
-        display_name="House Author",
-        soul_text="Default house author for the host-run universe server.",
+        display_name="House Daemon",
+        soul_text="Default house daemon for the host-run universe server.",
         created_by="system",
         metadata={"auto_created": True},
     )
@@ -843,7 +843,7 @@ def register_author(
             (display_name,),
         ).fetchone()
         if existing is not None and str(existing["author_id"]) != author_id:
-            raise ValueError(f"Author display name already exists: {display_name}")
+            raise ValueError(f"Daemon display name already exists: {display_name}")
         conn.execute(
             """
             INSERT INTO author_definitions (
@@ -1221,7 +1221,7 @@ def resolve_vote_if_due(
     if str(vote["vote_type"]) == "author_fork" and result["passed"]:
         created = register_author(
             base_path,
-            display_name=str(payload.get("display_name", "Forked Author")),
+            display_name=str(payload.get("display_name", "Forked Daemon")),
             soul_text=str(payload.get("soul_text", "")),
             created_by=str(vote["created_by"]),
             lineage_parent_id=str(payload.get("lineage_parent_id") or vote["subject_id"]),

@@ -1,4 +1,4 @@
-"""Tests for BUG-031: describe_branch / get_branch surface unapproved source_code nodes."""
+"""Tests for BUG-031: describe/validate/get_branch surface unapproved source_code nodes."""
 import json
 from unittest.mock import patch  # noqa: E402
 
@@ -76,6 +76,25 @@ def _call_get(branch_dict):
         patch("workflow.author_server.list_gate_claims", return_value=[]),
     ):
         result = _ext_branch_get({"branch_def_id": branch_dict["branch_def_id"]})
+    return json.loads(result)
+
+
+def _call_validate(branch_dict, validate_errors=None):
+    from workflow.universe_server import _ext_branch_validate
+
+    if validate_errors is None:
+        validate_errors = []
+
+    with (
+        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.branches.BranchDefinition.validate", return_value=validate_errors),
+        patch(
+            "workflow.providers.base.get_sandbox_status",
+            return_value={"bwrap_available": True},
+        ),
+    ):
+        result = _ext_branch_validate({"branch_def_id": branch_dict["branch_def_id"]})
     return json.loads(result)
 
 
@@ -178,11 +197,80 @@ class TestGetBranchApproval:
         assert len(result["unapproved_source_code_nodes"]) == 1
         assert result["unapproved_source_code_nodes"][0]["node_id"] == "sc1"
 
-    def test_approved_source_code_node_runnable(self):
-        """get_branch: approved source_code node → runnable True."""
-        node = _make_node(source_code="code", approved=True)
-        branch = _make_branch_dict(node_defs=[node])
-        result = _call_get(branch)
 
+# ---------------------------------------------------------------------------
+# validate_branch tests (BUG-031: was missing runnable + unapproved fields)
+# ---------------------------------------------------------------------------
+
+class TestValidateBranchApproval:
+    def test_no_source_code_nodes_runnable(self):
+        """validate_branch: no source_code nodes → runnable True, list empty."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(branch)
+
+        assert result["valid"] is True
         assert result["runnable"] is True
         assert result["unapproved_source_code_nodes"] == []
+
+    def test_unapproved_source_code_node_not_runnable(self):
+        """validate_branch: unapproved source_code node → runnable False, node listed."""
+        node = _make_node(
+            node_id="sc1",
+            display_name="Custom Script",
+            source_code="def run(state): return state",
+            approved=False,
+        )
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(branch)
+
+        assert result["valid"] is True
+        assert result["runnable"] is False
+        assert len(result["unapproved_source_code_nodes"]) == 1
+        assert result["unapproved_source_code_nodes"][0]["node_id"] == "sc1"
+        assert result["unapproved_source_code_nodes"][0]["display_name"] == "Custom Script"
+
+    def test_approved_source_code_node_runnable(self):
+        """validate_branch: approved source_code node → runnable True."""
+        node = _make_node(source_code="def run(state): ...", approved=True)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(branch)
+
+        assert result["valid"] is True
+        assert result["runnable"] is True
+        assert result["unapproved_source_code_nodes"] == []
+
+    def test_structural_errors_make_not_runnable(self):
+        """validate_branch: structural validation errors → valid False, runnable False."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(branch, validate_errors=["entry_point is required"])
+
+        assert result["valid"] is False
+        assert result["runnable"] is False
+
+    def test_unapproved_and_structural_errors(self):
+        """validate_branch: both structural errors and unapproved node → both flagged."""
+        node = _make_node(
+            node_id="sc1", source_code="code", approved=False,
+        )
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(branch, validate_errors=["entry_point is required"])
+
+        assert result["valid"] is False
+        assert result["runnable"] is False
+        assert len(result["unapproved_source_code_nodes"]) == 1
+
+    def test_multiple_unapproved_nodes_all_listed(self):
+        """validate_branch: multiple unapproved nodes all appear in list."""
+        nodes = [
+            _make_node(node_id="n1", source_code="code", approved=False),
+            _make_node(node_id="n2", source_code="code", approved=True),
+            _make_node(node_id="n3", source_code="code", approved=False),
+        ]
+        branch = _make_branch_dict(node_defs=nodes)
+        result = _call_validate(branch)
+
+        ids = {n["node_id"] for n in result["unapproved_source_code_nodes"]}
+        assert ids == {"n1", "n3"}
+        assert result["runnable"] is False

@@ -1,7 +1,9 @@
 # Workflow Codex Routing
 
-Read [STATUS.md](STATUS.md) first, then [PLAN.md](PLAN.md), then
-[AGENTS.md](AGENTS.md).
+Read [STATUS.md](STATUS.md) first, then [AGENTS.md](AGENTS.md).
+Load [PLAN.md](PLAN.md) by the scope rules in AGENTS.md: full for planning,
+design, or architecture; scoped sections for small module work; skip for
+routine non-architectural changes.
 
 Use `python scripts/docview.py` for large Markdown, text, and JSON artifacts.
 

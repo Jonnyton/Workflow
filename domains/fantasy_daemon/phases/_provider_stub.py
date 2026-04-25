@@ -50,15 +50,21 @@ try:
 
     try:
         from workflow.providers.claude_provider import ClaudeProvider
-        _real_router.register(ClaudeProvider())
-        logger.info("Registered ClaudeProvider")
+        if ClaudeProvider.is_available():
+            _real_router.register(ClaudeProvider())
+            logger.info("Registered ClaudeProvider")
+        else:
+            logger.debug("claude binary not found — ClaudeProvider skipped")
     except Exception:
         logger.debug("ClaudeProvider not available")
 
     try:
         from workflow.providers.codex_provider import CodexProvider
-        _real_router.register(CodexProvider())
-        logger.info("Registered CodexProvider")
+        if CodexProvider.is_available():
+            _real_router.register(CodexProvider())
+            logger.info("Registered CodexProvider")
+        else:
+            logger.debug("codex binary not found — CodexProvider skipped")
     except Exception:
         logger.debug("CodexProvider not available")
 

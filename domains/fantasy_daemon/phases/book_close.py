@@ -1,13 +1,4 @@
-"""Book-close node -- book-level consolidation and wrap-up.
-
-Generates a book summary and runs final promotion gates when a
-MemoryManager is available.
-
-Contract
---------
-Input:  BookState after all chapters are complete.
-Output: Partial BookState with ``book_summary``.
-"""
+"""Book-close node -- book graph; terminal node after all chapters done or stuck recovery."""
 
 from __future__ import annotations
 

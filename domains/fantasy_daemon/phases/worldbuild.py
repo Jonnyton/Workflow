@@ -1,18 +1,4 @@
-"""Worldbuild node -- generates canon documents and maintains world knowledge.
-
-Author-driven worldbuilding: when the commit node discovers new elements,
-contradictions, or expansions during writing, this node acts on those
-specific signals instead of doing generic round-robin gap-filling.
-
-Falls back to gap-filling behavior when no signals are pending (useful
-for bootstrapping a new universe).
-
-Contract
---------
-Input:  UniverseState.
-Output: Partial UniverseState with updated world state version,
-        canon_facts_count, and quality_trace.
-"""
+"""Worldbuild node -- universe graph; invoked by dispatch_execution on worldbuild signals."""
 
 from __future__ import annotations
 

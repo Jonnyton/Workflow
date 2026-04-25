@@ -53,6 +53,10 @@ class ClaudeProvider(BaseProvider):
     name = "claude-code"
     family = "anthropic"
 
+    @classmethod
+    def is_available(cls) -> bool:
+        return shutil.which("claude") is not None
+
     async def complete(
         self,
         prompt: str,

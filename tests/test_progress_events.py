@@ -255,7 +255,7 @@ def test_build_node_status_map_surfaces_running_during_flight():
 def test_slow_provider_starting_event_fires_before_completion(us_env):
     """With a slow provider, the starting event is visible to polling
     clients BEFORE the ran event lands — the whole point of #60."""
-    from workflow.author_server import get_branch_definition
+    from workflow.daemon_server import get_branch_definition
     from workflow.runs import execute_branch_async, wait_for
 
     us, base = us_env

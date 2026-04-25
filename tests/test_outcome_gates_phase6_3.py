@@ -215,14 +215,14 @@ def test_sqlite_only_save_gate_claim_returns_none_commit(tmp_path):
     """SqliteOnlyBackend.save_gate_claim_and_commit delegates to
     author_server.claim_gate and returns ``(saved, None)``.
     """
-    from workflow.author_server import (
+    from workflow.branches import BranchDefinition
+    from workflow.catalog.backend import SqliteOnlyBackend
+    from workflow.daemon_server import (
         initialize_author_server,
         save_branch_definition,
         save_goal,
         update_branch_definition,
     )
-    from workflow.branches import BranchDefinition
-    from workflow.catalog.backend import SqliteOnlyBackend
 
     base = tmp_path / "out"
     base.mkdir()
@@ -235,7 +235,7 @@ def test_sqlite_only_save_gate_claim_returns_none_commit(tmp_path):
         base, branch_def_id=branch["branch_def_id"],
         updates={"goal_id": goal["goal_id"]},
     )
-    from workflow.author_server import set_goal_ladder
+    from workflow.daemon_server import set_goal_ladder
     set_goal_ladder(base, goal_id=goal["goal_id"], ladder=_LADDER)
 
     backend = SqliteOnlyBackend(base)

@@ -15,6 +15,13 @@ This project uses Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). When a
 
 Team-mode caveat from the Claude docs: teammates do not inherit lead chat history, and they start with the lead's permission settings. Subagent role files reliably contribute tools, model, and prompt body; do not assume role `permissionMode`, `skills`, or `mcpServers` frontmatter will enforce team behavior. Put critical constraints in the spawn/task prompt, tool allowlists, and hooks.
 
+### Verification Implementation
+
+AGENTS.md defines the project-wide verification invariants. In Claude Code,
+the persistent verifier teammate is the independent verification path, and
+the live user-sim route is the final proof path for chatbot-facing MCP
+behavior. Other providers may implement the same invariants differently.
+
 ### Skills
 
 Project workflow skills live in `.claude/skills/`. When the right skill is not obvious, read `.claude/skills/using-agent-skills/SKILL.md` first, then open the matching skill.

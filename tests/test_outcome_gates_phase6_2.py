@@ -457,7 +457,7 @@ def test_claim_gate_storage_raises_branch_rebind_error(gates_env):
     # directly with a divergent goal_id to probe the storage guard.
     gid_b = _call(us, "goals", "propose", name="Goal B",
                   description="")["goal"]["goal_id"]
-    from workflow.author_server import BranchRebindError, claim_gate
+    from workflow.daemon_server import BranchRebindError, claim_gate
     with pytest.raises(BranchRebindError) as exc_info:
         claim_gate(
             base,
@@ -477,7 +477,7 @@ def test_claim_gate_storage_allows_update_on_same_goal(gates_env):
     us, base, _ = gates_env
     gid, bid = _seed(us)
     _claim(us, bid, "draft_complete", "https://example.com/first")
-    from workflow.author_server import claim_gate
+    from workflow.daemon_server import claim_gate
     updated = claim_gate(
         base,
         branch_def_id=bid,
@@ -502,7 +502,7 @@ def test_claim_gate_storage_reactivates_retracted_under_new_goal(gates_env):
           reason="moving to B")
     gid_b = _call(us, "goals", "propose", name="Goal B",
                   description="")["goal"]["goal_id"]
-    from workflow.author_server import claim_gate
+    from workflow.daemon_server import claim_gate
     reactivated = claim_gate(
         base,
         branch_def_id=bid,
