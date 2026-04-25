@@ -14,8 +14,8 @@ Sub-branch invocation **partially exists** in the engine. It is implemented as a
 What does NOT exist:
 
 1. **No MCP-level `invoke_branch` action.** Sub-branch invocation is callable only from inside a graph definition's `NodeDefinition`, not from chatbot intent or external dispatch. There is no `runs action=invoke` or similar verb.
-2. **No `branch_version_id` support.** `execute_branch` / `execute_branch_async` accept a live `BranchDefinition` (resolved from `branch_def_id`), not an immutable `branch_version_id`. This is the same blocker as G1 audit row #4 — canonical-bound code paths cannot run a frozen-snapshot canonical via the sub-branch primitive.
-3. **No gate-aware "send back to canonical for goal X" verb.** The G1 audit established that there is no first-class router primitive at all (gap row #3); the sub-branch primitive doesn't add one. A gate node that wants to invoke the canonical for goal G must (a) read the goal via `goals action=get`, (b) extract `canonical_branch_version_id`, (c) … hit the version-id gap above.
+2. **No `branch_version_id` support.** `execute_branch` / `execute_branch_async` accept a live `BranchDefinition` (resolved from `branch_def_id`), not an immutable `branch_version_id`. This is the same blocker as G1 audit gap row #6 ("NO RUN-FROM-VERSION PRIMITIVE") — canonical-bound code paths cannot run a frozen-snapshot canonical via the sub-branch primitive.
+3. **No gate-aware "send back to canonical for goal X" verb.** The G1 audit established that there is no first-class router primitive at all (gap row #4 — "no routing primitive exists"); the sub-branch primitive doesn't add one. A gate node that wants to invoke the canonical for goal G must (a) read the goal via `goals action=get`, (b) extract `canonical_branch_version_id`, (c) … hit the version-id gap above.
 4. **No state-merge contract.** Output mapping is whatever the parent declares in the spec. There is no schema validation that the child's output keys exist or have compatible types — runtime returns `None` silently for missing keys.
 5. **No failure propagation contract.** Child failures return a RunOutcome with non-completed status; the parent node receives `outcome.output.get(...)` which may yield None or stale partial output. No first-class error-as-data, no parent-fails-on-child-fail toggle.
 6. **No concurrency budget mediation between parent and child.** Parent and child each call `execute_branch` independently; their `concurrency_budget_override` does not transfer or pool. Async children spawn into the same shared executor pool as standalone runs.
@@ -147,7 +147,7 @@ This means:
 - If a published version's definition is later edited via `update_branch_definition`, every parent with `invoke_branch_spec.branch_def_id=<that_id>` silently picks up the change. This is intentional for live-editing semantics during a session, but undesirable for canonical routing.
 - There is no "pin a sub-branch to a frozen version" verb.
 
-**Cross-reference G1 audit row #4:** "Runner does not accept `branch_version_id` (immutable snapshot) as a run target. Only `branch_def_id` (live editable)." That gap is the same gap surfaced here through the sub-branch lens; closing the runner-side version-id gap unblocks BOTH the G1 canonical-routing story AND the BUG-005 gate-routing story.
+**Cross-reference G1 audit gap row #6:** "NO RUN-FROM-VERSION PRIMITIVE. Today branches run via `run_branch_def_id` (live editable definition). The canonical is a published `branch_version_id` (immutable snapshot). The runner doesn't accept `branch_version_id` as input." That gap is the same gap surfaced here through the sub-branch lens; closing the runner-side version-id gap unblocks BOTH the G1 canonical-routing story AND the BUG-005 gate-routing story.
 
 **Possible bridge shapes (no design here, scoping only):**
 1. New parameter `branch_version_id` on `execute_branch` / `execute_branch_async`. When set, resolves version → def from `branch_versions` table, loads def at that version's snapshot point, runs against that. Requires version-snapshot reconstruction logic.
@@ -208,9 +208,9 @@ Cross-referenced with G1 audit gap list where overlapping.
 
 | # | Gap | Severity for gate-routing | Severity for platform | Cross-ref |
 |---|---|---|---|---|
-| **1** | No `branch_version_id` support in `execute_branch` / `invoke_branch_spec`. Cannot invoke a canonical (which is a frozen version). | **Blocking** | High | Same as G1 row #4. Closing this unblocks BOTH stories. |
+| **1** | No `branch_version_id` support in `execute_branch` / `invoke_branch_spec`. Cannot invoke a canonical (which is a frozen version). | **Blocking** | High | Same as G1 row #6. Closing this unblocks BOTH stories. |
 | **2** | No MCP-callable `runs action=invoke` (or similar) for spawning a sub-branch from chatbot/external intent. Only graph-internal NodeDefinition can spawn. | **Blocking** for chatbot-driven gate routing; **non-blocking** for graph-internal gate routing | Medium | Sub-branch-specific. |
-| **3** | No goal-aware "send to canonical for goal X" verb wrapping the lookup+invoke chain. | **Blocking** | High | Same as G1 row #3. |
+| **3** | No goal-aware "send to canonical for goal X" verb wrapping the lookup+invoke chain. | **Blocking** | High | Same as G1 row #4. |
 | **4** | No structured failure propagation contract between child and parent. Silent None-substitution on child fail. | **High** for auto-heal (sub-branch fails silently → parent emits bad data) | High | Sub-branch-specific. |
 | **5** | Child runs default `actor="anonymous"` instead of inheriting parent's actor. Attribution gap. | Low for routing, **Medium** for attribution ledger (Phase B work). | Medium | Cross-cuts Phase B ContributionEvent ledger work. |
 | **6** | No concurrency-budget propagation parent→child. Pool starvation possible. | Low immediately, **Blocking** at scale (multi-tenant). | High at scale | Sub-branch-specific. |
@@ -247,6 +247,6 @@ The other gaps (#5–#11) are non-blocking for first-cut; they become important 
 - Compiler: `workflow/graph_compiler.py` lines 1185-1380 (`_build_invoke_branch_node`, `_build_await_branch_run_node`).
 - Runtime: `workflow/runs.py` lines 1388-1500 (`execute_branch`, `execute_branch_async`), 2087-2129 (`MAX_INVOKE_BRANCH_DEPTH`, `poll_child_run_status`).
 - Tests: `tests/test_sub_branch_invocation.py`.
-- Cross-reference G1 audit: `docs/audits/2026-04-25-canonical-primitive-audit.md` (gaps #3, #4 overlap with this audit's #1, #3).
+- Cross-reference G1 audit: `docs/audits/2026-04-25-canonical-primitive-audit.md` (gaps #4, #6 overlap with this audit's #3, #1).
 - Strategic context: `docs/audits/2026-04-23-navigator-full-corpus-synthesis.md` §B4; `docs/design-notes/2026-04-25-self-evolving-platform-vision.md` lines 79, 116, 194; `docs/design-notes/2026-04-25-primitive-shipment-roadmap.md` row #5.
 - Wiki: `bugs/BUG-005` page does not exist at `$APPDATA/Workflow/wiki/pages/bugs/` as of 2026-04-25.

@@ -233,6 +233,24 @@ class NodeDefinition:
     #   output_mapping[0] target key, returns immediately.
     invoke_branch_spec: dict[str, Any] | None = None
 
+    # Sub-branch invocation against a frozen branch_version snapshot
+    # (Task #76a, Phase A item 5). Sibling to invoke_branch_spec; uses an
+    # immutable branch_version_id instead of a live branch_def_id. The
+    # version is content-addressed via branch_versions; the run binds to
+    # that exact snapshot, immune to live-def edits.
+    # Shape: {
+    #   "branch_version_id": str,                         # required, "<def_id>@<sha8>"
+    #   "inputs_mapping": {parent_state_key: child_input_key},
+    #   "output_mapping": {parent_state_key: child_output_key},
+    #   "wait_mode": "blocking" | "async",
+    #   "on_child_fail": "propagate" | "default" | "retry",  # default "propagate"
+    #   "default_outputs": dict | None,        # used when on_child_fail="default"
+    #   "retry_budget": int | None,            # used when on_child_fail="retry"
+    #   "child_actor": str | None,             # actor override; default = parent
+    # }
+    # Mutually exclusive with invoke_branch_spec; validate() enforces.
+    invoke_branch_version_spec: dict[str, Any] | None = None
+
     # await_branch_run node kind. Reads a run_id from parent state, polls
     # until the child run ends, writes output_mapping into parent state.
     # Shape: {
@@ -511,6 +529,28 @@ def _validate_checkpoints(
         )
 
     return errors
+
+
+def _validate_invoke_output_mapping(
+    errors: list[str],
+    node_id: str,
+    spec_kind: str,
+    output_mapping: dict[str, str],
+    parent_schema_fields: set[str],
+) -> None:
+    """Audit gap #7 — confirm each output_mapping target is a parent state
+    field. Skips silently when parent schema is empty (no schema declared).
+    Mutates ``errors`` in place; matches the surrounding validate() pattern.
+    """
+    if not parent_schema_fields:
+        return  # legacy branches without state_schema — warn-only mode
+    for parent_key in (output_mapping or {}):
+        if parent_key not in parent_schema_fields:
+            errors.append(
+                f"Node '{node_id}' {spec_kind} output_mapping target "
+                f"'{parent_key}' is not declared in parent branch's "
+                f"state_schema."
+            )
 
 
 def _validate_llm_policy_shape(
@@ -930,6 +970,14 @@ class BranchDefinition:
             if n.checkpoints:
                 errors.extend(_validate_checkpoints(n.checkpoints, node_id=n.node_id))
 
+        # Pre-build the parent state-schema field set for output_mapping
+        # validation (Task #76b — audit gap #7). Empty schema = warn-only;
+        # validate-time output_mapping check is best-effort when schema is
+        # unset (some legacy branches don't declare state_schema).
+        _parent_schema_fields = {
+            f.get("name") for f in (self.state_schema or []) if f.get("name")
+        }
+
         for n in self.node_defs:
             if n.invoke_branch_spec is not None:
                 spec = n.invoke_branch_spec
@@ -948,6 +996,52 @@ class BranchDefinition:
                         f"Node '{n.node_id}' has invoke_branch_spec and also "
                         f"prompt_template/source_code — these are mutually exclusive."
                     )
+                # Task #76b — output_mapping schema check (audit gap #7).
+                _validate_invoke_output_mapping(
+                    errors, n.node_id, "invoke_branch_spec",
+                    spec.get("output_mapping") or {},
+                    _parent_schema_fields,
+                )
+
+            # Task #76a: invoke_branch_version_spec sibling validation.
+            if n.invoke_branch_version_spec is not None:
+                vspec = n.invoke_branch_version_spec
+                if not vspec.get("branch_version_id"):
+                    errors.append(
+                        f"Node '{n.node_id}' invoke_branch_version_spec missing "
+                        f"'branch_version_id'."
+                    )
+                v_wait_mode = vspec.get("wait_mode", "blocking")
+                if v_wait_mode not in ("blocking", "async"):
+                    errors.append(
+                        f"Node '{n.node_id}' invoke_branch_version_spec wait_mode "
+                        f"must be 'blocking' or 'async', got '{v_wait_mode}'."
+                    )
+                v_on_fail = vspec.get("on_child_fail", "propagate")
+                if v_on_fail not in ("propagate", "default", "retry"):
+                    errors.append(
+                        f"Node '{n.node_id}' invoke_branch_version_spec "
+                        f"on_child_fail must be 'propagate' | 'default' | "
+                        f"'retry', got '{v_on_fail}'."
+                    )
+                if n.prompt_template or n.source_code:
+                    errors.append(
+                        f"Node '{n.node_id}' has invoke_branch_version_spec and "
+                        f"also prompt_template/source_code — these are mutually "
+                        f"exclusive."
+                    )
+                if n.invoke_branch_spec is not None:
+                    errors.append(
+                        f"Node '{n.node_id}' has both invoke_branch_spec and "
+                        f"invoke_branch_version_spec — these are mutually "
+                        f"exclusive (use one or the other)."
+                    )
+                # Task #76b — output_mapping schema check (audit gap #7).
+                _validate_invoke_output_mapping(
+                    errors, n.node_id, "invoke_branch_version_spec",
+                    vspec.get("output_mapping") or {},
+                    _parent_schema_fields,
+                )
 
             if n.await_run_spec is not None:
                 spec = n.await_run_spec

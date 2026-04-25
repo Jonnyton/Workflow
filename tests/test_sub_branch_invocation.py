@@ -393,3 +393,541 @@ class TestPollChildRunStatus:
 
         with pytest.raises(TimeoutError):
             poll_child_run_status(tmp_path, run_id, timeout_seconds=0.05, poll_interval=0.01)
+
+
+# ─── Phase A item 5 (Task #76a) — invoke_branch_version_spec validation ──────
+
+
+class TestValidateInvokeBranchVersionSpec:
+    """Schema-layer validation of the new sibling spec."""
+
+    def test_missing_branch_version_id_is_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={"wait_mode": "blocking"},
+        )
+        b = _simple_branch(nd)
+        errs = b.validate()
+        assert any("branch_version_id" in e for e in errs)
+
+    def test_invalid_wait_mode_is_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "b1@abc12345",
+                "wait_mode": "fire_and_forget",
+            },
+        )
+        b = _simple_branch(nd)
+        errs = b.validate()
+        assert any("wait_mode" in e for e in errs)
+
+    def test_invalid_on_child_fail_is_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "b1@abc12345",
+                "on_child_fail": "ignore",  # not in {propagate, default, retry}
+            },
+        )
+        b = _simple_branch(nd)
+        errs = b.validate()
+        assert any("on_child_fail" in e for e in errs)
+
+    def test_valid_spec_no_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "b1@abc12345",
+                "inputs_mapping": {},
+                "output_mapping": {},
+                "wait_mode": "blocking",
+                "on_child_fail": "propagate",
+            },
+        )
+        b = _simple_branch(nd)
+        errs = [
+            e for e in b.validate()
+            if "invoke_branch_version_spec" in e
+            or "branch_version_id" in e
+            or "on_child_fail" in e
+        ]
+        assert not errs
+
+    def test_invoke_version_plus_invoke_def_is_error(self):
+        """Mutex with the existing invoke_branch_spec — only one or the other."""
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child", "wait_mode": "blocking",
+            },
+            invoke_branch_version_spec={
+                "branch_version_id": "b1@abc12345",
+            },
+        )
+        b = _simple_branch(nd)
+        errs = b.validate()
+        assert any(
+            "invoke_branch_version_spec" in e and "invoke_branch_spec" in e
+            for e in errs
+        )
+
+    def test_invoke_version_plus_template_is_error(self):
+        """Mutex with prompt_template (matches invoke_branch_spec rule)."""
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            prompt_template="hello",
+            invoke_branch_version_spec={
+                "branch_version_id": "b1@abc12345",
+            },
+        )
+        b = _simple_branch(nd)
+        errs = b.validate()
+        assert any("mutually exclusive" in e for e in errs)
+
+
+class TestCompileInvokeBranchVersionNode:
+    """Compiler-level wiring for the new sibling builder."""
+
+    def test_compile_succeeds_with_valid_version_spec(self, tmp_path):
+        from workflow.graph_compiler import compile_branch
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "inputs_mapping": {},
+                "output_mapping": {},
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="test", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+            state_schema=[{"name": "result", "type": "str"}],
+        )
+        # Compilation must succeed (no live execution; no actual version lookup).
+        compiled = compile_branch(b, base_path=tmp_path)
+        assert compiled is not None
+
+    def test_invoke_version_node_without_base_path_raises(self):
+        from workflow.graph_compiler import compile_branch
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="test", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+        )
+        with pytest.raises(CompilerError, match="base_path"):
+            compile_branch(b)
+
+    def test_build_invoke_version_node_blocking_mode(self, tmp_path):
+        """Blocking mode loads the snapshot via execute_branch_version_async,
+        polls for terminal status, then maps output to parent state."""
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "inputs_mapping": {"parent_in": "child_in"},
+                "output_mapping": {"parent_out": "child_out"},
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-xyz")
+            mock_poll.return_value = {
+                "status": "completed",
+                "output": {"child_out": "value-from-child"},
+            }
+            updates = node_fn({"parent_in": "value-from-parent"})
+
+        assert updates == {"parent_out": "value-from-child"}
+        mock_exec.assert_called_once()
+        kwargs = mock_exec.call_args.kwargs
+        assert kwargs["branch_version_id"] == "child@abc12345"
+        assert kwargs["inputs"] == {"child_in": "value-from-parent"}
+
+    def test_build_invoke_version_node_async_mode_writes_run_id(self, tmp_path):
+        """Async mode writes the child run_id into the first output_mapping
+        target and returns immediately (no polling)."""
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "async",
+                "inputs_mapping": {},
+                "output_mapping": {"child_run_id": "ignored"},
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec:
+            mock_exec.return_value = MagicMock(run_id="async-run-xyz")
+            updates = node_fn({})
+
+        assert updates == {"child_run_id": "async-run-xyz"}
+        mock_exec.assert_called_once()
+
+    def test_build_invoke_version_node_recursion_cap(self, tmp_path):
+        """Recursion-cap works through the version-spec path too."""
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+            },
+        )
+        with pytest.raises(CompilerError, match="recursion depth cap"):
+            _build_invoke_branch_version_node(
+                nd, base_path=tmp_path, event_sink=None,
+                depth=MAX_INVOKE_BRANCH_DEPTH,
+            )
+
+
+# ─── Phase A item 5 (Task #76b) — on_child_fail policy + retry + ChildFailure ─
+
+
+class TestChildFailurePolicy:
+    """Policy enforcement on non-completed child terminal status. Both
+    invoke_branch_spec and invoke_branch_version_spec share the dispatch
+    helper (`_dispatch_invoke_outcome`); tested via the version builder
+    since it's the simpler mocking surface."""
+
+    def test_propagate_default_raises_child_failed_error(self, tmp_path):
+        from workflow.graph_compiler import (
+            ChildFailedError,
+            _build_invoke_branch_version_node,
+        )
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                # on_child_fail defaults to "propagate"
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-fail")
+            mock_poll.return_value = {"status": "failed", "output": {}}
+            with pytest.raises(ChildFailedError) as exc_info:
+                node_fn({})
+
+        from workflow.runs import ChildFailure
+        assert isinstance(exc_info.value.failure, ChildFailure)
+        assert exc_info.value.failure.failure_class == "child_failed"
+        assert exc_info.value.failure.run_id == "run-fail"
+        assert exc_info.value.failure.child_status == "failed"
+
+    def test_default_policy_substitutes_default_outputs(self, tmp_path):
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                "on_child_fail": "default",
+                "default_outputs": {"parent_out": "fallback-value"},
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-fail")
+            mock_poll.return_value = {"status": "failed", "output": {}}
+            updates = node_fn({})
+
+        # Parent continues with the default value substituted into output_mapping.
+        assert updates == {"parent_out": "fallback-value"}
+
+    def test_default_policy_no_default_outputs_uses_none(self, tmp_path):
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                "on_child_fail": "default",
+                # no default_outputs
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-fail")
+            mock_poll.return_value = {"status": "failed", "output": {}}
+            updates = node_fn({})
+
+        # No defaults declared → None for each declared output_mapping key.
+        assert updates == {"parent_out": None}
+
+    def test_retry_succeeds_within_budget(self, tmp_path, monkeypatch):
+        """retry budget=2: first attempt fails, second succeeds → completed
+        outputs returned, no propagate."""
+        from workflow.graph_compiler import (
+            _build_invoke_branch_version_node,
+            _retry_budget_reset,
+        )
+
+        # Reset the threadlocal to ensure clean budget state.
+        _retry_budget_reset()
+        # Generous global cap to not interfere.
+        monkeypatch.setenv("WORKFLOW_MAX_CHILD_RETRIES_TOTAL", "10")
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                "on_child_fail": "retry",
+                "retry_budget": 2,
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        # First poll fails, second succeeds.
+        poll_returns = [
+            {"status": "failed", "output": {}},
+            {"status": "completed", "output": {"child_out": "ok"}},
+        ]
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-attempt")
+            mock_poll.side_effect = poll_returns
+            updates = node_fn({})
+
+        assert updates == {"parent_out": "ok"}
+        # Confirm the helper actually retried (called twice).
+        assert mock_exec.call_count == 2
+
+    def test_retry_exhausted_falls_through_to_propagate(self, tmp_path, monkeypatch):
+        """retry_budget=1: one retry, then exhausts → propagate raises."""
+        from workflow.graph_compiler import (
+            ChildFailedError,
+            _build_invoke_branch_version_node,
+            _retry_budget_reset,
+        )
+        _retry_budget_reset()
+        monkeypatch.setenv("WORKFLOW_MAX_CHILD_RETRIES_TOTAL", "10")
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                "on_child_fail": "retry",
+                "retry_budget": 1,
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-fail")
+            mock_poll.return_value = {"status": "failed", "output": {}}
+            with pytest.raises(ChildFailedError):
+                node_fn({})
+
+        # Initial attempt + retry_budget=1 retry = 2 attempts total.
+        assert mock_exec.call_count == 2
+
+    def test_global_cap_overrides_per_spec_budget(self, tmp_path, monkeypatch):
+        """Per-spec retry_budget=10 + global cap=1 → only 1 retry across
+        the parent run, then propagate."""
+        from workflow.graph_compiler import (
+            ChildFailedError,
+            _build_invoke_branch_version_node,
+            _retry_budget_reset,
+        )
+        _retry_budget_reset()
+        monkeypatch.setenv("WORKFLOW_MAX_CHILD_RETRIES_TOTAL", "1")
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"parent_out": "child_out"},
+                "on_child_fail": "retry",
+                "retry_budget": 10,  # would allow 10 retries, but global cap=1
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="run-fail")
+            mock_poll.return_value = {"status": "failed", "output": {}}
+            with pytest.raises(ChildFailedError):
+                node_fn({})
+
+        # Initial attempt + 1 retry (global cap) = 2 attempts.
+        assert mock_exec.call_count == 2
+
+    def test_failure_class_classification(self, tmp_path):
+        """Each child terminal status maps to the correct failure_class."""
+        from workflow.graph_compiler import (
+            ChildFailedError,
+            _build_invoke_branch_version_node,
+        )
+
+        for child_status, expected_class in (
+            ("failed", "child_failed"),
+            ("cancelled", "child_cancelled"),
+            ("interrupted", "child_timeout"),
+        ):
+            nd = NodeDefinition(
+                node_id="n1", display_name="N1",
+                invoke_branch_version_spec={
+                    "branch_version_id": "child@abc12345",
+                    "wait_mode": "blocking",
+                    "output_mapping": {"parent_out": "child_out"},
+                },
+            )
+            node_fn = _build_invoke_branch_version_node(
+                nd, base_path=tmp_path, event_sink=None,
+            )
+            with patch("workflow.runs.execute_branch_version_async") as m_exec, \
+                 patch("workflow.runs.poll_child_run_status") as m_poll:
+                m_exec.return_value = MagicMock(run_id="r")
+                m_poll.return_value = {"status": child_status, "output": {}}
+                with pytest.raises(ChildFailedError) as exc_info:
+                    node_fn({})
+            assert exc_info.value.failure.failure_class == expected_class, (
+                f"child_status={child_status} → expected {expected_class}, "
+                f"got {exc_info.value.failure.failure_class}"
+            )
+
+
+class TestOutputMappingSchemaValidation:
+    """Audit gap #7 (Task #76b) — validate-time check that each
+    output_mapping target is a parent state-schema field."""
+
+    def test_invoke_branch_output_mapping_unknown_target_is_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "wait_mode": "blocking",
+                "inputs_mapping": {},
+                "output_mapping": {"unknown_field": "child_out"},
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="t", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+            state_schema=[{"name": "result", "type": "str"}],
+        )
+        errs = b.validate()
+        assert any(
+            "output_mapping target 'unknown_field'" in e for e in errs
+        )
+
+    def test_invoke_branch_version_output_mapping_unknown_target_is_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"missing_field": "child_out"},
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="t", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+            state_schema=[{"name": "result", "type": "str"}],
+        )
+        errs = b.validate()
+        assert any(
+            "output_mapping target 'missing_field'" in e for e in errs
+        )
+
+    def test_valid_output_mapping_target_no_error(self):
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"result": "child_out"},
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="t", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+            state_schema=[{"name": "result", "type": "str"}],
+        )
+        errs = [e for e in b.validate() if "output_mapping" in e]
+        assert errs == []
+
+    def test_empty_state_schema_skips_check(self):
+        """Branches without declared state_schema get warn-only — no error."""
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "output_mapping": {"any_field": "child_out"},
+            },
+        )
+        b = BranchDefinition(
+            branch_def_id="b1", name="t", entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+            # No state_schema declared.
+        )
+        errs = [e for e in b.validate() if "output_mapping" in e]
+        assert errs == []

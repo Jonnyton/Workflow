@@ -1039,11 +1039,34 @@ def is_cancel_requested(base_path: str | Path, run_id: str) -> bool:
 
 
 @dataclass
+class ChildFailure:
+    """Structured failure info for a sub-branch invocation that didn't complete.
+
+    Phase A item 5 / Task #76b. Embedded in :class:`RunOutcome.child_failures`
+    when a parent run's invoke_branch / invoke_branch_version step encounters
+    a non-completed child terminal status. The downstream graph (and Task #48
+    contribution ledger's ``caused_regression`` emit) reads these to decide
+    whether to propagate, default, or retry — see ``on_child_fail`` policy
+    in the spec.
+    """
+
+    run_id: str
+    failure_class: str  # 'child_failed' | 'child_timeout' | 'child_cancelled' | 'child_unknown'
+    child_status: str  # the child's terminal RUN_STATUS_*
+    partial_output: dict[str, Any] | None = None
+
+
+@dataclass
 class RunOutcome:
     run_id: str
     status: str
     output: dict[str, Any]
     error: str = ""
+    # Phase A item 5 / Task #76b — populated when a parent run's
+    # invoke_branch / invoke_branch_version step sees a non-completed child
+    # terminal status. Default empty list keeps existing callers untouched
+    # (no behavior change for runs without sub-branch invocations).
+    child_failures: list[ChildFailure] = field(default_factory=list)
 
 
 def _graph_node_order(branch: BranchDefinition) -> list[str]:
@@ -1302,6 +1325,11 @@ def _invoke_graph(
             output={}, error="Cancelled before execution started.",
         )
 
+    # Phase A item 5 / Task #76b — reset the threadlocal child-retry counter
+    # so this parent run starts with a fresh global cap.
+    from workflow.graph_compiler import ChildFailedError, _retry_budget_reset
+    _retry_budget_reset()
+
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -1326,6 +1354,23 @@ def _invoke_graph(
         return RunOutcome(
             run_id=run_id, status=RUN_STATUS_CANCELLED,
             output={}, error=str(exc),
+        )
+    except ChildFailedError as exc:
+        # Phase A item 5 / Task #76b — sub-branch propagated a non-completed
+        # child terminal status. Parent run terminates with the structured
+        # ChildFailure surfaced on RunOutcome.child_failures so downstream
+        # observers (Task #48 contribution-ledger caused_regression emit;
+        # Task #53 route-back gate verdicts) can consume the failure.
+        msg = str(exc)
+        update_run_status(
+            base_path, run_id,
+            status=RUN_STATUS_FAILED, error=msg, finished_at=_now(),
+        )
+        failure = exc.failure if isinstance(exc.failure, ChildFailure) else None
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_FAILED,
+            output={}, error=msg,
+            child_failures=[failure] if failure is not None else [],
         )
     except Exception as exc:
         # GraphRecursionError: structured error naming the applied limit.

@@ -29,6 +29,7 @@ import concurrent.futures
 import json
 import logging
 import operator
+import os
 import re
 import threading
 from dataclasses import dataclass
@@ -1186,6 +1187,131 @@ def _wrap_with_checkpoints(
     return _fn
 
 
+# Phase A item 5 / Task #76b — threadlocal global cap on child-run retries
+# within a single parent run. Each parent run executes on its own thread
+# from the executor pool; threadlocal naturally scopes per-run. Children
+# spawn into their own threads with independent counters; only the
+# parent's invoke nodes consume from this counter.
+_retry_state = threading.local()
+
+
+def _retry_budget_max() -> int:
+    """Read ``WORKFLOW_MAX_CHILD_RETRIES_TOTAL`` env (default 5)."""
+    raw = os.environ.get("WORKFLOW_MAX_CHILD_RETRIES_TOTAL", "").strip()
+    try:
+        return max(0, int(raw)) if raw else 5
+    except ValueError:
+        return 5
+
+
+def _retry_budget_remaining() -> bool:
+    """True iff the threadlocal retry counter has budget left."""
+    used = getattr(_retry_state, "used", 0)
+    return used < _retry_budget_max()
+
+
+def _retry_budget_consume() -> None:
+    """Increment the threadlocal retry counter by 1."""
+    _retry_state.used = getattr(_retry_state, "used", 0) + 1
+
+
+def _retry_budget_reset() -> None:
+    """Reset the threadlocal counter — called by ``_invoke_graph`` at run
+    start so each parent run gets a fresh budget."""
+    _retry_state.used = 0
+
+
+def _classify_child_failure(child_status: str) -> str:
+    """Map a child run's terminal status to a failure_class label.
+
+    Phase A item 5 / Task #76b. Used by invoke_branch / invoke_branch_version
+    builders when populating ``ChildFailure.failure_class`` on the parent's
+    ``RunOutcome.child_failures`` list.
+    """
+    from workflow.runs import (
+        RUN_STATUS_CANCELLED,
+        RUN_STATUS_FAILED,
+        RUN_STATUS_INTERRUPTED,
+    )
+    if child_status == RUN_STATUS_FAILED:
+        return "child_failed"
+    if child_status == RUN_STATUS_CANCELLED:
+        return "child_cancelled"
+    if child_status == RUN_STATUS_INTERRUPTED:
+        return "child_timeout"
+    return "child_unknown"
+
+
+def _dispatch_invoke_outcome(
+    *,
+    child_status: str,
+    child_run_id: str,
+    child_output: dict[str, Any],
+    output_mapping: dict[str, str],
+    on_child_fail: str,
+    default_outputs: dict[str, Any] | None,
+    node_id: str,
+) -> tuple[dict[str, Any], "object | None"]:
+    """Apply the ``on_child_fail`` policy to a completed child run.
+
+    Returns ``(updates, child_failure_or_none)``. ``child_failure_or_none`` is
+    a ``ChildFailure`` instance when the child terminated non-completed
+    (worth recording on the parent's ``RunOutcome.child_failures``); None on
+    successful completion.
+
+    Policies:
+      - ``"propagate"`` (default): child failure raises ``ChildFailedError``
+        so the parent run terminates with the structured error.
+      - ``"default"``: parent continues; ``output_mapping`` populates from
+        ``default_outputs`` dict (or None when not declared).
+      - ``"retry"``: caller handles retry via the closure's retry counter;
+        this helper treats retry-exhausted as ``"propagate"``.
+    """
+    from workflow.runs import RUN_STATUS_COMPLETED, ChildFailure
+
+    if child_status == RUN_STATUS_COMPLETED:
+        updates: dict[str, Any] = {}
+        for parent_key, child_key in output_mapping.items():
+            updates[parent_key] = child_output.get(child_key)
+        return updates, None
+
+    failure = ChildFailure(
+        run_id=child_run_id,
+        failure_class=_classify_child_failure(child_status),
+        child_status=child_status,
+        partial_output=dict(child_output) if child_output else None,
+    )
+
+    if on_child_fail == "default":
+        defaults = default_outputs or {}
+        updates = {
+            parent_key: defaults.get(parent_key)
+            for parent_key in output_mapping
+        }
+        return updates, failure
+
+    # propagate (default) — raise so the parent's _invoke_graph catches.
+    raise ChildFailedError(
+        f"Sub-branch invocation in node '{node_id}' produced a "
+        f"non-completed terminal status: {failure.failure_class} "
+        f"(child run_id={child_run_id})",
+        failure=failure,
+    )
+
+
+class ChildFailedError(Exception):
+    """Raised by ``_dispatch_invoke_outcome`` under ``on_child_fail="propagate"``.
+
+    Phase A item 5 / Task #76b. Carries the ``ChildFailure`` so the parent
+    ``_invoke_graph`` can surface it via ``RunOutcome.child_failures`` rather
+    than discarding the structured failure data.
+    """
+
+    def __init__(self, message: str, *, failure: object) -> None:
+        super().__init__(message)
+        self.failure = failure
+
+
 def _build_invoke_branch_node(
     node: NodeDefinition,
     *,
@@ -1209,6 +1335,9 @@ def _build_invoke_branch_node(
     inputs_mapping: dict[str, str] = spec.get("inputs_mapping", {})
     output_mapping: dict[str, str] = spec.get("output_mapping", {})
     wait_mode: str = spec.get("wait_mode", "blocking")
+    on_child_fail: str = spec.get("on_child_fail", "propagate")
+    default_outputs = spec.get("default_outputs")
+    retry_budget: int = int(spec.get("retry_budget", 1) or 1)
 
     if not child_branch_def_id:
         raise CompilerError(
@@ -1240,18 +1369,178 @@ def _build_invoke_branch_node(
         }
 
         if wait_mode == "blocking":
-            outcome = execute_branch(
-                _base, branch=child_branch, inputs=child_inputs,
-            )
-            updates: dict[str, Any] = {}
-            for parent_key, child_key in output_mapping.items():
-                updates[parent_key] = outcome.output.get(child_key)
-            return updates
+            # Phase A item 5 / Task #76b — on_child_fail policy + retry.
+            # Blocking-mode invocation knows the child's terminal status
+            # synchronously. async-mode failures surface at the await
+            # node (#56 §8 Q6) and aren't policy-handled here.
+            attempt = 0
+            while True:
+                attempt += 1
+                outcome = execute_branch(
+                    _base, branch=child_branch, inputs=child_inputs,
+                )
+                if outcome.status == "completed":
+                    return {
+                        parent_key: outcome.output.get(child_key)
+                        for parent_key, child_key in output_mapping.items()
+                    }
+                # Non-completed terminal status — apply policy.
+                retries_left = (
+                    retry_budget - (attempt - 1)
+                    if on_child_fail == "retry" else 0
+                )
+                if on_child_fail == "retry" and retries_left > 0 and (
+                    _retry_budget_remaining()
+                ):
+                    _retry_budget_consume()
+                    continue
+                updates, _failure = _dispatch_invoke_outcome(
+                    child_status=outcome.status,
+                    child_run_id=outcome.run_id,
+                    child_output=outcome.output,
+                    output_mapping=output_mapping,
+                    on_child_fail=(
+                        "propagate" if on_child_fail == "retry"
+                        else on_child_fail
+                    ),
+                    default_outputs=default_outputs,
+                    node_id=node.node_id,
+                )
+                # _dispatch_invoke_outcome raised on propagate (default
+                # for retry-exhausted); only "default" path returns here.
+                return updates
         else:
             outcome = execute_branch_async(
                 _base, branch=child_branch, inputs=child_inputs,
             )
             # async: write the child run_id into the first output_mapping target
+            updates = {}
+            if output_mapping:
+                first_parent_key = next(iter(output_mapping))
+                updates[first_parent_key] = outcome.run_id
+            return updates
+
+    return _node_fn
+
+
+def _build_invoke_branch_version_node(
+    node: NodeDefinition,
+    *,
+    base_path: str | Path,
+    event_sink: Callable[..., None] | None,
+    depth: int = 0,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Build a callable for an ``invoke_branch_version_spec`` node.
+
+    Phase A item 5 (Task #76a). Sibling to :func:`_build_invoke_branch_node`
+    that resolves a frozen ``branch_version_id`` snapshot via
+    :func:`workflow.runs.execute_branch_version_async` instead of calling
+    :func:`execute_branch` against the live def. Same input/output mapping
+    contract; same recursion-cap discipline.
+
+    Failure-policy + retry-budget logic lands in Task #76b — this builder
+    uses the default ``on_child_fail="propagate"`` semantics today: the
+    parent step receives the child's outcome.output as-is, and child
+    failures surface as ``None`` values in the mapping (matches existing
+    invoke_branch behavior; structured propagation lands in 76b).
+    """
+    from workflow.runs import MAX_INVOKE_BRANCH_DEPTH
+
+    spec = node.invoke_branch_version_spec or {}
+    child_branch_version_id: str = spec.get("branch_version_id", "")
+    inputs_mapping: dict[str, str] = spec.get("inputs_mapping", {})
+    output_mapping: dict[str, str] = spec.get("output_mapping", {})
+    wait_mode: str = spec.get("wait_mode", "blocking")
+    on_child_fail: str = spec.get("on_child_fail", "propagate")
+    default_outputs = spec.get("default_outputs")
+    retry_budget: int = int(spec.get("retry_budget", 1) or 1)
+
+    if not child_branch_version_id:
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch_version_spec missing "
+            f"'branch_version_id'."
+        )
+    if wait_mode not in ("blocking", "async"):
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch_version_spec wait_mode "
+            f"must be 'blocking' or 'async', got '{wait_mode}'."
+        )
+    if depth >= MAX_INVOKE_BRANCH_DEPTH:
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch recursion depth cap "
+            f"({MAX_INVOKE_BRANCH_DEPTH}) reached. Circular sub-branch chain?"
+        )
+
+    _base = Path(base_path)
+
+    def _node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        # Lazy module-attribute lookups so unittest.mock.patch on
+        # workflow.runs.* takes effect (matches the patch-where-the-
+        # function-is-looked-up gotcha from Task #46 Failure #1).
+        from workflow.runs import (
+            execute_branch_version_async,
+            poll_child_run_status,
+        )
+
+        child_inputs: dict[str, Any] = {
+            child_key: state.get(parent_key)
+            for parent_key, child_key in inputs_mapping.items()
+        }
+
+        if wait_mode == "blocking":
+            # Phase A item 5 / Task #76b — on_child_fail policy + retry,
+            # mirroring _build_invoke_branch_node's blocking path.
+            attempt = 0
+            while True:
+                attempt += 1
+                # Async helper handles the snapshot-load + reconstruction +
+                # SnapshotSchemaDrift + KeyError contract per Task #65b.
+                outcome = execute_branch_version_async(
+                    _base,
+                    branch_version_id=child_branch_version_id,
+                    inputs=child_inputs,
+                )
+                # Block until the child terminates; harvest its output dict.
+                record = poll_child_run_status(_base, outcome.run_id)
+                child_status = record.get("status", "")
+                child_output = record.get("output") or {}
+
+                if child_status == "completed":
+                    return {
+                        parent_key: child_output.get(child_key)
+                        for parent_key, child_key in output_mapping.items()
+                    }
+                # Non-completed terminal status — apply policy.
+                retries_left = (
+                    retry_budget - (attempt - 1)
+                    if on_child_fail == "retry" else 0
+                )
+                if on_child_fail == "retry" and retries_left > 0 and (
+                    _retry_budget_remaining()
+                ):
+                    _retry_budget_consume()
+                    continue
+                updates, _failure = _dispatch_invoke_outcome(
+                    child_status=child_status,
+                    child_run_id=outcome.run_id,
+                    child_output=child_output,
+                    output_mapping=output_mapping,
+                    on_child_fail=(
+                        "propagate" if on_child_fail == "retry"
+                        else on_child_fail
+                    ),
+                    default_outputs=default_outputs,
+                    node_id=node.node_id,
+                )
+                return updates
+        else:
+            # Async: spawn and write child run_id; failure handling deferred
+            # to the await_branch_run node per #56 §8 Q6.
+            outcome = execute_branch_version_async(
+                _base,
+                branch_version_id=child_branch_version_id,
+                inputs=child_inputs,
+            )
             updates = {}
             if output_mapping:
                 first_parent_key = next(iter(output_mapping))
@@ -1369,6 +1658,16 @@ def _build_node(
                 f"compile_branch was not given base_path."
             )
         inner = _build_invoke_branch_node(
+            node, base_path=base_path, event_sink=event_sink,
+        )
+        return _wrap_with_checkpoints(inner, node, event_sink)
+    if node.invoke_branch_version_spec is not None:
+        if base_path is None:
+            raise CompilerError(
+                f"Node '{node.node_id}' uses invoke_branch_version_spec but "
+                f"compile_branch was not given base_path."
+            )
+        inner = _build_invoke_branch_version_node(
             node, base_path=base_path, event_sink=event_sink,
         )
         return _wrap_with_checkpoints(inner, node, event_sink)
