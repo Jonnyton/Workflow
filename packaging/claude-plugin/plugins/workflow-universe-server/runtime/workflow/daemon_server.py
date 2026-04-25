@@ -342,6 +342,36 @@ def initialize_author_server(base_path: str | Path) -> Path:
     CREATE INDEX IF NOT EXISTS idx_unreconciled_writes_at
         ON unreconciled_writes(recorded_at);
 
+    -- Variant canonicals (Task #61 Step 0). See
+    -- docs/design-notes/2026-04-25-variant-canonicals-proposal.md.
+    -- Composite PK enforces "one canonical per (goal, scope)". scope_token
+    -- is opaque: '' = default/unscoped, 'user:<actor_id>' = personal,
+    -- 'tier:<tier>' / 'team:<team>' = future. The legacy
+    -- goals.canonical_branch_version_id column stays as-is; this table is
+    -- additive-only until Step 2 (dual-write) lands.
+    -- Note: branch_version_id is NOT a FK because branch_versions lives in
+    -- the runs database, not this one. Validation of branch_version_id
+    -- existence happens at write time via workflow.branch_versions API
+    -- (matches how goals.canonical_branch_version_id behaves today).
+    CREATE TABLE IF NOT EXISTS canonical_bindings (
+        goal_id            TEXT NOT NULL,
+        scope_token        TEXT NOT NULL DEFAULT '',
+        branch_version_id  TEXT NOT NULL,
+        bound_by_actor_id  TEXT NOT NULL,
+        bound_at           REAL NOT NULL,
+        visibility         TEXT NOT NULL DEFAULT 'public',
+        PRIMARY KEY (goal_id, scope_token),
+        FOREIGN KEY (goal_id) REFERENCES goals(goal_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_canonical_bindings_goal
+        ON canonical_bindings(goal_id);
+    CREATE INDEX IF NOT EXISTS idx_canonical_bindings_actor
+        ON canonical_bindings(bound_by_actor_id);
+    CREATE INDEX IF NOT EXISTS idx_canonical_bindings_branch_ver
+        ON canonical_bindings(branch_version_id);
+    CREATE INDEX IF NOT EXISTS idx_canonical_bindings_scope_goal
+        ON canonical_bindings(scope_token, goal_id);
+
     -- Memory-scope Stage 2a: per-universe access control list.
     -- A universe with zero rows is public; a universe with at least
     -- one row is private and only listed actors can access it.
@@ -421,6 +451,20 @@ def initialize_author_server(base_path: str | Path) -> Path:
                 "ALTER TABLE goals ADD COLUMN canonical_branch_history_json "
                 "TEXT NOT NULL DEFAULT '[]'"
             )
+        # Variant canonicals (Task #61 Step 1) — backfill canonical_bindings
+        # from existing goals.canonical_branch_version_id. INSERT OR IGNORE
+        # makes the migration idempotent: re-running on an already-backfilled
+        # DB hits the (goal_id, scope_token='') primary key collision and
+        # skips. Goals with NULL canonical_branch_version_id are excluded.
+        conn.execute(
+            "INSERT OR IGNORE INTO canonical_bindings "
+            "(goal_id, scope_token, branch_version_id, "
+            " bound_by_actor_id, bound_at, visibility) "
+            "SELECT goal_id, '', canonical_branch_version_id, "
+            "       author, updated_at, 'public' "
+            "FROM goals "
+            "WHERE canonical_branch_version_id IS NOT NULL"
+        )
     ensure_default_author(base_path)
     return author_server_db_path(base_path)
 
@@ -2408,6 +2452,29 @@ def set_canonical_branch(
             """,
             (branch_version_id, _json_dumps(history), now, goal_id),
         )
+        # Variant canonicals (Task #63 — Step 2 dual-write). Mirror the
+        # default-scope binding into canonical_bindings so future readers
+        # can prefer the new table while the legacy column is still
+        # written above. When branch_version_id is None we delete any
+        # existing default-scope binding to keep the two stores in sync.
+        if branch_version_id is None:
+            conn.execute(
+                "DELETE FROM canonical_bindings "
+                "WHERE goal_id = ? AND scope_token = ''",
+                (goal_id,),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO canonical_bindings "
+                "(goal_id, scope_token, branch_version_id, "
+                " bound_by_actor_id, bound_at, visibility) "
+                "VALUES (?, '', ?, ?, ?, 'public') "
+                "ON CONFLICT(goal_id, scope_token) DO UPDATE SET "
+                "    branch_version_id = excluded.branch_version_id, "
+                "    bound_by_actor_id = excluded.bound_by_actor_id, "
+                "    bound_at          = excluded.bound_at",
+                (goal_id, branch_version_id, set_by, now),
+            )
     return get_goal(base_path, goal_id=goal_id)
 
 
