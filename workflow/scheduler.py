@@ -135,12 +135,13 @@ class CronSchedule:
         )
 
     def matches(self, t: time.struct_time) -> bool:
+        cron_dow = (t.tm_wday + 1) % 7  # Python Mon=0…Sun=6 → cron Sun=0…Sat=6
         return (
             t.tm_min in self.minutes
             and t.tm_hour in self.hours
             and t.tm_mday in self.days_of_month
             and t.tm_mon in self.months
-            and t.tm_wday in self.days_of_week  # Python: 0=Monday, but cron: 0=Sunday
+            and cron_dow in self.days_of_week
         )
 
 
