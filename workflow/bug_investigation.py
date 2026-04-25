@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
@@ -253,8 +254,13 @@ def _maybe_enqueue_investigation(
         return None
     bug_ref = dict(frontmatter or {})
     bug_ref["bug_id"] = bug_id
+    # Module-attribute lookup (NOT bare-name) so `patch("workflow.bug_investigation
+    # .enqueue_investigation_request", ...)` reliably takes effect across full-suite
+    # ordering. Bare-name lookup races with sibling tests that hold local-name
+    # bindings to the original function.
+    enqueue = getattr(sys.modules[__name__], "enqueue_investigation_request")
     try:
-        return enqueue_investigation_request(
+        return enqueue(
             bug_ref=bug_ref,
             canonical_branch_def_id=canonical,
             base_path=base_path,
