@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import uuid
 from pathlib import Path
@@ -2282,6 +2283,58 @@ def fork_branch_definition(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+_logger = logging.getLogger(__name__)
+
+# Variant canonicals (Task #64 — Step 3 reader cutover). Counter
+# incremented every time a get_goal/list_goals/search_goals reader falls
+# back to the legacy goals.canonical_branch_version_id column because no
+# default-scope row exists in canonical_bindings. Should remain 0 in
+# healthy operation post-Step-2 (dual-write keeps both stores in sync).
+# Tests assert this counter directly. Step 4 deprecation will remove the
+# counter + fallback path entirely.
+_LEGACY_FALLBACK_HITS: dict[str, int] = {"count": 0}
+
+
+def _apply_canonical_bindings_cutover(
+    conn: sqlite3.Connection,
+    goals: list[dict[str, Any]],
+) -> None:
+    """Patch ``goals[*]["canonical_branch_version_id"]`` from canonical_bindings.
+
+    Step 3 reader cutover: prefer the new ``canonical_bindings`` table over
+    the legacy ``goals.canonical_branch_version_id`` column. Falls back to
+    the legacy column (with a loud warning + ``_LEGACY_FALLBACK_HITS``
+    increment) when the new table has no default-scope row for a goal but
+    the legacy column does — that's a Step-2-dual-write-broke signal.
+
+    Single batch query for all N goals; no N+1.
+    """
+    if not goals:
+        return
+    goal_ids = [g["goal_id"] for g in goals]
+    placeholders = ",".join("?" for _ in goal_ids)
+    rows = conn.execute(
+        f"SELECT goal_id, branch_version_id FROM canonical_bindings "
+        f"WHERE scope_token = '' AND goal_id IN ({placeholders})",
+        goal_ids,
+    ).fetchall()
+    bindings_by_goal = {r["goal_id"]: r["branch_version_id"] for r in rows}
+    for goal in goals:
+        bound = bindings_by_goal.get(goal["goal_id"])
+        if bound is not None:
+            goal["canonical_branch_version_id"] = bound
+        elif goal.get("canonical_branch_version_id") is not None:
+            # Legacy column has a value but new table does not — Step-2
+            # dual-write skipped this goal somewhere. Log loudly so any
+            # post-Step-3 hit surfaces as a real bug.
+            _LEGACY_FALLBACK_HITS["count"] += 1
+            _logger.warning(
+                "canonical_bindings fallback to legacy column for goal %s; "
+                "investigate Step-2 dual-write coverage.",
+                goal["goal_id"],
+            )
+
+
 def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
     ladder_raw = ""
     try:
@@ -2357,9 +2410,11 @@ def get_goal(
             "SELECT * FROM goals WHERE goal_id = ?",
             (goal_id,),
         ).fetchone()
-    if row is None:
-        raise KeyError(goal_id)
-    return _goal_from_row(row)
+        if row is None:
+            raise KeyError(goal_id)
+        result = _goal_from_row(row)
+        _apply_canonical_bindings_cutover(conn, [result])
+    return result
 
 
 def update_goal(
@@ -2525,7 +2580,9 @@ def list_goals(
             """,
             (*params, max(1, int(limit))),
         ).fetchall()
-    return [_goal_from_row(row) for row in rows]
+        results = [_goal_from_row(row) for row in rows]
+        _apply_canonical_bindings_cutover(conn, results)
+    return results
 
 
 def search_goals(
@@ -2557,20 +2614,22 @@ def search_goals(
             "SELECT * FROM goals WHERE visibility != 'deleted'",
         ).fetchall()
 
-    scored: list[tuple[int, dict[str, Any]]] = []
-    for row in all_rows:
-        g = _goal_from_row(row)
-        haystack = " ".join([
-            (g.get("name") or "").lower(),
-            (g.get("description") or "").lower(),
-            " ".join(g.get("tags") or []).lower(),
-        ])
-        hit_count = sum(1 for t in tokens if t in haystack)
-        if hit_count > 0:
-            scored.append((hit_count, g))
+        scored: list[tuple[int, dict[str, Any]]] = []
+        for row in all_rows:
+            g = _goal_from_row(row)
+            haystack = " ".join([
+                (g.get("name") or "").lower(),
+                (g.get("description") or "").lower(),
+                " ".join(g.get("tags") or []).lower(),
+            ])
+            hit_count = sum(1 for t in tokens if t in haystack)
+            if hit_count > 0:
+                scored.append((hit_count, g))
 
-    scored.sort(key=lambda x: -x[0])
-    return [g for _, g in scored[:max(1, int(limit))]]
+        scored.sort(key=lambda x: -x[0])
+        top = [g for _, g in scored[:max(1, int(limit))]]
+        _apply_canonical_bindings_cutover(conn, top)
+    return top
 
 
 def delete_goal(

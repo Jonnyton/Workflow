@@ -365,3 +365,176 @@ class TestDualWrite:
                 ("g1",),
             ))
         assert rows == []
+
+
+# ── Step 3: reader cutover via get_goal / list_goals / search_goals ──────────
+
+
+@pytest.fixture
+def reset_fallback_counter():
+    """Ensure each Step-3 test starts with a clean _LEGACY_FALLBACK_HITS counter."""
+    from workflow.daemon_server import _LEGACY_FALLBACK_HITS
+    saved = _LEGACY_FALLBACK_HITS["count"]
+    _LEGACY_FALLBACK_HITS["count"] = 0
+    yield _LEGACY_FALLBACK_HITS
+    _LEGACY_FALLBACK_HITS["count"] = saved
+
+
+class TestReaderCutover:
+    """Step 3 — get_goal / list_goals / search_goals prefer canonical_bindings
+    over the legacy goals.canonical_branch_version_id column. Falls back to
+    the legacy column with a loud warning when the new table has no row."""
+
+    def test_reader_prefers_canonical_bindings_over_legacy(
+        self, tmp_path, reset_fallback_counter
+    ):
+        bvid = _seed_branch_version(tmp_path, "b1")
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        # Step-2 dual-write puts the same value in both stores.
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid, set_by="alice"
+        )
+
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] == bvid
+        # No fallback hit — both stores agree.
+        assert reset_fallback_counter["count"] == 0
+
+    def test_reader_falls_back_to_legacy_when_bindings_empty(
+        self, tmp_path, caplog, reset_fallback_counter
+    ):
+        """Pre-Step-2 state: legacy column has a value but canonical_bindings
+        is empty for that goal. Helper returns the legacy value, increments
+        the fallback counter, logs a warning.
+
+        Tested by calling the helper directly because get_goal goes through
+        initialize_author_server which re-runs the Step-1 backfill — that
+        would silently re-populate bindings before the cutover ran. The
+        helper-level test exercises the fallback code path without the
+        backfill interference.
+        """
+        from workflow.daemon_server import _apply_canonical_bindings_cutover
+
+        bvid = _seed_branch_version(tmp_path, "b1")
+        _seed_goal(tmp_path, "g1", author="alice")
+        # Manually populate the legacy column ONLY — simulates a goal whose
+        # binding row is missing from canonical_bindings.
+        with _connect(tmp_path) as conn:
+            conn.execute(
+                "UPDATE goals SET canonical_branch_version_id = ? WHERE goal_id = ?",
+                (bvid, "g1"),
+            )
+            # Goal dict mimicking what _goal_from_row would produce.
+            goal_dict = {"goal_id": "g1", "canonical_branch_version_id": bvid}
+            with caplog.at_level("WARNING", logger="workflow.daemon_server"):
+                _apply_canonical_bindings_cutover(conn, [goal_dict])
+
+        # Legacy column value preserved on the dict.
+        assert goal_dict["canonical_branch_version_id"] == bvid
+        # Fallback hit recorded.
+        assert reset_fallback_counter["count"] == 1
+        # Warning emitted with goal id.
+        warnings_for_goal = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "g1" in r.getMessage()
+        ]
+        assert warnings_for_goal, (
+            f"Expected fallback warning for g1; got "
+            f"{[r.getMessage() for r in caplog.records]}"
+        )
+
+    def test_reader_returns_none_when_both_stores_empty(
+        self, tmp_path, reset_fallback_counter
+    ):
+        """No canonical anywhere → None, no fallback hit (legacy is also None)."""
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] is None
+        # No fallback fires — there's nothing to fall back to.
+        assert reset_fallback_counter["count"] == 0
+
+    def test_reader_after_dual_write_consistent(
+        self, tmp_path, reset_fallback_counter
+    ):
+        """Post-Step-2 invariant: legacy column == canonical_bindings.scope=''."""
+        bvid = _seed_branch_version(tmp_path, "b1")
+        _seed_goal(tmp_path, "g1", author="alice")
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid, set_by="alice"
+        )
+
+        # Direct probe of both stores — must agree.
+        with _connect(tmp_path) as conn:
+            legacy = conn.execute(
+                "SELECT canonical_branch_version_id FROM goals WHERE goal_id = ?",
+                ("g1",),
+            ).fetchone()["canonical_branch_version_id"]
+            new_table = conn.execute(
+                "SELECT branch_version_id FROM canonical_bindings "
+                "WHERE goal_id = ? AND scope_token = ''",
+                ("g1",),
+            ).fetchone()["branch_version_id"]
+        assert legacy == new_table == bvid
+        assert reset_fallback_counter["count"] == 0
+
+    def test_list_goals_uses_cutover(self, tmp_path, reset_fallback_counter):
+        """list_goals must apply the cutover too — single batch query, no N+1."""
+        from workflow.daemon_server import list_goals
+
+        bvid_a = _seed_branch_version(tmp_path, "b_a")
+        bvid_b = _seed_branch_version(tmp_path, "b_b")
+        _seed_goal(tmp_path, "ga", author="alice")
+        _seed_goal(tmp_path, "gb", author="alice")
+        set_canonical_branch(
+            tmp_path, goal_id="ga", branch_version_id=bvid_a, set_by="alice"
+        )
+        set_canonical_branch(
+            tmp_path, goal_id="gb", branch_version_id=bvid_b, set_by="alice"
+        )
+
+        goals = list_goals(tmp_path)
+        # Order may vary; pull values by id.
+        canonical_by_goal = {g["goal_id"]: g["canonical_branch_version_id"] for g in goals}
+        assert canonical_by_goal.get("ga") == bvid_a
+        assert canonical_by_goal.get("gb") == bvid_b
+        # No fallback hit — both goals' bindings present.
+        assert reset_fallback_counter["count"] == 0
+
+    def test_helper_increments_counter_once_per_legacy_only_goal(
+        self, tmp_path, reset_fallback_counter
+    ):
+        """When the helper sees multiple goals with legacy-only canonicals,
+        the counter increments once per goal (not once per call).
+
+        Tested at helper level for the same reason as the previous test:
+        list_goals/get_goal would silently re-backfill via _init_db.
+        """
+        from workflow.daemon_server import _apply_canonical_bindings_cutover
+
+        bvid_a = _seed_branch_version(tmp_path, "b_a")
+        bvid_b = _seed_branch_version(tmp_path, "b_b")
+        _seed_goal(tmp_path, "ga", author="alice")
+        _seed_goal(tmp_path, "gb", author="alice")
+
+        with _connect(tmp_path) as conn:
+            # Simulate two goals with legacy-only canonicals, no bindings rows.
+            conn.execute(
+                "UPDATE goals SET canonical_branch_version_id = ? WHERE goal_id = ?",
+                (bvid_a, "ga"),
+            )
+            conn.execute(
+                "UPDATE goals SET canonical_branch_version_id = ? WHERE goal_id = ?",
+                (bvid_b, "gb"),
+            )
+            goals = [
+                {"goal_id": "ga", "canonical_branch_version_id": bvid_a},
+                {"goal_id": "gb", "canonical_branch_version_id": bvid_b},
+            ]
+            _apply_canonical_bindings_cutover(conn, goals)
+
+        # Both goals fell back; counter incremented twice.
+        assert reset_fallback_counter["count"] == 2
