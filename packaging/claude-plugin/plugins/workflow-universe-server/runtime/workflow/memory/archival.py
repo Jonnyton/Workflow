@@ -115,7 +115,7 @@ class ArchivalMemory:
         """
         # Prefer runtime singleton (shares connection with indexer)
         try:
-            from workflow import runtime
+            from workflow import runtime_singletons as runtime
 
             if runtime.knowledge_graph is not None:
                 return runtime.knowledge_graph

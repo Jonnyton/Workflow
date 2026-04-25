@@ -6,8 +6,6 @@ import json
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
-
 from domains.fantasy_author.graphs.universe import run_book
 from domains.fantasy_author.phases.authorial_priority_review import authorial_priority_review
 from domains.fantasy_author.phases.dispatch_execution import dispatch_execution
@@ -16,7 +14,9 @@ from domains.fantasy_author.phases.target_actions import (
     create_provisional_target_from_execution,
     mark_target_for_discard_from_execution,
 )
-from workflow.api import app, configure
+from fastapi.testclient import TestClient
+
+from fantasy_daemon.api import app, configure
 from workflow.work_targets import (
     LIFECYCLE_DISCARDED,
     LIFECYCLE_MARKED_FOR_DISCARD,

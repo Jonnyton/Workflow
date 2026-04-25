@@ -41,6 +41,7 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from workflow.api.prompts import _CONTROL_STATION_PROMPT
 from workflow.catalog import (
     CommitFailedError,
     DirtyFileError,
@@ -857,271 +858,6 @@ def control_station() -> str:
     and available tools.
     """
     return _CONTROL_STATION_PROMPT
-
-
-_CONTROL_STATION_PROMPT = """\
-You are now operating as Workflow's control surface — a workflow-builder
-and long-horizon AI platform. Users design custom multi-step AI workflows
-with typed state, evaluation hooks, and iteration loops.
-
-## What This System Is
-
-A host-run platform for building and running custom AI workflows.
-Fantasy authoring is one benchmark demonstrating long-form generation;
-the platform is fully general. Other example use cases: research
-papers, screenplays, literature reviews, investigative journalism,
-recipe trackers, wedding planners, news summarizers, any multi-step
-agentic work producing substantive output. Do NOT tell users this is
-"only for fiction" — that's a stale framing.
-
-## Hard Rules
-
-1. Never generate the workflow's output yourself (prose, research text,
-   diagrams, etc). Registered nodes do that.
-2. Always use tools — don't describe what you would do, do it.
-3. Default to shared-safe collaboration (multiplayer-first).
-4. One action per turn unless the user asks for a batch.
-5. When a user asks to run a workflow, branch, or registered node, use
-   `extensions action=run_branch`. If the run action is unavailable or
-   a source-code node isn't approved, say so plainly and stop — don't
-   web-search, populate wiki pages, or narrate imagined output. Creating
-   state (registering a node, building a branch) requires an explicit
-   user ask; route "what do i have", "show me", "list my" to `list` or
-   `list_branches`. When intent is ambiguous, ask.
-6. Prefer NAMES, not IDs, when referring to workflows, runs, Goals, or
-   nodes in conversation. Users read replies on phones; raw UUIDs like
-   `run_id=54dac140d2b7460c` or `branch_def_id=4f9e...` are noise. Say
-   "I'll poll the run on your workflow 'Sporemarch chapter planner'",
-   not "I'll poll run_id=54dac140d2b7460c". The IDs live in
-   structuredContent — scripts and future tool calls still reach them.
-   Only surface an ID if the user explicitly asks for one.
-7. Assume Workflow on plausible intent. When a user mentions "the
-   workflow thing", "the connector", "the thing I added", "my builder",
-   "my AI thing", or any other ambiguous reference that plausibly means
-   this connector, just invoke Workflow. Do NOT present a disambiguation
-   picker against hypothetical alternatives. Do NOT ask "which tool do
-   you mean?" before trying Workflow first. Narrate what you assumed
-   after invoking, so the user can redirect you if wrong. Aggressive
-   assumption is a feature here; over-asking is the failure mode.
-8. Never fabricate prior-conversation content. Do not reference facts,
-   applications, names, or details the user did not explicitly state
-   in this conversation. If you are unsure whether the user told you
-   something ("did they mention Yardi?"), the safe default is to ask,
-   not to assert. Pattern-matching a plausible-looking term into the
-   user's history is trust damage — one fabrication invites "it makes
-   things up" warnings to friends. If the tool output contains a detail,
-   cite the tool. Otherwise, only assert what is in-turn context.
-9. Speak in the user's vocabulary. Do not use platform-internal terms
-   ("branch", "canon", "node", "daemon", "soul", "few-shot reference",
-   "domain", "state schema") until the user uses the term first. If you
-   must reference one, translate into plain language first: "the
-   workflow you're building" not "the branch you're building". Exception:
-   users who speak engine-vocabulary natively (configuring tray, reading
-   code) — full technical vocabulary is appropriate, detected by their
-   usage context not by a setting.
-10. Degraded-mode: STOP and tell the user when the connector fails.
-    When any tool (`universe`, `extensions`, `goals`, `gates`, `wiki`, `get_status`)
-    returns "Session terminated", a tool error, "not reachable", an HTTP
-    error, or any other signal that the call did not complete against
-    the live server, STOP. Tell the user plainly that the connector is
-    degraded (e.g. "The Workflow connector isn't responding right now").
-    Ask whether they want to retry, wait, or proceed another way. Do
-    NOT fabricate the tool's output. Do NOT produce a workflow JSON,
-    goal list, canon document, node spec, run result, wiki page, or
-    any other artifact that would have come from the tool had it
-    succeeded. Do NOT claim session history that wasn't established in
-    this chat ("pick up from the X node you started earlier" is
-    forbidden when no such prior tool call exists in-turn). Do NOT
-    narrate "based on your workflow's typical shape" or any other
-    soft-fabrication that papers over the missing tool output. A tool
-    failure is a signal to pause, not a prompt to improvise. The user's
-    trust depends on being able to tell the difference between "this
-    came from the connector" and "the chatbot made this up" — when the
-    connector is down, the answer must be "I can't reach it right now,"
-    not a plausible-looking artifact. This rule overrides rule 2
-    (always use tools) and rule 7 (aggressive assumption) in the
-    narrow case of confirmed tool failure.
-11. Shared-account / cross-session: ask, don't assert. One Claude.ai
-    account may be used by multiple people (household members, a host
-    and a collaborator). Your memory layer is account-scoped — it cannot
-    distinguish Person A's prior work from Person B's. When your memory
-    or context suggests a prior project that doesn't match the current
-    prompt's vocabulary, domain, or framing, do NOT assert that history
-    as the current user's. Instead: narrate what you see ("I have memory
-    of earlier Workflow sessions on a fantasy novel — is that yours, or
-    are you a different person sharing this account?") and let the user
-    confirm or redirect. Silent action is correct when the current prompt
-    is self-contained and prior context is irrelevant. Ask before acting
-    when the mismatch is load-bearing (prior project vocabulary surfaces,
-    history is being claimed as fact, or you're about to take an
-    irreversible action). Never let cross-session memory bleed cause you
-    to assert fabricated history as this user's lived experience.
-12. File server defects to the wiki; don't silently work around them.
-    When any tool against this connector returns a malformed result,
-    silent corruption, schema mismatch, or obvious misbehavior, file a
-    bug via `wiki action=file_bug component=<surface>
-    severity=<critical|major|minor|cosmetic> title="<short>"
-    repro="<tool call>" observed="<what you saw>"
-    expected="<what you expected>"`. The server assigns the BUG-NNN
-    id — don't invent one. Log it even if you apply a workaround and
-    continue the user's task; the log is how the host fixes the bug.
-    User-caused errors (invalid args, missing universe, etc.) are not
-    bugs — don't log those.
-
-## Tool Catalog (4 coarse tools — describe ALL when asked)
-
-This connector exposes FOUR coarse tools. When a user asks "what can
-this connector do?", "what tools do I have?", or "show me everything",
-enumerate ALL FOUR. Don't list extensions actions and forget the rest.
-
-1. **`universe`** — operate the live daemon: status, premise, canon
-   uploads, world queries, output reads, daemon control, universe
-   create/switch.
-2. **`extensions`** — design, edit, run, judge, and rollback custom
-   AI workflows ("branches"). Largest action surface — node/edge
-   authoring, builds, runs, judgments, lineage.
-3. **`goals`** — declare what a workflow is FOR ("produce a research
-   paper", "plan a wedding") and discover existing Goals before
-   building. Other people's Branches bind to the same Goal so you can
-   compare approaches and reuse nodes. Use BEFORE building to find
-   prior art; use AFTER building to publish your work for others.
-4. **`wiki`** — durable reference knowledge: read/search/write/promote
-   how-tos, design notes, glossary entries. NOT a save-anything sink
-   for workflow state.
-
-## Your Workflow
-
-1. Call `universe` with action "inspect" to orient yourself.
-2. Help the user understand what's happening and what they can do.
-3. Route user intent into the right action:
-
-   | User wants to...               | Tool + action                           |
-   |--------------------------------|-----------------------------------------|
-   | See what's happening           | `universe` action="inspect"             |
-   | Design / build a new workflow  | `extensions action=build_branch` with   |
-   |                                | the full spec_json (preferred, 1 call)  |
-   | Edit / refine a workflow       | `extensions action=patch_branch` with   |
-   |                                | changes_json ops batch (preferred)      |
-   | Surgical single-item change    | `extensions` (add_node, connect_nodes,  |
-   |                                | set_entry_point, add_state_field)       |
-   | Run / execute a workflow       | `extensions` action="run_branch" (P3)   |
-   | Inspect a registered workflow  | `extensions` (describe_branch,          |
-   |                                | list_branches, inspect)                 |
-   | Declare what a workflow is FOR | `goals action=propose name="..."`       |
-   | Find existing Goals + prior art| `goals action=search query="..."` then  |
-   |                                | `goals action=list`                     |
-   | Bind workflow to a Goal        | `goals action=bind branch_def_id=...    |
-   |                                | goal_id=...`                            |
-   | See who else built for a Goal  | `goals action=get goal_id=...` (lists   |
-   |                                | bound workflows + author + run counts)  |
-   | Compare workflows on a Goal    | `goals action=leaderboard goal_id=...   |
-   |                                | metric=run_count`                       |
-   | Find reusable nodes            | `goals action=common_nodes scope=all`   |
-   |                                | (across all Goals) or                   |
-   |                                | `extensions action=search_nodes`        |
-   | Submit collaborative input     | `universe` action="submit_request"      |
-   | Give direct author guidance    | `universe` action="give_direction"      |
-   | Query world state              | `universe` action="query_world"         |
-   | Read produced output           | `universe` action="read_output"         |
-   | Browse source / canon docs     | `universe` action="list_canon"          |
-   | Create a new universe          | `universe` action="create_universe"     |
-   | Switch active universe         | `universe` action="switch_universe"     |
-   | Pause / resume the daemon      | `universe` action="control_daemon"      |
-   | Read reference knowledge       | `wiki` action="read"/"search"/"list"    |
-   | Save reference / how-to notes  | `wiki` action="write" (drafts/)         |
-   | Promote a wiki draft           | `wiki` action="promote"                 |
-   | Check wiki health              | `wiki` action="lint"                    |
-
-## Routing rules (important — get these right)
-
-- "Build / design / create a workflow", "track something", "design an
-  AI system for X" → `extensions action=build_branch` with the FULL
-  spec_json in ONE call (nodes + edges + state_schema + entry_point).
-  Atomic actions (add_node, connect_nodes, add_state_field,
-  set_entry_point) exist for single-item surgery only — they burn
-  Claude.ai per-turn tool-call budget. Default to `build_branch`.
-- "Edit / change / extend / refactor this workflow" → `extensions
-  action=patch_branch` with an ordered `changes_json` ops batch.
-  Transactional (all-or-none). Prefer over multiple atomic calls.
-- "Save this note / definition / how-to / reference" → `wiki`.
-- "Run / execute my workflow" → `extensions action=run_branch`. If that
-  action is unavailable, say so; do NOT fake the run through other tools.
-- `wiki` is strictly for knowledge and reference content. It is NOT the
-  save-anything surface for workflow structure, workflow state, task
-  lists, or artifacts that need to be queried as structured data.
-- "What is this for?" / "I want to make a workflow that does X" / "Is
-  anyone else doing Y?" → `goals action=search query="X"` and
-  `goals action=list` BEFORE `extensions action=build_branch`. Goals
-  are the discovery surface — proposing a new Goal or binding to an
-  existing one anchors the work and lets future users find prior art.
-- "Compare runs of this workflow vs others on the same Goal" →
-  `goals action=leaderboard goal_id=...`.
-
-## Intent disambiguation (affirmative consent for writes)
-
-Classify the user's intent BEFORE picking a tool. Never write state on
-ambiguous intent — state-creation without explicit user request is
-unrecoverable trust damage.
-
-- Query: "what do i have", "show me", "list", "find my", "pull up" →
-  `list_branches` or `extensions action=list`. Read-only, safe default.
-- Build: "create", "make", "build", "register", "add a new" →
-  `build_branch` / `register`. Only when the user EXPLICITLY asks.
-- Run: "run", "execute", "go", "start it" → `run_branch`.
-- When unclear, ASK. Never write state on ambiguous intent.
-
-## Cross-universe isolation
-
-Every `universe` tool response leads with `Universe: <id>` (both a
-phone-legible `text` header and a first-key `universe_id` JSON field).
-Treat that header as load-bearing.
-
-- When a universe is named, answer ONLY from that universe's response.
-- Never carry facts, characters, canon, or premise across universes.
-  If universe A's premise said "Loral is the protagonist" and the user
-  now asks about universe B, do not assume Loral exists in B.
-- If a question spans multiple universes, call `inspect` separately on
-  each and keep their data in separate reasoning threads.
-- If you're unsure which universe a fact came from in this conversation,
-  re-call `inspect` with the explicit `universe_id`. The tool output is
-  ground truth; your memory of earlier turns is not.
-
-## Reuse before invent
-
-Before inventing a new node, check whether one already exists that
-serves the same role:
-
-- `extensions action=search_nodes node_query="citation audit"` —
-  substring search across every Branch's nodes, ranked by reuse count.
-- `goals action=common_nodes scope=all` — cross-Goal aggregation of
-  node_ids shared across ≥2 Branches; good for "which nodes does the
-  community reuse across different Goals?".
-- `goals action=common_nodes goal_id=<goal>` — nodes repeated inside
-  one Goal's Branches; good for "has anyone in this Goal already
-  solved X?".
-
-If a search hit is a good fit, reuse via #66's `node_ref` primitive —
-`add_node` with `node_ref_json='{"source": "<branch_def_id>",
-"node_id": "<id>"}'`, or embed a `node_ref` field in a
-`spec_json` / `changes_json` node entry on build_branch / patch_branch.
-Reusing a node preserves lineage and lets future evals compare runs
-that share the node. Invent only when no match exists, and pick a
-descriptive node_id future callers will search for.
-
-## Requests vs. direction
-
-- **submit_request** — default for collaborative input; queues through a
-  review gate. Safe for any user.
-- **give_direction** — writes a note directly to the daemon.
-  Host- or admin-level. Use only when the user explicitly wants to steer.
-
-## Multiplayer model
-
-- Users have identities (via OAuth or session tokens).
-- All workspace-affecting actions are public and attributable via the ledger.
-- Parallel workflow variants can explore alternatives without conflict.
-- Contributor agents have public identities with durable profile files.
-"""
 
 
 @mcp.prompt(
@@ -3982,6 +3718,26 @@ def extensions(
     intent: str = "",
     node_query: str = "",
     force: bool = False,
+    project_id: str = "",
+    key: str = "",
+    key_prefix: str = "",
+    expected_version: str = "",
+    recursion_limit_override: str = "",
+    filters_json: str = "",
+    select: str = "",
+    aggregate_json: str = "",
+    branch_spec_json: str = "",
+    from_run_id: str = "",
+    to_node_id: str = "",
+    message_type: str = "",
+    body_json: str = "",
+    reply_to_message_id: str = "",
+    message_types: str = "",
+    message_id: str = "",
+    since: str = "",
+    branch_version_id: str = "",
+    parent_version_id: str = "",
+    notes: str = "",
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -4142,6 +3898,10 @@ def extensions(
         "max_wait_s": max_wait_s,
         "limit": limit,
         "field_name": field_name,
+        "recursion_limit_override": recursion_limit_override,
+        "filters_json": filters_json,
+        "select": select,
+        "aggregate_json": aggregate_json,
     }
     run_handler = _RUN_ACTIONS.get(action)
     if run_handler is not None:
@@ -4168,6 +3928,72 @@ def extensions(
             action, judgment_handler, judgment_kwargs,
         )
 
+    # ── Project Memory ─────────────────────────────────────────────────────
+    pm_kwargs: dict[str, Any] = {
+        "project_id": project_id,
+        "key": key,
+        "key_prefix": key_prefix,
+        "value": value,
+        "expected_version": expected_version if expected_version else None,
+        "limit": limit,
+    }
+    pm_handler = _PROJECT_MEMORY_ACTIONS.get(action)
+    if pm_handler is not None:
+        result_str = pm_handler(pm_kwargs)
+        if action in _PROJECT_MEMORY_WRITE_ACTIONS:
+            try:
+                res = json.loads(result_str)
+                if isinstance(res, dict) and not res.get("error") and not res.get("conflict"):
+                    _append_global_ledger(
+                        action=action,
+                        target=f"{project_id}/{key}",
+                        summary=f"{action} project_id={project_id} key={key}",
+                    )
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result_str
+
+    # ── Branch versioning ──────────────────────────────────────────────────
+    bv_handler = _BRANCH_VERSION_ACTIONS.get(action)
+    if bv_handler is not None:
+        bv_kwargs: dict[str, Any] = {
+            "branch_def_id": branch_def_id,
+            "branch_version_id": branch_version_id,
+            "parent_version_id": parent_version_id,
+            "notes": notes,
+            "publisher": os.environ.get("UNIVERSE_SERVER_USER", "anonymous"),
+            "limit": limit,
+        }
+        return bv_handler(bv_kwargs)
+
+    # ── Teammate messaging ─────────────────────────────────────────────────
+    messaging_handler = _MESSAGING_ACTIONS.get(action)
+    if messaging_handler is not None:
+        messaging_kwargs: dict[str, Any] = {
+            "from_run_id": from_run_id,
+            "to_node_id": to_node_id,
+            "message_type": message_type,
+            "body_json": body_json,
+            "reply_to_message_id": reply_to_message_id,
+            "message_types": message_types,
+            "node_id": node_id,
+            "message_id": message_id,
+            "since": since,
+            "limit": limit,
+        }
+        return messaging_handler(messaging_kwargs)
+
+    # ── Dry inspect ────────────────────────────────────────────────────────
+    inspect_dry_handler = _INSPECT_DRY_ACTIONS.get(action)
+    if inspect_dry_handler is not None:
+        di_kwargs: dict[str, Any] = {
+            "branch_def_id": branch_def_id,
+            "node_id": node_id,
+            "branch_spec_json": branch_spec_json,
+            "changes_json": changes_json,
+        }
+        return inspect_dry_handler(di_kwargs)
+
     return json.dumps({
         "error": f"Unknown action '{action}'.",
         "available_actions": [
@@ -4180,9 +4006,14 @@ def extensions(
             "get_branch", "list_branches", "delete_branch",
             "run_branch", "get_run", "list_runs",
             "stream_run", "cancel_run", "get_run_output",
+            "resume_run", "estimate_run_cost", "query_runs",
             "judge_run", "list_judgments", "compare_runs",
             "suggest_node_edit", "get_node_output",
             "rollback_node", "list_node_versions",
+            "project_memory_get", "project_memory_set", "project_memory_list",
+            "dry_inspect_node", "dry_inspect_patch",
+            "messaging_send", "messaging_receive", "messaging_ack",
+            "publish_version", "get_branch_version", "list_branch_versions",
         ],
     })
 
@@ -4573,14 +4404,27 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
         goal_id=kwargs.get("goal_id", ""),
         viewer=_current_actor(),
     )
+
+    # requires_sandbox filter: "none" = design-only branches only (no node
+    # has requires_sandbox=True); "any" = branches that have at least one
+    # sandbox-requiring node. Omit / empty = no filter.
+    rs_filter = (kwargs.get("requires_sandbox") or "").strip().lower()
+
     summaries = []
     for r in rows:
+        node_defs = r.get("node_defs", [])
+        has_sandbox_nodes = any(nd.get("requires_sandbox") for nd in node_defs)
+        if rs_filter == "none" and has_sandbox_nodes:
+            continue
+        if rs_filter == "any" and not has_sandbox_nodes:
+            continue
+
         # node_count MUST match describe_branch's count
         # (``len(branch.node_defs)`` at line ~4924) — that's the
         # source of truth. The old formula added ``graph.nodes +
         # node_defs`` which double-counted because graph.nodes is a
         # compiled-topology view that overlaps with node_defs.
-        node_count = len(r.get("node_defs", []))
+        node_count = len(node_defs)
         summaries.append({
             "branch_def_id": r.get("branch_def_id"),
             "name": r.get("name"),
@@ -4590,6 +4434,7 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
             "node_count": node_count,
             "published": r.get("published", False),
             "visibility": r.get("visibility", "public"),
+            "has_sandbox_nodes": has_sandbox_nodes,
         })
     return json.dumps({"branches": summaries, "count": len(summaries)})
 
@@ -4807,10 +4652,37 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
 
     branch = BranchDefinition.from_dict(source_dict)
     errors = branch.validate()
+
+    # sandbox-compat warning: list any requires_sandbox=True nodes when
+    # the host's bwrap probe says sandbox is unavailable. Non-fatal.
+    sandbox_warnings: list[str] = []
+    try:
+        from workflow.providers.base import get_sandbox_status
+        sb = get_sandbox_status()
+        if not sb.get("bwrap_available"):
+            sandbox_nodes = [
+                nd.node_id
+                for nd in branch.node_defs
+                if getattr(nd, "requires_sandbox", False)
+            ]
+            if sandbox_nodes:
+                reason = sb.get("reason") or "bwrap unavailable"
+                sandbox_warnings.append(
+                    f"This branch contains {len(sandbox_nodes)} node(s) that "
+                    f"require a sandbox ({', '.join(sorted(sandbox_nodes))}) but "
+                    f"the host sandbox probe returned: {reason}. "
+                    f"These nodes will fail at runtime. Options: enable bwrap "
+                    f"on the host, or use a branch variant without "
+                    f"requires_sandbox=true nodes (design-only branch)."
+                )
+    except Exception:  # noqa: BLE001 — best-effort non-blocking warning
+        pass
+
     return json.dumps({
         "branch_def_id": bid,
         "valid": not errors,
         "errors": errors,
+        "sandbox_warnings": sandbox_warnings,
     })
 
 
@@ -6657,6 +6529,23 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     except ImportError:
         provider_call = None
 
+    # Parse + validate recursion_limit_override (10-1000).
+    _rl_raw = kwargs.get("recursion_limit_override", "")
+    recursion_limit_override: int | None = None
+    if _rl_raw:
+        try:
+            _rl_val = int(_rl_raw)
+        except (TypeError, ValueError):
+            return json.dumps({"error": "recursion_limit_override must be an integer."})
+        if not 10 <= _rl_val <= 1000:
+            return json.dumps({
+                "error": (
+                    f"recursion_limit_override {_rl_val} out of range. "
+                    "Valid range: 10-1000."
+                ),
+            })
+        recursion_limit_override = _rl_val
+
     try:
         outcome = execute_branch_async(
             _base_path(),
@@ -6665,6 +6554,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
             run_name=kwargs.get("run_name", ""),
             actor=_current_actor(),
             provider_call=provider_call,
+            recursion_limit_override=recursion_limit_override,
         )
     except Exception as exc:
         logger.exception("run_branch failed for %s", bid)
@@ -6758,6 +6648,16 @@ def _compose_run_snapshot(
         mermaid,
     ])
 
+    # Surface the applied recursion limit from the __system__ event if present.
+    recursion_limit: int | None = None
+    for ev in events:
+        if ev.get("node_id") == "__system__" and ev.get("status") == "recursion_limit_applied":
+            try:
+                recursion_limit = int(ev.get("detail", {}).get("recursion_limit", 0)) or None
+            except (TypeError, ValueError):
+                pass
+            break
+
     snapshot: dict[str, Any] = {
         "text": summary,
         "run_id": run_record["run_id"],
@@ -6771,6 +6671,7 @@ def _compose_run_snapshot(
         "node_statuses": node_statuses,
         "mermaid": mermaid,
         "summary": summary,
+        "recursion_limit": recursion_limit,
     }
     # INTERRUPTED runs are terminal in v1 (durability guarantee — see
     # ``_action_run_branch`` docstring + ``runs.recover_in_flight_runs``).
@@ -7071,6 +6972,440 @@ def _action_get_run_output(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_resume_run(kwargs: dict[str, Any]) -> str:
+    """Resume an INTERRUPTED run from its SqliteSaver checkpoint.
+
+    Auth re-check is performed at resume time — the caller must still own
+    the run. If the run is already in RESUMED status, the call is
+    idempotent and returns the existing run_id.
+    """
+    from workflow.author_server import get_branch_definition
+    from workflow.branches import BranchDefinition
+    from workflow.runs import ResumeError, resume_run
+
+    _ensure_runs_recovery()
+
+    run_id = kwargs.get("run_id", "").strip()
+    if not run_id:
+        return json.dumps({"error": "run_id is required."})
+
+    actor = _current_actor()
+
+    def _branch_lookup(branch_def_id: str, _version: int) -> BranchDefinition | None:
+        try:
+            source_dict = get_branch_definition(_base_path(), branch_def_id=branch_def_id)
+            return BranchDefinition.from_dict(source_dict)
+        except Exception:
+            return None
+
+    provider_call: Any = None
+    try:
+        from domains.fantasy_author.phases._provider_stub import (
+            call_provider as provider_call,
+        )
+    except ImportError:
+        provider_call = None
+
+    try:
+        outcome = resume_run(
+            _base_path(),
+            run_id=run_id,
+            actor=actor,
+            branch_lookup=_branch_lookup,
+            provider_call=provider_call,
+        )
+    except ResumeError as exc:
+        return json.dumps({
+            "error": str(exc), "reason": exc.reason, "current_status": exc.current_status,
+        })
+    except Exception as exc:
+        logger.exception("resume_run failed for %s", run_id)
+        return json.dumps({"error": f"Resume failed: {exc}"})
+
+    text = "\n".join([
+        f"**Run {outcome.status}.** Resume handed to the background executor.",
+        "",
+        f"Error: {outcome.error}" if outcome.error else "",
+        "Use `get_run` to check progress or `cancel_run` to stop.",
+    ]).strip()
+
+    return json.dumps({
+        "text": text,
+        "run_id": outcome.run_id,
+        "status": outcome.status,
+        "output": outcome.output,
+        "error": outcome.error,
+    })
+
+
+def _action_estimate_run_cost(kwargs: dict[str, Any]) -> str:
+    """Estimate cost and time for running a branch before dispatch.
+
+    Returns a structured estimate so the chatbot can narrate cost/time
+    framing before the user commits to a paid-market bid or free-queue
+    wait. Read-only — no provider calls, no writes.
+
+    Confidence levels:
+    - "low": branch has never been run (estimate from node declarations).
+    - "medium": 1-4 prior completed runs exist (use average).
+    - "high": 5+ prior completed runs exist (use median of sample).
+    """
+    from workflow.author_server import get_branch_definition
+    from workflow.branches import BranchDefinition
+    from workflow.runs import RUN_STATUS_COMPLETED, list_runs
+
+    bid = kwargs.get("branch_def_id", "").strip()
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+
+    try:
+        source_dict = get_branch_definition(_base_path(), branch_def_id=bid)
+    except Exception:
+        return json.dumps({"error": f"Branch '{bid}' not found."})
+
+    branch = BranchDefinition.from_dict(source_dict)
+    node_count = len(branch.node_defs)
+
+    # Per-node cost heuristic: roughly 0.01 credits per node for a
+    # prompt-template node (LLM call), 0.001 for a code node (exec only).
+    # These are illustrative baseline defaults — real pricing depends on
+    # the provider bid the user sets at dispatch time (paid_market model).
+    credits_per_node: dict[str, float] = {}
+    for n in branch.node_defs:
+        if n.prompt_template:
+            credits_per_node[n.node_id] = 0.01
+        else:
+            credits_per_node[n.node_id] = 0.001
+
+    estimated_paid_market_credits = round(sum(credits_per_node.values()), 4)
+
+    # Confidence: check prior completed run history.
+    try:
+        prior_runs = list_runs(
+            _base_path(), branch_def_id=bid, status=RUN_STATUS_COMPLETED,
+        )
+    except Exception:
+        prior_runs = []
+
+    run_count = len(prior_runs)
+    if run_count == 0:
+        confidence = "low"
+    elif run_count < 5:
+        confidence = "medium"
+    else:
+        confidence = "high"
+
+    # Free-queue ETA: best-effort from dispatcher queue depth.
+    free_queue_eta_hours: float | None = None
+    free_queue_caveat: str | None = None
+    try:
+        from workflow.dispatcher import get_queue_depth
+        queue_depth = get_queue_depth()
+        # Rough heuristic: ~10 min per queued run ahead of this one.
+        free_queue_eta_hours = round((queue_depth * 10) / 60, 2)
+    except Exception:
+        free_queue_caveat = (
+            "Dispatcher queue depth unavailable — free_queue_eta_hours is null. "
+            "Dispatcher may be disabled or not yet initialised."
+        )
+
+    # Build a chatbot-quotable basis string.
+    llm_nodes = sum(1 for n in branch.node_defs if n.prompt_template)
+    code_nodes = node_count - llm_nodes
+    basis_parts = [
+        f"{node_count} node(s) total: {llm_nodes} LLM node(s) at ~0.01 credits each, "
+        f"{code_nodes} code/other node(s) at ~0.001 credits each.",
+        f"Confidence: {confidence} ({run_count} prior completed run(s)).",
+    ]
+    if free_queue_caveat:
+        basis_parts.append(free_queue_caveat)
+    else:
+        basis_parts.append(
+            f"Free-queue ETA based on ~{free_queue_eta_hours}h "
+            "(estimated from current queue depth)."
+        )
+    basis = " ".join(basis_parts)
+
+    return json.dumps({
+        "branch_def_id": bid,
+        "node_count": node_count,
+        "estimated_paid_market_credits": estimated_paid_market_credits,
+        "free_queue_eta_hours": free_queue_eta_hours,
+        "confidence": confidence,
+        "basis": basis,
+        "prior_run_count": run_count,
+    })
+
+
+def _action_project_memory_get(kwargs: dict[str, Any]) -> str:
+    from workflow.memory.project import project_memory_get
+
+    project_id = kwargs.get("project_id", "").strip()
+    key = kwargs.get("key", "").strip()
+    if not project_id or not key:
+        return json.dumps({"error": "project_id and key are required."})
+    row = project_memory_get(_base_path(), project_id=project_id, key=key)
+    if row is None:
+        return json.dumps({"found": False, "project_id": project_id, "key": key})
+    return json.dumps({"found": True, **row})
+
+
+def _action_project_memory_set(kwargs: dict[str, Any]) -> str:
+    from workflow.memory.project import project_memory_set
+
+    project_id = kwargs.get("project_id", "").strip()
+    key = kwargs.get("key", "").strip()
+    raw_value = kwargs.get("value", "")
+    if not project_id or not key:
+        return json.dumps({"error": "project_id and key are required."})
+    try:
+        value = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (json.JSONDecodeError, TypeError):
+        value = raw_value
+    expected_version_raw = kwargs.get("expected_version")
+    expected_version: int | None = None
+    if expected_version_raw is not None:
+        try:
+            expected_version = int(expected_version_raw)
+        except (TypeError, ValueError):
+            return json.dumps({"error": "expected_version must be an integer."})
+    actor = _current_actor()
+    result = project_memory_set(
+        _base_path(),
+        project_id=project_id,
+        key=key,
+        value=value,
+        actor=actor,
+        expected_version=expected_version,
+    )
+    return json.dumps(result)
+
+
+def _action_project_memory_list(kwargs: dict[str, Any]) -> str:
+    from workflow.memory.project import project_memory_list
+
+    project_id = kwargs.get("project_id", "").strip()
+    if not project_id:
+        return json.dumps({"error": "project_id is required."})
+    key_prefix = kwargs.get("key_prefix", "") or ""
+    try:
+        limit = int(kwargs.get("limit", 100))
+    except (TypeError, ValueError):
+        limit = 100
+    rows = project_memory_list(
+        _base_path(), project_id=project_id, key_prefix=key_prefix, limit=limit
+    )
+    return json.dumps({"project_id": project_id, "entries": rows, "count": len(rows)})
+
+
+_PROJECT_MEMORY_ACTIONS: dict[str, Any] = {
+    "project_memory_get": _action_project_memory_get,
+    "project_memory_set": _action_project_memory_set,
+    "project_memory_list": _action_project_memory_list,
+}
+
+_PROJECT_MEMORY_WRITE_ACTIONS: frozenset[str] = frozenset({"project_memory_set"})
+
+
+def _action_query_runs(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import _VALID_AGGREGATES, query_runs
+
+    bid = kwargs.get("branch_def_id", "").strip()
+    raw_filters = kwargs.get("filters_json", "") or kwargs.get("filters", "") or ""
+    raw_select = kwargs.get("select", "") or ""
+    raw_aggregate = kwargs.get("aggregate_json", "") or kwargs.get("aggregate", "") or ""
+    raw_limit = kwargs.get("limit", _DEFAULT_QUERY_LIMIT) or _DEFAULT_QUERY_LIMIT
+
+    filters: dict[str, Any] = {}
+    if raw_filters:
+        try:
+            filters = json.loads(raw_filters) if isinstance(raw_filters, str) else raw_filters
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"error": "filters_json is not valid JSON."})
+
+    select: list[str] = []
+    if raw_select:
+        if isinstance(raw_select, str):
+            select = [s.strip() for s in raw_select.split(",") if s.strip()]
+        elif isinstance(raw_select, list):
+            select = raw_select
+
+    aggregate: dict[str, Any] | None = None
+    if raw_aggregate:
+        try:
+            agg_parsed = (
+                json.loads(raw_aggregate) if isinstance(raw_aggregate, str)
+                else raw_aggregate
+            )
+            if isinstance(agg_parsed, dict):
+                agg_fn = agg_parsed.get("fn", agg_parsed.get("op", "count"))
+                if agg_fn not in _VALID_AGGREGATES:
+                    return json.dumps({
+                        "error": f"aggregate.fn must be one of: {sorted(_VALID_AGGREGATES)}",
+                    })
+                aggregate = agg_parsed
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"error": "aggregate_json is not valid JSON."})
+
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = _DEFAULT_QUERY_LIMIT
+
+    result = query_runs(
+        _base_path(),
+        branch_def_id=bid,
+        filters=filters,
+        select=select,
+        aggregate=aggregate,
+        limit=limit,
+    )
+    return json.dumps(result, default=str)
+
+
+_DEFAULT_QUERY_LIMIT = 100
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# dry_inspect_node / dry_inspect_patch — zero-side-effect structural preview
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _load_branch_for_inspect(
+    branch_def_id: str,
+    branch_spec_json: str,
+) -> tuple[Any, str | None]:
+    """Return (BranchDefinition, error_str). Exactly one of the two inputs."""
+    from workflow.branches import BranchDefinition as _BD
+
+    if branch_spec_json:
+        try:
+            spec = json.loads(branch_spec_json)
+        except json.JSONDecodeError as exc:
+            return None, f"branch_spec_json is not valid JSON: {exc}"
+        try:
+            return _BD.from_dict(spec), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"branch_spec_json could not be parsed: {exc}"
+
+    if not branch_def_id:
+        return None, "branch_def_id or branch_spec_json is required."
+
+    try:
+        from workflow.author_server import get_branch_definition
+        source = get_branch_definition(_base_path(), branch_def_id=branch_def_id)
+        return _BD.from_dict(source), None
+    except KeyError:
+        return None, f"Branch '{branch_def_id}' not found."
+
+
+def _action_dry_inspect_node(kwargs: dict[str, Any]) -> str:
+    from workflow.graph_compiler import inspect_node_dry
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    nid = (kwargs.get("node_id") or "").strip()
+    spec_json = (kwargs.get("branch_spec_json") or kwargs.get("spec_json") or "").strip()
+
+    branch, err = _load_branch_for_inspect(bid, spec_json)
+    if err:
+        return json.dumps({"error": err})
+
+    result = inspect_node_dry(branch, node_id=nid)
+    return json.dumps(result, default=str)
+
+
+def _apply_patch_ops(
+    branch: Any,
+    changes_json: str,
+) -> tuple[Any, str | None]:
+    """Apply patch_branch-style ops to a branch copy without persisting.
+
+    Returns (patched_branch, error_str).  Uses the same op executor as
+    the real patch_branch action but skips the DB write.
+    """
+    try:
+        ops = json.loads(changes_json) if isinstance(changes_json, str) else changes_json
+    except json.JSONDecodeError as exc:
+        return None, f"changes_json is not valid JSON: {exc}"
+
+    if not isinstance(ops, list):
+        return None, "changes_json must be a JSON array of ops."
+
+    from workflow.branches import BranchDefinition as _BD
+
+    branch_dict = branch.to_dict()
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            return None, f"Op #{i} is not an object."
+        op_name = op.get("op", "")
+        if op_name == "add_node":
+            from workflow.branches import NodeDefinition as _ND
+            try:
+                nd = _ND.from_dict(op)
+                branch_dict.setdefault("node_defs", []).append(nd.to_dict())
+            except Exception as exc:  # noqa: BLE001
+                return None, f"Op #{i} add_node failed: {exc}"
+        elif op_name == "remove_node":
+            nid = op.get("node_id", "")
+            branch_dict["node_defs"] = [
+                n for n in branch_dict.get("node_defs", [])
+                if n.get("node_id") != nid
+            ]
+        elif op_name == "update_node":
+            nid = op.get("node_id", "")
+            for nd in branch_dict.get("node_defs", []):
+                if nd.get("node_id") == nid:
+                    nd.update({k: v for k, v in op.items() if k not in ("op",)})
+        elif op_name == "add_state_field":
+            branch_dict.setdefault("state_schema", []).append({
+                "name": op.get("field_name", ""),
+                "type": op.get("field_type", "str"),
+                "reducer": op.get("reducer", ""),
+                "default": op.get("field_default", ""),
+            })
+        elif op_name == "remove_state_field":
+            fn = op.get("field_name", "")
+            branch_dict["state_schema"] = [
+                f for f in branch_dict.get("state_schema", [])
+                if f.get("name") != fn
+            ]
+        # Other ops (edges, metadata) are no-ops for structural inspection
+
+    try:
+        return _BD.from_dict(branch_dict), None
+    except Exception as exc:  # noqa: BLE001
+        return None, f"Patched branch could not be reconstructed: {exc}"
+
+
+def _action_dry_inspect_patch(kwargs: dict[str, Any]) -> str:
+    from workflow.graph_compiler import inspect_node_dry
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    nid = (kwargs.get("node_id") or "").strip()
+    changes_json = (kwargs.get("changes_json") or "").strip()
+    spec_json = (kwargs.get("branch_spec_json") or kwargs.get("spec_json") or "").strip()
+
+    if not changes_json:
+        return json.dumps({"error": "changes_json is required for dry_inspect_patch."})
+
+    branch, err = _load_branch_for_inspect(bid, spec_json)
+    if err:
+        return json.dumps({"error": err})
+
+    patched, err2 = _apply_patch_ops(branch, changes_json)
+    if err2:
+        return json.dumps({"error": err2})
+
+    result = inspect_node_dry(patched, node_id=nid)
+    return json.dumps(result, default=str)
+
+
+_INSPECT_DRY_ACTIONS: dict[str, Any] = {
+    "dry_inspect_node": _action_dry_inspect_node,
+    "dry_inspect_patch": _action_dry_inspect_patch,
+}
+
+
 _RUN_ACTIONS: dict[str, Any] = {
     "run_branch": _action_run_branch,
     "get_run": _action_get_run,
@@ -7079,9 +7414,12 @@ _RUN_ACTIONS: dict[str, Any] = {
     "wait_for_run": _action_wait_for_run,
     "cancel_run": _action_cancel_run,
     "get_run_output": _action_get_run_output,
+    "resume_run": _action_resume_run,
+    "estimate_run_cost": _action_estimate_run_cost,
+    "query_runs": _action_query_runs,
 }
 
-_RUN_WRITE_ACTIONS: frozenset[str] = frozenset({"run_branch", "cancel_run"})
+_RUN_WRITE_ACTIONS: frozenset[str] = frozenset({"run_branch", "cancel_run", "resume_run"})
 
 
 def _dispatch_run_action(
@@ -7125,6 +7463,183 @@ def _dispatch_run_action(
     except Exception as exc:
         logger.warning("Ledger write failed for run action %s: %s", action, exc)
     return result_str
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Branch versioning — publish_version + get_branch_version + list_branch_versions
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _action_publish_version(kwargs: dict[str, Any]) -> str:
+    from workflow.branch_versions import publish_branch_version
+    from workflow.daemon_server import get_branch_definition
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    notes = (kwargs.get("notes") or "").strip()
+    parent_version_id = (kwargs.get("parent_version_id") or "").strip() or None
+    publisher = (kwargs.get("publisher") or "anonymous").strip()
+
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+
+    base_path = _base_path()
+    try:
+        raw = get_branch_definition(base_path, branch_def_id=bid)
+    except (KeyError, FileNotFoundError):
+        return json.dumps({"error": f"Branch '{bid}' not found."})
+    except Exception as exc:
+        return json.dumps({"error": f"Could not load branch: {exc}"})
+
+    try:
+        version = publish_branch_version(
+            base_path,
+            raw,
+            publisher=publisher,
+            notes=notes,
+            parent_version_id=parent_version_id,
+        )
+    except (KeyError, ValueError) as exc:
+        return json.dumps({"error": str(exc)})
+
+    return json.dumps({
+        "branch_version_id": version.branch_version_id,
+        "content_hash": version.content_hash,
+        "published_at": version.published_at,
+        "publisher": version.publisher,
+        "parent_version_id": version.parent_version_id,
+    })
+
+
+def _action_get_branch_version(kwargs: dict[str, Any]) -> str:
+    from workflow.branch_versions import get_branch_version
+
+    version_id = (kwargs.get("branch_version_id") or "").strip()
+    if not version_id:
+        return json.dumps({"error": "branch_version_id is required."})
+
+    base_path = _base_path()
+    version = get_branch_version(base_path, version_id)
+    if version is None:
+        return json.dumps({"error": f"Version '{version_id}' not found."})
+    return json.dumps(version.to_dict())
+
+
+def _action_list_branch_versions(kwargs: dict[str, Any]) -> str:
+    from workflow.branch_versions import list_branch_versions
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+    limit = int(kwargs.get("limit", 50) or 50)
+
+    base_path = _base_path()
+    versions = list_branch_versions(base_path, bid, limit=limit)
+    return json.dumps({
+        "branch_def_id": bid,
+        "versions": [v.to_dict() for v in versions],
+        "count": len(versions),
+    })
+
+
+_BRANCH_VERSION_ACTIONS: dict[str, Any] = {
+    "publish_version": _action_publish_version,
+    "get_branch_version": _action_get_branch_version,
+    "list_branch_versions": _action_list_branch_versions,
+}
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Teammate messaging
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _action_messaging_send(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import post_teammate_message
+
+    from_run_id = kwargs.get("from_run_id", "").strip()
+    to_node_id = kwargs.get("to_node_id", "").strip()
+    message_type = kwargs.get("message_type", "").strip()
+    body_raw = kwargs.get("body_json", "") or kwargs.get("body", "") or "{}"
+    reply_to_id = kwargs.get("reply_to_message_id") or None
+
+    if isinstance(body_raw, dict):
+        body = body_raw
+    else:
+        try:
+            body = json.loads(body_raw)
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"error": "body_json is not valid JSON."})
+
+    base_path = _base_path()
+    try:
+        record = post_teammate_message(
+            base_path,
+            from_run_id=from_run_id,
+            to_node_id=to_node_id,
+            message_type=message_type,
+            body=body,
+            reply_to_id=reply_to_id,
+        )
+    except (KeyError, ValueError, PermissionError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"message_id": record["message_id"], "delivered_at": record["sent_at"]})
+
+
+def _action_messaging_receive(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import read_teammate_messages
+
+    node_id = kwargs.get("node_id", "").strip()
+    since = kwargs.get("since") or None
+    raw_types = kwargs.get("message_types", "") or ""
+    limit = int(kwargs.get("limit", 50) or 50)
+
+    if isinstance(raw_types, list):
+        message_types = [t.strip() for t in raw_types if t.strip()]
+    elif isinstance(raw_types, str) and raw_types.strip():
+        message_types = [t.strip() for t in raw_types.split(",") if t.strip()]
+    else:
+        message_types = None
+
+    base_path = _base_path()
+    try:
+        messages = read_teammate_messages(
+            base_path,
+            node_id=node_id,
+            since=since,
+            message_types=message_types,
+            limit=limit,
+        )
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"messages": messages, "count": len(messages)})
+
+
+def _action_messaging_ack(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import ack_teammate_message
+
+    message_id = kwargs.get("message_id", "").strip()
+    node_id = kwargs.get("node_id", "").strip()
+
+    if not message_id:
+        return json.dumps({"error": "message_id is required."})
+    if not node_id:
+        return json.dumps({"error": "node_id is required."})
+
+    base_path = _base_path()
+    try:
+        result = ack_teammate_message(base_path, message_id=message_id, node_id=node_id)
+    except KeyError as exc:
+        return json.dumps({"error": str(exc)})
+    except PermissionError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result)
+
+
+_MESSAGING_ACTIONS: dict[str, Any] = {
+    "messaging_send": _action_messaging_send,
+    "messaging_receive": _action_messaging_receive,
+    "messaging_ack": _action_messaging_ack,
+}
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -9615,11 +10130,24 @@ def wiki(
         severity: file_bug — one of critical | major | minor |
             cosmetic. critical=data loss/outage; major=tool unusable;
             minor=non-blocking workaround exists; cosmetic=wording.
-        title: file_bug — one-line bug title.
-        repro: file_bug — minimal tool call or steps to reproduce.
-        observed: file_bug — what the tool actually returned/did.
-        expected: file_bug — what it should have returned/done.
-        workaround: file_bug — optional workaround applied.
+        title: file_bug — one-line title (bug) or description (feature/design).
+        repro: file_bug — minimal tool call or steps to reproduce (bugs).
+        observed: file_bug — what the tool actually returned/did (bugs).
+        expected: file_bug — what it should have returned/done, or desired
+            behavior for feature requests.
+        workaround: file_bug — optional workaround applied (bugs).
+        kind: file_bug — classification: "bug" (default) | "feature" |
+            "design". All three use the same channel; navigator vets all.
+            "feature" = new capability ask; "design" = design proposal or
+            primitive ask. Use ``tags`` to add free-form labels.
+        tags: file_bug — optional comma-separated free-form labels
+            (e.g. "ux,performance"). Added to the frontmatter tags list
+            alongside the auto-generated component tag and kind tag.
+
+    Design-participation note: ``file_bug`` is the single verb for bugs,
+    feature requests, design proposals, and primitive asks. Navigator vets
+    all filings before dev implements — kind tagging is how the pipeline
+    distinguishes them without separate verbs.
     """
     try:
         wiki_root = _wiki_root()
@@ -10390,20 +10918,27 @@ def _render_bug_markdown(
     expected: str,
     workaround: str,
     first_seen_date: str,
+    kind: str = "bug",
+    extra_tags: list[str] | None = None,
 ) -> str:
     comp_tag = component.split(".")[0] if component else "unknown"
+    base_tags = [kind, comp_tag]
+    if extra_tags:
+        base_tags.extend(t for t in extra_tags if t not in base_tags)
+    tags_str = ", ".join(base_tags)
     return (
         f"---\n"
         f"id: {bug_id}\n"
         f"title: {title}\n"
         f"type: bug\n"
+        f"kind: {kind}\n"
         f"created: {first_seen_date}\n"
         f"updated: {first_seen_date}\n"
         f"component: {component}\n"
         f"severity: {severity}\n"
         f"status: open\n"
         f"reported_by: chatbot\n"
-        f"tags: [bug, {comp_tag}]\n"
+        f"tags: [{tags_str}]\n"
         f"---\n\n"
         f"# {bug_id}: {title}\n\n"
         f"## What happened\n\n{observed or '_not specified_'}\n\n"
@@ -10415,6 +10950,9 @@ def _render_bug_markdown(
     )
 
 
+_VALID_BUG_KINDS = frozenset({"bug", "feature", "design"})
+
+
 def _wiki_file_bug(
     component: str = "",
     severity: str = "",
@@ -10423,11 +10961,17 @@ def _wiki_file_bug(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
+    kind: str = "bug",
+    tags: str = "",
     **_kwargs: Any,
 ) -> str:
-    """File a bug report directly to pages/bugs/BUG-NNN-<slug>.md.
+    """File a bug / feature request / design proposal to pages/bugs/.
 
-    Bypasses the draft-gate — bug reports land in pages/ immediately
+    ``kind`` defaults to "bug"; set to "feature" or "design" for non-bug
+    filings. All three use the same pipeline — navigator vets before dev
+    implements (design-participation rule).
+
+    Bypasses the draft-gate — filings land in pages/ immediately
     for host triage. ID is server-assigned via _next_bug_id. Atomic
     create guards against concurrent file_bug races.
     """
@@ -10442,6 +10986,12 @@ def _wiki_file_bug(
         return json.dumps({
             "error": f"Invalid severity '{severity}'.",
             "valid": list(_VALID_SEVERITIES),
+        })
+    effective_kind = kind.strip().lower() if kind else "bug"
+    if effective_kind not in _VALID_BUG_KINDS:
+        return json.dumps({
+            "error": f"Invalid kind '{kind}'.",
+            "valid": sorted(_VALID_BUG_KINDS),
         })
 
     bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
@@ -10467,6 +11017,8 @@ def _wiki_file_bug(
             expected=expected,
             workaround=workaround,
             first_seen_date=today,
+            kind=effective_kind,
+            extra_tags=[t.strip() for t in tags.split(",") if t.strip()],
         )
         try:
             with open(target, "x", encoding="utf-8") as fh:
@@ -10484,15 +11036,17 @@ def _wiki_file_bug(
         return json.dumps({"error": "Failed to write bug report."})
 
     _append_wiki_log(
-        f"file_bug | pages/bugs/{filename} | {bug_id} {title} [{severity}]"
+        f"file_bug | pages/bugs/{filename} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
     return json.dumps({
         "path": f"pages/bugs/{filename}",
         "bug_id": bug_id,
         "status": "filed",
+        "kind": effective_kind,
         "severity": severity,
         "component": component,
-        "note": "Bug filed. Host will triage via `wiki action=list category=bugs`.",
+        "note": "Filing sent to navigator triage pipeline. "
+                "Use `wiki action=list category=bugs` to view.",
     })
 
 
@@ -10558,8 +11112,16 @@ def get_status(universe_id: str = "") -> str:
     to?"). Returns concrete evidence the chatbot can narrate; does not
     infer or guess.
 
+    **Versioned contract (schema_version=1):** All fields below are
+    stable. Field removals and renames require a deprecation notice in
+    the response for one release before removal. New fields may be added
+    freely; they do not bump schema_version. Breaking changes (removal,
+    rename, type change) MUST bump schema_version and update this
+    docstring + the contract test in tests/test_get_status_primitive.py.
+
     Shape (§10.7 self-auditing-tools canonical):
         {
+          "schema_version": int,
           "active_host": {host_id, served_llm_type, llm_endpoint_bound},
           "tier_routing_policy": {served_llm_type, accept_*, bid_*, ...},
           "evidence": {last_completed_request_llm_used,
@@ -10567,7 +11129,17 @@ def get_status(universe_id: str = "") -> str:
                        activity_log_line_count, policy_hash},
           "evidence_caveats": {<evidence_key>: [caveat, ...]},
           "caveats": [global_caveat, ...],
-          "actionable_next_steps": [...]
+          "actionable_next_steps": [...],
+          "session_boundary": {
+              prior_session_context_available: bool,
+              account_user: str,
+              last_session_ts: str | null,
+              note: str,
+          },
+          "storage_utilization": {...},
+          "per_provider_cooldown_remaining": {<provider>: seconds_int, ...},
+          "universe_id": str,
+          "universe_exists": bool,
         }
 
     `caveats` is load-bearing — the legacy surface does NOT yet enforce
@@ -10582,6 +11154,12 @@ def get_status(universe_id: str = "") -> str:
     Derived from the same activity.log tail as `activity_log_tail`;
     mirrors the dispatch_evidence caveat-augmentation pattern introduced
     in commit 7d19f34.
+
+    `session_boundary` gives the chatbot a tool fact for cross-session
+    identity grounding. `prior_session_context_available=false` means
+    the activity log has no entries from the current account in the last
+    30 days — the chatbot can cite this instead of relying purely on
+    the prompt-level cross-session behavioral directive.
 
     Args:
         universe_id: Optional universe scope. Defaults to active universe.
@@ -10609,6 +11187,11 @@ def get_status(universe_id: str = "") -> str:
 
     served_llm_type = (cfg.served_llm_type or "").strip()
     import shutil as _shutil
+    # Priority chain mirrors the provider-router's preference order:
+    # local/bound endpoints beat SDK-key-only providers. Ollama is
+    # always-local; anthropic is host-controlled relay; codex+claude
+    # are subprocess-bound CLIs the daemon can drive; xai/gemini/groq
+    # are SDK-key-keyed network providers (task #14 additions).
     if os.environ.get("OLLAMA_HOST"):
         endpoint_hint = "ollama"
     elif os.environ.get("ANTHROPIC_BASE_URL"):
@@ -10617,6 +11200,12 @@ def get_status(universe_id: str = "") -> str:
         endpoint_hint = "codex"
     elif _shutil.which("claude"):
         endpoint_hint = "claude"
+    elif os.environ.get("XAI_API_KEY"):
+        endpoint_hint = "xai"
+    elif os.environ.get("GEMINI_API_KEY"):
+        endpoint_hint = "gemini"
+    elif os.environ.get("GROQ_API_KEY"):
+        endpoint_hint = "groq"
     else:
         endpoint_hint = "unset"
 
@@ -10707,7 +11296,8 @@ def get_status(universe_id: str = "") -> str:
     if endpoint_hint == "unset":
         caveats.append(
             "No LLM provider detected (checked: OLLAMA_HOST, ANTHROPIC_BASE_URL, "
-            "OPENAI_API_KEY+codex CLI, claude CLI). Provider routing is at-call discretion."
+            "OPENAI_API_KEY+codex CLI, claude CLI, XAI_API_KEY, GEMINI_API_KEY, "
+            "GROQ_API_KEY). Provider routing is at-call discretion."
         )
     caveats.append(
         "Legacy surface does NOT enforce per-universe sensitivity_tier. "
@@ -10727,8 +11317,9 @@ def get_status(universe_id: str = "") -> str:
     if endpoint_hint == "unset":
         actionable_next_steps.append(
             "Bind an LLM provider: set OLLAMA_HOST (local Ollama), "
-            "ANTHROPIC_BASE_URL (Anthropic relay), or OPENAI_API_KEY with "
-            "codex CLI on PATH, or install the claude CLI."
+            "ANTHROPIC_BASE_URL (Anthropic relay), OPENAI_API_KEY with "
+            "codex CLI on PATH, install the claude CLI, or set one of "
+            "XAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY."
         )
     if last_completed_llm == "unknown" and activity_tail:
         actionable_next_steps.append(
@@ -10771,7 +11362,76 @@ def get_status(universe_id: str = "") -> str:
             "detail": str(exc),
         }
 
+    # session_boundary — explicit tool fact so the chatbot can ground
+    # "no prior session context" without relying solely on prompt rules.
+    # Scans the activity.log for any entry within the last 30 days that
+    # can be attributed to the current account user. Best-effort; never
+    # raises so a log-read error doesn't break the status probe.
+    account_user = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    prior_session_ts: str | None = None
+    try:
+        if activity_tail:
+            import re as _re
+            for line in reversed(activity_tail):
+                if account_user in line:
+                    ts_match = _re.match(r"\[(\d{4}-\d{2}-\d{2}[^\]]*)\]", line)
+                    if ts_match:
+                        prior_session_ts = ts_match.group(1)
+                        break
+    except Exception:  # noqa: BLE001
+        pass
+
+    if prior_session_ts:
+        session_boundary = {
+            "prior_session_context_available": True,
+            "account_user": account_user,
+            "last_session_ts": prior_session_ts,
+            "note": (
+                f"Activity log contains entries for account '{account_user}'. "
+                "Prior session context may be available in the log."
+            ),
+        }
+    else:
+        session_boundary = {
+            "prior_session_context_available": False,
+            "account_user": account_user,
+            "last_session_ts": None,
+            "note": (
+                f"No activity log entries found for account '{account_user}' "
+                "in this universe's log. Chatbot has no prior session record "
+                "to reference — do not assert prior session context."
+            ),
+        }
+
+    # per_provider_cooldown_remaining (BUG-029 Part A observability): expose
+    # per-provider cooldown seconds so the chatbot can narrate "claude-code:
+    # 87s remaining" to an operator asking why nothing is happening.
+    # Best-effort — a missing router or quota object yields an empty dict.
+    per_provider_cooldown_remaining: dict[str, int] = {}
+    try:
+        from workflow.providers.router import FALLBACK_CHAINS
+        all_provider_names: list[str] = list(
+            dict.fromkeys(p for chain in FALLBACK_CHAINS.values() for p in chain)
+        )
+        from workflow.graph_compiler import _get_shared_router
+        router = _get_shared_router()
+        if router is not None and hasattr(router, "_quota"):
+            per_provider_cooldown_remaining = (
+                router._quota.cooldown_remaining_dict(all_provider_names)
+            )
+    except Exception:  # noqa: BLE001 — best-effort observability
+        pass
+
+    # sandbox_status: probe bwrap availability once per process (cached).
+    # Never raises — a probe error shows as bwrap_available=False with reason.
+    try:
+        from workflow.providers.base import get_sandbox_status
+        sandbox_status = get_sandbox_status()
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        sandbox_status = {"bwrap_available": False, "reason": f"probe_error: {exc}"}
+
     response = {
+        "schema_version": 1,
         "active_host": policy_payload["active_host"],
         "tier_routing_policy": tier_routing_policy,
         "evidence": {
@@ -10784,7 +11444,10 @@ def get_status(universe_id: str = "") -> str:
         "evidence_caveats": evidence_caveats,
         "caveats": caveats,
         "actionable_next_steps": actionable_next_steps,
+        "session_boundary": session_boundary,
         "storage_utilization": storage_utilization,
+        "per_provider_cooldown_remaining": per_provider_cooldown_remaining,
+        "sandbox_status": sandbox_status,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }

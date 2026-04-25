@@ -735,7 +735,7 @@ def _extract_pov_and_tier(
     # 2. Look up access_tier from the KG entity table
     if pov_character:
         try:
-            from workflow import runtime
+            from workflow import runtime_singletons as runtime
 
             kg = runtime.knowledge_graph
             if kg is not None:

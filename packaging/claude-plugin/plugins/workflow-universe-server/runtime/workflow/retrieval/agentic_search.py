@@ -97,7 +97,7 @@ def assemble_phase_search_context(
 
 def assemble_memory_context(state: dict[str, Any], phase: str) -> dict[str, Any]:
     """Call MemoryManager.assemble_context if available."""
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     mgr = runtime.memory_manager
     if mgr is None:
@@ -132,12 +132,13 @@ def run_phase_retrieval(
     kg = None
     owns_kg = False
     try:
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         from workflow.retrieval.router import RetrievalRouter
 
         kg = runtime.knowledge_graph
         if kg is None:
             from domains.fantasy_author.phases._paths import resolve_kg_path
+
             from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
             kg_path = resolve_kg_path(state)

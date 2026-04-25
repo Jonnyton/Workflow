@@ -32,7 +32,7 @@ from workflow.work_targets import get_target
 def _get_config_chapters_target() -> int:
     """Read chapters_target from universe config, default 1."""
     try:
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         return runtime.universe_config.chapters_target
     except Exception:
         return 1
@@ -41,7 +41,7 @@ def _get_config_chapters_target() -> int:
 def _get_config_scenes_target() -> int:
     """Read scenes_target from universe config, default 3."""
     try:
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         return runtime.universe_config.scenes_target
     except Exception:

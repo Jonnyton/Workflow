@@ -349,4 +349,36 @@ if git diff --cached --name-only | grep -qE '^\.github/workflows/.+\.ya?ml$'; th
   fi
 fi
 
+# --- 8. Block new workflow.author_server imports ----------------------
+#
+# workflow.author_server is a deprecated shim for workflow.daemon_server.
+# 124 existing call sites are grandfathered. This check scans only
+# ADDED lines in the staged diff, so existing sites are never flagged.
+# Delegates to scripts/pre_commit_invariant_author_server.py.
+
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.py$'; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  elif command -v py >/dev/null 2>&1; then
+    PYTHON_BIN="py -3"
+  else
+    echo "${YELLOW}pre-commit: python not available; skipping author_server import gate${RESET}" >&2
+    PYTHON_BIN=""
+  fi
+
+  if [ -n "${PYTHON_BIN}" ]; then
+    if [ ! -f scripts/pre_commit_invariant_author_server.py ]; then
+      echo "${YELLOW}pre-commit: scripts/pre_commit_invariant_author_server.py missing; skipping${RESET}" >&2
+    elif ! ${PYTHON_BIN} scripts/pre_commit_invariant_author_server.py; then
+      echo "" >&2
+      echo "${RED}pre-commit: workflow.author_server import gate failed.${RESET}" >&2
+      echo "Use workflow.daemon_server in new code." >&2
+      echo "Override with --no-verify for the bulk-rename commit itself." >&2
+      exit 1
+    fi
+  fi
+fi
+
 exit 0

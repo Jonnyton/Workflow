@@ -162,3 +162,79 @@ def test_deploy_dir_mkdir_uses_workflow_home_var():
     assert re.search(r'mkdir -p.*WORKFLOW_HOME.*deploy', text), (
         "deploy dir mkdir should use ${WORKFLOW_HOME}/deploy, not a hardcoded path"
     )
+
+
+# ── Task #72 — cloud-init / apt-lock wait (DR drill race condition) ───────
+
+
+def test_bootstrap_waits_for_cloud_init():
+    """Bootstrap must call cloud-init status --wait before first apt call.
+
+    Race: fresh Droplet runs cloud-init + unattended-upgrades at boot.
+    Without this wait, apt update races the lock and exits 100.
+    DR drill run ac4b562 proved this failure mode.
+    """
+    text = _text()
+    assert "cloud-init" in text, (
+        "hetzner-bootstrap.sh must call cloud-init to avoid apt-lock race on fresh Droplets"
+    )
+    assert "status --wait" in text, (
+        "cloud-init call must use 'status --wait' to block until cloud-init completes"
+    )
+
+
+def test_bootstrap_cloud_init_is_guarded_by_command_check():
+    """cloud-init may not be present on all distros; guard with 'command -v'."""
+    text = _text()
+    assert re.search(r'command -v cloud-init', text), (
+        "cloud-init call must be guarded by 'command -v cloud-init' — "
+        "not all Debian variants ship it"
+    )
+
+
+def test_bootstrap_cloud_init_failure_is_non_fatal():
+    """cloud-init status --wait must use '|| true' — a non-zero exit (e.g.
+    'status: error') must not abort the bootstrap."""
+    text = _text()
+    cloud_init_line = next(
+        (line for line in text.splitlines() if "status --wait" in line), ""
+    )
+    assert "|| true" in cloud_init_line, (
+        "cloud-init status --wait must be followed by '|| true' so bootstrap "
+        "continues even when cloud-init reports an error status"
+    )
+
+
+def test_bootstrap_apt_lock_wait_loop_present():
+    """A polling loop must wait for apt-get, dpkg, and unattended-upgr to clear
+    before the first apt call."""
+    text = _text()
+    assert "pgrep" in text, (
+        "hetzner-bootstrap.sh must use pgrep to poll for running apt/dpkg processes"
+    )
+    assert "unattended-upgr" in text, (
+        "apt-lock wait must also check for 'unattended-upgr' process "
+        "(DigitalOcean Droplets run it at first boot)"
+    )
+
+
+def test_bootstrap_apt_lock_wait_appears_before_apt_update():
+    """The apt-lock wait block must come before the first 'apt-get update' call."""
+    text = _text()
+    pgrep_pos = text.find("pgrep")
+    apt_update_pos = text.find("apt-get update")
+    assert pgrep_pos != -1 and apt_update_pos != -1, (
+        "Both pgrep wait and apt-get update must be in the script"
+    )
+    assert pgrep_pos < apt_update_pos, (
+        "apt-lock wait (pgrep loop) must appear before the first 'apt-get update'"
+    )
+
+
+def test_bootstrap_apt_lock_wait_has_timeout():
+    """The polling loop must have a bounded timeout to prevent infinite hangs."""
+    text = _text()
+    # The loop uses seq 1 180 (180 iterations × 1s = 3 min max)
+    assert re.search(r'seq 1 1[0-9]{2}', text), (
+        "apt-lock wait loop must be bounded (seq 1 N where N >= 100)"
+    )

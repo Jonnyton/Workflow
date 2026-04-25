@@ -47,7 +47,7 @@ def reflect(state: dict[str, Any]) -> dict[str, Any]:
     dict
         Partial state with ``quality_trace`` entry.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     trace: dict[str, Any] = {
         "node": "reflect",
@@ -134,7 +134,7 @@ def _review_canon_quality(state: dict[str, Any]) -> dict[str, Any]:
     current_model = ""
     try:
         # Probe which provider is currently active
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         if runtime.memory_manager is not None:
             # The provider name is tracked in state from the last call
             current_model = state.get("provider", "")

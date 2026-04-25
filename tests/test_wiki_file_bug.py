@@ -252,3 +252,105 @@ class TestFileBugViaWikiDispatch:
         """Smoke test that 'bugs' is registered via patch (a)."""
         from workflow.universe_server import _WIKI_CATEGORIES
         assert "bugs" in _WIKI_CATEGORIES
+
+
+class TestFileBugKindField:
+    """Tests for the optional `kind` field (bug | feature | design)."""
+
+    def test_no_kind_defaults_to_bug(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(component="x", severity="minor", title="t")
+        )
+        assert out["kind"] == "bug"
+
+    def test_kind_feature_annotates_frontmatter(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="Add feature Y",
+                kind="feature",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "feature"
+        path = wiki_dir / out["path"]
+        body = path.read_text(encoding="utf-8")
+        assert "kind: feature" in body
+        assert "feature" in body.split("tags:")[1].split("\n")[0]
+
+    def test_kind_design_annotates_frontmatter(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="Design proposal Z",
+                kind="design",
+            )
+        )
+        assert out["kind"] == "design"
+        path = wiki_dir / out["path"]
+        body = path.read_text(encoding="utf-8")
+        assert "kind: design" in body
+
+    def test_invalid_kind_rejected(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="t",
+                kind="banana",
+            )
+        )
+        assert "error" in out
+        assert "banana" in out["error"]
+
+    def test_missing_kind_reads_as_bug(self, wiki_dir):
+        """No kind kwarg = kind defaults to 'bug' (backward-compat)."""
+        out = json.loads(
+            _wiki_file_bug(component="x", severity="minor", title="legacy bug")
+        )
+        assert out["kind"] == "bug"
+
+
+class TestFileBugTagsField:
+    """Tests for the optional `tags` free-form labels field."""
+
+    def test_tags_appear_in_frontmatter(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="t",
+                tags="ux,performance",
+            )
+        )
+        assert out["status"] == "filed"
+        path = wiki_dir / out["path"]
+        body = path.read_text(encoding="utf-8")
+        tags_line = [ln for ln in body.split("\n") if ln.startswith("tags:")][0]
+        assert "ux" in tags_line
+        assert "performance" in tags_line
+
+    def test_empty_tags_does_not_break(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="t",
+                tags="",
+            )
+        )
+        assert out["status"] == "filed"
+
+
+def test_render_bug_markdown_kind_and_extra_tags():
+    """Direct unit test on _render_bug_markdown with kind + extra_tags."""
+    md = _render_bug_markdown(
+        bug_id="BUG-001",
+        title="Feature req",
+        component="extensions",
+        severity="minor",
+        repro="",
+        observed="",
+        expected="wanted new thing",
+        workaround="",
+        first_seen_date="2026-04-24",
+        kind="feature",
+        extra_tags=["ux", "roadmap"],
+    )
+    assert "kind: feature" in md
+    tags_line = [ln for ln in md.split("\n") if ln.startswith("tags:")][0]
+    assert "feature" in tags_line
+    assert "ux" in tags_line
+    assert "roadmap" in tags_line

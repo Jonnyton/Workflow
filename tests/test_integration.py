@@ -20,10 +20,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E402
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
-
-import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E402
 
 # Force mock provider responses
 _provider_stub._FORCE_MOCK = True
@@ -33,6 +32,7 @@ from domains.fantasy_author.phases.commit import commit  # noqa: E402
 from domains.fantasy_author.phases.draft import draft  # noqa: E402
 from domains.fantasy_author.phases.orient import orient  # noqa: E402
 from domains.fantasy_author.phases.plan import plan  # noqa: E402
+
 from workflow.desktop.dashboard import DashboardHandler  # noqa: E402
 from workflow.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
 
@@ -177,7 +177,7 @@ class TestOrientRetrievalIntegration:
 
     def test_orient_passes_enriched_state_to_memory_manager(self, base_state):
         """MemoryManager should see the freshly assembled orient_result contract."""
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         captured: dict[str, Any] = {}
 
@@ -200,7 +200,8 @@ class TestOrientRetrievalIntegration:
         from unittest.mock import patch
 
         from domains.fantasy_author.phases.orient import _run_retrieval
-        from workflow import runtime
+
+        from workflow import runtime_singletons as runtime
         from workflow.knowledge.models import (
             FactWithContext,
             RetrievalResult,
@@ -313,13 +314,13 @@ class TestMemoryManagerIntegration:
         Uses monkeypatch so the global is automatically reverted even if
         the test raises.  This prevents mock leakage across test ordering.
         """
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         monkeypatch.setattr(runtime, "memory_manager", None)
 
     def test_orient_calls_memory_manager(self, base_state, monkeypatch):
         """Orient should call assemble_context with the enriched orient state."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {
@@ -338,7 +339,7 @@ class TestMemoryManagerIntegration:
 
     def test_plan_calls_memory_manager(self, base_state, monkeypatch):
         """Plan should call assemble_context('plan', state)."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"recent_beats": []}
@@ -350,7 +351,7 @@ class TestMemoryManagerIntegration:
 
     def test_draft_calls_memory_manager(self, base_state, monkeypatch):
         """Draft should call assemble_context('draft', state)."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"tone": "dark"}
@@ -365,7 +366,7 @@ class TestMemoryManagerIntegration:
 
     def test_commit_calls_memory_manager(self, base_state, monkeypatch):
         """Commit should call assemble_context('evaluate', state)."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {"eval_context": True}
@@ -383,7 +384,7 @@ class TestMemoryManagerIntegration:
 
     def test_nodes_work_without_memory_manager(self, base_state, monkeypatch):
         """All nodes should work when runtime.memory_manager is None."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         monkeypatch.setattr(runtime, "memory_manager", None)
         result = orient(base_state)
@@ -392,7 +393,7 @@ class TestMemoryManagerIntegration:
 
     def test_commit_stores_to_memory_on_accept(self, base_state, monkeypatch):
         """Commit should call store_scene_result on accept."""
-        import workflow.runtime as runtime
+        import workflow.runtime_singletons as runtime
 
         mock_mgr = MagicMock()
         mock_mgr.assemble_context.return_value = {}
@@ -2041,6 +2042,7 @@ class TestEditorialReader:
     def test_editorial_skips_on_hard_failure(self):
         """Editorial reader should be skipped on structural hard failure."""
         from domains.fantasy_author.phases.commit import _run_editorial
+
         from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
@@ -2114,6 +2116,7 @@ class TestEditorialVerdict:
     def test_accept_without_editorial(self):
         """No editorial -> accept."""
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+
         from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
@@ -2126,6 +2129,7 @@ class TestEditorialVerdict:
     def test_revert_on_hard_failure(self):
         """Structural hard failure -> revert."""
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+
         from workflow.evaluation.editorial import EditorialNotes
         from workflow.evaluation.structural import StructuralResult
 
@@ -2140,6 +2144,7 @@ class TestEditorialVerdict:
     def test_second_draft_on_clearly_wrong(self):
         """Clearly wrong concern -> second_draft (first attempt)."""
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
@@ -2163,6 +2168,7 @@ class TestEditorialVerdict:
     def test_accept_on_second_draft_even_with_clearly_wrong(self):
         """Clearly wrong on second draft -> accept (never block)."""
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
@@ -2184,6 +2190,7 @@ class TestEditorialVerdict:
     def test_accept_with_non_wrong_concerns(self):
         """Concerns that aren't clearly_wrong -> accept."""
         from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,

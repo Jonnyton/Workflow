@@ -6,7 +6,10 @@ Grades how the scene loop behaved, not just what prose it produced.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from workflow.evaluation import EvalResult
 
 
 @dataclass
@@ -44,6 +47,27 @@ class ProcessEvaluation:
                 for check in self.checks
             ],
         }
+
+    def to_eval_result(self) -> "EvalResult":
+        """Convert to a unified EvalResult for protocol-compatible routing."""
+        from workflow.evaluation import EvalResult
+
+        score = max(-1.0, min(1.0, self.aggregate_score))
+        verdict: str
+        if self.failing_checks:
+            verdict = "fail"
+        else:
+            verdict = "pass"
+        return EvalResult(
+            score=score,
+            verdict=verdict,  # type: ignore[arg-type]
+            kind="process",
+            label="process_evaluation",
+            details={
+                "aggregate_score": self.aggregate_score,
+                "failing_checks": list(self.failing_checks),
+            },
+        )
 
 
 _CHECK_WEIGHTS: dict[str, float] = {

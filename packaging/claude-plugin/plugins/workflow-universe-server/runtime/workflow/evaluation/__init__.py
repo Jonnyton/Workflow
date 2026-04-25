@@ -2,7 +2,14 @@
 
 Structural: Deterministic checks (no LLM cost).
 Editorial: Natural-language feedback from a different model family.
+Process: Trace-quality grading over the scene loop.
+Protocol: Unified Evaluator interface for all evaluation kinds.
 """
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from workflow.evaluation.editorial import (
     EditorialConcern,
@@ -20,7 +27,56 @@ from workflow.evaluation.structural import (
     StructuralResult,
 )
 
+# ── Shared types ──────────────────────────────────────────────────────────────
+
+EvalVerdict = Literal["pass", "fail", "skip", "error"]
+EvaluatorKind = Literal["structural", "editorial", "process", "numeric", "custom"]
+
+
+@dataclass
+class EvalResult:
+    """Unified result from any Evaluator.
+
+    score is in [-1.0, 1.0]; -1.0 is reserved for "not applicable."
+    verdict summarises pass/fail/skip/error for routing decisions.
+    """
+
+    score: float
+    verdict: EvalVerdict
+    kind: EvaluatorKind
+    label: str = ""
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError(
+                f"EvalResult.score must be in [-1.0, 1.0], got {self.score!r}"
+            )
+
+
+# ── Protocol ──────────────────────────────────────────────────────────────────
+
+@runtime_checkable
+class Evaluator(Protocol):
+    """Structural-subtyping protocol for all evaluator kinds.
+
+    Any object with an ``evaluate(state) -> EvalResult`` method satisfies
+    this protocol — no inheritance required.
+    """
+
+    def evaluate(self, state: dict[str, Any]) -> EvalResult:
+        ...
+
+
+# ── Public surface ─────────────────────────────────────────────────────────────
+
 __all__ = [
+    # Protocol + unified result
+    "Evaluator",
+    "EvalResult",
+    "EvalVerdict",
+    "EvaluatorKind",
+    # Existing evaluation types
     "CheckResult",
     "EditorialConcern",
     "EditorialNotes",

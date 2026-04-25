@@ -311,3 +311,113 @@ def test_shared_account_rule_covers_silent_action_case():
         "rule 11 must specify the zero-friction path (silent action when "
         "prior context is not load-bearing) to prevent over-asking"
     )
+
+
+# ---- Rule 13: prior-run re-anchor directive ------------------------------
+#
+# 2026-04-23 sweep identified chatbots asserting results from prior runs
+# without calling list_runs + get_run_output first. Priya S2, Devin M27
+# both probe this pattern. Rule 13 must force tool-first re-anchor.
+
+
+def _rule_13_block(body: str) -> str:
+    m = re.search(
+        r"13\.\s*Re-anchor.*?(?=^\s*\d+\.|^## )",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert m, "could not locate rule 13 block in control_station prompt"
+    return m.group(0)
+
+
+def test_rule_13_is_present():
+    """Hard rule 13 (re-anchor to prior runs) must exist as a numbered rule."""
+    body = _prompt_text()
+    assert re.search(
+        r"^\s*13\.\s*Re-anchor",
+        body,
+        re.MULTILINE,
+    ), "Hard rule 13 (re-anchor to prior runs via tools) missing from control_station prompt"
+
+
+def test_rule_13_in_hard_rules_block():
+    """Rule 13 must sit inside the ## Hard Rules section, before ## Tool Catalog."""
+    body = _prompt_text()
+    hard_rules_start = body.find("## Hard Rules")
+    tool_catalog_start = body.find("## Tool Catalog")
+    assert hard_rules_start != -1
+    assert tool_catalog_start != -1
+    hard_rules_block = body[hard_rules_start:tool_catalog_start]
+    assert "Re-anchor" in hard_rules_block, (
+        "rule 13 escaped the Hard Rules block"
+    )
+
+
+def test_rule_13_names_list_runs():
+    """Rule 13 must require calling list_runs first to discover prior runs."""
+    rule = _rule_13_block(_prompt_text())
+    assert "list_runs" in rule, (
+        "rule 13 must name 'list_runs' as the first required tool call "
+        "when user references an unnamed prior run"
+    )
+
+
+def test_rule_13_names_get_run_output():
+    """Rule 13 must require get_run_output to retrieve the actual result."""
+    rule = _rule_13_block(_prompt_text())
+    assert "get_run_output" in rule, (
+        "rule 13 must name 'get_run_output' as the retrieval step — "
+        "not just listing runs, but fetching what they produced"
+    )
+
+
+def test_rule_13_forbids_asserting_from_memory():
+    """Rule 13 must contain a negative-imperative forbidding assertion from memory."""
+    rule = _rule_13_block(_prompt_text())
+    assert re.search(
+        r"(do\s+not|never|must\s+not|don['’]t)\s+\w*\s*(assert|claim)",
+        rule,
+        re.IGNORECASE,
+    ), (
+        "rule 13 must contain a negative-imperative ('do NOT assert', 'never claim') "
+        "against asserting prior-run results from memory"
+    )
+
+
+def test_rule_13_names_vague_reference_triggers():
+    """Rule 13 must name the canonical vague-reference phrasings that trigger it.
+
+    The 2026-04-23 sweep identified 'extend the sweep', 'pick up from where we
+    left off', and 'add RF to what you ran' as Priya-style trigger phrases.
+    These must appear in the rule (matching across line-wraps in the prompt).
+    """
+    rule = _rule_13_block(_prompt_text())
+    # Collapse whitespace/newlines for phrase matching — prompt may line-wrap.
+    rule_collapsed = " ".join(rule.split())
+    triggers = [
+        "extend the sweep",
+        "pick up from where we left off",
+        "add RF to what you ran",
+    ]
+    missing = [t for t in triggers if t not in rule_collapsed]
+    assert not missing, (
+        f"rule 13 missing Priya-style trigger phrases: {missing}. "
+        "These are the canonical vague-reference phrasings from the 2026-04-23 sweep."
+    )
+
+
+def test_rule_13_specifies_no_matching_run_response():
+    """Rule 13 must specify what to say when no matching run exists.
+
+    Without this, chatbots invent a plausible run or silently scaffold a new one.
+    The rule must instruct: say 'no matching run' and offer to start fresh.
+    """
+    rule = _rule_13_block(_prompt_text())
+    assert re.search(
+        r"no\s+matching\s+run|start\s+fresh|offer\s+to\s+start",
+        rule,
+        re.IGNORECASE,
+    ), (
+        "rule 13 must specify the honest-disclosure path when no run matches: "
+        "'say so and offer to start fresh'"
+    )

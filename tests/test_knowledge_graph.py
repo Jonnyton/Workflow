@@ -713,7 +713,7 @@ class TestRAPTOR:
         """rebuild_raptor_from_canon builds tree from canon/*.md paragraphs."""
         from unittest.mock import patch
 
-        import workflow.runtime as rt
+        import workflow.runtime_singletons as rt
         from workflow.knowledge.raptor import rebuild_raptor_from_canon
 
         # Create canon files with >50 char paragraphs
@@ -759,7 +759,7 @@ class TestRAPTOR:
         """DaemonController._build_raptor_tree reads canon files."""
         from unittest.mock import patch
 
-        import workflow.runtime as rt
+        import workflow.runtime_singletons as rt
         from workflow.__main__ import DaemonController
 
         canon_dir = tmp_path / "canon"
@@ -802,7 +802,7 @@ class TestRAPTOR:
 
     def test_daemon_build_raptor_skips_without_embed_fn(self, tmp_path):
         """_build_raptor_tree skips when no embed_fn is available."""
-        import workflow.runtime as rt
+        import workflow.runtime_singletons as rt
         from workflow.__main__ import DaemonController
 
         canon_dir = tmp_path / "canon"
@@ -831,7 +831,7 @@ class TestRAPTOR:
 
     def test_daemon_build_raptor_skips_empty_canon(self, tmp_path):
         """_build_raptor_tree skips when canon dir has no content."""
-        import workflow.runtime as rt
+        import workflow.runtime_singletons as rt
         from workflow.__main__ import DaemonController
 
         old_rt = rt.raptor_tree

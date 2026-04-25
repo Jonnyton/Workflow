@@ -30,7 +30,9 @@ import json
 import logging
 import operator
 import re
+import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any, Callable
 
 from langgraph.graph import END, START, StateGraph
@@ -79,6 +81,44 @@ class EmptyResponseError(CompilerError):
         self.node_id = node_id
 
 
+class ConcurrencyTracker:
+    """Track concurrent node executions for observability + budget enforcement.
+
+    Created per-run by ``compile_branch`` when ``concurrency_budget`` is set.
+    Shared across all node callables in a single branch invocation via closure.
+    Thread-safe: lock guards active_count + peak.
+    """
+
+    def __init__(self, budget: int | None) -> None:
+        self.budget = budget
+        self._semaphore = threading.Semaphore(budget) if budget else None
+        self._lock = threading.Lock()
+        self.active_count: int = 0
+        self.peak: int = 0
+
+    def acquire(self) -> None:
+        if self._semaphore is not None:
+            self._semaphore.acquire()
+        with self._lock:
+            self.active_count += 1
+            if self.active_count > self.peak:
+                self.peak = self.active_count
+
+    def release(self) -> None:
+        with self._lock:
+            self.active_count = max(0, self.active_count - 1)
+        if self._semaphore is not None:
+            self._semaphore.release()
+
+    def stats(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "active_now": self.active_count,
+                "peak": self.peak,
+                "budget": self.budget,
+            }
+
+
 # Shared executor so every timeout-wrapped call doesn't spin up a
 # fresh thread. Bounded worker count keeps a runaway graph from
 # spawning unbounded threads on a slow provider.
@@ -97,6 +137,26 @@ def _get_timeout_executor() -> concurrent.futures.ThreadPoolExecutor:
             max_workers=8, thread_name_prefix="node-timeout",
         )
     return _TIMEOUT_EXECUTOR
+
+
+_SHARED_ROUTER: Any = None
+
+
+def _get_shared_router() -> Any:
+    """Return the shared ProviderRouter singleton, or None if not available.
+
+    Lazily imports so test environments without providers don't fail at
+    import time.  The router is cached module-level after first import.
+    """
+    global _SHARED_ROUTER
+    if _SHARED_ROUTER is not None:
+        return _SHARED_ROUTER
+    try:
+        from workflow.providers.router import ProviderRouter
+        _SHARED_ROUTER = ProviderRouter()
+    except Exception:
+        pass
+    return _SHARED_ROUTER
 
 
 def _run_with_timeout(
@@ -376,6 +436,107 @@ def collect_build_warnings(branch: BranchDefinition) -> list[dict[str, Any]]:
     return warnings
 
 
+def inspect_node_dry(
+    branch: BranchDefinition,
+    *,
+    node_id: str = "",
+) -> dict[str, Any]:
+    """Return a side-effect-free structural preview of one node (or all nodes).
+
+    Zero state writes, zero provider calls, zero wiki touches.  Suitable for
+    use from ``dry_inspect_node`` MCP action.
+
+    Shape returned per node::
+
+        {
+          "node_id": str,
+          "node_def": dict,                          # to_dict() snapshot
+          "resolved_prompt_template": str | None,    # {{..}} → {..} normalized
+          "declared_input_keys": list[str],
+          "declared_output_keys": list[str],
+          "state_schema_refs": list[str],            # placeholder keys found in template
+          "placeholder_validation": {
+            "missing": list[str],   # in template but not in state_schema
+            "extra": list[str],     # in input_keys but not referenced
+            "escaped": list[str],   # \\{ident\\} literals found
+          },
+          "policy_resolution": {
+            "source": "node" | "branch" | "default",
+            "effective_policy": dict | None,
+            "fallback_chain": list,
+          },
+          "warnings": list[dict],   # from collect_build_warnings for this node
+        }
+
+    If ``node_id`` is empty the return is ``{"nodes": [<shape>, ...]}``.
+    If ``node_id`` is given and not found the return is ``{"error": "...", "node_id": node_id}``.
+    """
+    schema_keys: set[str] = {
+        (f.get("name") or "").strip()
+        for f in (branch.state_schema or [])
+        if (f.get("name") or "").strip()
+    }
+
+    def _inspect_one(nd: NodeDefinition) -> dict[str, Any]:
+        template = nd.prompt_template or ""
+        normalized = _normalize_placeholders(template) if template else ""
+        placeholder_keys = _placeholder_keys(template) if template else []
+        escaped: list[str] = _ESCAPED_PLACEHOLDER_RE.findall(template) if template else []
+
+        # Keys in template but absent from state_schema
+        missing = [k for k in placeholder_keys if k not in schema_keys]
+        # Keys declared in input_keys but not referenced in template
+        extra = [
+            k for k in nd.input_keys
+            if k not in placeholder_keys
+        ] if nd.prompt_template else []
+
+        # Policy resolution: node > branch > default
+        effective_policy = nd.llm_policy or getattr(branch, "default_llm_policy", None)
+        if nd.llm_policy is not None:
+            policy_source = "node"
+        elif getattr(branch, "default_llm_policy", None) is not None:
+            policy_source = "branch"
+        else:
+            policy_source = "default"
+
+        fallback_chain: list[dict[str, Any]] = []
+        if isinstance(effective_policy, dict):
+            fallback_chain = effective_policy.get("fallback_chain", [])
+
+        # Per-node warnings from the branch-level collector (filter to this node)
+        branch_warnings = collect_build_warnings(branch)
+        node_warnings = [w for w in branch_warnings if w.get("node_id") == nd.node_id]
+
+        return {
+            "node_id": nd.node_id,
+            "node_def": nd.to_dict(),
+            "resolved_prompt_template": normalized if template else None,
+            "declared_input_keys": list(nd.input_keys),
+            "declared_output_keys": list(nd.output_keys),
+            "state_schema_refs": placeholder_keys,
+            "placeholder_validation": {
+                "missing": missing,
+                "extra": extra,
+                "escaped": escaped,
+            },
+            "policy_resolution": {
+                "source": policy_source,
+                "effective_policy": effective_policy,
+                "fallback_chain": fallback_chain,
+            },
+            "warnings": node_warnings,
+        }
+
+    if node_id:
+        nd = branch.get_node_def(node_id)
+        if nd is None:
+            return {"error": f"Node '{node_id}' not found.", "node_id": node_id}
+        return _inspect_one(nd)
+
+    return {"nodes": [_inspect_one(nd) for nd in branch.node_defs]}
+
+
 _JSON_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -526,10 +687,17 @@ def _build_prompt_template_node(
     provider_call: Callable[..., str] | None,
     event_sink: Callable[..., None] | None,
     state_schema: list[dict[str, Any]] | None = None,
+    llm_policy: dict[str, Any] | None = None,
+    concurrency_tracker: ConcurrencyTracker | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Return a node function that fills the prompt template and calls an
     LLM. Output is stored under the node's first ``output_keys`` entry
-    (or ``<node_id>_output`` if none declared)."""
+    (or ``<node_id>_output`` if none declared).
+
+    When ``llm_policy`` is set the call is routed through
+    ``ProviderRouter.call_with_policy_sync`` if the router is importable;
+    otherwise falls back to the plain ``provider_call`` callable.
+    """
 
     output_key = (
         node.output_keys[0] if node.output_keys else f"{node.node_id}_output"
@@ -542,6 +710,15 @@ def _build_prompt_template_node(
     state_types = _state_type_map(state_schema or [])
     needs_json = _needs_json_contract(node, state_types)
     json_suffix = _json_contract_suffix(node, state_types) if needs_json else ""
+    effective_policy: dict[str, Any] | None = llm_policy
+
+    # Lazy import so graph_compiler doesn't hard-depend on providers at import
+    # time. Aliased so the except-clauses below can reference it by name without
+    # re-importing inside every invocation.
+    try:
+        from workflow.providers.base import SandboxUnavailableError as _SandboxUnavailableError
+    except Exception:  # noqa: BLE001 — import failure must not break compilation
+        _SandboxUnavailableError = type("_SandboxUnavailableError", (Exception,), {})  # type: ignore[assignment,misc]
 
     def _fn(state: dict[str, Any]) -> dict[str, Any]:
         # Normalize Jinja-style ``{{var}}`` into Python's ``{var}``.
@@ -631,22 +808,63 @@ def _build_prompt_template_node(
                     "event_sink raised in %s (starting)", node.node_id,
                 )
 
-        if provider_call is None:
-            response = f"[Mock response for {node.node_id}]"
-        else:
-            try:
-                response = _run_with_timeout(
-                    lambda: provider_call(prompt, "", role=role),
-                    timeout_s=timeout_s,
-                    node_id=node.node_id,
-                )
-            except NodeTimeoutError:
-                raise
-            except Exception as exc:
-                logger.exception("Provider call failed in %s", node.node_id)
-                raise CompilerError(
-                    f"Provider call failed in node '{node.node_id}': {exc}"
-                ) from exc
+        if concurrency_tracker is not None:
+            concurrency_tracker.acquire()
+        try:
+            provider_served: str = "unknown"
+            if provider_call is None:
+                response = f"[Mock response for {node.node_id}]"
+                provider_served = "mock"
+            elif effective_policy:
+                # Policy-aware path: route through ProviderRouter.call_with_policy_sync
+                try:
+                    _policy_router = _get_shared_router()
+                    if _policy_router is not None:
+                        def _policy_call() -> tuple[str, str]:
+                            return _policy_router.call_with_policy_sync(
+                                role, prompt, "", effective_policy,
+                            )
+                        text_and_name = _run_with_timeout(
+                            _policy_call,
+                            timeout_s=timeout_s,
+                            node_id=node.node_id,
+                        )
+                        response, provider_served = text_and_name
+                    else:
+                        # Router not available — fall through to plain provider_call
+                        response = _run_with_timeout(
+                            lambda: provider_call(prompt, "", role=role),
+                            timeout_s=timeout_s,
+                            node_id=node.node_id,
+                        )
+                except NodeTimeoutError:
+                    raise
+                except _SandboxUnavailableError:
+                    raise
+                except Exception as exc:
+                    logger.exception("Policy provider call failed in %s", node.node_id)
+                    raise CompilerError(
+                        f"Provider call failed in node '{node.node_id}': {exc}"
+                    ) from exc
+            else:
+                try:
+                    response = _run_with_timeout(
+                        lambda: provider_call(prompt, "", role=role),
+                        timeout_s=timeout_s,
+                        node_id=node.node_id,
+                    )
+                except NodeTimeoutError:
+                    raise
+                except _SandboxUnavailableError:
+                    raise
+                except Exception as exc:
+                    logger.exception("Provider call failed in %s", node.node_id)
+                    raise CompilerError(
+                        f"Provider call failed in node '{node.node_id}': {exc}"
+                    ) from exc
+        finally:
+            if concurrency_tracker is not None:
+                concurrency_tracker.release()
 
         if not response:
             raise EmptyResponseError(
@@ -655,12 +873,24 @@ def _build_prompt_template_node(
                 node_id=node.node_id,
             )
 
+        # Defense-in-depth: if a subprocess provider leaked a bwrap failure
+        # into the response text instead of raising, catch it here so the
+        # garbage never propagates into state (hard-rule #8 fail-loudly).
+        try:
+            from workflow.providers.base import check_bwrap_failure
+            check_bwrap_failure(response)
+        except _SandboxUnavailableError:
+            raise
+        except Exception:  # noqa: BLE001 — import/probe errors must not block runs
+            pass
+
         if event_sink is not None:
             try:
                 event_sink(
                     node_id=node.node_id,
                     phase="ran",
                     prompt=prompt, response=response, role=role,
+                    provider_served=provider_served,
                 )
             except Exception as exc:
                 if _is_cancel_exception(exc):
@@ -727,6 +957,7 @@ def _build_source_code_node(
     node: NodeDefinition,
     *,
     event_sink: Callable[..., None] | None,
+    concurrency_tracker: ConcurrencyTracker | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Return a node function that exec()s the approved source_code.
 
@@ -766,6 +997,8 @@ def _build_source_code_node(
                 logger.exception(
                     "event_sink raised in %s (starting)", node.node_id,
                 )
+        if concurrency_tracker is not None:
+            concurrency_tracker.acquire()
         try:
             result = _run_with_timeout(
                 lambda: runner(state),
@@ -779,6 +1012,9 @@ def _build_source_code_node(
             raise CompilerError(
                 f"Node '{node.node_id}' raised at runtime: {exc}"
             ) from exc
+        finally:
+            if concurrency_tracker is not None:
+                concurrency_tracker.release()
         if not isinstance(result, dict):
             raise CompilerError(
                 f"Node '{node.node_id}' must return a dict, "
@@ -861,6 +1097,217 @@ def _build_opaque_node(
     return _fn
 
 
+def _checkpoint_predicate_matches(
+    reached_when: dict[str, Any], merged_state: dict[str, Any],
+) -> bool:
+    """Return True when merged_state satisfies reached_when.
+
+    Supported shapes:
+    - {"state_key": K, "value": V} — fires when merged_state[K] == V
+    - {"state_key": K, "exists": true} — fires when K is present and non-None/non-empty
+    - {"state_key": K} — same as exists=true (key presence)
+    """
+    key = reached_when.get("state_key", "")
+    if not key:
+        return False
+    val = merged_state.get(key)
+    if "value" in reached_when:
+        return val == reached_when["value"]
+    # exists check (default): truthy non-None value
+    if val is None:
+        return False
+    if isinstance(val, (str, list, dict)):
+        return bool(val)
+    return True
+
+
+def _wrap_with_checkpoints(
+    inner_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    node: NodeDefinition,
+    event_sink: Callable[..., None] | None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Wrap a node function to evaluate checkpoints after execution.
+
+    After inner_fn returns a state delta, this evaluates each checkpoint's
+    reached_when predicate against the merged state (incoming + delta).
+    Matching checkpoints emit a checkpoint_reached event via event_sink
+    and record the checkpoint_id in _fired_checkpoints to prevent re-firing.
+    """
+    checkpoints = list(node.checkpoints)
+    if not checkpoints:
+        return inner_fn
+
+    node_id = node.node_id
+
+    def _fn(state: dict[str, Any]) -> dict[str, Any]:
+        delta = inner_fn(state)
+        # Merge incoming state with delta to evaluate predicates.
+        merged = {**state, **delta}
+        # _fired_checkpoints uses an append reducer — LangGraph concatenates
+        # the delta list onto the accumulated state list. We emit only
+        # newly-fired IDs so each ID appears at most once in the final list.
+        already_fired: set[str] = set(state.get("_fired_checkpoints") or [])
+        newly_fired: list[str] = []
+
+        for ckpt in checkpoints:
+            ckpt_id = ckpt.get("checkpoint_id", "")
+            if not ckpt_id or ckpt_id in already_fired:
+                continue
+            rw = ckpt.get("reached_when")
+            if not isinstance(rw, dict):
+                continue
+            if _checkpoint_predicate_matches(rw, merged):
+                newly_fired.append(ckpt_id)
+                if event_sink is not None:
+                    try:
+                        event_sink(
+                            node_id=node_id,
+                            phase="checkpoint_reached",
+                            checkpoint_id=ckpt_id,
+                            earns_fraction=ckpt.get("earns_fraction", 0.0),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        if _is_cancel_exception(exc):
+                            raise
+                        logger.exception(
+                            "event_sink raised emitting checkpoint_reached "
+                            "for %s/%s", node_id, ckpt_id,
+                        )
+
+        if newly_fired:
+            # Emit only the new IDs; the append reducer accumulates them.
+            delta = {**delta, "_fired_checkpoints": newly_fired}
+        return delta
+
+    return _fn
+
+
+def _build_invoke_branch_node(
+    node: NodeDefinition,
+    *,
+    base_path: str | Path,
+    event_sink: Callable[..., None] | None,
+    depth: int = 0,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Build a callable for an ``invoke_branch_spec`` node.
+
+    The callable spawns a child branch run (blocking or async) and writes
+    declared output_mapping fields back into the parent state.
+    """
+    from workflow.runs import (
+        MAX_INVOKE_BRANCH_DEPTH,
+        execute_branch,
+        execute_branch_async,
+    )
+
+    spec = node.invoke_branch_spec or {}
+    child_branch_def_id: str = spec.get("branch_def_id", "")
+    inputs_mapping: dict[str, str] = spec.get("inputs_mapping", {})
+    output_mapping: dict[str, str] = spec.get("output_mapping", {})
+    wait_mode: str = spec.get("wait_mode", "blocking")
+
+    if not child_branch_def_id:
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch_spec missing 'branch_def_id'."
+        )
+    if wait_mode not in ("blocking", "async"):
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch_spec wait_mode must be "
+            f"'blocking' or 'async', got '{wait_mode}'."
+        )
+    if depth >= MAX_INVOKE_BRANCH_DEPTH:
+        raise CompilerError(
+            f"Node '{node.node_id}': invoke_branch recursion depth cap "
+            f"({MAX_INVOKE_BRANCH_DEPTH}) reached. Circular sub-branch chain?"
+        )
+
+    _base = Path(base_path)
+
+    def _node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        from workflow.author_server import get_branch_definition
+        from workflow.branches import BranchDefinition as _BD
+
+        raw = get_branch_definition(_base, child_branch_def_id)
+        child_branch = _BD.from_dict(raw)
+
+        child_inputs: dict[str, Any] = {
+            child_key: state.get(parent_key)
+            for parent_key, child_key in inputs_mapping.items()
+        }
+
+        if wait_mode == "blocking":
+            outcome = execute_branch(
+                _base, branch=child_branch, inputs=child_inputs,
+            )
+            updates: dict[str, Any] = {}
+            for parent_key, child_key in output_mapping.items():
+                updates[parent_key] = outcome.output.get(child_key)
+            return updates
+        else:
+            outcome = execute_branch_async(
+                _base, branch=child_branch, inputs=child_inputs,
+            )
+            # async: write the child run_id into the first output_mapping target
+            updates = {}
+            if output_mapping:
+                first_parent_key = next(iter(output_mapping))
+                updates[first_parent_key] = outcome.run_id
+            return updates
+
+    return _node_fn
+
+
+def _build_await_branch_run_node(
+    node: NodeDefinition,
+    *,
+    base_path: str | Path,
+    event_sink: Callable[..., None] | None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Build a callable for an ``await_run_spec`` node.
+
+    The callable reads a run_id from parent state, polls until the child run
+    reaches a terminal status, then writes declared output_mapping fields.
+    """
+    from workflow.runs import poll_child_run_status
+
+    spec = node.await_run_spec or {}
+    run_id_field: str = spec.get("run_id_field", "")
+    output_mapping: dict[str, str] = spec.get("output_mapping", {})
+    timeout_seconds: float = float(spec.get("timeout_seconds", 300.0))
+
+    if not run_id_field:
+        raise CompilerError(
+            f"Node '{node.node_id}': await_run_spec missing 'run_id_field'."
+        )
+
+    _base = Path(base_path)
+
+    def _node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        import json as _json
+        run_id: str = state.get(run_id_field, "") or ""
+        if not run_id:
+            raise RuntimeError(
+                f"await_branch_run node '{node.node_id}': "
+                f"state field '{run_id_field}' is empty or missing."
+            )
+        record = poll_child_run_status(
+            _base, run_id, timeout_seconds=timeout_seconds,
+        )
+        raw_output = record.get("output") or {}
+        if isinstance(raw_output, str):
+            try:
+                raw_output = _json.loads(raw_output)
+            except Exception:
+                raw_output = {}
+
+        updates: dict[str, Any] = {}
+        for parent_key, child_key in output_mapping.items():
+            updates[parent_key] = raw_output.get(child_key)
+        return updates
+
+    return _node_fn
+
+
 def _build_node(
     node: NodeDefinition,
     *,
@@ -868,6 +1315,9 @@ def _build_node(
     event_sink: Callable[..., None] | None,
     domain_id: str = "",
     state_schema: list[dict[str, Any]] | None = None,
+    llm_policy: dict[str, Any] | None = None,
+    concurrency_tracker: ConcurrencyTracker | None = None,
+    base_path: str | Path | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Dispatch a NodeDefinition to the right adapter.
 
@@ -876,6 +1326,11 @@ def _build_node(
     a Branch-level attribute. When ``domain_id`` is non-empty and
     ``(domain_id, node.node_id)`` resolves in the domain registry,
     the opaque-node branch is taken.
+
+    ``llm_policy`` is the effective policy for this node — the node's
+    own policy or the branch default; resolved by ``compile_branch``.
+    ``concurrency_tracker`` limits concurrent LLM/sandbox calls via a
+    semaphore acquired before the provider call and released after.
     """
     from workflow.domain_registry import resolve_domain_callable
 
@@ -887,16 +1342,42 @@ def _build_node(
             f"source_code — exactly one must be set."
         )
     if has_source:
-        return _build_source_code_node(node, event_sink=event_sink)
-    if has_template:
-        return _build_prompt_template_node(
-            node, provider_call=provider_call, event_sink=event_sink,
-            state_schema=state_schema,
+        inner = _build_source_code_node(
+            node, event_sink=event_sink, concurrency_tracker=concurrency_tracker,
         )
+        return _wrap_with_checkpoints(inner, node, event_sink)
+    if has_template:
+        inner = _build_prompt_template_node(
+            node, provider_call=provider_call, event_sink=event_sink,
+            state_schema=state_schema, llm_policy=llm_policy,
+            concurrency_tracker=concurrency_tracker,
+        )
+        return _wrap_with_checkpoints(inner, node, event_sink)
     if domain_id:
         opaque = resolve_domain_callable(domain_id, node.node_id)
         if opaque is not None:
-            return _build_opaque_node(node, opaque, event_sink=event_sink)
+            inner = _build_opaque_node(node, opaque, event_sink=event_sink)
+            return _wrap_with_checkpoints(inner, node, event_sink)
+    if node.invoke_branch_spec is not None:
+        if base_path is None:
+            raise CompilerError(
+                f"Node '{node.node_id}' uses invoke_branch_spec but "
+                f"compile_branch was not given base_path."
+            )
+        inner = _build_invoke_branch_node(
+            node, base_path=base_path, event_sink=event_sink,
+        )
+        return _wrap_with_checkpoints(inner, node, event_sink)
+    if node.await_run_spec is not None:
+        if base_path is None:
+            raise CompilerError(
+                f"Node '{node.node_id}' uses await_run_spec but "
+                f"compile_branch was not given base_path."
+            )
+        inner = _build_await_branch_run_node(
+            node, base_path=base_path, event_sink=event_sink,
+        )
+        return _wrap_with_checkpoints(inner, node, event_sink)
     # Fallback: a genuine body-less node in a non-domain-trusted
     # context is a malformed Branch. Preserve the CompilerError
     # contract so user Branches that omit both template and source
@@ -981,6 +1462,7 @@ class CompiledBranch:
     state_type: type
     branch: BranchDefinition
     node_ids_in_order: list[str]
+    concurrency_tracker: ConcurrencyTracker | None = None
 
 
 def compile_branch(
@@ -988,6 +1470,8 @@ def compile_branch(
     *,
     provider_call: Callable[..., str] | None = None,
     event_sink: Callable[..., None] | None = None,
+    concurrency_budget_override: int | None = None,
+    base_path: str | Path | None = None,
 ) -> CompiledBranch:
     """Compile a validated BranchDefinition into a StateGraph.
 
@@ -1003,6 +1487,10 @@ def compile_branch(
         Optional callable invoked after each node executes with
         per-node diagnostics. Used by the runner to record
         ``RunStepEvent`` rows.
+    concurrency_budget_override
+        Override the branch-level ``concurrency_budget`` for this
+        compilation. When ``None``, falls back to ``branch.concurrency_budget``.
+        When both are ``None``, concurrency is unbounded (current behavior).
 
     Returns
     -------
@@ -1040,8 +1528,28 @@ def compile_branch(
                     warning.get("node_id", "?"),
                 )
 
-    state_type = _build_state_typeddict(branch.state_schema or [])
+    # Inject _fired_checkpoints into the schema when any node uses checkpoints.
+    # This field accumulates the list of fired checkpoint IDs across the run
+    # so each checkpoint fires at most once (idempotent on resume).
+    schema = list(branch.state_schema or [])
+    has_checkpoints = any(
+        getattr(nd, "checkpoints", None) for nd in branch.node_defs
+    )
+    if has_checkpoints:
+        if not any(f.get("name") == "_fired_checkpoints" for f in schema):
+            schema.append({"name": "_fired_checkpoints", "type": "list", "reducer": "append"})
+    state_type = _build_state_typeddict(schema)
     graph: StateGraph = StateGraph(state_type)
+
+    # Build concurrency tracker: override > branch-level > None (unbounded).
+    effective_budget = (
+        concurrency_budget_override
+        if concurrency_budget_override is not None
+        else getattr(branch, "concurrency_budget", None)
+    )
+    concurrency_tracker: ConcurrencyTracker | None = (
+        ConcurrencyTracker(effective_budget) if effective_budget is not None else None
+    )
 
     node_by_id: dict[str, NodeDefinition] = {
         n.node_id: n for n in branch.node_defs
@@ -1059,12 +1567,19 @@ def compile_branch(
                 f"Graph node '{gn.id}' references unknown node_def_id "
                 f"'{def_id}'."
             )
+        # Effective llm_policy: node-level takes precedence over branch default.
+        effective_policy = node_def.llm_policy or getattr(
+            branch, "default_llm_policy", None,
+        )
         fn = _build_node(
             node_def,
             provider_call=provider_call,
             event_sink=event_sink,
             domain_id=branch.domain_id,
             state_schema=branch.state_schema,
+            llm_policy=effective_policy,
+            concurrency_tracker=concurrency_tracker,
+            base_path=base_path,
         )
         graph.add_node(gn.id, fn)
 
@@ -1096,4 +1611,5 @@ def compile_branch(
         state_type=state_type,
         branch=branch,
         node_ids_in_order=node_ids_in_order,
+        concurrency_tracker=concurrency_tracker,
     )

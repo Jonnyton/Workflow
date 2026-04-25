@@ -52,6 +52,7 @@ RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_FAILED = "failed"
 RUN_STATUS_CANCELLED = "cancelled"
 RUN_STATUS_INTERRUPTED = "interrupted"
+RUN_STATUS_RESUMED = "resumed"
 
 NODE_STATUS_PENDING = "pending"
 NODE_STATUS_RUNNING = "running"
@@ -173,7 +174,26 @@ def initialize_runs_db(base_path: str | Path) -> Path:
 
     CREATE INDEX IF NOT EXISTS idx_audit_branch
         ON node_edit_audit(branch_def_id);
+
+    CREATE TABLE IF NOT EXISTS teammate_messages (
+        message_id     TEXT PRIMARY KEY,
+        from_run_id    TEXT NOT NULL,
+        to_node_id     TEXT NOT NULL,
+        message_type   TEXT NOT NULL,
+        body_json      TEXT NOT NULL DEFAULT '{}',
+        reply_to_id    TEXT,
+        sent_at        TEXT NOT NULL,
+        acked          INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tmsg_to_node
+        ON teammate_messages(to_node_id, sent_at);
+    CREATE INDEX IF NOT EXISTS idx_tmsg_from_run
+        ON teammate_messages(from_run_id);
     """
+    from workflow.branch_versions import BRANCH_VERSIONS_SCHEMA
+    from workflow.scheduler import SCHEDULER_SCHEMA
+    schema = schema + SCHEDULER_SCHEMA + BRANCH_VERSIONS_SCHEMA
     with _connect(base_path) as conn:
         conn.executescript(schema)
         # Migration: older installs may predate the body-snapshot columns
@@ -331,7 +351,26 @@ def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:
         row = conn.execute(
             "SELECT * FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-    return _row_to_run(row) if row else None
+        if row is None:
+            return None
+        result = _row_to_run(row)
+        # Surface concurrency stats from the last concurrency_stats system event.
+        stats_row = conn.execute(
+            """
+            SELECT detail_json FROM run_events
+            WHERE run_id = ? AND status = 'concurrency_stats'
+            ORDER BY step_index DESC LIMIT 1
+            """,
+            (run_id,),
+        ).fetchone()
+    if stats_row:
+        try:
+            result["concurrency"] = json.loads(stats_row["detail_json"] or "{}")
+        except json.JSONDecodeError:
+            result["concurrency"] = None
+    else:
+        result["concurrency"] = None
+    return result
 
 
 def list_runs(
@@ -985,6 +1024,14 @@ def _prepare_run(
     return run_id
 
 
+#: Default LangGraph recursion-limit ceiling, raised from LangGraph's
+#: stock 25 → 100 per the Tier-1 investigation Step 6 (BUG-019/021/022).
+#: Stock 25 is too tight for branches with 3+ gate iterations; BUG-020
+#: runs tripped the limit. Callers can override via the explicit
+#: `recursion_limit_override` arg on execute_branch / execute_branch_async.
+DEFAULT_RECURSION_LIMIT = 100
+
+
 def _invoke_graph(
     base_path: str | Path,
     *,
@@ -992,6 +1039,8 @@ def _invoke_graph(
     branch: BranchDefinition,
     inputs: dict[str, Any],
     provider_call: Callable[..., str] | None,
+    recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+    concurrency_budget_override: int | None = None,
 ) -> RunOutcome:
     """Compile + invoke the graph for an already-prepared run_id.
 
@@ -1042,6 +1091,8 @@ def _invoke_graph(
             branch,
             provider_call=provider_call,
             event_sink=_on_node,
+            concurrency_budget_override=concurrency_budget_override,
+            base_path=base_path,
         )
     except (UnapprovedNodeError, CompilerError) as exc:
         update_run_status(
@@ -1056,6 +1107,16 @@ def _invoke_graph(
         )
 
     update_run_status(base_path, run_id, status=RUN_STATUS_RUNNING)
+
+    # Emit recursion_limit_applied event so get_run can surface the cap used.
+    record_event(base_path, RunStepEvent(
+        run_id=run_id,
+        step_index=0,
+        node_id="__system__",
+        status="recursion_limit_applied",
+        started_at=_now(),
+        detail={"recursion_limit": recursion_limit},
+    ))
 
     if is_cancel_requested(base_path, run_id):
         update_run_status(
@@ -1078,7 +1139,10 @@ def _invoke_graph(
             app = compiled.graph.compile(checkpointer=checkpointer)
             result = app.invoke(
                 dict(inputs),
-                config={"configurable": {"thread_id": thread_id}},
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": recursion_limit,
+                },
             )
     except RunCancelledError as exc:
         update_run_status(
@@ -1092,6 +1156,23 @@ def _invoke_graph(
             output={}, error=str(exc),
         )
     except Exception as exc:
+        # GraphRecursionError: structured error naming the applied limit.
+        try:
+            from langgraph.errors import GraphRecursionError as _GRE
+            if isinstance(exc, _GRE):
+                msg = (
+                    f"GraphRecursionError: recursion limit {recursion_limit} reached. "
+                    f"Raise via recursion_limit_override on run_branch. Detail: {exc}"
+                )
+                update_run_status(
+                    base_path, run_id,
+                    status=RUN_STATUS_FAILED, error=msg, finished_at=_now(),
+                )
+                return RunOutcome(
+                    run_id=run_id, status=RUN_STATUS_FAILED, output={}, error=msg,
+                )
+        except ImportError:
+            pass
         # LangGraph may wrap RunCancelledError in its own exception.
         # Unwrap and handle uniformly.
         if _is_cancel_exception(exc):
@@ -1171,6 +1252,21 @@ def _invoke_graph(
         )
 
     output = dict(result) if isinstance(result, dict) else {"result": result}
+
+    # Emit concurrency_stats event so get_run can surface peak + budget.
+    if compiled.concurrency_tracker is not None:
+        stats = compiled.concurrency_tracker.stats()
+        step = execution_cursor["step"]
+        execution_cursor["step"] += 1
+        record_event(base_path, RunStepEvent(
+            run_id=run_id,
+            step_index=step + _PENDING_OFFSET,
+            node_id="__system__",
+            status="concurrency_stats",
+            started_at=_now(),
+            detail=stats,
+        ))
+
     update_run_status(
         base_path, run_id,
         status=RUN_STATUS_COMPLETED,
@@ -1260,6 +1356,8 @@ def execute_branch(
     run_name: str = "",
     actor: str = "anonymous",
     provider_call: Callable[..., str] | None = None,
+    recursion_limit_override: int | None = None,
+    concurrency_budget_override: int | None = None,
 ) -> RunOutcome:
     """Synchronous end-to-end execution.
 
@@ -1268,6 +1366,13 @@ def execute_branch(
 
     Raises nothing: validation/runtime errors are reported via
     ``RunOutcome.status``.
+
+    Parameters
+    ----------
+    recursion_limit_override
+        Optional override for LangGraph's recursion limit. When ``None``
+        (default), uses :data:`DEFAULT_RECURSION_LIMIT` (100). Branches
+        with deep conditional loops (Tier-1 Step 6) bump this.
     """
     run_id = _prepare_run(
         base_path,
@@ -1278,6 +1383,8 @@ def execute_branch(
         base_path,
         run_id=run_id, branch=branch, inputs=inputs,
         provider_call=provider_call,
+        recursion_limit=recursion_limit_override or DEFAULT_RECURSION_LIMIT,
+        concurrency_budget_override=concurrency_budget_override,
     )
 
 
@@ -1360,6 +1467,8 @@ def execute_branch_async(
     run_name: str = "",
     actor: str = "anonymous",
     provider_call: Callable[..., str] | None = None,
+    recursion_limit_override: int | None = None,
+    concurrency_budget_override: int | None = None,
 ) -> RunOutcome:
     """Prepare a run synchronously and kick off graph execution in the
     background. Returns within a few ms with ``status=queued``.
@@ -1367,6 +1476,14 @@ def execute_branch_async(
     The status will transition to ``running`` once the worker picks up
     the job, then to ``completed`` / ``failed`` / ``cancelled``. Clients
     poll ``get_run`` or ``stream_run`` for updates.
+
+    Parameters
+    ----------
+    recursion_limit_override
+        Optional override for LangGraph's recursion limit. See
+        :func:`execute_branch` for rationale.
+    concurrency_budget_override
+        Override the branch-level concurrency_budget for this run.
     """
     run_id = _prepare_run(
         base_path,
@@ -1375,6 +1492,7 @@ def execute_branch_async(
     )
 
     executor = _get_executor()
+    effective_limit = recursion_limit_override or DEFAULT_RECURSION_LIMIT
 
     def _worker() -> RunOutcome:
         try:
@@ -1382,6 +1500,8 @@ def execute_branch_async(
                 base_path,
                 run_id=run_id, branch=branch, inputs=inputs,
                 provider_call=provider_call,
+                recursion_limit=effective_limit,
+                concurrency_budget_override=concurrency_budget_override,
             )
         except Exception:
             # Belt-and-suspenders: _invoke_graph already catches and
@@ -1405,6 +1525,281 @@ def execute_branch_async(
     return RunOutcome(
         run_id=run_id, status=RUN_STATUS_QUEUED,
         output={}, error="",
+    )
+
+
+class ResumeError(Exception):
+    """Raised when a resume_run call cannot proceed.
+
+    Carries a structured ``reason`` code for programmatic handling:
+    - ``not_interrupted``: run is not in INTERRUPTED status.
+    - ``already_resumed``: run is already in RESUMED status (idempotent return).
+    - ``not_found``: run_id does not exist.
+    - ``auth_failed``: caller does not own the run.
+    - ``no_checkpoint``: SqliteSaver has no checkpoint for this thread_id.
+    - ``branch_version_mismatch``: branch was patched since the run was created.
+    """
+
+    def __init__(self, message: str, *, reason: str = "", current_status: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.current_status = current_status
+
+
+def _has_checkpoint(base_path: str | Path, thread_id: str) -> bool:
+    """Return True if SqliteSaver has a checkpoint for thread_id."""
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        saver_path = str(Path(base_path) / ".langgraph_runs.db")
+        if not Path(saver_path).exists():
+            return False
+        with SqliteSaver.from_conn_string(saver_path) as cp:
+            # LangGraph's list() yields checkpoint tuples; we just need to
+            # know at least one exists.
+            config = {"configurable": {"thread_id": thread_id}}
+            items = list(cp.list(config))
+            return bool(items)
+    except Exception:
+        return False
+
+
+def resume_run(
+    base_path: str | Path,
+    *,
+    run_id: str,
+    actor: str,
+    branch_lookup: Callable[[str, int], BranchDefinition | None],
+    provider_call: Callable[..., str] | None = None,
+) -> RunOutcome:
+    """Resume an INTERRUPTED run from its SqliteSaver checkpoint.
+
+    Parameters
+    ----------
+    run_id
+        The run to resume.
+    actor
+        The caller's identity. Must match the run's ``actor`` field.
+    branch_lookup
+        Callable ``(branch_def_id, branch_version) -> BranchDefinition | None``.
+        Used to re-compile the exact branch version used in the original run.
+    provider_call
+        Optional provider callable; same semantics as ``execute_branch``.
+
+    Returns a ``RunOutcome`` with the resumed run's ID (same as input ``run_id``).
+
+    Raises ``ResumeError`` on auth failure, wrong status, missing checkpoint,
+    or branch version mismatch.
+    """
+    run = get_run(base_path, run_id)
+    if run is None:
+        raise ResumeError(
+            f"Run '{run_id}' not found.", reason="not_found",
+        )
+
+    # Auth gate: caller must own the run.
+    if run["actor"] != actor:
+        raise ResumeError(
+            f"Actor '{actor}' does not own run '{run_id}' "
+            f"(owned by '{run['actor']}').",
+            reason="auth_failed",
+        )
+
+    current_status = run["status"]
+
+    # Idempotency: already resumed → return the same run_id, no second resume.
+    if current_status == RUN_STATUS_RESUMED:
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_RESUMED,
+            output=run.get("output", {}), error="",
+        )
+
+    # Status gate: only INTERRUPTED can be resumed.
+    if current_status != RUN_STATUS_INTERRUPTED:
+        raise ResumeError(
+            f"Run '{run_id}' is '{current_status}', not 'interrupted'. "
+            f"Only interrupted runs can be resumed.",
+            reason="not_interrupted",
+            current_status=current_status,
+        )
+
+    # Checkpoint gate.
+    thread_id = run.get("thread_id") or run_id
+    if not _has_checkpoint(base_path, thread_id):
+        raise ResumeError(
+            f"No SqliteSaver checkpoint found for run '{run_id}'. "
+            "The run predates resume support or the checkpoint was evicted. "
+            "Rerun from scratch with run_branch using the same inputs.",
+            reason="no_checkpoint",
+        )
+
+    # Branch version gate: re-compile the exact version used in the original run.
+    lineage = get_lineage(base_path, run_id)
+    branch_version = int(
+        (lineage or {}).get("branch_version") or getattr(branch_lookup, "_fallback_version", 1)
+    )
+    branch_def_id = run["branch_def_id"]
+    branch = branch_lookup(branch_def_id, branch_version)
+    if branch is None:
+        raise ResumeError(
+            f"Branch '{branch_def_id}' version {branch_version} no longer exists. "
+            "Cannot resume — the branch was patched and that version was removed.",
+            reason="branch_version_mismatch",
+        )
+
+    # Mark RESUMED immediately (before background work starts).
+    update_run_status(base_path, run_id, status=RUN_STATUS_RESUMED)
+
+    # Emit resume_started event.
+    record_event(base_path, RunStepEvent(
+        run_id=run_id,
+        step_index=_PENDING_OFFSET,
+        node_id="__resume__",
+        status="resume_started",
+        started_at=_now(),
+        finished_at=_now(),
+        detail={
+            "resume_actor": actor,
+            "resumed_at": _iso_now(),
+        },
+    ))
+
+    # Background worker: re-invoke graph with None inputs to trigger resume.
+    executor = _get_executor()
+
+    def _resume_worker() -> RunOutcome:
+        return _invoke_graph_resume(
+            base_path,
+            run_id=run_id,
+            branch=branch,
+            thread_id=thread_id,
+            provider_call=provider_call,
+        )
+
+    future = executor.submit(_resume_worker)
+    _track_future(run_id, future)
+
+    return RunOutcome(
+        run_id=run_id, status=RUN_STATUS_RESUMED,
+        output={}, error="",
+    )
+
+
+def _invoke_graph_resume(
+    base_path: str | Path,
+    *,
+    run_id: str,
+    branch: BranchDefinition,
+    thread_id: str,
+    provider_call: Callable[..., str] | None,
+) -> RunOutcome:
+    """Compile branch + invoke with None inputs to resume from checkpoint."""
+    execution_cursor = {"step": 1000}  # offset so resume events don't collide
+
+    def _on_node(node_id: str, **detail: Any) -> None:
+        phase = detail.pop("phase", "ran")
+        step = execution_cursor["step"]
+        execution_cursor["step"] += 1
+
+        if phase == "starting":
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=node_id,
+                status=NODE_STATUS_RUNNING,
+                started_at=_now(),
+                detail=detail,
+            ))
+            return
+
+        if is_cancel_requested(base_path, run_id):
+            raise RunCancelledError(f"Run {run_id} cancelled during resume.")
+        record_event(base_path, RunStepEvent(
+            run_id=run_id,
+            step_index=step + _PENDING_OFFSET,
+            node_id=node_id,
+            status=NODE_STATUS_RAN,
+            started_at=_now(),
+            finished_at=_now(),
+            detail=detail,
+        ))
+
+    try:
+        compiled = compile_branch(
+            branch,
+            provider_call=provider_call,
+            event_sink=_on_node,
+        )
+    except (UnapprovedNodeError, CompilerError) as exc:
+        update_run_status(
+            base_path, run_id,
+            status=RUN_STATUS_FAILED,
+            error=str(exc),
+            finished_at=_now(),
+        )
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_FAILED,
+            output={}, error=str(exc),
+        )
+
+    update_run_status(base_path, run_id, status=RUN_STATUS_RUNNING)
+
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        saver_path = str(Path(base_path) / ".langgraph_runs.db")
+        with SqliteSaver.from_conn_string(saver_path) as checkpointer:
+            app = compiled.graph.compile(checkpointer=checkpointer)
+            # None inputs triggers resume from last checkpoint.
+            result = app.invoke(
+                None,
+                config={"configurable": {"thread_id": thread_id}},
+            )
+    except RunCancelledError as exc:
+        update_run_status(
+            base_path, run_id,
+            status=RUN_STATUS_CANCELLED,
+            error=str(exc),
+            finished_at=_now(),
+        )
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_CANCELLED,
+            output={}, error=str(exc),
+        )
+    except Exception as exc:
+        if _is_cancel_exception(exc):
+            msg = f"Run {run_id} cancelled during resume."
+            update_run_status(
+                base_path, run_id,
+                status=RUN_STATUS_CANCELLED,
+                error=msg,
+                finished_at=_now(),
+            )
+            return RunOutcome(
+                run_id=run_id, status=RUN_STATUS_CANCELLED,
+                output={}, error=msg,
+            )
+        msg = f"Resume execution failed: {exc}"
+        update_run_status(
+            base_path, run_id,
+            status=RUN_STATUS_FAILED,
+            error=msg,
+            finished_at=_now(),
+        )
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_FAILED,
+            output={}, error=msg,
+        )
+
+    output = dict(result) if isinstance(result, dict) else {}
+    update_run_status(
+        base_path, run_id,
+        status=RUN_STATUS_COMPLETED,
+        output=output,
+        finished_at=_now(),
+    )
+    return RunOutcome(
+        run_id=run_id, status=RUN_STATUS_COMPLETED,
+        output=output, error="",
     )
 
 
@@ -1493,6 +1888,354 @@ def build_node_status_map(
     ]
 
 
+_VALID_STATUSES = frozenset({
+    RUN_STATUS_QUEUED, RUN_STATUS_RUNNING, RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED, RUN_STATUS_CANCELLED, RUN_STATUS_INTERRUPTED,
+})
+_VALID_AGGREGATES = frozenset({"count", "mean", "sum", "rate"})
+_MAX_QUERY_LIMIT = 1000
+_DEFAULT_QUERY_LIMIT = 100
+
+
+def query_runs(
+    base_path: str | Path,
+    *,
+    branch_def_id: str = "",
+    filters: dict[str, Any] | None = None,
+    select: list[str] | None = None,
+    aggregate: dict[str, Any] | None = None,
+    limit: int = _DEFAULT_QUERY_LIMIT,
+) -> dict[str, Any]:
+    """Query runs table with optional field projection + simple aggregation.
+
+    Spec: docs/vetted-specs.md §Cross-run state query primitive.
+
+    Returns:
+        {"rows": [...], "count": N} for plain queries.
+        {"aggregated": [...], "count": N, "group_by": field, "agg_op": op}
+        for aggregate queries.
+
+    Invariants:
+        - INTERRUPTED runs excluded from aggregation unless status filter
+          explicitly includes them.
+        - limit default 100, max 1000.
+        - select fields extracted from output_json via JSON path.
+        - aggregate.fn in {"count", "mean", "sum", "rate"}.
+    """
+    initialize_runs_db(base_path)
+    filters = filters or {}
+    select = select or []
+    limit = min(max(1, limit), _MAX_QUERY_LIMIT)
+
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if branch_def_id:
+        clauses.append("branch_def_id = ?")
+        params.append(branch_def_id)
+
+    if "status" in filters:
+        status_val = filters["status"]
+        if isinstance(status_val, list):
+            placeholders = ",".join("?" * len(status_val))
+            clauses.append(f"status IN ({placeholders})")
+            params.extend(status_val)
+        else:
+            clauses.append("status = ?")
+            params.append(status_val)
+
+    if "actor" in filters:
+        clauses.append("actor = ?")
+        params.append(filters["actor"])
+
+    if "since" in filters:
+        clauses.append("started_at >= ?")
+        params.append(float(filters["since"]))
+
+    if "until" in filters:
+        clauses.append("started_at <= ?")
+        params.append(float(filters["until"]))
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            f"SELECT run_id, branch_def_id, status, actor, "
+            f"started_at, finished_at, output_json "
+            f"FROM runs {where} "
+            f"ORDER BY started_at DESC LIMIT ?",
+            [*params, limit],
+        ).fetchall()
+
+    def _extract_fields(output_str: str, fields: list[str]) -> dict[str, Any]:
+        try:
+            state = json.loads(output_str) if output_str else {}
+        except (json.JSONDecodeError, TypeError):
+            state = {}
+        if not fields:
+            return {}
+        return {f: state.get(f) for f in fields}
+
+    _RUN_COLUMNS = frozenset({
+        "run_id", "branch_def_id", "status", "actor", "started_at", "finished_at",
+    })
+
+    def _row_value(r: Any, field: str) -> Any:
+        if field in _RUN_COLUMNS:
+            return r[field]
+        try:
+            state = json.loads(r["output_json"]) if r["output_json"] else {}
+        except (json.JSONDecodeError, TypeError):
+            state = {}
+        return state.get(field)
+
+    if aggregate:
+        group_by = aggregate.get("group_by", "")
+        agg_op = aggregate.get("fn", aggregate.get("op", "count"))
+        agg_field = aggregate.get("field", "")
+
+        groups: dict[Any, list[Any]] = {}
+        for r in rows:
+            gv = _row_value(r, group_by) if group_by else "_all"
+            av = _row_value(r, agg_field) if agg_field else 1.0
+            groups.setdefault(gv, []).append(av)
+
+        def _agg(values: list[Any], op: str) -> Any:
+            nums = [v for v in values if isinstance(v, (int, float))]
+            if op == "count":
+                return len(values)
+            if op == "sum":
+                return sum(nums) if nums else 0
+            if op == "mean":
+                return sum(nums) / len(nums) if nums else None
+            if op == "rate":
+                total = len(rows) if rows else 1
+                return len(values) / total if total else None
+            return len(values)
+
+        aggregated = [
+            {"group": gv, "value": _agg(vals, agg_op), "n": len(vals)}
+            for gv, vals in sorted(groups.items(), key=lambda kv: str(kv[0]))
+        ]
+        return {
+            "aggregated": aggregated,
+            "count": len(aggregated),
+            "group_by": group_by,
+            "agg_op": agg_op,
+        }
+
+    result_rows = []
+    for r in rows:
+        row_dict: dict[str, Any] = {
+            "run_id": r["run_id"],
+            "branch_def_id": r["branch_def_id"],
+            "status": r["status"],
+            "actor": r["actor"],
+            "started_at": r["started_at"],
+            "finished_at": r["finished_at"],
+        }
+        if select:
+            row_dict["fields"] = _extract_fields(r["output_json"], select)
+        result_rows.append(row_dict)
+
+    return {"rows": result_rows, "count": len(result_rows)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sub-branch invocation helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Maximum nesting depth for invoke_branch nodes. A child run increments
+#: the depth counter; reaching this cap raises CompilerError at runtime.
+MAX_INVOKE_BRANCH_DEPTH = 5
+
+_TERMINAL_STATUSES = frozenset({
+    RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_CANCELLED,
+    RUN_STATUS_INTERRUPTED,
+})
+
+
+def poll_child_run_status(
+    base_path: str | Path,
+    run_id: str,
+    *,
+    timeout_seconds: float = 300.0,
+    poll_interval: float = 1.0,
+) -> dict[str, Any]:
+    """Block until *run_id* reaches a terminal status or *timeout_seconds* elapses.
+
+    Returns the run record dict (same shape as ``get_run``).
+    Raises ``TimeoutError`` if the run does not terminate in time.
+    Raises ``KeyError`` if the run does not exist at poll time.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        record = get_run(base_path, run_id)
+        if record is None:
+            raise KeyError(f"Child run '{run_id}' not found in runs DB.")
+        if record.get("status") in _TERMINAL_STATUSES:
+            return record
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"await_branch_run: child run '{run_id}' did not complete "
+                f"within {timeout_seconds}s."
+            )
+        time.sleep(min(poll_interval, remaining))
+
+
+# ─── Teammate messaging ───────────────────────────────────────────────────────
+
+_VALID_MESSAGE_TYPES = frozenset({
+    "request", "response", "broadcast",
+    "plan_approval_request", "plan_approval_response",
+    "shutdown_request", "shutdown_response",
+})
+
+
+def post_teammate_message(
+    base_path: str | Path,
+    *,
+    from_run_id: str,
+    to_node_id: str,
+    message_type: str,
+    body: dict[str, Any],
+    reply_to_id: str | None = None,
+) -> dict[str, Any]:
+    """Insert a teammate message. Returns the stored message record."""
+    import uuid
+    from datetime import datetime, timezone
+
+    if not from_run_id:
+        raise ValueError("from_run_id is required.")
+    if not to_node_id:
+        raise ValueError("to_node_id is required.")
+    if message_type not in _VALID_MESSAGE_TYPES:
+        raise ValueError(
+            f"Unknown message_type {message_type!r}; "
+            f"valid: {sorted(_VALID_MESSAGE_TYPES)}"
+        )
+    try:
+        body_json = json.dumps(body)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"body must be JSON-serializable: {exc}") from exc
+
+    run_record = get_run(base_path, from_run_id)
+    if run_record is None:
+        raise KeyError(f"from_run_id '{from_run_id}' not found in runs DB.")
+
+    message_id = str(uuid.uuid4())
+    sent_at = datetime.now(timezone.utc).isoformat()
+
+    initialize_runs_db(base_path)
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO teammate_messages
+                (message_id, from_run_id, to_node_id, message_type,
+                 body_json, reply_to_id, sent_at, acked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (message_id, from_run_id, to_node_id, message_type,
+             body_json, reply_to_id, sent_at),
+        )
+    return {
+        "message_id": message_id,
+        "from_run_id": from_run_id,
+        "to_node_id": to_node_id,
+        "message_type": message_type,
+        "body": body,
+        "reply_to_id": reply_to_id,
+        "sent_at": sent_at,
+        "acked": False,
+    }
+
+
+def read_teammate_messages(
+    base_path: str | Path,
+    *,
+    node_id: str = "",
+    since: str | None = None,
+    message_types: list[str] | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return messages for node_id (or all if node_id is empty/broadcast)."""
+    initialize_runs_db(base_path)
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if node_id:
+        clauses.append("(to_node_id = ? OR to_node_id = '*')")
+        params.append(node_id)
+    if since:
+        clauses.append("sent_at >= ?")
+        params.append(since)
+    if message_types:
+        placeholders = ",".join("?" * len(message_types))
+        clauses.append(f"message_type IN ({placeholders})")
+        params.extend(message_types)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    limit = min(max(1, limit), 1000)
+
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            f"SELECT * FROM teammate_messages {where} "
+            f"ORDER BY sent_at ASC LIMIT ?",
+            [*params, limit],
+        ).fetchall()
+
+    results = []
+    for r in rows:
+        try:
+            body = json.loads(r["body_json"])
+        except (json.JSONDecodeError, TypeError):
+            body = {}
+        results.append({
+            "message_id": r["message_id"],
+            "from_run_id": r["from_run_id"],
+            "to_node_id": r["to_node_id"],
+            "message_type": r["message_type"],
+            "body": body,
+            "reply_to_id": r["reply_to_id"],
+            "sent_at": r["sent_at"],
+            "acked": bool(r["acked"]),
+        })
+    return results
+
+
+def ack_teammate_message(
+    base_path: str | Path,
+    *,
+    message_id: str,
+    node_id: str,
+) -> dict[str, Any]:
+    """Mark message as acked. Idempotent. Returns acked_at timestamp."""
+    from datetime import datetime, timezone
+
+    initialize_runs_db(base_path)
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM teammate_messages WHERE message_id = ?",
+            (message_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"message_id '{message_id}' not found.")
+        if row["to_node_id"] != node_id and row["to_node_id"] != "*":
+            raise PermissionError(
+                f"node_id '{node_id}' cannot ack message addressed to "
+                f"'{row['to_node_id']}'."
+            )
+        acked_at = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE teammate_messages SET acked = 1 WHERE message_id = ?",
+            (message_id,),
+        )
+    return {"message_id": message_id, "acked_at": acked_at}
+
+
 __all__ = [
     "RUN_STATUS_QUEUED",
     "RUN_STATUS_RUNNING",
@@ -1534,4 +2277,10 @@ __all__ = [
     "shutdown_executor",
     "update_run_status",
     "wait_for",
+    "query_runs",
+    "poll_child_run_status",
+    "MAX_INVOKE_BRANCH_DEPTH",
+    "post_teammate_message",
+    "read_teammate_messages",
+    "ack_teammate_message",
 ]

@@ -16,4 +16,7 @@ foreach ($target in $targets) {
     Copy-Item -Recurse -Force (Join-Path $source "*") $target
 }
 
+$validator = Join-Path $root "scripts\validate_skills.py"
+python $validator --root $root
+
 Write-Output "Skill mirrors refreshed from .agents\\skills"

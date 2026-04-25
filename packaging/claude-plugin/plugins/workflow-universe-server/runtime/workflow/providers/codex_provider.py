@@ -18,7 +18,12 @@ from workflow.exceptions import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
+from workflow.providers.base import (
+    BaseProvider,
+    ModelConfig,
+    ProviderResponse,
+    check_bwrap_failure,
+)
 
 
 def _no_window_kwargs() -> dict:
@@ -97,14 +102,15 @@ class CodexProvider(BaseProvider):
                 "codex exec returned exit code 1 quickly -- likely unavailable"
             )
 
+        stderr_text = stderr.decode("utf-8", errors="replace")
+        check_bwrap_failure(stderr_text)
+
         if proc.returncode != 0:
             raise ProviderError(
-                f"codex exec exit {proc.returncode}: "
-                f"{stderr.decode(errors='replace')}"
+                f"codex exec exit {proc.returncode}: {stderr_text}"
             )
 
         text = stdout.decode("utf-8", errors="replace").strip()
-        stderr_text = stderr.decode("utf-8", errors="replace")
 
         if not text:
             # codex v0.122+ exits 0 on auth failure (401) but emits nothing to

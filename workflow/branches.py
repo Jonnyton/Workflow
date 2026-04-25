@@ -25,10 +25,43 @@ Graph topology JSON follows LangGraph's native API shape:
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+# Placeholder-extraction regex pair — kept in sync with
+# ``workflow/graph_compiler.py`` (_PLACEHOLDER_RE + _DOUBLE_PLACEHOLDER_RE
+# + _ESCAPED_PLACEHOLDER_RE). Duplicated here so ``validate()`` can run
+# the build-time missing-key check without creating a circular import
+# (graph_compiler already imports BranchDefinition at module load).
+# If either copy changes, update both.
+_VALIDATE_PLACEHOLDER_RE = re.compile(
+    r"(?<!\\){([a-zA-Z_][a-zA-Z0-9_]*)}"
+)
+_VALIDATE_DOUBLE_PLACEHOLDER_RE = re.compile(
+    r"{{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}"
+)
+
+
+def _template_placeholders(template: str) -> list[str]:
+    """Return deduped list of placeholder identifiers in a template.
+
+    Handles Jinja ``{{ident}}`` by normalizing to ``{ident}`` before
+    scanning. Escaped ``\\{ident\\}`` forms are excluded via the
+    lookbehind in ``_VALIDATE_PLACEHOLDER_RE``.
+    """
+    if not template:
+        return []
+    normalized = _VALIDATE_DOUBLE_PLACEHOLDER_RE.sub(r"{\1}", template)
+    seen: set[str] = set()
+    out: list[str] = []
+    for k in _VALIDATE_PLACEHOLDER_RE.findall(normalized):
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 # ═══════════════════════════════════════════════════════════════════════════
 # State Schema (Phase 3 — formal validation deferred)
@@ -151,8 +184,63 @@ class NodeDefinition:
         "backoff_seconds": 1.0,
     })
 
+    # Per-node LLM policy override. Shape:
+    # {
+    #   "preferred": {"provider": str, "model": str, "reasoning_effort"?: str},
+    #   "fallback_chain": [{"provider": str, "model"?: str,
+    #                       "trigger": "unavailable"|"rate_limited"|
+    #                                  "cost_exceeded"|"empty_response"}],
+    #   "difficulty_override": [{"if_difficulty": str,
+    #                            "use": {"provider": str, "model"?: str}}],
+    # }
+    # When None the branch-level default_llm_policy applies; when that is
+    # also None the existing role-based routing is used (backward-compat).
+    llm_policy: dict[str, Any] | None = None
+
+    # When True the node shells out to a bwrap-sandboxed CLI (dev, checker,
+    # tester variants). validate_branch warns when this is True and the
+    # host's sandbox probe fails. Default False preserves back-compat.
+    requires_sandbox: bool = False
+
+    # Partial-credit checkpoints authored into node_def.
+    # Each entry: {
+    #   "checkpoint_id": str (unique within node),
+    #   "earns_fraction": float (0.0-1.0),
+    #   "reached_when": {
+    #       "state_key": str,
+    #       "value": <any>  # optional — if omitted, fires on key presence
+    #       OR "exists": true  # fires when key is non-empty/non-None
+    #   }
+    # }
+    # Cumulative earns_fraction across all checkpoints must not exceed 1.0.
+    # Default (empty list) = all-or-nothing = current behavior.
+    checkpoints: list[dict[str, Any]] = field(default_factory=list)
+
     # Quality
     evaluation_criteria: list[dict[str, str]] = field(default_factory=list)
+
+    # Sub-branch invocation (invoke_branch node kind).
+    # When set this node spawns a child branch run rather than executing an
+    # LLM template or source-code snippet.
+    # Shape: {
+    #   "branch_def_id": str,
+    #   "inputs_mapping": {parent_state_key: child_input_key},
+    #   "output_mapping": {parent_state_key: child_output_key},
+    #   "wait_mode": "blocking" | "async",
+    # }
+    # "blocking": spawns the child, waits for completion, writes output_mapping.
+    # "async": spawns the child, writes run_id to the declared
+    #   output_mapping[0] target key, returns immediately.
+    invoke_branch_spec: dict[str, Any] | None = None
+
+    # await_branch_run node kind. Reads a run_id from parent state, polls
+    # until the child run ends, writes output_mapping into parent state.
+    # Shape: {
+    #   "run_id_field": str,       # state key that holds the child run_id
+    #   "output_mapping": {parent_state_key: child_output_key},
+    #   "timeout_seconds": float,  # default 300
+    # }
+    await_run_spec: dict[str, Any] | None = None
 
     # Legacy compat fields from NodeRegistration
     author: str = "anonymous"
@@ -346,6 +434,152 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_VALID_POLICY_TRIGGERS = frozenset({
+    "unavailable", "rate_limited", "cost_exceeded", "empty_response",
+})
+
+
+def _validate_checkpoints(
+    checkpoints: list[dict[str, Any]], *, node_id: str,
+) -> list[str]:
+    """Return validation errors for a node's checkpoints list."""
+    errors: list[str] = []
+    if not checkpoints:
+        return errors
+
+    seen_ids: set[str] = set()
+    cumulative: float = 0.0
+    for i, ckpt in enumerate(checkpoints):
+        if not isinstance(ckpt, dict):
+            errors.append(
+                f"Node '{node_id}' checkpoint[{i}] must be a dict."
+            )
+            continue
+        ckpt_id = ckpt.get("checkpoint_id", "")
+        if not ckpt_id:
+            errors.append(
+                f"Node '{node_id}' checkpoint[{i}] missing 'checkpoint_id'."
+            )
+        elif ckpt_id in seen_ids:
+            errors.append(
+                f"Node '{node_id}' duplicate checkpoint_id '{ckpt_id}'."
+            )
+        else:
+            seen_ids.add(ckpt_id)
+
+        fraction = ckpt.get("earns_fraction")
+        if fraction is None:
+            errors.append(
+                f"Node '{node_id}' checkpoint '{ckpt_id or i}' missing 'earns_fraction'."
+            )
+        else:
+            try:
+                fv = float(fraction)
+            except (TypeError, ValueError):
+                errors.append(
+                    f"Node '{node_id}' checkpoint '{ckpt_id or i}' "
+                    f"earns_fraction must be a number."
+                )
+                fv = 0.0
+            if fv < 0.0 or fv > 1.0:
+                errors.append(
+                    f"Node '{node_id}' checkpoint '{ckpt_id or i}' "
+                    f"earns_fraction {fv!r} must be between 0.0 and 1.0."
+                )
+            cumulative += fv
+
+        rw = ckpt.get("reached_when")
+        if rw is None:
+            errors.append(
+                f"Node '{node_id}' checkpoint '{ckpt_id or i}' missing 'reached_when'."
+            )
+        elif not isinstance(rw, dict):
+            errors.append(
+                f"Node '{node_id}' checkpoint '{ckpt_id or i}' "
+                f"reached_when must be a dict."
+            )
+        elif "state_key" not in rw:
+            errors.append(
+                f"Node '{node_id}' checkpoint '{ckpt_id or i}' "
+                f"reached_when must have a 'state_key'."
+            )
+
+    if cumulative > 1.0 + 1e-9:
+        errors.append(
+            f"Node '{node_id}' checkpoints cumulative earns_fraction "
+            f"{cumulative:.4f} exceeds 1.0."
+        )
+
+    return errors
+
+
+def _validate_llm_policy_shape(
+    policy: dict[str, Any], *, context: str,
+) -> list[str]:
+    """Return validation errors for an llm_policy dict.
+
+    Called from ``BranchDefinition.validate()`` for both node-level
+    and branch-level policy dicts. Validates known keys without being
+    over-strict about unknown keys (forward-compat).
+    """
+    errors: list[str] = []
+    if not isinstance(policy, dict):
+        return [f"{context}: llm_policy must be a dict, got {type(policy).__name__}."]
+
+    preferred = policy.get("preferred")
+    if preferred is not None:
+        if not isinstance(preferred, dict):
+            errors.append(f"{context}: 'preferred' must be a dict.")
+        elif "provider" not in preferred:
+            errors.append(f"{context}: 'preferred' must have a 'provider' key.")
+
+    fallback_chain = policy.get("fallback_chain")
+    if fallback_chain is not None:
+        if not isinstance(fallback_chain, list):
+            errors.append(f"{context}: 'fallback_chain' must be a list.")
+        else:
+            for i, entry in enumerate(fallback_chain):
+                if not isinstance(entry, dict):
+                    errors.append(
+                        f"{context}: fallback_chain[{i}] must be a dict."
+                    )
+                    continue
+                if "provider" not in entry:
+                    errors.append(
+                        f"{context}: fallback_chain[{i}] must have a 'provider' key."
+                    )
+                trigger = entry.get("trigger")
+                if trigger is not None and trigger not in _VALID_POLICY_TRIGGERS:
+                    errors.append(
+                        f"{context}: fallback_chain[{i}] trigger {trigger!r} "
+                        f"must be one of {sorted(_VALID_POLICY_TRIGGERS)}."
+                    )
+
+    difficulty_override = policy.get("difficulty_override")
+    if difficulty_override is not None:
+        if not isinstance(difficulty_override, list):
+            errors.append(f"{context}: 'difficulty_override' must be a list.")
+        else:
+            for i, entry in enumerate(difficulty_override):
+                if not isinstance(entry, dict):
+                    errors.append(
+                        f"{context}: difficulty_override[{i}] must be a dict."
+                    )
+                    continue
+                if "if_difficulty" not in entry:
+                    errors.append(
+                        f"{context}: difficulty_override[{i}] must have 'if_difficulty'."
+                    )
+                use = entry.get("use")
+                if use is None or not isinstance(use, dict) or "provider" not in use:
+                    errors.append(
+                        f"{context}: difficulty_override[{i}] 'use' must be a "
+                        f"dict with a 'provider' key."
+                    )
+
+    return errors
+
+
 @dataclass
 class BranchDefinition:
     """A complete community-designed graph topology.
@@ -378,6 +612,8 @@ class BranchDefinition:
 
     # Fork lineage
     parent_def_id: str | None = None
+    # Publish-version lineage — points to the branch_version_id this was forked from.
+    fork_from: str | None = None
 
     # Graph topology — stored as embedded JSON in LangGraph-native shape
     graph_nodes: list[GraphNodeRef] = field(default_factory=list)
@@ -409,6 +645,15 @@ class BranchDefinition:
         "avg_quality_score": 0.0,
     })
 
+    # Branch-level LLM policy default. Applied to nodes that have no
+    # node-level llm_policy set. Same shape as NodeDefinition.llm_policy.
+    # When None, falls back to the global role-based routing.
+    default_llm_policy: dict[str, Any] | None = None
+
+    # Max concurrent executing nodes per run. None = unbounded (current behavior).
+    # When set, a semaphore limits simultaneous LLM/sandbox calls within a run.
+    concurrency_budget: int | None = None
+
     # ── Serialization ──────────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
@@ -423,6 +668,7 @@ class BranchDefinition:
             "tags": self.tags,
             "version": self.version,
             "parent_def_id": self.parent_def_id,
+            "fork_from": self.fork_from,
             "entry_point": self.entry_point,
             "published": self.published,
             "visibility": self.visibility,
@@ -434,6 +680,8 @@ class BranchDefinition:
             "conditional_edges": [c.to_dict() for c in self.conditional_edges],
             "node_defs": [n.to_dict() for n in self.node_defs],
             "state_schema": self.state_schema,
+            "default_llm_policy": self.default_llm_policy,
+            "concurrency_budget": self.concurrency_budget,
         }
 
     def to_json(self) -> str:
@@ -643,6 +891,75 @@ class BranchDefinition:
                 if name in field_names:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
+
+        # Build-time placeholder validation: every ``{ident}`` in a
+        # node's prompt_template must resolve via the node's
+        # input_keys OR the branch-level state_schema. Runtime
+        # ``CompilerError`` is the second layer; this is the first.
+        # Escaped ``\\{ident\\}`` forms are literal output and are
+        # excluded by the regex lookbehind in ``_template_placeholders``.
+        for n in self.node_defs:
+            if not n.prompt_template:
+                continue
+            declared = set(n.input_keys or []) | field_names
+            for placeholder in _template_placeholders(n.prompt_template):
+                if placeholder not in declared:
+                    errors.append(
+                        f"Node '{n.node_id}' prompt_template references "
+                        f"'{{{placeholder}}}' but it is not declared in "
+                        f"input_keys or state_schema. Add it to one, or "
+                        f"escape it as '\\{{{placeholder}\\}}' for a "
+                        f"literal brace."
+                    )
+
+        # llm_policy shape validation (node-level and branch default)
+        if self.default_llm_policy is not None:
+            policy_errors = _validate_llm_policy_shape(
+                self.default_llm_policy, context="branch default_llm_policy",
+            )
+            errors.extend(policy_errors)
+
+        for n in self.node_defs:
+            if n.llm_policy is not None:
+                policy_errors = _validate_llm_policy_shape(
+                    n.llm_policy, context=f"node '{n.node_id}' llm_policy",
+                )
+                errors.extend(policy_errors)
+
+        for n in self.node_defs:
+            if n.checkpoints:
+                errors.extend(_validate_checkpoints(n.checkpoints, node_id=n.node_id))
+
+        for n in self.node_defs:
+            if n.invoke_branch_spec is not None:
+                spec = n.invoke_branch_spec
+                if not spec.get("branch_def_id"):
+                    errors.append(
+                        f"Node '{n.node_id}' invoke_branch_spec missing 'branch_def_id'."
+                    )
+                wait_mode = spec.get("wait_mode", "blocking")
+                if wait_mode not in ("blocking", "async"):
+                    errors.append(
+                        f"Node '{n.node_id}' invoke_branch_spec wait_mode must be "
+                        f"'blocking' or 'async', got '{wait_mode}'."
+                    )
+                if n.prompt_template or n.source_code:
+                    errors.append(
+                        f"Node '{n.node_id}' has invoke_branch_spec and also "
+                        f"prompt_template/source_code — these are mutually exclusive."
+                    )
+
+            if n.await_run_spec is not None:
+                spec = n.await_run_spec
+                if not spec.get("run_id_field"):
+                    errors.append(
+                        f"Node '{n.node_id}' await_run_spec missing 'run_id_field'."
+                    )
+                if n.prompt_template or n.source_code:
+                    errors.append(
+                        f"Node '{n.node_id}' has await_run_spec and also "
+                        f"prompt_template/source_code — these are mutually exclusive."
+                    )
 
         return errors
 

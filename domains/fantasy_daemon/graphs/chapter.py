@@ -348,7 +348,7 @@ def should_continue_chapter(state: ChapterState) -> str:
         # to stand as a chapter.  The daemon's narrative beats determine
         # whether this is a good stopping point.
         try:
-            from workflow import runtime
+            from workflow import runtime_singletons as runtime
 
             min_words = runtime.universe_config.min_words_per_scene * 2
         except Exception:

@@ -349,7 +349,7 @@ def rebuild_raptor_from_canon(
         finally:
             loop.close()
 
-        import workflow.runtime as rt
+        import workflow.runtime_singletons as rt
         rt.raptor_tree = tree
         logger.info(
             "RAPTOR tree built: %d nodes, depth %d from %d canon paragraphs",

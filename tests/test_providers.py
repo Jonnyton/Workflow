@@ -269,7 +269,7 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_writer_tried_first(self, monkeypatch):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
         monkeypatch.setattr(
@@ -284,7 +284,7 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_judge_tried_first(self, monkeypatch):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
         monkeypatch.setattr(
@@ -299,7 +299,7 @@ class TestPreferredProvider:
 
     @pytest.mark.asyncio
     async def test_preferred_writer_falls_back_on_failure(self, monkeypatch):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
         monkeypatch.setattr(

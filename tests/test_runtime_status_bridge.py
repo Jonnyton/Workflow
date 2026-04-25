@@ -139,10 +139,17 @@ def test_write_runtime_status_empty_pin_serializes_to_empty_string(
 
 @pytest.fixture
 def tray_manager(tmp_path, monkeypatch):
-    """UniverseServerManager with PROJECT_DIR pointed at a tmp tree.
+    """UniverseServerManager with PROJECT_DIR + WORKFLOW_DATA_DIR pointed
+    at a tmp tree.
 
     Avoids the real GTK/pystray init by instantiating the class only far
     enough to exercise the pure-logic methods.
+
+    Post-Task-#7 the tray reads ``data_dir()`` (via
+    ``workflow.storage.data_dir``) rather than ``PROJECT_DIR / "output"``,
+    so we pin ``WORKFLOW_DATA_DIR`` to a tmp root and create the
+    universe directory there. ``PROJECT_DIR`` is still monkeypatched for
+    tray-local state (log dir, singleton lock, etc.).
     """
     # Stub pystray + PIL so importing the module doesn't require GUI deps
     # at test time (they're not installed in CI environments).
@@ -154,16 +161,25 @@ def tray_manager(tmp_path, monkeypatch):
     sys.modules["pystray"].Menu = type("Menu", (), {"SEPARATOR": object()})
     sys.modules["pystray"].MenuItem = object
 
-    # Point workflow_tray at our tmp project root
+    # Pin data_dir() to a throwaway root BEFORE importing workflow_tray
+    # (manager's __init__ calls _read_active_universe which reads
+    # data_dir()). Clear legacy alias so it can't shadow the canonical.
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
+
+    # Point workflow_tray at our tmp project root for tray-local state.
     import workflow_tray
 
     importlib.reload(workflow_tray)
     monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
     monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 
-    # Create an output/<universe>/ tree so the manager picks it up
+    # Create <data_dir>/<universe>/ so the manager picks it up via
+    # data_dir()-anchored resolution.
     universe = "test-universe"
-    universe_dir = tmp_path / "output" / universe
+    universe_dir = data_root / universe
     universe_dir.mkdir(parents=True)
     (universe_dir / "PROGRAM.md").write_text("premise", encoding="utf-8")
 

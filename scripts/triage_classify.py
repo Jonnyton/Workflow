@@ -75,6 +75,15 @@ class TriageClass:
 
 # Priority-ordered detectors. First match wins.
 # (class_name, compiled_regex, auto_repairable, manual_only, description)
+#
+# Spec ordering (docs/design-notes/2026-04-23-revert-loop-canary-spec.md
+# §Q6): env_unreadable > tunnel_token > provider_exhaustion > disk_full
+# > oom > image_pull_failure > watchdog_hotloop > unknown. Rationale:
+# cause-addressing repairs outrank symptom-addressing repairs. The
+# 2026-04-23 P0 specifically exposed this: disk-prune fired three times
+# on the symptom while the generator (sustained revert-loop) kept
+# producing the pressure. provider_exhaustion PRIORITY over disk_full
+# breaks that cycle — halt the generator, then let disk prune naturally.
 _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
     # 1. ENV-UNREADABLE (Task #3 class) — most specific, check first.
     (
@@ -85,8 +94,6 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         "systemd/entrypoint/sed-site emitted the canonical marker",
     ),
     # 2. Tunnel token expired — cloudflared emits these on auth reject.
-    #    Must precede IMAGE_PULL_FAILURE because cloudflared failures can
-    #    also cascade into compose-up failures.
     (
         TriageClass.TUNNEL_TOKEN,
         re.compile(
@@ -94,11 +101,47 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
             r"Failed to get tunnel|tunnel token|Unauthorized: Invalid tunnel secret)",
             re.IGNORECASE,
         ),
-        False,  # not auto-repairable
-        True,   # manual-only
+        False,
+        True,
         "cloudflared rejected tunnel token — manual rotation required",
     ),
-    # 3. OOM — kernel OOM killer or compose "killed as a result of limit".
+    # 3. Provider exhaustion — PRIORITY OVER disk_full per spec §Q6.
+    #    Daemon alive + writing, but every scene terminates as REVERT.
+    #    The 2026-04-23 signature: N≥5 "Commit: ... REVERT" verdicts in
+    #    a 20-min window with "draft provider failed" cause. Repair is
+    #    halt-the-generator (docker stop workflow-worker + .pause) —
+    #    cause-addressing, not symptom-addressing.
+    #
+    #    Signal discipline (spec §Q2): ONLY terminal Commit:REVERT
+    #    verdicts count. "Draft: FAILED" and "All providers exhausted"
+    #    are explicitly excluded — they add noise from retry-recoveries
+    #    and from transient cooldowns. Both surfaces are visible to
+    #    operators via the canary's richer pattern, but the triage
+    #    classifier anchors on the terminal verdict shape to match the
+    #    repair's preconditions.
+    (
+        TriageClass.PROVIDER_EXHAUSTION,
+        re.compile(
+            r"(?:Commit:.*score\s+\d+\.\d+\s*--\s*REVERT|"
+            r"Commit:\s*reverting.*draft provider failed|"
+            r"score\s+0\.0{1,2}\s*--\s*REVERT)",
+            re.IGNORECASE,
+        ),
+        True,
+        False,
+        "daemon alive but revert-looping — pause worker + page host priority=2",
+    ),
+    # 4. Disk full — df output showing >=90% usage on / or /data/docker.
+    (
+        TriageClass.DISK_FULL,
+        re.compile(
+            r"\b(9[0-9]|100)%\s+(?:/|/data|/var/lib/docker|/var)(?:\s|$)",
+        ),
+        True,
+        False,
+        "df reports >=90% usage on / or /var/lib/docker or /data",
+    ),
+    # 5. OOM — kernel OOM killer or compose "killed as a result of limit".
     (
         TriageClass.OOM,
         re.compile(
@@ -113,19 +156,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         False,
         "kernel OOM-killer or container OOMKilled event",
     ),
-    # 4. Disk full — df output showing >=90% usage on / or /data/docker.
-    #    The compose diag captures `df -h` output; look for any line where
-    #    a Use% column is >=90.
-    (
-        TriageClass.DISK_FULL,
-        re.compile(
-            r"\b(9[0-9]|100)%\s+(?:/|/data|/var/lib/docker|/var)(?:\s|$)",
-        ),
-        True,
-        False,
-        "df reports >=90% usage on / or /var/lib/docker or /data",
-    ),
-    # 5. Image pull failure — compose-up reports manifest-not-found or
+    # 6. Image pull failure — compose-up reports manifest-not-found or
     #    pull backoff on the pinned tag.
     (
         TriageClass.IMAGE_PULL_FAILURE,
@@ -141,7 +172,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         False,
         "compose up failed pulling pinned image; fall back to :latest",
     ),
-    # 6. Watchdog hot-loop — systemd start-limit hit OR explicit restart
+    # 7. Watchdog hot-loop — systemd start-limit hit OR explicit restart
     #    counter >20 visible in `systemctl status`.
     (
         TriageClass.WATCHDOG_HOTLOOP,
@@ -156,27 +187,6 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         True,
         False,
         "systemd start-limit-hit on workflow-daemon; stop + sleep + start",
-    ),
-    # 7. Provider exhaustion — daemon is alive + writing, but every
-    #    draft fails because every provider in the fallback chain is
-    #    cooling / quota-capped / broken. The 2026-04-23 P0 signature:
-    #    workflow-worker looped through 67 revert attempts producing
-    #    empty prose because ollama+codex+claude were all degraded.
-    #    Distinct from disk_full (different root cause, different
-    #    repair): here we stop the worker + pause the universe so the
-    #    loop can't burn more cycles, then page host to fix providers.
-    (
-        TriageClass.PROVIDER_EXHAUSTION,
-        re.compile(
-            r"(?:All providers exhausted|"
-            r"AllProvidersExhaustedError|"
-            r"score\s+0\.0{1,2}\s*--\s*REVERT|"
-            r"Draft:\s*FAILED)",
-            re.IGNORECASE,
-        ),
-        True,   # auto-pause is the repair — safe to invoke without host
-        False,  # not manual-only: the pause action is automatable
-        "daemon alive but every provider cooling — pause worker + page host",
     ),
 ]
 

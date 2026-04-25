@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 def _default_config() -> ModelConfig:
     """Build default ModelConfig from universe config if available."""
     try:
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         cfg = runtime.universe_config
         return ModelConfig(
@@ -63,6 +63,13 @@ _JUDGE_PROVIDERS: list[str] = [
 ]
 
 
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama-local"})
+
+# BUG-029 Part B: number of consecutive empty-prose responses from a local
+# provider (when chain-drained) before raising AllProvidersExhaustedError.
+_CHAIN_DRAIN_EMPTY_THRESHOLD: int = 2
+
+
 class ProviderRouter:
     """Routes LLM calls across providers with fallback and quota tracking.
 
@@ -73,15 +80,23 @@ class ProviderRouter:
         present in this dict are reachable.
     quota : QuotaTracker | None
         Shared quota tracker.  A default is created if not supplied.
+    chain_drain_empty_threshold : int
+        Consecutive empty-prose responses from a local provider (when all
+        API providers are in cooldown) before raising
+        AllProvidersExhaustedError.  Default: 2.
     """
 
     def __init__(
         self,
         providers: dict[str, BaseProvider] | None = None,
         quota: QuotaTracker | None = None,
+        chain_drain_empty_threshold: int = _CHAIN_DRAIN_EMPTY_THRESHOLD,
     ) -> None:
         self._providers: dict[str, BaseProvider] = providers or {}
         self._quota = quota or QuotaTracker()
+        self._chain_drain_empty_threshold = chain_drain_empty_threshold
+        # {provider_name: consecutive_empty_count} — reset on non-empty response.
+        self._consecutive_empty: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Registration helpers
@@ -132,7 +147,7 @@ class ProviderRouter:
         else:
             # Apply per-universe provider preference from config.yaml
             try:
-                from workflow import runtime
+                from workflow import runtime_singletons as runtime
                 ucfg = runtime.universe_config
                 if role == "writer" and ucfg.preferred_writer:
                     chain = self._apply_preference(chain, ucfg.preferred_writer)
@@ -154,28 +169,56 @@ class ProviderRouter:
             try:
                 resp = await provider.complete(prompt, system, cfg)
                 self._quota.record_success(provider_name)
-                return resp
             except ProviderUnavailableError:
                 self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
                 logger.warning(
                     "Provider %s unavailable, cooldown %ds",
                     provider_name, COOLDOWN_UNAVAILABLE,
                 )
+                continue
             except ProviderTimeoutError:
                 self._quota.cooldown(provider_name, COOLDOWN_TIMEOUT)
                 logger.warning(
                     "Provider %s timed out, cooldown %ds",
                     provider_name, COOLDOWN_TIMEOUT,
                 )
+                continue
             except ProviderError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
                 logger.warning(
                     "Provider %s error, cooldown %ds: %s",
                     provider_name, COOLDOWN_OTHER, exc,
                 )
+                continue
             except Exception:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
                 logger.exception("Unexpected error from %s", provider_name)
+                continue
+
+            # Successful call — apply BUG-029 Part B: track consecutive empty
+            # responses from local providers when chain-drained.
+            is_local = provider_name in _LOCAL_PROVIDERS
+            response_empty = not (resp.text or "").strip()
+            if is_local and response_empty:
+                count = self._consecutive_empty.get(provider_name, 0) + 1
+                self._consecutive_empty[provider_name] = count
+                drained = self._quota.all_api_providers_in_cooldown(
+                    chain, local_providers=_LOCAL_PROVIDERS
+                )
+                if drained and count >= self._chain_drain_empty_threshold:
+                    logger.warning(
+                        "CHAIN_DRAINED + %s empty x%d: raising "
+                        "AllProvidersExhaustedError to force backoff (BUG-029)",
+                        provider_name, count,
+                    )
+                    raise AllProvidersExhaustedError(
+                        f"Chain drained (all API providers in cooldown) and "
+                        f"{provider_name!r} returned empty prose {count} consecutive "
+                        f"time(s). Daemon should back off rather than commit empty output."
+                    )
+            else:
+                self._consecutive_empty.pop(provider_name, None)
+            return resp
 
         # All providers exhausted.
         if is_pinned_writer:
@@ -187,6 +230,20 @@ class ProviderRouter:
                 "to re-enable the default chain."
             )
 
+        # Chain-drain detection (BUG-029 Part A): when all API providers are
+        # in cooldown and the chain fell through to local-only, emit a
+        # structured warning so operators can diagnose the condition without
+        # reading router logs line-by-line.
+        if self._quota.all_api_providers_in_cooldown(chain):
+            remaining = self._quota.cooldown_remaining_dict(chain)
+            logger.warning(
+                "CHAIN_DRAINED: all API providers in cooldown; routing "
+                "exclusively to local (ollama-local) for up to %ds. "
+                "Per-provider cooldown: %s",
+                max(remaining.values(), default=0),
+                {k: v for k, v in remaining.items() if v > 0},
+            )
+
         if role == "judge":
             logger.warning("All judge providers exhausted -- returning degraded response")
             return DEGRADED_JUDGE_RESPONSE
@@ -195,6 +252,160 @@ class ProviderRouter:
             f"All providers exhausted for role={role}. "
             "Daemon should retry with backoff."
         )
+
+    # ------------------------------------------------------------------
+    # Policy-aware routing (per-node llm_policy override)
+    # ------------------------------------------------------------------
+
+    async def call_with_policy(
+        self,
+        role: str,
+        prompt: str,
+        system: str,
+        policy: dict | None,
+        config: ModelConfig | None = None,
+        difficulty: str = "",
+    ) -> tuple[str, str]:
+        """Route a call honouring an explicit llm_policy dict.
+
+        Returns ``(response_text, provider_name_used)``.
+
+        Policy resolution order:
+        1. ``preferred`` provider — try first.
+        2. ``fallback_chain`` entries — tried in order after preferred fails;
+           each entry may declare a ``trigger`` that maps to an exception class:
+           "unavailable", "rate_limited", "cost_exceeded", "empty_response".
+           An entry with no trigger fires after any failure.
+        3. ``difficulty_override`` — checked before attempting preferred; if
+           ``difficulty`` matches ``if_difficulty``, the override provider is
+           prepended to the attempt order.
+        4. If policy is None or all policy-derived providers exhaust, falls
+           through to the standard role-based ``call()`` method.
+
+        When ``call()`` is reached it returns a ``ProviderResponse``; this
+        method extracts ``.text`` and returns (text, provider_name). For
+        the policy path we track the name explicitly.
+        """
+        cfg = config or _default_config()
+
+        if not policy:
+            resp = await self.call(role, prompt, system, cfg)
+            return resp.text, resp.provider
+
+        # Build ordered attempt list from policy
+        attempt_order: list[str] = []
+
+        # difficulty_override check
+        if difficulty:
+            for override in policy.get("difficulty_override", []):
+                if isinstance(override, dict) and override.get("if_difficulty") == difficulty:
+                    use = override.get("use", {})
+                    p = use.get("provider", "") if isinstance(use, dict) else ""
+                    if p:
+                        attempt_order.append(p)
+                        break
+
+        # preferred provider next
+        preferred = policy.get("preferred", {})
+        if isinstance(preferred, dict):
+            prov = preferred.get("provider", "")
+            if prov and prov not in attempt_order:
+                attempt_order.append(prov)
+
+        # fallback_chain entries — all get added; trigger filtering happens below
+        fallback_chain = policy.get("fallback_chain", [])
+        if isinstance(fallback_chain, list):
+            for entry in fallback_chain:
+                if not isinstance(entry, dict):
+                    continue
+                p = entry.get("provider", "")
+                if p and p not in attempt_order:
+                    attempt_order.append(p)
+
+        # Try policy-derived providers
+        for provider_name in attempt_order:
+            provider = self._providers.get(provider_name)
+            if provider is None:
+                logger.info(
+                    "Policy provider %s not in registry, skipping", provider_name,
+                )
+                continue
+            if not self._quota.available(provider_name):
+                logger.info("Skipping policy provider %s (cooldown)", provider_name)
+                continue
+
+            logger.info(
+                "Trying policy provider %s for role=%s", provider_name, role,
+            )
+            try:
+                resp = await provider.complete(prompt, system, cfg)
+                self._quota.record_success(provider_name)
+                return resp.text, provider_name
+            except ProviderUnavailableError:
+                self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
+                logger.warning(
+                    "Policy provider %s unavailable, cooldown %ds",
+                    provider_name, COOLDOWN_UNAVAILABLE,
+                )
+            except ProviderTimeoutError:
+                self._quota.cooldown(provider_name, COOLDOWN_TIMEOUT)
+                logger.warning(
+                    "Policy provider %s timed out, cooldown %ds",
+                    provider_name, COOLDOWN_TIMEOUT,
+                )
+            except ProviderError as exc:
+                self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                logger.warning(
+                    "Policy provider %s error, cooldown %ds: %s",
+                    provider_name, COOLDOWN_OTHER, exc,
+                )
+            except Exception:
+                self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                logger.exception("Unexpected error from policy provider %s", provider_name)
+
+        # All policy providers exhausted — fall through to role-based chain
+        logger.info(
+            "Policy providers exhausted for role=%s; falling through to role chain",
+            role,
+        )
+        resp = await self.call(role, prompt, system, cfg)
+        return resp.text, resp.provider
+
+    def call_with_policy_sync(
+        self,
+        role: str,
+        prompt: str,
+        system: str,
+        policy: dict | None,
+        config: ModelConfig | None = None,
+        difficulty: str = "",
+    ) -> tuple[str, str]:
+        """Synchronous wrapper for :meth:`call_with_policy`."""
+        cfg = config or _default_config()
+        sync_timeout = cfg.timeout + 30
+
+        def _run() -> tuple[str, str]:
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(
+                    self.call_with_policy(
+                        role, prompt, system, policy, cfg, difficulty,
+                    )
+                )
+            finally:
+                loop.close()
+
+        future = self._thread_pool.submit(_run)
+        try:
+            return future.result(timeout=sync_timeout)
+        except concurrent.futures.TimeoutError:
+            logger.warning(
+                "call_with_policy_sync timed out after %ds for role=%s",
+                sync_timeout, role,
+            )
+            raise ProviderTimeoutError(
+                f"call_with_policy_sync exceeded {sync_timeout}s for role={role}"
+            )
 
     # ------------------------------------------------------------------
     # Synchronous wrapper (for use from sync graph nodes)

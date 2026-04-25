@@ -821,7 +821,7 @@ def _upsert_characters_from_facts(
 
 def _assemble_memory(state: dict[str, Any], phase: str) -> dict:
     """Call MemoryManager.assemble_context if available."""
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     mgr = runtime.memory_manager
     if mgr is None:
@@ -835,7 +835,7 @@ def _assemble_memory(state: dict[str, Any], phase: str) -> dict:
 
 def _store_to_memory(state: dict[str, Any], extracted_facts: list) -> None:
     """Store scene results to MemoryManager if available."""
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     mgr = runtime.memory_manager
     if mgr is None:
@@ -855,7 +855,7 @@ def _save_to_version_store(
     quality_score: float,
 ) -> None:
     """Save draft to OutputVersionStore if available."""
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     store = runtime.version_store
     if store is None:
@@ -1214,7 +1214,7 @@ def _index_prose_entities(
     registry) and the indexer module. Non-blocking -- failures are
     logged but don't affect the commit verdict.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     kg = runtime.knowledge_graph
     vs = runtime.vector_store

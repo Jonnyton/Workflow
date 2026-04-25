@@ -1,0 +1,32 @@
+"""workflow.outcomes — Real-world outcome tracking and evaluator adapters.
+
+Schema (schema.py): outcome_event DDL and OutcomeEvent dataclass.
+Evaluators (evaluators.py): Evaluator-protocol-conformant adapters for
+  published papers (DOI), merged PRs (GitHub), deployed apps (URL liveness).
+"""
+
+from __future__ import annotations
+
+from workflow.outcomes.evaluators import (
+    DeployedAppEvaluator,
+    MergedPREvaluator,
+    PublishedPaperEvaluator,
+)
+from workflow.outcomes.schema import (
+    OUTCOME_SCHEMA,
+    OUTCOME_TYPES,
+    OutcomeEvent,
+    migrate_outcome_schema,
+)
+
+__all__ = [
+    # schema.py
+    "OUTCOME_SCHEMA",
+    "OUTCOME_TYPES",
+    "OutcomeEvent",
+    "migrate_outcome_schema",
+    # evaluators.py
+    "DeployedAppEvaluator",
+    "MergedPREvaluator",
+    "PublishedPaperEvaluator",
+]

@@ -46,6 +46,93 @@ DEGRADED_JUDGE_RESPONSE = ProviderResponse(
 )
 
 
+# bwrap failure signature emitted to stderr on Linux hosts that lack
+# unprivileged user namespaces. When this appears the CLI silently wrote
+# the error to state and returned exit=0 — hard-rule #8 demands we detect
+# and raise rather than let the garbage propagate.
+_BWRAP_FAILURE_PATTERNS: tuple[str, ...] = (
+    "bwrap: No permissions to create a new namespace",
+    "bwrap: No such file or directory",
+    "sandbox initialization failed",
+)
+
+
+class SandboxUnavailableError(Exception):
+    """Raised when bwrap / sandbox is unavailable on the host.
+
+    Carries the exact stderr excerpt so callers can surface guidance.
+    """
+
+
+def check_bwrap_failure(stderr_text: str) -> None:
+    """Raise SandboxUnavailableError if *stderr_text* contains a bwrap error.
+
+    Called by subprocess-backed providers after every CLI invocation so the
+    failure is loud (raises) rather than silent (appears in state as output).
+    No-op on Windows (bwrap is Linux-only).
+    """
+    import sys as _sys
+    if _sys.platform == "win32":
+        return
+    lower = stderr_text.lower()
+    for pattern in _BWRAP_FAILURE_PATTERNS:
+        if pattern.lower() in lower:
+            raise SandboxUnavailableError(
+                f"Sandbox (bwrap) is unavailable on this host. "
+                f"The CLI subprocess emitted a sandboxing failure:\n"
+                f"  {stderr_text[:400].strip()}\n\n"
+                f"Fix options:\n"
+                f"  1. Enable unprivileged user namespaces: "
+                f"sysctl -w kernel.unprivileged_userns_clone=1\n"
+                f"  2. Use a branch that contains only design-only nodes "
+                f"(requires_sandbox=false). These nodes don't need bwrap.\n"
+                f"  3. Run the daemon on a host where bwrap is available."
+            )
+
+
+def probe_sandbox_available() -> dict[str, object]:
+    """Probe whether bwrap is available on this host.
+
+    Returns {bwrap_available: bool, reason: str | None}.  Cached at
+    module level after first call so get_status probes once at startup.
+    """
+    import shutil as _shutil
+    import subprocess as _subprocess
+    import sys as _sys
+
+    if _sys.platform == "win32":
+        return {"bwrap_available": False, "reason": "bwrap is Linux-only (win32 host)"}
+
+    if not _shutil.which("bwrap"):
+        return {"bwrap_available": False, "reason": "bwrap not found on PATH"}
+
+    try:
+        result = _subprocess.run(
+            ["bwrap", "--version"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        if result.returncode == 0:
+            return {"bwrap_available": True, "reason": None}
+        return {
+            "bwrap_available": False,
+            "reason": f"bwrap --version exited {result.returncode}: {result.stderr[:200]}",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"bwrap_available": False, "reason": f"probe error: {exc}"}
+
+
+# Module-level cache populated on first get_status call.
+_sandbox_probe_cache: dict[str, object] | None = None
+
+
+def get_sandbox_status() -> dict[str, object]:
+    """Return cached sandbox probe result (probes once per process)."""
+    global _sandbox_probe_cache  # noqa: PLW0603
+    if _sandbox_probe_cache is None:
+        _sandbox_probe_cache = probe_sandbox_available()
+    return _sandbox_probe_cache
+
+
 class BaseProvider(abc.ABC):
     """Abstract base for all LLM providers."""
 

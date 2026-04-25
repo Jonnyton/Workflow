@@ -41,6 +41,7 @@ from domains.fantasy_author.phases.worldbuild import (
     _scan_existing_canon,
     worldbuild,
 )
+
 from workflow.notes import add_note, update_note_status
 
 # -----------------------------------------------------------------------
@@ -64,7 +65,7 @@ class TestWorldbuild:
         promotion_result.asp_rule_candidates = []
         mgr.run_promotion_gates.return_value = promotion_result
 
-        with patch("workflow.runtime.memory_manager", mgr):
+        with patch("workflow.runtime_singletons.memory_manager", mgr):
             state = {"world_state_version": 5}
             result = worldbuild(state)
         assert result["world_state_version"] == 6
@@ -116,7 +117,7 @@ class TestWorldbuild:
         promotion_result.asp_rule_candidates = []
         mgr.run_promotion_gates.return_value = promotion_result
 
-        with patch("workflow.runtime.memory_manager", mgr):
+        with patch("workflow.runtime_singletons.memory_manager", mgr):
             state = {"world_state_version": 0}
             result = worldbuild(state)
 
@@ -130,7 +131,7 @@ class TestWorldbuild:
         assert result["quality_trace"][0]["promoted_facts"] == 0
 
     def test_graceful_when_manager_fails(self):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         mgr = MagicMock()
         mgr.run_promotion_gates.side_effect = RuntimeError("oops")
@@ -964,7 +965,7 @@ class TestUniverseCycle:
         assert result["health"]["cycles_completed"] == 4
 
     def test_calls_memory_cleanup(self):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         mgr = MagicMock()
         mgr.evict_old_data.return_value = 5
@@ -994,7 +995,7 @@ class TestUniverseCycle:
         assert result["quality_trace"][0]["evicted_records"] == 0
 
     def test_graceful_when_manager_fails(self):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         mgr = MagicMock()
         mgr.evict_old_data.side_effect = RuntimeError("fail")
@@ -1075,7 +1076,7 @@ class TestReflect:
         assert trace["node"] == "reflect"
 
     def test_reflexion_runs_with_manager(self):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         mgr = MagicMock()
         reflexion_result = MagicMock()
@@ -1099,7 +1100,7 @@ class TestReflect:
         assert result["quality_trace"][0]["reflexion_ran"] is False
 
     def test_reflexion_failure_is_graceful(self):
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         mgr = MagicMock()
         mgr.run_reflexion.side_effect = RuntimeError("boom")
@@ -2126,7 +2127,7 @@ class TestReflectSignalDriven:
 
     def test_model_tier_guard_still_works(self, tmp_path):
         """Model quality tier guard should still prevent weak overwrites."""
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
 
         universe_dir = self._make_universe(
             tmp_path,

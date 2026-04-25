@@ -94,6 +94,32 @@ class QuotaTracker:
         remaining = expiry - time.monotonic()
         return max(0, int(remaining))
 
+    def cooldown_remaining_dict(self, providers: list[str]) -> dict[str, int]:
+        """Return {provider: seconds_remaining} for every provider in *providers*.
+
+        Providers not in cooldown appear with value 0.
+        """
+        return {p: self.cooldown_remaining(p) for p in providers}
+
+    def all_api_providers_in_cooldown(
+        self,
+        chain: list[str],
+        local_providers: set[str] | None = None,
+    ) -> bool:
+        """Return True when every non-local provider in *chain* is in cooldown.
+
+        *local_providers* defaults to ``{"ollama-local"}``. When this
+        returns True, the router is funnelling all traffic to local
+        providers — the chain-drain condition that preceded the 2026-04-23
+        P0 revert-loop.
+        """
+        if local_providers is None:
+            local_providers = {"ollama-local"}
+        api_providers = [p for p in chain if p not in local_providers]
+        if not api_providers:
+            return False
+        return all(self._in_cooldown(p) for p in api_providers)
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

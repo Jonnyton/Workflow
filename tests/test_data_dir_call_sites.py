@@ -17,8 +17,6 @@ the call site level.
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
 
 
@@ -35,10 +33,7 @@ def test_auth_provider_honors_workflow_data_dir(clean_env, tmp_path):
     target = tmp_path / "auth-root"
     clean_env.setenv("WORKFLOW_DATA_DIR", str(target))
 
-    # Import via the canonical path; reload in case an earlier test
-    # locked in a snapshot of the module state.
     from workflow.auth import provider
-    importlib.reload(provider)
 
     ap = provider.OAuthProvider()
     db_path = ap._db_path
@@ -54,10 +49,9 @@ def test_node_evaluator_honors_workflow_data_dir(clean_env, tmp_path):
     target = tmp_path / "eval-root"
     clean_env.setenv("WORKFLOW_DATA_DIR", str(target))
 
-    from workflow import node_eval
-    importlib.reload(node_eval)
+    from workflow.node_eval import NodeEvaluator
 
-    ne = node_eval.NodeEvaluator()
+    ne = NodeEvaluator()
     db_path = ne._db_path
     assert db_path.parent.resolve() == target.resolve(), (
         f"NodeEvaluator db not rooted at WORKFLOW_DATA_DIR: "
@@ -69,7 +63,6 @@ def test_node_evaluator_honors_workflow_data_dir(clean_env, tmp_path):
 def test_auth_provider_absolute_even_without_env(clean_env, tmp_path):
     """No env → resolver default → still absolute (no CWD drift)."""
     from workflow.auth import provider
-    importlib.reload(provider)
 
     ap = provider.OAuthProvider()
     assert ap._db_path.is_absolute(), (
@@ -79,10 +72,9 @@ def test_auth_provider_absolute_even_without_env(clean_env, tmp_path):
 
 def test_node_evaluator_absolute_even_without_env(clean_env, tmp_path):
     """No env → resolver default → still absolute (no CWD drift)."""
-    from workflow import node_eval
-    importlib.reload(node_eval)
+    from workflow.node_eval import NodeEvaluator
 
-    ne = node_eval.NodeEvaluator()
+    ne = NodeEvaluator()
     assert ne._db_path.is_absolute(), (
         "NodeEvaluator.db_path is not absolute — container CWD-drift risk"
     )
@@ -103,7 +95,6 @@ def test_legacy_env_still_honored(clean_env, tmp_path):
     clean_env.setenv("UNIVERSE_SERVER_BASE", str(target))
 
     from workflow.auth import provider
-    importlib.reload(provider)
 
     ap = provider.OAuthProvider()
     assert ap._db_path.parent.resolve() == target.resolve()

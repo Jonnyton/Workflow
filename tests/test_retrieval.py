@@ -542,7 +542,7 @@ class TestAgenticSearchPolicy:
         )
         # Clear the runtime singletons so run_phase_retrieval falls
         # through to construct a fresh KG/router.
-        from workflow import runtime
+        from workflow import runtime_singletons as runtime
         monkeypatch.setattr(runtime, "knowledge_graph", None)
 
         state = {

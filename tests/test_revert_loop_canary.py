@@ -1,8 +1,13 @@
-"""Revert-loop canary tests (BUG-023 Lane 4a).
+"""Revert-loop canary tests (Lane 4a per
+docs/design-notes/2026-04-23-revert-loop-canary-spec.md).
 
-Pure-logic tests on `classify_loop` + network-path tests via injected
-`post_fn`. No live daemon touched; fixtures drawn from actual activity
-log shapes captured on 2026-04-23 and adjacent dates.
+Covers the 6 test surfaces named in the spec Test Strategy §:
+0/2/3 REVERTs (OK), 3/10min (WARN), 5/20min (CRITICAL), 3/20min (below
+WARN strict rate but inside CRITICAL window — confirms math), empty
+tail (exit 5), network-path failures.
+
+Pure classify_loop tests use injected ``now`` and scripted tails; network
+path tests use stubbed ``post_fn``. No live daemon.
 """
 from __future__ import annotations
 
@@ -25,226 +30,219 @@ def _now() -> _dt.datetime:
 
 def _stamp(minutes_ago: float) -> str:
     ts = _now() - _dt.timedelta(minutes=minutes_ago)
-    # Drop microseconds for cleaner fixtures.
     ts = ts.replace(microsecond=0)
     return ts.isoformat().replace("+00:00", "Z")
 
 
+def _revert_line(minutes_ago: float, style: str = "standard") -> str:
+    """Build a realistic REVERT activity-log entry."""
+    if style == "draft_failed":
+        return (
+            f"{_stamp(minutes_ago)} [commit] Commit: reverting — "
+            "draft provider failed"
+        )
+    if style == "score":
+        return f"{_stamp(minutes_ago)} [commit] score 0.00 -- REVERT"
+    return (
+        f"{_stamp(minutes_ago)} [commit] Commit: universe=concordance "
+        "score 0.00 -- REVERT"
+    )
+
+
+def _classify(
+    tail: list[str],
+    *,
+    warn_n: int = 3, warn_t: int = 10,
+    crit_n: int = 5, crit_t: int = 20,
+) -> tuple[int, str]:
+    return rlc.classify_loop(
+        tail, now=_now(),
+        warn_window_min=warn_t, warn_threshold=warn_n,
+        critical_window_min=crit_t, critical_threshold=crit_n,
+    )
+
+
 # ════════════════════════════════════════════════════════════════════
-# classify_loop — pure logic
+# Spec §Test Strategy #1 — classify_loop unit tests
 # ════════════════════════════════════════════════════════════════════
 
 
-class TestClassifyLoopHappyPaths:
-    def test_green_on_empty_failure_markers(self):
+class TestClassifyLoopOkTier:
+    def test_green_on_no_reverts(self):
         tail = [
-            f"{_stamp(1)} [worker] universe=x action=commit verdict=accept",
-            f"{_stamp(5)} [worker] Draft: accepted",
+            f"{_stamp(5)} [commit] Commit: score 0.95 -- KEEP",
+            f"{_stamp(3)} [commit] Commit: score 0.88 -- MERGE",
         ]
-        code, msg = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
+        code, msg = _classify(tail)
         assert code == 0
-        assert "0 failure markers" in msg
+        assert "0 REVERTs" in msg
 
-    def test_red_on_three_consecutive_draft_failed(self):
-        tail = [
-            f"{_stamp(9)} [worker] Draft: FAILED (provider exhausted)",
-            f"{_stamp(6)} [worker] Draft: FAILED (provider exhausted)",
-            f"{_stamp(3)} [worker] Draft: FAILED (provider exhausted)",
-        ]
-        code, msg = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 2
-        assert "REVERT-LOOP detected" in msg
-        assert "3 failure markers" in msg
-
-    def test_red_on_revert_verdict_signature(self):
-        tail = [
-            f"{_stamp(8)} [commit] score 0.00 -- REVERT",
-            f"{_stamp(5)} [commit] score 0.00 -- REVERT",
-            f"{_stamp(2)} [commit] score 0.00 -- REVERT",
-        ]
-        code, msg = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 2
-        assert "REVERT-LOOP" in msg
-
-    def test_red_on_all_providers_exhausted_pattern(self):
-        tail = [
-            f"{_stamp(7)} [provider] All providers exhausted for role=writer",
-            f"{_stamp(5)} [provider] All providers exhausted for role=writer",
-            f"{_stamp(3)} [provider] All providers exhausted for role=writer",
-        ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 2
-
-    def test_mixed_patterns_count_toward_same_threshold(self):
-        tail = [
-            f"{_stamp(8)} [worker] Draft: FAILED",
-            f"{_stamp(5)} [commit] score 0.00 -- REVERT",
-            f"{_stamp(2)} [provider] All providers exhausted",
-        ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 2
-
-
-class TestClassifyLoopWindowBehavior:
-    def test_failures_outside_window_do_not_count(self):
-        # 5 old failures, all outside the 10-min window → green.
-        tail = [
-            f"{_stamp(15)} [worker] Draft: FAILED",
-            f"{_stamp(20)} [worker] Draft: FAILED",
-            f"{_stamp(25)} [worker] Draft: FAILED",
-            f"{_stamp(30)} [worker] Draft: FAILED",
-            f"{_stamp(35)} [worker] Draft: FAILED",
-        ]
-        code, msg = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 0
-        assert "0 failure markers" in msg
-
-    def test_mixed_inside_and_outside_window_counts_only_in_window(self):
-        tail = [
-            f"{_stamp(3)} [worker] Draft: FAILED",  # in
-            f"{_stamp(20)} [worker] Draft: FAILED",  # out
-            f"{_stamp(30)} [worker] Draft: FAILED",  # out
-        ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        # Only 1 in-window failure; threshold=3 → green.
+    def test_green_on_2_reverts(self):
+        tail = [_revert_line(8), _revert_line(3)]
+        code, _ = _classify(tail)
         assert code == 0
 
-    def test_exactly_threshold_fires(self):
+    def test_green_on_mixed_success_and_fail(self):
         tail = [
-            f"{_stamp(3)} [worker] Draft: FAILED",
-            f"{_stamp(2)} [worker] Draft: FAILED",
-            f"{_stamp(1)} [worker] Draft: FAILED",
+            _revert_line(8),
+            f"{_stamp(6)} [commit] Commit: score 0.95 -- KEEP",
+            _revert_line(3),
         ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 2
-
-    def test_one_under_threshold_does_not_fire(self):
-        tail = [
-            f"{_stamp(3)} [worker] Draft: FAILED",
-            f"{_stamp(2)} [worker] Draft: FAILED",
-        ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
+        code, _ = _classify(tail)
         assert code == 0
 
 
-class TestClassifyLoopMissingTimestamps:
-    def test_untimestamped_failure_ignored(self):
+class TestClassifyLoopWarnTier:
+    def test_warn_on_3_reverts_in_10min(self):
+        tail = [_revert_line(9), _revert_line(6), _revert_line(3)]
+        code, msg = _classify(tail)
+        assert code == 2
+        assert "WARN revert-loop" in msg
+        assert "3 REVERTs" in msg
+
+    def test_warn_exact_boundary(self):
+        tail = [_revert_line(10), _revert_line(5), _revert_line(1)]
+        code, _ = _classify(tail)
+        assert code == 2
+
+    def test_warn_with_draft_failed_style_revert(self):
         tail = [
-            "some log line without a timestamp Draft: FAILED",
-            "another untimestamped Draft: FAILED",
-            "still no timestamp Draft: FAILED",
+            _revert_line(9, "draft_failed"),
+            _revert_line(6, "draft_failed"),
+            _revert_line(3, "draft_failed"),
         ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        # No timestamps → no placement in window → green.
+        code, _ = _classify(tail)
+        assert code == 2
+
+
+class TestClassifyLoopCriticalTier:
+    def test_critical_on_5_reverts_in_20min(self):
+        tail = [
+            _revert_line(18), _revert_line(14), _revert_line(10),
+            _revert_line(6), _revert_line(2),
+        ]
+        code, msg = _classify(tail)
+        assert code == 3
+        assert "CRITICAL revert-loop" in msg
+        assert "5 REVERTs" in msg
+        assert "auto-repair" in msg
+
+    def test_critical_precedence_over_warn_when_both_fire(self):
+        # 5 reverts in 20min AND 3+ within 10min → CRITICAL wins.
+        tail = [
+            _revert_line(18), _revert_line(14),
+            _revert_line(9), _revert_line(6), _revert_line(2),
+        ]
+        code, _ = _classify(tail)
+        assert code == 3
+
+    def test_critical_with_more_than_threshold(self):
+        tail = [_revert_line(20 - i) for i in range(20)]
+        code, _ = _classify(tail)
+        assert code == 3
+
+
+class TestClassifyLoopMathBoundaries:
+    """Spec surface #1 explicit: '3 in 20min (below WARN at strict rate
+    but within critical window — confirms math)'."""
+
+    def test_3_reverts_outside_10min_inside_20min_stays_green(self):
+        # 3 REVERTs at 12, 14, 16 min ago: none in WARN window (10min),
+        # all 3 in CRITICAL window (20min). Neither threshold fires:
+        # WARN count=0, CRIT count=3 < crit_threshold=5.
+        tail = [_revert_line(16), _revert_line(14), _revert_line(12)]
+        code, _ = _classify(tail)
         assert code == 0
 
-    def test_mixed_timestamped_and_bare_lines(self):
+    def test_untimestamped_reverts_ignored(self):
         tail = [
-            f"{_stamp(3)} [worker] Draft: FAILED",
-            "no-timestamp Draft: FAILED",
-            f"{_stamp(2)} [worker] Draft: FAILED",
-            "another bare line Draft: FAILED",
-            f"{_stamp(1)} [worker] Draft: FAILED",
+            "some log line without timestamp Commit: score 0.00 -- REVERT",
+            "another bare REVERT line",
         ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
-        # Only the 3 timestamped ones count → fires.
-        assert code == 2
+        code, _ = _classify(tail)
+        assert code == 0
 
 
 class TestClassifyLoopEmptyEvidence:
-    def test_empty_tail_returns_code_3(self):
-        code, msg = rlc.classify_loop(
-            [], now=_now(), window_min=10, threshold=3,
-        )
-        assert code == 3
+    def test_empty_tail_returns_exit_5(self):
+        code, msg = _classify([])
+        assert code == 5
         assert "empty" in msg
 
-    def test_tail_of_non_strings_ignored(self):
-        tail = [None, 42, {"not": "a string"}, ""]  # type: ignore[list-item]
-        code, msg = rlc.classify_loop(
-            tail,  # type: ignore[arg-type]
-            now=_now(), window_min=10, threshold=3,
-        )
-        # Non-string entries skipped; no failures counted.
+    def test_non_string_entries_skipped(self):
+        tail = [None, 42, {"dict": "not a string"}]  # type: ignore[list-item]
+        code, _ = _classify(tail)  # type: ignore[arg-type]
         assert code == 0
-        assert "0 failure markers" in msg
 
 
-class TestFailurePatternPrecision:
-    """Guard against over-matching — common non-failure phrases stay green."""
+class TestRevertPatternDiscipline:
+    """Spec Q2: Draft:FAILED is explicitly EXCLUDED. Only terminal
+    commit verdicts count."""
 
-    @pytest.mark.parametrize(
-        "ok_line",
-        [
-            "2026-04-23T21:00:00Z [worker] Draft accepted; verdict accept",
-            "2026-04-23T21:00:00Z [worker] score 0.95 -- accept",
-            "2026-04-23T21:00:00Z [worker] reverting to checkpoint",  # different shape
-        ],
-    )
-    def test_false_positive_shapes_stay_green(self, ok_line: str):
-        tail = [ok_line] * 5
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
+    def test_draft_failed_does_not_count(self):
+        tail = [
+            f"{_stamp(9)} [worker] Draft: FAILED — provider empty prose",
+            f"{_stamp(6)} [worker] Draft: FAILED — provider empty prose",
+            f"{_stamp(3)} [worker] Draft: FAILED — provider empty prose",
+        ]
+        code, _ = _classify(tail)
         assert code == 0
+
+    def test_all_providers_exhausted_does_not_count(self):
+        tail = [
+            f"{_stamp(9)} [provider] All providers exhausted",
+            f"{_stamp(6)} [provider] All providers exhausted",
+            f"{_stamp(3)} [provider] All providers exhausted",
+        ]
+        code, _ = _classify(tail)
+        assert code == 0
+
+    def test_keep_and_merge_verdicts_stay_green(self):
+        tail = [
+            f"{_stamp(9)} [commit] Commit: score 0.92 -- KEEP",
+            f"{_stamp(6)} [commit] Commit: score 0.88 -- MERGE",
+            f"{_stamp(3)} [commit] Commit: score 0.95 -- KEEP",
+        ]
+        code, _ = _classify(tail)
+        assert code == 0
+
+    def test_mixed_revert_styles_all_count(self):
+        tail = [
+            _revert_line(9, "standard"),
+            _revert_line(6, "draft_failed"),
+            _revert_line(3, "score"),
+        ]
+        code, _ = _classify(tail)
+        assert code == 2
 
     def test_case_insensitive_matching(self):
         tail = [
-            f"{_stamp(3)} [worker] DRAFT: failed (upper + mixed)",
-            f"{_stamp(2)} [commit] Score 0.00 -- REVERT",
-            f"{_stamp(1)} [worker] draft: FAILED",
+            f"{_stamp(9)} commit: SCORE 0.00 -- revert",
+            f"{_stamp(6)} Commit: Reverting — draft provider failed",
+            f"{_stamp(3)} COMMIT: score 0.00 -- REVERT",
         ]
-        code, _ = rlc.classify_loop(
-            tail, now=_now(), window_min=10, threshold=3,
-        )
+        code, _ = _classify(tail)
         assert code == 2
 
 
 class TestParseLineTimestamp:
     def test_bare_iso(self):
-        ts = rlc._parse_line_timestamp("2026-04-23T21:00:00Z foo bar")
+        ts = rlc._parse_line_timestamp("2026-04-23T21:00:00Z foo")
         assert ts is not None
-        assert ts.year == 2026 and ts.month == 4 and ts.day == 23
 
     def test_bracketed_iso(self):
         ts = rlc._parse_line_timestamp("[2026-04-23T21:00:00Z] foo")
-        assert ts is not None
-
-    def test_offset_form(self):
-        ts = rlc._parse_line_timestamp("2026-04-23T21:00:00+00:00 foo")
         assert ts is not None
 
     def test_no_timestamp_returns_none(self):
         assert rlc._parse_line_timestamp("foo bar baz") is None
 
     def test_malformed_timestamp_returns_none(self):
-        assert rlc._parse_line_timestamp("2026-99-99T99:99:99Z foo") is None
+        assert rlc._parse_line_timestamp("2026-99-99T99:99:99Z") is None
 
 
 # ════════════════════════════════════════════════════════════════════
-# fetch_status_activity_tail — network path via injected post_fn
+# Network path via injected post_fn (spec surface #3)
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -270,30 +268,21 @@ def _make_tool_response(tail: list[str]) -> dict:
 
 
 class _StubPost:
-    """Replay a list of (response, sid) tuples in order."""
-
     def __init__(self, steps: list[tuple[dict | None, str | None]]):
         self._steps = list(steps)
-        self.calls: list[tuple[str | None, str]] = []
 
-    def __call__(
-        self, url, sid, payload, timeout, *, step_code,
-    ):
-        self.calls.append((sid, payload.get("method", "?")))
+    def __call__(self, url, sid, payload, timeout, *, step_code):
         if not self._steps:
             raise AssertionError("stub ran out of responses")
         return self._steps.pop(0)
 
 
 class TestFetchStatusActivityTail:
-    def test_happy_path_returns_tail(self):
-        tail = [
-            f"{_stamp(2)} [worker] Draft: accepted",
-            f"{_stamp(1)} [worker] Draft: accepted",
-        ]
+    def test_happy_path(self):
+        tail = [_revert_line(5)]
         stub = _StubPost([
             (_make_init_response(), "sid-abc"),
-            (None, "sid-abc"),  # notifications/initialized — no response
+            (None, "sid-abc"),
             (_make_tool_response(tail), "sid-abc"),
         ])
         result = rlc.fetch_status_activity_tail(
@@ -303,7 +292,7 @@ class TestFetchStatusActivityTail:
 
     def test_initialize_error_raises_step4(self):
         stub = _StubPost([
-            ({"jsonrpc": "2.0", "id": 1, "error": {"message": "nope"}}, "sid"),
+            ({"jsonrpc": "2.0", "id": 1, "error": {"message": "x"}}, "sid"),
         ])
         with pytest.raises(rlc.RevertLoopError) as exc_info:
             rlc.fetch_status_activity_tail(
@@ -312,16 +301,14 @@ class TestFetchStatusActivityTail:
         assert exc_info.value.code == 4
 
     def test_initialize_missing_sid_raises_step4(self):
-        stub = _StubPost([
-            (_make_init_response(), None),  # no session id
-        ])
+        stub = _StubPost([(_make_init_response(), None)])
         with pytest.raises(rlc.RevertLoopError) as exc_info:
             rlc.fetch_status_activity_tail(
                 "http://fake/mcp", 10.0, post_fn=stub,
             )
         assert exc_info.value.code == 4
 
-    def test_tool_is_error_raises_step3(self):
+    def test_tool_is_error_raises_step5(self):
         stub = _StubPost([
             (_make_init_response(), "sid"),
             (None, "sid"),
@@ -340,29 +327,10 @@ class TestFetchStatusActivityTail:
             rlc.fetch_status_activity_tail(
                 "http://fake/mcp", 10.0, post_fn=stub,
             )
-        assert exc_info.value.code == 3
+        # Spec-bumped from 3 → 5 to avoid CRITICAL-exit collision.
+        assert exc_info.value.code == 5
 
-    def test_tool_text_not_json_raises_step3(self):
-        stub = _StubPost([
-            (_make_init_response(), "sid"),
-            (None, "sid"),
-            (
-                {
-                    "jsonrpc": "2.0", "id": 2,
-                    "result": {
-                        "content": [{"type": "text", "text": "not json"}],
-                    },
-                },
-                "sid",
-            ),
-        ])
-        with pytest.raises(rlc.RevertLoopError) as exc_info:
-            rlc.fetch_status_activity_tail(
-                "http://fake/mcp", 10.0, post_fn=stub,
-            )
-        assert exc_info.value.code == 3
-
-    def test_payload_missing_evidence_raises_step3(self):
+    def test_payload_missing_evidence_raises_step5(self):
         stub = _StubPost([
             (_make_init_response(), "sid"),
             (None, "sid"),
@@ -372,7 +340,7 @@ class TestFetchStatusActivityTail:
                     "result": {
                         "content": [{
                             "type": "text",
-                            "text": '{"active_host": {"host_id": "test"}}',
+                            "text": '{"active_host": {"host_id": "t"}}',
                         }],
                     },
                 },
@@ -383,43 +351,37 @@ class TestFetchStatusActivityTail:
             rlc.fetch_status_activity_tail(
                 "http://fake/mcp", 10.0, post_fn=stub,
             )
-        assert exc_info.value.code == 3
+        assert exc_info.value.code == 5
 
 
-# ════════════════════════════════════════════════════════════════════
-# run_canary — end-to-end via stubbed post_fn
-# ════════════════════════════════════════════════════════════════════
-
-
-class TestRunCanary:
-    def test_green_end_to_end(self):
-        tail = [f"{_stamp(2)} [worker] Draft: accepted"]
+class TestRunCanaryEndToEnd:
+    def _run(self, tail: list[str]):
         stub = _StubPost([
             (_make_init_response(), "sid"),
             (None, "sid"),
             (_make_tool_response(tail), "sid"),
         ])
-        code, msg = rlc.run_canary(
+        return rlc.run_canary(
             "http://fake/mcp", 10.0,
-            window_min=10, threshold=3,
+            warn_window_min=10, warn_threshold=3,
+            critical_window_min=20, critical_threshold=5,
             post_fn=stub, now=_now(),
         )
+
+    def test_green_end_to_end(self):
+        tail = [f"{_stamp(2)} [commit] Commit: score 0.9 -- KEEP"]
+        code, _ = self._run(tail)
         assert code == 0
 
-    def test_red_end_to_end_on_three_failures(self):
-        tail = [
-            f"{_stamp(5)} [worker] Draft: FAILED",
-            f"{_stamp(3)} [worker] Draft: FAILED",
-            f"{_stamp(1)} [worker] Draft: FAILED",
-        ]
-        stub = _StubPost([
-            (_make_init_response(), "sid"),
-            (None, "sid"),
-            (_make_tool_response(tail), "sid"),
-        ])
-        code, _ = rlc.run_canary(
-            "http://fake/mcp", 10.0,
-            window_min=10, threshold=3,
-            post_fn=stub, now=_now(),
-        )
+    def test_warn_end_to_end(self):
+        tail = [_revert_line(9), _revert_line(6), _revert_line(3)]
+        code, _ = self._run(tail)
         assert code == 2
+
+    def test_critical_end_to_end(self):
+        tail = [
+            _revert_line(18), _revert_line(14), _revert_line(10),
+            _revert_line(6), _revert_line(2),
+        ]
+        code, _ = self._run(tail)
+        assert code == 3

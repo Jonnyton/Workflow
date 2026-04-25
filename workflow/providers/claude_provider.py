@@ -20,7 +20,12 @@ from workflow.exceptions import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
+from workflow.providers.base import (
+    BaseProvider,
+    ModelConfig,
+    ProviderResponse,
+    check_bwrap_failure,
+)
 
 
 def _no_window_kwargs() -> dict:
@@ -111,9 +116,12 @@ class ClaudeProvider(BaseProvider):
                 f"— subprocess failure, applying cooldown"
             )
 
+        stderr_text = stderr.decode(errors="replace")
+        check_bwrap_failure(stderr_text)
+
         if proc.returncode != 0:
             raise ProviderError(
-                f"claude -p exit {proc.returncode}: {stderr.decode(errors='replace')}"
+                f"claude -p exit {proc.returncode}: {stderr_text}"
             )
 
         text = stdout.decode("utf-8", errors="replace").strip()
@@ -182,10 +190,12 @@ class ClaudeProvider(BaseProvider):
                 f"{proc.returncode:#x} — applying cooldown"
             )
 
+        stderr_text_json = stderr.decode(errors="replace")
+        check_bwrap_failure(stderr_text_json)
+
         if proc.returncode != 0:
             raise ProviderError(
-                f"claude -p (json) exit {proc.returncode}: "
-                f"{stderr.decode(errors='replace')}"
+                f"claude -p (json) exit {proc.returncode}: {stderr_text_json}"
             )
 
         raw = stdout.decode("utf-8", errors="replace")

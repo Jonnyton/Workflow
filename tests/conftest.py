@@ -25,7 +25,7 @@ def _reset_runtime():
     The pre-test reset catches cases where a prior test's background thread
     (e.g. LangGraph executor) sets the global after the prior test's teardown.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     runtime.reset()
     yield

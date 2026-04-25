@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from workflow.api import (
+from fantasy_daemon.api import (
     _extract_username,
     _slugify,
     app,
@@ -1682,7 +1682,7 @@ class TestServeFlag:
         assert callable(main)
 
     def test_api_module_importable(self):
-        from workflow.api import app as api_app
+        from fantasy_daemon.api import app as api_app
 
         assert api_app is not None
 

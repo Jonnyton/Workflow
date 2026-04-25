@@ -71,11 +71,21 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(preferences, "_PREFS_PATH", prefs_path)
     preferences.reset_cache()
 
-    # Redirect project + log dirs to tmp to avoid touching repo state.
-    output = tmp_path / "output"
-    output.mkdir()
-    (output / "testverse").mkdir()
-    (output / ".active_universe").write_text("testverse", encoding="utf-8")
+    # Pin data_dir() to tmp so marker + universe dirs live under a
+    # throwaway root. Post-Task-#7 the tray reads ``data_dir()`` rather
+    # than ``PROJECT_DIR / "output"`` — we set WORKFLOW_DATA_DIR so the
+    # tray's internal ``_data_dir()`` resolves into tmp.
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    (data_root / "testverse").mkdir()
+    (data_root / ".active_universe").write_text("testverse", encoding="utf-8")
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    # Clear legacy alias so it doesn't shadow the canonical var.
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
+
+    # Still redirect PROJECT_DIR + LOG_DIR to tmp for tray-local state
+    # (singleton lock, log files, script lookup) that is intentionally
+    # install-anchored, not data-anchored.
     monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
     monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 
@@ -248,6 +258,16 @@ def test_spawn_passes_provider_flag_and_env(mgr) -> None:
     flag_idx = record["cmd"].index("--provider")
     assert record["cmd"][flag_idx + 1] == "claude-code"
     assert record["kwargs"]["env"]["WORKFLOW_PIN_WRITER"] == "claude-code"
+    # Task #7: daemon child must inherit the tray's data_dir() as an
+    # absolute WORKFLOW_DATA_DIR, not a CWD-relative path. Previously
+    # the tray set UNIVERSE_SERVER_BASE="output" which drifted whenever
+    # tray CWD != data_dir().
+    env = record["kwargs"]["env"]
+    assert "WORKFLOW_DATA_DIR" in env
+    assert Path(env["WORKFLOW_DATA_DIR"]).is_absolute()
+    assert env.get("UNIVERSE_SERVER_BASE", None) != "output", (
+        "legacy CWD-relative literal must not leak to child"
+    )
 
 
 def test_spawn_writes_per_provider_log_name(mgr, monkeypatch) -> None:
@@ -263,3 +283,72 @@ def test_spawn_writes_per_provider_log_name(mgr, monkeypatch) -> None:
     assert any(p.name == "daemon.grok-free.log" for p in opened)
     # Restore not strictly needed; pytest unwinds monkeypatch at test end.
     _ = real_open
+
+
+# ---------------------------------------------------------------------------
+# Task #7 — data_dir()-anchored active-universe marker (tray-side)
+# ---------------------------------------------------------------------------
+
+
+def test_active_universe_read_from_data_dir(mgr, tmp_path) -> None:
+    """Marker is read from data_dir()/.active_universe, not PROJECT_DIR."""
+    # Fixture already seeded data_dir/.active_universe="testverse".
+    # The manager picked it up on construction.
+    assert mgr._active_universe == "testverse"
+
+
+def test_active_universe_falls_back_to_enumeration_in_data_dir(
+    tmp_path, monkeypatch,
+) -> None:
+    """No marker -> enumerate data_dir for a PROGRAM.md universe."""
+    prefs_path = tmp_path / "preferences.json"
+    monkeypatch.setattr(preferences, "_PREFS_PATH", prefs_path)
+    preferences.reset_cache()
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    # Two universes, one with PROGRAM.md — that one should win.
+    (data_root / "empty-verse").mkdir()
+    premise_verse = data_root / "premise-verse"
+    premise_verse.mkdir()
+    (premise_verse / "PROGRAM.md").write_text("hello", encoding="utf-8")
+    # No .active_universe marker on purpose.
+
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
+    monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
+
+    monkeypatch.setattr(workflow_tray.subprocess, "Popen",
+                        lambda *_a, **_k: FakePopen())
+    monkeypatch.setattr("builtins.open",
+                        lambda *_a, **_k: FakeLog(), raising=False)
+
+    m = workflow_tray.UniverseServerManager()
+    assert m._active_universe == "premise-verse"
+
+
+def test_spawn_passes_data_dir_scoped_universe_path(mgr, tmp_path) -> None:
+    """Child daemon's --universe arg points inside data_dir(), not
+    PROJECT_DIR/output.
+    """
+    mgr.start_daemon_for("codex")
+    record = mgr._spawn_log[-1]
+    cmd = record["cmd"]
+    assert "--universe" in cmd
+    flag_idx = cmd.index("--universe")
+    universe_arg = Path(cmd[flag_idx + 1])
+    data_root = tmp_path / "data"
+    assert universe_arg == data_root / "testverse"
+
+
+def test_universe_switch_reads_new_marker_from_data_dir(mgr, tmp_path) -> None:
+    """Writing a fresh marker into data_dir flips the active universe."""
+    data_root = tmp_path / "data"
+    # Create a second universe and update the marker.
+    (data_root / "otherverse").mkdir()
+    (data_root / ".active_universe").write_text("otherverse", encoding="utf-8")
+
+    switched = mgr._check_universe_switch()
+    assert switched is True
+    assert mgr._active_universe == "otherverse"

@@ -282,6 +282,14 @@ def run_canary(
 
     ``now`` and ``post_fn`` are test seams — default to real time + real
     HTTP when unset.
+
+    Paused-daemon exemption: when ``daemon.is_paused`` is True or
+    ``daemon.staleness`` is ``'idle'``, the freshness check is skipped
+    and FRESH is returned with a ``(paused)`` annotation. A daemon that
+    is intentionally paused via the host's ``.pause`` signal is not
+    stale — the MCP surface is live, node execution is intentionally
+    suspended (host directive 2026-04-24). Only resume the freshness
+    gate when the daemon is unpaused.
     """
     current_now = now or _dt.datetime.now(tz=_dt.timezone.utc)
     inspect = fetch_inspect_result(url, timeout, post_fn=post_fn)
@@ -292,13 +300,26 @@ def run_canary(
             "inspect result has no daemon block; "
             f"top-level keys: {sorted(inspect.keys())}"
         )
-    last_activity_iso = daemon.get("last_activity_at")
 
-    code, msg = classify_freshness(last_activity_iso, current_now, threshold_min)
+    staleness = daemon.get("staleness", "")
+    is_paused = bool(daemon.get("is_paused", False))
+
     if verbose:
         print(f"[last-activity] universe_id={inspect.get('universe_id')} "
-              f"phase={daemon.get('phase')} staleness={daemon.get('staleness')}")
-    return code, msg
+              f"phase={daemon.get('phase')} staleness={staleness} "
+              f"is_paused={is_paused}")
+
+    if is_paused or staleness == "idle":
+        reason = "paused" if is_paused else "idle"
+        return 0, (
+            f"FRESH (paused/{reason}): daemon is intentionally "
+            f"{'paused via .pause signal' if is_paused else 'idle — no active work queued'}; "
+            f"last_activity_at={daemon.get('last_activity_at')!r} "
+            f"(freshness gate suspended while {reason})"
+        )
+
+    last_activity_iso = daemon.get("last_activity_at")
+    return classify_freshness(last_activity_iso, current_now, threshold_min)
 
 
 def main(argv: list[str] | None = None) -> int:

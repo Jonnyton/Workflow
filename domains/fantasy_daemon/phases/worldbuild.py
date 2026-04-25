@@ -138,7 +138,7 @@ def worldbuild(state: dict[str, Any]) -> dict[str, Any]:
                 logger.warning("Canon re-ingestion failed: %s", e)
 
     # --- 5. Run promotion gates via MemoryManager ---
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     mgr = runtime.memory_manager
     if mgr is not None:
@@ -1071,7 +1071,7 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
     which extracts entities/relationships/facts and indexes text chunks.
     Uses runtime singletons for the retrieval backends.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     kg = runtime.knowledge_graph
     vs = runtime.vector_store
@@ -1141,7 +1141,7 @@ def _run_leiden_clustering(state: dict[str, Any]) -> None:
     stores them in the KG's community table. Non-blocking -- failures
     are logged but don't affect the worldbuild cycle.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     kg = runtime.knowledge_graph
     if kg is None:
@@ -1178,7 +1178,7 @@ def _rebuild_raptor(state: dict[str, Any]) -> None:
     router gets fresh multi-level summaries.  Uses the shared helper
     in ``knowledge.raptor`` which is also called at daemon startup.
     """
-    from workflow import runtime
+    from workflow import runtime_singletons as runtime
 
     universe_path = state.get("_universe_path")
     if not universe_path:

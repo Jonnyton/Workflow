@@ -229,7 +229,10 @@ def _get_endpoint_hint(monkeypatch, env: dict, which_map: dict) -> str:
     """Helper: patch env + shutil.which, call get_status, return endpoint hint."""
     import shutil as _shutil
 
-    for key in ("OLLAMA_HOST", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY"):
+    for key in (
+        "OLLAMA_HOST", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY",
+        "XAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY",
+    ):
         monkeypatch.delenv(key, raising=False)
     for key, val in env.items():
         monkeypatch.setenv(key, val)
@@ -326,3 +329,189 @@ def test_llm_endpoint_bound_codex_takes_priority_over_claude(
         },
     )
     assert hint == "codex"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Task #14 — SDK-key-only providers (xai, gemini, groq).
+# Priority: ollama → anthropic → codex → claude → xai → gemini → groq → unset.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_llm_endpoint_bound_xai(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"XAI_API_KEY": "xai-test"},
+        which_map={},
+    )
+    assert hint == "xai"
+
+
+def test_llm_endpoint_bound_gemini(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"GEMINI_API_KEY": "gemini-test"},
+        which_map={},
+    )
+    assert hint == "gemini"
+
+
+def test_llm_endpoint_bound_groq(monkeypatch) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"GROQ_API_KEY": "groq-test"},
+        which_map={},
+    )
+    assert hint == "groq"
+
+
+def test_llm_endpoint_bound_xai_takes_priority_over_gemini(
+    monkeypatch,
+) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"XAI_API_KEY": "xai-test", "GEMINI_API_KEY": "gemini-test"},
+        which_map={},
+    )
+    assert hint == "xai"
+
+
+def test_llm_endpoint_bound_gemini_takes_priority_over_groq(
+    monkeypatch,
+) -> None:
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"GEMINI_API_KEY": "gemini-test", "GROQ_API_KEY": "groq-test"},
+        which_map={},
+    )
+    assert hint == "gemini"
+
+
+def test_llm_endpoint_bound_claude_beats_xai(monkeypatch) -> None:
+    """Claude CLI is a subprocess-bound primary writer; XAI_API_KEY
+    only feeds an SDK-keyed tertiary fallback. Claude wins."""
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"XAI_API_KEY": "xai-test"},
+        which_map={"claude": "/usr/local/bin/claude"},
+    )
+    assert hint == "claude"
+
+
+def test_llm_endpoint_bound_ollama_beats_all_sdk_keys(monkeypatch) -> None:
+    """Ollama is always-local; beats every SDK-key-only binding."""
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={
+            "OLLAMA_HOST": "http://localhost:11434",
+            "XAI_API_KEY": "xai-test",
+            "GEMINI_API_KEY": "gemini-test",
+            "GROQ_API_KEY": "groq-test",
+        },
+        which_map={},
+    )
+    assert hint == "ollama"
+
+
+def test_llm_endpoint_bound_empty_xai_key_falls_through(monkeypatch) -> None:
+    """Empty-string key does not count as bound — matches OPENAI_API_KEY
+    pattern where empty string is treated as unset."""
+    hint = _get_endpoint_hint(
+        monkeypatch,
+        env={"XAI_API_KEY": ""},
+        which_map={},
+    )
+    assert hint == "unset"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Task #11 — schema_version + session_boundary contract fields.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_get_status_schema_version_is_present() -> None:
+    """schema_version must be present and equal to 1 (first versioned contract)."""
+    payload = json.loads(get_status())
+    assert "schema_version" in payload
+    assert payload["schema_version"] == 1
+
+
+def test_get_status_schema_contract() -> None:
+    """Contract test: every documented top-level field must be present.
+
+    If this test fails after a get_status change, the author must bump
+    schema_version and update the docstring contract in universe_server.py.
+    """
+    payload = json.loads(get_status())
+    required_top_level = {
+        "schema_version",
+        "active_host",
+        "tier_routing_policy",
+        "evidence",
+        "evidence_caveats",
+        "caveats",
+        "actionable_next_steps",
+        "session_boundary",
+        "storage_utilization",
+        "per_provider_cooldown_remaining",
+        "universe_id",
+        "universe_exists",
+    }
+    for key in required_top_level:
+        assert key in payload, f"Contract field missing from get_status: '{key}'"
+
+    required_evidence = {
+        "last_completed_request_llm_used",
+        "activity_log_tail",
+        "activity_log_line_count",
+        "last_n_calls",
+        "policy_hash",
+    }
+    for key in required_evidence:
+        assert key in payload["evidence"], f"evidence.{key} missing"
+
+    required_session_boundary = {
+        "prior_session_context_available",
+        "account_user",
+        "last_session_ts",
+        "note",
+    }
+    for key in required_session_boundary:
+        assert key in payload["session_boundary"], f"session_boundary.{key} missing"
+
+
+def test_get_status_session_boundary_no_prior_when_empty_log(tmp_path) -> None:
+    """Universe with no activity returns prior_session_context_available=false."""
+    import os
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    udir = tmp_path / "empty_sb_universe"
+    udir.mkdir(parents=True, exist_ok=True)
+    payload = json.loads(get_status(universe_id="empty_sb_universe"))
+    sb = payload["session_boundary"]
+    assert sb["prior_session_context_available"] is False
+    assert sb["last_session_ts"] is None
+    assert "account_user" in sb and sb["account_user"]
+
+
+def test_get_status_session_boundary_prior_when_log_has_user(tmp_path, monkeypatch) -> None:
+    """Universe with activity for current user returns prior_session_context_available=true."""
+    user = "test_session_user"
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", user)
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(tmp_path))
+    udir = tmp_path / "active_sb_universe"
+    udir.mkdir(parents=True, exist_ok=True)
+    (udir / "activity.log").write_text(
+        f"[2026-04-24 12:00:00] [{user}] some activity\n",
+        encoding="utf-8",
+    )
+    payload = json.loads(get_status(universe_id="active_sb_universe"))
+    sb = payload["session_boundary"]
+    assert sb["prior_session_context_available"] is True
+    assert sb["last_session_ts"] is not None
+    assert sb["account_user"] == user
+
+
+def test_get_status_session_boundary_account_user_matches_env(monkeypatch) -> None:
+    """account_user field must reflect UNIVERSE_SERVER_USER env var."""
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "my_user")
+    payload = json.loads(get_status())
+    assert payload["session_boundary"]["account_user"] == "my_user"

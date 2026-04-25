@@ -396,3 +396,116 @@ def test_extract_tool_text_joins_text_items():
 def test_extract_tool_text_empty_on_no_content():
     assert lac._extract_tool_text({}) == ""
     assert lac._extract_tool_text({"content": []}) == ""
+
+
+# ---- Paused-daemon exemption (task #13 — issue #59 false-positive fix) ------
+
+
+def _paused_inspect_resp(
+    is_paused: bool = True,
+    staleness: str = "idle",
+    last_activity_at: str | None = "2026-04-20T04:55:00+00:00",
+    sid: str = "sess-x",
+):
+    """Build a universe inspect response for a paused daemon."""
+    raw_text = json.dumps({
+        "universe_id": "concordance",
+        "daemon": {
+            "phase": "writing",
+            "phase_human": "paused" if is_paused else "idle",
+            "is_paused": is_paused,
+            "staleness": staleness,
+            "last_activity_at": last_activity_at,
+        },
+    })
+    return (
+        {"jsonrpc": "2.0", "id": 2, "result": {
+            "content": [{"type": "text", "text": raw_text}],
+            "isError": False,
+        }},
+        sid,
+    )
+
+
+def test_run_canary_paused_daemon_returns_zero():
+    """is_paused=True must return exit 0 (FRESH) even with stale last_activity.
+
+    Reproduces issue #59: host paused concordance 2026-04-24; canary was
+    paging STALE because it didn't gate on is_paused.
+    """
+    scripted = ScriptedPost([
+        _init_resp(), _notif_resp(),
+        _paused_inspect_resp(is_paused=True, staleness="idle"),
+    ])
+    code, msg = lac.run_canary(
+        "https://fake/mcp", 5.0, 30,
+        post_fn=scripted,
+        now=_utc("2026-04-24T12:00:00+00:00"),  # >30 min after last_activity
+    )
+    assert code == 0
+    assert "paused" in msg.lower()
+    assert "FRESH" in msg
+
+
+def test_run_canary_idle_staleness_returns_zero():
+    """staleness='idle' (even without is_paused=True) exempts the freshness check."""
+    scripted = ScriptedPost([
+        _init_resp(), _notif_resp(),
+        _paused_inspect_resp(is_paused=False, staleness="idle"),
+    ])
+    code, msg = lac.run_canary(
+        "https://fake/mcp", 5.0, 30,
+        post_fn=scripted,
+        now=_utc("2026-04-24T12:00:00+00:00"),
+    )
+    assert code == 0
+    assert "idle" in msg.lower()
+
+
+def test_run_canary_dormant_not_exempt():
+    """staleness='dormant' is NOT exempted — daemon has been quiet too long."""
+    scripted = ScriptedPost([
+        _init_resp(), _notif_resp(),
+        _paused_inspect_resp(is_paused=False, staleness="dormant"),
+    ])
+    code, _ = lac.run_canary(
+        "https://fake/mcp", 5.0, 30,
+        post_fn=scripted,
+        now=_utc("2026-04-24T12:00:00+00:00"),
+    )
+    # dormant → last_activity is very old → STALE
+    assert code == 2
+
+
+def test_run_canary_fresh_staleness_uses_timestamp():
+    """staleness='fresh' still uses the timestamp check (normal operation)."""
+    scripted = ScriptedPost([
+        _init_resp(), _notif_resp(),
+        _paused_inspect_resp(
+            is_paused=False,
+            staleness="fresh",
+            last_activity_at="2026-04-24T11:55:00+00:00",
+        ),
+    ])
+    code, msg = lac.run_canary(
+        "https://fake/mcp", 5.0, 30,
+        post_fn=scripted,
+        now=_utc("2026-04-24T12:00:00+00:00"),
+    )
+    assert code == 0
+    assert "FRESH" in msg
+
+
+def test_run_canary_is_paused_true_overrides_stale_timestamp():
+    """is_paused=True overrides even a 'dormant' staleness bucket."""
+    scripted = ScriptedPost([
+        _init_resp(), _notif_resp(),
+        _paused_inspect_resp(is_paused=True, staleness="dormant"),
+    ])
+    code, msg = lac.run_canary(
+        "https://fake/mcp", 5.0, 30,
+        post_fn=scripted,
+        now=_utc("2026-04-24T12:00:00+00:00"),
+    )
+    assert code == 0
+    assert "paused" in msg.lower()

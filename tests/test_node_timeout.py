@@ -204,6 +204,69 @@ def test_runner_emits_node_timeout_event_and_marks_run_failed(
     assert timeout_events[0]["node_id"] == "slow"
 
 
+# ─── integration: empty LLM response → node failed, run failed ───────────
+
+
+def test_runner_emits_node_empty_response_event_and_marks_run_failed(
+    tmp_path, monkeypatch,
+):
+    """BUG-004 Layer 2+3: a provider that returns empty string must produce
+    a NODE_STATUS_FAILED event with reason='empty_response' and set
+    run status to 'failed' — not silently mark the node 'ran' with output=''."""
+    base = tmp_path / "output"
+    base.mkdir()
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
+
+    from workflow.author_server import (
+        initialize_author_server,
+        save_branch_definition,
+    )
+    from workflow.runs import (
+        NODE_STATUS_FAILED,
+        RUN_STATUS_FAILED,
+        execute_branch_async,
+        get_run,
+        list_events,
+        wait_for,
+    )
+
+    def _empty_provider(prompt, system, *, role):
+        return ""  # simulate silent auth failure / codex 401
+
+    initialize_author_server(base)
+    branch = _slow_branch(timeout_s=5.0)
+    save_branch_definition(base, branch_def=branch.to_dict())
+    outcome = execute_branch_async(
+        base, branch=branch, inputs={"x": "hi"},
+        actor="tester", provider_call=_empty_provider,
+    )
+    wait_for(outcome.run_id, timeout=5.0)
+
+    record = get_run(base, outcome.run_id)
+    assert record is not None
+    assert record["status"] == RUN_STATUS_FAILED
+    assert "empty" in (record.get("error") or "").lower()
+
+    events = list_events(base, outcome.run_id, since_step=-1)
+    empty_events = [
+        e for e in events
+        if e.get("detail", {}).get("reason") == "empty_response"
+    ]
+    assert empty_events, (
+        "Expected a run_events row with detail.reason='empty_response' "
+        "so the UI can distinguish auth failure from a generic crash."
+    )
+    assert empty_events[0]["status"] == NODE_STATUS_FAILED
+    assert empty_events[0]["node_id"] == "slow"
+
+    # Downstream nodes must not receive empty string — output must be absent.
+    ran_events = [e for e in events if e.get("status") == "ran"]
+    assert not ran_events, (
+        "No node should reach 'ran' status when provider returns empty"
+    )
+
+
 def test_fast_provider_does_not_hit_timeout(tmp_path, monkeypatch):
     """Sanity: a provider that returns immediately with a default
     timeout does not trip the guard."""

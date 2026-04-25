@@ -161,17 +161,17 @@ def test_create_app_with_registry() -> None:
     assert hasattr(app, "add_route")
 
 
-def test_backward_compatibility_app_export() -> None:
-    """Test that app is still exported for backward compatibility."""
-    from workflow.api import app
+def test_fantasy_daemon_app_export() -> None:
+    """Test that fantasy_daemon.api exports the FastAPI app."""
+    from fantasy_daemon.api import app
 
     assert app is not None
     assert hasattr(app, "add_route")
 
 
-def test_backward_compatibility_configure_export() -> None:
-    """Test that configure is still exported for backward compatibility."""
-    from workflow.api import configure
+def test_fantasy_daemon_configure_export() -> None:
+    """Test that fantasy_daemon.api exports configure."""
+    from fantasy_daemon.api import configure
 
     assert configure is not None
     assert callable(configure)
