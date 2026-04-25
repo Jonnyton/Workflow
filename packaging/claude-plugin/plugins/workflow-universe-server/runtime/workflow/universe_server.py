@@ -3744,6 +3744,14 @@ def extensions(
     escrow_recipient_id: str = "",
     escrow_evidence: str = "",
     escrow_reason: str = "",
+    event_id: str = "",
+    event_type: str = "",
+    event_date: str = "",
+    attested_by: str = "",
+    cites_json: str = "",
+    verifier_id: str = "",
+    disputed_by: str = "",
+    retracted_by: str = "",
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -4003,6 +4011,27 @@ def extensions(
         }
         return escrow_handler(escrow_kwargs)
 
+    # ── Gate events (real-world outcome attestation) ───────────────────────
+    gate_event_handler = _GATE_EVENT_ACTIONS.get(action)
+    if gate_event_handler is not None:
+        ge_kwargs: dict[str, Any] = {
+            "goal_id": goal_id,
+            "event_id": event_id,
+            "event_type": event_type,
+            "event_date": event_date,
+            "attested_by": attested_by,
+            "cites_json": cites_json,
+            "verifier_id": verifier_id,
+            "disputed_by": disputed_by,
+            "retracted_by": retracted_by,
+            "reason": notes,
+            "note": notes,
+            "branch_version_id": branch_version_id,
+            "since": since,
+            "limit": limit,
+        }
+        return gate_event_handler(ge_kwargs)
+
     # ── Dry inspect ────────────────────────────────────────────────────────
     inspect_dry_handler = _INSPECT_DRY_ACTIONS.get(action)
     if inspect_dry_handler is not None:
@@ -4034,7 +4063,7 @@ def extensions(
             "dry_inspect_node", "dry_inspect_patch",
             "messaging_send", "messaging_receive", "messaging_ack",
             "publish_version", "get_branch_version", "list_branch_versions",
-            "continue_branch",
+            "continue_branch", "fork_tree",
             "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
         ],
     })
@@ -4415,7 +4444,7 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_list(kwargs: dict[str, Any]) -> str:
-    from workflow.author_server import list_branch_definitions
+    from workflow.daemon_server import list_branch_definitions
 
     # Phase 6.2.2 — visibility-aware listing. Viewer sees public
     # Branches and any private Branches they authored.
@@ -4931,12 +4960,34 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "Pass state field values via inputs_json.",
     ])
     related = _related_wiki_pages(source_dict)
+
+    # Lineage: expose fork_from + compute fork_descendants.
+    fork_from = source_dict.get("fork_from")
+    from workflow.daemon_server import list_branch_definitions
+    from workflow.branch_versions import list_branch_versions
+
+    my_versions = list_branch_versions(_base_path(), bid, limit=500)
+    my_version_ids = {v.branch_version_id for v in my_versions}
+    fork_descendants: list[dict[str, Any]] = []
+    for b in list_branch_definitions(_base_path(), include_private=False):
+        ff = b.get("fork_from")
+        if ff and ff in my_version_ids:
+            fork_descendants.append({
+                "branch_def_id": b["branch_def_id"],
+                "author": b.get("author", ""),
+                "published_versions_count": len(
+                    list_branch_versions(_base_path(), b["branch_def_id"], limit=500)
+                ),
+            })
+
     return json.dumps({
         "branch_def_id": bid,
         "summary": summary,
         "mermaid": mermaid,
         "valid": not errors,
         "error_count": len(errors),
+        "fork_from": fork_from,
+        "fork_descendants": fork_descendants,
         "related_wiki_pages": related["items"],
         "related_wiki_pages_truncated": related["truncated_count"],
     })
@@ -5330,6 +5381,7 @@ def _staged_branch_from_spec(
         goal_id=(spec.get("goal_id") or "").strip(),
         author=(spec.get("author") or _current_actor()),
         tags=list(spec.get("tags") or []),
+        fork_from=spec.get("fork_from") or None,
     )
 
     for idx, raw in enumerate(spec.get("node_defs") or spec.get("nodes") or []):
@@ -5426,6 +5478,15 @@ def _ext_branch_build(kwargs: dict[str, Any]) -> str:
     branch, staging_errors = _staged_branch_from_spec(spec)
     validation_errors = branch.validate()
     errors = staging_errors + validation_errors
+
+    # Validate fork_from points to a real branch_version_id.
+    if branch.fork_from:
+        from workflow.branch_versions import get_branch_version
+        if get_branch_version(_base_path(), branch.fork_from) is None:
+            errors.append(
+                f"fork_from '{branch.fork_from}' is not a known branch_version_id. "
+                "Pass a published branch_version_id, not a branch_def_id."
+            )
 
     if errors:
         suggestions = _errors_to_suggestions(branch, errors)
@@ -5630,6 +5691,23 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                 "set_visibility 'visibility' must be 'public' or 'private'"
             )
         branch.visibility = normalized
+        return ""
+    if name == "set_fork_from":
+        bvid = (op.get("branch_version_id") or "").strip()
+        if not bvid:
+            return "set_fork_from requires branch_version_id"
+        if branch.fork_from is not None:
+            return (
+                f"set_fork_from: fork_from is already set to '{branch.fork_from}' "
+                "and is immutable after set."
+            )
+        from workflow.branch_versions import get_branch_version
+        if get_branch_version(_base_path(), bvid) is None:
+            return (
+                f"set_fork_from: '{bvid}' is not a known branch_version_id. "
+                "Pass a published branch_version_id, not a branch_def_id."
+            )
+        branch.fork_from = bvid
         return ""
     return f"unknown op '{name}'"
 
@@ -6450,6 +6528,71 @@ def _action_continue_branch(kwargs: dict[str, Any]) -> str:
     )
 
 
+def _action_fork_tree(kwargs: dict[str, Any]) -> str:
+    from workflow.daemon_server import get_branch_definition, list_branch_definitions
+    from workflow.branch_versions import get_branch_version, list_branch_versions
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+
+    try:
+        root = get_branch_definition(_base_path(), branch_def_id=bid)
+    except KeyError:
+        return json.dumps({"error": f"branch_def_id '{bid}' not found."})
+
+    # Walk ancestor chain via fork_from (branch_version_id → branch_def_id).
+    ancestors: list[dict[str, Any]] = []
+    seen_bids: set[str] = {bid}
+    current_bvid = root.get("fork_from")
+    while current_bvid:
+        bv = get_branch_version(_base_path(), current_bvid)
+        if bv is None:
+            break
+        anc_bid = bv.branch_def_id
+        if anc_bid in seen_bids:
+            break  # cycle guard
+        seen_bids.add(anc_bid)
+        try:
+            anc = get_branch_definition(_base_path(), branch_def_id=anc_bid)
+        except KeyError:
+            break
+        ancestors.append({
+            "branch_def_id": anc_bid,
+            "name": anc.get("name", ""),
+            "author": anc.get("author", ""),
+            "fork_from_version": current_bvid,
+        })
+        current_bvid = anc.get("fork_from")
+
+    # Find descendants: branches whose fork_from matches any version of this branch.
+    versions = list_branch_versions(_base_path(), bid, limit=200)
+    version_ids = {v.branch_version_id for v in versions}
+    descendants: list[dict[str, Any]] = []
+    all_branches = list_branch_definitions(_base_path(), include_private=False)
+    for b in all_branches:
+        ff = b.get("fork_from")
+        if ff and ff in version_ids:
+            descendants.append({
+                "branch_def_id": b["branch_def_id"],
+                "name": b.get("name", ""),
+                "author": b.get("author", ""),
+                "fork_from_version": ff,
+                "published_versions_count": len(
+                    list_branch_versions(_base_path(), b["branch_def_id"], limit=500)
+                ),
+            })
+
+    return json.dumps({
+        "branch_def_id": bid,
+        "name": root.get("name", ""),
+        "fork_from": root.get("fork_from"),
+        "ancestors": ancestors,
+        "descendant_count": len(descendants),
+        "descendants": descendants[:50],
+    }, default=str)
+
+
 _BRANCH_ACTIONS: dict[str, Any] = {
     "create_branch": _ext_branch_create,
     "get_branch": _ext_branch_get,
@@ -6467,6 +6610,7 @@ _BRANCH_ACTIONS: dict[str, Any] = {
     "update_node": _ext_branch_update_node,
     "search_nodes": _ext_branch_search_nodes,
     "continue_branch": _action_continue_branch,
+    "fork_tree": _action_fork_tree,
 }
 
 _BRANCH_WRITE_ACTIONS: frozenset[str] = frozenset({
