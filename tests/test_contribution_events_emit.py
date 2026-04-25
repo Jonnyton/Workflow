@@ -219,3 +219,230 @@ class TestBountyCalcOnRealData:
         shares = {r["actor_id"]: r["share"] for r in rows}
         assert shares["alice"] == 1.0
         assert shares["bob"] == 1.0
+
+
+# ── design_used emits (Task #75) ─────────────────────────────────────────────
+
+
+def _seed_branch_with_authored_nodes(
+    tmp_path,
+    *,
+    branch_id: str = "b1",
+    node_authors: dict[str, str] | None = None,
+) -> "BranchDefinition":  # noqa: F821 — string annotation; real type imported in body
+    """Create a real BranchDefinition with NodeDefinitions whose authors are
+    set per the node_authors mapping. Single-node default keeps tests focused."""
+    from workflow.branches import (
+        BranchDefinition,
+        EdgeDefinition,
+        GraphNodeRef,
+        NodeDefinition,
+    )
+    from workflow.daemon_server import (
+        initialize_author_server,
+        save_branch_definition,
+    )
+
+    initialize_author_server(tmp_path)
+    if node_authors is None:
+        node_authors = {"n1": "alice"}
+
+    node_defs = [
+        NodeDefinition(
+            node_id=node_id, display_name=node_id.upper(),
+            prompt_template="do thing",
+            author=author,
+        )
+        for node_id, author in node_authors.items()
+    ]
+    graph_nodes = [
+        GraphNodeRef(id=node_id, node_def_id=node_id)
+        for node_id in node_authors
+    ]
+    # Single linear chain n1 -> END (or n1 -> n2 -> END for 2-node tests).
+    edges: list[EdgeDefinition] = []
+    ids = list(node_authors)
+    for i, nid in enumerate(ids[:-1]):
+        edges.append(EdgeDefinition(from_node=nid, to_node=ids[i + 1]))
+    edges.append(EdgeDefinition(from_node=ids[-1], to_node="END"))
+
+    branch = BranchDefinition(
+        branch_def_id=branch_id,
+        name=f"Branch {branch_id}",
+        graph_nodes=graph_nodes,
+        edges=edges,
+        entry_point=ids[0],
+        node_defs=node_defs,
+        state_schema=[],
+    )
+    save_branch_definition(tmp_path, branch_def=branch.to_dict())
+    return branch
+
+
+def _design_used_events(tmp_path, run_id: str) -> list[dict]:
+    with _connect(tmp_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM contribution_events "
+            "WHERE source_run_id = ? AND event_type = 'design_used' "
+            "ORDER BY occurred_at ASC",
+            (run_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+class TestDesignUsedEmits:
+    """Phase 2 design_used emit (Task #75). Fires per successful step
+    execution, crediting the NodeDefinition's author. Skips on missing
+    artifact id, missing/anonymous author, system-prefixed node ids."""
+
+    def test_node_def_kind_emitted_for_authored_node(self, tmp_path):
+        """A node with non-anonymous author fires one design_used per
+        successful step — kind=node_def, source_artifact_id=node_def_id,
+        actor_id=author."""
+        from workflow.runs import execute_branch_async
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path,
+            node_authors={"n1": "alice"},
+        )
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        from workflow.runs import wait_for
+        wait_for(outcome.run_id, timeout=10.0)
+
+        events = _design_used_events(tmp_path, outcome.run_id)
+        assert len(events) >= 1
+        ev = events[0]
+        assert ev["event_type"] == "design_used"
+        assert ev["actor_id"] == "alice"
+        assert ev["source_artifact_id"] == "n1"
+        assert ev["source_artifact_kind"] == "node_def"
+        assert ev["weight"] == 1.0
+        meta = json.loads(ev["metadata_json"])
+        assert meta["node_def_id"] == "n1"
+        assert meta["graph_node_id"] == "n1"
+        assert "step_index" in meta
+
+    def test_anonymous_author_skips_emit(self, tmp_path):
+        """Default 'anonymous' author skips emit — orphan-row prevention.
+        Only registered actors (non-default author) get credited."""
+        from workflow.runs import execute_branch_async, wait_for
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path,
+            node_authors={"n1": "anonymous"},
+        )
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        wait_for(outcome.run_id, timeout=10.0)
+
+        events = _design_used_events(tmp_path, outcome.run_id)
+        assert events == []
+
+    def test_multi_node_run_emits_per_node(self, tmp_path):
+        """Two authored nodes each fire one design_used in step order."""
+        from workflow.runs import execute_branch_async, wait_for
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path,
+            node_authors={"n1": "alice", "n2": "bob"},
+        )
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        wait_for(outcome.run_id, timeout=10.0)
+
+        events = _design_used_events(tmp_path, outcome.run_id)
+        actors = {e["actor_id"] for e in events}
+        assert "alice" in actors
+        assert "bob" in actors
+        # Each authored node contributes at least one event.
+        artifact_ids = {e["source_artifact_id"] for e in events}
+        assert "n1" in artifact_ids
+        assert "n2" in artifact_ids
+
+    def test_synthetic_system_node_id_does_not_emit(self, tmp_path):
+        """Direct _on_node call with a __-prefixed node_id never emits.
+        Tests the system-event filter without needing a full run."""
+        from workflow.contribution_events import _connect as ce_connect
+        from workflow.runs import _invoke_graph  # noqa: F401 — verifies symbol importable
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path, node_authors={"n1": "alice"},
+        )
+        # We can't easily invoke _on_node directly (it's a closure inside
+        # _invoke_graph). Instead drive a full run, then verify no
+        # contribution event has graph_node_id starting with "__".
+        from workflow.runs import execute_branch_async, wait_for
+
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        wait_for(outcome.run_id, timeout=10.0)
+
+        with ce_connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT metadata_json FROM contribution_events "
+                "WHERE event_type = 'design_used' AND source_run_id = ?",
+                (outcome.run_id,),
+            ))
+        for r in rows:
+            meta = json.loads(r["metadata_json"])
+            assert not meta["graph_node_id"].startswith("__"), (
+                f"design_used event has system-prefixed node_id: "
+                f"{meta['graph_node_id']}"
+            )
+
+    def test_design_used_idempotent_within_run(self, tmp_path):
+        """Same (run_id, step_index, node_def_id) tuple cannot emit twice —
+        deterministic event_id + INSERT OR IGNORE. Verified by inspecting
+        for any duplicate (step_index, node_def_id) pairs."""
+        from workflow.runs import execute_branch_async, wait_for
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path,
+            node_authors={"n1": "alice"},
+        )
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        wait_for(outcome.run_id, timeout=10.0)
+
+        events = _design_used_events(tmp_path, outcome.run_id)
+        # Confirm no duplicate (step_index, node_def_id) pairs.
+        seen = set()
+        for e in events:
+            meta = json.loads(e["metadata_json"])
+            key = (meta["step_index"], meta["node_def_id"])
+            assert key not in seen, f"Duplicate design_used event: {key}"
+            seen.add(key)
+
+    def test_design_used_findable_by_bounty_calc_query(self, tmp_path):
+        """The §4 recursive-CTE bounty calc finds production-emitted
+        design_used events with correct actor attribution."""
+        from workflow.runs import execute_branch_async, wait_for
+
+        branch = _seed_branch_with_authored_nodes(
+            tmp_path,
+            node_authors={"n1": "alice", "n2": "bob"},
+        )
+        outcome = execute_branch_async(
+            tmp_path, branch=branch, inputs={}, actor="runner",
+        )
+        wait_for(outcome.run_id, timeout=10.0)
+
+        # Bounty-calc-shaped query restricted to design_used events.
+        with _connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT actor_id, SUM(weight) AS share "
+                "FROM contribution_events "
+                "WHERE event_type = 'design_used' "
+                "  AND source_run_id = ? "
+                "GROUP BY actor_id",
+                (outcome.run_id,),
+            ))
+        shares = {r["actor_id"]: r["share"] for r in rows}
+        assert shares.get("alice", 0) >= 1.0
+        assert shares.get("bob", 0) >= 1.0

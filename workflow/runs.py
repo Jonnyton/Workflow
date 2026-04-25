@@ -1160,6 +1160,22 @@ def _invoke_graph(
     execution_cursor = {"step": 0}
     provider_tracker: dict[str, str | None] = {"last": None}
 
+    # Phase 2 design_used emit (Task #75) — pre-build a graph_node_id ->
+    # NodeDefinition lookup so each "ran" event can credit the artifact
+    # author without scanning branch.node_defs per step. Falls back to
+    # node_id matching when graph_nodes is empty (legacy single-list
+    # branches). Empty NodeDefinition.author skips emit at the
+    # contribution-event layer (orphan-row prevention).
+    _node_def_by_id: dict[str, Any] = {}
+    _defs_index = {n.node_id: n for n in branch.node_defs}
+    if branch.graph_nodes:
+        for gn in branch.graph_nodes:
+            ref_id = gn.node_def_id or gn.id
+            if ref_id in _defs_index:
+                _node_def_by_id[gn.id] = _defs_index[ref_id]
+    else:
+        _node_def_by_id = dict(_defs_index)
+
     def _on_node(node_id: str, **detail: Any) -> None:
         # #60: the compiler emits TWO events per node — phase="starting"
         # before the provider call and phase="ran" after. Each event gets
@@ -1198,6 +1214,49 @@ def _invoke_graph(
             finished_at=_now(),
             detail=detail,
         ))
+
+        # Phase 2 design_used emit (Task #75) — credit the NodeDefinition's
+        # author for a successful step execution. Fires only at "ran" phase
+        # for real artifact-referencing nodes. System events (node_id
+        # prefixed with "__") and synthetic phases never trigger. Wrapped
+        # in try/except so emit failure stays decoupled from run state
+        # (mirrors Task #72 discipline).
+        if node_id.startswith("__"):
+            return
+        nd = _node_def_by_id.get(node_id)
+        if nd is None:
+            return
+        node_def_id = getattr(nd, "node_def_id", "") or getattr(nd, "node_id", "")
+        author = getattr(nd, "author", "") or ""
+        if not node_def_id or not author or author == "anonymous":
+            return
+        try:
+            from workflow.contribution_events import record_contribution_event
+            record_contribution_event(
+                base_path,
+                event_id=f"design_used:{run_id}:{step}:{node_def_id}",
+                event_type="design_used",
+                actor_id=author,
+                source_run_id=run_id,
+                source_artifact_id=node_def_id,
+                source_artifact_kind="node_def",
+                weight=1.0,
+                occurred_at=_now(),
+                metadata_json=json.dumps({
+                    "step_index": step,
+                    "node_def_id": node_def_id,
+                    "graph_node_id": node_id,
+                }),
+            )
+        except Exception as exc:
+            from workflow.contribution_events import _EMIT_FAILURES
+            from workflow.contribution_events import _logger as _ce_logger
+            _EMIT_FAILURES["count"] += 1
+            _ce_logger.warning(
+                "design_used emit failed for run %s step %s node %s: %s; "
+                "step event preserved",
+                run_id, step, node_id, exc,
+            )
 
     try:
         compiled = compile_branch(
