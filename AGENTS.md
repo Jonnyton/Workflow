@@ -158,6 +158,7 @@ scoped reader at `python scripts/docview.py`.
 - **Broadcast sparingly.** Token cost scales with team size. Use direct messages for targeted coordination, broadcast only for team-wide state changes.
 - **Claim before working.** When self-claiming from the task list, claim first to prevent collisions. File locking handles races but claiming communicates intent.
 - **Shutdown is graceful.** Teammates can reject shutdown if mid-task. Lead shuts down all teammates before running cleanup. Never force-kill without checking.
+- **Despawn discipline.** Floater swaps use Escape-then-`shutdown_request` (Protocol A in `LAUNCH_PROMPT.md`). Verifier and dev despawns wait for in-flight tool calls — no Escape unless the teammate is genuinely idle. Hung teammates require filesystem cleanup of `~/.claude/teams/<team>/`; no force-kill verb exists. Spawn the replacement only AFTER `shutdown_approved` lands — never overlap, since the 3+1 floater roster is sized to the rate-limit budget. See `docs/audits/2026-04-25-despawn-chain-protocol.md`.
 
 ### Quality Gates
 

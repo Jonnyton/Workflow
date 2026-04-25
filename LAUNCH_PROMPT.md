@@ -50,6 +50,22 @@ Execute these in order. Each step is an action — do it, confirm the result, mo
 4. After all teammates confirm shutdown, clean up the team. Cleanup fails if any teammates are still running — shut them all down first.
 5. Update `.agents/activity.log` with session summary.
 
+## Floater Swap (Mid-Session)
+
+Use when reassigning the floater slot to a different role. Faster than Session End.
+
+1. Confirm the teammate is idle or has just messaged you (no Bash/WebFetch/pytest in flight).
+2. Press Escape ONCE to interrupt any new turn the teammate may have just started.
+3. Send `shutdown_request` with reason "floater swap".
+4. Wait for `shutdown_approved` — expect <30s if the teammate was idle.
+5. Spawn the replacement role.
+
+DO NOT Escape a verifier mid-pytest, a dev mid-Edit, or any teammate that has uncommitted work in flight. For those, use the Session End graceful protocol — the wait is correct.
+
+DO NOT manually delete `~/.claude/teams/<team>/` mid-session unless the team is hung (no `shutdown_approved` after 60s). Filesystem cleanup is the escape hatch, not the default.
+
+Reference: `docs/audits/2026-04-25-despawn-chain-protocol.md` for the full chain analysis.
+
 ## Autonomous Operation
 
 The lead runs autonomously all day. **Never block on human input.** Make the best call yourself and document it in STATUS.md.
