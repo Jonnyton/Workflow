@@ -220,3 +220,148 @@ class TestBackfill:
                 ("g1",),
             ).fetchone()["n"]
         assert count == 2
+
+
+# ── Step 2: dual-write via set_canonical_branch ───────────────────────────────
+
+
+class TestDualWrite:
+    """Step 2 — set_canonical_branch writes BOTH legacy goals column AND
+    canonical_bindings (scope_token=''). Reads still go to legacy column."""
+
+    def test_set_canonical_writes_both_stores(self, tmp_path):
+        bvid = _seed_branch_version(tmp_path, "b1")
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid, set_by="alice"
+        )
+
+        # Legacy column populated.
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] == bvid
+
+        # New table also populated with scope_token=''.
+        with _connect(tmp_path) as conn:
+            row = conn.execute(
+                "SELECT branch_version_id, bound_by_actor_id, visibility "
+                "FROM canonical_bindings WHERE goal_id = ? AND scope_token = ''",
+                ("g1",),
+            ).fetchone()
+        assert row is not None
+        assert row["branch_version_id"] == bvid
+        assert row["bound_by_actor_id"] == "alice"
+        assert row["visibility"] == "public"
+
+    def test_set_canonical_overwrite_updates_both(self, tmp_path):
+        """Setting a new canonical replaces both legacy and new-table values."""
+        bvid1 = _seed_branch_version(tmp_path, "b1")
+        bvid2 = _seed_branch_version(tmp_path, "b2")
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid1, set_by="alice"
+        )
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid2, set_by="alice"
+        )
+
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] == bvid2
+
+        with _connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT branch_version_id FROM canonical_bindings "
+                "WHERE goal_id = ? AND scope_token = ''",
+                ("g1",),
+            ))
+        assert len(rows) == 1
+        assert rows[0]["branch_version_id"] == bvid2
+
+    def test_unset_canonical_removes_default_binding(self, tmp_path):
+        """branch_version_id=None unsets BOTH legacy column AND deletes the
+        default-scope canonical_bindings row."""
+        bvid = _seed_branch_version(tmp_path, "b1")
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid, set_by="alice"
+        )
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=None, set_by="alice"
+        )
+
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] is None
+
+        with _connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT * FROM canonical_bindings "
+                "WHERE goal_id = ? AND scope_token = ''",
+                ("g1",),
+            ))
+        assert rows == []
+
+    def test_unset_does_not_touch_other_scopes(self, tmp_path):
+        """Unsetting the default scope must NOT touch non-default scope rows."""
+        bvid = _seed_branch_version(tmp_path, "b1")
+        bvid2 = _seed_branch_version(tmp_path, "b2")
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        # Set the default canonical (writes to both stores).
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=bvid, set_by="alice"
+        )
+        # Manually insert a non-default-scope binding (simulates a future
+        # user:mark variant added directly via the new table).
+        with _connect(tmp_path) as conn:
+            conn.execute(
+                "INSERT INTO canonical_bindings "
+                "(goal_id, scope_token, branch_version_id, "
+                " bound_by_actor_id, bound_at, visibility) "
+                "VALUES (?, 'user:mark', ?, 'mark', 1.0, 'public')",
+                ("g1", bvid2),
+            )
+
+        # Unset the default — only the '' scope row should disappear.
+        set_canonical_branch(
+            tmp_path, goal_id="g1", branch_version_id=None, set_by="alice"
+        )
+
+        with _connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT scope_token, branch_version_id "
+                "FROM canonical_bindings WHERE goal_id = ? "
+                "ORDER BY scope_token",
+                ("g1",),
+            ))
+        assert len(rows) == 1
+        assert rows[0]["scope_token"] == "user:mark"
+        assert rows[0]["branch_version_id"] == bvid2
+
+    def test_set_canonical_invalid_branch_version_raises(self, tmp_path):
+        """Validation runs BEFORE dual-write; invalid version_id raises and
+        leaves both stores untouched."""
+        _seed_goal(tmp_path, "g1", author="alice")
+
+        with pytest.raises(ValueError, match="not found"):
+            set_canonical_branch(
+                tmp_path,
+                goal_id="g1",
+                branch_version_id="nonexistent-bvid",
+                set_by="alice",
+            )
+
+        from workflow.daemon_server import get_goal
+        goal = get_goal(tmp_path, goal_id="g1")
+        assert goal["canonical_branch_version_id"] is None
+
+        with _connect(tmp_path) as conn:
+            rows = list(conn.execute(
+                "SELECT * FROM canonical_bindings WHERE goal_id = ?",
+                ("g1",),
+            ))
+        assert rows == []
