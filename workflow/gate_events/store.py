@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -321,10 +321,161 @@ def list_gate_events(
     return result
 
 
+_WINDOW_DAYS: dict[str, int | None] = {
+    "all": None,
+    "30d": 30,
+    "90d": 90,
+    "1y": 365,
+}
+
+
+def leaderboard_by_gate_events(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    window: str = "all",
+    limit: int = 20,
+    verified_weight: float = 2.0,
+    event_weights: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Rank branch versions under a Goal by attributed gate events.
+
+    Args:
+        goal_id: Goal to rank within.
+        window: One of 'all', '30d', '90d', '1y'. Filters by event_date.
+        limit: Max ranked entries to return (capped at 100).
+        verified_weight: Score multiplier for verified-status events
+            (default 2.0). Attested-only = 1.0.
+        event_weights: Optional per-event_type weight overrides.
+            Unrecognised types default to 1.0.
+
+    Returns dict with keys: goal_id, window, ranked (list), total_events_in_window.
+
+    Disputed and retracted events are excluded from scoring.
+    """
+    if not goal_id:
+        raise ValueError("goal_id is required")
+    if window not in _WINDOW_DAYS:
+        raise ValueError(
+            f"Unknown window {window!r}. Must be one of: {list(_WINDOW_DAYS)}"
+        )
+    limit = min(max(1, limit), 100)
+    db = _ensure_schema(base_path)
+
+    days = _WINDOW_DAYS[window]
+    with _connect(db) as conn:
+        # Base query: events for this goal, not disputed or retracted.
+        if days is not None:
+            cutoff = (
+                datetime.now(timezone.utc).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+            )
+            cutoff = cutoff - timedelta(days=days)
+            cutoff_str = cutoff.date().isoformat()
+            rows = conn.execute(
+                """
+                SELECT ge.event_id, ge.event_type, ge.event_date,
+                       ge.verification_status
+                  FROM gate_event ge
+                 WHERE ge.goal_id = ?
+                   AND ge.verification_status NOT IN ('disputed', 'retracted')
+                   AND ge.event_date >= ?
+                """,
+                (goal_id, cutoff_str),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT ge.event_id, ge.event_type, ge.event_date,
+                       ge.verification_status
+                  FROM gate_event ge
+                 WHERE ge.goal_id = ?
+                   AND ge.verification_status NOT IN ('disputed', 'retracted')
+                """,
+                (goal_id,),
+            ).fetchall()
+
+        total_events = len(rows)
+        if total_events == 0:
+            return {
+                "goal_id": goal_id,
+                "window": window,
+                "ranked": [],
+                "total_events_in_window": 0,
+            }
+
+        # Load cites for all events.
+        event_ids = [r["event_id"] for r in rows]
+        event_map = {r["event_id"]: r for r in rows}
+
+        # Aggregate per branch_version_id.
+        # Structure: {bvid: {gate_event_count, verified_event_count, types, score, recent_date}}
+        tally: dict[str, dict[str, Any]] = {}
+        for eid in event_ids:
+            cite_rows = conn.execute(
+                "SELECT branch_version_id FROM gate_event_cite WHERE event_id = ?",
+                (eid,),
+            ).fetchall()
+            ev = event_map[eid]
+            ev_type = ev["event_type"]
+            ev_date = ev["event_date"] or ""
+            is_verified = ev["verification_status"] == "verified"
+
+            # Base weight: per-type override or 1.0.
+            base_w = (event_weights or {}).get(ev_type, 1.0)
+            # Verified multiplier applied on top.
+            score_contrib = base_w * (verified_weight if is_verified else 1.0)
+
+            for cr in cite_rows:
+                bvid = cr["branch_version_id"] or ""
+                if not bvid:
+                    continue
+                if bvid not in tally:
+                    tally[bvid] = {
+                        "branch_version_id": bvid,
+                        "gate_event_count": 0,
+                        "verified_event_count": 0,
+                        "gate_event_types": {},
+                        "score": 0.0,
+                        "most_recent_event_date": "",
+                    }
+                entry = tally[bvid]
+                entry["gate_event_count"] += 1
+                if is_verified:
+                    entry["verified_event_count"] += 1
+                entry["gate_event_types"][ev_type] = (
+                    entry["gate_event_types"].get(ev_type, 0) + 1
+                )
+                entry["score"] += score_contrib
+                if ev_date > entry["most_recent_event_date"]:
+                    entry["most_recent_event_date"] = ev_date
+
+    # Sort: score desc → most_recent_event_date desc → branch_version_id asc.
+    # ISO date strings are lexicographically sortable; negate score for desc.
+    # "~" (ASCII 126) sorts after all printable date chars — use as inversion
+    # sentinel so empty date sorts last in the desc pass.
+    def _sort_key(e: dict[str, Any]) -> tuple[float, str, str]:
+        date = e["most_recent_event_date"] or ""
+        # Invert date for descending: replace each char with chr(255 - ord(c)).
+        inv_date = "".join(chr(255 - ord(c)) for c in date) if date else chr(255)
+        return (-e["score"], inv_date, e["branch_version_id"])
+
+    ranked = sorted(tally.values(), key=_sort_key)[:limit]
+
+    return {
+        "goal_id": goal_id,
+        "window": window,
+        "ranked": ranked,
+        "total_events_in_window": total_events,
+    }
+
+
 __all__ = [
     "attest_gate_event",
     "dispute_gate_event",
     "get_gate_event",
+    "leaderboard_by_gate_events",
     "list_gate_events",
     "retract_gate_event",
     "verify_gate_event",

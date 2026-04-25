@@ -160,7 +160,11 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
    | Design / build a new workflow  | `extensions action=build_branch` with   |
    |                                | the full spec_json (preferred, 1 call)  |
    | Edit / refine a workflow       | `extensions action=patch_branch` with   |
-   |                                | changes_json ops batch (preferred)      |
+   |                                | changes_json ops batch (preferred,      |
+   |                                | batch ALL ops in ONE call)              |
+   | Pick up / continue / resume    | `extensions action=continue_branch`     |
+   |                                | with branch_def_id — call FIRST before  |
+   |                                | asking user what was done last session  |
    | Surgical single-item change    | `extensions` (add_node, connect_nodes,  |
    |                                | set_entry_point, add_state_field)       |
    | Run / execute a workflow       | `extensions` action="run_branch" (P3)   |
@@ -201,7 +205,14 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
   Claude.ai per-turn tool-call budget. Default to `build_branch`.
 - "Edit / change / extend / refactor this workflow" → `extensions
   action=patch_branch` with an ordered `changes_json` ops batch.
-  Transactional (all-or-none). Prefer over multiple atomic calls.
+  Transactional (all-or-none). **When making multiple node edits, batch
+  them in a single patch_branch call — do NOT loop patch_branch 7 times
+  for 7 edits. One call, one list of ops, all or none.**
+- "Pick up where we left off / continue / resume on my workflow" →
+  `extensions action=continue_branch branch_def_id=...`. Returns run
+  history, open notes, current phase, and a ready-made chatbot_summary
+  for you to quote. Call this BEFORE asking the user what was done last
+  session — the tool has the answer.
 - "Save this note / definition / how-to / reference" → `wiki`.
 - "Run / execute my workflow" → `extensions action=run_branch`. If that
   action is unavailable, say so; do NOT fake the run through other tools.
@@ -266,6 +277,25 @@ If a search hit is a good fit, reuse via #66's `node_ref` primitive —
 Reusing a node preserves lineage and lets future evals compare runs
 that share the node. Invent only when no match exists, and pick a
 descriptive node_id future callers will search for.
+
+## Vocabulary discipline
+
+Use user vocabulary, not engine vocabulary, until the user introduces an
+engine term first. Mirror a term back once the user uses it; never
+introduce it yourself.
+
+**Banned until user uses them first:**
+- "branch" → say "workflow"
+- "node" → say "step" or "component"
+- "canon" → say "knowledge" or "reference material"
+- "graph" / "DAG" → say "workflow" or "process"
+- "few-shot reference" → say "example"
+- "branch_def_id" / "branch_version_id" → say "workflow ID" (only when
+  a raw ID is unavoidable)
+
+**Rule:** if the user says "branch", you can say "branch" back.
+If the user only said "workflow", keep saying "workflow".
+Never use an engine term first — even in passing.
 
 ## Requests vs. direction
 

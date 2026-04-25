@@ -401,6 +401,17 @@ def initialize_author_server(base_path: str | Path) -> Path:
                 "ALTER TABLE goals ADD COLUMN gate_ladder_json "
                 "TEXT NOT NULL DEFAULT '[]'"
             )
+        # canonical_branch migration: first-experience fork target per Goal.
+        if "canonical_branch_version_id" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN canonical_branch_version_id "
+                "TEXT DEFAULT NULL"
+            )
+        if "canonical_branch_history_json" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN canonical_branch_history_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            )
     ensure_default_author(base_path)
     return author_server_db_path(base_path)
 
@@ -2211,6 +2222,14 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         ladder_raw = row["gate_ladder_json"]
     except (IndexError, KeyError):
         ladder_raw = "[]"
+    try:
+        canonical_bvid = row["canonical_branch_version_id"]
+    except (IndexError, KeyError):
+        canonical_bvid = None
+    try:
+        canonical_history_raw = row["canonical_branch_history_json"]
+    except (IndexError, KeyError):
+        canonical_history_raw = "[]"
     return {
         "goal_id": row["goal_id"],
         "name": row["name"],
@@ -2221,6 +2240,10 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "gate_ladder": _json_loads(ladder_raw or "[]", []),
+        "canonical_branch_version_id": canonical_bvid,
+        "canonical_branch_history": _json_loads(
+            canonical_history_raw or "[]", []
+        ),
     }
 
 
@@ -2304,6 +2327,83 @@ def update_goal(
             params,
         )
     return get_goal(base_path, goal_id=goal_id)
+
+
+def set_canonical_branch(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    branch_version_id: str | None,
+    set_by: str,
+) -> dict[str, Any]:
+    """Set (or unset) the canonical branch version for a Goal.
+
+    Only the Goal author or a host-level actor may set canonical.
+    Caller must validate authority before calling this function.
+
+    Args:
+        branch_version_id: A published branch_version_id to designate
+            as canonical, or None to unset.
+        set_by: Actor making the change (for history audit trail).
+
+    The previous canonical (if any) is recorded in
+    canonical_branch_history before the new value is written.
+    Raises KeyError if goal_id not found.
+    Raises ValueError if branch_version_id is provided but does not exist
+        in branch_versions table (not a published version).
+    """
+    initialize_author_server(base_path)
+    now = _now()
+    goal = get_goal(base_path, goal_id=goal_id)
+
+    if branch_version_id is not None:
+        # Validate that it's a real published version.
+        from workflow.branch_versions import get_branch_version
+        if get_branch_version(base_path, branch_version_id) is None:
+            raise ValueError(
+                f"branch_version_id {branch_version_id!r} not found "
+                "in branch_versions — only published versions may be canonical."
+            )
+
+    # Build history entry for previous canonical (if any).
+    prev_bvid = goal.get("canonical_branch_version_id")
+    history: list[dict[str, Any]] = list(goal.get("canonical_branch_history") or [])
+    if prev_bvid is not None:
+        history.append({
+            "branch_version_id": prev_bvid,
+            "unset_at": now,
+            "replaced_by": branch_version_id,
+        })
+
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            UPDATE goals
+               SET canonical_branch_version_id = ?,
+                   canonical_branch_history_json = ?,
+                   updated_at = ?
+             WHERE goal_id = ?
+            """,
+            (branch_version_id, _json_dumps(history), now, goal_id),
+        )
+    return get_goal(base_path, goal_id=goal_id)
+
+
+def get_canonical_branch_history(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+) -> list[dict[str, Any]]:
+    """Return the canonical branch history for a Goal.
+
+    Each entry: {branch_version_id, unset_at, replaced_by}.
+    Returns [] if no history exists or goal is not found.
+    """
+    try:
+        goal = get_goal(base_path, goal_id=goal_id)
+    except KeyError:
+        return []
+    return list(goal.get("canonical_branch_history") or [])
 
 
 def list_goals(

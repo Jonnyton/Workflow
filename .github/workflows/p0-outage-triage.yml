@@ -76,8 +76,11 @@ jobs:
         id: prediag
         run: |
           # Bundle docker + compose + journalctl + df + systemctl status
-          # so the classifier sees all signals at once. df is needed for
-          # disk-full detection; systemctl status for watchdog-hotloop.
+          # + activity.log tail so the classifier sees all signals at once.
+          # df is needed for disk-full; systemctl for watchdog-hotloop;
+          # activity.log tail for provider_exhaustion (Lane 4b — spec
+          # §Q6: classifier needs the REVERT-verdict shape that only
+          # lands in the daemon's activity log, not journalctl).
           diag=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>&1; \
@@ -90,7 +93,13 @@ jobs:
                echo '--- systemctl status workflow-daemon ---'; \
                systemctl status workflow-daemon --no-pager 2>&1 | head -30 || true; \
                echo '--- cloudflared logs ---'; \
-               docker logs workflow-tunnel --tail 30 2>&1 || true" \
+               docker logs workflow-tunnel --tail 30 2>&1 || true; \
+               echo '--- activity.log tail (provider_exhaustion signal) ---'; \
+               for udir in /var/lib/docker/volumes/workflow-data/_data/*/; do \
+                 [ -f \"\$udir/activity.log\" ] && \
+                   echo \"# \$udir/activity.log:\" && \
+                   tail -n 100 \"\$udir/activity.log\" 2>&1 || true; \
+               done || true" \
               2>&1 || echo "(SSH failed)")
           _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
@@ -218,28 +227,45 @@ jobs:
                sudo systemctl reset-failed workflow-daemon && \
                sudo systemctl start workflow-daemon" 2>&1
 
-      # --- Repair branch 6: provider exhaustion (Lane 4b) --------------
-      # Daemon is alive + writing, but every draft is failing because
-      # every provider in the fallback chain is cooling / quota-capped /
-      # broken. The 2026-04-23 P0 shape: 67 consecutive revert attempts
-      # on the concordance universe, producing empty prose.
+      # --- Repair branch 6: provider_exhaustion (Lane 4b) --------------
+      # Daemon alive + writing, but every scene terminates as REVERT —
+      # the 2026-04-23 P0 signature. Revert-loop canary fires this via
+      # the triage pipeline; auto-repair halts the generator (docker
+      # stop workflow-worker + .pause sentinel) and pages the host
+      # priority=2 because provider routing needs human intervention
+      # (rotate API keys, bump quota, flip tier_routing_policy).
       #
-      # Auto-repair is narrow: stop the worker (halt the loop) + write
-      # a `.pause` sentinel into the affected universe (idempotent on
-      # resume) + page the host priority=2 because provider routing
-      # requires human intervention (rotate API keys, bump quota, or
-      # adjust tier_routing_policy). Distinct from disk_full: no volume
-      # pressure; distinct from generic restart because a restart just
-      # re-enters the loop on broken providers.
+      # Staged rollout (spec §Rollout plan Phase 3): auto-repair gated
+      # on WORKFLOW_REVERT_AUTO_REPAIR=on. Off by default so the class
+      # can run in WARN-only mode during 7-day soak period before
+      # flipping on. Spec Phase 6: remove gate after 14 days clean.
       #
-      # If the universe_id can't be inferred from the diag, the sentinel
-      # is written into every universe dir under /data — over-broad but
-      # safe (pause is idempotent and reversible).
-      - name: Repair — provider exhaustion (stop worker + pause universe)
-        id: repair_provider_exhaustion
+      # Distinct from disk_full: no volume pressure, cause-addressing;
+      # distinct from generic restart: restart re-enters the loop on
+      # broken providers.
+      - name: Repair — provider_exhaustion (auto-repair gate check)
+        id: repair_provider_exhaustion_gate
         if: steps.classify.outputs.class == 'provider_exhaustion'
+        env:
+          REVERT_AUTO_REPAIR: ${{ vars.WORKFLOW_REVERT_AUTO_REPAIR || '' }}
         run: |
-          echo "::warning::provider-exhaustion detected — stopping worker + pausing universe"
+          if [ "${REVERT_AUTO_REPAIR,,}" = "on" ] || \
+             [ "${REVERT_AUTO_REPAIR,,}" = "true" ] || \
+             [ "${REVERT_AUTO_REPAIR,,}" = "1" ]; then
+            echo "auto_repair_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::provider_exhaustion auto-repair ENABLED"
+          else
+            echo "auto_repair_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::provider_exhaustion DETECTED but auto-repair gated off (WORKFLOW_REVERT_AUTO_REPAIR unset). WARN-only mode; host must act manually."
+          fi
+
+      - name: Repair — provider_exhaustion (stop worker + .pause)
+        id: repair_provider_exhaustion
+        if: >
+          steps.classify.outputs.class == 'provider_exhaustion' &&
+          steps.repair_provider_exhaustion_gate.outputs.auto_repair_enabled == 'true'
+        run: |
+          echo "::warning::provider_exhaustion — halting worker + pausing universe"
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "docker stop workflow-worker 2>&1 || true; \
@@ -248,6 +274,32 @@ jobs:
                    echo \"paused \$udir\"; \
                done; \
                ls -la /var/lib/docker/volumes/workflow-data/_data/*/.pause 2>&1" 2>&1
+
+      # Priority=2 page regardless of auto-repair gate — host needs to
+      # know even in WARN-only mode so they can act manually. Matches
+      # spec §Q6 repair-branch YAML.
+      - name: Page — provider_exhaustion (Pushover priority=2)
+        if: steps.classify.outputs.class == 'provider_exhaustion'
+        env:
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          AUTO_REPAIR: ${{ steps.repair_provider_exhaustion_gate.outputs.auto_repair_enabled }}
+        run: |
+          if [ -z "$PUSHOVER_USER_KEY" ] || [ -z "$PUSHOVER_APP_TOKEN" ]; then
+            echo "::warning::Pushover secrets unset — cannot page for provider_exhaustion"
+            exit 0
+          fi
+          if [ "$AUTO_REPAIR" = "true" ]; then
+            title="P0 provider_exhaustion — worker halted"
+            message="Revert-loop canary fired CRITICAL. Worker stopped + .pause set. Fix provider stack before resume."
+          else
+            title="P0 provider_exhaustion — WARN only (auto-repair gated off)"
+            message="Revert-loop canary fired. Auto-repair NOT enabled (WORKFLOW_REVERT_AUTO_REPAIR unset). Manual intervention required."
+          fi
+          python scripts/pushover_page.py \
+              --title "$title" \
+              --message "$message" \
+              --priority 2 || echo "::warning::Pushover paging failed"
 
       # --- Manual-only branch: tunnel token ----------------------------
       # Detection only — we can't auto-rotate the Cloudflare tunnel token
@@ -495,7 +547,8 @@ jobs:
             echo "  - image_pull: \`${{ steps.repair_pull.outcome }}\`"
             echo "  - watchdog_hotloop: \`${{ steps.repair_watchdog.outcome }}\`"
             echo "  - tunnel_token: \`${{ steps.triage_tunnel.outcome }}\`"
-            echo "  - provider_exhaustion: \`${{ steps.repair_provider_exhaustion.outcome }}\`"
+            echo "  - provider_exhaustion (gate): \`${{ steps.repair_provider_exhaustion_gate.outcome }}\` (enabled=${{ steps.repair_provider_exhaustion_gate.outputs.auto_repair_enabled }})"
+            echo "  - provider_exhaustion (repair): \`${{ steps.repair_provider_exhaustion.outcome }}\`"
             echo "- **Generic restart attempted:** \`${{ steps.restart.outcome }}\`"
             echo "- **Re-probe:** \`${{ steps.reprobe.outputs.color }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

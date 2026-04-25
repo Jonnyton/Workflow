@@ -3738,6 +3738,12 @@ def extensions(
     branch_version_id: str = "",
     parent_version_id: str = "",
     notes: str = "",
+    lock_id: str = "",
+    escrow_amount: int = 0,
+    escrow_currency: str = "MicroToken",
+    escrow_recipient_id: str = "",
+    escrow_evidence: str = "",
+    escrow_reason: str = "",
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -3983,6 +3989,20 @@ def extensions(
         }
         return messaging_handler(messaging_kwargs)
 
+    # ── Escrow ─────────────────────────────────────────────────────────────
+    escrow_handler = _ESCROW_ACTIONS.get(action)
+    if escrow_handler is not None:
+        escrow_kwargs: dict[str, Any] = {
+            "node_id": node_id,
+            "lock_id": lock_id,
+            "amount": escrow_amount,
+            "currency": escrow_currency,
+            "recipient_id": escrow_recipient_id,
+            "evidence": escrow_evidence,
+            "reason": escrow_reason,
+        }
+        return escrow_handler(escrow_kwargs)
+
     # ── Dry inspect ────────────────────────────────────────────────────────
     inspect_dry_handler = _INSPECT_DRY_ACTIONS.get(action)
     if inspect_dry_handler is not None:
@@ -4014,6 +4034,8 @@ def extensions(
             "dry_inspect_node", "dry_inspect_patch",
             "messaging_send", "messaging_receive", "messaging_ack",
             "publish_version", "get_branch_version", "list_branch_versions",
+            "continue_branch",
+            "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
         ],
     })
 
@@ -6206,6 +6228,228 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+# ───────────────────────────────────────────────────────────────────────────
+# continue_branch — workspace-memory continuity primitive
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _resolve_udir() -> Path:
+    """Return the active universe directory (best-effort; never raises)."""
+    try:
+        uid = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
+        if not uid:
+            base = _base_path()
+            if base.is_dir():
+                subdirs = [d for d in base.iterdir() if d.is_dir()]
+                if subdirs:
+                    uid = subdirs[0].name
+        if uid:
+            return _universe_dir(uid)
+    except Exception:  # noqa: BLE001
+        pass
+    return _base_path()
+
+
+def _action_continue_branch(kwargs: dict[str, Any]) -> str:
+    """Read-only composite that returns everything a chatbot needs to resume work.
+
+    Composes: branch metadata, last-5 run records, open notes (branch-scoped),
+    current daemon phase, session_boundary block.  Zero writes — safe to call
+    on every session open.
+
+    Spec: docs/vetted-specs.md §continue_branch
+    """
+    from workflow.daemon_server import get_branch_definition
+    from workflow.runs import initialize_runs_db, query_runs
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+
+    base = _base_path()
+
+    # ── 1. Branch metadata ───────────────────────────────────────────────────
+    try:
+        branch = get_branch_definition(base, branch_def_id=bid)
+    except KeyError:
+        return json.dumps({
+            "error": (
+                f"Branch '{bid}' not found. "
+                "Use extensions action=build_branch to create it first."
+            ),
+        })
+
+    branch_name: str = branch.get("name") or bid
+    description: str = branch.get("description") or ""
+    last_modified_at: str | None = branch.get("last_modified_at") or branch.get("updated_at")
+
+    # ── 2. Run history (last 5, most recent first) ───────────────────────────
+    initialize_runs_db(base)
+    run_result = query_runs(
+        base,
+        branch_def_id=bid,
+        filters={},
+        select=[],
+        limit=5,
+    )
+    run_rows: list[dict[str, Any]] = run_result.get("rows", [])
+    run_history = [
+        {
+            "run_id": r.get("run_id"),
+            "status": r.get("status"),
+            "actor": r.get("actor"),
+            "started_at": r.get("started_at"),
+            "finished_at": r.get("finished_at"),
+        }
+        for r in run_rows
+    ]
+
+    # ── 3. Open notes scoped to this branch (last 10) ───────────────────────
+    # notes.json lives in the active universe dir.  Scope = notes whose
+    # "target_id" or "branch_def_id" field matches bid, or that have no
+    # target (universe-global user/editor/structural notes are included).
+    udir = _resolve_udir()
+    raw_notes = _read_json(udir / "notes.json")
+    open_notes: list[dict[str, Any]] = []
+    if raw_notes and isinstance(raw_notes, list):
+        wanted_types = {"user", "editor", "structural"}
+        for n in raw_notes:
+            nt = n.get("note_type") or n.get("type") or ""
+            if nt not in wanted_types:
+                continue
+            # Branch-scoped notes or universe-global notes (no branch_def_id field).
+            note_bid = n.get("branch_def_id") or n.get("target_id") or ""
+            if note_bid and note_bid != bid:
+                continue
+            open_notes.append({
+                "note_id": n.get("note_id") or n.get("id"),
+                "note_type": nt,
+                "text": (n.get("text") or "")[:500],
+                "timestamp": n.get("timestamp"),
+            })
+        open_notes = open_notes[-10:]
+
+    # ── 4. Current daemon phase (best-effort, never raises) ─────────────────
+    # Check if any run for this branch is currently in "running" state.
+    current_phase: str | None = None
+    try:
+        active_result = query_runs(
+            base,
+            branch_def_id=bid,
+            filters={"status": "running"},
+            select=[],
+            limit=1,
+        )
+        active_rows = active_result.get("rows", [])
+        if active_rows:
+            current_phase = active_rows[0].get("status")
+    except Exception:  # noqa: BLE001
+        pass
+
+    # ── 5. session_boundary (same logic as get_status) ───────────────────────
+    account_user = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    prior_session_ts: str | None = None
+    try:
+        import re as _re
+        log_path = udir / "activity.log"
+        if log_path.exists():
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for line in reversed(lines[-200:]):
+                if account_user in line:
+                    m = _re.match(r"\[(\d{4}-\d{2}-\d{2}[^\]]*)\]", line)
+                    if m:
+                        prior_session_ts = m.group(1)
+                        break
+    except Exception:  # noqa: BLE001
+        pass
+
+    prior_session_available: bool = prior_session_ts is not None
+    if prior_session_available:
+        session_boundary = {
+            "prior_session_context_available": True,
+            "account_user": account_user,
+            "last_session_ts": prior_session_ts,
+            "note": (
+                f"Activity log contains entries for '{account_user}'. "
+                "Prior session context may be available."
+            ),
+        }
+    else:
+        session_boundary = {
+            "prior_session_context_available": False,
+            "account_user": account_user,
+            "last_session_ts": None,
+            "note": (
+                f"No activity log entries found for '{account_user}'. "
+                "Chatbot has no prior session record — do not assert prior session context."
+            ),
+        }
+
+    # ── 6. chatbot_summary (pre-composed, anti-hallucination) ───────────────
+    run_count = len(run_history)
+    completed = sum(1 for r in run_history if r.get("status") == "completed")
+    note_count = len(open_notes)
+
+    if prior_session_available:
+        session_line = f"Last session recorded: {prior_session_ts}."
+    else:
+        session_line = (
+            "No prior session history is recorded — this may be your first time "
+            "running this branch, or context was not captured."
+        )
+
+    if run_count == 0:
+        progress_line = "No runs have been recorded for this branch yet."
+    else:
+        last_run = run_history[0]
+        progress_line = (
+            f"{run_count} run(s) on record; {completed} completed. "
+            f"Most recent run: status={last_run.get('status')}, "
+            f"started {last_run.get('started_at')}."
+        )
+
+    if current_phase:
+        phase_line = f"Current daemon phase: {current_phase}."
+    else:
+        phase_line = ""
+
+    if note_count == 0:
+        notes_line = "No open notes."
+    elif note_count <= 2:
+        quoted = "; ".join(
+            f'"{n["text"][:120]}"' for n in open_notes if n.get("text")
+        )
+        notes_line = f"{note_count} open note(s): {quoted}"
+    else:
+        notes_line = f"{note_count} open notes (use list_canon or inspect to see all)."
+
+    parts = [
+        f"Branch: {branch_name!r}.",
+        session_line,
+        progress_line,
+    ]
+    if phase_line:
+        parts.append(phase_line)
+    parts.append(notes_line)
+    chatbot_summary = " ".join(p for p in parts if p)
+
+    return json.dumps(
+        {
+            "branch_def_id": bid,
+            "branch_name": branch_name,
+            "description": description,
+            "last_modified_at": last_modified_at,
+            "run_history": run_history,
+            "open_notes": open_notes,
+            "current_phase": current_phase,
+            "session_boundary": session_boundary,
+            "prior_session_available": prior_session_available,
+            "chatbot_summary": chatbot_summary,
+        },
+        default=str,
+    )
+
+
 _BRANCH_ACTIONS: dict[str, Any] = {
     "create_branch": _ext_branch_create,
     "get_branch": _ext_branch_get,
@@ -6222,6 +6466,7 @@ _BRANCH_ACTIONS: dict[str, Any] = {
     "patch_nodes": _ext_branch_patch_nodes,
     "update_node": _ext_branch_update_node,
     "search_nodes": _ext_branch_search_nodes,
+    "continue_branch": _action_continue_branch,
 }
 
 _BRANCH_WRITE_ACTIONS: frozenset[str] = frozenset({
@@ -7403,6 +7648,116 @@ def _action_dry_inspect_patch(kwargs: dict[str, Any]) -> str:
 _INSPECT_DRY_ACTIONS: dict[str, Any] = {
     "dry_inspect_node": _action_dry_inspect_node,
     "dry_inspect_patch": _action_dry_inspect_patch,
+}
+
+
+# ── Escrow MCP handlers ────────────────────────────────────────────────────────
+
+def _action_escrow_lock(kwargs: dict[str, Any]) -> str:
+    """Lock escrow for a node request. Requires WORKFLOW_PAID_MARKET=on."""
+    from workflow.payments.actions import action_escrow_lock
+    from workflow.producers.node_bid import paid_market_enabled
+    from workflow.storage import _connect
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
+        })
+
+    node_id = (kwargs.get("node_id") or "").strip()
+    claimer = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    currency = (kwargs.get("currency") or "MicroToken").strip()
+    raw_amount = kwargs.get("amount", 0)
+    try:
+        amount = int(raw_amount)
+    except (TypeError, ValueError):
+        return json.dumps({
+            "status": "rejected",
+            "error": f"amount must be an integer, got {raw_amount!r}.",
+        })
+
+    with _connect(_base_path()) as conn:
+        result = action_escrow_lock(
+            conn,
+            node_id=node_id,
+            amount=amount,
+            claimer=claimer,
+            currency=currency,
+        )
+    return json.dumps(result)
+
+
+def _action_escrow_release(kwargs: dict[str, Any]) -> str:
+    """Release locked escrow to a recipient on completion verdict."""
+    from workflow.payments.actions import action_escrow_release
+    from workflow.producers.node_bid import paid_market_enabled
+    from workflow.storage import _connect
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
+        })
+
+    lock_id = (kwargs.get("lock_id") or "").strip()
+    recipient_id = (kwargs.get("recipient_id") or "").strip()
+    evidence = (kwargs.get("evidence") or "").strip()
+
+    if not recipient_id:
+        return json.dumps({
+            "status": "rejected",
+            "error": "recipient_id is required for escrow_release.",
+        })
+
+    with _connect(_base_path()) as conn:
+        result = action_escrow_release(
+            conn,
+            lock_id=lock_id,
+            recipient_id=recipient_id,
+            evidence=evidence,
+        )
+    return json.dumps(result)
+
+
+def _action_escrow_refund(kwargs: dict[str, Any]) -> str:
+    """Refund locked escrow to staker on abandonment or rejection."""
+    from workflow.payments.actions import action_escrow_refund
+    from workflow.producers.node_bid import paid_market_enabled
+    from workflow.storage import _connect
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
+        })
+
+    lock_id = (kwargs.get("lock_id") or "").strip()
+    reason = (kwargs.get("reason") or "").strip()
+
+    with _connect(_base_path()) as conn:
+        result = action_escrow_refund(conn, lock_id=lock_id, reason=reason)
+    return json.dumps(result)
+
+
+def _action_escrow_inspect(kwargs: dict[str, Any]) -> str:
+    """Read-only inspection of escrow lock(s). No paid-market gate."""
+    from workflow.payments.actions import action_escrow_inspect
+    from workflow.storage import _connect
+
+    node_id = (kwargs.get("node_id") or "").strip()
+    lock_id = (kwargs.get("lock_id") or "").strip()
+
+    with _connect(_base_path()) as conn:
+        result = action_escrow_inspect(conn, node_id=node_id, lock_id=lock_id)
+    return json.dumps(result)
+
+
+_ESCROW_ACTIONS: dict[str, Any] = {
+    "escrow_lock": _action_escrow_lock,
+    "escrow_release": _action_escrow_release,
+    "escrow_refund": _action_escrow_refund,
+    "escrow_inspect": _action_escrow_inspect,
 }
 
 
@@ -8813,7 +9168,8 @@ def _action_goal_search(kwargs: dict[str, Any]) -> str:
 
 
 _V1_LEADERBOARD_METRICS = ("run_count", "forks", "outcome")
-_ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS
+_GATE_EVENT_LEADERBOARD_METRICS = ("gate_events",)
+_ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS + _GATE_EVENT_LEADERBOARD_METRICS
 
 
 def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
@@ -8838,12 +9194,48 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
             "error": f"Goal '{gid}' not found.",
         })
 
-    if metric not in _V1_LEADERBOARD_METRICS:
+    if metric not in _ALL_LEADERBOARD_METRICS:
         return json.dumps({
             "status": "rejected",
             "error": f"Unknown metric '{metric}'.",
             "available_metrics": list(_ALL_LEADERBOARD_METRICS),
         })
+
+    # gate_events metric: rank by attributed real-world gate events.
+    if metric == "gate_events":
+        from workflow.gate_events import leaderboard_by_gate_events
+        window = (kwargs.get("window") or "all").strip().lower()
+        limit = int(kwargs.get("limit", 20) or 20)
+        try:
+            lb = leaderboard_by_gate_events(
+                _base_path(), goal_id=gid, window=window, limit=limit,
+            )
+        except ValueError as exc:
+            return json.dumps({"status": "rejected", "error": str(exc)})
+        lines = [
+            f"**Gate-event leaderboard for Goal '{goal.get('name', gid)}'**"
+            f" — window `{window}`",
+            "",
+        ]
+        if lb["ranked"]:
+            for rank, entry in enumerate(lb["ranked"], 1):
+                lines.append(
+                    f"{rank}. `{entry['branch_version_id']}` · "
+                    f"gate events: {entry['gate_event_count']} "
+                    f"({entry['verified_event_count']} verified) · "
+                    f"score: {entry['score']:.1f} · "
+                    f"latest: {entry['most_recent_event_date']}"
+                )
+        else:
+            lines.append("_No gate events attributed to any workflow under this Goal._")
+        return json.dumps({
+            "text": "\n".join(lines),
+            "goal_id": gid,
+            "metric": metric,
+            "window": lb["window"],
+            "ranked": lb["ranked"],
+            "total_events_in_window": lb["total_events_in_window"],
+        }, default=str)
 
     # GATES_ENABLED gates the outcome metric. When the flag is off,
     # return a friendly flag-gated envelope rather than letting the
@@ -9042,6 +9434,60 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_goal_set_canonical(kwargs: dict[str, Any]) -> str:
+    from workflow.daemon_server import get_goal, set_canonical_branch
+
+    gid = (kwargs.get("goal_id") or "").strip()
+    if not gid:
+        return json.dumps({"status": "rejected", "error": "goal_id is required."})
+    branch_version_id = (kwargs.get("branch_version_id") or "").strip() or None
+    _ensure_author_server_db()
+
+    try:
+        goal = get_goal(_base_path(), goal_id=gid)
+    except KeyError:
+        return json.dumps({"status": "rejected", "error": f"Goal '{gid}' not found."})
+
+    # Authority: only Goal author or host may set canonical.
+    actor = _current_actor()
+    host_actor = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+    if actor != goal["author"] and actor != host_actor:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "Only the Goal author or a host-level actor may set the canonical branch. "
+                f"Goal author is '{goal['author']}'; request actor is '{actor}'."
+            ),
+        })
+
+    try:
+        updated = set_canonical_branch(
+            _base_path(), goal_id=gid,
+            branch_version_id=branch_version_id, set_by=actor,
+        )
+    except ValueError as exc:
+        return json.dumps({"status": "rejected", "error": str(exc)})
+
+    if branch_version_id:
+        text = (
+            f"Canonical branch for Goal '{goal['name']}' set to "
+            f"`{branch_version_id}`. New users forking this Goal will "
+            f"start from this version."
+        )
+    else:
+        text = (
+            f"Canonical branch for Goal '{goal['name']}' unset. "
+            f"No starter branch is currently designated."
+        )
+
+    return json.dumps({
+        "status": "ok",
+        "text": text,
+        "goal_id": gid,
+        "canonical_branch_version_id": updated.get("canonical_branch_version_id"),
+    }, default=str)
+
+
 _GOAL_ACTIONS: dict[str, Any] = {
     "propose": _action_goal_propose,
     "update": _action_goal_update,
@@ -9051,10 +9497,11 @@ _GOAL_ACTIONS: dict[str, Any] = {
     "search": _action_goal_search,
     "leaderboard": _action_goal_leaderboard,
     "common_nodes": _action_goal_common_nodes,
+    "set_canonical": _action_goal_set_canonical,
 }
 
 _GOAL_WRITE_ACTIONS: frozenset[str] = frozenset({
-    "propose", "update", "bind",
+    "propose", "update", "bind", "set_canonical",
 })
 
 
@@ -9671,6 +10118,136 @@ def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_gates_stake_bonus(kwargs: dict[str, Any]) -> str:
+    """Lock a bonus stake on an existing gate claim.
+
+    Requires: claim_id, bonus_stake (int), node_id.
+    Rejected when WORKFLOW_PAID_MARKET is off, claim is retracted,
+    or claim already has a bonus staked.
+    """
+    from workflow.gates.actions import stake_bonus, validate_stake_amount
+    from workflow.producers.node_bid import paid_market_enabled
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": (
+                "Gate bonuses require WORKFLOW_PAID_MARKET=on. "
+                "Enable the paid-market flag to use bonus staking."
+            ),
+        })
+
+    claim_id = (kwargs.get("claim_id") or "").strip()
+    node_id = (kwargs.get("node_id") or "").strip()
+    attachment_scope = (kwargs.get("attachment_scope") or "node").strip()
+    raw_stake = kwargs.get("bonus_stake", 0)
+
+    if not claim_id:
+        return json.dumps({"status": "rejected", "error": "claim_id is required."})
+    if not node_id:
+        return json.dumps({"status": "rejected", "error": "node_id is required."})
+
+    stake, err = validate_stake_amount(raw_stake)
+    if err:
+        return json.dumps({"status": "rejected", "error": err})
+    if stake == 0:
+        return json.dumps({
+            "status": "rejected",
+            "error": "bonus_stake must be > 0 to stake a bonus.",
+        })
+
+    _ensure_author_server_db()
+    from workflow.storage import _connect as _storage_connect
+    with _storage_connect(_base_path()) as conn:
+        result = stake_bonus(
+            conn,
+            claim_id=claim_id,
+            bonus_stake=stake,
+            node_id=node_id,
+            attachment_scope=attachment_scope,
+        )
+    return json.dumps(result, default=str)
+
+
+def _action_gates_unstake_bonus(kwargs: dict[str, Any]) -> str:
+    """Remove a bonus stake from a gate claim (refund to original staker).
+
+    Requires: claim_id. Only the original staker can unstake.
+    """
+    from workflow.gates.actions import unstake_bonus
+    from workflow.producers.node_bid import paid_market_enabled
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": "Gate bonuses require WORKFLOW_PAID_MARKET=on.",
+        })
+
+    claim_id = (kwargs.get("claim_id") or "").strip()
+    if not claim_id:
+        return json.dumps({"status": "rejected", "error": "claim_id is required."})
+
+    actor = _current_actor_or_anon()
+    _ensure_author_server_db()
+    from workflow.storage import _connect as _storage_connect
+    with _storage_connect(_base_path()) as conn:
+        result = unstake_bonus(conn, claim_id=claim_id, actor=actor)
+    return json.dumps(result, default=str)
+
+
+def _action_gates_release_bonus(kwargs: dict[str, Any]) -> str:
+    """Release or refund a bonus based on an evaluator verdict.
+
+    Requires: claim_id, eval_verdict ("pass"|"fail"|"skip"),
+    node_last_claimer (who gets the payout on pass).
+    Rejected when no verdict supplied or bonus_stake is 0.
+    """
+    from workflow.gates.actions import release_bonus
+    from workflow.producers.node_bid import paid_market_enabled
+
+    if not paid_market_enabled():
+        return json.dumps({
+            "status": "not_available",
+            "error": "Gate bonuses require WORKFLOW_PAID_MARKET=on.",
+        })
+
+    claim_id = (kwargs.get("claim_id") or "").strip()
+    eval_verdict = (kwargs.get("eval_verdict") or "").strip()
+    node_last_claimer = (kwargs.get("node_last_claimer") or "").strip()
+
+    if not claim_id:
+        return json.dumps({"status": "rejected", "error": "claim_id is required."})
+    if not eval_verdict:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "eval_verdict is required ('pass', 'fail', or 'skip'). "
+                "Use the Evaluator protocol to obtain a verdict before releasing."
+            ),
+        })
+    if not node_last_claimer:
+        return json.dumps({
+            "status": "rejected",
+            "error": (
+                "node_last_claimer is required "
+                "(the actor holding the node at gate-pass time)."
+            ),
+        })
+
+    staker = _current_actor_or_anon()
+    _ensure_author_server_db()
+    from workflow.storage import _connect as _storage_connect
+    with _storage_connect(_base_path()) as conn:
+        result = release_bonus(
+            conn,
+            claim_id=claim_id,
+            eval_verdict=eval_verdict,
+            node_last_claimer=node_last_claimer,
+            staker=staker,
+        )
+    return json.dumps(result, default=str)
+
+
 _GATES_ACTIONS: dict[str, Any] = {
     "define_ladder": _action_gates_define_ladder,
     "get_ladder": _action_gates_get_ladder,
@@ -9678,6 +10255,9 @@ _GATES_ACTIONS: dict[str, Any] = {
     "retract": _action_gates_retract,
     "list_claims": _action_gates_list_claims,
     "leaderboard": _action_gates_leaderboard,
+    "stake_bonus": _action_gates_stake_bonus,
+    "unstake_bonus": _action_gates_unstake_bonus,
+    "release_bonus": _action_gates_release_bonus,
 }
 
 
@@ -9704,6 +10284,12 @@ def gates(
     include_retracted: bool = False,
     limit: int = 50,
     force: bool = False,
+    claim_id: str = "",
+    bonus_stake: int = 0,
+    attachment_scope: str = "node",
+    eval_verdict: str = "",
+    node_last_claimer: str = "",
+    node_id: str = "",
 ) -> str:
     """Outcome Gates — real-world impact claims per Branch.
 
@@ -9779,6 +10365,12 @@ def gates(
         "include_retracted": include_retracted,
         "limit": limit,
         "force": force,
+        "claim_id": claim_id,
+        "bonus_stake": bonus_stake,
+        "attachment_scope": attachment_scope,
+        "eval_verdict": eval_verdict,
+        "node_last_claimer": node_last_claimer,
+        "node_id": node_id,
     }
     try:
         return handler(kwargs)

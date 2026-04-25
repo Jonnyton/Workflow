@@ -17,8 +17,6 @@ import json
 import uuid
 from pathlib import Path
 
-import pytest
-
 from workflow.branches import BranchDefinition, EdgeDefinition, GraphNodeRef, NodeDefinition
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -45,7 +43,7 @@ def _seed_run(
     branch_id: str = "b1",
     status: str = "completed",
 ) -> str:
-    from workflow.runs import create_run, finalize_run
+    from workflow.runs import create_run, update_run_status
 
     run_id = create_run(
         base_path,
@@ -55,7 +53,7 @@ def _seed_run(
         run_name="test run",
     )
     if status == "completed":
-        finalize_run(base_path, run_id=run_id, status="completed", outputs={})
+        update_run_status(base_path, run_id, status="completed", output={})
     return run_id
 
 
@@ -124,7 +122,6 @@ def _assert_action_recognized(result: dict) -> None:
     )
 
 
-@pytest.mark.xfail(reason="continue_branch action not yet implemented", strict=True)
 class TestContinueBranchAction:
     """Full integration tests against the extensions MCP action.
 
@@ -252,7 +249,6 @@ class TestContinueBranchAction:
 
 # ── Alias routing test ────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(reason="patch_branch continue alias not yet implemented", strict=True)
 class TestContinueBranchAlias:
     """Spec: `patch_branch action=continue` routes to the same handler."""
 
@@ -276,10 +272,6 @@ class TestContinueBranchAlias:
 
 # ── Control station routing hint grep-test ────────────────────────────────────
 
-@pytest.mark.xfail(
-    reason="control_station prompt not yet updated with continue_branch routing hint",
-    strict=True,
-)
 class TestControlStationRoutingHint:
     """Spec: control_station prompt body must contain routing hint for continue_branch."""
 
