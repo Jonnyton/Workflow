@@ -471,6 +471,24 @@ class TestFileBugKindRouting:
         assert out["bug_id"].startswith("BUG-")
         assert out["path"].startswith("pages/bugs/")
 
+    def test_kind_patch_request_lands_in_patch_requests_dir(self, wiki_dir):
+        """Task #70 — patch_request kind routes to PR-NNN in pages/patch-requests/.
+        Used by Task #55 external-PR bridge to file inbound patch submissions."""
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor",
+                title="Inbound PR from external contributor",
+                kind="patch_request",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "patch_request"
+        assert out["bug_id"].startswith("PR-")
+        assert out["path"].startswith("pages/patch-requests/")
+        pr_dir = wiki_dir / "pages" / "patch-requests"
+        assert pr_dir.is_dir()
+        assert any(p.stem.startswith("pr-") for p in pr_dir.glob("*.md"))
+
     def test_independent_id_counters_per_kind(self, wiki_dir):
         """BUG-001 / FEAT-001 / DESIGN-001 must coexist — independent sequences."""
         b = json.loads(_wiki_file_bug(
