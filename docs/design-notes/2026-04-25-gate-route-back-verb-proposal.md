@@ -185,3 +185,113 @@ Each route-back resolution emits a `code_committed`-style event to the contribut
 - Existing evaluator contract: `workflow/evaluation/__init__.py:32-54` (`EvalVerdict` enum + `EvalResult` dataclass).
 - Existing evaluator implementations: `workflow/outcomes/evaluators.py` (PublishedPaperEvaluator, MergedPREvaluator, DeployedAppEvaluator) — pattern reference for typed evaluator subclasses.
 - Existing run-cancel primitive: `workflow/runs.py:129-132` (`run_cancels` table) — reused for routed-run interruption.
+
+---
+
+## 9. v2 Amendments — TypedPatchNotes shape (added 2026-04-25 post-#66)
+
+These amendments fold Task #66 (`docs/design-notes/2026-04-25-typed-patch-notes-spec.md`) into this proposal. The semantics are unchanged; the type discipline is sharpened. Every original section above remains valid as the v1 reference; this §9 names the v2 deltas.
+
+### 9.1 EvalResult.patch_notes — typed, not opaque
+
+The v1 sketch in §1 had:
+
+```python
+patch_notes: dict[str, Any] | None = None    # payload for the routed run
+```
+
+**v2:** the type tightens to:
+
+```python
+from workflow.evaluation.patch_notes import PatchNotes  # NEW per Task #66
+
+@dataclass
+class EvalResult:
+    # ... existing fields ...
+    route_to: tuple[str, str] | None = None
+    patch_notes: "PatchNotes | None" = None   # was dict[str, Any] | None
+```
+
+`PatchNotes` is the frozen dataclass from Task #66 — content-hashed `patch_notes_id`, structured `evidence_refs: list[EvidenceRef]`, in-payload `route_history: list[tuple[str, str]]`. Validation in `__post_init__` per #66 §3.
+
+### 9.2 Cycle detection — typed field, not magic-dict-key
+
+The v1 §3 cycle-detection used an opaque dict magic key:
+
+```python
+visited = patch_notes.get("_route_history", [])
+if len(visited) > 3 or (goal, scope) in visited:
+    terminate("route_back_loop")
+```
+
+**v2:** the typed field replaces the magic key:
+
+```python
+if len(notes.route_history) > 3 or (goal, scope) in notes.route_history:
+    terminate("route_back_loop")
+```
+
+Engine logic identical in semantics. The `WORKFLOW_ROUTE_BACK_MAX_DEPTH` env var (v1 §6 Q3) still tunes the depth cap.
+
+When the engine appends a hop to `route_history`, it constructs a new PatchNotes via `dataclasses.replace`:
+
+```python
+new_notes = dataclasses.replace(
+    notes, route_history=[*notes.route_history, (goal, scope)]
+)
+# __post_init__ recomputes patch_notes_id automatically
+```
+
+### 9.3 Evidence references — structured EvidenceRef
+
+The v1 spec had no specific shape for citing evidence; gate evaluators populated arbitrary fields in `patch_notes`. v2 uses `EvidenceRef` per #66 §2:
+
+```python
+notes_with_cite = dataclasses.replace(
+    notes,
+    evidence_refs=[
+        *notes.evidence_refs,
+        EvidenceRef(kind="wiki_page", id="bugs/BUG-042", cited_by="evaluator_xyz"),
+    ],
+)
+```
+
+The gate runner inspects `len(notes.evidence_refs) > 0` before emitting `feedback_provided` events — anti-spam invariant from attribution-layer-specs §1.4.
+
+### 9.4 patch_notes_id stabilizes cite chains
+
+When a gate cites a PatchNotes as decision input, attribution-layer-specs §1.4 records `notes.patch_notes_id` in `feedback_provided` event metadata. **The id is the entity-identity-per-state**, not a stable identity-across-states (per #66 §4 immutability contract). Subsequent route-back hops produce new PatchNotes with new ids; lineage is preserved in `route_history`. This composes correctly because cite events reference the id AT cite-time, and route-back evolution doesn't invalidate prior cites.
+
+### 9.5 Open questions delta
+
+| v1 Q | Status post-v2 |
+|---|---|
+| Q1 verdict-string vs separate decision-shape | Unchanged — still open. Verdict-string remains the v2 default. |
+| **Q2 patch_notes opaque vs typed** | **RATIFIED — closed by Task #66.** TypedPatchNotes is the v2 shape. |
+| Q3 cycle-detection config-tunable max-depth | Unchanged — `WORKFLOW_ROUTE_BACK_MAX_DEPTH` env, default 3. |
+| Q4 sync vs async route-back | Unchanged — recommended sync. |
+| Q5 fallthrough fail-fast vs hold-for-host-bind | Unchanged — recommended fail-fast. |
+
+The v2 amend closes Q2 specifically; the other 4 open Qs carry forward unchanged.
+
+### 9.6 Implementation sequencing
+
+Task #66 must land before #53 implementation can consume the typed shape. Sequence:
+
+1. Task #66 lands: `workflow/evaluation/patch_notes.py` ships PatchNotes + EvidenceRef.
+2. (Concurrent) Task #54 already landed `dc7d2cb` — `execute_branch_version_async` available.
+3. Task #53 implementation: route-back handler consumes `PatchNotes` via the typed field on `EvalResult.patch_notes`.
+
+During the 2-week sunset window per #66 §7 Step 3, `EvalResult.__post_init__` accepts both `dict` and `PatchNotes`; the dict path emits a deprecation warning + auto-converts. After sunset, dict path raises `TypeError`.
+
+### 9.7 Cross-proposal consistency check
+
+This v2 amend does NOT change interactions with sibling proposals:
+
+- **Task #54 sibling-action pattern** — still describes the runner ABI; PatchNotes lives at the EvalResult layer above.
+- **Task #56 sub-branch invocation** — `output_mapping` references parent state keys, not patch_notes; no interaction.
+- **Task #57 surgical rollback** — `caused_regression` event metadata is independent; rollback doesn't observe patch_notes shape.
+- **Task #58 named-checkpoint contract** — orthogonal layer (within-branch routing); patch_notes flows through both layers but the checkpoint contract sees only the route_to tuple, not patch_notes contents.
+- **Task #59 resolve_canonical** — read primitive doesn't touch patch_notes.
+
+The 10-document series remains coherent with this v2 amend folded in.
