@@ -4,25 +4,28 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from domains.fantasy_author.phases import _provider_stub
 from workflow.exceptions import AllProvidersExhaustedError
 
 
 class TestProviderRetry:
-    def setup_method(self):
-        self._orig_mock = _provider_stub._FORCE_MOCK
-        _provider_stub._FORCE_MOCK = False
+    @pytest.fixture(autouse=True)
+    def _force_mock_off(self, monkeypatch):
+        # Exception-safe save+restore: monkeypatch tears down even if a test
+        # errors mid-execution, unlike setup_method/teardown_method which
+        # leaves _FORCE_MOCK=False permanent on a mid-setup crash and
+        # contaminates downstream tests (notably test_writer_tools).
+        monkeypatch.setattr(_provider_stub, "_FORCE_MOCK", False)
 
-    def teardown_method(self):
-        _provider_stub._FORCE_MOCK = self._orig_mock
-
-    def test_force_mock_bypasses_retry(self):
-        _provider_stub._FORCE_MOCK = True
+    def test_force_mock_bypasses_retry(self, monkeypatch):
+        monkeypatch.setattr(_provider_stub, "_FORCE_MOCK", True)
         result = _provider_stub.call_provider("test", fallback_response="mock")
         assert result == "mock"
 
-    def test_force_mock_default_response(self):
-        _provider_stub._FORCE_MOCK = True
+    def test_force_mock_default_response(self, monkeypatch):
+        monkeypatch.setattr(_provider_stub, "_FORCE_MOCK", True)
         result = _provider_stub.call_provider("test")
         assert "[Mock response" in result
 
