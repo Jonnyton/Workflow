@@ -204,3 +204,68 @@ def test_jinja_style_double_braces_still_substitute():
         config={"configurable": {"thread_id": "t3"}},
     )
     assert captured["prompt"] == "Hello world!"
+
+
+# ─── Build-time placeholder validation (BUG-014 Part B) ─────────────────────
+
+
+def _make_validation_branch(template: str, input_keys: list[str], state_keys: list[str]):
+    from workflow.branches import (
+        BranchDefinition,
+        EdgeDefinition,
+        GraphNodeRef,
+        NodeDefinition,
+    )
+
+    branch = BranchDefinition(name="validation test", entry_point="n1")
+    branch.node_defs = [NodeDefinition(
+        node_id="n1",
+        display_name="N1",
+        prompt_template=template,
+        output_keys=["out"],
+        input_keys=list(input_keys),
+    )]
+    branch.graph_nodes = [GraphNodeRef(id="n1", node_def_id="n1")]
+    branch.edges = [
+        EdgeDefinition(from_node="START", to_node="n1"),
+        EdgeDefinition(from_node="n1", to_node="END"),
+    ]
+    branch.state_schema = [
+        {"name": k, "type": "str", "default": ""} for k in state_keys
+    ] + [{"name": "out", "type": "str", "default": ""}]
+    return branch
+
+
+def test_validate_raises_for_undeclared_placeholder():
+    """build_branch validate() must name both the node and the missing key."""
+    branch = _make_validation_branch(
+        template="Hello {undeclared_key}!",
+        input_keys=[],
+        state_keys=[],
+    )
+    errors = branch.validate()
+    assert any("n1" in e and "undeclared_key" in e for e in errors), (
+        f"Expected error naming node 'n1' and key 'undeclared_key'. Got: {errors}"
+    )
+
+
+def test_validate_no_error_for_escaped_placeholder():
+    """\\{key\\} is a literal brace sequence — not a placeholder reference.
+
+    Even if 'key' is absent from input_keys and state_schema, validate()
+    must NOT raise an error, because the backslash escape marks it as
+    literal output.
+    """
+    branch = _make_validation_branch(
+        template=r"Literal brace: \{key\}",
+        input_keys=[],
+        state_keys=[],
+    )
+    errors = branch.validate()
+    placeholder_errors = [
+        e for e in errors
+        if "key" in e and "prompt_template" in e
+    ]
+    assert not placeholder_errors, (
+        f"Escaped placeholder should not trigger validation error. Got: {placeholder_errors}"
+    )

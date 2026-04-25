@@ -442,10 +442,6 @@ def _assert_graph_primitive_recognized(result: object, primitive: str) -> None:
         )
 
 
-@pytest.mark.xfail(
-    reason="graph_compiler send_message_spec dispatch not yet implemented",
-    strict=True,
-)
 class TestSendMessageSpec:
     """Tests for the `send_message_spec` node-level primitive in graph_compiler.
 
@@ -466,8 +462,8 @@ class TestSendMessageSpec:
         )
         _assert_graph_primitive_recognized(result, "send_message_spec")
         messages = read_teammate_messages(tmp_path, node_id="node-B")
-        assert len(messages["messages"]) == 1
-        assert messages["messages"][0]["message_type"] == "broadcast"
+        assert len(messages) == 1
+        assert messages[0]["message_type"] == "broadcast"
 
     def test_send_message_spec_generates_server_side_message_id(self, tmp_path):
         from workflow.graph_compiler import compile_send_message_spec
@@ -497,10 +493,6 @@ class TestSendMessageSpec:
             )
 
 
-@pytest.mark.xfail(
-    reason="graph_compiler receive_messages_spec dispatch not yet implemented",
-    strict=True,
-)
 class TestReceiveMessagesSpec:
     """Tests for the `receive_messages_spec` node-level primitive in graph_compiler.
 
@@ -593,10 +585,6 @@ class TestReceiveMessagesSpec:
         )
 
 
-@pytest.mark.xfail(
-    reason="graph_compiler compile-time validation for recipient_node_id not yet implemented",
-    strict=True,
-)
 class TestSendMessageSpecCompileTimeValidation:
     """Compile-time validation: recipient_node_id not in branch raises error."""
 

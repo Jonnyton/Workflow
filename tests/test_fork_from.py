@@ -215,3 +215,51 @@ class TestForkTree:
         initialize_author_server(tmp_path)
         result = json.loads(_action_fork_tree({}))
         assert "error" in result
+
+
+class TestDescribeBranchLineageEnrichment:
+    def test_describe_branch_includes_fork_from(self, tmp_path, monkeypatch):
+        from workflow.universe_server import _ext_branch_describe
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        _seed_branch(tmp_path, "b1")
+        bvid = _publish(tmp_path, "b1")
+        _seed_branch(tmp_path, "b2", "Fork")
+        update_branch_definition(tmp_path, branch_def_id="b2", updates={"fork_from": bvid})
+
+        result = json.loads(_ext_branch_describe({"branch_def_id": "b2"}))
+        assert result["fork_from"] == bvid
+
+    def test_describe_branch_no_fork_from_is_none(self, tmp_path, monkeypatch):
+        from workflow.universe_server import _ext_branch_describe
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        _seed_branch(tmp_path)
+
+        result = json.loads(_ext_branch_describe({"branch_def_id": "b1"}))
+        assert result["fork_from"] is None
+
+    def test_describe_branch_includes_fork_descendants(self, tmp_path, monkeypatch):
+        from workflow.universe_server import _ext_branch_describe
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        _seed_branch(tmp_path, "b1", "Root")
+        bvid = _publish(tmp_path, "b1")
+        _seed_branch(tmp_path, "b2", "Fork")
+        update_branch_definition(tmp_path, branch_def_id="b2", updates={"fork_from": bvid})
+
+        result = json.loads(_ext_branch_describe({"branch_def_id": "b1"}))
+        assert len(result["fork_descendants"]) == 1
+        desc = result["fork_descendants"][0]
+        assert desc["branch_def_id"] == "b2"
+        assert "author" in desc
+        assert "published_versions_count" in desc
+
+    def test_describe_branch_no_descendants_returns_empty_list(self, tmp_path, monkeypatch):
+        from workflow.universe_server import _ext_branch_describe
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        _seed_branch(tmp_path)
+
+        result = json.loads(_ext_branch_describe({"branch_def_id": "b1"}))
+        assert result["fork_descendants"] == []
