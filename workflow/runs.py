@@ -1692,7 +1692,7 @@ def execute_branch_version_async(
         )
     try:
         branch = BranchDefinition.from_dict(bv.snapshot)
-    except (KeyError, TypeError, ValueError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise SnapshotSchemaDrift(
             f"Snapshot for {branch_version_id!r} cannot be reconstructed: "
             f"{exc}. Republish at current schema version."

@@ -8420,8 +8420,123 @@ _ESCROW_ACTIONS: dict[str, Any] = {
 }
 
 
+def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
+    """Execute a published branch_version snapshot.
+
+    Phase A item 6 (Task #65b). Sibling to ``run_branch``; resolves a
+    ``branch_version_id`` via ``branch_versions``, reconstructs a
+    ``BranchDefinition`` from the immutable snapshot, and hands off to
+    the same async executor pool. Records the ``branch_version_id`` on
+    the new ``runs.branch_version_id`` column for attribution.
+    """
+    from workflow.runs import (
+        SnapshotSchemaDrift,
+        execute_branch_version_async,
+    )
+
+    _ensure_runs_recovery()
+
+    bvid = (kwargs.get("branch_version_id") or "").strip()
+    if not bvid:
+        return json.dumps({"error": "branch_version_id is required."})
+
+    inputs_raw = kwargs.get("inputs_json", "").strip()
+    inputs: dict[str, Any] = {}
+    if inputs_raw:
+        try:
+            parsed = json.loads(inputs_raw)
+            if not isinstance(parsed, dict):
+                return json.dumps({
+                    "error": "inputs_json must decode to a JSON object.",
+                })
+            inputs = parsed
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "error": f"inputs_json is not valid JSON: {exc}",
+            })
+
+    # Real provider — lazy import so test envs without providers work.
+    provider_call: Any = None
+    try:
+        from domains.fantasy_author.phases._provider_stub import (
+            call_provider as provider_call,
+        )
+    except ImportError:
+        provider_call = None
+
+    # Parse + validate recursion_limit_override (10-1000) — same shape as run_branch.
+    _rl_raw = kwargs.get("recursion_limit_override", "")
+    recursion_limit_override: int | None = None
+    if _rl_raw:
+        try:
+            _rl_val = int(_rl_raw)
+        except (TypeError, ValueError):
+            return json.dumps({"error": "recursion_limit_override must be an integer."})
+        if not 10 <= _rl_val <= 1000:
+            return json.dumps({
+                "error": (
+                    f"recursion_limit_override {_rl_val} out of range. "
+                    "Valid range: 10-1000."
+                ),
+            })
+        recursion_limit_override = _rl_val
+
+    try:
+        outcome = execute_branch_version_async(
+            _base_path(),
+            branch_version_id=bvid,
+            inputs=inputs,
+            run_name=kwargs.get("run_name", ""),
+            actor=_current_actor(),
+            provider_call=provider_call,
+            recursion_limit_override=recursion_limit_override,
+        )
+    except KeyError as exc:
+        return json.dumps({"error": str(exc).strip("'\"")})
+    except SnapshotSchemaDrift as exc:
+        return json.dumps({
+            "error": str(exc),
+            "failure_class": SnapshotSchemaDrift.failure_class,
+            "suggested_action": SnapshotSchemaDrift.suggested_action,
+        })
+    except Exception as exc:
+        logger.exception("run_branch_version failed for %s", bvid)
+        return json.dumps(_classify_run_error(exc, bvid))
+
+    # Write-ack mirroring _action_run_branch's response shape.
+    error_annotation = _classify_run_outcome_error(outcome.error) if outcome.error else None
+    error_lines: list[str] = []
+    if outcome.error:
+        error_lines.append(f"Error: {outcome.error}")
+    if error_annotation:
+        error_lines.append(f"Suggested action: {error_annotation[1]}")
+    text = "\n".join([
+        f"**Run {outcome.status}.** Version-based workflow handed to the "
+        "background executor.",
+        "",
+        *error_lines,
+        "Use `get_run` to read a snapshot, `stream_run` to poll for "
+        "progress, or `cancel_run` to stop. Each takes a `run_id` "
+        "from the structured content of this response.",
+    ]).strip()
+
+    result: dict[str, Any] = {
+        "text": text,
+        "run_id": outcome.run_id,
+        "status": outcome.status,
+        "output": outcome.output,
+        "error": outcome.error,
+        "branch_version_id": bvid,
+    }
+    if error_annotation:
+        result["failure_class"] = error_annotation[0]
+        result["suggested_action"] = error_annotation[1]
+    return json.dumps(result)
+
+
 _RUN_ACTIONS: dict[str, Any] = {
     "run_branch": _action_run_branch,
+    "run_branch_version": _action_run_branch_version,
     "get_run": _action_get_run,
     "list_runs": _action_list_runs,
     "stream_run": _action_stream_run,
@@ -8435,7 +8550,9 @@ _RUN_ACTIONS: dict[str, Any] = {
     "get_memory_scope_status": _action_get_memory_scope_status,
 }
 
-_RUN_WRITE_ACTIONS: frozenset[str] = frozenset({"run_branch", "cancel_run", "resume_run"})
+_RUN_WRITE_ACTIONS: frozenset[str] = frozenset(
+    {"run_branch", "run_branch_version", "cancel_run", "resume_run"}
+)
 
 
 def _dispatch_run_action(
@@ -12879,6 +12996,7 @@ _BUG_ID_RE = re.compile(r"^BUG-(\d{3,})", re.IGNORECASE)
 _BUGS_CATEGORY = "bugs"
 _KIND_FEATURES_DIR = "feature-requests"
 _KIND_DESIGNS_DIR = "design-proposals"
+_KIND_PATCH_REQUESTS_DIR = "patch-requests"
 _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
 
 # Per-kind routing: kind -> (category-dir-name, ID-prefix). Each prefix has its
@@ -12886,9 +13004,10 @@ _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
 # put (no migration). Default kind="bug" preserves the historical pages/bugs/
 # location and BUG-NNN sequence — backward-compat clean.
 _KIND_ROUTING: dict[str, tuple[str, str]] = {
-    "bug":     (_BUGS_CATEGORY,     "BUG"),
-    "feature": (_KIND_FEATURES_DIR, "FEAT"),
-    "design":  (_KIND_DESIGNS_DIR,  "DESIGN"),
+    "bug":           (_BUGS_CATEGORY,           "BUG"),
+    "feature":       (_KIND_FEATURES_DIR,       "FEAT"),
+    "design":        (_KIND_DESIGNS_DIR,        "DESIGN"),
+    "patch_request": (_KIND_PATCH_REQUESTS_DIR, "PR"),
 }
 
 
@@ -12976,7 +13095,7 @@ def _render_bug_markdown(
     )
 
 
-_VALID_BUG_KINDS = frozenset({"bug", "feature", "design"})
+_VALID_BUG_KINDS = frozenset({"bug", "feature", "design", "patch_request"})
 _BUG_DEDUP_THRESHOLD = 0.5
 
 
