@@ -195,9 +195,16 @@ def initialize_runs_db(base_path: str | Path) -> Path:
         ON teammate_messages(from_run_id);
     """
     from workflow.branch_versions import BRANCH_VERSIONS_SCHEMA
+    from workflow.contribution_events import CONTRIBUTION_EVENTS_SCHEMA
     from workflow.gate_events.schema import GATE_EVENT_SCHEMA
     from workflow.scheduler import SCHEDULER_SCHEMA
-    schema = schema + SCHEDULER_SCHEMA + BRANCH_VERSIONS_SCHEMA + GATE_EVENT_SCHEMA
+    schema = (
+        schema
+        + SCHEDULER_SCHEMA
+        + BRANCH_VERSIONS_SCHEMA
+        + GATE_EVENT_SCHEMA
+        + CONTRIBUTION_EVENTS_SCHEMA
+    )
     with _connect(base_path) as conn:
         conn.executescript(schema)
         # Migration: older installs may predate the body-snapshot columns
