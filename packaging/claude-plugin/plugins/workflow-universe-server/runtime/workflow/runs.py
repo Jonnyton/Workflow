@@ -1616,8 +1616,13 @@ def execute_branch(
 # choose to rerun.
 
 _DEFAULT_MAX_WORKERS = 4
+# Phase A item 5 / Task #76c — two-pool model. Top-level runs (depth=0)
+# go to _parent_pool; sub-branch invocations (depth>=1) go to _child_pool.
+# This prevents the parent-holds-its-own-slot-while-waiting-on-child
+# deadlock that single-pool concurrency hit at depth>=4 with pool size 4.
 _executor_lock = threading.Lock()
-_executor: ThreadPoolExecutor | None = None
+_parent_pool: ThreadPoolExecutor | None = None
+_child_pool: ThreadPoolExecutor | None = None
 _futures: dict[str, Future] = {}
 _futures_lock = threading.Lock()
 
@@ -1631,24 +1636,74 @@ def _max_workers() -> int:
     return max(1, val)
 
 
-def _get_executor() -> ThreadPoolExecutor:
-    global _executor
+def _max_child_workers() -> int:
+    """Pool size for sub-branch (depth>=1) invocations.
+
+    Phase A item 5 / Task #76c. Default ``MAX_INVOKE_BRANCH_DEPTH + 1`` so
+    the deepest legal chain plus one buffer slot can run without blocking.
+    Env override: ``WORKFLOW_CHILD_POOL_SIZE``.
+    """
+    raw = os.environ.get("WORKFLOW_CHILD_POOL_SIZE", "")
+    try:
+        val = int(raw) if raw else MAX_INVOKE_BRANCH_DEPTH + 1
+    except ValueError:
+        val = MAX_INVOKE_BRANCH_DEPTH + 1
+    return max(1, val)
+
+
+def _runtime_max_invocation_depth() -> int:
+    """Runtime cap on sub-branch invocation depth.
+
+    Phase A item 5 / Task #76c. Defaults to ``MAX_INVOKE_BRANCH_DEPTH``
+    (5) but is host-tunable via ``WORKFLOW_INVOCATION_MAX_DEPTH`` for
+    power-user research workflows that need deeper chains.
+    """
+    raw = os.environ.get("WORKFLOW_INVOCATION_MAX_DEPTH", "")
+    try:
+        val = int(raw) if raw else MAX_INVOKE_BRANCH_DEPTH
+    except ValueError:
+        val = MAX_INVOKE_BRANCH_DEPTH
+    return max(1, val)
+
+
+def _get_executor(invocation_depth: int = 0) -> ThreadPoolExecutor:
+    """Two-pool executor lookup. Depth-0 → _parent_pool; depth>=1 → _child_pool.
+
+    Phase A item 5 / Task #76c. Each pool is lazy-init under the shared
+    ``_executor_lock``. Child pool is sized larger than parent pool by
+    default so a deep sub-branch chain can't starve top-level runs.
+    """
+    global _parent_pool, _child_pool
     with _executor_lock:
-        if _executor is None:
-            _executor = ThreadPoolExecutor(
+        if invocation_depth >= 1:
+            if _child_pool is None:
+                _child_pool = ThreadPoolExecutor(
+                    max_workers=_max_child_workers(),
+                    thread_name_prefix="workflow-child",
+                )
+            return _child_pool
+        if _parent_pool is None:
+            _parent_pool = ThreadPoolExecutor(
                 max_workers=_max_workers(),
                 thread_name_prefix="workflow-run",
             )
-    return _executor
+        return _parent_pool
 
 
 def shutdown_executor(wait: bool = True) -> None:
-    """Shut down the shared executor. Used by tests and graceful shutdown."""
-    global _executor
+    """Shut down both executor pools. Used by tests and graceful shutdown.
+
+    Phase A item 5 / Task #76c — two-pool model means both pools must be
+    drained on shutdown.
+    """
+    global _parent_pool, _child_pool
     with _executor_lock:
-        if _executor is not None:
-            _executor.shutdown(wait=wait)
-            _executor = None
+        if _parent_pool is not None:
+            _parent_pool.shutdown(wait=wait)
+            _parent_pool = None
+        if _child_pool is not None:
+            _child_pool.shutdown(wait=wait)
+            _child_pool = None
     with _futures_lock:
         _futures.clear()
 
@@ -1688,6 +1743,7 @@ def _execute_branch_core(
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
     branch_version_id: str | None = None,
+    _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Shared async-execution core for def-based and version-based runs.
 
@@ -1698,6 +1754,13 @@ def _execute_branch_core(
     ``branch_version_id`` is None for def-based runs (the public
     :func:`execute_branch_async`) and set for version-based runs (the
     Phase A item 6 :func:`execute_branch_version_async`).
+
+    ``_invocation_depth`` (Phase A item 5 / Task #76c) routes the run to
+    the appropriate executor pool — top-level runs (depth=0) to the
+    parent pool, sub-branch invocations (depth>=1) to the child pool.
+    Compiler builders pass ``depth+1`` when spawning a child run from
+    inside an ``invoke_branch_spec`` / ``invoke_branch_version_spec``
+    node body.
     """
     run_id = _prepare_run(
         base_path,
@@ -1706,7 +1769,7 @@ def _execute_branch_core(
         branch_version_id=branch_version_id,
     )
 
-    executor = _get_executor()
+    executor = _get_executor(invocation_depth=_invocation_depth)
     effective_limit = recursion_limit_override or DEFAULT_RECURSION_LIMIT
 
     def _worker() -> RunOutcome:
@@ -1753,6 +1816,7 @@ def execute_branch_async(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Prepare a def-based run synchronously and kick off graph execution
     in the background. Returns within a few ms with ``status=queued``.
@@ -1772,6 +1836,9 @@ def execute_branch_async(
         :func:`execute_branch` for rationale.
     concurrency_budget_override
         Override the branch-level concurrency_budget for this run.
+    _invocation_depth
+        Phase A item 5 / Task #76c — sub-branch builders pass ``depth+1``
+        when spawning a child. Top-level callers leave default (0).
     """
     return _execute_branch_core(
         base_path,
@@ -1783,6 +1850,7 @@ def execute_branch_async(
         recursion_limit_override=recursion_limit_override,
         concurrency_budget_override=concurrency_budget_override,
         branch_version_id=None,
+        _invocation_depth=_invocation_depth,
     )
 
 
@@ -1811,6 +1879,7 @@ def execute_branch_version_async(
     actor: str = "anonymous",
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
+    _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Execute a published branch_version snapshot (immutable).
 
@@ -1867,6 +1936,7 @@ def execute_branch_version_async(
         provider_call=provider_call,
         recursion_limit_override=recursion_limit_override,
         branch_version_id=branch_version_id,
+        _invocation_depth=_invocation_depth,
     )
 
 

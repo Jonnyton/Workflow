@@ -1312,12 +1312,77 @@ class ChildFailedError(Exception):
         self.failure = failure
 
 
+def _emit_invoke_design_used(
+    *,
+    base_path: "Path",
+    parent_run_id: str,
+    parent_node_id: str,
+    artifact_kind: str,
+    artifact_id: str,
+    branch_def_id_for_author_lookup: str,
+    metadata_extra: dict[str, Any] | None = None,
+) -> None:
+    """Phase A item 5 / Task #76c — emit a ``design_used`` event for a
+    successful sub-branch invocation.
+
+    Fires only on child success per #56 + #75 discipline ("only successful
+    uses count"). Resolves the credited author by reading the live
+    ``BranchDefinition.author`` keyed by ``branch_def_id_for_author_lookup``;
+    for ``invoke_branch_version_spec`` we still resolve via the live def
+    because ``branch_versions.snapshot`` only carries topology, not author.
+
+    Skips emit when author is empty or "anonymous" — orphan-row
+    prevention. Per #48 §1.4 + impl-pair-read on #75: ``execute_step``
+    events MAY carry actor_id="anonymous" (the run-claimer might not be
+    a registered actor); ``design_used`` events MUST NEVER, because
+    crediting "anonymous" pollutes the ledger with synthetic-actor
+    attribution. Different events, different discipline.
+
+    Wrapped in try/except by callers so emit failure never breaks the
+    parent step (mirrors Task #72/#75 decoupling).
+    """
+    from workflow.daemon_server import get_branch_definition
+
+    try:
+        raw = get_branch_definition(
+            base_path, branch_def_id=branch_def_id_for_author_lookup,
+        )
+    except KeyError:
+        return  # Live def gone; skip emit (lineage walk handles attribution).
+
+    author = (raw.get("author") if isinstance(raw, dict) else "") or ""
+    if not author or author == "anonymous":
+        return
+
+    metadata = {
+        "graph_node_id": parent_node_id,
+        artifact_kind + "_id": artifact_id,
+    }
+    if metadata_extra:
+        metadata.update(metadata_extra)
+
+    from workflow.contribution_events import record_contribution_event
+
+    record_contribution_event(
+        base_path,
+        event_id=f"design_used:{parent_run_id}:{parent_node_id}:{artifact_id}",
+        event_type="design_used",
+        actor_id=author,
+        source_run_id=parent_run_id,
+        source_artifact_id=artifact_id,
+        source_artifact_kind=artifact_kind,
+        weight=1.0,
+        metadata_json=json.dumps(metadata),
+    )
+
+
 def _build_invoke_branch_node(
     node: NodeDefinition,
     *,
     base_path: str | Path,
     event_sink: Callable[..., None] | None,
     depth: int = 0,
+    parent_run_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Build a callable for an ``invoke_branch_spec`` node.
 
@@ -1325,7 +1390,7 @@ def _build_invoke_branch_node(
     declared output_mapping fields back into the parent state.
     """
     from workflow.runs import (
-        MAX_INVOKE_BRANCH_DEPTH,
+        _runtime_max_invocation_depth,
         execute_branch,
         execute_branch_async,
     )
@@ -1338,6 +1403,7 @@ def _build_invoke_branch_node(
     on_child_fail: str = spec.get("on_child_fail", "propagate")
     default_outputs = spec.get("default_outputs")
     retry_budget: int = int(spec.get("retry_budget", 1) or 1)
+    child_actor: str = spec.get("child_actor", "") or ""
 
     if not child_branch_def_id:
         raise CompilerError(
@@ -1348,10 +1414,11 @@ def _build_invoke_branch_node(
             f"Node '{node.node_id}': invoke_branch_spec wait_mode must be "
             f"'blocking' or 'async', got '{wait_mode}'."
         )
-    if depth >= MAX_INVOKE_BRANCH_DEPTH:
+    _depth_cap = _runtime_max_invocation_depth()
+    if depth >= _depth_cap:
         raise CompilerError(
             f"Node '{node.node_id}': invoke_branch recursion depth cap "
-            f"({MAX_INVOKE_BRANCH_DEPTH}) reached. Circular sub-branch chain?"
+            f"({_depth_cap}) reached. Circular sub-branch chain?"
         )
 
     _base = Path(base_path)
@@ -1360,7 +1427,7 @@ def _build_invoke_branch_node(
         from workflow.branches import BranchDefinition as _BD
         from workflow.daemon_server import get_branch_definition
 
-        raw = get_branch_definition(_base, child_branch_def_id)
+        raw = get_branch_definition(_base, branch_def_id=child_branch_def_id)
         child_branch = _BD.from_dict(raw)
 
         child_inputs: dict[str, Any] = {
@@ -1368,6 +1435,7 @@ def _build_invoke_branch_node(
             for parent_key, child_key in inputs_mapping.items()
         }
 
+        actor_arg = child_actor or "anonymous"
         if wait_mode == "blocking":
             # Phase A item 5 / Task #76b — on_child_fail policy + retry.
             # Blocking-mode invocation knows the child's terminal status
@@ -1378,8 +1446,20 @@ def _build_invoke_branch_node(
                 attempt += 1
                 outcome = execute_branch(
                     _base, branch=child_branch, inputs=child_inputs,
+                    actor=actor_arg,
                 )
                 if outcome.status == "completed":
+                    try:
+                        _emit_invoke_design_used(
+                            base_path=_base,
+                            parent_run_id=parent_run_id,
+                            parent_node_id=node.node_id,
+                            artifact_kind="branch_def",
+                            artifact_id=child_branch_def_id,
+                            branch_def_id_for_author_lookup=child_branch_def_id,
+                        )
+                    except Exception:
+                        pass
                     return {
                         parent_key: outcome.output.get(child_key)
                         for parent_key, child_key in output_mapping.items()
@@ -1412,8 +1492,12 @@ def _build_invoke_branch_node(
         else:
             outcome = execute_branch_async(
                 _base, branch=child_branch, inputs=child_inputs,
+                actor=actor_arg,
+                _invocation_depth=depth + 1,
             )
-            # async: write the child run_id into the first output_mapping target
+            # async: write the child run_id into the first output_mapping target.
+            # design_used emit deferred to await_branch_run on success
+            # (#56 §8 Q6 — async failures surface at the await site).
             updates = {}
             if output_mapping:
                 first_parent_key = next(iter(output_mapping))
@@ -1429,6 +1513,7 @@ def _build_invoke_branch_version_node(
     base_path: str | Path,
     event_sink: Callable[..., None] | None,
     depth: int = 0,
+    parent_run_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Build a callable for an ``invoke_branch_version_spec`` node.
 
@@ -1444,7 +1529,7 @@ def _build_invoke_branch_version_node(
     failures surface as ``None`` values in the mapping (matches existing
     invoke_branch behavior; structured propagation lands in 76b).
     """
-    from workflow.runs import MAX_INVOKE_BRANCH_DEPTH
+    from workflow.runs import _runtime_max_invocation_depth
 
     spec = node.invoke_branch_version_spec or {}
     child_branch_version_id: str = spec.get("branch_version_id", "")
@@ -1454,6 +1539,7 @@ def _build_invoke_branch_version_node(
     on_child_fail: str = spec.get("on_child_fail", "propagate")
     default_outputs = spec.get("default_outputs")
     retry_budget: int = int(spec.get("retry_budget", 1) or 1)
+    child_actor: str = spec.get("child_actor", "") or ""
 
     if not child_branch_version_id:
         raise CompilerError(
@@ -1465,10 +1551,11 @@ def _build_invoke_branch_version_node(
             f"Node '{node.node_id}': invoke_branch_version_spec wait_mode "
             f"must be 'blocking' or 'async', got '{wait_mode}'."
         )
-    if depth >= MAX_INVOKE_BRANCH_DEPTH:
+    _depth_cap = _runtime_max_invocation_depth()
+    if depth >= _depth_cap:
         raise CompilerError(
             f"Node '{node.node_id}': invoke_branch recursion depth cap "
-            f"({MAX_INVOKE_BRANCH_DEPTH}) reached. Circular sub-branch chain?"
+            f"({_depth_cap}) reached. Circular sub-branch chain?"
         )
 
     _base = Path(base_path)
@@ -1486,6 +1573,18 @@ def _build_invoke_branch_version_node(
             child_key: state.get(parent_key)
             for parent_key, child_key in inputs_mapping.items()
         }
+        actor_arg = child_actor or "anonymous"
+
+        def _resolve_branch_def_id_for_author() -> str:
+            """Map child_branch_version_id → branch_def_id for author lookup.
+
+            ``branch_versions.snapshot`` is topology-only; author lives on the
+            live BranchDefinition. ``get_branch_version`` returns None on
+            missing — return "" so emit silently skips (orphan-row prevention).
+            """
+            from workflow.branch_versions import get_branch_version
+            ver = get_branch_version(_base, child_branch_version_id)
+            return ver.branch_def_id if ver else ""
 
         if wait_mode == "blocking":
             # Phase A item 5 / Task #76b — on_child_fail policy + retry,
@@ -1499,6 +1598,8 @@ def _build_invoke_branch_version_node(
                     _base,
                     branch_version_id=child_branch_version_id,
                     inputs=child_inputs,
+                    actor=actor_arg,
+                    _invocation_depth=depth + 1,
                 )
                 # Block until the child terminates; harvest its output dict.
                 record = poll_child_run_status(_base, outcome.run_id)
@@ -1506,6 +1607,19 @@ def _build_invoke_branch_version_node(
                 child_output = record.get("output") or {}
 
                 if child_status == "completed":
+                    try:
+                        bdid = _resolve_branch_def_id_for_author()
+                        if bdid:
+                            _emit_invoke_design_used(
+                                base_path=_base,
+                                parent_run_id=parent_run_id,
+                                parent_node_id=node.node_id,
+                                artifact_kind="branch_version",
+                                artifact_id=child_branch_version_id,
+                                branch_def_id_for_author_lookup=bdid,
+                            )
+                    except Exception:
+                        pass
                     return {
                         parent_key: child_output.get(child_key)
                         for parent_key, child_key in output_mapping.items()
@@ -1540,7 +1654,11 @@ def _build_invoke_branch_version_node(
                 _base,
                 branch_version_id=child_branch_version_id,
                 inputs=child_inputs,
+                actor=actor_arg,
+                _invocation_depth=depth + 1,
             )
+            # design_used emit deferred to await on success (mirrors
+            # invoke_branch async path).
             updates = {}
             if output_mapping:
                 first_parent_key = next(iter(output_mapping))
@@ -1611,6 +1729,7 @@ def _build_node(
     llm_policy: dict[str, Any] | None = None,
     concurrency_tracker: ConcurrencyTracker | None = None,
     base_path: str | Path | None = None,
+    parent_run_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Dispatch a NodeDefinition to the right adapter.
 
@@ -1659,6 +1778,7 @@ def _build_node(
             )
         inner = _build_invoke_branch_node(
             node, base_path=base_path, event_sink=event_sink,
+            parent_run_id=parent_run_id,
         )
         return _wrap_with_checkpoints(inner, node, event_sink)
     if node.invoke_branch_version_spec is not None:
@@ -1669,6 +1789,7 @@ def _build_node(
             )
         inner = _build_invoke_branch_version_node(
             node, base_path=base_path, event_sink=event_sink,
+            parent_run_id=parent_run_id,
         )
         return _wrap_with_checkpoints(inner, node, event_sink)
     if node.await_run_spec is not None:
@@ -1775,6 +1896,7 @@ def compile_branch(
     event_sink: Callable[..., None] | None = None,
     concurrency_budget_override: int | None = None,
     base_path: str | Path | None = None,
+    parent_run_id: str = "",
 ) -> CompiledBranch:
     """Compile a validated BranchDefinition into a StateGraph.
 
@@ -1883,6 +2005,7 @@ def compile_branch(
             llm_policy=effective_policy,
             concurrency_tracker=concurrency_tracker,
             base_path=base_path,
+            parent_run_id=parent_run_id,
         )
         graph.add_node(gn.id, fn)
 

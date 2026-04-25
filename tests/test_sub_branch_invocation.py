@@ -931,3 +931,460 @@ class TestOutputMappingSchemaValidation:
         )
         errs = [e for e in b.validate() if "output_mapping" in e]
         assert errs == []
+
+
+# ─── Phase A item 5 / Task #76c — two-pool + child_actor + design_used ─────
+
+
+class TestChildActorHonoring:
+    """Phase A item 5 / Task #76c — invoke_branch_spec.child_actor flows
+    into the spawned child run as the ``actor`` kwarg. Defaults to
+    "anonymous" when unset."""
+
+    def test_invoke_branch_threads_child_actor_blocking(self, tmp_path):
+        from workflow.runs import RUN_STATUS_COMPLETED, RunOutcome
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+                "child_actor": "alice",
+            },
+        )
+        child_outcome = RunOutcome(
+            run_id="r1", status=RUN_STATUS_COMPLETED,
+            output={"answer": "ok"}, error="",
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        _raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
+
+        with (
+            patch("workflow.daemon_server.get_branch_definition", return_value=_raw),
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome) as mock_exec,
+        ):
+            fn = _build_invoke_branch_node(nd, base_path=tmp_path, event_sink=None)
+            fn({})
+
+        assert mock_exec.call_args.kwargs["actor"] == "alice"
+
+    def test_invoke_branch_default_actor_anonymous(self, tmp_path):
+        from workflow.runs import RUN_STATUS_COMPLETED, RunOutcome
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+                # child_actor unset
+            },
+        )
+        child_outcome = RunOutcome(
+            run_id="r1", status=RUN_STATUS_COMPLETED,
+            output={"answer": "ok"}, error="",
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        _raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
+
+        with (
+            patch("workflow.daemon_server.get_branch_definition", return_value=_raw),
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome) as mock_exec,
+        ):
+            fn = _build_invoke_branch_node(nd, base_path=tmp_path, event_sink=None)
+            fn({})
+
+        assert mock_exec.call_args.kwargs["actor"] == "anonymous"
+
+    def test_invoke_branch_async_threads_invocation_depth(self, tmp_path):
+        """Async path passes ``_invocation_depth=depth+1`` for two-pool routing."""
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"child_run_id": "ignored"},
+                "wait_mode": "async",
+                "child_actor": "bob",
+            },
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        _raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
+
+        with (
+            patch("workflow.daemon_server.get_branch_definition", return_value=_raw),
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch_async") as mock_async,
+        ):
+            mock_async.return_value = MagicMock(run_id="async-r1")
+            fn = _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None, depth=2,
+            )
+            fn({})
+
+        kwargs = mock_async.call_args.kwargs
+        assert kwargs["actor"] == "bob"
+        assert kwargs["_invocation_depth"] == 3  # depth=2 + 1
+
+    def test_invoke_branch_version_threads_child_actor_and_depth(self, tmp_path):
+        """invoke_branch_version_spec passes child_actor + _invocation_depth."""
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_version_spec={
+                "branch_version_id": "child@abc12345",
+                "wait_mode": "blocking",
+                "inputs_mapping": {},
+                "output_mapping": {"parent_out": "child_out"},
+                "child_actor": "carol",
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None, depth=1,
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="r-x")
+            mock_poll.return_value = {
+                "status": "completed",
+                "output": {"child_out": "v"},
+            }
+            node_fn({})
+
+        kwargs = mock_exec.call_args.kwargs
+        assert kwargs["actor"] == "carol"
+        assert kwargs["_invocation_depth"] == 2  # depth=1 + 1
+
+
+class TestTwoPoolIsolation:
+    """Phase A item 5 / Task #76c — top-level runs (depth=0) and
+    sub-branch runs (depth>=1) route to separate ThreadPoolExecutors so
+    deep chains can't starve the parent pool.
+    """
+
+    def test_get_executor_returns_distinct_pools_per_depth(self):
+        from workflow.runs import _get_executor, shutdown_executor
+
+        # Reset global pool state so the assertion holds independent of
+        # earlier tests in this session.
+        shutdown_executor()
+        parent = _get_executor(invocation_depth=0)
+        child1 = _get_executor(invocation_depth=1)
+        child2 = _get_executor(invocation_depth=3)
+
+        assert parent is not child1
+        assert child1 is child2  # all depth>=1 share child_pool
+        shutdown_executor()
+
+    def test_shutdown_executor_drains_both_pools(self):
+        import workflow.runs as _runs_mod
+        from workflow.runs import (
+            _get_executor,
+            shutdown_executor,
+        )
+
+        # Force both pools to exist.
+        _get_executor(invocation_depth=0)
+        _get_executor(invocation_depth=1)
+        assert _runs_mod._parent_pool is not None
+        assert _runs_mod._child_pool is not None
+
+        shutdown_executor()
+        assert _runs_mod._parent_pool is None
+        assert _runs_mod._child_pool is None
+
+    def test_runtime_max_invocation_depth_env_override(self, monkeypatch):
+        from workflow.runs import _runtime_max_invocation_depth
+
+        monkeypatch.setenv("WORKFLOW_INVOCATION_MAX_DEPTH", "9")
+        assert _runtime_max_invocation_depth() == 9
+
+        monkeypatch.delenv("WORKFLOW_INVOCATION_MAX_DEPTH", raising=False)
+        # Default should be MAX_INVOKE_BRANCH_DEPTH (5).
+        assert _runtime_max_invocation_depth() == MAX_INVOKE_BRANCH_DEPTH
+
+    def test_runtime_depth_cap_used_in_compile(self, tmp_path, monkeypatch):
+        """Compile-time cap reads runtime helper, so env override
+        flips the cap without a code-change."""
+        monkeypatch.setenv("WORKFLOW_INVOCATION_MAX_DEPTH", "2")
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {},
+                "wait_mode": "blocking",
+            },
+        )
+        # depth=2 with cap=2 should raise.
+        with pytest.raises(CompilerError, match="recursion depth cap"):
+            _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None, depth=2,
+            )
+        # depth=1 with cap=2 should NOT raise.
+        _build_invoke_branch_node(
+            nd, base_path=tmp_path, event_sink=None, depth=1,
+        )
+
+
+class TestInvokeBranchDesignUsedEmit:
+    """Phase A item 5 / Task #76c — successful blocking invocation emits
+    a ``design_used`` contribution event crediting the child branch_def's
+    author. Skipped on empty/anonymous author. Only fires on success."""
+
+    def _seed_child_def(self, base_path, *, author="alice"):
+        from workflow.daemon_server import (
+            initialize_author_server,
+            save_branch_definition,
+        )
+        initialize_author_server(base_path)
+        save_branch_definition(
+            base_path,
+            branch_def={
+                "branch_def_id": "child",
+                "name": "child",
+                "author": author,
+                "node_defs": [],
+                "edges": [],
+                "graph_nodes": [],
+                "entry_point": "",
+            },
+        )
+
+    def test_emits_design_used_on_blocking_success(self, tmp_path):
+        from workflow.contribution_events import (
+            _connect as ce_connect,
+        )
+        from workflow.contribution_events import (
+            initialize_contribution_events_db,
+        )
+        from workflow.runs import RUN_STATUS_COMPLETED, RunOutcome
+
+        initialize_contribution_events_db(tmp_path)
+        self._seed_child_def(tmp_path, author="alice")
+
+        nd = NodeDefinition(
+            node_id="n_invoke", display_name="X",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+            },
+        )
+        child_outcome = RunOutcome(
+            run_id="cr1", status=RUN_STATUS_COMPLETED,
+            output={"answer": "v"}, error="",
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+
+        with (
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome),
+        ):
+            fn = _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None,
+                parent_run_id="parent-run-1",
+            )
+            fn({})
+
+        with ce_connect(tmp_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM contribution_events "
+                "WHERE event_type = ?",
+                ("design_used",),
+            ).fetchall()
+        assert len(rows) == 1
+        ev = rows[0]
+        assert ev["actor_id"] == "alice"
+        assert ev["source_run_id"] == "parent-run-1"
+        assert ev["source_artifact_kind"] == "branch_def"
+        assert ev["source_artifact_id"] == "child"
+
+    def test_skips_emit_when_author_anonymous(self, tmp_path):
+        from workflow.contribution_events import (
+            _connect as ce_connect,
+        )
+        from workflow.contribution_events import (
+            initialize_contribution_events_db,
+        )
+        from workflow.runs import RUN_STATUS_COMPLETED, RunOutcome
+
+        initialize_contribution_events_db(tmp_path)
+        self._seed_child_def(tmp_path, author="anonymous")
+
+        nd = NodeDefinition(
+            node_id="n_invoke", display_name="X",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+            },
+        )
+        child_outcome = RunOutcome(
+            run_id="cr1", status=RUN_STATUS_COMPLETED,
+            output={"answer": "v"}, error="",
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        with (
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome),
+        ):
+            fn = _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None,
+                parent_run_id="parent-run-1",
+            )
+            fn({})
+
+        with ce_connect(tmp_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM contribution_events WHERE event_type = ?",
+                ("design_used",),
+            ).fetchall()
+        assert rows == []
+
+    def test_no_emit_on_child_failure(self, tmp_path):
+        from workflow.contribution_events import (
+            _connect as ce_connect,
+        )
+        from workflow.contribution_events import (
+            initialize_contribution_events_db,
+        )
+        from workflow.runs import RunOutcome
+
+        initialize_contribution_events_db(tmp_path)
+        self._seed_child_def(tmp_path, author="alice")
+
+        nd = NodeDefinition(
+            node_id="n_invoke", display_name="X",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+                "on_child_fail": "default",
+                "default_outputs": {"result": "fallback"},
+            },
+        )
+        child_outcome = RunOutcome(
+            run_id="cr1", status="failed",
+            output={}, error="boom",
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        with (
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome),
+        ):
+            fn = _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None,
+                parent_run_id="parent-run-1",
+            )
+            fn({})  # default policy → returns fallback updates, no raise
+
+        with ce_connect(tmp_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM contribution_events WHERE event_type = ?",
+                ("design_used",),
+            ).fetchall()
+        assert rows == []
+
+
+class TestInvokeBranchVersionDesignUsedEmit:
+    """invoke_branch_version_spec emits design_used keyed by the resolved
+    branch_def_id (since branch_version snapshot is topology-only)."""
+
+    def test_emits_design_used_for_version_blocking_success(self, tmp_path):
+        from workflow.branch_versions import (
+            initialize_branch_versions_db,
+            publish_branch_version,
+        )
+        from workflow.contribution_events import (
+            _connect as ce_connect,
+        )
+        from workflow.contribution_events import (
+            initialize_contribution_events_db,
+        )
+        from workflow.daemon_server import (
+            initialize_author_server,
+            save_branch_definition,
+        )
+        from workflow.graph_compiler import _build_invoke_branch_version_node
+
+        initialize_contribution_events_db(tmp_path)
+        initialize_author_server(tmp_path)
+        initialize_branch_versions_db(tmp_path)
+
+        # Live def with a non-anonymous author.
+        save_branch_definition(
+            tmp_path,
+            branch_def={
+                "branch_def_id": "child",
+                "name": "child",
+                "author": "dave",
+                "node_defs": [],
+                "edges": [],
+                "graph_nodes": [],
+                "entry_point": "",
+            },
+        )
+        # Publish a version of it.
+        record = publish_branch_version(
+            tmp_path,
+            branch_dict={
+                "branch_def_id": "child",
+                "name": "child",
+                "node_defs": [],
+                "edges": [],
+            },
+        )
+        bvid = record.branch_version_id
+
+        nd = NodeDefinition(
+            node_id="n_invoke", display_name="X",
+            invoke_branch_version_spec={
+                "branch_version_id": bvid,
+                "inputs_mapping": {},
+                "output_mapping": {"parent_out": "child_out"},
+                "wait_mode": "blocking",
+            },
+        )
+        node_fn = _build_invoke_branch_version_node(
+            nd, base_path=tmp_path, event_sink=None,
+            parent_run_id="parent-run-7",
+        )
+
+        with patch("workflow.runs.execute_branch_version_async") as mock_exec, \
+             patch("workflow.runs.poll_child_run_status") as mock_poll:
+            mock_exec.return_value = MagicMock(run_id="r-x")
+            mock_poll.return_value = {
+                "status": "completed",
+                "output": {"child_out": "v"},
+            }
+            node_fn({})
+
+        with ce_connect(tmp_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM contribution_events WHERE event_type = ?",
+                ("design_used",),
+            ).fetchall()
+        assert len(rows) == 1
+        ev = rows[0]
+        assert ev["actor_id"] == "dave"
+        assert ev["source_run_id"] == "parent-run-7"
+        assert ev["source_artifact_kind"] == "branch_version"
+        assert ev["source_artifact_id"] == bvid
