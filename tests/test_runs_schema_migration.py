@@ -70,6 +70,62 @@ class TestNewColumnsExist:
             cols = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         assert "token_count" in cols
 
+    def test_branch_version_id_column_present(self, tmp_path: Path) -> None:
+        """Task #65a — runs.branch_version_id added for Phase A item 6."""
+        initialize_runs_db(tmp_path)
+        with _connect(tmp_path) as conn:
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+        assert "branch_version_id" in cols
+
+    def test_branch_version_id_index_present(self, tmp_path: Path) -> None:
+        """Task #65a — index on runs.branch_version_id for attribution queries."""
+        initialize_runs_db(tmp_path)
+        with _connect(tmp_path) as conn:
+            idx_names = {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index'"
+                )
+            }
+        assert "idx_runs_branch_version" in idx_names
+
+    def test_def_based_run_leaves_branch_version_id_null(self, tmp_path: Path) -> None:
+        """Task #65a invariant: create_run without branch_version_id leaves it NULL."""
+        initialize_runs_db(tmp_path)
+        run_id = create_run(
+            tmp_path,
+            branch_def_id="b1",
+            thread_id="t1",
+            inputs={},
+            run_name="legacy",
+            actor="anon",
+        )
+        with _connect(tmp_path) as conn:
+            row = conn.execute(
+                "SELECT branch_version_id FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        assert row["branch_version_id"] is None
+
+    def test_create_run_with_branch_version_id_persists(self, tmp_path: Path) -> None:
+        """Task #65a: explicit branch_version_id on create_run is stored."""
+        initialize_runs_db(tmp_path)
+        run_id = create_run(
+            tmp_path,
+            branch_def_id="b1",
+            thread_id="t1",
+            inputs={},
+            run_name="versioned",
+            actor="anon",
+            branch_version_id="b1@abc12345",
+        )
+        with _connect(tmp_path) as conn:
+            row = conn.execute(
+                "SELECT branch_version_id FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        assert row["branch_version_id"] == "b1@abc12345"
+
 
 class TestMigrationExistingDb:
     def _old_schema_db(self, base: Path) -> None:

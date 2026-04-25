@@ -228,6 +228,18 @@ def initialize_runs_db(base_path: str | Path) -> Path:
         ):
             if col not in existing_runs:
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {ddl}")
+        # Phase A item 6 (Task #65a) — branch_version_id on runs. NULL for
+        # def-based runs (the existing path); populated only by
+        # execute_branch_version_async for version-based runs. Required by
+        # Task #48 contribution ledger + Task #53 route-back attribution.
+        if "branch_version_id" not in existing_runs:
+            conn.execute(
+                "ALTER TABLE runs ADD COLUMN branch_version_id TEXT"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_runs_branch_version "
+            "ON runs(branch_version_id)"
+        )
     return runs_db_path(base_path)
 
 
@@ -308,6 +320,7 @@ def create_run(
     inputs: dict[str, Any],
     run_name: str = "",
     actor: str = "anonymous",
+    branch_version_id: str | None = None,
 ) -> str:
     initialize_runs_db(base_path)
     run_id = uuid.uuid4().hex[:16]
@@ -316,13 +329,15 @@ def create_run(
             """
             INSERT INTO runs (
                 run_id, branch_def_id, run_name, thread_id,
-                status, actor, inputs_json, started_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                status, actor, inputs_json, started_at,
+                branch_version_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id, branch_def_id, run_name, thread_id,
                 RUN_STATUS_QUEUED, actor,
                 json.dumps(inputs, default=str), _now(),
+                branch_version_id,
             ),
         )
     return run_id
@@ -985,11 +1000,15 @@ def _prepare_run(
     inputs: dict[str, Any],
     run_name: str,
     actor: str,
+    branch_version_id: str | None = None,
 ) -> str:
     """Write the run row + pending-node events + lineage synchronously.
 
     Returns the ``run_id``. Fast (~a few ms); safe to call from the MCP
     handler before handing off to a background executor.
+
+    ``branch_version_id`` is populated only for version-based runs
+    (Phase A item 6, Task #65). Def-based runs leave it as None.
     """
     initialize_runs_db(base_path)
     run_id = create_run(
@@ -999,6 +1018,7 @@ def _prepare_run(
         inputs=inputs,
         run_name=run_name,
         actor=actor,
+        branch_version_id=branch_version_id,
     )
     thread_id = run_id
     with _connect(base_path) as conn:
@@ -1496,7 +1516,7 @@ def wait_for(run_id: str, timeout: float | None = None) -> None:
         fut.result(timeout=timeout)
 
 
-def execute_branch_async(
+def _execute_branch_core(
     base_path: str | Path,
     *,
     branch: BranchDefinition,
@@ -1506,26 +1526,23 @@ def execute_branch_async(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    branch_version_id: str | None = None,
 ) -> RunOutcome:
-    """Prepare a run synchronously and kick off graph execution in the
-    background. Returns within a few ms with ``status=queued``.
+    """Shared async-execution core for def-based and version-based runs.
 
-    The status will transition to ``running`` once the worker picks up
-    the job, then to ``completed`` / ``failed`` / ``cancelled``. Clients
-    poll ``get_run`` or ``stream_run`` for updates.
+    Prepares the run row + pending-node events synchronously, then submits
+    the graph invocation to the background executor. Returns within a few
+    ms with ``status=queued``.
 
-    Parameters
-    ----------
-    recursion_limit_override
-        Optional override for LangGraph's recursion limit. See
-        :func:`execute_branch` for rationale.
-    concurrency_budget_override
-        Override the branch-level concurrency_budget for this run.
+    ``branch_version_id`` is None for def-based runs (the public
+    :func:`execute_branch_async`) and set for version-based runs (the
+    Phase A item 6 :func:`execute_branch_version_async`).
     """
     run_id = _prepare_run(
         base_path,
         branch=branch, inputs=inputs,
         run_name=run_name, actor=actor,
+        branch_version_id=branch_version_id,
     )
 
     executor = _get_executor()
@@ -1562,6 +1579,133 @@ def execute_branch_async(
     return RunOutcome(
         run_id=run_id, status=RUN_STATUS_QUEUED,
         output={}, error="",
+    )
+
+
+def execute_branch_async(
+    base_path: str | Path,
+    *,
+    branch: BranchDefinition,
+    inputs: dict[str, Any],
+    run_name: str = "",
+    actor: str = "anonymous",
+    provider_call: Callable[..., str] | None = None,
+    recursion_limit_override: int | None = None,
+    concurrency_budget_override: int | None = None,
+) -> RunOutcome:
+    """Prepare a def-based run synchronously and kick off graph execution
+    in the background. Returns within a few ms with ``status=queued``.
+
+    The status will transition to ``running`` once the worker picks up
+    the job, then to ``completed`` / ``failed`` / ``cancelled``. Clients
+    poll ``get_run`` or ``stream_run`` for updates.
+
+    Backed by :func:`_execute_branch_core` with ``branch_version_id=None``.
+    Version-based runs use :func:`execute_branch_version_async` (Phase A
+    item 6, Task #65) instead.
+
+    Parameters
+    ----------
+    recursion_limit_override
+        Optional override for LangGraph's recursion limit. See
+        :func:`execute_branch` for rationale.
+    concurrency_budget_override
+        Override the branch-level concurrency_budget for this run.
+    """
+    return _execute_branch_core(
+        base_path,
+        branch=branch,
+        inputs=inputs,
+        run_name=run_name,
+        actor=actor,
+        provider_call=provider_call,
+        recursion_limit_override=recursion_limit_override,
+        concurrency_budget_override=concurrency_budget_override,
+        branch_version_id=None,
+    )
+
+
+class SnapshotSchemaDrift(Exception):
+    """Raised when a published version's snapshot can't be reconstructed.
+
+    Phase A item 6 (Task #65). Wraps the failure of
+    ``BranchDefinition.from_dict(snapshot)`` when the snapshot was
+    published against an older branch schema and is missing a
+    now-required field, has a now-removed field, or has a type-changed
+    field. Carries class-level ``failure_class`` + ``suggested_action``
+    so the MCP-layer handler can read them off the class without
+    instantiating a defensive copy.
+    """
+
+    failure_class = "snapshot_schema_drift"
+    suggested_action = "republish at current schema version"
+
+
+def execute_branch_version_async(
+    base_path: str | Path,
+    *,
+    branch_version_id: str,
+    inputs: dict[str, Any],
+    run_name: str = "",
+    actor: str = "anonymous",
+    provider_call: Callable[..., str] | None = None,
+    recursion_limit_override: int | None = None,
+) -> RunOutcome:
+    """Execute a published branch_version snapshot (immutable).
+
+    Sibling to :func:`execute_branch_async`; both wrap
+    :func:`_execute_branch_core`. The version-based path loads the
+    immutable snapshot from ``branch_versions``, reconstructs a
+    ``BranchDefinition`` from it, and threads ``branch_version_id``
+    through to the new ``runs.branch_version_id`` column for
+    attribution (Task #48 / Task #53 dependencies).
+
+    Cancellation propagation
+    ------------------------
+    Basic cancellation is identical to def-based runs — the run gets a
+    ``run_id`` like any other; ``cancel_run(run_id)`` flips the flag in
+    ``run_cancels`` and ``_invoke_graph``'s event_sink unwinds. **Parent
+    gate-series cancellation does NOT propagate to child version-runs
+    today.** Child runs are independent ``run_id``s; the propagation
+    primitive lands when Task #53 route-back is implemented (a parent
+    run that route-backs to a canonical via this helper will need
+    cancellation forwarding then).
+
+    Raises
+    ------
+    KeyError
+        ``branch_version_id`` is not found in ``branch_versions``.
+    SnapshotSchemaDrift
+        The snapshot exists but cannot be reconstructed into a
+        ``BranchDefinition`` because the on-disk shape predates a
+        required field. The exception's ``failure_class`` and
+        ``suggested_action`` class attributes name the recovery path
+        ("republish at current schema version").
+    """
+    from workflow.branch_versions import get_branch_version
+
+    bv = get_branch_version(base_path, branch_version_id=branch_version_id)
+    if bv is None:
+        raise KeyError(
+            f"branch_version_id {branch_version_id!r} not found "
+            "in branch_versions"
+        )
+    try:
+        branch = BranchDefinition.from_dict(bv.snapshot)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SnapshotSchemaDrift(
+            f"Snapshot for {branch_version_id!r} cannot be reconstructed: "
+            f"{exc}. Republish at current schema version."
+        ) from exc
+    return _execute_branch_core(
+        base_path,
+        branch=branch,
+        inputs=inputs,
+        run_name=run_name,
+        actor=actor,
+        provider_call=provider_call,
+        recursion_limit_override=recursion_limit_override,
+        branch_version_id=branch_version_id,
     )
 
 
