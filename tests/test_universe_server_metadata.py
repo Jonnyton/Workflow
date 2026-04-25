@@ -19,7 +19,7 @@ class TestUniverseServerMetadata:
 
         universe = tools["universe"]
         assert universe.title == "Universe Operations"
-        assert {"universe", "daemon", "fiction", "collaboration"} <= universe.tags
+        assert {"universe", "daemon", "collaboration", "workflow"} <= universe.tags
         assert universe.annotations.readOnlyHint is False
         assert universe.annotations.destructiveHint is False
         assert universe.annotations.idempotentHint is False

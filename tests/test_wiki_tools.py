@@ -579,7 +579,7 @@ class TestWikiFileBugDispatch:
 
         def fake_open(path, mode="r", *args, **kwargs):
             p = Path(path) if not isinstance(path, Path) else path
-            if mode == "x" and "BUG-001" in p.name and not first_call["fired"]:
+            if mode == "x" and "bug-001" in p.name and not first_call["fired"]:
                 first_call["fired"] = True
                 real_open(path, "w", *args, **kwargs).close()
                 raise FileExistsError(path)
