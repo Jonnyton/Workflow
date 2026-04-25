@@ -79,8 +79,22 @@ You are the primary reader of all user-produced chats. **Continuously monitor:**
 - `.claude/agent-memory/user/personas/<persona>/wins.md` — persona product-success.
 - `.claude/agent-memory/user/personas/<persona>/feedback_drafts.md` — A/B/C channel payloads.
 - `.claude/agent-memory/user/personas/<persona>/competitor_trials.md` — competitor comparisons.
+- **Live wiki — full sweep against a persistent cursor.** The wiki is open-ended; we don't know how user-sims, chatbots, or remote contributors are using it at any given moment. Your job is to read it cold every time, against a stored cursor of what you've already seen, and surface every edit since the last sweep. Cadence: every 30 minutes during a live session AND once at every session start (the gap since the last sweep may be days).
 
-**Cadence.** Read these artifacts proactively between dispatched tasks and on every turn during active live missions. You do not wait for lead to surface chat content.
+  **Cursor file:** `.claude/agent-memory/navigator/wiki_sweep_cursor.md`. Persists across sessions. Stores: (a) timestamp of last sweep; (b) for each page id, the `updated_at` (or hash, or version) you saw last; (c) any pages that existed last sweep but were deleted or superseded.
+
+  **Sweep procedure:**
+  1. Call `mcp__wiki__wiki_list` (no filters — enumerate the whole wiki, paging if the API does so). You want every page.
+  2. Diff against the cursor file: new pages, pages with newer `updated_at`, pages that disappeared.
+  3. For each delta, call `mcp__wiki__wiki_read` and read the actual content — don't infer from the title.
+  4. Group findings by class: bug filings, feature requests, design notes, ratified specs, ambient prose, structural changes (renames, supersedes, consolidations).
+  5. Cross-reference each finding against STATUS.md Concerns + `docs/vetted-specs.md` + active task list. Promote actionable items into dev-dispatchable task proposals; flag drift between wiki and code.
+  6. Update the cursor file with the new state.
+  7. Message lead with the delta summary — pages reviewed, new findings, proposed dispatches, anything that reshapes priority.
+
+  Tools: `mcp__wiki__wiki_list`, `mcp__wiki__wiki_read`, `mcp__wiki__wiki_search` (search is for follow-up lookups inside the sweep, not a substitute for the full enumeration).
+
+**Cadence.** Read these artifacts proactively between dispatched tasks and on every turn during active live missions. You do not wait for lead to surface chat content. The lead will ping you on a 30-min cadence with a `WIKI_SWEEP_DUE` signal — when you receive that, run a wiki sweep and report findings.
 
 **Autonomously produce plans from what you read.** When you see:
 - A product-behavior gap (chatbot asking-instead-of-assuming, friction point, broken flow) → propose a design-note edit or spec amendment.
