@@ -401,6 +401,15 @@ def initialize_author_server(base_path: str | Path) -> Path:
                 "ALTER TABLE goals ADD COLUMN gate_ladder_json "
                 "TEXT NOT NULL DEFAULT '[]'"
             )
+        # fork_from migration: content-addressed lineage tracking.
+        if "fork_from" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE branch_definitions ADD COLUMN fork_from TEXT DEFAULT NULL"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_branch_defs_fork_from "
+                "ON branch_definitions(fork_from)"
+            )
         # canonical_branch migration: first-experience fork target per Goal.
         if "canonical_branch_version_id" not in goal_cols:
             conn.execute(
@@ -1885,6 +1894,7 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
     visibility = (
         row["visibility"] if "visibility" in row_keys else "public"
     ) or "public"
+    fork_from = row["fork_from"] if "fork_from" in row_keys else None
     return {
         "branch_def_id": row["branch_def_id"],
         "name": row["name"],
@@ -1904,6 +1914,7 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "updated_at": row["updated_at"],
         "goal_id": goal_id,
         "visibility": visibility,
+        "fork_from": fork_from,
     }
 
 
@@ -1960,8 +1971,8 @@ def save_branch_definition(
                 tags_json, version, parent_def_id, entry_point,
                 graph_json, node_defs_json, state_schema_json,
                 published, stats_json, created_at, updated_at, goal_id,
-                visibility
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                visibility, fork_from
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 branch_def_id,
@@ -1982,6 +1993,7 @@ def save_branch_definition(
                 now,
                 branch_def.get("goal_id") or None,
                 visibility,
+                branch_def.get("fork_from") or None,
             ),
         )
     return get_branch_definition(base_path, branch_def_id=branch_def_id)
@@ -2117,6 +2129,16 @@ def update_branch_definition(
         normalized = "private" if incoming == "private" else "public"
         sets.append("visibility = ?")
         params.append(normalized)
+
+    if "fork_from" in updates:
+        # fork_from is immutable-after-set. Only write if not already set.
+        existing_row = get_branch_definition(base_path, branch_def_id=branch_def_id)
+        if existing_row.get("fork_from") is not None:
+            raise ValueError(
+                f"fork_from is immutable after set on branch '{branch_def_id}'."
+            )
+        sets.append("fork_from = ?")
+        params.append(updates["fork_from"] or None)
 
     json_fields = {
         "tags": "tags_json",
