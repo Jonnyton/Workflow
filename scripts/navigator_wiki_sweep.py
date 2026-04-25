@@ -180,7 +180,7 @@ def fetch_wiki_list(url: str, timeout: float) -> list[dict[str, Any]]:
     raise SweepError(3, f"could not parse pages list from wiki response: structured_keys={list(structured.keys())} text_first_200={text[:200]!r}")
 
 
-_PAGE_ROW_RE = re.compile(r"^\|\s*(?P<path>pages/[^|]+\.md)\s*\|", re.MULTILINE)
+_PAGE_ROW_RE = re.compile(r"^\|\s*(?P<path>(?:pages|drafts)/[^|]+\.md)\s*\|", re.MULTILINE)
 
 
 def parse_cursor_pages(cursor_text: str) -> set[str]:
@@ -206,13 +206,103 @@ def diff(live_pages: list[dict[str, Any]], cursor_paths: set[str]) -> dict[str, 
     }
 
 
+_TABLE_RE = re.compile(
+    r"(?P<header>^## (?P<title>Promoted pages — pages/[^\n]+|Draft pages)\s*\n\n"
+    r"(?P<colhdr>\| Page path \|[^\n]*)\n"
+    r"(?P<divider>\|[-|\s]+\|)\n)"
+    r"(?P<rows>(?:\|[^\n]*\n)*)",
+    re.MULTILINE,
+)
+
+
+def _parse_existing_rows(rows_block: str) -> dict[str, list[str]]:
+    """path → list of trailing column cells (preserves historical metadata)."""
+    out: dict[str, list[str]] = {}
+    for line in rows_block.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not cells or not cells[0].endswith(".md"):
+            continue
+        out[cells[0]] = cells[1:]
+    return out
+
+
+def _regen_table(
+    title: str,
+    header_block: str,
+    existing_rows: dict[str, list[str]],
+    live_paths: list[str],
+    col_count: int,
+) -> str:
+    """Rebuild a single section's table preserving historical cells."""
+    body_lines = [header_block.rstrip()]
+    for path in sorted(live_paths):
+        prior = existing_rows.get(path)
+        if prior is not None and len(prior) >= col_count:
+            cells = prior[:col_count]
+        else:
+            cells = ["unknown"] * col_count
+        body_lines.append("| " + path + " | " + " | ".join(cells) + " |")
+    return "\n".join(body_lines) + "\n"
+
+
 def update_cursor(cursor_path: Path, cursor_text: str, live_pages: list[dict[str, Any]]) -> str:
-    """Return the cursor text with last_sweep updated to now (UTC ISO)."""
+    """Refresh cursor: bump last_sweep + regenerate page-path tables.
+
+    Tables that match `## Promoted pages — pages/<category>/` or `## Draft pages`
+    are rebuilt from live_pages. Existing rows' trailing cells (created /
+    updated / status) are preserved verbatim where the path is unchanged.
+    New paths get 'unknown' filler. Missing paths drop out.
+    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if re.search(r"^last_sweep:", cursor_text, re.MULTILINE):
-        return re.sub(r"^last_sweep:\s*\S+", f"last_sweep: {now}", cursor_text, count=1, flags=re.MULTILINE)
-    # Insert into frontmatter if last_sweep absent (best-effort).
-    return cursor_text.replace("---\n", f"---\nlast_sweep: {now}\n", 1)
+        cursor_text = re.sub(
+            r"^last_sweep:\s*\S+", f"last_sweep: {now}",
+            cursor_text, count=1, flags=re.MULTILINE,
+        )
+    else:
+        cursor_text = cursor_text.replace("---\n", f"---\nlast_sweep: {now}\n", 1)
+
+    # Group live pages by category.
+    by_category: dict[str, list[str]] = {}
+    drafts: list[str] = []
+    for page in live_pages:
+        path = page.get("path", "")
+        if not path:
+            continue
+        if path.startswith("drafts/"):
+            drafts.append(path)
+        elif path.startswith("pages/"):
+            # Category is the second segment: pages/<cat>/...
+            parts = path.split("/", 2)
+            if len(parts) >= 3:
+                cat = parts[1]
+                by_category.setdefault(cat, []).append(path)
+
+    def replace_table(match: "re.Match[str]") -> str:
+        title = match.group("title")
+        header = match.group("header")
+        colhdr = match.group("colhdr")
+        existing = _parse_existing_rows(match.group("rows"))
+        # Column count = number of header cells minus 1 (Page path itself).
+        # `colhdr` is `| Page path | id | ... | status |` — split on `|` excluding empties.
+        header_cells = [c.strip() for c in colhdr.strip("|").split("|") if c.strip()]
+        col_count = max(0, len(header_cells) - 1)
+
+        if title == "Draft pages":
+            paths = drafts
+        else:
+            # Title looks like "Promoted pages — pages/bugs/" — extract category.
+            cat_match = re.search(r"pages/([^/\s]+)/", title)
+            if not cat_match:
+                return match.group(0)
+            cat = cat_match.group(1)
+            paths = by_category.get(cat, [])
+
+        return _regen_table(title, header, existing, paths, col_count)
+
+    return _TABLE_RE.sub(replace_table, cursor_text)
 
 
 def main(argv: list[str] | None = None) -> int:
