@@ -4065,6 +4065,8 @@ def extensions(
             "publish_version", "get_branch_version", "list_branch_versions",
             "continue_branch", "fork_tree",
             "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
+            "attest_gate_event", "verify_gate_event", "dispute_gate_event",
+            "retract_gate_event", "get_gate_event", "list_gate_events",
         ],
     })
 
@@ -4963,8 +4965,8 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
 
     # Lineage: expose fork_from + compute fork_descendants.
     fork_from = source_dict.get("fork_from")
-    from workflow.daemon_server import list_branch_definitions
     from workflow.branch_versions import list_branch_versions
+    from workflow.daemon_server import list_branch_definitions
 
     my_versions = list_branch_versions(_base_path(), bid, limit=500)
     my_version_ids = {v.branch_version_id for v in my_versions}
@@ -6529,8 +6531,8 @@ def _action_continue_branch(kwargs: dict[str, Any]) -> str:
 
 
 def _action_fork_tree(kwargs: dict[str, Any]) -> str:
-    from workflow.daemon_server import get_branch_definition, list_branch_definitions
     from workflow.branch_versions import get_branch_version, list_branch_versions
+    from workflow.daemon_server import get_branch_definition, list_branch_definitions
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     if not bid:
@@ -10390,6 +10392,154 @@ def _action_gates_release_bonus(kwargs: dict[str, Any]) -> str:
             staker=staker,
         )
     return json.dumps(result, default=str)
+
+
+def _action_attest_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events import attest_gate_event
+
+    goal_id = (kwargs.get("goal_id") or "").strip()
+    event_type = (kwargs.get("event_type") or "").strip()
+    event_date = (kwargs.get("event_date") or "").strip()
+    attested_by = (kwargs.get("attested_by") or _current_actor()).strip()
+    notes = (kwargs.get("note") or "").strip()
+    cites_raw = (kwargs.get("cites_json") or "[]").strip()
+    try:
+        cites = json.loads(cites_raw) if cites_raw else []
+        if not isinstance(cites, list):
+            return json.dumps({"error": "cites_json must be a JSON array."})
+    except json.JSONDecodeError as exc:
+        return json.dumps({"error": f"cites_json is not valid JSON: {exc}"})
+    try:
+        evt = attest_gate_event(
+            _base_path(),
+            goal_id=goal_id,
+            event_type=event_type,
+            event_date=event_date,
+            attested_by=attested_by,
+            cites=cites,
+            notes=notes,
+        )
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"status": "attested", "event_id": evt.event_id,
+                       "goal_id": evt.goal_id, "event_type": evt.event_type,
+                       "event_date": evt.event_date, "attested_by": evt.attested_by,
+                       "verification_status": evt.verification_status,
+                       "cite_count": len(evt.cites)})
+
+
+def _action_verify_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events import verify_gate_event
+
+    event_id = (kwargs.get("event_id") or "").strip()
+    verifier_id = (kwargs.get("verifier_id") or _current_actor()).strip()
+    if not event_id:
+        return json.dumps({"error": "event_id is required."})
+    try:
+        evt = verify_gate_event(_base_path(), event_id=event_id, verifier_id=verifier_id)
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"status": "verified", "event_id": evt.event_id,
+                       "verification_status": evt.verification_status,
+                       "verifier_id": evt.verifier_id})
+
+
+def _action_dispute_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events.store import dispute_gate_event
+
+    event_id = (kwargs.get("event_id") or "").strip()
+    disputed_by = (kwargs.get("disputed_by") or _current_actor()).strip()
+    reason = (kwargs.get("reason") or "").strip()
+    if not event_id:
+        return json.dumps({"error": "event_id is required."})
+    try:
+        evt = dispute_gate_event(_base_path(), event_id=event_id,
+                                 disputed_by=disputed_by, reason=reason)
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"status": "disputed", "event_id": evt.event_id,
+                       "verification_status": evt.verification_status})
+
+
+def _action_retract_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events.store import retract_gate_event
+
+    event_id = (kwargs.get("event_id") or "").strip()
+    retracted_by = (kwargs.get("retracted_by") or _current_actor()).strip()
+    note = (kwargs.get("note") or "").strip()
+    if not event_id:
+        return json.dumps({"error": "event_id is required."})
+    try:
+        evt = retract_gate_event(_base_path(), event_id=event_id,
+                                 retracted_by=retracted_by, note=note)
+    except (ValueError, KeyError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"status": "retracted", "event_id": evt.event_id,
+                       "verification_status": evt.verification_status})
+
+
+def _action_get_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events.store import get_gate_event
+
+    event_id = (kwargs.get("event_id") or "").strip()
+    if not event_id:
+        return json.dumps({"error": "event_id is required."})
+    evt = get_gate_event(_base_path(), event_id)
+    if evt is None:
+        return json.dumps({"error": f"event_id '{event_id}' not found."})
+    return json.dumps({
+        "event_id": evt.event_id,
+        "goal_id": evt.goal_id,
+        "event_type": evt.event_type,
+        "event_date": evt.event_date,
+        "attested_by": evt.attested_by,
+        "attested_at": evt.attested_at,
+        "verification_status": evt.verification_status,
+        "verifier_id": evt.verifier_id,
+        "notes": evt.notes,
+        "cites": [
+            {"branch_version_id": c.branch_version_id, "run_id": c.run_id,
+             "contribution_summary": c.contribution_summary}
+            for c in evt.cites
+        ],
+    }, default=str)
+
+
+def _action_list_gate_events(kwargs: dict[str, Any]) -> str:
+    from workflow.gate_events.store import list_gate_events
+
+    goal_id = (kwargs.get("goal_id") or "").strip()
+    bvid = (kwargs.get("branch_version_id") or "").strip()
+    limit = min(max(1, int(kwargs.get("limit") or 50)), 500)
+    include_retracted = bool(kwargs.get("include_retracted", True))
+    events = list_gate_events(
+        _base_path(),
+        goal_id=goal_id,
+        branch_version_id=bvid,
+        include_retracted=include_retracted,
+        limit=limit,
+    )
+    return json.dumps({
+        "goal_id": goal_id,
+        "count": len(events),
+        "events": [
+            {"event_id": e.event_id, "event_type": e.event_type,
+             "event_date": e.event_date, "attested_by": e.attested_by,
+             "verification_status": e.verification_status,
+             "cite_count": len(e.cites)}
+            for e in events
+        ],
+    }, default=str)
+
+
+_GATE_EVENT_ACTIONS: dict[str, Any] = {
+    "attest_gate_event": _action_attest_gate_event,
+    "verify_gate_event": _action_verify_gate_event,
+    "dispute_gate_event": _action_dispute_gate_event,
+    "retract_gate_event": _action_retract_gate_event,
+    "get_gate_event": _action_get_gate_event,
+    "list_gate_events": _action_list_gate_events,
+}
 
 
 _GATES_ACTIONS: dict[str, Any] = {
