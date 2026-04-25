@@ -397,6 +397,56 @@ def update_run_status(
             f"UPDATE runs SET {', '.join(sets)} WHERE run_id = ?",
             params,
         )
+        # Phase 2 emit-site (Task #72): on terminal status transition, emit
+        # one execute_step contribution event for attribution. Wrapped in
+        # try/except so emit failure (malformed metadata, table missing,
+        # etc.) never blocks a status update — status is the load-bearing
+        # semantic; emit is best-effort observability. Production observers
+        # grep contribution_events._EMIT_FAILURES for non-zero.
+        if status in _TERMINAL_STATUSES:
+            try:
+                row = conn.execute(
+                    "SELECT actor, branch_def_id, branch_version_id "
+                    "FROM runs WHERE run_id = ?", (run_id,),
+                ).fetchone()
+                if row is not None:
+                    artifact_id = row["branch_version_id"] or row["branch_def_id"]
+                    # Skip emit when no artifact identifier is present —
+                    # no attribution path = no event (per design discipline).
+                    if artifact_id:
+                        from workflow.contribution_events import (
+                            record_contribution_event,
+                        )
+                        artifact_kind = (
+                            "branch_version" if row["branch_version_id"]
+                            else "branch_def"
+                        )
+                        record_contribution_event(
+                            base_path,
+                            event_id=f"execute_step:{run_id}:{status}",
+                            event_type="execute_step",
+                            actor_id=row["actor"] or "anonymous",
+                            source_run_id=run_id,
+                            source_artifact_id=artifact_id,
+                            source_artifact_kind=artifact_kind,
+                            weight=1.0,
+                            occurred_at=_now(),
+                            metadata_json=json.dumps({
+                                "branch_def_id": row["branch_def_id"],
+                                "branch_version_id": row["branch_version_id"],
+                                "terminal_status": status,
+                            }),
+                            conn=conn,
+                        )
+            except Exception as exc:
+                from workflow.contribution_events import _EMIT_FAILURES
+                from workflow.contribution_events import _logger as _ce_logger
+                _EMIT_FAILURES["count"] += 1
+                _ce_logger.warning(
+                    "execute_step emit failed for run %s (status=%s): %s; "
+                    "status update preserved",
+                    run_id, status, exc,
+                )
 
 
 def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:

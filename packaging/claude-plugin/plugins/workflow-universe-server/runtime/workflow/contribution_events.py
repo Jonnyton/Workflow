@@ -1,19 +1,33 @@
-"""Contribution events ledger — Phase B item 8 (Task #71 schema; Task #72+ emit-wiring).
+"""Contribution events ledger — Phase B item 8.
 
 Single-table append-only events ledger. All five contribution surfaces emit
 into ``contribution_events``; the bounty calculator (Phase 2 dispatch) reads.
 
 Spec: ``docs/design-notes/2026-04-25-contribution-ledger-proposal.md`` §1.
 
-This module owns ONLY the schema constant + initializer. Phase 2 emit-wiring
-will land helpers (``record_contribution_event``, ``list_events_by_actor``,
-etc.) in this module — single-source layout matches ``branch_versions.py``.
+Schema layer landed in Task #71. Emit-wiring layer landed in Task #72+;
+``record_contribution_event`` is the helper Phase 2 emit-sites call. Future
+list / aggregate helpers belong in this module too — single-source layout
+matches ``branch_versions.py``.
 """
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+import time
+import uuid
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
+
+# Counter incremented on every record_contribution_event failure recovered
+# by an upstream try/except. Should remain 0 in healthy operation. Phase 2
+# emit-sites (Task #72: execute_step in update_run_status) wrap the call in
+# try/except, log a warning, and increment this counter. Operators grep for
+# non-zero in production — same observability shape as
+# ``_LEGACY_FALLBACK_HITS`` from Task #64.
+_EMIT_FAILURES: dict[str, int] = {"count": 0}
 
 # ── DDL ──────────────────────────────────────────────────────────────────────
 
@@ -71,3 +85,58 @@ def initialize_contribution_events_db(base_path: str | Path) -> None:
     runs_db_path(base_path)  # ensure parent runs DB path exists
     with _connect(base_path) as conn:
         conn.executescript(CONTRIBUTION_EVENTS_SCHEMA)
+
+
+def record_contribution_event(
+    base_path: str | Path,
+    *,
+    event_id: str | None = None,
+    event_type: str,
+    actor_id: str,
+    actor_handle: str = "",
+    source_run_id: str | None = None,
+    source_artifact_id: str | None = None,
+    source_artifact_kind: str = "",
+    weight: float = 1.0,
+    occurred_at: float | None = None,
+    metadata_json: str = "{}",
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """INSERT a contribution event. Returns True if inserted, False if
+    skipped via ``INSERT OR IGNORE`` on caller-supplied ``event_id`` collision.
+
+    Caller-supplied ``event_id`` enables idempotent emits — Phase 2 emit-sites
+    use deterministic IDs like ``"execute_step:{run_id}:{terminal_status}"``
+    so re-emit attempts (e.g. duplicate run-completion paths) silently dedup.
+    When ``event_id`` is None (caller doesn't need idempotency), a fresh
+    UUID4 hex is generated.
+
+    ``conn`` lets callers share an open SQLite transaction — the INSERT
+    runs inside the caller's ``with _connect()`` block, atomic with whatever
+    write the caller is doing. When None, opens a fresh connection.
+    """
+    if event_id is None:
+        event_id = uuid.uuid4().hex
+    if occurred_at is None:
+        occurred_at = time.time()
+
+    sql = (
+        "INSERT OR IGNORE INTO contribution_events "
+        "(event_id, event_type, actor_id, actor_handle, source_run_id, "
+        " source_artifact_id, source_artifact_kind, weight, occurred_at, "
+        " metadata_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    params = (
+        event_id, event_type, actor_id, actor_handle, source_run_id,
+        source_artifact_id, source_artifact_kind, weight, occurred_at,
+        metadata_json,
+    )
+
+    if conn is not None:
+        cur = conn.execute(sql, params)
+        return cur.rowcount > 0
+
+    with _connect(base_path) as own_conn:
+        cur = own_conn.execute(sql, params)
+        return cur.rowcount > 0
