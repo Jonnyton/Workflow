@@ -12877,29 +12877,55 @@ def _wiki_sync_projects(**_kwargs: Any) -> str:
 
 _BUG_ID_RE = re.compile(r"^BUG-(\d{3,})", re.IGNORECASE)
 _BUGS_CATEGORY = "bugs"
+_KIND_FEATURES_DIR = "feature-requests"
+_KIND_DESIGNS_DIR = "design-proposals"
 _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
 
+# Per-kind routing: kind -> (category-dir-name, ID-prefix). Each prefix has its
+# own independent NNN counter. New filings route per kind; existing pages stay
+# put (no migration). Default kind="bug" preserves the historical pages/bugs/
+# location and BUG-NNN sequence — backward-compat clean.
+_KIND_ROUTING: dict[str, tuple[str, str]] = {
+    "bug":     (_BUGS_CATEGORY,     "BUG"),
+    "feature": (_KIND_FEATURES_DIR, "FEAT"),
+    "design":  (_KIND_DESIGNS_DIR,  "DESIGN"),
+}
 
-def _next_bug_id(bugs_pages_dir: Path) -> str:
-    """Allocate the next BUG-NNN id by scanning existing bug filenames.
 
-    Scans both pages/bugs/ and drafts/bugs/ so concurrent writes don't
-    collide with an already-promoted entry. Returns "BUG-001" when
-    empty or missing. Glob is case-insensitive via *.md + regex filter.
+def _next_id(pages_dir: Path, drafts_dir: Path, prefix: str) -> str:
+    """Allocate the next ``<PREFIX>-NNN`` id for a kind's directory pair.
+
+    Scans both ``pages_dir`` and ``drafts_dir`` so concurrent writes don't
+    collide with an already-promoted entry. Returns ``<PREFIX>-001`` when
+    both dirs are empty or missing. Glob is case-insensitive via *.md plus a
+    prefix-anchored regex filter.
     """
+    pat = re.compile(rf"^{re.escape(prefix)}-(\d{{3,}})", re.IGNORECASE)
     seen: set[int] = set()
-    for base in (bugs_pages_dir, _wiki_drafts_dir() / _BUGS_CATEGORY):
+    for base in (pages_dir, drafts_dir):
         if not base.is_dir():
             continue
         for p in base.glob("*.md"):
-            m = _BUG_ID_RE.match(p.stem)
+            m = pat.match(p.stem)
             if m:
                 try:
                     seen.add(int(m.group(1)))
                 except ValueError:
                     continue
     next_n = (max(seen) + 1) if seen else 1
-    return f"BUG-{next_n:03d}"
+    return f"{prefix}-{next_n:03d}"
+
+
+def _next_bug_id(bugs_pages_dir: Path) -> str:
+    """Backward-compat wrapper preserving the original BUG-NNN signature.
+
+    Existing call sites that pass only the pages dir still work; the drafts
+    dir is resolved internally to keep behavior identical to the prior
+    implementation.
+    """
+    return _next_id(
+        bugs_pages_dir, _wiki_drafts_dir() / _BUGS_CATEGORY, "BUG"
+    )
 
 
 def _slugify_title(title: str, max_len: int = 60) -> str:
@@ -13027,29 +13053,38 @@ def _wiki_cosign_bug(
     reporter_context: str = "",
     **_kwargs: Any,
 ) -> str:
-    """Append a cosign to an existing bug report.
+    """Append a cosign to an existing bug / feature / design filing.
 
-    Reads pages/bugs/BUG-NNN-*.md, appends a ## Cosigns section (or
-    extends existing), and increments the cosign_count frontmatter field.
-    Returns {status: "cosigned", bug_id, cosign_count}.
+    Derives the target directory from the ``bug_id`` prefix
+    (``BUG-`` → ``pages/bugs/``, ``FEAT-`` → ``pages/feature-requests/``,
+    ``DESIGN-`` → ``pages/design-proposals/``). Appends a ``## Cosigns``
+    section (or extends existing), and increments the ``cosign_count``
+    frontmatter field. Returns ``{status: "cosigned", bug_id, cosign_count}``.
     """
     if not bug_id:
         return json.dumps({"error": "bug_id is required for cosign_bug."})
     if not reporter_context:
         return json.dumps({"error": "reporter_context is required for cosign_bug."})
 
-    bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
-    # Find the matching file (case-insensitive prefix match)
+    # Derive category dir from bug_id prefix. Falls back to bugs/ for
+    # backward-compat with raw "NNN" / unrecognized formats.
     bid_upper = bug_id.upper()
+    category_dir = _BUGS_CATEGORY
+    for _kind, (_dir, _prefix) in _KIND_ROUTING.items():
+        if bid_upper.startswith(f"{_prefix}-"):
+            category_dir = _dir
+            break
+
+    bugs_dir = _wiki_pages_dir() / category_dir
+    # Find the matching file (case-insensitive prefix match)
     matches = [
         p for p in bugs_dir.glob("*.md")
-        if _BUG_ID_RE.match(p.stem)
-        and (p.stem.split("-", 2)[0].upper() + "-" + p.stem.split("-", 2)[1]) == bid_upper
+        if (p.stem.split("-", 2)[0].upper() + "-" + p.stem.split("-", 2)[1]) == bid_upper
     ]
     if not matches:
         return json.dumps({
             "error": f"Bug not found: {bug_id}",
-            "hint": "Check bug_id format (e.g. BUG-042).",
+            "hint": "Check bug_id format (e.g. BUG-042 / FEAT-007 / DESIGN-003).",
         })
 
     target = matches[0]
@@ -13095,7 +13130,7 @@ def _wiki_cosign_bug(
         "status": "cosigned",
         "bug_id": bid_upper,
         "cosign_count": cosign_count,
-        "path": f"pages/bugs/{target.name}",
+        "path": f"pages/{category_dir}/{target.name}",
     })
 
 
@@ -13145,20 +13180,24 @@ def _wiki_file_bug(
             "valid": sorted(_VALID_BUG_KINDS),
         })
 
-    bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
+    category_dir, id_prefix = _KIND_ROUTING[effective_kind]
+    pages_dir = _wiki_pages_dir() / category_dir
+    drafts_dir = _wiki_drafts_dir() / category_dir
     try:
-        bugs_dir.mkdir(parents=True, exist_ok=True)
+        pages_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        return json.dumps({"error": f"Cannot create bugs dir: {exc}"})
+        return json.dumps({"error": f"Cannot create {category_dir} dir: {exc}"})
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     slug = _slugify_title(title)
 
-    # Dedup check: scan existing bugs for Jaccard similarity ≥ threshold.
-    # Skip when force_new=True.
+    # Dedup check: scan existing filings of THIS kind for Jaccard similarity
+    # ≥ threshold. Per-kind only — a feature-request shouldn't dedup against
+    # a bug because they're different work surfaces; same title may
+    # legitimately exist as both. Skip when force_new=True.
     if not force_new:
         query_tokens = _bug_token_set(title + " " + (observed or ""))
-        existing = _scan_existing_bugs(bugs_dir)
+        existing = _scan_existing_bugs(pages_dir)
         scored = []
         for entry in existing:
             sim = _jaccard(query_tokens, entry["haystack_tokens"])
@@ -13180,16 +13219,16 @@ def _wiki_file_bug(
                 "bug_id": None,
                 "similar": top3,
                 "hint": (
-                    "Similar bugs exist. Use cosign_bug to add your context to "
-                    "the top match, or set force_new=true if the symptom is "
+                    "Similar filings exist. Use cosign_bug to add your context "
+                    "to the top match, or set force_new=true if the symptom is "
                     "materially different."
                 ),
             })
 
     for attempt in (1, 2):
-        bug_id = _next_bug_id(bugs_dir)
+        bug_id = _next_id(pages_dir, drafts_dir, id_prefix)
         filename = f"{bug_id.lower()}-{slug}.md"
-        target = bugs_dir / filename
+        target = pages_dir / filename
         body = _render_bug_markdown(
             bug_id=bug_id,
             title=title,
@@ -13210,7 +13249,7 @@ def _wiki_file_bug(
         except FileExistsError:
             if attempt == 2:
                 return json.dumps({
-                    "error": "BUG id collision retry exhausted.",
+                    "error": f"{id_prefix} id collision retry exhausted.",
                     "hint": "Retry in a moment — concurrent filers.",
                 })
             time.sleep(0.05)
@@ -13218,18 +13257,19 @@ def _wiki_file_bug(
     else:
         return json.dumps({"error": "Failed to write bug report."})
 
+    rel_path = f"pages/{category_dir}/{filename}"
     _append_wiki_log(
-        f"file_bug | pages/bugs/{filename} | {bug_id} {title} [{severity}] kind={effective_kind}"
+        f"file_bug | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
     return json.dumps({
-        "path": f"pages/bugs/{filename}",
+        "path": rel_path,
         "bug_id": bug_id,
         "status": "filed",
         "kind": effective_kind,
         "severity": severity,
         "component": component,
         "note": "Filing sent to navigator triage pipeline. "
-                "Use `wiki action=list category=bugs` to view.",
+                f"Use `wiki action=list category={category_dir}` to view.",
     })
 
 

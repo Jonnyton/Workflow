@@ -423,3 +423,156 @@ class TestBug028SlugCaseRoundtrip:
         bugs_dir = wiki_dir / "pages" / "bugs"
         (bugs_dir / "BUG-007-legacy.md").write_text("x", encoding="utf-8")
         assert _next_bug_id(bugs_dir) == "BUG-008"
+
+
+class TestFileBugKindRouting:
+    """Task #52 — kind=feature → pages/feature-requests/FEAT-NNN,
+    kind=design → pages/design-proposals/DESIGN-NNN, kind=bug stays in
+    pages/bugs/BUG-NNN. Each prefix has its own counter."""
+
+    def test_kind_feature_lands_in_feature_requests_dir(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="Add feature Y",
+                kind="feature",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "feature"
+        assert out["bug_id"].startswith("FEAT-")
+        assert out["path"].startswith("pages/feature-requests/")
+        feat_dir = wiki_dir / "pages" / "feature-requests"
+        assert feat_dir.is_dir()
+        assert any(p.stem.startswith("feat-") for p in feat_dir.glob("*.md"))
+
+    def test_kind_design_lands_in_design_proposals_dir(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="Design proposal Z",
+                kind="design",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "design"
+        assert out["bug_id"].startswith("DESIGN-")
+        assert out["path"].startswith("pages/design-proposals/")
+        design_dir = wiki_dir / "pages" / "design-proposals"
+        assert design_dir.is_dir()
+        assert any(p.stem.startswith("design-") for p in design_dir.glob("*.md"))
+
+    def test_kind_bug_still_lands_in_bugs_dir(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="A real bug",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "bug"
+        assert out["bug_id"].startswith("BUG-")
+        assert out["path"].startswith("pages/bugs/")
+
+    def test_independent_id_counters_per_kind(self, wiki_dir):
+        """BUG-001 / FEAT-001 / DESIGN-001 must coexist — independent sequences."""
+        b = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="bug one",
+        ))
+        f = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="feat one", kind="feature",
+        ))
+        d = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="design one", kind="design",
+        ))
+        assert b["bug_id"] == "BUG-001"
+        assert f["bug_id"] == "FEAT-001"
+        assert d["bug_id"] == "DESIGN-001"
+
+    def test_per_kind_counter_increments_independently(self, wiki_dir):
+        """Filing 2 features then 1 bug: features get FEAT-001/FEAT-002, bug gets BUG-001."""
+        f1 = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="feat one", kind="feature",
+        ))
+        f2 = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="feat two completely different",
+            kind="feature",
+        ))
+        b1 = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="some bug",
+        ))
+        assert f1["bug_id"] == "FEAT-001"
+        assert f2["bug_id"] == "FEAT-002"
+        assert b1["bug_id"] == "BUG-001"
+
+    def test_dedup_is_per_kind_not_cross_kind(self, wiki_dir):
+        """Same title may be filed as both bug AND feature — different surfaces."""
+        b = json.loads(_wiki_file_bug(
+            component="x", severity="minor",
+            title="Database connection pool exhaustion under load",
+            observed="Connections timeout after 5 seconds when pool is exhausted",
+        ))
+        # Same title as feature should NOT be flagged as similar (different kind dir)
+        f = json.loads(_wiki_file_bug(
+            component="x", severity="minor",
+            title="Database connection pool exhaustion under load",
+            observed="Connections timeout after 5 seconds when pool is exhausted",
+            kind="feature",
+        ))
+        assert b["status"] == "filed"
+        assert b["bug_id"].startswith("BUG-")
+        assert f["status"] == "filed"
+        assert f["bug_id"].startswith("FEAT-")
+
+    def test_invalid_kind_still_rejected(self, wiki_dir):
+        """Invalid kinds are rejected before routing kicks in (existing contract)."""
+        out = json.loads(
+            _wiki_file_bug(
+                component="x", severity="minor", title="t", kind="banana",
+            )
+        )
+        assert "error" in out
+        assert "banana" in out["error"]
+
+    def test_cosign_feature_routes_to_feature_requests_dir(self, wiki_dir):
+        """cosign_bug must derive dir from the bug_id prefix (FEAT- → feature-requests)."""
+        from workflow.universe_server import wiki
+        f = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="add feature Q", kind="feature",
+        ))
+        feat_id = f["bug_id"]
+        cos = json.loads(
+            wiki("cosign_bug", bug_id=feat_id, reporter_context="me too — important")
+        )
+        assert cos["status"] == "cosigned"
+        assert cos["bug_id"] == feat_id.upper()
+        assert cos["path"].startswith("pages/feature-requests/")
+        # Verify the file actually has a Cosigns section
+        feat_dir = wiki_dir / "pages" / "feature-requests"
+        bug_files = list(feat_dir.glob(f"{feat_id.lower()}-*.md"))
+        assert len(bug_files) == 1
+        body = bug_files[0].read_text(encoding="utf-8")
+        assert "## Cosigns" in body
+        assert "me too — important" in body
+
+    def test_cosign_design_routes_to_design_proposals_dir(self, wiki_dir):
+        from workflow.universe_server import wiki
+        d = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="design prop K", kind="design",
+        ))
+        design_id = d["bug_id"]
+        cos = json.loads(
+            wiki("cosign_bug", bug_id=design_id, reporter_context="agree with this")
+        )
+        assert cos["status"] == "cosigned"
+        assert cos["path"].startswith("pages/design-proposals/")
+
+    def test_cosign_bug_unknown_prefix_falls_back_to_bugs_dir(self, wiki_dir):
+        """Unrecognized prefix → bugs/ fallback (backward compat)."""
+        from workflow.universe_server import wiki
+        # File a regular bug to give cosign something to find
+        b = json.loads(_wiki_file_bug(
+            component="x", severity="minor", title="legit bug",
+        ))
+        cos = json.loads(
+            wiki("cosign_bug", bug_id=b["bug_id"], reporter_context="seen it too")
+        )
+        assert cos["status"] == "cosigned"
+        assert cos["path"].startswith("pages/bugs/")
