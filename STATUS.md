@@ -24,24 +24,14 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Spec | Status |
 |---|---|
-| Per-node llm_policy override | claimed:dev-2 (pending verifier SHIP) |
+| Continue branch — workspace-memory continuity primitive | claimed:dev (Task #37 in_progress) |
+| Gate bonuses MCP wiring — claim/unstake/release with bonus_stake | claimed:dev (Task #38) |
+| Payments escrow MCP wiring — extensions action=escrow_* | claimed:dev (Task #41) |
+| patch_branch docstring batch-ops example + control_station hint | claimed:dev-2 (Task #39) |
+| Maya LIVE-F3 vocabulary leak — control_station prompt discipline | claimed:dev-2 (Task #40) |
+| teammate_message — inter-node messaging primitive (vetted-specs.md) | dev-dispatchable |
 | In-flight run recovery — part 2 (SqliteSaver-keyed resume, node-escrow aware) | dev-dispatchable |
-| Node checkpoints — partial-credit boundaries authored into node_def | claimed:dev (pending verifier SHIP) |
-| Gate bonuses — staked payouts attached to gate milestones | dev-dispatchable |
-| Concurrency budget + observability for fan-out nodes | claimed:dev (pending verifier SHIP) |
-| Loud sandbox-unavailable surface for dev/checker exec nodes | dev-dispatchable |
-| Sub-branch invocation primitive | dev-dispatchable |
-| Cross-run state query primitive | dev-dispatchable |
-| Scheduled + event-triggered branch invocation | dev-dispatchable |
-| Project-scope persistent memory primitive | dev-dispatchable |
-| file_bug is the feature-request verb — docstring + optional kind field | claimed:dev-2 (pending verifier SHIP) |
-| 8 navigator-promoted specs 2026-04-23 — see `docs/vetted-specs.md` §Navigator-promoted 2026-04-23 | dev-dispatchable |
-| Continue branch — workspace-memory continuity primitive (PRIYA-R7 retention break) | dev-dispatchable (post-sweep) |
-| Evaluator protocol — workflow/evaluation/__init__.py | claimed:dev (Task #17 in_progress) |
-| Thundering-herd provider cooldown chain-drain detection (BUG-029) | dev-dispatchable |
-| estimate_run_cost — cost + time estimate before dispatch | dev-dispatchable |
-| get_status session_boundary field — explicit no-prior-session assertion | dev-dispatchable |
-| get_status schema stability guarantee — schema_version + contract test | dev-dispatchable |
+| publish_version + canonical_branch + fork_from + gate_event + gate-leaderboard | dev-dispatchable (multi-day) |
 | [deferred] Daemon roster + soul.md authoring surface | deferred:needs-scoping |
 | [deferred] Per-node soul_policy field on NodeDefinition | deferred:needs-scoping |
 | [deferred] Branch-contribution ledger | deferred:needs-scoping |
@@ -57,28 +47,25 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 ## Work
 
-**Session 2026-04-25 audit (dev-2): uncommitted backlog is MORE complete than STATUS.md implied.** #18/#19/#20/#21 all already complete in tree (pre-commit hook sync + 2 stale patch targets in `tests/test_universe_nodes.py` were the only real deltas). BUG-029 chain-drain Part B landed (`workflow/providers/router.py` + `tests/test_provider_router_bug029.py`, 13 new tests). Most navigator-promoted specs from 2026-04-23 are already implemented + tested: estimate_run_cost, session_boundary, schema_version, dry_inspect_node, storage_inspect, project_memory, recursion_limit_override.
+**Session 2026-04-25 wrap-state landed:** `55a874f` (17+ specs across 7 verifier-cleared bundles + post-sweep additive: scheduler, evaluation, idempotency, sandbox, memory, api/prompts, gates+payments+treasury+outcomes+attribution scaffolding, sub-branch, teammate_message, publish_version), `b2b3a25` (docs+skills+agents companion), `3c15cf9` (scheduler DOW fix + edge-case tests + gate_events scaffolding). Net `~25,000 insertions` across 250+ files. Last commit: `3c15cf9`.
 
-**Reconciled spec status (navigator audit 2026-04-24, file:line evidence):**
-- DONE in tree (verifier SHIP only): `query_runs`, `in-flight run recovery part 2` (SqliteSaver-keyed resume).
-- PARTIAL: `sub-branch invocation` (schema in branches.py, graph_compiler execution path missing — dev-2 on it, Task #14); `loud sandbox-unavailable` (design-half done; missing get_status.sandbox_status + bwrap detection — Task #16).
-- GENUINELY MISSING: `gate bonuses`; `publish_version` + `canonical_branch` + `fork_from` + `gate_event` + `gate-leaderboard` (multi-day, shared storage); `scheduled + event-triggered` (dev on it, Task #9).
+**P0 #59 closed** — uptime canary back to green after pause-aware fix landed.
 
-**Wrap state:** still 192 files / 6761 insertions uncommitted. Verifier SHIP sweep + themed-bundle commits still pending — top priority for next session before any new spec dispatch. Verifier ran full-suite to 41% clean at wrap (no failures, normal skips). Pre-existing ruff issue in `workflow/desktop/tray.py` (unsorted imports) — fix when touched, not a blocker. Last commit: `3269dcd`.
+**Now-active dev queue:** continue_branch handler (#37), gate bonuses MCP wiring (#38), payments escrow MCP wiring (#41) — dev. patch_branch batch docs (#39), Maya vocabulary leak (#40) — dev-2. All on writable-now main; additive-only constraint lifted.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Verifier per-task SHIP sweep | 11 unverified tasks (see above list) | dev-2 stub fix | in_progress:verifier — resume next session |
-| dev-2 stub fix | `tests/test_run_recursion_limit.py` `_FakeCompiled` stubs | — | in_progress:dev-2 |
-| #18 Clear workflow/api/__init__.py domain wildcard (arch-audit #1) | `workflow/api/__init__.py` + 6 test files | — | in_progress:dev |
-| #19-21 arch audit quick-wins (author_server pre-commit gate, prompt single-source, runtime.py rename) | see task descriptions | #18 precedes #20 | dev-dispatchable |
-| Arch audit #5/#6 + multi-week #9-#11 (FastMCP submodules, R7 extractions) | see `docs/design-notes/2026-04-24-architecture-audit.md` | host-review before dispatch | host-review |
-| #13 Wire enforce_write_cap into write sites | `workflow/**/*.py` write sites | #10 landed | dev-dispatchable (multi-day) |
-| Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | navigator+lead+host, half-day |
+| continue_branch MCP handler (#37) | universe_server.py + mirror | — | in_progress:dev |
+| gate bonuses MCP wiring (#38) | universe_server.py + gates/actions.py | #37 | claimed:dev |
+| Payments escrow MCP wiring (#41) | universe_server.py + payments/actions.py | #38 | claimed:dev |
+| patch_branch batch docs (#39) | universe_server.py docstring + prompt | — | claimed:dev-2 |
+| Maya LIVE-F3 vocabulary leak (#40) | _CONTROL_STATION_PROMPT + grep test | #39 | claimed:dev-2 |
+| Arch audit #5/#6 + multi-week #9-#11 | `docs/design-notes/2026-04-24-architecture-audit.md` | host-review | host-review |
+| Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | — | host or lead-with-PAT |
 | Mission 10 retest | user-sim | host watches browser | claimed:user |
-| #19 Memory-scope Stage 2c flag | — | 30d clean | monitoring |
-| #9 Remove provider+DO keys from persistent uptime surfaces (code landed, e2e blocked) | `deploy/*` | host Qs answered | host→e2e |
+| Memory-scope Stage 2c flag | — | 30d clean | monitoring |
+| Remove provider+DO keys from persistent uptime surfaces (code landed, e2e blocked) | `deploy/*` | host Qs answered | host→e2e |
 | STATUS.md Concerns cleanup pass | STATUS.md | — | host |
 
 ---
