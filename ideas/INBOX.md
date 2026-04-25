@@ -13,10 +13,12 @@ half-formed experiments.
 
 ## Inbox
 
-- [YYYY-MM-DD] (source: user-chat, owner: unassigned, status: captured) Replace
-  this with the first real idea.
-  Next: classify whether it belongs in `STATUS.md`, `PLAN.md`, a design note,
-  or an exec plan.
+- [2026-04-25] (source: navigator-audit, owner: unassigned, status: captured) CONTRIBUTORS.md authoring surface — a canonical file listing node/branch authors with GitHub handles for Co-Authored-By attribution, seeded from the designer-royalties model (`project_designer_royalties_and_bounties`). Chatbot can read it to credit contributors in commit messages and pull request bodies.
+  Next: evaluate whether this is a standalone file convention or a feature that needs a daemon_server.py table + MCP surface. Ilse persona (OSS-contributor tier) is the natural first user — good user-sim mission candidate.
+  Links: -
+
+- [2026-04-25] (source: navigator-audit, owner: unassigned, status: captured) fantasy_daemon/phases/ entry-point comment — each phase file (orient.py, worldbuild.py, commit.py, etc.) lacks a one-line header comment naming which graph cycle invokes it and what the entry-point node is. Reading any phase file cold requires tracing back through book.py/chapter.py/universe.py to understand context. Simple docstring convention addition; no architecture change.
+  Next: quick fix — dev can add entry-point comments to all 7 phase files in a single small task. No spec needed; just a task with Files boundary `domains/fantasy_daemon/phases/*.py`.
   Links: -
 
 - [2026-04-20] (source: host, owner: navigator-followup, status: captured,
@@ -72,3 +74,32 @@ half-formed experiments.
   - `docs/design-notes/2026-04-18-full-platform-architecture.md` — check
     §10 track decomposition for whether this falls under Track N
     (vibe-coding authoring) or needs its own track.
+
+- [2026-04-24] (source: user-sim/Priya-Session2, owner: navigator, status: captured,
+  priority: post-uptime, size: medium)
+  **"Extend run" / "continue branch" as a first-class primitive.**
+  User-sim signal: Priya Session 2 ask "add BIOCLIM + RF for comparison on the same 14 species"
+  has no clean Workflow verb. "New branch" implies fresh scaffolding. "New run" implies same
+  algo-set. Chatbot must semantically infer "clone this branch, add algorithm nodes, re-run
+  same species set." No existing primitive surfaces this as an intent. Chain-break: Interface 1
+  primitive gap — chatbot improvises where it should have a clear tool.
+  Scoping questions: (a) clone-branch-and-add-nodes vs. re-run-with-additional-params vs.
+  new sibling branch? (b) does this need a new MCP verb (`extend_branch`/`continue_run`) or
+  is it composable from `submit_request` + `clone_branch`? (c) what state carries over from
+  the original run (params, results, species set)?
+  Dependencies: in-flight run recovery part 2 (#6) should land first (resume semantics
+  inform extension semantics).
+  Next: triage after #6 lands; design note needed before spec.
+  Links:
+  - `docs/audits/user-chat-intelligence/2026-04-24-competitor-trials-sweep.md` Signal 2
+
+- [2026-04-24] (source: user-sim/Priya-W&B-trial, owner: navigator, status: captured,
+  priority: domain-skill, size: small)
+  **`hyperparameter_importance` evaluator node for scientific/ML domain.**
+  W&B Sweeps computes hyperparameter importance (which knobs matter most across a sweep)
+  automatically. Workflow has no equivalent. User-sim rates it "cheap to add, high-value
+  for scientific users." Domain-specific — belongs in the scientific-computing skill module,
+  not the engine. CV-as-first-class-primitive is the structural moat; this is a parity win.
+  Next: capture in science-domain node catalog when that module is scoped.
+  Links:
+  - `docs/audits/user-chat-intelligence/2026-04-24-competitor-trials-sweep.md` Signal 4

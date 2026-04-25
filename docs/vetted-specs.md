@@ -171,20 +171,6 @@ New MCP primitives: `extensions action=project_memory_get {project_id, key}` / `
 
 ---
 
-## Prompt_template literal-brace escape + build-time missing-key validation
-
-**Scope:** Three additive changes to `workflow/graph_compiler.py` + `workflow/branches.py`. (A) Add backslash-escape pass: identifier wrapped in backslash-brace pair renders literally as `{ident}` without substitution; runs after Jinja→Python normalizer, before single-brace substitution; `_missing_state_keys` skips escaped refs. (B) Extend `BranchDefinition.validate()` with per-node placeholder scan — each `{ident}` must exist in `input_keys` ∪ `state_schema` names; validation error with node+key otherwise. Runtime `CompilerError` stays as second layer. (C) Fix docstring at `graph_compiler.py:11-13` (falsely claims `str.format_map`).
-
-**Files:** `workflow/graph_compiler.py`, `workflow/branches.py`, tests.
-
-**Invariants:** Jinja `{{ident}}` = substitute unchanged (ecosystem compat); non-identifier braces still pass through verbatim; Parts A+B+C ship together.
-
-**Tests:** backslash-escape renders literal; single-brace substitutes; double-brace normalized+substitutes; build-time catches undeclared ref; build-time does NOT flag escaped refs; JSON `{"key": "val"}` passes through.
-
-**Vetted:** 2026-04-22 by navigator. Reshape of user-submitted "double-braces should be literal" ask — filer's proposed fix would silently break every existing Claude.ai-authored template. Full design rationale: `pages/plans/feature-prompt-template-literal-braces-and-build-time-validation.md` (navigator-authored).
-
----
-
 ## Node checkpoints — partial-credit boundaries authored into node_def
 
 **Strategy rationale:** `project_node_escrow_and_abandonment` makes the node the unit of money. All-or-nothing at the node boundary is fine for small nodes but gets brutal on 6-hour nodes where a crash at the 5th hour forfeits everything. Host directive 2026-04-22: user-authored checkpoints are the partial-credit lever. A daemon that runs 2h on a 6h node + hits checkpoint = paid for that segment, forfeits only post-checkpoint. Ships alongside the gate-bonus primitive as a pair — checkpoints handle within-node partial credit, gate bonuses handle cross-node milestone incentives. Both are load-bearing for the paid-market incentive design to be humane to honest daemon hosts.
@@ -443,6 +429,279 @@ Scoring starts dumb (count of verified gate events weighted per `Goal.gate_spec.
 **Tests:** leaderboard with 0 gate events returns empty ranked list; single gate event ranks single branch; two branches with same event count ordered by recent-date; disputed events excluded; verified events weighted 2x by default; custom gate_spec weights applied correctly; window filters correctly; limit caps output.
 
 **Vetted:** 2026-04-23 by navigator. Promoted from strategic-synthesis Pillar 2. DEPENDS on `gate_event` spec (this is the consumer). DEPENDS on `publish_version` (ranks by branch_version_id). Ships naturally alongside `gate_event` spec — they form the Pillar-2 ranking surface together.
+
+---
+
+## Thundering-herd provider cooldown — chain-drain detection + backoff floor (BUG-029)
+
+**One-line:** When all API providers enter cooldown simultaneously, the router silently funnels all traffic to `ollama-local` for up to 120s — the provider that triggered the revert-loop in the 2026-04-23 P0. Add a chain-drain detector that emits a structured warning and imposes a minimum inter-scene wait when every non-local provider is in cooldown, preventing the daemon from hammering the already-failing local provider at full scene-loop speed.
+
+**Strategy rationale (3-layer lens):** System→Chatbot→User chain breaks at the generator layer. When all API providers are in cooldown, `ollama-local` receives all writer calls. In the 2026-04-23 incident, ollama-local was the empty-prose trigger — so the "safe fallback" was the broken component. The router has no awareness of this state. Lane 4 revert-loop canary (Task #9, shipped) detects the symptom (N consecutive REVERTs) but not the cause (all-providers-in-cooldown). This spec adds upstream cause-detection so the canary fires earlier and the daemon self-limits before disk pressure cascades.
+
+**Diagnosis (from router.py + quota.py inspection):**
+- `COOLDOWN_UNAVAILABLE = COOLDOWN_TIMEOUT = 120s` for all API providers.
+- A burst failure at session start (container restart, all APIs rate-limited simultaneously, or network partition) puts all 4 API providers into 120s cooldown at roughly the same time.
+- `ProviderRouter.call()` iterates the chain, skips all cooled-down providers, falls through to `ollama-local` — but does NOT log or signal that `ollama-local` is now carrying 100% of traffic.
+- `get_status` does not expose per-provider cooldown state. Chatbot and operator have no visibility.
+- No `AllProvidersExhaustedError` is raised (ollama-local is always in the chain and always available from quota's perspective), so the daemon has no signal to back off.
+
+**Scope — two decoupled parts:**
+
+*Part A — chain-drain detection + observability (small, ship first):*
+Add `QuotaTracker.all_api_providers_in_cooldown(chain: list[str], local_providers: set[str]) -> bool` that returns True when every provider in `chain` except those in `local_providers` is in cooldown. `ProviderRouter.call()` checks this after chain traversal fails all non-local entries and emits a structured `logger.warning("CHAIN_DRAINED: all API providers in cooldown; routing exclusively to local for up to Xs")` event. Expose `per_provider_cooldown_remaining: dict[str, int]` on `get_status` so chatbot can narrate "claude-code: 87s, codex: 112s, gemini-free: 0s" to a user asking why nothing is happening.
+
+*Part B — backoff floor when chain-drained (companion behavior):*
+When `all_api_providers_in_cooldown` returns True AND `ollama-local` returned empty prose on the last N attempts (N=2 default, configurable), the router raises `AllProvidersExhaustedError` instead of returning the empty response. This gives the scene loop a clean error to back off from rather than silently committing an empty-prose REVERT that refills disk. The Lane 4 canary then catches the consecutive REVERTs before they cascade.
+
+**Files:** `workflow/providers/quota.py` (add `all_api_providers_in_cooldown`), `workflow/providers/router.py` (call detection + emit warning + raise on local-empty-chain-drained), `workflow/universe_server.py` (expose `per_provider_cooldown_remaining` in `get_status`), `tests/test_quota.py` or `tests/test_provider_router.py` (new tests).
+
+**Local providers set (hardcoded for now):** `{"ollama-local"}`. When more local providers exist, this becomes a provider attribute (`is_local: bool`).
+
+**Invariants:** Part A is purely observational — no behavior change to routing for non-chain-drain cases. Part B only raises when BOTH conditions hold (all-api-in-cooldown AND local-returned-empty-last-N). Normal fallback-to-ollama behavior (API providers cooled down but ollama producing valid prose) is unaffected.
+
+**Tests:** All-API-in-cooldown detection returns True when all non-local providers cooled; returns False when at least one API provider is available; `get_status` includes `per_provider_cooldown_remaining` dict; chain-drained + local-empty raises `AllProvidersExhaustedError`; chain-drained + local-producing returns response (Part B does not fire); normal single-provider-cooled path unchanged.
+
+**Depends on:** None (self-contained quota + router change). Complementary to Lane 4 revert-loop canary (Task #9, shipped) — that canary detects the symptom; this spec adds upstream cause-signal.
+
+**Vetted:** 2026-04-24 by navigator. Root-cause traced from 2026-04-23 P0 revert-loop audit + router.py + quota.py code inspection. Corroborates PLAN.md §Providers "error loudly when the remaining provider can't produce acceptable work."
+
+---
+
+## Three chatbot-leverage primitives — cost estimate, session boundary, get_status stability
+
+Three primitives surfaced by the 2026-04-23 pre-dispatch sweep (`docs/audits/user-chat-intelligence/2026-04-23-pre-dispatch-sweep.md`) as the highest-leverage missing chatbot tools across four pending persona missions (Priya L1, Priya M2, Devin M27, Maya S2). All three are interface-1 chain-break mitigations — they make the chatbot's job easier by giving it structured tool facts instead of forcing it to heuristic-estimate or rely on prompt-level behavioral rules.
+
+### estimate_run_cost — cost + time estimate before dispatch
+
+**One-line:** `extensions action=estimate_run_cost branch_id=X` returns `{estimated_paid_market_credits: float, free_queue_eta_hours: float, node_count: int, basis: str, confidence: "low"|"medium"|"high"}` so the chatbot can give the user honest upfront cost/time framing before any dispatch.
+
+**Why this matters:** Priya (scientific-computing persona) success bar includes "~$6 on paid-market" or "8 hours free-queue, honest ETA." Without a tool primitive the chatbot must heuristic-estimate from node count — a source of Priya-R12 (mid-sweep failure, partial compute loss) and general pitch-vs-product drift on any paid workflow. Cross-persona: any Tier-2 user dispatching a non-trivial branch faces the same gap. Per `project_paid_requests_model` the requester sets node+price; the estimate verb closes the loop so the chatbot can narrate the bid math before committing.
+
+**Scope:** New `estimate_run_cost` action in the `extensions` MCP tool. Reads `BranchDefinition.nodes` (count + declared `llm_role` per node), cross-references current `FALLBACK_CHAINS` provider roster + approximate token estimates per node type, returns structured estimate. Confidence is "low" when no prior run data exists for this branch, "medium" when 1+ prior runs exist, "high" when 5+ runs exist (use median). Free-queue ETA derives from current queue depth (if dispatcher is available). No provider calls. No writes.
+
+**Files:** `workflow/universe_server.py` (new extensions action handler), `workflow/branches.py` (read node declarations for cost basis), `workflow/dispatcher.py` (read queue depth for free-queue ETA, optional), tests.
+
+**Invariants:** read-only; zero writes; works on branches that have never run (returns low-confidence estimate from node declarations alone); `basis` field narrates the formula so chatbot can quote it verbatim.
+
+**Tests:** estimate on never-run branch returns low-confidence estimate with node_count; estimate on 5-run branch returns medium/high confidence; queue_depth unavailable path returns null free_queue_eta_hours with caveat; response is stable across multiple calls with no state changes.
+
+---
+
+### get_status session_boundary field — explicit "no prior session" assertion
+
+**One-line:** Add a `session_boundary` field to `get_status` response that explicitly states whether the daemon has any record of the calling session or prior context, giving the chatbot a tool fact to ground "I don't have context from a prior session" instead of relying purely on prompt rule 11 (cross-session ask-don't-assert behavioral directive).
+
+**Why this matters:** The 2026-04-23 sweep identifies "cross-session / shared-account fabrication" as a risk in 3/4 pending mission drafts. Rule 11 in the `control_station` prompt is a behavioral guardrail, but it's prompt-level — a model that wants to be helpful can drift under user pressure ("but you said yesterday…"). A tool fact that explicitly returns `"session_boundary": {"prior_session_context_available": false, "note": "No prior session record in this universe's activity log for the current account"}` gives the chatbot a ground-truth anchor to cite, not just a rule to follow. This is the `get_status` caveats pattern (`project_chain_break_taxonomy` — "tool response contains the caveats directly, chatbot can't dodge the truth") applied to session identity.
+
+**Scope:** Add `session_boundary` block to the existing `get_status` response shape. Reads activity log for any entries associated with the current `UNIVERSE_SERVER_USER` identity in the last N days (configurable, default 30). If none: `prior_session_context_available: false`. If some: `prior_session_context_available: true, last_session_ts: "..."`. Adds `account_user: <UNIVERSE_SERVER_USER value>` so chatbot can narrate "account shows as <user>, prior sessions are [not] present."
+
+**Files:** `workflow/universe_server.py` (extend `get_status` response block), tests. Minimal scope — `get_status` already reads the activity log; this adds one structured block to the output.
+
+**Invariants:** read-only; zero writes; always present in get_status response (not gated on universe_id resolution); uses same activity.log reader that `get_status` already uses.
+
+**Tests:** universe with no activity returns `prior_session_context_available: false`; universe with activity returns `true` + `last_session_ts`; `account_user` field present and matches env var; response schema stable (no existing fields changed).
+
+---
+
+### get_status schema stability guarantee
+
+**One-line:** All existing `get_status` response fields must be considered a versioned contract. Any field removal or rename requires a deprecation notice in `get_status` output for one release before removal. New fields may be added freely.
+
+**Why this matters:** The 2026-04-23 sweep explicitly flags: "Any regression there breaks three of four live-validation arcs simultaneously." Three pending personas (Priya L1, Devin M27, Priya M2) depend on `get_status` evidence fields being stable. The `served_llm_type`, `llm_endpoint_bound`, `policy_hash`, and `caveats` fields are load-bearing for trust claims. The new `per_provider_cooldown_remaining` (BUG-029) and `session_boundary` (above) additions must not silently displace existing fields.
+
+**Scope:** Document the `get_status` response shape in the docstring as a versioned contract. Add a `schema_version` field (integer, starts at 1, increments on any breaking change). Add a test that reads `get_status` output and asserts the presence of every field named in the docstring. If any spec change to `get_status` lands, the test fails and forces the spec author to update the contract explicitly.
+
+**Files:** `workflow/universe_server.py` (`get_status` docstring + `schema_version` addition), `tests/test_get_status_primitive.py` (schema assertion test). Read-only behavioral change.
+
+**Tests:** `test_get_status_schema_contract` — calls `get_status`, asserts presence of all documented fields; any field removal causes test failure and forces explicit contract version bump.
+
+**Vetted:** 2026-04-24 by navigator. Surfaced from 2026-04-23 pre-dispatch sweep cross-draft analysis. All three are interface-1 chain-break mitigations with no dependency blockers and small file footprints. `estimate_run_cost` and `session_boundary` are new additions; schema stability is a guard for both.
+
+---
+
+## continue_branch — workspace-memory continuity primitive
+
+**One-line:** `extensions action=continue_branch {branch_id}` returns the branch's current working state (recent run summaries, last session activity, open notes, node progress) in one structured response — giving the chatbot a "pick-up-where-we-left-off" primitive instead of forcing it to reconstruct context from disconnected tool calls or, worse, hallucinate it.
+
+**Problem statement (PRIYA-R7 + Maya LIVE-F1 chain-break diagnosis):** When a user returns to a branch in a second chat session, the chatbot has no memory of prior session activity. The chatbot must either (a) ask the user what was done before (friction — user expected continuity), (b) heuristic-reconstruct from disconnected `get_status` + `get_progress` + `describe_branch` calls (high-latency, error-prone), or (c) assert prior context that it doesn't have (hallucination — PRIYA-R7 root cause). `continue_branch` closes this interface-1 chain-break by giving the chatbot one verb that returns everything it needs to narrate "here's where we are" accurately.
+
+**User experience framing (System→Chatbot→User):** User opens a second chat and says "let's keep going on my fantasy novel workflow." Chatbot calls `continue_branch branch_id=X`. Tool returns: last-run summary, open notes, most recent session timestamp, partial-progress state, any open concerns flagged by the daemon. Chatbot narrates "Your branch has 3 completed chapters and is currently in the Orient phase of chapter 4 — you left off yesterday at 14:23 UTC. The daemon flagged one note: [quote]. Want to resume?" That's the experience. Without this primitive the chatbot either asks (friction) or invents (hallucination).
+
+**Scope:** New action `continue_branch` in the `extensions` MCP tool. Composes from already-existing read paths:
+- `get_progress` output (completed / in-progress / pending node summary)
+- Last `N` run records for this branch (from `query_runs`, default N=5, most recent first)
+- Open notes from `notes.json` scoped to this branch (`note_type in ["user", "editor", "structural"]`, last 10)
+- Current daemon phase if a run is active (`get_status` phase field)
+- `session_boundary` block (from the session-boundary spec above) to explicitly anchor whether prior-session context is available
+- Branch metadata: `branch_def_id`, `branch_name`, `description`, `last_modified_at`
+
+Returns a single structured dict `ContinueBranchResponse` with all of the above, plus a `chatbot_summary: str` field — a one-paragraph plain-English "here's where you are" pre-composed for the chatbot to quote verbatim or adapt. The chatbot_summary is the composing layer that connects the structured data into a narrative the chatbot can use immediately without additional reasoning.
+
+**`chatbot_summary` composition rules (pre-computed by the tool, not by the chatbot):**
+- Lead with branch name + last-active timestamp
+- State progress: "X of Y nodes completed; currently in [phase]"
+- Cite open notes count and (if ≤2) quote them inline
+- Close with "Want to [continue / run_branch / inspect a specific node]?" — but only if a clear next action is deterministic; otherwise omit the prompt to avoid false confidence
+
+**Anti-hallucination invariant:** If `session_boundary.prior_session_context_available = false`, the tool includes `"prior_session_available": false` explicitly in the response AND reflects this in `chatbot_summary` ("No prior session history is recorded — this may be your first time running this branch, or context was not captured."). This gives the chatbot a tool fact to cite when it cannot provide continuity — eliminates the hallucination mode.
+
+**Alias:** `patch_branch action=continue` resolves to the same handler for users who discover it via `patch_branch` rather than `extensions`. The canonical verb is `continue_branch` in `extensions`; the alias is for discoverability only.
+
+**Files:** `workflow/universe_server.py` (new `_action_continue_branch()` handler wired into `_EXT_ACTIONS`; composes from `_action_get_progress()`, `query_runs()`, notes reader, `get_status()` phase field, `session_boundary` block), `workflow/branches.py` (read `last_modified_at` if not already surfaced), `tests/test_continue_branch.py` (new test file). No schema changes. No writes.
+
+**Invariants:** read-only; zero writes; works on a branch that has never been run (returns "no run history" + low-confidence chatbot_summary); `session_boundary` block always present; `chatbot_summary` always present (even if "no data available — branch is new"); `prior_session_available: false` path tested explicitly; does not call any external providers; latency target: ≤200ms (pure SQLite reads + notes.json parse).
+
+**Tests:**
+- Branch with 3 completed runs returns correct progress + last-run summaries
+- Branch with 0 runs returns "no run history" response with non-null chatbot_summary
+- Open notes (≤2) quoted inline in chatbot_summary; (>2) count-only reference
+- `prior_session_available: false` when session_boundary has no prior record — chatbot_summary includes anti-hallucination language
+- `prior_session_available: true` when activity log has prior records — chatbot_summary includes last-session timestamp
+- Active run (daemon mid-flight): `current_phase` field present and matches `get_status` phase
+- Response is read-only: calling continue_branch twice returns identical output when no state changes occurred
+- Alias `patch_branch action=continue` routes to same handler
+
+**Depends on:** `get_status session_boundary field` spec (above) — uses the `session_boundary` block. `get_progress` (already implemented). `query_runs` (DONE per 2026-04-25 audit).
+
+**Vetted:** 2026-04-25 by navigator. Signal: PRIYA-R7 (retention break in second-chat return), Maya LIVE-F1 (chatbot asked instead of assumed on brand return). Both failures root-cause to the same missing primitive: one verb that gives the chatbot accurate workspace-memory continuity without forcing reconstruction or tolerating hallucination. The `chatbot_summary` field is the key differentiator — it pre-composes the narrative the chatbot would have to reason toward, eliminating one hallucination-risk reasoning step.
+
+---
+
+## Evaluator protocol — workflow/evaluation/__init__.py
+
+**One-line:** Define a shared `Evaluator` Protocol in `workflow/evaluation/__init__.py` so that every evaluation surface in the system (editorial judges, structural checks, gate verifiers, real-world outcome hooks, autoresearch metrics) implements a common structural interface — enabling the gate-bonus economy, autoresearch metric composition, and future moderation rubrics to share a single dispatch and result shape.
+
+**Problem statement (unifying frame):** `workflow/evaluation/` currently has three siloed modules with incompatible shapes: `editorial.py` (`EditorialNotes` — no score, no `to_dict()`), `structural.py` (deterministic checks, optional spaCy/ASP deps), `process.py` (`ProcessEvaluation` with `aggregate_score` and `to_dict()` — closest to canonical). Gate bonuses depend on gate verifiers. Autoresearch depends on a runnable metric. Moderation rubrics are entirely future. All three are the same primitive at different points in the design — an `Evaluator` that takes context and returns a structured result. Without a shared interface, every new evaluation surface re-invents the shape and the dispatch layer cannot compose them. `project_evaluation_layers_unifying_frame` explicitly calls this out: "unify into first-class `Evaluator` type."
+
+**Design (structural subtyping via `typing.Protocol`):** Use `typing.Protocol` with `runtime_checkable` — not ABC inheritance. Existing evaluator types do NOT need to inherit; they satisfy the protocol structurally if they implement `evaluate()` and `kind`. This keeps the change non-breaking and lets other in-flight work proceed in parallel without touching evaluation surfaces.
+
+```python
+# workflow/evaluation/__init__.py
+
+from __future__ import annotations
+from typing import Any, Literal, Protocol, runtime_checkable
+from dataclasses import dataclass
+
+EvalVerdict = Literal["pass", "fail", "warn", "skip"]
+
+@dataclass
+class EvalResult:
+    score: float          # 0.0-1.0; deterministic checkers use 0.0 or 1.0
+    verdict: EvalVerdict
+    rationale: str        # human-readable; chatbot can quote verbatim
+    evaluator_kind: str   # "editorial" | "structural" | "gate" | "metric" | "moderation" | custom
+    details: dict[str, Any]  # evaluator-specific breakdown; always serializable
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "score": self.score,
+            "verdict": self.verdict,
+            "rationale": self.rationale,
+            "evaluator_kind": self.evaluator_kind,
+            "details": self.details,
+        }
+
+@runtime_checkable
+class Evaluator(Protocol):
+    """Structural protocol -- implement evaluate() + kind to satisfy."""
+    kind: str  # matches EvalResult.evaluator_kind
+
+    def evaluate(self, context: dict[str, Any]) -> EvalResult:
+        ...
+```
+
+**`context` dict contract:** Callers pass a context dict with keys appropriate to the evaluator kind. Each evaluator declares its required keys in its docstring. No global schema — each evaluator validates its own inputs and raises `ValueError` with a clear message if required keys are missing. This avoids a monolithic context schema that must anticipate all future evaluator types.
+
+**`EvalResult.details` contract:** Evaluator-specific. `editorial` may include `{"concerns": [...]}`. `structural` may include `{"failed_checks": [...]}`. `gate` includes `{"gate_id": ..., "rung_key": ...}`. `metric` includes `{"metric_name": ..., "raw_value": ...}`. The `evaluator_kind` field is the discriminant. Callers that need to interpret `details` must know `evaluator_kind` first.
+
+**Migration path for existing evaluators (non-breaking):** `editorial.py`, `structural.py`, `process.py` do NOT need to change to satisfy the Protocol. They satisfy structurally if they expose `kind: str` and `evaluate(context) -> EvalResult`. `process.py` is closest and may need minor field additions (`kind` attribute, return type coercion). `editorial.py` needs a `score` field or thin adapter. These adaptations are follow-up tasks dispatched separately — this spec ships the Protocol definition only.
+
+**Gate bonus integration point:** The gate claim verifier (future `gate_event` spec) uses `Evaluator.evaluate()` to determine gate pass/fail. `EvalResult.verdict == "pass"` triggers bonus release; `"fail"` triggers refund to staker. This is the `project_evaluation_layers_unifying_frame` economic feedback loop made concrete. The `gate bonuses` spec (L198 above) depends on this Protocol being defined first.
+
+**Autoresearch integration point:** Per `project_node_autoresearch_optimization`, per-node autoresearch runs a metric evaluator across 1000 candidate outputs overnight. The metric is an `Evaluator` — `evaluate({"node_output": ..., "node_def": ...})` returns `EvalResult` with `score` as the optimization target. The Protocol makes this composable: a research run can chain multiple `Evaluator` instances and aggregate scores.
+
+**Files:** `workflow/evaluation/__init__.py` (Protocol + EvalResult + EvalVerdict — currently empty; this is the only file this spec touches), `tests/test_evaluator_protocol.py` (new test file).
+
+**Invariants:** `Evaluator` is structural (Protocol), not nominal (ABC) — no existing class needs to inherit; `EvalResult.to_dict()` is always JSON-serializable (evaluators are responsible for `details` values being serializable); `runtime_checkable` allows `isinstance(obj, Evaluator)` checks at dispatch time without explicit registration; `EvalVerdict` is a `Literal` type — mypy catches invalid verdicts at type-check time; `score` range 0.0–1.0 by convention — evaluators with out-of-range values must normalize before returning.
+
+**Tests:**
+- `EvalResult` construction and `to_dict()` round-trip
+- Structural Protocol satisfaction: a class with `kind: str` and `evaluate() -> EvalResult` passes `isinstance(obj, Evaluator)` without inheriting
+- A class without `evaluate()` fails `isinstance` check
+- A class without `kind` fails `isinstance` check
+- `EvalVerdict` accepts `"pass"`, `"fail"`, `"warn"`, `"skip"`
+- `to_dict()` output is JSON-serializable for a representative details payload
+- Context dict with missing required key raises `ValueError` from a sample evaluator (integration pattern test)
+
+**Depends on:** Nothing. `workflow/evaluation/__init__.py` is currently empty — clean dispatch, no blockers.
+
+**Vetted:** 2026-04-25 by navigator. Unblocks: `gate bonuses` spec (needs gate verifier interface), autoresearch metric composition, future moderation rubrics. Existing evaluators (`editorial.py`, `structural.py`, `process.py`) do not need to change — Protocol is additive. Smallest possible footprint for maximum unblocking leverage: one file, one Protocol, one dataclass.
+
+---
+
+## teammate_message — inter-node messaging primitive for agent-teams-on-Workflow
+
+**One-line:** Add a `teammate_message` MCP action that lets one branch node post a typed message to another node's inbox, enabling the agent-teams-on-Workflow pattern: chatbot as lead, branch nodes as teammates, inter-node coordination via message rather than shared state mutation.
+
+**Problem statement (agent-teams-on-Workflow thesis):** Sub-branch invocation (Task #14, done) gives the chatbot the ability to spawn a child branch as a "teammate." But once spawned, there is no coordination channel — a node cannot signal another node, request approval, or broadcast state without writing to the shared branch state (which requires reducer coordination and pollutes the canonical output). In the Claude Code teams model, teammates communicate via `SendMessage`; in Workflow, the equivalent is a typed event posted to `run_events` with a well-known status. Without this primitive, agent-teams-on-Workflow degrades to fire-and-forget fan-out with no inter-node dialogue.
+
+**Design (uses existing `run_events` table — no schema change):** The `run_events` table already has `run_id`, `event_type`, `payload_json`, `created_at`, `status` columns (confirmed at `workflow/daemon_server.py:~200`). The `teammate_message` primitive uses this table with `status="teammate_msg"` as the message-passing channel. No new table, no new schema migration. The sender writes a row; the recipient polls (or is notified via the existing event-sink mechanism).
+
+**Scope — three MCP actions under a new `messaging` tool (or added to `extensions`):**
+
+```
+messaging action=send {
+  from_run_id: str,       # sender's run_id
+  to_node_id: str,        # recipient node_def_id (inbox address)
+  message_type: str,      # "request" | "response" | "broadcast" | "plan_approval_request" | "shutdown_request"
+  body: dict,             # arbitrary payload; JSON-serializable
+  reply_to_message_id?: str  # for threading responses to a prior message
+}
+-> {message_id: str, delivered_at: str}
+
+messaging action=receive {
+  node_id: str,           # which node's inbox to read
+  since?: str,            # ISO timestamp; defaults to beginning of run
+  message_types?: [str],  # filter by type; default all
+  limit?: int             # default 50
+}
+-> {messages: [{message_id, from_run_id, message_type, body, sent_at, reply_to_message_id}]}
+
+messaging action=ack {
+  message_id: str,        # mark message as processed
+  node_id: str            # must match original to_node_id (auth check)
+}
+-> {acked_at: str}
+```
+
+**Storage:** Each `send` inserts a `run_events` row with `event_type="teammate_msg"`, `status="teammate_msg"`, `payload_json` containing `{from_run_id, to_node_id, message_type, body, reply_to_message_id, message_id}`. `receive` queries `run_events WHERE event_type="teammate_msg" AND payload_json->to_node_id = ?`. `ack` updates `status` to `"teammate_msg_acked"`. No new tables. Index on `(event_type, created_at)` already exists from prior run_events usage — the `payload_json->to_node_id` query path will be a JSON extract on SQLite; acceptable at current scale, index on `to_node_id` can be extracted column if benchmarks show need.
+
+**Plan-approval flow (mirrors Claude Code teams protocol):** A node posts `message_type="plan_approval_request"` with `body={plan_summary, request_id}`. The lead node (or chatbot, via MCP) calls `messaging action=receive` to read it, then posts `message_type="plan_approval_response"` with `body={request_id, approve: bool, feedback?: str}`. The requesting node polls `receive` for a response to its `request_id`. This is the two-message handshake from the Claude Code teams plan-approval protocol, implemented purely via `run_events` rows — no new concurrency primitives needed.
+
+**Shutdown flow:** `message_type="shutdown_request"` + `"shutdown_response"` mirror the Claude Code shutdown protocol. A lead node posts shutdown; child nodes respond with `approve: bool`. Lead polls for all responses before terminating child branches.
+
+**Broadcast:** `to_node_id="*"` routes to all active nodes in the same branch run. `receive` with no `node_id` filter returns all messages posted to `"*"`. Useful for state-change announcements ("phase changed to orient") that all nodes should know about without targeted delivery.
+
+**Universe isolation:** Messages are scoped to `run_id` (from_run_id determines the universe). Cross-universe messaging is structurally impossible — `run_events` rows are per-universe database. No additional isolation logic needed.
+
+**Files:** `workflow/universe_server.py` (new `messaging` action dispatch block — or add to `_EXT_ACTIONS`), `workflow/daemon_server.py` (3 helper functions: `post_teammate_message()`, `read_teammate_messages()`, `ack_teammate_message()` — thin wrappers over `run_events` inserts/queries), `tests/test_teammate_message.py` (new test file).
+
+**Invariants:** messages are immutable after send (no update verb); `ack` is idempotent (double-ack is a no-op); `receive` is non-destructive (does not consume messages — callers must `ack` explicitly); `from_run_id` is validated to be a real run in the universe (rejects phantom senders); `to_node_id="*"` broadcast is per-run (no cross-run broadcast); `body` must be JSON-serializable (error at send time, not at receive time); `message_id` is server-generated UUID (not caller-supplied, prevents collision/spoofing).
+
+**Tests:**
+- `send` inserts run_events row with correct event_type + status
+- `receive` returns messages for correct `to_node_id`; does not return messages for other nodes
+- `receive` with `since` filter excludes older messages
+- `ack` marks message as acked; double-ack is no-op
+- Plan-approval flow: request → response → requesting node reads response by `request_id`
+- Broadcast (`to_node_id="*"`): received by any node calling receive with no node_id filter
+- `from_run_id` pointing to non-existent run rejected
+- Non-JSON-serializable `body` rejected at send time
+- `message_id` is server-generated (caller-supplied id ignored)
+
+**Depends on:** Sub-branch invocation (Task #14, done) — `teammate_message` is the coordination layer on top of sub-branch spawning. `run_events` table (already exists). No other blockers.
+
+**Vetted:** 2026-04-25 by navigator. Closes the second gap in the agent-teams-on-Workflow analysis (`docs/notes/2026-04-20-agent-teams-on-workflow-research.md` — gap: "no inter-teammate messaging"). Sub-branch invocation (#14) is gap 1 (spawn); `teammate_message` is gap 2 (coordinate). Together they make chatbot-as-lead + branch-nodes-as-teammates a complete pattern. STATUS.md row pending verifier sweep clearing `daemon_server.py` + `universe_server.py`.
 
 ---
 

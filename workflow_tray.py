@@ -46,7 +46,7 @@ from workflow.singleton_lock import (
 
 MCP_PORT = 8001
 MCP_URL = "https://tinyassets.io/mcp"
-ACTIVE_UNIVERSE_FILE = "output/.active_universe"
+ACTIVE_UNIVERSE_FILENAME = ".active_universe"
 TUNNEL_TOKEN = (
     "eyJhIjoiYTQ2ZWI0ZjY5MjhkN2M1MzhiMzlmYmNlYmRlYmE0OWIi"
     "LCJ0IjoiYjU5ZjNjZDktYTQ3YS00Yzk3LTgwZTQtNzgyNjUxM2RlNj"
@@ -137,41 +137,56 @@ class UniverseServerManager:
 
     # -- Universe selection ---------------------------------------------
 
+    def _data_dir(self) -> Path:
+        """Canonical on-disk root for universes + marker.
+
+        Delegates to ``workflow.storage.data_dir`` so tray and daemon
+        resolve the same path. Pre-2026-04-20 the tray used
+        ``PROJECT_DIR / "output"`` (CWD-relative), which drifted from
+        the daemon's ``data_dir()`` result whenever tray was launched
+        from a CWD other than the resolved data root — the
+        ``.active_universe`` marker would split between two locations
+        and universe switching silently broke.
+        """
+        from workflow.storage import data_dir
+        return data_dir()
+
     def _read_active_universe(self) -> str:
-        marker = PROJECT_DIR / ACTIVE_UNIVERSE_FILE
+        base = self._data_dir()
+        marker = base / ACTIVE_UNIVERSE_FILENAME
         if marker.exists():
             uid = marker.read_text(encoding="utf-8").strip()
-            if uid and (PROJECT_DIR / "output" / uid).is_dir():
+            if uid and (base / uid).is_dir():
                 return uid
 
-        output_dir = PROJECT_DIR / "output"
-        if output_dir.is_dir():
-            for child in sorted(output_dir.iterdir()):
+        if base.is_dir():
+            for child in sorted(base.iterdir()):
                 if child.is_dir() and not child.name.startswith("."):
                     if (child / "PROGRAM.md").exists():
                         return child.name
-            for child in sorted(output_dir.iterdir()):
+            for child in sorted(base.iterdir()):
                 if child.is_dir() and not child.name.startswith("."):
                     return child.name
         return "default-universe"
 
     def _ensure_active_universe_file(self) -> None:
-        marker = PROJECT_DIR / ACTIVE_UNIVERSE_FILE
+        marker = self._data_dir() / ACTIVE_UNIVERSE_FILENAME
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(self._active_universe, encoding="utf-8")
 
     def _check_universe_switch(self) -> bool:
-        marker = PROJECT_DIR / ACTIVE_UNIVERSE_FILE
+        base = self._data_dir()
+        marker = base / ACTIVE_UNIVERSE_FILENAME
         if not marker.exists():
             return False
         uid = marker.read_text(encoding="utf-8").strip()
-        if uid and uid != self._active_universe and (PROJECT_DIR / "output" / uid).is_dir():
+        if uid and uid != self._active_universe and (base / uid).is_dir():
             self._active_universe = uid
             return True
         return False
 
     def _read_runtime_status(self) -> dict | None:
-        path = PROJECT_DIR / "output" / self._active_universe / ".runtime_status.json"
+        path = self._data_dir() / self._active_universe / ".runtime_status.json"
         if not path.exists():
             return None
         try:
@@ -304,12 +319,16 @@ class UniverseServerManager:
         log.write(f"\n--- Daemon ({provider}) start {time.strftime('%H:%M:%S')} ---\n")
         log.flush()
 
-        universe_path = PROJECT_DIR / "output" / self._active_universe
+        universe_path = self._data_dir() / self._active_universe
         env = os.environ.copy()
         # Belt and suspenders: --provider is consumed by argparse and sets
         # WORKFLOW_PIN_WRITER itself, but setting it in the env too means
         # the router pin survives even if the flag parsing changes.
         env["WORKFLOW_PIN_WRITER"] = provider
+        # Pin the data root so child's data_dir() resolves to the same
+        # absolute path the tray picked. Prevents CWD drift between tray
+        # and daemon when they launch from different working directories.
+        env["WORKFLOW_DATA_DIR"] = str(self._data_dir())
 
         try:
             proc = subprocess.Popen(
@@ -336,7 +355,14 @@ class UniverseServerManager:
     def start_mcp(self) -> None:
         LOG_DIR.mkdir(exist_ok=True)
         env = os.environ.copy()
-        env["UNIVERSE_SERVER_BASE"] = "output"
+        # Pin the canonical data root as an absolute path so the MCP
+        # subprocess's data_dir() resolves identically no matter what
+        # CWD it inherits. Previously we set the legacy
+        # UNIVERSE_SERVER_BASE to the literal "output" — a CWD-relative
+        # string that made the tray and MCP server drift onto different
+        # on-disk trees whenever the tray wasn't launched from the repo
+        # root (Task #7 / 2026-04-20 observability bug).
+        env["WORKFLOW_DATA_DIR"] = str(self._data_dir())
 
         log = open(LOG_DIR / "mcp_server.log", "a", encoding="utf-8")
         log.write(f"\n--- MCP start {time.strftime('%H:%M:%S')} ---\n")

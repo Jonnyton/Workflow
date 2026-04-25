@@ -66,7 +66,7 @@ The tray is repositioned: no longer a self-contained MCP endpoint, now a **host-
 
 | Surface | Purpose | Cross-ref |
 |---|---|---|
-| **Daemons (provider-grouped)** | One row per provider (`local`, `claude`, `codex`, `gemini`, ...). Shows current count. "Launch daemon" opens provider picker. 2nd+ same-provider gates on confirmation popup (§4 below). | §5.1.1 + §5.3 |
+| **Daemons (provider-grouped)** | One row per provider (`local`, `claude`, `codex`, `gemini`, ...). Shows current count. "Launch daemon" opens provider picker. ~~2nd+ same-provider gates on confirmation popup (§4 below).~~ **Retracted 2026-04-24: no payment-tier gate. Host spawns daemons freely. §4 multi-daemon spawn UI is retired.** | §5.1.1 |
 | **Capabilities** | List of `(node_type, llm_model)` pairs declared in `host_pool`. Each row has a visibility toggle (self / network / paid) + optional `price_floor` slider for paid. "Add capability" pulls from `capabilities` reference table (ref §1.5b of schema spec). | §5.1.1 |
 | **Earnings** | Read `daemon_earnings` view from schema-spec + crypto-spec §5.2. Shows balance, weekly accrual. "Request payout" triggers on-demand `request_payout` RPC from crypto-spec §5.3; "Settlement history" reads `ledger` + `settlement_batches` rows. | paid-market §5 |
 | **My chatbot requests** | User's own `request_inbox` rows where `requester_user_id = owner_user_id`. Closes the consumption loop per §5.1.1. RLS policy `req_own_requests` from schema spec §2.4 makes this a direct read. | §5.1.1 |
@@ -228,7 +228,9 @@ Tray connection drops (network blip, laptop sleep):
 
 ## 4. Multi-daemon spawn UI
 
-Per §5.3 + memory `project_daemon_default_behavior.md`: 1 daemon per provider is free; 2nd+ same-provider fires confirmation popup.
+> **Retracted 2026-04-24.** Host confirmed normal state is 1 always-on daemon; multi-daemon is ad-hoc test sessions driven via host's own chatbot. The "1/provider free, 2nd+ confirmation popup" framing was wrong. Host spawns without confirmation friction. The payment-tier popup UX below is **retired** — do not implement. The §4.2 payment-tier estimate table and §4.3 same-provider policies are also retired.
+
+~~Per §5.3 + memory `project_daemon_default_behavior.md`: 1 daemon per provider is free; 2nd+ same-provider fires confirmation popup.~~
 
 ### 4.1 Launch flow
 

@@ -99,8 +99,18 @@ When this decision tree leads to a concrete fix, file it as a task immediately a
 
 **Hard rule: 2 devs always running, always busy.** This is not a soft target. The lead is responsible for keeping the floor filled.
 
+This failed in past sessions because the lead dispatched the right-now task but did not pre-seed a rolling queue. Fix the system, not the reminder: keep 5-6 unblocked, file-bounded tasks per developer in `TaskList` whenever known work exists.
+
+Backlog sources, in priority order:
+- STATUS.md Work rows whose dependencies are satisfied.
+- STATUS.md Approved specs marked `dev-dispatchable`.
+- `docs/vetted-specs.md` sections for approved specs.
+- STATUS.md Concerns that can be converted to file-bounded investigation or fix tasks.
+- Navigator audits and user-sim findings.
+
 When a dev goes idle:
 - Pick the next non-colliding pending task and dispatch immediately.
+- If TaskList is empty, seed it before doing anything else. Create tasks with Files, Depends, deliverable, and verifier handoff.
 - Don't wait for user signal.
 - Don't accept "board is thin" as an excuse — **that's what user-sim is for**.
 
@@ -140,7 +150,7 @@ Red flag that the loop is bloating: user-sim uses >10 prompts before producing a
 
 user-sim is event-driven, not always-up. Idle notifications burn tokens on both sides during long waits. Shut it down between missions; respawn fresh when the next mission is ready.
 
-- Durable state lives in `output/user_sim_session.md` (transcript) and `.agents/skills/ui-test/` (skill). Agent memory is not needed.
+- Durable state lives in `output/user_sim_session.md` (mission log), `.claude/agent-memory/user/personas/` (persona memory), and `.agents/skills/ui-test/` (skill).
 - Shut down when: a mission ends and the next is blocked on unrelated work; wait > 10 min; no active prompts.
 - Respawn with a specific Mission brief — don't rely on in-memory continuity. The skill + log give a fresh instance everything.
-- Core teammates (dev, verifier, navigator) stay up across a session because they are continuously engaged; user-sim is not.
+- Core teammates (dev, dev-2, verifier, navigator) stay up across a session because they are continuously engaged; user-sim is not.

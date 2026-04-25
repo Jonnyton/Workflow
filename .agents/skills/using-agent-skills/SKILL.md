@@ -1,171 +1,167 @@
 ---
 name: using-agent-skills
-description: Discovers and invokes agent skills. Use when starting a session or when you need to discover which skill applies to the current task. This is the meta-skill that governs how all other skills are discovered and invoked.
+description: Discovers and invokes agent skills. Use when starting a session or when you need to decide which skill or sequence of skills fits the current task.
 ---
 
 # Using Agent Skills
 
 ## Overview
 
-Agent Skills is a collection of engineering workflow skills organized by development phase. Each skill encodes a specific process that senior engineers follow. This meta-skill helps you discover and apply the right skill for your current task.
+Agent skills are workflow modules. This meta-skill is the router: pick the
+right specialist skill, then follow that skill's process instead of trying to
+do everything from memory.
 
-## Skill Discovery
+Keep this file thin. Do not stuff specialist guidance into the router when a
+dedicated skill should own it.
 
-When a task arrives, identify the development phase and apply the corresponding skill:
+## Discovery
 
-```
+When a task arrives, identify the dominant need first:
+
+```text
 Task arrives
-    │
-    ├── Vague idea/need refinement? ──→ idea-refine
-    ├── New project/feature/change? ──→ spec-driven-development
-    ├── Have a spec, need tasks? ──────→ planning-and-task-breakdown
-    ├── Implementing code? ────────────→ incremental-implementation
-    │   ├── UI work? ─────────────────→ frontend-ui-engineering
-    │   ├── API work? ────────────────→ api-and-interface-design
-    │   └── Need better context? ─────→ context-engineering
-    ├── Writing/running tests? ────────→ test-driven-development
-    │   └── Browser-based? ───────────→ browser-testing-with-devtools
-    ├── Something broke? ──────────────→ debugging-and-error-recovery
-    ├── Reviewing code? ───────────────→ code-review-and-quality
-    │   ├── Security concerns? ───────→ security-and-hardening
-    │   └── Performance concerns? ────→ performance-optimization
-    ├── Committing/branching? ─────────→ git-workflow-and-versioning
-    ├── CI/CD pipeline work? ──────────→ ci-cd-and-automation
-    ├── Writing docs/ADRs? ───────────→ documentation-and-adrs
-    └── Deploying/launching? ─────────→ shipping-and-launch
+    |
+    |-- Unfamiliar area / need bigger map? ----------> zoom-out
+    |-- Need to create or update a skill? -----------> skill-authoring
+    |-- Vague idea / need refinement? ---------------> idea-refine
+    |-- Domain terms drifting / overloaded? ---------> ubiquitous-language
+    |-- Need to challenge plan vs domain model? -----> domain-model
+    |-- Architecture or modularity audit? -----------> improve-codebase-architecture
+    |-- New feature / change with no spec? ----------> spec-driven-development
+    |-- Have a spec, need tasks? --------------------> planning-and-task-breakdown
+    |-- Implementing code? --------------------------> incremental-implementation
+    |   |-- UI work? --------------------------------> frontend-ui-engineering
+    |   |-- API / interface work? -------------------> api-and-interface-design
+    |   |-- Mostly simplification / clarity? --------> code-simplification
+    |   `-- Need better context loaded? -------------> context-engineering
+    |-- Writing or running tests? -------------------> test-driven-development
+    |   |-- Conditional-edge branch routing? --------> conditional-edge-testing
+    |   |-- Browser runtime verification? -----------> browser-testing-with-devtools
+    |   `-- Live Claude.ai phone-surface test? ------> ui-test
+    |-- Something broke? ----------------------------> debugging-and-error-recovery
+    |-- Reviewing code? -----------------------------> code-review-and-quality
+    |   |-- Security-sensitive? ---------------------> security-and-hardening
+    |   `-- Performance-sensitive? ------------------> performance-optimization
+    |-- Removing legacy systems or aliases? ---------> deprecation-and-migration
+    |-- CI/CD pipeline or automation work? ----------> ci-cd-and-automation
+    |-- Committing / branching / release hygiene? ---> git-workflow-and-versioning
+    |-- Cloudflare dashboard or tunnel ops? ---------> cloudflare-ops
+    |-- GoDaddy domain / DNS / site ops? ------------> godaddy-ops
+    |-- Writing docs or rationale? ------------------> documentation-and-adrs
+    |-- Deploying or launching? ---------------------> shipping-and-launch
+    `-- Agent-team behavior needs tuning? -----------> team-iterate
 ```
 
-## Core Operating Behaviors
+## Rules
 
-These behaviors apply at all times, across all skills. They are non-negotiable.
+1. Check for an applicable skill before starting substantive work.
+2. Use the minimum set of skills that covers the task.
+3. Let specialist skills own specialist instructions.
+4. When two skills overlap, route by the primary job:
+   - `using-agent-skills` chooses.
+   - `skill-authoring` writes or updates skills.
+   - `domain-model` stress-tests concepts and boundaries.
+   - `ubiquitous-language` hardens terminology.
+   - `improve-codebase-architecture` audits seams and modularity.
+5. Multiple skills can be chained. Example:
+   `zoom-out -> improve-codebase-architecture -> planning-and-task-breakdown -> incremental-implementation -> test-driven-development`.
 
-### 1. Surface Assumptions
+## Core Behaviors
 
-Before implementing anything non-trivial, explicitly state your assumptions:
+These apply across all skills:
 
-```
-ASSUMPTIONS I'M MAKING:
-1. [assumption about requirements]
-2. [assumption about architecture]
-3. [assumption about scope]
-→ Correct me now or I'll proceed with these.
-```
+### 1. Surface assumptions
 
-Don't silently fill in ambiguous requirements. The most common failure mode is making wrong assumptions and running with them unchecked. Surface uncertainty early — it's cheaper than rework.
+State non-trivial assumptions before acting on them.
 
-### 2. Manage Confusion Actively
-
-When you encounter inconsistencies, conflicting requirements, or unclear specifications:
-
-1. **STOP.** Do not proceed with a guess.
-2. Name the specific confusion.
-3. Present the tradeoff or ask the clarifying question.
-4. Wait for resolution before continuing.
-
-**Bad:** Silently picking one interpretation and hoping it's right.
-**Good:** "I see X in the spec but Y in the existing code. Which takes precedence?"
-
-### 3. Push Back When Warranted
-
-You are not a yes-machine. When an approach has clear problems:
-
-- Point out the issue directly
-- Explain the concrete downside (quantify when possible — "this adds ~200ms latency" not "this might be slower")
-- Propose an alternative
-- Accept the human's decision if they override with full information
-
-Sycophancy is a failure mode. "Of course!" followed by implementing a bad idea helps no one. Honest technical disagreement is more valuable than false agreement.
-
-### 4. Enforce Simplicity
-
-Your natural tendency is to overcomplicate. Actively resist it.
-
-Before finishing any implementation, ask:
-- Can this be done in fewer lines?
-- Are these abstractions earning their complexity?
-- Would a staff engineer look at this and say "why didn't you just..."?
-
-If you build 1000 lines and 100 would suffice, you have failed. Prefer the boring, obvious solution. Cleverness is expensive.
-
-### 5. Maintain Scope Discipline
-
-Touch only what you're asked to touch.
-
-Do NOT:
-- Remove comments you don't understand
-- "Clean up" code orthogonal to the task
-- Refactor adjacent systems as a side effect
-- Delete code that seems unused without explicit approval
-- Add features not in the spec because they "seem useful"
-
-Your job is surgical precision, not unsolicited renovation.
-
-### 6. Verify, Don't Assume
-
-Every skill includes a verification step. A task is not complete until verification passes. "Seems right" is never sufficient — there must be evidence (passing tests, build output, runtime data).
-
-## Failure Modes to Avoid
-
-These are the subtle errors that look like productivity but create problems:
-
-1. Making wrong assumptions without checking
-2. Not managing your own confusion — plowing ahead when lost
-3. Not surfacing inconsistencies you notice
-4. Not presenting tradeoffs on non-obvious decisions
-5. Being sycophantic ("Of course!") to approaches with clear problems
-6. Overcomplicating code and APIs
-7. Modifying code or comments orthogonal to the task
-8. Removing things you don't fully understand
-9. Building without a spec because "it's obvious"
-10. Skipping verification because "it looks right"
-
-## Skill Rules
-
-1. **Check for an applicable skill before starting work.** Skills encode processes that prevent common mistakes.
-
-2. **Skills are workflows, not suggestions.** Follow the steps in order. Don't skip verification steps.
-
-3. **Multiple skills can apply.** A feature implementation might involve `idea-refine` → `spec-driven-development` → `planning-and-task-breakdown` → `incremental-implementation` → `test-driven-development` → `code-review-and-quality` → `shipping-and-launch` in sequence.
-
-4. **When in doubt, start with a spec.** If the task is non-trivial and there's no spec, begin with `spec-driven-development`.
-
-## Lifecycle Sequence
-
-For a complete feature, the typical skill sequence is:
-
-```
-1. idea-refine                 → Refine vague ideas
-2. spec-driven-development     → Define what we're building
-3. planning-and-task-breakdown → Break into verifiable chunks
-4. context-engineering         → Load the right context
-5. incremental-implementation  → Build slice by slice
-6. test-driven-development     → Prove each slice works
-7. code-review-and-quality     → Review before merge
-8. git-workflow-and-versioning → Clean commit history
-9. documentation-and-adrs      → Document decisions
-10. shipping-and-launch        → Deploy safely
+```text
+ASSUMPTIONS:
+1. ...
+2. ...
+3. ...
 ```
 
-Not every task needs every skill. A bug fix might only need: `debugging-and-error-recovery` → `test-driven-development` → `code-review-and-quality`.
+### 2. Manage confusion actively
+
+If the spec, code, tests, or docs disagree:
+
+1. Stop.
+2. Name the contradiction.
+3. Prefer an autonomous default when it is reversible and low-risk.
+4. Record unresolved risk in `STATUS.md` or the relevant spec when it matters.
+5. Ask the user only when no safe default exists.
+
+### 3. Push back when warranted
+
+Say why an approach is weak, quantify the downside when possible, and propose
+the smaller or safer alternative.
+
+### 4. Enforce simplicity
+
+Prefer boring, legible solutions over clever ones. If a dedicated skill exists
+for the work, use it instead of inventing a one-off process.
+
+### 5. Maintain scope discipline
+
+Touch only what the task requires. Do not turn one request into an unrelated
+cleanup campaign.
+
+### 6. Verify, do not assume
+
+Every task needs evidence: tests, build output, runtime checks, or document
+diffs. "Looks right" is not completion.
+
+## Lifecycle
+
+For larger work, the common sequence is:
+
+```text
+1. using-agent-skills
+2. zoom-out (if the area is unfamiliar)
+3. idea-refine or spec-driven-development
+4. planning-and-task-breakdown
+5. context-engineering
+6. incremental-implementation
+7. test-driven-development
+8. code-review-and-quality
+9. documentation-and-adrs
+10. git-workflow-and-versioning
+11. shipping-and-launch
+```
+
+Not every task needs every step. Bug triage might be:
+`zoom-out -> debugging-and-error-recovery -> test-driven-development -> code-review-and-quality`.
 
 ## Quick Reference
 
-| Phase | Skill | One-Line Summary |
-|-------|-------|-----------------|
-| Define | idea-refine | Refine ideas through structured divergent and convergent thinking |
-| Define | spec-driven-development | Requirements and acceptance criteria before code |
-| Plan | planning-and-task-breakdown | Decompose into small, verifiable tasks |
-| Build | incremental-implementation | Thin vertical slices, test each before expanding |
-| Build | context-engineering | Right context at the right time |
-| Build | frontend-ui-engineering | Production-quality UI with accessibility |
-| Build | api-and-interface-design | Stable interfaces with clear contracts |
-| Verify | test-driven-development | Failing test first, then make it pass |
-| Verify | browser-testing-with-devtools | Chrome DevTools MCP for runtime verification |
-| Verify | debugging-and-error-recovery | Reproduce → localize → fix → guard |
-| Review | code-review-and-quality | Five-axis review with quality gates |
-| Review | security-and-hardening | OWASP prevention, input validation, least privilege |
-| Review | performance-optimization | Measure first, optimize only what matters |
-| Ship | git-workflow-and-versioning | Atomic commits, clean history |
-| Ship | ci-cd-and-automation | Automated quality gates on every change |
-| Ship | documentation-and-adrs | Document the why, not just the what |
-| Ship | shipping-and-launch | Pre-launch checklist, monitoring, rollback plan |
+| Phase | Skill | One-line summary |
+|-------|-------|------------------|
+| Orient | zoom-out | Build a high-level map before diving into details |
+| Define | idea-refine | Refine ideas through structured divergence and convergence |
+| Define | ubiquitous-language | Harden domain terms and remove naming drift |
+| Define | domain-model | Stress-test a plan against concepts, invariants, and boundaries |
+| Define | spec-driven-development | Write requirements and acceptance criteria before code |
+| Plan | planning-and-task-breakdown | Decompose work into small verifiable tasks |
+| Build | incremental-implementation | Ship thin vertical slices |
+| Build | context-engineering | Load the right context at the right time |
+| Build | frontend-ui-engineering | Build production-quality user interfaces |
+| Build | api-and-interface-design | Design stable interfaces and contracts |
+| Build | code-simplification | Simplify working code without changing behavior |
+| Build | improve-codebase-architecture | Find and fix weak module boundaries |
+| Verify | test-driven-development | Write failing tests first, then make them pass |
+| Verify | conditional-edge-testing | Require compile+invoke coverage for conditional-edge branches |
+| Verify | browser-testing-with-devtools | Use browser runtime evidence to verify behavior |
+| Verify | ui-test | Exercise the live Claude.ai user surface |
+| Verify | debugging-and-error-recovery | Reproduce, localize, fix, and guard regressions |
+| Review | code-review-and-quality | Review by bugs, regressions, and missing tests first |
+| Review | security-and-hardening | Apply least privilege and hostile-input thinking |
+| Review | performance-optimization | Measure first, then optimize what matters |
+| Change | deprecation-and-migration | Remove or migrate legacy systems deliberately |
+| Ship | git-workflow-and-versioning | Keep branches and commits intentional |
+| Ship | ci-cd-and-automation | Automate quality gates and recurring checks |
+| Ship | documentation-and-adrs | Record durable design context and rationale |
+| Ship | shipping-and-launch | Deploy with monitoring and rollback discipline |
+| Ops | cloudflare-ops | Operate Cloudflare DNS, routes, and website surfaces |
+| Ops | godaddy-ops | Operate GoDaddy domain and site surfaces |
+| Meta | skill-authoring | Create or update project-local skills correctly |
+| Meta | team-iterate | Improve agent-team definitions and launch prompts |

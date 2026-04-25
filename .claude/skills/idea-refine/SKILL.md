@@ -1,6 +1,6 @@
 ---
 name: idea-refine
-description: Refines ideas iteratively. Refine ideas through structured divergent and convergent thinking. Use "idea-refine" or "ideate" to trigger.
+description: Refines raw ideas into actionable concepts through divergent and convergent thinking. Use when the user asks to refine, ideate, stress-test, or sharpen an idea before committing it to the project.
 ---
 
 # Idea Refine
@@ -17,10 +17,8 @@ Refines raw ideas into sharp, actionable concepts worth building through structu
 
 This skill is primarily an interactive dialogue. Invoke it with an idea, and the agent will guide you through the process.
 
-```bash
-# Optional: Initialize the ideas directory
-bash /mnt/skills/user/idea-refine/scripts/idea-refine.sh
-```
+If the refined idea will not be executed immediately, capture it in
+`ideas/INBOX.md` or `ideas/PIPELINE.md` before the turn ends.
 
 **Trigger Phrases:**
 - "Help me refine this idea"
@@ -29,7 +27,8 @@ bash /mnt/skills/user/idea-refine/scripts/idea-refine.sh
 
 ## Output
 
-The final output is a markdown one-pager saved to `docs/ideas/[idea-name].md` (after user confirmation), containing:
+The final output is a markdown one-pager. If saved, use the existing `ideas/`
+pipeline files or a dedicated file under `ideas/`.
 - Problem Statement
 - Recommended Direction
 - Key Assumptions
@@ -66,7 +65,9 @@ When the user invokes this skill with an idea (`$ARGUMENTS`), guide them through
    - What's been tried before?
    - Why now?
 
-   Use the `AskUserQuestion` tool to gather this input. Do NOT proceed until you understand who this is for and what success looks like.
+   Ask only the questions needed to avoid a wrong direction. If the user is not
+   available, state reasonable assumptions, continue, and capture open questions
+   in the artifact.
 
 3. **Generate 5-8 idea variations** using these lenses:
    - **Inversion:** "What if we did the opposite?"
@@ -137,7 +138,9 @@ Produce a concrete artifact — a markdown one-pager that moves work forward:
 
 **The "Not Doing" list is arguably the most valuable part.** Focus is about saying no to good ideas. Make the trade-offs explicit.
 
-Ask the user if they'd like to save this to `docs/ideas/[idea-name].md` (or a location of their choosing). Only save if they confirm.
+If the idea will not be executed immediately, save or append it under
+`ideas/` so other sessions can see it. If it is being executed now, keep the
+artifact close to the relevant spec or implementation plan.
 
 ### Anti-patterns to Avoid
 

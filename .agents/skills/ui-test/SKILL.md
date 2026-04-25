@@ -190,11 +190,38 @@ Claude.ai sometimes renders a clarifying-question widget where the free-text inp
 
 **What you do when you see the widget:**
 
-1. If `ask` returned `input_not_found ... selection_widget=visible`: that's the tool telling you Escape/reload didn't clear the widget. **Do not panic and do not switch approaches.** Just run your next `ask` with your persona's real answer typed out. The act of posting a new user message re-mounts the input and the model treats your typed content as the reply to the widget's question.
-2. If the persona genuinely has no preference, type that in the persona's voice: `ask "honestly, no strong preference — whatever you think works best"`. That's a persona decision. The *tool* must never make that call for you.
-3. Log the event in the session log: `## [...] USER NOTE selection-widget-bypassed Asked: <your persona reply>` — helpful when the lead is auditing mission authenticity.
+1. **Read the options first.** `claude_chat.py read` does NOT capture them — the rendered-text extraction strips the widget. Hit CDP directly with Playwright and write output as UTF-8 to avoid Windows console codec failures:
+
+   ```python
+   from pathlib import Path
+   from playwright.sync_api import sync_playwright
+
+   with sync_playwright() as pw:
+       browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
+       page = browser.contexts[0].pages[0]
+       loc = page.locator('[id^="ask-user-option-question-"]')
+       lines = []
+       for i in range(loc.count()):
+           el = loc.nth(i)
+           if el.is_visible():
+               text = el.inner_text().replace("\n", " | ")[:200]
+               lines.append(f"{el.get_attribute('id')} | {text}")
+       Path("output/user_sim_widget_options.txt").write_text(
+           "\n".join(lines), encoding="utf-8"
+       )
+   ```
+
+2. **Pick the option the persona would pick**, based on the option text and the persona's identity/goals. Do not skip. Do not use "no preference" unless the persona genuinely has none.
+3. Reference the option by number and paraphrase the choice in persona voice: `ask "full research paper, option 2 — i want the thorough one"`. Avoid `ask "2"` alone because labels can be ambiguous.
+4. If `ask` returned `input_not_found ... selection_widget=visible`, the tool is saying Escape/reload did not clear the widget. Run the next `ask` with the persona-voice answer. Posting a new user message re-mounts the input and the model treats your typed content as the reply.
+5. **Verify the widget cleared after your reply.** Re-run the locator scan. If visible option count is still > 0, read and answer the fresh widget round.
+6. Log the event in the session log: `## [...] USER NOTE option-widget-handled Options: <short list>. Picked: <N> — <persona reasoning>.`
 
 Full bug history + fix rationale: `docs/design-notes/2026-04-19-option-select-bug-claude-chat.md`.
+
+Observed 2026-04-20: widgets can coexist with prose-only clarifying questions.
+Scan the DOM when the bot says "pick one" or "which"; do not trust `read`
+alone.
 
 ### Fallback priming (rarely needed post-fix)
 

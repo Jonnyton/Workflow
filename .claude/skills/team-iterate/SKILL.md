@@ -1,7 +1,6 @@
 ---
 name: team-iterate
-description: Review and improve agent team definitions and the launch prompt based on observed behavior this session.
-user_invocable: true
+description: Reviews and improves agent team definitions and launch prompts based on observed behavior. Use when a teammate underperforms, roles overlap, the launch prompt needs tuning, or the user asks to iterate the agent team.
 ---
 
 Iterate the agent team based on what actually happened. Agent definitions evolve through USE, not upfront planning.
@@ -46,7 +45,7 @@ For the team as a whole:
 The agent-teams harness has capabilities the team prompts may not be using. Each iteration, ask:
 
 - Are we using `TeammateIdle` / `TaskCreated` / `TaskCompleted` hooks where they would help?
-- Do any roles warrant `permissionMode: plan` with plan-approval gates before implementation?
+- Do any roles need plan-approval gates or read-only behavior? In agent-team mode, do not assume `permissionMode` frontmatter is enforced per teammate; verify with current docs and prefer tool allowlists, spawn instructions, and hooks.
 - Are tasks sized to the 5–6/teammate guidance? Is the lead splitting work small enough?
 - Are we using `message` (one teammate) vs `broadcast` (all) deliberately? Broadcast cost scales with team size.
 - Does cleanup ordering match the docs (on-demand teammates shut down first, then core, then `cleanup`)?
@@ -73,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File scripts/sync-skills.ps1
 
 ## Standing principles
 
-- The full team is ALWAYS running. Never dismiss teammates.
+- The core team named by `LAUNCH_PROMPT.md` stays running. On-demand roles follow the lifecycle in `LAUNCH_PROMPT.md`; don't keep token-heavy specialists up just because this skill exists.
 - When an agent isn't performing, refine and respawn — don't wait.
 - After 2 unanswered messages, respawn with a sharper prompt.
 - Agent definitions are living documents — update after every session.

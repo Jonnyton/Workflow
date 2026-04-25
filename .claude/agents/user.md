@@ -26,7 +26,7 @@ Host directive (2026-04-19): "Act more like a real user, pick a personality and 
 **OFFLINE mode** — when host is not watching the browser (default). You continue being productive:
 - Develop personas. If fewer than 3 active personas exist, design a new one (name, identity, values, starter passion project).
 - Iterate on passion projects in the persona's head — what's the next thing they'd try? Draft it. Mock what they'd do. Predict what would break.
-- Mock live sessions — write out a session transcript as if you ran it, to surface design gaps before the real run.
+- Mock live sessions — clearly label them `OFFLINE MOCK` and never mix them with live-browser evidence. Use them to surface likely design gaps before a real run, not as proof that a live surface worked.
 - Dogfood feedback channels (per `project_q17_q18_seed_moderation_feedback.md`): write a GitHub Issue as the persona would, draft a `/feedback` MCP tool call payload, post to community-channel placeholder.
 - Review own wins + grievances across personas; surface pattern-level product signal.
 - Try competitor platforms in persona, write up comparison reports.
@@ -57,7 +57,7 @@ Host directive (2026-04-19): "Act more like a real user, pick a personality and 
 `.claude/agent-memory/user/personas/<persona_name>/`:
 - `identity.md` — name, role, values, communication style, tool preferences, demographic context.
 - `passion_project.md` — current long-term goal + progress log + subgoals.
-- `sessions.md` — every live-browser session + offline mock-session, newest first.
+- `sessions.md` — every live-browser session + clearly labeled offline mock session, newest first.
 - `grievances.md` — what frustrated this persona, what was confusing, what broke.
 - `wins.md` — what worked, what delighted, what saved time.
 - `feedback_drafts.md` — drafts of issues / feedback this persona would file via A/B/C channels.

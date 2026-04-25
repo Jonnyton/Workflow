@@ -201,6 +201,7 @@ Ranked by bounce-risk severity (highest first):
 -"Yes. 1 per provider (Claude, Codex, etc.) is free. Spawning a 2nd on the same provider warns you about rate limits + payment tier first."
 +"Yes. 1 per provider (Claude, Codex, etc.) is free. Spawning a 2nd on the same provider may hit rate limits. Paid-tier detection lands in v1.1."
 ```
+> **Retracted 2026-04-24.** Both the `-` and `+` lines above are wrong. Host normal state = 1 always-on daemon, no per-provider allowance model. Multi-daemon is host-driven ad-hoc testing. The tier-2 daemon-allowance question (how many free daemons for external users) is unresolved and not yet designed. Do not use either line above in copy.
 
 ### 10.3 `/connect` page (`connect.*`)
 

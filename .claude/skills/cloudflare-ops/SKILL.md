@@ -1,6 +1,6 @@
 ---
 name: cloudflare-ops
-description: Drive Cloudflare dashboard + API for DNS, Worker, and API-token management via host's CDP Chrome browser + emergency_dns_flip.py.
+description: Drives Cloudflare dashboard and API operations for DNS, Workers, and API-token management. Use when changing Cloudflare DNS, Worker routes, Access headers, tunnel routing, or emergency DNS records for the Workflow public surfaces.
 ---
 
 # cloudflare-ops

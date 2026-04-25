@@ -1,6 +1,6 @@
 ---
 name: godaddy-ops
-description: Drive GoDaddy account admin via the lead's CDP Chrome browser. Use for domain portfolio, DNS management, Websites + Marketing (GoDaddy Website Builder) publish URLs, and SSL/nameserver changes. Reuses the same Chrome-for-Testing profile user-sim uses; obeys the shared browser lock + one-tab rule.
+description: Drives GoDaddy account admin via the lead's CDP Chrome browser. Use when managing domain portfolio, DNS, Websites + Marketing publish URLs, SSL, or nameserver changes. Reuses the same Chrome-for-Testing profile user-sim uses; obeys the shared browser lock and one-tab rule.
 ---
 
 # godaddy-ops

@@ -162,14 +162,31 @@ Phase 4 in the parent plan is the **brand pass**, not deletion. Phase 5 is delet
 
 ---
 
-## 5. Dispatch-ready task list — one row per atomic commit
+## 5. Dispatch-ready task list — **OBSOLETE 2026-04-19** ⚠️
 
-For STATUS.md addition. Each row is a single dispatchable commit. Dependencies set so dev never blocks on a non-existent task.
+> **⚠️ OBSOLETE per host's "Foundation End-State" standing rule (CLAUDE_LEAD_OPS.md §"Foundation End-State vs Feature Iteration", commit `557b051`).** The A1 → A2 → A3 → A4 → A5 → B1 → C1 → C2 → D1 → D2 ladder below is **abandoned**. Rename = foundation work, and foundation builds to end-state in one commit, not phased.
+>
+> **Current spec for remaining rename work:** `docs/exec-plans/active/2026-04-19-rename-end-state.md`. Two paths there:
+> - **Path A** — one end-state commit (~3-4 dev-days serial atomic). Recommended.
+> - **Path B** — freeze current aliases as permanent feature (~0.5 dev-day brand pass standalone).
+>
+> Already-shipped work stays landed: `72e696e` (Phase 1 Part 1) + `7dde417` (Phase 1 Part 2.5). They can't be un-shipped, but no further phases follow — collapse to end-state OR skip per host directive.
+>
+> **Sequencing per `2026-04-19-rename-end-state.md` §3:** ships AFTER daemon-economy first-draft (per "Daemon Economy is Foundation" rule — cleanup doesn't block product shipping).
+>
+> The original §5 task list is preserved below for historical context only; **do NOT dispatch from it**.
+
+### Historical §5 (preserved for context — DO NOT DISPATCH)
+
+> **2026-04-19 reclassification (post task #7 audit).** Task #6 marked completed-as-no-op — the actual Phase 1 Part 2 commit was `72e696e`, landed before this session. The dirty-tree cluster dev's audit *deferred* (`workflow/_rename_compat.py` extensions + `workflow/discovery.py` rename_compat branch + `domains/fantasy_author/__init__.py` + `fantasy_author/__init__.py` + `fantasy_author/__main__.py` shim + `domains/fantasy_author/phases/` + their packaging mirrors) is **Phase 1 Part 2.5**, not Phase 2. Verdict + reasoning in §5.5 below. Renumbered the queue so STATUS dispatch is unambiguous.
+
+> **A0 (Phase 1 Part 2.5)** is now the dependency root for A1-C2; not a Phase 2 task.
 
 | Proposed # | Task | Files (collision boundary) | Depends | Notes |
 |---|---|---|---|---|
-| **(in-flight) #6** | Phase 1 Part 2 audit + commit queued shims | The 4 shims + 64 rewrites + packaging mirror entries listed in §2 above | — | Already claimed by dev. Verifier full-pytest gate, then commit. |
-| **A1** | Phase 2 commit 1 — `Daemon` class + `register_daemon` family + module-level aliases | `workflow/daemon_server.py` class definitions; `Author = Daemon` alias guarded by `rename_compat_enabled()`; equivalent for `register_author`/`list_authors`/`get_author` → new names + alias | #6 | Smallest atomic commit; gets the public API rename in. Old names keep working via aliases. |
+| **(landed) #6** | Phase 1 Part 2 audit + commit queued shims | — | — | Completed-as-no-op 2026-04-19; the actual commit was `72e696e`, pre-this-session. |
+| **A0** | Phase 1 Part 2.5 — deep-submodule alias loader + missing shim surfaces (STATUS task #17) | `workflow/_rename_compat.py` (+ mirror); `workflow/discovery.py` (+ mirror); `domains/fantasy_author/__init__.py`; `fantasy_author/__init__.py`; `fantasy_author/__main__.py` (untracked); `domains/fantasy_author/phases/` (untracked dir) | — | Dev's deferred cluster from `docs/audits/2026-04-19-dirty-tree-audit.md`. Closes Phase 1 robustness gap (sys.modules-rebind alone misses deep-submodule imports done lazily). Required *before* A1 — A1's `Author = Daemon` aliases will be exported through this loader. Verdict reasoning in §5.5. |
+| **A1** | Phase 2 commit 1 — `Daemon` class + `register_daemon` family + module-level aliases | `workflow/daemon_server.py` class definitions; `Author = Daemon` alias guarded by `rename_compat_enabled()`; equivalent for `register_author`/`list_authors`/`get_author` → new names + alias | A0 | Smallest atomic commit; gets the public API rename in. Old names keep working via aliases. |
 | **A2** | Phase 2 commit 2 — daemon_server internal find-replace | `workflow/daemon_server.py` (parameter/variable names: `author_id` → `daemon_id` inside Python; SQL strings UNCHANGED) | A1 | Subsystem-scoped per parent plan §142. Awkward `daemon_id = row["author_id"]` reads are EXPECTED and temporary. |
 | **A3** | Phase 2 commit 3 — branches + memory subsystems internal find-replace | `workflow/branches/`, `workflow/memory/`, `workflow/retrieval/`, `workflow/runtime.py` parameter/variable names | A1 | Parallel-safe with A2 (different files). Same SQL-string discipline. |
 | **A4** | Phase 2 commit 4 — fantasy_daemon + domains internal find-replace | `fantasy_daemon/`, `domains/fantasy_daemon/` parameter/variable names | A1 | Parallel-safe with A2 + A3. |
@@ -187,6 +204,53 @@ For STATUS.md addition. Each row is a single dispatchable commit. Dependencies s
 - A5 is mechanical and gates B1 (mirror needs to reflect canonical state before DB migration tests run cleanly in mirrored environment).
 
 **Estimate (with parallelism, 2 devs):** ~3-4 dev-days from A1 through D2 (excluding the D1 bake). Without parallelism: ~5-6 dev-days serial.
+
+---
+
+## 5.5. Reclassification verdict — Phase 1 Part 2.5 vs Phase 2 A1
+
+**Date:** 2026-04-19
+**Trigger:** Dev's `docs/audits/2026-04-19-dirty-tree-audit.md` deferred a cluster ("Rename Phase 1 compat extensions") pending navigator classification. Reading the actual file diffs vs the parent rename plan + Phase 1 Part 2 commit (`72e696e`):
+
+**The deferred cluster IS Phase 1 Part 2.5 — not Phase 2.** Reasoning:
+
+1. **`workflow/_rename_compat.py` diff** adds `_RenameAliasLoader` + `_RenameAliasFinder` + `_AliasModuleProxy` + `install_module_alias()`. This is a **deep-submodule meta-path finder** — it intercepts lazy imports of `fantasy_author.X.Y.Z` after parent `fantasy_author` is already loaded and rebinds them to `fantasy_daemon.X.Y.Z`. The `72e696e` Phase 1 Part 2 commit shipped a `sys.modules`-rebind-only shim, which catches eager imports but misses lazy / late-bound submodule imports. The new loader closes that gap. **Diagnosis: this is a Phase 1 robustness fix that should have been part of Phase 1 Part 2 originally**, not a Phase 2 forward step.
+
+2. **`fantasy_author/__init__.py` + `domains/fantasy_author/__init__.py` diffs** add `install_module_alias(__name__, "fantasy_daemon")` calls. Without (1) above, these calls don't compile. They are paired changes that cannot be separated. Phase 1 territory.
+
+3. **`fantasy_author/__main__.py` (untracked)** is a one-liner `from fantasy_daemon.__main__ import *` shim. Pure CLI surface preservation — exactly the Phase 1 contract ("old import paths keep working"). Phase 1 territory.
+
+4. **`domains/fantasy_author/phases/` (untracked dir)** contains `__init__.py` only — a phases sub-package shim that preserves `from domains.fantasy_author.phases.X import Y` import paths. Same reasoning. Phase 1 territory.
+
+5. **`workflow/discovery.py` diff** adds a `rename_compat_enabled()` branch that appends `fantasy_author` to the discovered domain list. This is the ONLY runtime-behavior change in the cluster, and it is also Phase 1 in spirit — it ensures the `discover_domains()` API surface still returns `fantasy_author` while the alias is live, so any test or consumer that does `assert "fantasy_author" in domains` keeps passing. Without it, Phase 1's "old paths keep working" contract leaks at the discovery surface.
+
+**Conclusion: ship the cluster as Phase 1 Part 2.5 (task #17), not as Phase 2 A1.** Rationale:
+
+- It closes a Phase 1 robustness gap that `72e696e` did not.
+- It contains zero Phase 2 work (no `class Daemon`, no `Author = Daemon` alias, no internal `daemon_id` parameter renames).
+- A1 (Phase 2 commit 1) *depends on* this loader existing, because A1's `Author = Daemon` aliases will need to flow through the alias surface to be transparent to old call sites.
+- Treating it as Phase 1 Part 2.5 keeps the parent plan's phase boundaries clean — Phase 1 = paths preserved; Phase 2 = identifiers renamed.
+
+**Suggested commit message for task #17:**
+```
+rename Phase 1 Part 2.5: deep-submodule alias loader + missing shim surfaces
+
+- workflow/_rename_compat.py: add _RenameAliasLoader + meta-path finder
+  + install_module_alias() helper. Closes deep-submodule import gap left
+  by Phase 1 Part 2 sys.modules-rebind-only shim.
+- fantasy_author/__init__.py + domains/fantasy_author/__init__.py: route
+  through install_module_alias for transparent submodule aliasing.
+- fantasy_author/__main__.py + domains/fantasy_author/phases/__init__.py:
+  CLI + phases sub-package shims (Phase 1 contract).
+- workflow/discovery.py: rename_compat_enabled() branch appends
+  fantasy_author to discovered domain list while alias live.
+- Mirror byte-equal to canonical workflow/.
+
+Phase 1 Part 2.5 of docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md.
+Closes the Phase 1 robustness contract before Phase 2 A1 begins.
+```
+
+**KG-hardness aside (dev's other ask).** Dev's audit asks for navigator confirmation that `workflow/knowledge/models.py`'s `FactHardness` + `FactHorizon` enums are independent of the in-flight #17 follow-up. **Confirmed independent.** Diff is pure additive (two new enums + 3 back-compat aliases at end of file); not entangled with #17 (synthesis-skip / scene-scoped KG cleanup) or memory-scope work. Safe to ship as the standalone `[KG-HARDNESS]` commit.
 
 ---
 

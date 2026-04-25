@@ -74,25 +74,18 @@ row.
   - `DIGITALOCEAN_TOKEN` — for droplet-level actions from CI (reboot,
     resize, snapshot).
 
-### HD-3 — LLM endpoint not bound on prod daemon
+### HD-3 — ~~LLM endpoint not bound on prod daemon~~ → CLOSED: codex provider
 
-- **What's missing:** `/etc/workflow/env` on the Droplet has no
-  `ANTHROPIC_BASE_URL` / `OLLAMA_HOST` / API key. Daemon reports
-  `llm_endpoint_bound: unset`.
-- **What breaks when host is off:** daemon can accept + queue
-  requests but can't execute any. `concordance` universe currently
-  has 1 pending request, `phase: starved`.
-- **Why local Ollama won't work:** Droplet is 960 MB RAM / 1 vCPU; no
-  usable model fits.
-- **Close action (host):**
-  1. Generate an `ANTHROPIC_API_KEY` at https://console.anthropic.com.
-  2. Paste into `$HOME/workflow-secrets.env` as
-     `ANTHROPIC_API_KEY=sk-ant-...` and tell the lead.
-  3. Lead adds it to `/etc/workflow/env` on the Droplet + restarts
-     compose.
-  4. Eventually: also add `ANTHROPIC_API_KEY` as a GH Actions secret
-     so CI can seed it to fresh Droplets without host SSH.
-- **Alternative:** resize Droplet to ≥ 4 GB, install Ollama locally.
+- **Resolution:** codex CLI shipped in the daemon image (Dockerfile
+  Node 20 + `@openai/codex`), `OPENAI_API_KEY` seeded to
+  `/etc/workflow/env` + GH Actions secret. `get_status` reports
+  `llm_endpoint_bound: codex`.
+- **Why codex (not Anthropic):** codex CLI is subprocess-based (hard
+  rule 3) and already wrapped by `workflow.providers.codex_provider`.
+  No new HTTP wiring needed.
+- **Verified:** `python scripts/mcp_probe.py status` against
+  `tinyassets.io/mcp` → `"llm_endpoint_bound": "codex"`. Live on
+  2026-04-21.
 
 ### HD-4 — Cloudflare Global API Key exposed in host's terminal history
 
@@ -130,12 +123,12 @@ row.
 
 | ID | Gap | Host-action-minutes | Blocks |
 |---|---|---|---|
-| HD-1 | SSH key host-only | ~2 | CI auto-deploy |
+| HD-1 | ~~SSH key host-only~~ CLOSED | 0 | — |
 | HD-2 | secrets.env host-only | ~5 | Disaster recovery |
-| HD-3 | LLM endpoint unset | ~1 + key mint | Daemon requests execute |
+| HD-3 | ~~LLM endpoint unset~~ CLOSED (codex) | 0 | — |
 | HD-4 | Global API Key rotation | ~0.5 | Credential hygiene |
 | HD-5 | Windows Task canary host-only | 0 (deprecated) | Nothing (GHA replaces) |
 | HD-6 | Lead session host-only | 0 (by design) | Nothing (state in files) |
 
-Actionable today: HD-1, HD-2, HD-3, HD-4. All require host input. When
+Actionable today: HD-2, HD-4. Both require host input. When
 a gap closes, delete its section and the matching ledger row.

@@ -274,7 +274,7 @@ The tray UI exposes this as three toggles per capability: "host for me / share w
 
 The tray is tier-2's product. What it shows:
 
-- **Daemon list, grouped by provider.** Shows current count per provider (e.g. "local: 1, Claude: 1, Codex: 0, Gemini: 0"). "Launch daemon" control with provider dropdown. First daemon per provider = one click. Second+ daemon for the same provider = confirmation popup per §5.3 (rate-limit warning + payment-tier estimate + host confirms quota). The popup is a *warning*, not a block; host can override.
+- **Daemon list, grouped by provider.** Shows current count per provider (e.g. "local: 1, Claude: 1, Codex: 0, Gemini: 0"). "Launch daemon" control with provider dropdown. ~~First daemon per provider = one click. Second+ daemon for the same provider = confirmation popup per §5.3 (rate-limit warning + payment-tier estimate + host confirms quota). The popup is a *warning*, not a block; host can override.~~ **Retracted 2026-04-24: no payment-tier popup. Host spawns freely. See §5.3 retraction note.**
 - **Hosting controls panel.** For each declared capability, the three visibility toggles (self / network / paid). Add-capability flow pulls from the node-type registry (nodes declare required LLMs + software per `project_node_software_capabilities`). One row per `(node_type, llm_model)` pair.
 - **Active-mode toggle** (§5.2). On = daemon runs the full cascade (host queue → paid → public → stay-busy) when not executing. Off = daemon only runs host-queue work then sleeps. On by default for `visibility=paid`, off by default for `visibility=self`.
 - **Earnings dashboard.** Running total of ledger credits, last 30 days, per-capability breakdown. Links to settlement history.
@@ -307,19 +307,12 @@ The tray does *not* include chat UX. Tier-2 users still chat in Claude.ai; the t
 
 ### §5.3 Multi-daemon spawn policy
 
-From the tray notification, the host can launch additional daemons. Baseline policy:
+> **Retracted 2026-04-24.** Host confirmed: normal operating state is 1 always-on daemon. Multi-daemon is ad-hoc test sessions the host drives via their own chatbot. The "1/provider free, Nth triggers confirmation popup" policy and the payment-tier estimate table are **retired** — do not implement. Host spawns daemons without confirmation friction. The per-tier-2-user daemon-allowance model is a future question for the multi-tenant platform and does not apply to host's own daemon fleet.
 
-- **1 daemon per provider is free-to-spawn.** Providers are distinct by backend LLM: local (ollama/etc.), Claude, Codex, Gemini, and future additions. Running one daemon against each is default-allowed.
-- **Nth daemon (N>1) on the same provider triggers a confirmation popup** with:
-  - (a) **Rate-limit warning** — "a 2nd Claude daemon in always-active mode will frequently hit concurrent-request limits on the Anthropic API; work will queue or fail."
-  - (b) **Expected payment-tier estimate** — "to sustain this reliably, you likely need Anthropic Team / Max plan — estimated $X/mo based on the current always-active cascade's typical request volume."
-  - (c) Host confirms "yes I have the quota" and proceeds, or cancels.
-
-The system **warns**, it does not **block**. Host has final say.
-
-**Payment-tier estimate table** is a per-provider lookup — Anthropic plans + pricing, OpenAI plans, Gemini plans, etc. Store as a config row in the backend, not compiled into the tray binary. Updated when providers change pricing without a tray release. Tray fetches on-demand at spawn time. Fallback on fetch failure: show a plain warning without dollar estimate; don't block.
-
-**What "always-active" means for the estimate:** cascade runs continuously when the daemon isn't executing a node. At typical per-node compute of ~N tool calls and ~M LLM turns, daemon consumes ~K requests/minute. Estimator multiplies to monthly, compares against provider tiers. Numbers are approximate and labeled as such.
+~~From the tray notification, the host can launch additional daemons. Baseline policy:~~
+~~- **1 daemon per provider is free-to-spawn.**~~
+~~- **Nth daemon (N>1) on the same provider triggers a confirmation popup**~~
+~~- **Payment-tier estimate table** ...~~
 
 ### §5.4 Host-pool state in the control plane
 
