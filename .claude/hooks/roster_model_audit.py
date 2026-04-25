@@ -5,6 +5,12 @@ If `~/.claude/teams/<active-team>/config.json` lists any member with a model
 that is not the latest (Opus today), emit an emergency systemMessage via the
 SessionStart hook. The lead is expected to despawn + respawn the offender
 on the latest model immediately. Project rule: latest-model-only.
+
+Filters to the active team only — stale entries from prior sessions get
+ignored. Active-team detection mirrors `stale_team_pruner.py`'s
+`_team_is_active` (kept inline rather than imported to keep this hook
+single-file). Reference: `docs/audits/2026-04-25-despawn-chain-protocol.md`
+§6 CHANGE-2.
 """
 
 from __future__ import annotations
@@ -12,10 +18,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 LATEST_ALLOWED = {"opus"}
 LATEST_PREFIXES = ("claude-opus-",)
+ACTIVE_THRESHOLD_MIN = 60
 
 
 def _is_latest(model: str | None) -> bool:
@@ -32,13 +40,45 @@ def _teams_root() -> Path:
     return Path(home) / ".claude" / "teams"
 
 
+def _path_mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except (OSError, ValueError):
+        return None
+
+
+def _team_is_active(team_dir: Path, threshold_seconds: float, now: float) -> bool:
+    """Active if `inboxes/` OR `config.json` mtime is within threshold.
+
+    Mirrors the helper in `stale_team_pruner.py`. Kept inline here so this
+    hook stays a single file.
+    """
+    inboxes = team_dir / "inboxes"
+    config = team_dir / "config.json"
+    for candidate in (inboxes, config):
+        mtime = _path_mtime(candidate)
+        if mtime is not None and (now - mtime) <= threshold_seconds:
+            return True
+    return False
+
+
 def main() -> int:
     teams_root = _teams_root()
     if not teams_root.is_dir():
         return 0
 
+    now = time.time()
+    threshold_seconds = ACTIVE_THRESHOLD_MIN * 60.0
+
     offenders: list[tuple[str, str, str]] = []
     for team_dir in teams_root.iterdir():
+        if not team_dir.is_dir():
+            continue
+        try:
+            if not _team_is_active(team_dir, threshold_seconds, now):
+                continue
+        except OSError:
+            continue
         cfg = team_dir / "config.json"
         if not cfg.is_file():
             continue
