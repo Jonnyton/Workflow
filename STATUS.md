@@ -6,7 +6,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 - [2026-04-23] **P0 revert-loop: daemon PAUSED.** Auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [2026-04-20] Canonical public MCP: `tinyassets.io/mcp` -> 200; `mcp.tinyassets.io/mcp` -> gated internal origin only.
-- [2026-04-22→25] `/etc/workflow/env` mode flip — RC audit landed (`docs/audits/2026-04-25-etc-workflow-env-mode-flip.md`); Fix A (`install -m 640` instead of `sed -i`) awaits host review.
+- [2026-04-22→25] `/etc/workflow/env` mode flip — Fix A landed (bc079a0: atomic mutator); awaits host review of installer behavior.
 - [2026-04-20] `test_node_eval::test_record_and_get_stats_roundtrip` pre-existing flake. Passes alone, flaky in full suite.
 - [2026-04-17] Privacy mode note has 3 host Qs: `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md`.
 - [2026-04-18] `add_canon_from_path` sensitivity note has 3 host asks: `docs/design-notes/2026-04-18-add-canon-from-path-sensitivity.md`.
@@ -18,7 +18,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [2026-04-25] ChatGPT connector approval bug: Update Node approval errored; retry saved node v2.
 - [2026-04-25] ChatGPT Run Branch approval stalled after access grant; no run ID rendered.
 - [2026-04-25] ChatGPT UX: normal users need name-based workflow refs, not raw branch IDs.
-- [2026-04-26] Watchdog production observability gap CLOSED via Task #20: prod alarm log moved to `/var/log/workflow/uptime_alarms.log` (env-overridable); `.agents/` path retired, `.gitignore`d. Audit: `docs/audits/2026-04-26-restart-loop-correlation.md`.
+- [2026-04-26] BUG-034 ("All extensions actions: No approval received") triaged: ChatGPT connector approval-prompt failure, NOT Workflow server bug (no `git grep` match in repo). Workaround documented in wiki `pages/plans/chatbot-builder-behaviors.md` §"When MCP actions return 'No approval received'": use `goals action=get goal_id=<id>` for read-only branch inspection. BUG-034 wiki page status-comment deferred until cloud redeploy lands BUG-028 alias-fix.
 
 ## Approved Specs
 
@@ -30,7 +30,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 ## Work
 
-Devs idle pending verifier sweep. ~14 SHIP requests queued (BUG-029/030/031/032/033, REST vote tests, schema migration, classifier gap, memory_scope action, routing_evidence, Dockerfile data/ COPY, provider binary probe, brand-pass copy, P0/P1/P2 MCP descriptions, design notes, runbook). Verifier 1 hung — respawning fresh + adding verifier-2 to drain. Host decisions outstanding: R7 storage split, Mark-branch-canonical, cloud daemon redeploy, audit-doc review for #28/#29.
+2026-04-26 baseline: 6113p / 0f / 14 skipped (vs 2811p/42f at 2026-04-15). Decomp Step 1 LANDED (4f98654 helpers extraction); Step 2 (wiki.py) verifier-pending; Steps 3-5 prep docs landed (004afd9 + 3ea263a-followup). PROBE-003 wiki_canary CI wiring LANDED (3ea263a). Host decisions outstanding: R7 storage split, Mark-branch-canonical, cloud daemon redeploy, audit-doc review for #28/#29.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
