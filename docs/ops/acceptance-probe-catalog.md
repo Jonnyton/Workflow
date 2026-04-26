@@ -218,7 +218,7 @@ python scripts/mcp_tool_canary.py --verbose --timeout 20
 
 ## PROBE-005 — Last-activity freshness (node execution liveness)
 
-**Validated:** registration 2026-04-26 — script live since task #15 landed (tests at `tests/test_last_activity_canary.py`).
+**Validated:** registration 2026-04-26 — script live since task #15 landed (tests at `tests/test_last_activity_canary.py`). Scheduled in CI as the `activity_probe` step in `.github/workflows/uptime-canary.yml`, runs every 5 min on the GHA cron after handshake + tool canaries pass.
 **Source script:** `scripts/last_activity_canary.py`
 **Persona:** `last-activity-canary` (automated; client name `workflow-last-activity-canary/1.0`)
 **Connector URL under test:** `https://tinyassets.io/mcp`
@@ -267,7 +267,7 @@ PROBE-001/002 prove the daemon answers MCP. PROBE-004 proves a tool handler runs
 
 ## PROBE-006 — Revert-loop detection (busy-broken pathology)
 
-**Validated:** registration 2026-04-26 — script live since revert-loop spec landed; spec at `docs/design-notes/2026-04-23-revert-loop-canary-spec.md`.
+**Validated:** registration 2026-04-26 — script live since revert-loop spec landed; spec at `docs/design-notes/2026-04-23-revert-loop-canary-spec.md`. Scheduled in CI as the `revert_loop_probe` step in `.github/workflows/uptime-canary.yml`, runs every 5 min on the GHA cron after handshake + tool canaries pass.
 **Source script:** `scripts/revert_loop_canary.py`
 **Persona:** `revert-loop-canary` (automated; client name `revert-loop-canary/1.0`)
 **Connector URL under test:** `https://tinyassets.io/mcp`
