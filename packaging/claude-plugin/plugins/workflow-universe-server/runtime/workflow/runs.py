@@ -1868,6 +1868,7 @@ class SnapshotSchemaDrift(Exception):
 
     failure_class = "snapshot_schema_drift"
     suggested_action = "republish at current schema version"
+    actionable_by = "chatbot"
 
 
 def execute_branch_version_async(
@@ -2664,6 +2665,53 @@ _ROUTING_EVIDENCE_LIMIT_CAP = 50
 _ROUTING_EVIDENCE_DEFAULT_LIMIT = 10
 
 
+# BUG-029: canonical failure_class → actionable_by mapping.
+# Imported by `workflow.universe_server` so both run-failure classifiers
+# (typed-exception path + string-pattern path + this list_recent_runs
+# path) emit the same `actionable_by` for the same failure_class.
+#
+# Values:
+#   "host"    — server operator must act (creds, binaries, approvals).
+#   "chatbot" — chatbot can fix via another tool call (switch llm_type,
+#               raise recursion_limit, retry, republish version).
+#   "user"    — chatbot can only escalate raw error to the human user;
+#               human judgment may identify a recovery.
+#   "none"    — terminal: no fix exists, outcome is final. Chatbot must
+#               NOT suggest retry or escalate to user — the run is dead
+#               by design (e.g. cancelled by request).
+#
+# A failure_class missing from this map gets `actionable_by="user"` —
+# safe-default escalate, never silently drop the field. Use "none"
+# explicitly when the failure is genuinely unrecoverable; the default
+# is a conservative "ask the human."
+ACTIONABLE_BY: dict[str, str] = {
+    # host — server-side configuration / credentials / binaries
+    "empty_llm_response": "host",
+    "provider_unavailable": "host",
+    "provider_subprocess_failed": "host",
+    "provider_exhausted": "host",
+    "sandbox_unavailable": "host",
+    "node_not_approved": "host",
+    "permission_denied:approval_required": "host",
+    "permission_denied:auth_expired": "host",
+    # chatbot — recoverable via another tool call
+    "quota_exhausted": "chatbot",
+    "provider_overloaded": "chatbot",
+    "provider_error": "chatbot",
+    "recursion_limit": "chatbot",
+    "timeout": "chatbot",
+    "context_length_exceeded": "chatbot",
+    "state_mutation_conflict": "chatbot",
+    "snapshot_schema_drift": "chatbot",
+    "interrupted": "chatbot",
+    # user — opaque/internal; chatbot escalates raw error for human judgment
+    "unknown": "user",
+    "error": "user",
+    # none — terminal by design; no fix exists, no escalation needed
+    "cancelled": "none",
+}
+
+
 def _classify_failure(run: dict) -> str:
     """Return a short failure class string from a run record."""
     error = run.get("error") or ""
@@ -2769,6 +2817,13 @@ def list_recent_runs(
             "last_node_id": run.get("last_node_id"),
             "failure_class": failure_class,
             "suggested_action": suggested_action,
+            # Empty failure_class → empty actionable_by (run wasn't a
+            # failure). Otherwise look it up; default to "user" for any
+            # class not in the table so the field is never silently
+            # dropped.
+            "actionable_by": (
+                ACTIONABLE_BY.get(failure_class, "user") if failure_class else ""
+            ),
             "provider_used": run.get("provider_used"),
             "token_count": run.get("token_count"),
             "caveat": _ROUTING_EVIDENCE_CAVEAT,
@@ -2788,6 +2843,7 @@ __all__ = [
     "NODE_STATUS_RUNNING",
     "NODE_STATUS_RAN",
     "NODE_STATUS_FAILED",
+    "ACTIONABLE_BY",
     "RunCancelledError",
     "RunOutcome",
     "RunStepEvent",

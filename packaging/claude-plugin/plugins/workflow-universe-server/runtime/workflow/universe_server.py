@@ -7082,82 +7082,79 @@ def _build_failure_taxonomy() -> list[tuple[type, str, str]]:
     return rows
 
 
-def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
-    for exc_type, failure_class, suggested_action in _build_failure_taxonomy():
-        if isinstance(exc, exc_type):
-            return {
-                "status": "error",
-                "error": f"Run failed: {exc}",
-                "failure_class": failure_class,
-                "suggested_action": suggested_action,
-            }
-    msg = str(exc).lower()
-    if "quota" in msg or "rate limit" in msg or "rate_limit" in msg or "ratelimit" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "quota_exhausted",
-            "suggested_action": (
-                "Provider quota or rate limit hit; wait before retrying OR"
-                " switch providers via the llm_type param."
-            ),
-        }
-    if "auth expir" in msg or "token expir" in msg or "credential" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "permission_denied:auth_expired",
-            "suggested_action": (
-                "Provider credentials have expired; re-authenticate or rotate the API key."
-            ),
-        }
-    if "permission denied" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "permission_denied:approval_required",
-            "suggested_action": (
-                "Ask host to approve the source_code node via extensions"
-                " action=approve_source_code before running."
-            ),
-        }
-    if "approv" in msg or "source_code" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "node_not_approved",
-            "suggested_action": (
-                "Ask host to approve the source_code node via extensions"
-                " action=approve_source_code before running."
-            ),
-        }
-    if "concurrent" in msg or "conflict" in msg or "modified" in msg or "stale" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "state_mutation_conflict",
-            "suggested_action": (
-                "Concurrent modification detected; re-fetch the branch state"
-                " with get_branch then reapply your edit."
-            ),
-        }
-    if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
-        return {
-            "status": "error",
-            "error": f"Run failed: {exc}",
-            "failure_class": "provider_unavailable",
-            "suggested_action": (
-                "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys."
-            ),
-        }
+def _actionable_by(failure_class: str) -> str:
+    """Look up `actionable_by` for a failure_class via the canonical table.
+
+    BUG-029 surface: chatbot reads this field to know whether to retry
+    via another tool call ("chatbot"), surface a host-action to the user
+    ("host"), escalate the raw error to the user for human judgment
+    ("user"), or accept the run as terminal-by-design with no recovery
+    path ("none" — e.g. cancelled).
+
+    Defaults to "user" — never silently drops the field; conservative
+    "ask the human" beats silent absence. Use "none" only when the
+    failure is genuinely unrecoverable.
+    """
+    from workflow.runs import ACTIONABLE_BY
+    return ACTIONABLE_BY.get(failure_class, "user")
+
+
+def _failure_payload(
+    exc: Exception, failure_class: str, suggested_action: str,
+) -> dict[str, Any]:
+    """Construct the standard failure response with all 3 BUG-029 fields."""
     return {
         "status": "error",
         "error": f"Run failed: {exc}",
-        "failure_class": "unknown",
-        "suggested_action": (
-            f"Inspect the run transcript with get_run for branch '{bid}' details."
-        ),
+        "failure_class": failure_class,
+        "suggested_action": suggested_action,
+        "actionable_by": _actionable_by(failure_class),
     }
+
+
+def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
+    for exc_type, failure_class, suggested_action in _build_failure_taxonomy():
+        if isinstance(exc, exc_type):
+            return _failure_payload(exc, failure_class, suggested_action)
+    msg = str(exc).lower()
+    if "quota" in msg or "rate limit" in msg or "rate_limit" in msg or "ratelimit" in msg:
+        return _failure_payload(
+            exc, "quota_exhausted",
+            "Provider quota or rate limit hit; wait before retrying OR"
+            " switch providers via the llm_type param.",
+        )
+    if "auth expir" in msg or "token expir" in msg or "credential" in msg:
+        return _failure_payload(
+            exc, "permission_denied:auth_expired",
+            "Provider credentials have expired; re-authenticate or rotate the API key.",
+        )
+    if "permission denied" in msg:
+        return _failure_payload(
+            exc, "permission_denied:approval_required",
+            "Ask host to approve the source_code node via extensions"
+            " action=approve_source_code before running.",
+        )
+    if "approv" in msg or "source_code" in msg:
+        return _failure_payload(
+            exc, "node_not_approved",
+            "Ask host to approve the source_code node via extensions"
+            " action=approve_source_code before running.",
+        )
+    if "concurrent" in msg or "conflict" in msg or "modified" in msg or "stale" in msg:
+        return _failure_payload(
+            exc, "state_mutation_conflict",
+            "Concurrent modification detected; re-fetch the branch state"
+            " with get_branch then reapply your edit.",
+        )
+    if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
+        return _failure_payload(
+            exc, "provider_unavailable",
+            "No LLM provider is reachable; check ANTHROPIC/GROQ/GEMINI keys.",
+        )
+    return _failure_payload(
+        exc, "unknown",
+        f"Inspect the run transcript with get_run for branch '{bid}' details.",
+    )
 
 
 def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
@@ -7368,6 +7365,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     if error_annotation:
         result["failure_class"] = error_annotation[0]
         result["suggested_action"] = error_annotation[1]
+        result["actionable_by"] = _actionable_by(error_annotation[0])
     return json.dumps(result)
 
 
@@ -7469,11 +7467,14 @@ def _compose_run_snapshot(
         snapshot["resumable"] = False
         snapshot["resumable_reason"] = "v1 terminal-on-restart"
     # BUG-029: enrich failed snapshots so chatbots have a user-actionable hint.
+    # `actionable_by` tells the chatbot WHO can fix it — chatbot/host/user —
+    # so it doesn't have to guess (Mara's failure mode 2026-04-24).
     if run_record["status"] == "failed":
         error_annotation = _classify_run_outcome_error(run_record.get("error", ""))
         if error_annotation:
             snapshot["failure_class"] = error_annotation[0]
             snapshot["suggested_action"] = error_annotation[1]
+            snapshot["actionable_by"] = _actionable_by(error_annotation[0])
     return snapshot
 
 
@@ -8498,6 +8499,7 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
             "error": str(exc),
             "failure_class": SnapshotSchemaDrift.failure_class,
             "suggested_action": SnapshotSchemaDrift.suggested_action,
+            "actionable_by": SnapshotSchemaDrift.actionable_by,
         })
     except Exception as exc:
         logger.exception("run_branch_version failed for %s", bvid)
@@ -8531,6 +8533,7 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
     if error_annotation:
         result["failure_class"] = error_annotation[0]
         result["suggested_action"] = error_annotation[1]
+        result["actionable_by"] = _actionable_by(error_annotation[0])
     return json.dumps(result)
 
 
