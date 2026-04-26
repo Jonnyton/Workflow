@@ -329,11 +329,15 @@ class TestActionHandlesSnapshotDrift:
         """Plant a drifted snapshot, invoke the handler, confirm the JSON
         response carries failure_class + suggested_action from the class."""
         from workflow import universe_server as us
+        from workflow.api import runs as runs_mod
         from workflow.branch_versions import _connect as bv_connect
         from workflow.branch_versions import initialize_branch_versions_db
 
         monkeypatch.setattr(us, "_base_path", lambda: tmp_path)
         monkeypatch.setattr(us, "_current_actor", lambda: "alice")
+        # _action_run_branch_version moved to workflow.api.runs (Task #11). Patch
+        # the names where the function actually looks them up so the redirect works.
+        monkeypatch.setattr(runs_mod, "_base_path", lambda: tmp_path)
         initialize_runs_db(tmp_path)
 
         initialize_branch_versions_db(tmp_path)
