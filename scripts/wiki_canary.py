@@ -1,12 +1,12 @@
 """Wiki write-roundtrip canary — Layer-1 extension.
 
 Probes the wiki MCP surface with a write-then-read roundtrip against a
-dedicated canary draft slug (``drafts/canary/uptime-probe.md``).  A working
+dedicated canary draft (``drafts/notes/uptime-probe.md``).  A working
 ``initialize`` handshake is necessary but not sufficient: this canary also
 verifies that:
 
-- ``wiki action=write`` persists a known body without error.
-- ``wiki action=read`` returns that body verbatim.
+- ``wiki action=write`` persists a known content body without error.
+- ``wiki action=read`` returns that content verbatim.
 
 Wiki-write failure is P0 (Forever Rule: 24/7 uptime, auto-heal pipeline).
 BUG-028 demonstrated that a slug-normalization bug could silently break bug
@@ -49,9 +49,17 @@ from uptime_canary import _append_log, _now_local_iso  # noqa: E402
 DEFAULT_URL = "https://tinyassets.io/mcp"
 DEFAULT_TIMEOUT = 20.0
 
-_CANARY_SLUG = "uptime-probe"
-_CANARY_CATEGORY = "canary"
-_CANARY_BODY = "Workflow wiki uptime canary — automated write-roundtrip probe."
+_CANARY_FILENAME = "uptime-probe"
+# `notes` is in _WIKI_CATEGORIES on the server (workflow/universe_server.py
+# `_WIKI_CATEGORIES`); `canary` is not. The previous value silently failed
+# the server's category validation, masking real wiki-write breakage.
+_CANARY_CATEGORY = "notes"
+# ASCII-only content. Server's JSON response wraps the read body with
+# `json.dumps`, which (default ensure_ascii=True) escapes non-ASCII
+# characters like em-dash to \uNNNN sequences. A substring check on the
+# raw response text would then fail. Keep the canary content ASCII so
+# the roundtrip check stays a simple substring match.
+_CANARY_CONTENT = "Workflow wiki uptime canary - automated write-roundtrip probe."
 
 _INIT_PAYLOAD = {
     "jsonrpc": "2.0",
@@ -75,15 +83,18 @@ def _wiki_write_payload(call_id: int) -> dict:
             "name": "wiki",
             "arguments": {
                 "action": "write",
-                "slug": _CANARY_SLUG,
+                "filename": _CANARY_FILENAME,
                 "category": _CANARY_CATEGORY,
-                "body": _CANARY_BODY,
+                "content": _CANARY_CONTENT,
             },
         },
     }
 
 
 def _wiki_read_payload(call_id: int) -> dict:
+    # `wiki action=read` takes a single `page=` arg (the slug); _resolve_page
+    # locates it across pages/ + drafts/ subdirectories. No `category` /
+    # `slug` kwargs — that mismatch was the 2026-04-26 canary RED root cause.
     return {
         "jsonrpc": "2.0",
         "id": call_id,
@@ -92,8 +103,7 @@ def _wiki_read_payload(call_id: int) -> dict:
             "name": "wiki",
             "arguments": {
                 "action": "read",
-                "slug": _CANARY_SLUG,
-                "category": _CANARY_CATEGORY,
+                "page": _CANARY_FILENAME,
             },
         },
     }
@@ -165,7 +175,11 @@ def run_canary(
         raise ToolCanaryError(
             6, f"wiki write text not JSON: {exc}; preview={write_text[:200]!r}"
         ) from exc
-    if write_obj.get("status") not in ("ok", "written", "updated", "filed"):
+    # Server returns "drafted" on first write of a new draft, "updated" on
+    # any subsequent write to the same path. Both are healthy for the canary.
+    if write_obj.get("status") not in (
+        "ok", "written", "drafted", "updated", "filed",
+    ):
         raise ToolCanaryError(6, f"wiki write unexpected status: {write_obj!r}")
     if verbose:
         print(f"[wiki-canary] wiki write OK: {write_obj.get('status')!r}")
@@ -181,14 +195,14 @@ def run_canary(
     read_text = _extract_tool_text(read_result)
     if not read_text:
         raise ToolCanaryError(7, f"wiki read returned no text content: {read_result!r}")
-    if _CANARY_BODY not in read_text:
+    if _CANARY_CONTENT not in read_text:
         raise ToolCanaryError(
             7,
-            f"wiki roundtrip mismatch: expected body not found in read response. "
+            f"wiki roundtrip mismatch: expected content not found in read response. "
             f"preview={read_text[:300]!r}",
         )
     if verbose:
-        print("[wiki-canary] wiki read roundtrip OK — body confirmed")
+        print("[wiki-canary] wiki read roundtrip OK — content confirmed")
 
 
 def run_probe(

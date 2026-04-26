@@ -140,15 +140,15 @@ python scripts/wiki_canary.py --once --format=gha
 | Layer | What's tested |
 |---|---|
 | System | MCP `initialize` handshake reaches the daemon. |
-| System | `wiki action=write` persists a known body to `drafts/canary/uptime-probe.md`. |
-| System | `wiki action=read` returns that body verbatim. |
+| System | `wiki action=write` persists a known content body to `drafts/notes/uptime-probe.md`. |
+| System | `wiki action=read` returns that content verbatim. |
 | User-impact | Auto-heal pipeline integrity — chatbots filing bugs depend on wiki writes succeeding. |
 
 ### Green criteria
 
 - Exit code 0.
 - `wiki action=write` succeeds without `isError`.
-- `wiki action=read` returns body matching `_CANARY_BODY` byte-for-byte.
+- `wiki action=read` returns content matching `_CANARY_CONTENT` byte-for-byte.
 
 ### Red signals
 

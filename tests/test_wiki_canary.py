@@ -66,7 +66,10 @@ def _notif_resp(sid: str = "sess-wiki") -> tuple[None, str]:
 
 
 def _wiki_write_ok_resp(sid: str = "sess-wiki") -> tuple[dict, str]:
-    body = json.dumps({"status": "ok", "slug": wc._CANARY_SLUG})
+    body = json.dumps({
+        "status": "drafted",
+        "path": f"drafts/{wc._CANARY_CATEGORY}/{wc._CANARY_FILENAME}.md",
+    })
     return (
         {"jsonrpc": "2.0", "id": 2, "result": {
             "content": [{"type": "text", "text": body}],
@@ -77,8 +80,13 @@ def _wiki_write_ok_resp(sid: str = "sess-wiki") -> tuple[dict, str]:
 
 
 def _wiki_read_ok_resp(sid: str = "sess-wiki") -> tuple[dict, str]:
-    # Read response body must contain the canary body text.
-    body = f"---\nslug: {wc._CANARY_SLUG}\n---\n\n{wc._CANARY_BODY}\n"
+    # Read response body must contain the canary content text.
+    body = json.dumps({
+        "path": f"drafts/{wc._CANARY_CATEGORY}/{wc._CANARY_FILENAME}.md",
+        "is_draft": True,
+        "content": f"[DRAFT] {wc._CANARY_CONTENT}",
+        "truncated": False,
+    })
     return (
         {"jsonrpc": "2.0", "id": 3, "result": {
             "content": [{"type": "text", "text": body}],
@@ -183,7 +191,7 @@ def test_exit_6_on_wiki_write_iserror():
 
 
 def test_exit_6_on_wiki_write_unexpected_status():
-    bad_body = json.dumps({"status": "conflict", "slug": wc._CANARY_SLUG})
+    bad_body = json.dumps({"status": "conflict", "filename": wc._CANARY_FILENAME})
     scripted = ScriptedPost([
         _init_resp(), _notif_resp(),
         ({"jsonrpc": "2.0", "id": 2, "result": {
