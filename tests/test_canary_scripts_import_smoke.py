@@ -38,6 +38,21 @@ CANARY_MODULES = (
     "wiki_canary",
 )
 
+# Non-canary MCP-client scripts that ALSO default to the canonical public
+# endpoint. Subject to the same host-directive 2026-04-20 invariant: the
+# `mcp.tinyassets.io` Access-gated tunnel origin must NOT leak into any
+# user-facing default. A script that drifted to `mcp.tinyassets.io` would
+# silently 401/403 for any caller without CF Access service-token headers.
+# Audited 2026-04-26 — these are the 4 non-canary `scripts/*.py` files
+# with a `DEFAULT_URL` symbol; if a new MCP-client script is added with
+# a `DEFAULT_URL` default, append it here so the same drift guard applies.
+NON_CANARY_URL_SCRIPTS = (
+    "navigator_wiki_sweep",
+    "mcp_probe",
+    "wiki_bug_sync",
+    "verify_llm_binding",
+)
+
 
 @pytest.fixture(scope="module")
 def loaded_modules() -> dict[str, object]:
@@ -71,6 +86,34 @@ def test_canary_module_has_default_url(
         f"{module_name}.DEFAULT_URL drifted from the canonical "
         f"https://tinyassets.io/mcp (host directive 2026-04-20). "
         f"Got: {mod.DEFAULT_URL!r}"
+    )
+
+
+@pytest.mark.parametrize("module_name", NON_CANARY_URL_SCRIPTS)
+def test_non_canary_script_default_url_matches_canonical(module_name: str) -> None:
+    """Non-canary MCP-client scripts also lock to the canonical public endpoint.
+
+    Same host-directive (2026-04-20) invariant as the canary scripts above:
+    `mcp.tinyassets.io` is the Access-gated internal tunnel origin and must
+    NOT leak into any default URL surface. A script defaulting to it would
+    silently 401/403 for any caller without CF Access service-token headers.
+
+    Sentinel against the BUG-028-class regression: a fix to one MCP-client
+    script's `DEFAULT_URL` could leave the others stale. This test catches
+    that drift the same way `test_canary_module_has_default_url` catches it
+    on the canary side.
+    """
+    mod = importlib.import_module(module_name)
+    assert hasattr(mod, "DEFAULT_URL"), (
+        f"{module_name} has no DEFAULT_URL — was it removed? If so, drop "
+        f"it from NON_CANARY_URL_SCRIPTS in this test file."
+    )
+    assert mod.DEFAULT_URL == "https://tinyassets.io/mcp", (
+        f"{module_name}.DEFAULT_URL drifted from the canonical "
+        f"https://tinyassets.io/mcp (host directive 2026-04-20). "
+        f"Got: {mod.DEFAULT_URL!r}. If `mcp.tinyassets.io` crept in, "
+        f"that's the Access-gated internal tunnel origin and must not "
+        f"appear in user-facing defaults."
     )
 
 
