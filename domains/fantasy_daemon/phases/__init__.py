@@ -1,22 +1,36 @@
-"""Mock node implementations for Phase 0.
+"""Fantasy-daemon phase nodes -- graph cycle map.
 
-All nodes accept a state dict and return a partial state dict.
-Phase 1 will replace these with real implementations.
+Each phase is a graph node invoked by one of four LangGraph cycles
+defined in ``domains/fantasy_daemon/graphs/``:
+
+scene cycle (``graphs/scene.py``, entry: ``orient``)
+    orient -> plan -> draft -> commit -> (accept | second_draft -> draft)
+
+chapter cycle (``graphs/chapter.py``, entry: ``run_scene``)
+    run_scene -> (next_scene | done) -> consolidate -> learn
+
+book cycle (``graphs/book.py``, entry: ``run_chapter``)
+    run_chapter -> (next_chapter | diagnose | book_close)
+    diagnose -> (next_chapter | book_close)
+
+universe cycle (``graphs/universe.py``, entry: ``foundation_priority_review``)
+    foundation_priority_review -> (authorial_priority_review | dispatch_execution)
+    dispatch_execution -> (run_book | worldbuild | reflect | idle) -> universe_cycle
 
 Re-exports
 ----------
-orient          -- deterministic forward-projection
-plan            -- beat sheet generation
-draft           -- prose generation
-commit          -- evaluation and verdict
-consolidate     -- chapter-level fact promotion
-learn           -- style rule lifecycle
-select_task     -- universe task routing
-worldbuild      -- world knowledge updates
-reflect         -- creative direction review
-universe_cycle  -- end-of-cycle maintenance
-book_close      -- book-level consolidation
-diagnose        -- stuck detection and recovery
+orient          -- scene cycle entry; deterministic forward-projection
+plan            -- scene cycle; beat sheet generation
+draft           -- scene cycle; prose generation
+commit          -- scene cycle; evaluation and verdict
+consolidate     -- chapter cycle; fact promotion after scenes
+learn           -- chapter cycle; style rule lifecycle
+diagnose        -- book cycle; stuck detection and recovery
+book_close      -- book cycle; book-level consolidation (terminal)
+worldbuild      -- universe cycle; world knowledge updates
+reflect         -- universe cycle; cross-series coherence review
+universe_cycle  -- universe cycle; end-of-cycle maintenance
+select_task     -- legacy universe routing (predates dispatch_execution)
 """
 
 from domains.fantasy_daemon.phases._activity import activity_log

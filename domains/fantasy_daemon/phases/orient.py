@@ -1,13 +1,7 @@
-# Graph entry point: node "orient" in domains/fantasy_daemon/graphs/scene.py
-#   Topology: orient -> plan -> draft -> commit
-#   Registered via: graph.add_node("orient", orient); graph.set_entry_point("orient")
-# Reads:  SceneState fields — universe_id, book_number, chapter_number, scene_number,
-#         _universe_path, _db_path, workflow_instructions
-# Writes: SceneState fields — orient_result (dict), quality_trace (appended)
-# Sibling phases to read next: plan.py (LLM scene planner), draft.py (writer),
-#         commit.py (accept/revise gate)
+"""Orient node -- scene graph entry; deterministic forward-projection.
 
-"""Orient node -- deterministic forward-projection.
+Registered as scene-graph entry point in ``domains/fantasy_daemon/graphs/scene.py``
+(``graph.set_entry_point("orient")``). Topology: orient -> plan -> draft -> commit.
 
 Queries the world state database for overdue promises, pacing flags,
 character gaps, and continuity warnings.  Zero LLM calls -- this is
@@ -15,8 +9,14 @@ pure deterministic analysis.
 
 Contract
 --------
-Input:  SceneState with identity fields populated.
-Output: Partial SceneState with ``orient_result`` and ``quality_trace``.
+Input:  SceneState with identity fields populated (universe_id, book_number,
+        chapter_number, scene_number, _universe_path, _db_path,
+        workflow_instructions).
+Output: Partial SceneState with ``orient_result`` (dict) and ``quality_trace``
+        (appended).
+
+Sibling phases: plan.py (LLM scene planner), draft.py (writer), commit.py
+(accept/revise gate).
 """
 
 from __future__ import annotations
