@@ -10892,6 +10892,7 @@ def goals(
     action: str,
     goal_id: str = "",
     branch_def_id: str = "",
+    branch_version_id: str = "",
     name: str = "",
     description: str = "",
     tags: str = "",
@@ -10944,6 +10945,9 @@ def goals(
       goal_id: Goal target for bind/get/update/search/leaderboard,
         and for common_nodes when scope='this_goal'.
       branch_def_id: Branch target for bind.
+      branch_version_id: Published branch_version_id for set_canonical
+        (pass empty string to unset). Must reference a row in
+        `branch_versions` — only published versions may be canonical.
       name/description/tags/visibility: Goal fields for propose/update.
       query: search query.
       metric: leaderboard metric (run_count/forks/outcome).
@@ -10961,6 +10965,7 @@ def goals(
     goal_kwargs: dict[str, Any] = {
         "goal_id": goal_id,
         "branch_def_id": branch_def_id,
+        "branch_version_id": branch_version_id,
         "name": name,
         "description": description,
         "tags": tags,
