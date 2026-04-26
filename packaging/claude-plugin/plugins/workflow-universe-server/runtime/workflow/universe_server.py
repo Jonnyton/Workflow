@@ -943,7 +943,12 @@ def universe(
     Self-contained workspace (premise, canon, notes, daemons) for any
     multi-step agentic work. New workflows live in the `extensions`
     tool. Start with `action="inspect"`. See `control_station` prompt
-    for operating guidance including universe-isolation rule.
+    for operating guidance including universe-isolation rule. Load the
+    `control_station` prompt before first use of this connector.
+
+    `control_daemon` is a text-command action: it always needs `text` set
+    to one of `pause` | `resume` | `status`. Calling `control_daemon`
+    without `text` returns an error.
 
     Args:
         action: One of —
@@ -951,8 +956,8 @@ def universe(
             get_activity, get_recent_events, get_ledger, read_premise,
             list_canon, read_canon;
             writes: submit_request, give_direction, set_premise,
-            add_canon, add_canon_from_path, control_daemon,
-            switch_universe, create_universe;
+            add_canon, add_canon_from_path, control_daemon (text=pause|
+            resume|status), switch_universe, create_universe;
             queue ops: queue_list (list pending dispatch requests),
             queue_cancel (cancel a queued request by request_id);
             subscription ops: subscribe_goal (subscribe this universe
@@ -966,7 +971,11 @@ def universe(
             dispatcher tier; requires tier + enabled).
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
-            canon body, or daemon command: pause | resume | status).
+            canon body). For `control_daemon` this is the daemon
+            sub-command: `pause` (write `.pause` signal — daemon stops
+            at next scene boundary), `resume` (remove `.pause` signal),
+            or `status` (return phase / liveness / pending unreconciled
+            writes). No other values accepted.
         path: Dual-semantic based on action:
             - read_output: relative path inside the universe's output dir
               (e.g. "book-1/ch-01.md").
@@ -3781,7 +3790,8 @@ def extensions(
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
     See `control_station`, `extension_guide`, and `branch_design_guide`
-    prompts for operating guidance and worked examples.
+    prompts for operating guidance and worked examples. Load the
+    `control_station` prompt before first use of this connector.
 
     Action groups:
     - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
@@ -3802,6 +3812,22 @@ def extensions(
     - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
     - Self-audit: get_routing_evidence, get_memory_scope_status.
+
+    Feature-flag caveats — some action groups are conditionally available
+    based on server flags (callers see structured `not_available` rather
+    than tool-discovery hiding):
+    - Outcome gates live in the separate `gates` tool, gated by
+      GATES_ENABLED=1. When the flag is off, `gates` returns
+      `{"status": "not_available"}` — unrelated to this tool, but worth
+      knowing when discussing outcomes.
+    - Paid-market actions on `gates` (stake_bonus / unstake_bonus /
+      release_bonus) additionally require WORKFLOW_PAID_MARKET=on.
+    - Goal-pool surfaces (`universe action=post_to_goal_pool` /
+      `submit_node_bid`) require WORKFLOW_GOAL_POOL=on or
+      WORKFLOW_PAID_MARKET=on respectively.
+    - Tiered-memory-scope routing in `get_memory_scope_status` reflects
+      whatever WORKFLOW_TIERED_SCOPE is set to today (Stage 1 monitoring
+      is the default; Stage 2c flips it on).
 
     Node reuse across branches uses `node_ref_json`
     (`{"source": "standalone", "node_id": "..."}` or source=<branch_def_id>).
@@ -12378,6 +12404,13 @@ def wiki(
     feature requests, design proposals, and primitive asks. Navigator vets
     all filings before dev implements — kind tagging is how the pipeline
     distinguishes them without separate verbs.
+
+    Maintenance-ops note: ``promote`` (drafts → pages, runs the lint gate
+    unless ``skip_lint=true``) and ``consolidate`` (merge similar drafts
+    above a similarity threshold) are housekeeping verbs typically run by
+    the host or a curator, not casually invoked from a chat turn. From a
+    chatbot, prefer ``write`` (drafts new content) plus ``lint`` (quality
+    check) and let curators handle promotion and merging.
     """
     try:
         wiki_root = _wiki_root()
@@ -13585,10 +13618,17 @@ def _policy_hash(payload: dict[str, Any]) -> str:
 def get_status(universe_id: str = "") -> str:
     """Factual snapshot of the daemon's identity + routing config.
 
-    Chatbots call this when a user asks a privacy-critical question
-    ("will my manuscript go to a cloud LLM?", "which model is this bound
-    to?"). Returns concrete evidence the chatbot can narrate; does not
-    infer or guess.
+    Chatbots call this whenever they need ground-truth daemon facts,
+    not just for privacy questions. Triggering questions include:
+      - Privacy / routing: "will my manuscript go to a cloud LLM?",
+        "which model is this bound to?", "is anything leaving my box?".
+      - Liveness / orientation: "is the daemon running?", "what's the
+        active universe?", "which provider is currently bound?".
+      - Audit / proof: "show me the routing evidence" or anything where
+        the chatbot needs to back a claim with a tool fact instead of
+        relying on memory or the prompt.
+    Returns concrete evidence the chatbot can narrate; does not infer
+    or guess.
 
     **Versioned contract (schema_version=1):** All fields below are
     stable. Field removals and renames require a deprecation notice in
@@ -13629,9 +13669,10 @@ def get_status(universe_id: str = "") -> str:
 
     `last_n_calls` is a structured view of the most recent activity
     entries (parsed `{ts, tag, message, raw}` dicts, most-recent first).
-    Derived from the same activity.log tail as `activity_log_tail`;
-    mirrors the dispatch_evidence caveat-augmentation pattern introduced
-    in commit 7d19f34.
+    Derived from the same activity.log tail as `activity_log_tail`. When
+    the parser cannot recover a tag for an entry, that key surfaces in
+    `evidence_caveats` so chatbots know tag-based filtering on those
+    entries is unreliable.
 
     `session_boundary` gives the chatbot a tool fact for cross-session
     identity grounding. `prior_session_context_available=false` means
