@@ -233,3 +233,114 @@ def test_init_payload_builder_single_definition(
             f"means a manual dict literal crept back in — replace with "
             f"`_init_payload({expected_client_name!r})`."
         )
+
+
+# ---- Task #14 deferred follow-up — exception-class shape + reuse -------
+#
+# Per the Task #14 conservative-scope rule, exception classes were NOT
+# consolidated (callers do `except XError as e` and depend on type
+# identity). These tests lock in the contract that the 4 canary error
+# classes:
+#   1. Are `Exception` subclasses (catchable by generic `except`).
+#   2. Have the consistent `(code: int, msg: str)` constructor shape used
+#      by every `raise XError(step_code, "...")` site in the codebase.
+#   3. Expose `code` and `msg` instance attributes (read by `main()`
+#      handlers to set the exit code + format the failure line).
+#   4. Are re-used by reference where appropriate (wiki_canary →
+#      ToolCanaryError; uptime_canary → CanaryError) — no silent local
+#      shadow class with the same name.
+
+_CANARY_ERROR_CLASSES = {
+    "mcp_public_canary": "CanaryError",
+    "mcp_tool_canary": "ToolCanaryError",
+    "last_activity_canary": "LastActivityError",
+    "revert_loop_canary": "RevertLoopError",
+}
+
+
+@pytest.mark.parametrize(
+    "module_name,class_name", sorted(_CANARY_ERROR_CLASSES.items()),
+)
+class TestCanaryExceptionShape:
+    def test_class_is_exception_subclass(
+        self, loaded_modules, module_name, class_name,
+    ):
+        mod = loaded_modules[module_name]
+        cls = getattr(mod, class_name)
+        assert isinstance(cls, type), (
+            f"{module_name}.{class_name} is not a class: {cls!r}"
+        )
+        assert issubclass(cls, Exception), (
+            f"{module_name}.{class_name} is not an Exception subclass"
+        )
+
+    def test_instance_has_code_and_msg_attrs(
+        self, loaded_modules, module_name, class_name,
+    ):
+        """`(code, msg)` constructor + `.code` + `.msg` attrs locked in.
+
+        Every raise site in the canary scripts uses this shape. main()
+        handlers read `exc.code` to set the exit code and `exc.msg` to
+        format the failure line. A class change that drops these attrs
+        would break the canary's exit-code ladder silently.
+        """
+        mod = loaded_modules[module_name]
+        cls = getattr(mod, class_name)
+        instance = cls(42, "test message")
+        assert instance.code == 42, (
+            f"{module_name}.{class_name}(42, ...).code != 42 "
+            f"(got {instance.code!r}); constructor signature drifted."
+        )
+        assert instance.msg == "test message", (
+            f"{module_name}.{class_name}(..., 'test message').msg != "
+            f"'test message' (got {instance.msg!r})."
+        )
+
+    def test_instance_carries_msg_in_str(
+        self, loaded_modules, module_name, class_name,
+    ):
+        """`str(exc)` surfaces the msg so default Python error formatting
+        is meaningful. Exception.__init__(msg) puts msg in args[0]."""
+        mod = loaded_modules[module_name]
+        cls = getattr(mod, class_name)
+        instance = cls(99, "diagnostic")
+        assert "diagnostic" in str(instance), (
+            f"{module_name}.{class_name} does not surface msg via str(); "
+            f"got {str(instance)!r}. Default Python tracebacks would "
+            f"be unhelpful."
+        )
+
+
+def test_wiki_canary_reuses_tool_canary_error(loaded_modules):
+    """wiki_canary imports ToolCanaryError from mcp_tool_canary by reference.
+
+    All 14 raise sites in scripts/wiki_canary.py use ToolCanaryError. If
+    a future edit silently re-defined a local ToolCanaryError class
+    (same name, different identity), `except ToolCanaryError` blocks in
+    callers would stop catching the right type. Identity check locks it.
+    """
+    tool = loaded_modules["mcp_tool_canary"]
+    wiki = loaded_modules["wiki_canary"]
+    assert wiki.ToolCanaryError is tool.ToolCanaryError, (
+        "wiki_canary.ToolCanaryError is no longer the SAME class object "
+        "as mcp_tool_canary.ToolCanaryError. wiki_canary must keep "
+        "`from mcp_tool_canary import ToolCanaryError` rather than "
+        "redefining a local class."
+    )
+
+
+def test_uptime_canary_reuses_public_canary_error(loaded_modules):
+    """uptime_canary imports CanaryError from mcp_public_canary by reference.
+
+    `uptime_canary.run_probe` does `except CanaryError as exc` (L121) on
+    the CanaryError that `probe_result` raises. Identity drift would
+    break the catch.
+    """
+    public = loaded_modules["mcp_public_canary"]
+    uptime = loaded_modules["uptime_canary"]
+    assert uptime.CanaryError is public.CanaryError, (
+        "uptime_canary.CanaryError is no longer the SAME class object "
+        "as mcp_public_canary.CanaryError. uptime_canary must keep "
+        "`from mcp_public_canary import CanaryError` rather than "
+        "redefining a local class."
+    )
