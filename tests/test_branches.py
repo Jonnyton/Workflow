@@ -15,6 +15,7 @@ from workflow.branches import (
     EdgeDefinition,
     GraphNodeRef,
     NodeDefinition,
+    NodeDefinitionValidationError,
     StateFieldDecl,
 )
 
@@ -705,3 +706,157 @@ class TestBranchDefinition:
         )
         errors = b.validate()
         assert not any("cycle" in e for e in errors)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Task #12 — Read-side strict validation for input_keys / output_keys.
+#
+# Mara's chain-break (2026-04-26): a chatbot built a 7-node research-paper
+# branch with output_keys="framed_question" (str). Some path bypassed the
+# lenient write-side coercion (`_coerce_node_keys`), the value reached
+# storage as a str, and downstream code character-iterated it into
+# ['f','r','a','m','e','d',...] — silent state corruption.
+#
+# Option B fix per `feedback_symmetric_boundary_validation`: write-side
+# stays lenient (legitimate auto-wrap of bare tokens, see
+# tests/test_patch_branch_node_keys.py). Read-side strict-validates in
+# NodeDefinition.__post_init__ so corrupted persisted state can't load
+# silently — fail loudly per Hard Rule #8.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestNodeDefinitionStrictKeysValidation:
+    """`__post_init__` rejects non-list input_keys / output_keys."""
+
+    def test_str_input_keys_rejects(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                input_keys="framed_question",  # type: ignore[arg-type]
+            )
+        assert exc_info.value.field == "input_keys"
+        assert "list of strings" in exc_info.value.message
+        assert "got str" in exc_info.value.message
+
+    def test_str_output_keys_rejects(self):
+        """Mara's exact case."""
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                output_keys="framed_question",  # type: ignore[arg-type]
+            )
+        assert exc_info.value.field == "output_keys"
+        assert "got str" in exc_info.value.message
+
+    def test_int_input_keys_rejects(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                input_keys=42,  # type: ignore[arg-type]
+            )
+        assert exc_info.value.field == "input_keys"
+        assert "got int" in exc_info.value.message
+
+    def test_dict_output_keys_rejects(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                output_keys={"a": 1},  # type: ignore[arg-type]
+            )
+        assert exc_info.value.field == "output_keys"
+        assert "got dict" in exc_info.value.message
+
+    def test_list_of_non_string_input_keys_rejects(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                input_keys=["a", 1, "c"],  # type: ignore[list-item]
+            )
+        assert exc_info.value.field == "input_keys"
+        assert "[1]" in exc_info.value.message
+        assert "got int" in exc_info.value.message
+
+    def test_list_of_non_string_output_keys_rejects(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                output_keys=[None],  # type: ignore[list-item]
+            )
+        assert exc_info.value.field == "output_keys"
+        assert "[0]" in exc_info.value.message
+        assert "got NoneType" in exc_info.value.message
+
+    def test_proper_lists_pass(self):
+        """Positive control: list[str] is the contract; round-trips fine."""
+        node = NodeDefinition(
+            node_id="x", display_name="X",
+            input_keys=["a", "b"],
+            output_keys=["c"],
+        )
+        assert node.input_keys == ["a", "b"]
+        assert node.output_keys == ["c"]
+
+    def test_empty_lists_pass(self):
+        """Empty default also satisfies the contract."""
+        node = NodeDefinition(node_id="x", display_name="X")
+        assert node.input_keys == []
+        assert node.output_keys == []
+
+    def test_from_dict_with_str_input_keys_rejects(self):
+        """The actual Mara load-path: persisted dict round-trips
+        through `NodeDefinition.from_dict` and trips on the str."""
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition.from_dict({
+                "node_id": "x", "display_name": "X",
+                "input_keys": "framed_question",
+            })
+        assert exc_info.value.field == "input_keys"
+
+    def test_from_dict_with_str_output_keys_rejects(self):
+        """Same path, output_keys side."""
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition.from_dict({
+                "node_id": "x", "display_name": "X",
+                "output_keys": "framed_question",
+            })
+        assert exc_info.value.field == "output_keys"
+
+    def test_branch_from_dict_propagates_node_validation(self):
+        """`BranchDefinition.from_dict` constructs each node via
+        `NodeDefinition.from_dict` — corrupted persisted state surfaces
+        the validation error at the branch-load boundary."""
+        with pytest.raises(NodeDefinitionValidationError):
+            BranchDefinition.from_dict({
+                "branch_def_id": "b", "name": "b",
+                "node_defs": [
+                    {"node_id": "x", "display_name": "X",
+                     "output_keys": "framed_question"},
+                ],
+            })
+
+    def test_validation_error_is_value_error_subclass(self):
+        """Existing `except ValueError` catch sites still work — the
+        structured shape is opt-in via `field`/`message` attrs."""
+        try:
+            NodeDefinition(
+                node_id="x", display_name="X",
+                output_keys="bad",  # type: ignore[arg-type]
+            )
+        except ValueError as exc:
+            # Catches as plain ValueError too.
+            assert isinstance(exc, NodeDefinitionValidationError)
+            assert "output_keys" in str(exc)
+            assert "got str" in str(exc)
+        else:
+            pytest.fail("expected ValueError-family exception")
+
+    def test_to_dict_round_trip_preserves_lists(self):
+        """Sanity: a clean to_dict→from_dict round-trip stays clean."""
+        node = NodeDefinition(
+            node_id="x", display_name="X",
+            input_keys=["alpha", "beta"],
+            output_keys=["gamma"],
+        )
+        restored = NodeDefinition.from_dict(node.to_dict())
+        assert restored.input_keys == ["alpha", "beta"]
+        assert restored.output_keys == ["gamma"]

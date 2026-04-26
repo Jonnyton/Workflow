@@ -64,6 +64,39 @@ def _template_placeholders(template: str) -> list[str]:
     return out
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Validation errors
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class NodeDefinitionValidationError(ValueError):
+    """Raised when a NodeDefinition load/construct hits a type-level shape error.
+
+    Carries `field` + `message` attrs so MCP-layer handlers can render the
+    structured envelope ``{"error": "validation", "field": ..., "message": ...}``
+    that BUG-029-style chatbot contracts expect; falls back to plain
+    ``str(exc)`` for callers that just want a human-readable message.
+
+    Subclass of ``ValueError`` so existing ``except ValueError`` catch
+    sites keep working — the structured shape is opt-in.
+
+    Use case (Mara 2026-04-26): a chatbot writes a branch row with
+    ``output_keys: "framed_question"`` (str instead of list) via a path
+    that bypasses the lenient write-side ``_coerce_node_keys`` helper,
+    and the row later round-trips through ``NodeDefinition.from_dict``
+    with the string intact. Without strict read-side validation, the
+    string would be character-iterated into ``['f','r','a',...]`` and
+    silently corrupt downstream sandbox/state handling. With this
+    exception raised in ``__post_init__``, the load fails loudly per
+    Hard Rule #8.
+    """
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(f"{field}: {message}")
+        self.field = field
+        self.message = message
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # State Schema (Phase 3 — formal validation deferred)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -272,6 +305,30 @@ class NodeDefinition:
                 f"Invalid phase '{self.phase}'. "
                 f"Must be one of: {', '.join(sorted(VALID_PHASES))}"
             )
+        # Read-side strict validation for input_keys / output_keys
+        # (Task #12, Option B). Fail loudly when a persisted branch row
+        # holds a non-list value — typically a bare string from a
+        # pre-fix write or a non-funnel write path that bypassed the
+        # lenient `_coerce_node_keys` helper. Without this guard,
+        # downstream `for k in node.input_keys:` iterates the string
+        # character-by-character, silently corrupting sandbox/state
+        # handling. Per Hard Rule #8, we'd rather fail to load than
+        # accept malformed data.
+        for field_name in ("input_keys", "output_keys"):
+            value = getattr(self, field_name)
+            if not isinstance(value, list):
+                raise NodeDefinitionValidationError(
+                    field_name,
+                    f"must be a list of strings, got "
+                    f"{type(value).__name__}",
+                )
+            for idx, item in enumerate(value):
+                if not isinstance(item, str):
+                    raise NodeDefinitionValidationError(
+                        field_name,
+                        f"[{idx}] must be a string, got "
+                        f"{type(item).__name__}",
+                    )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -323,3 +323,47 @@ def test_unrecognised_edge_entry_raises():
         branch_from_yaml_payload(
             payload, {n["id"]: n for n in node_payloads},
         )
+
+
+def test_node_from_yaml_rejects_str_input_keys():
+    """Task #12: a YAML payload with `input_keys: framed_question` (str)
+    used to char-iterate into ['f','r','a','m','e','d',...] under
+    `list(payload.get(...) or [])`. Now passes through to
+    NodeDefinition's read-side validator which rejects with
+    NodeDefinitionValidationError."""
+    from workflow.branches import NodeDefinitionValidationError
+
+    payload = {
+        "id": "x", "display_name": "X",
+        "input_keys": "framed_question",
+    }
+    with pytest.raises(NodeDefinitionValidationError) as exc_info:
+        node_from_yaml_payload(payload)
+    assert exc_info.value.field == "input_keys"
+    assert "got str" in exc_info.value.message
+
+
+def test_node_from_yaml_rejects_str_output_keys():
+    """Same gap on the output_keys side (Mara's 2026-04-26 case)."""
+    from workflow.branches import NodeDefinitionValidationError
+
+    payload = {
+        "id": "x", "display_name": "X",
+        "output_keys": "framed_question",
+    }
+    with pytest.raises(NodeDefinitionValidationError) as exc_info:
+        node_from_yaml_payload(payload)
+    assert exc_info.value.field == "output_keys"
+    assert "got str" in exc_info.value.message
+
+
+def test_node_from_yaml_passes_proper_lists():
+    """Positive control: list[str] survives the read-side guard."""
+    payload = {
+        "id": "x", "display_name": "X",
+        "input_keys": ["a", "b"],
+        "output_keys": ["c"],
+    }
+    node = node_from_yaml_payload(payload)
+    assert node.input_keys == ["a", "b"]
+    assert node.output_keys == ["c"]

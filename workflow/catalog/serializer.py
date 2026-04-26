@@ -238,13 +238,20 @@ def node_to_yaml_payload(node: NodeDefinition) -> dict[str, Any]:
 
 
 def node_from_yaml_payload(payload: dict[str, Any]) -> NodeDefinition:
+    # Note: input_keys/output_keys are passed through as-is (with a
+    # None→[] guard) rather than wrapped in `list(...)`. A bare-string
+    # value like `input_keys: framed_question` would char-iterate under
+    # `list(...)` into ['f','r','a',...] — silent corruption that
+    # bypasses NodeDefinition's read-side validator (Task #12). With
+    # pass-through, the str reaches `__post_init__` and gets rejected
+    # by `NodeDefinitionValidationError`.
     return NodeDefinition(
         node_id=payload.get("id", ""),
         display_name=payload.get("display_name", ""),
         description=payload.get("description", ""),
         phase=payload.get("phase", "custom"),
-        input_keys=list(payload.get("input_keys", []) or []),
-        output_keys=list(payload.get("output_keys", []) or []),
+        input_keys=payload.get("input_keys") or [],
+        output_keys=payload.get("output_keys") or [],
         source_code=payload.get("source_code", ""),
         prompt_template=payload.get("prompt_template", ""),
         model_hint=payload.get("model_hint", ""),
