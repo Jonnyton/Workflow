@@ -107,9 +107,15 @@ def _post(
             new_sid = resp.headers.get("mcp-session-id") or sid
             body = resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
-        raise SweepError(step_code, f"HTTP {exc.code} on {payload.get('method','?')}: {exc.reason}") from exc
+        raise SweepError(
+            step_code,
+            f"HTTP {exc.code} on {payload.get('method','?')}: {exc.reason}",
+        ) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise SweepError(step_code, f"network error on {payload.get('method','?')}: {exc}") from exc
+        raise SweepError(
+            step_code,
+            f"network error on {payload.get('method','?')}: {exc}",
+        ) from exc
 
     parsed: dict | None = None
     for line in body.splitlines():
@@ -160,7 +166,10 @@ def fetch_wiki_list(url: str, timeout: float) -> list[dict[str, Any]]:
         raise SweepError(3, f"tools/call wiki action=list returned no result: {resp!r}")
     result = resp["result"]
     if result.get("isError"):
-        raise SweepError(3, f"tools/call wiki action=list returned isError: {_extract_tool_text(result)}")
+        raise SweepError(
+            3,
+            f"tools/call wiki action=list returned isError: {_extract_tool_text(result)}",
+        )
 
     text = _extract_tool_text(result)
     structured = result.get("structuredContent") or {}
@@ -174,10 +183,18 @@ def fetch_wiki_list(url: str, timeout: float) -> list[dict[str, Any]]:
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
-            return list(parsed.get("promoted") or []) + list(parsed.get("drafts") or []) + list(parsed.get("pages") or [])
+            return (
+                list(parsed.get("promoted") or [])
+                + list(parsed.get("drafts") or [])
+                + list(parsed.get("pages") or [])
+            )
     except (json.JSONDecodeError, AttributeError):
         pass
-    raise SweepError(3, f"could not parse pages list from wiki response: structured_keys={list(structured.keys())} text_first_200={text[:200]!r}")
+    raise SweepError(
+        3,
+        f"could not parse pages list from wiki response: "
+        f"structured_keys={list(structured.keys())} text_first_200={text[:200]!r}",
+    )
 
 
 _PAGE_ROW_RE = re.compile(r"^\|\s*(?P<path>(?:pages|drafts)/[^|]+\.md)\s*\|", re.MULTILINE)
@@ -308,9 +325,15 @@ def update_cursor(cursor_path: Path, cursor_text: str, live_pages: list[dict[str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Navigator wiki sweep helper")
     parser.add_argument("--url", default=DEFAULT_URL, help=f"MCP endpoint (default: {DEFAULT_URL})")
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="HTTP timeout seconds")
+    parser.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT,
+        help="HTTP timeout seconds",
+    )
     parser.add_argument("--cursor", default=str(DEFAULT_CURSOR_PATH), help="Cursor file path")
-    parser.add_argument("--update-cursor", action="store_true", help="Write last_sweep timestamp on success")
+    parser.add_argument(
+        "--update-cursor", action="store_true",
+        help="Write last_sweep timestamp on success",
+    )
     args = parser.parse_args(argv)
 
     cursor_path = Path(args.cursor)
