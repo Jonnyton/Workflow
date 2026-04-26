@@ -122,7 +122,7 @@ Are you there? Call get_status and tell me the llm_endpoint_bound value.
 
 ## PROBE-003 — Wiki write-roundtrip (auto-heal pipeline integrity)
 
-**Validated:** wiki canary script live since 2026-04-22; logs roundtripped probes to `.agents/uptime.log`.
+**Validated:** wiki canary script live since 2026-04-22; logs roundtripped probes to `.agents/uptime.log`. Scheduled in CI 2026-04-26 — Layer-1e step in `.github/workflows/uptime-canary.yml` runs every 5 min on the GHA cron alongside the other Layer-1 probes.
 **Source script:** `scripts/wiki_canary.py`
 **Persona:** `wiki-canary` (automated; client name `wiki-canary/1.0`)
 **Connector URL under test:** `https://tinyassets.io/mcp`
