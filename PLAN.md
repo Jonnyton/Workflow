@@ -54,7 +54,7 @@ The canonical subpackage layout the codebase is moving toward. Rooted in the spa
 
 | Subpackage | Responsibility |
 |---|---|
-| `workflow/api/` | MCP tool surfaces. Mounted submodules per capability cluster (`api/branches.py`, `api/runs.py`, `api/judgments.py`, `api/goals.py`, `api/wiki.py`, etc.). Per FastMCP `mount()` pattern. **No god-modules.** |
+| `workflow/api/` | MCP tool surfaces. Mounted submodules per capability cluster. Landed today (2026-04-26): `api/helpers.py`, `api/wiki.py`, `api/status.py`. In-flight per `docs/audits/2026-04-25-universe-server-decomposition.md` 8-step plan: `api/runs.py`, `api/evaluation.py`, `api/runtime_ops.py`, `api/market.py`, `api/branches.py`. Per FastMCP `mount()` pattern. **No god-modules.** |
 | `workflow/storage/` | Schema + bounded-context storage layers (`storage/accounts.py`, `storage/universes_branches.py`, `storage/requests_votes.py`, `storage/notes_work_targets.py`, `storage/goals_gates.py`). Shared `_connect()` + migrations in `__init__.py`. |
 | `workflow/runtime/` | Run scheduling primitives. Consolidates `runs.py`, `work_targets.py`, `dispatcher.py`, `branch_tasks.py`, `subscriptions.py`, plus existing `producers/` + `executors/` subpackages. `runtime/__init__.py` re-exports the public API. |
 | `workflow/bid/` | Per-node paid-market mechanics. Consolidates `node_bid.py`, `bid_execution_log.py`, `bid_ledger.py`, `settlements.py`. |
@@ -225,7 +225,7 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Shipping rule:** MCP tools and prompts publish explicit titles, tags, and behavior hints through the registered FastMCP surface — the daemon exposes a small number of coarse-grained tools, so discoverability metadata is part of the interface contract.
 
-**Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** The current 10k-line `universe_server.py` is in-flight refactor scope, not the target state.
+**Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** `workflow/universe_server.py` (12.4k LOC as of 2026-04-26, down from 14k peak) is in-flight refactor scope per `docs/audits/2026-04-25-universe-server-decomposition.md` — 3 of 8 steps landed (helpers, wiki, status); 5 remain (runs, evaluation, runtime_ops, market, branches).
 
 ---
 
@@ -328,5 +328,5 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 - **Structural scaffolding should shrink** as models improve — hard maxima and routing thresholds only survive if evals prove they help.
 - **Hybrid memory must become one policy.** Retrieval and memory may be separate implementations, but they should behave like one coherent decision system from the daemon's perspective.
 - **State contract mismatches are bugs.** TypedDicts, node outputs, and downstream consumers must agree.
-- **God-module decomposition is in-flight, not done.** `workflow/universe_server.py` (9.9k LOC) and `workflow/daemon_server.py` (3.6k LOC) are the dominant violations of the Module Layout commitment above. Refactor sequenced after rename Phase 5 — see spaghetti audit hotspots #1-#2 for the migration shape.
+- **God-module decomposition is in-flight, not done.** `workflow/universe_server.py` (12.4k LOC, down from 14k peak; 3 of 8 audit-prescribed extractions landed 2026-04-26) and `workflow/daemon_server.py` (3.6k LOC) are the dominant violations of the Module Layout commitment above. Decomp is sequenced ahead of the rename Phase 5 collapse per the active session's ordering — see `docs/audits/2026-04-25-universe-server-decomposition.md` for the 8-step migration shape.
 - **Postgres-canonical vs GitHub-canonical (Q1 in full-platform note) is the largest unresolved architectural decision.** Until host answers, two design shapes coexist in this document. The decision should land in the next few cycles to avoid further documentation divergence.
