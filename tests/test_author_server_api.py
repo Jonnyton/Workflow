@@ -168,9 +168,8 @@ def test_configure_bootstraps_universes_from_filesystem(tmp_path):
     DB. Regression guard for the missing bootstrap call — without it,
     downstream branch/request/runtime endpoints 404 on un-synced universes.
     """
-    from fantasy_author.api import configure
-
     import workflow.daemon_server as author_server
+    from fantasy_daemon.api import configure
 
     # Fresh base dir with a universe directory (no prior configure).
     base = tmp_path / "fresh_base"

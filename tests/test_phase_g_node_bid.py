@@ -1071,7 +1071,7 @@ def test_race_bypass_rejected_when_remote_configured(
         return None  # always "race lost"
     monkeypatch.setattr(nb_mod, "claim_node_bid", _patched_claim)
 
-    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from fantasy_daemon.__main__ import _try_execute_claimed_node_bid
     from workflow.branch_tasks import BranchTask
 
     task = BranchTask(
@@ -1121,7 +1121,7 @@ def test_fallback_still_works_without_remote(
         return None
     monkeypatch.setattr(nb_mod, "claim_node_bid", _patched_claim)
 
-    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from fantasy_daemon.__main__ import _try_execute_claimed_node_bid
     from workflow.branch_tasks import BranchTask
 
     task = BranchTask(
@@ -1157,7 +1157,7 @@ def test_fallback_rejected_when_remote_and_yaml_missing(
         nb_mod, "claim_node_bid", lambda r, b, d: None,
     )
 
-    from fantasy_author.__main__ import _try_execute_claimed_node_bid
+    from fantasy_daemon.__main__ import _try_execute_claimed_node_bid
     from workflow.branch_tasks import BranchTask
 
     task = BranchTask(

@@ -587,7 +587,7 @@ def test_flag_matrix_default_off_state(monkeypatch):
 def test_wire_up_try_pick_returns_none_when_queue_empty(
     universe_dir, monkeypatch,
 ):
-    from fantasy_author.__main__ import _try_dispatcher_pick
+    from fantasy_daemon.__main__ import _try_dispatcher_pick
 
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "1")
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "on")
@@ -599,7 +599,7 @@ def test_wire_up_try_pick_returns_none_when_queue_empty(
 def test_wire_up_try_pick_claims_pending_task(
     universe_dir, monkeypatch,
 ):
-    from fantasy_author.__main__ import _try_dispatcher_pick
+    from fantasy_daemon.__main__ import _try_dispatcher_pick
 
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "1")
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "on")
@@ -629,7 +629,7 @@ def test_wire_up_try_pick_claims_pending_task(
 
 def test_wire_up_cancel_during_claim_race(universe_dir, monkeypatch):
     """Invariant 8.2: cancel between select + claim → None, no raise."""
-    from fantasy_author.__main__ import _try_dispatcher_pick
+    from fantasy_daemon.__main__ import _try_dispatcher_pick
 
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "1")
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "on")
@@ -663,7 +663,7 @@ def test_wire_up_cancel_during_claim_race(universe_dir, monkeypatch):
 
 def test_wire_up_flag_off_returns_none(universe_dir, monkeypatch):
     """Dispatcher flag off → pick returns None regardless of queue."""
-    from fantasy_author.__main__ import _try_dispatcher_pick
+    from fantasy_daemon.__main__ import _try_dispatcher_pick
 
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "off")
     task = BranchTask(
@@ -678,7 +678,7 @@ def test_wire_up_flag_off_returns_none(universe_dir, monkeypatch):
 
 
 def test_wire_up_finalize_marks_succeeded(universe_dir):
-    from fantasy_author.__main__ import _finalize_claimed_task
+    from fantasy_daemon.__main__ import _finalize_claimed_task
 
     task = BranchTask(
         branch_task_id=new_task_id(),

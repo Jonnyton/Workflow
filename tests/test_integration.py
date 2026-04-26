@@ -2412,7 +2412,7 @@ class TestTrayMode:
         import io
         from unittest.mock import MagicMock
 
-        import fantasy_author.__main__ as main_mod
+        import fantasy_daemon.__main__ as main_mod
         from workflow.__main__ import (
             _drain_tunnel_stderr,
             _tunnel_url_ready,

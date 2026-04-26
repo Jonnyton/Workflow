@@ -192,7 +192,7 @@ def test_activity_log_parity_flag_off_vs_on(monkeypatch, tmp_path):
     Post-normalization assertion: after removing acceptable-diff lines,
     the two log line sets must be identical.
     """
-    from fantasy_author.__main__ import DaemonController
+    from fantasy_daemon.__main__ import DaemonController
 
     # Shared event corpus — representative sample of events the daemon logs.
     _ORIENT_EVENT = {
@@ -277,7 +277,7 @@ def test_activity_log_parity_acceptable_diff_surface_documented(monkeypatch, tmp
     new flag-on-only log lines are consciously added to
     _FLAG_ON_ONLY_PREFIXES before merging.
     """
-    from fantasy_author.__main__ import DaemonController
+    from fantasy_daemon.__main__ import DaemonController
 
     def _collect_lines(flag_value: str) -> set[str]:
         monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", flag_value)

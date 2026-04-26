@@ -28,7 +28,7 @@ import pytest
 
 def _make_controller_stub(universe_path: Path, pinned: str = ""):
     """Build a DaemonController without triggering its real start()."""
-    from fantasy_author.__main__ import DaemonController
+    from fantasy_daemon.__main__ import DaemonController
 
     controller = DaemonController.__new__(DaemonController)
     controller._universe_path = str(universe_path)
@@ -384,7 +384,7 @@ def test_router_pin_does_not_affect_non_writer_roles(
 
 def test_cli_pin_known_providers_covers_all_chains() -> None:
     """Every name in FALLBACK_CHAINS must pass the --provider validator."""
-    from fantasy_author.providers import router as router_mod
+    from fantasy_daemon.providers import router as router_mod
 
     known = set().union(*router_mod.FALLBACK_CHAINS.values())
     # Every chain-member we publish is acceptable input to the CLI.

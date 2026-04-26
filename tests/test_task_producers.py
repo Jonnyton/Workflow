@@ -12,12 +12,12 @@ import json
 from dataclasses import asdict
 
 import pytest
-
 from domains.fantasy_author.producers import (
     FantasyAuthorialProducer,
     SeedProducer,
     UserRequestProducer,
 )
+
 from workflow.producers import (
     TaskProducer,
     producer_interface_enabled,
@@ -58,9 +58,9 @@ def _clean_registry():
 
 
 def _reload_fantasy_init() -> None:
-    """Re-import ``domains.fantasy_author`` to re-register producers."""
-    from domains import fantasy_author
-    fantasy_author._init_producers()
+    """Re-import ``domains.fantasy_daemon`` to re-register producers."""
+    from domains import fantasy_daemon
+    fantasy_daemon._init_producers()
 
 
 # ─── Producer conformance ──────────────────────────────────────────────
@@ -357,6 +357,7 @@ def test_authorial_review_dispatches_through_producers_when_flag_on(
     from domains.fantasy_author.phases.authorial_priority_review import (
         authorial_priority_review,
     )
+
     from workflow.producers import register
 
     monkeypatch.setenv("WORKFLOW_PRODUCER_INTERFACE", "on")
@@ -393,6 +394,7 @@ def test_authorial_review_skips_producers_when_flag_off(
     from domains.fantasy_author.phases.authorial_priority_review import (
         authorial_priority_review,
     )
+
     from workflow.producers import register
 
     monkeypatch.setenv("WORKFLOW_PRODUCER_INTERFACE", "off")

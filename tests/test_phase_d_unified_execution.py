@@ -42,13 +42,13 @@ def clean_registry():
 
 @pytest.fixture
 def fresh_registrations(clean_registry):
-    """Guarantee fantasy_author.branch_registrations has registered
+    """Guarantee fantasy_daemon.branch_registrations has registered
     before the test runs, even if earlier tests cleared the registry.
     """
-    import fantasy_author.branch_registrations  # noqa: F401
+    import fantasy_daemon.branch_registrations  # noqa: F401
 
     # Re-registration is idempotent.
-    from fantasy_author.branch_registrations import universe_cycle_wrapper
+    from fantasy_daemon.branch_registrations import universe_cycle_wrapper
     clean_registry.register_domain_callable(
         "fantasy_author", "universe_cycle_wrapper", universe_cycle_wrapper,
     )
@@ -193,7 +193,7 @@ def test_template_path_unchanged_by_domain_id_thread(clean_registry):
 
 
 def test_universe_cycle_wrapper_is_registered(fresh_registrations):
-    """fantasy_author.branch_registrations module import registers
+    """fantasy_daemon.branch_registrations module import registers
     the wrapper at ("fantasy_author", "universe_cycle_wrapper").
     """
     fn = fresh_registrations.resolve_domain_callable(
@@ -234,8 +234,8 @@ def test_wrapper_returns_boundary_fields(fresh_registrations, monkeypatch):
         g.add_edge("step", END)
         return g
 
-    import fantasy_author.branch_registrations as br
-    import fantasy_author.graphs.universe as uni
+    import fantasy_daemon.branch_registrations as br
+    import fantasy_daemon.graphs.universe as uni
     monkeypatch.setattr(uni, "build_universe_graph", fake_build)
 
     out = br.universe_cycle_wrapper({
@@ -259,7 +259,7 @@ def test_flag_off_uses_direct_graph(monkeypatch):
     `build_universe_graph()` directly.
     """
     monkeypatch.delenv("WORKFLOW_UNIFIED_EXECUTION", raising=False)
-    from fantasy_author.__main__ import _workflow_unified_execution_enabled
+    from fantasy_daemon.__main__ import _workflow_unified_execution_enabled
     assert _workflow_unified_execution_enabled() is False
 
 
@@ -271,7 +271,7 @@ def test_flag_on_uses_compile_branch(monkeypatch, fresh_registrations):
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "1")
     from langgraph.graph import StateGraph
 
-    from fantasy_author.__main__ import (
+    from fantasy_daemon.__main__ import (
         _build_unified_graph_builder,
         _workflow_unified_execution_enabled,
     )
@@ -303,7 +303,7 @@ def test_flag_parsing_accepts_common_truthy_spellings(
     `workflow/universe_server.py`.
     """
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", flag_value)
-    from fantasy_author.__main__ import _workflow_unified_execution_enabled
+    from fantasy_daemon.__main__ import _workflow_unified_execution_enabled
     assert _workflow_unified_execution_enabled() is expected
 
 
@@ -322,7 +322,7 @@ def test_flag_on_compile_failure_raises_no_silent_fallthrough(
     monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "1")
     # Clear and intentionally do NOT register the wrapper.
     clean_registry.clear_registry()
-    from fantasy_author.__main__ import _build_unified_graph_builder
+    from fantasy_daemon.__main__ import _build_unified_graph_builder
     from workflow.graph_compiler import CompilerError
 
     with pytest.raises(CompilerError):
@@ -380,11 +380,11 @@ def test_producer_registry_no_double_registration(fresh_registrations):
     entry per (domain_id, node_id) key — no duplicates — counted by
     object id so identical re-registrations still show as one slot.
     """
-    import fantasy_author.branch_registrations  # re-import is idempotent
+    import fantasy_daemon.branch_registrations  # re-import is idempotent
     from workflow import domain_registry as dr
 
     # Simulate two imports (re-registration).
-    importlib.reload(fantasy_author.branch_registrations)
+    importlib.reload(fantasy_daemon.branch_registrations)
     registry = dr._REGISTRY
     # Distinct object ids by entry (value). The INVARIANT as written
     # in preflight §4.3 #4 says: len({id(p) for p in registry}) ==
@@ -443,8 +443,8 @@ def test_boundary_state_round_trip(fresh_registrations, monkeypatch):
         g.add_edge("run", END)
         return g
 
-    import fantasy_author.branch_registrations as br
-    import fantasy_author.graphs.universe as uni
+    import fantasy_daemon.branch_registrations as br
+    import fantasy_daemon.graphs.universe as uni
     monkeypatch.setattr(uni, "build_universe_graph", fake_build)
 
     out = br.universe_cycle_wrapper({
@@ -476,7 +476,7 @@ def test_flag_on_boundary_state_resumes_only_six_fields(
     # run one invocation, check saved state shape.
     from langgraph.checkpoint.sqlite import SqliteSaver
 
-    from fantasy_author.__main__ import _build_unified_graph_builder
+    from fantasy_daemon.__main__ import _build_unified_graph_builder
 
     graph = _build_unified_graph_builder()
     db_path = tmp_path / "ckpt.sqlite"
@@ -521,7 +521,7 @@ def test_flag_on_boundary_state_resumes_only_six_fields(
 def test_flag_off_default_is_off(monkeypatch):
     """No env var set → flag is off. Direct path is the default."""
     monkeypatch.delenv("WORKFLOW_UNIFIED_EXECUTION", raising=False)
-    from fantasy_author.__main__ import _workflow_unified_execution_enabled
+    from fantasy_daemon.__main__ import _workflow_unified_execution_enabled
     assert _workflow_unified_execution_enabled() is False
 
 
@@ -529,7 +529,7 @@ def test_seed_yaml_exists_and_compiles(fresh_registrations):
     """The committed seed YAML is a valid BranchDefinition that
     compiles cleanly. Landing regression guard.
     """
-    from fantasy_author.__main__ import _build_unified_graph_builder
+    from fantasy_daemon.__main__ import _build_unified_graph_builder
     graph = _build_unified_graph_builder()
     assert graph is not None
     compiled = graph.compile()

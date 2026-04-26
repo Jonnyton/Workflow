@@ -372,7 +372,7 @@ def test_dispatcher_flag_matrix_observational_safe(
     Observational means: no side effects on branch_tasks.json beyond the
     startup-recovery + GC already permitted by invariants 7 + 10.
     """
-    from fantasy_author.__main__ import _dispatcher_observe, _dispatcher_startup
+    from fantasy_daemon.__main__ import _dispatcher_observe, _dispatcher_startup
 
     monkeypatch.setenv(
         "WORKFLOW_UNIFIED_EXECUTION", "1" if phase_d == "on" else "0",
@@ -395,7 +395,7 @@ def test_dispatcher_flag_off_returns_no_observation_logs(
     universe_dir, monkeypatch, caplog,
 ):
     """Phase E flag off → dispatcher_observe silently skips (no log)."""
-    from fantasy_author.__main__ import _dispatcher_observe
+    from fantasy_daemon.__main__ import _dispatcher_observe
 
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "off")
     append_task(universe_dir, _make_task(trigger_source="host_request"))
@@ -432,7 +432,7 @@ def test_dispatcher_observe_does_not_raise_on_corrupt_queue(
 ):
     """Observational path must NOT crash the daemon even if the
     queue file is corrupt — it logs and moves on."""
-    from fantasy_author.__main__ import _dispatcher_observe
+    from fantasy_daemon.__main__ import _dispatcher_observe
 
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "on")
     queue_path(universe_dir).write_text("{not json", encoding="utf-8")
