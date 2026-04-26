@@ -139,3 +139,143 @@ class TestGetStatusCooldownField:
         assert "per_provider_cooldown_remaining" in payload, (
             "per_provider_cooldown_remaining not in get_status schema_version=1 response"
         )
+
+
+# ---- BUG-029 Part B — failure-taxonomy completeness matrix ---------------
+#
+# The chatbot UX surface depends on (failure_class, actionable_by,
+# suggested_action) being uniformly populated for every recognised
+# failure mode. A latent gap — a failure_class with empty actionable_by
+# or empty suggested_action — would render as "Run failed" with no
+# recovery hint, defeating the BUG-029 fix.
+#
+# These tests lock in the taxonomy contract:
+#   1. Every key in `ACTIONABLE_BY` resolves to one of {host, chatbot,
+#      user, none} via the canonical `_actionable_by` helper.
+#   2. Every classifier branch in `_classify_run_outcome_error` returns
+#      a non-empty `suggested_action` AND that the returned class is in
+#      `ACTIONABLE_BY` (so chatbot can always look up `actionable_by`).
+#
+# Source of truth: `workflow.runs.ACTIONABLE_BY` (canonical map).
+# Helpers under test live at `workflow.universe_server._actionable_by`
+# and `workflow.universe_server._classify_run_outcome_error` (back-compat
+# shim re-exports from `workflow.api.runs` post-decomp Step 4).
+
+
+_VALID_ACTIONABLE_BY = frozenset({"host", "chatbot", "user", "none"})
+
+
+@pytest.fixture(scope="module")
+def actionable_by_table() -> dict[str, str]:
+    from workflow.runs import ACTIONABLE_BY
+    return ACTIONABLE_BY
+
+
+@pytest.fixture(scope="module")
+def actionable_by_helper():
+    from workflow.universe_server import _actionable_by
+    return _actionable_by
+
+
+class TestActionableByCompleteness:
+    """Every failure_class in the canonical map must resolve to a known bucket."""
+
+    def test_every_class_resolves_to_known_bucket(
+        self, actionable_by_table, actionable_by_helper,
+    ):
+        for failure_class, expected_bucket in actionable_by_table.items():
+            actual = actionable_by_helper(failure_class)
+            assert actual == expected_bucket, (
+                f"{failure_class}: helper returned {actual!r}, "
+                f"map declares {expected_bucket!r}"
+            )
+            assert actual in _VALID_ACTIONABLE_BY, (
+                f"{failure_class}: bucket {actual!r} is not one of "
+                f"{sorted(_VALID_ACTIONABLE_BY)}"
+            )
+
+    def test_unknown_class_falls_back_to_user(self, actionable_by_helper):
+        """Conservative-default: unmapped classes escalate to 'user', never silently drop."""
+        assert actionable_by_helper("definitely_not_a_real_class") == "user"
+        assert actionable_by_helper("") == "user"
+
+    def test_taxonomy_covers_all_four_buckets(self, actionable_by_table):
+        """Sanity-check: the canonical map exercises every bucket. If a future
+        edit collapses the taxonomy to 3 buckets, this catches the regression."""
+        buckets = set(actionable_by_table.values())
+        assert buckets == _VALID_ACTIONABLE_BY, (
+            f"ACTIONABLE_BY no longer covers all 4 buckets — got {sorted(buckets)}"
+        )
+
+
+# Strings keyed by the failure_class each classifier branch should emit.
+# One representative string per regex/branch in `_classify_run_outcome_error`.
+# When a new branch is added, this table MUST grow to match — otherwise the
+# new branch will silently emit an unmapped failure_class.
+_OUTCOME_ERROR_FIXTURES: tuple[tuple[str, str], ...] = (
+    ("Empty LLM response from provider", "empty_llm_response"),
+    ("Run timed out after 60s", "timeout"),
+    ("Quota exhausted on Anthropic API", "quota_exhausted"),
+    ("Provider overloaded — 503 service unavailable", "provider_overloaded"),
+    ("Maximum context length exceeded for model", "context_length_exceeded"),
+    ("Auth expired: token refresh required", "permission_denied:auth_expired"),
+    ("Approval required for source_code node", "node_not_approved"),
+    ("Permission denied", "permission_denied:approval_required"),
+    ("Subprocess failure: exit code 127", "provider_subprocess_failed"),
+    ("Concurrent modification conflict", "state_mutation_conflict"),
+    ("Provider unavailable: no API key", "provider_unavailable"),
+    ("Groq call failed: HTTP 502", "provider_error"),
+)
+
+
+@pytest.fixture(scope="module")
+def classify_outcome():
+    from workflow.universe_server import _classify_run_outcome_error
+    return _classify_run_outcome_error
+
+
+@pytest.mark.parametrize("error_string,expected_class", _OUTCOME_ERROR_FIXTURES)
+class TestClassifyOutcomeErrorCompleteness:
+    """For every classifier branch, the (failure_class, suggested_action) pair
+    must be non-empty AND the failure_class must be in ACTIONABLE_BY (so the
+    chatbot can always look up `actionable_by` for the same class)."""
+
+    def test_classifier_returns_expected_class(
+        self, classify_outcome, error_string, expected_class,
+    ):
+        result = classify_outcome(error_string)
+        assert result is not None, (
+            f"{error_string!r} → None (expected ({expected_class!r}, ...))"
+        )
+        actual_class, _ = result
+        assert actual_class == expected_class, (
+            f"{error_string!r} → {actual_class!r} (expected {expected_class!r})"
+        )
+
+    def test_classifier_returns_non_empty_suggested_action(
+        self, classify_outcome, error_string, expected_class,
+    ):
+        result = classify_outcome(error_string)
+        _, suggested_action = result
+        assert suggested_action, (
+            f"{error_string!r} ({expected_class!r}): empty suggested_action"
+        )
+        assert len(suggested_action) >= 20, (
+            f"{error_string!r} ({expected_class!r}): suggested_action too "
+            f"terse to be actionable: {suggested_action!r}"
+        )
+
+    def test_classified_class_resolves_to_known_actionable_by(
+        self, classify_outcome, actionable_by_table, error_string, expected_class,
+    ):
+        """The class emitted by the classifier MUST appear in ACTIONABLE_BY.
+        Otherwise the chatbot's `_actionable_by(failure_class)` lookup
+        falls back to 'user' (safe default), masking the real recovery
+        path the host/chatbot could have taken."""
+        result = classify_outcome(error_string)
+        actual_class, _ = result
+        assert actual_class in actionable_by_table, (
+            f"{error_string!r} → {actual_class!r}, but {actual_class!r} is "
+            f"NOT in workflow.runs.ACTIONABLE_BY. Add it to the canonical "
+            f"map so chatbot can render a non-default actionable_by."
+        )
