@@ -30,6 +30,16 @@ WorkingDirectory=/opt/workflow
 StateDirectory=workflow-watchdog
 StateDirectoryMode=0750
 
+# /var/log/workflow needs to be writable by the workflow user. systemd
+# creates + chowns it on first start. Houses the structured alarm log
+# (`uptime_alarms.log`) that scripts/watchdog.py writes via the
+# WORKFLOW_WATCHDOG_ALARM_LOG env-var (default = /var/log/workflow/uptime_alarms.log).
+# Pre-2026-04-26 the alarm log lived at the repo-relative
+# `.agents/uptime_alarms.log` which collided with test writes; see
+# docs/audits/2026-04-26-restart-loop-correlation.md.
+LogsDirectory=workflow
+LogsDirectoryMode=0750
+
 # Need sudo to issue systemctl restart. The workflow user gets a
 # tightly-scoped sudoers rule installed by the bootstrap (see
 # HETZNER-DEPLOY.md): workflow ALL=(root) NOPASSWD:/usr/bin/systemctl

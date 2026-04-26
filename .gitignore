@@ -25,6 +25,13 @@ deploy/cloudflare-worker/.wrangler/
 .claude/worktrees/
 .claude/agent-memory/
 
+# Watchdog alarm log — production log on the droplet writes to
+# /var/log/workflow/uptime_alarms.log (see scripts/watchdog.py +
+# deploy/workflow-watchdog.service `LogsDirectory=workflow`). The
+# repo-relative path is test-only and must not be tracked. Audit:
+# docs/audits/2026-04-26-restart-loop-correlation.md.
+.agents/uptime_alarms.log
+
 # Secrets
 .secrets/
 .provider_keys.json

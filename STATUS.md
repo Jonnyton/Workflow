@@ -18,6 +18,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [2026-04-25] ChatGPT connector approval bug: Update Node approval errored; retry saved node v2.
 - [2026-04-25] ChatGPT Run Branch approval stalled after access grant; no run ID rendered.
 - [2026-04-25] ChatGPT UX: normal users need name-based workflow refs, not raw branch IDs.
+- [2026-04-26] Watchdog production observability gap CLOSED via Task #20: prod alarm log moved to `/var/log/workflow/uptime_alarms.log` (env-overridable); `.agents/` path retired, `.gitignore`d. Audit: `docs/audits/2026-04-26-restart-loop-correlation.md`.
 
 ## Approved Specs
 

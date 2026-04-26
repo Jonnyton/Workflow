@@ -16,12 +16,37 @@ _SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+import watchdog as _watchdog_module  # noqa: E402
 from watchdog import watchdog_tick  # noqa: E402
 
 
 @pytest.fixture
 def state_path(tmp_path):
     return tmp_path / "state.json"
+
+
+@pytest.fixture
+def alarm_path(tmp_path):
+    """Per-test alarm-log path. Pair with `alarm_log=alarm_path` on
+    every `watchdog_tick()` call to keep test writes out of the
+    production-shared `.agents/uptime_alarms.log`. The autouse
+    `_isolate_alarm_log` fixture below is a belt-and-suspenders guard
+    in case a future test forgets to inject this explicitly.
+    """
+    return tmp_path / "uptime_alarms.log"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_alarm_log(monkeypatch, tmp_path):
+    """Rebind `watchdog.ALARM_LOG` to a per-test tmp path so any
+    `watchdog_tick()` call that doesn't pass an explicit `alarm_log=`
+    cannot write to the production-shared file. Closes the test-
+    pollution class diagnosed in
+    docs/audits/2026-04-26-restart-loop-correlation.md.
+    """
+    monkeypatch.setattr(
+        _watchdog_module, "ALARM_LOG", tmp_path / "uptime_alarms.log",
+    )
 
 
 def _green_probe():

@@ -60,8 +60,16 @@ DEFAULT_THRESHOLD = 3
 # (bad env, dep issue) isn't "restart will fix it."
 MIN_RESTART_INTERVAL_SECONDS = 600  # 10 min
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-ALARM_LOG = _REPO_ROOT / ".agents" / "uptime_alarms.log"
+# Production alarm-log path. Env-var override allows tests + dev setups
+# to redirect to a tmp path without touching the real production file.
+# Pre-2026-04-26 default was `_REPO_ROOT / ".agents" / "uptime_alarms.log"`,
+# which collided with `tests/test_watchdog.py` writes (no `alarm_log=`
+# injection) and contaminated the only signal we had for production
+# watchdog behavior. Audit: docs/audits/2026-04-26-restart-loop-correlation.md.
+DEFAULT_ALARM_LOG = Path("/var/log/workflow/uptime_alarms.log")
+ALARM_LOG = Path(
+    os.environ.get("WORKFLOW_WATCHDOG_ALARM_LOG", str(DEFAULT_ALARM_LOG))
+)
 
 
 def _now_iso() -> str:
