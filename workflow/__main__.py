@@ -5,14 +5,15 @@ Usage::
     python -m workflow --domain fantasy_author [--universe PATH] [--api] [--port 8000]
 
 Loads a domain by name from the registry, builds its graph, and runs the daemon.
-Falls back to fantasy_author.__main__ for backward compatibility.
+Delegates daemon execution to ``fantasy_daemon.__main__.DaemonController``
+during the Phase 5 bridge.
 
 The entry point:
 1. Parses --domain, --universe, --api, --port arguments
 2. Auto-discovers and registers domains from the domains/ directory
 3. Looks up the requested domain from the registry
 4. Builds the domain's graph using domain.build_graph()
-5. For now, delegates daemon execution to fantasy_author.__main__.DaemonController
+5. For now, delegates daemon execution to fantasy_daemon.__main__.DaemonController
    (this is the Phase 5 bridge until runtime is fully extracted)
 6. If --api is set, also starts the FastAPI server on --port
 """
@@ -28,10 +29,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Phase 5 bridge re-exports
 # ---------------------------------------------------------------------------
-# The migration rewrote ``from fantasy_author.__main__ import …`` to
-# ``from workflow.__main__ import …`` across 60+ test call-sites.  Until the
-# runtime is fully extracted from fantasy_author, re-export the names so both
-# import paths work.
+# Re-export DaemonController + tunnel helpers from ``fantasy_daemon.__main__``
+# so callers can ``from workflow.__main__ import …`` without reaching into the
+# fantasy_daemon package directly. Tests still target this surface; the
+# block retires when the runtime fully moves out of fantasy_daemon.
 # ---------------------------------------------------------------------------
 import threading  # noqa: E402, F401  — tests patch workflow.__main__.threading
 
@@ -155,7 +156,7 @@ def main() -> int:
 
     logger.info("Loaded domain: %s", args.domain)
 
-    # Phase 5 bridge: for now, delegate to fantasy_author.__main__.DaemonController
+    # Phase 5 bridge: for now, delegate to fantasy_daemon.__main__.DaemonController
     # This allows the domain abstraction to be tested without fully extracting
     # the runtime. Once the runtime is extracted, this will build and execute
     # the domain's graph directly.
@@ -182,12 +183,12 @@ def main() -> int:
         if args.api:
             logger.info("Starting API server on port %d", args.port)
             # The API server is currently managed separately in
-            # fantasy_author.api.serve(). This integration will be completed
+            # fantasy_daemon.api.serve(). This integration will be completed
             # in a later phase. For now, users should run `python -m
-            # fantasy_author serve` separately.
+            # fantasy_daemon serve` separately.
             logger.warning(
                 "API server integration incomplete. "
-                "Run 'python -m fantasy_author serve' separately."
+                "Run 'python -m fantasy_daemon serve' separately."
             )
 
         # Run the daemon
