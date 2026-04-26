@@ -41,3 +41,13 @@
 - When a chatbot encounters an unexpected response field or a new action verb,
   check `docs/mcp-actions/` before assuming a schema error.
 - Index: `docs/mcp-actions/2026-04-25-session-additions.md`
+
+## Gate-branch shape
+
+- Standalone gate branches (`gate_investigation_v1`, `gate_review_v1`, etc.)
+  emit a uniform verdict shape so conditional-edge routing works generically
+  and chatbots converge on one consumer contract.
+- Verdict enum: `pass` / `send_back` / `reject` / `hold` / `rollback`.
+- See `docs/conventions/gate-branch-shape.md` for the full contract,
+  per-verdict required fields, worked example, and forward-compat plan
+  with the unified Evaluator type.
