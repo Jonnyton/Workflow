@@ -8,8 +8,12 @@ that class at PR time, before the canary goes red in production.
 Coverage:
     - All 6 scripts import without side effects (parametrized).
     - Each exposes a `main` callable.
-    - Shared helpers `_now_local_iso` / `_append_log` are defined exactly
-      once (in `uptime_canary`); wiki_canary imports them by reference.
+    - Log-line helpers (`_now_local_iso` / `_append_log`) are defined
+      exactly once in `uptime_canary`; wiki_canary imports them.
+    - HTTP+parse helpers (`_post`, `_extract_tool_text`, `_init_payload`,
+      `_INITIALIZED_NOTIF`) are defined exactly once in `_canary_common`;
+      mcp_tool / last_activity / revert_loop / wiki canaries import them
+      (Task #14 consolidation guard — locks in the BUG-028-class fix).
 """
 
 from __future__ import annotations
@@ -131,3 +135,101 @@ def test_tool_canary_helpers_reused_by_wiki_canary(
     # it resolves to the same class object.
     from mcp_tool_canary import ToolCanaryError as _ToolCanaryError
     assert _ToolCanaryError is tool.ToolCanaryError
+
+
+# ---- Task #14 consolidation guards --------------------------------------
+#
+# Locks in the move of `_post`, `_extract_tool_text`, `_init_payload`, and
+# `_INITIALIZED_NOTIF` to `scripts/_canary_common.py`. If a future author
+# re-introduces a local copy in any of the 4 callers, these identity
+# assertions fail loudly — same regression-guard pattern that
+# `test_log_helpers_single_definition` provides for the log helpers.
+
+_TOOL_CANARIES = (
+    "mcp_tool_canary", "last_activity_canary",
+    "revert_loop_canary", "wiki_canary",
+)
+
+
+@pytest.fixture(scope="module")
+def common_module() -> object:
+    return importlib.import_module("_canary_common")
+
+
+def test_extract_tool_text_single_definition(
+    loaded_modules: dict[str, object], common_module: object,
+) -> None:
+    """`_extract_tool_text` is the SAME function object across all 4 callers."""
+    common_fn = common_module._extract_tool_text
+    for name in _TOOL_CANARIES:
+        mod = loaded_modules[name]
+        assert mod._extract_tool_text is common_fn, (
+            f"{name}._extract_tool_text drifted from "
+            f"_canary_common._extract_tool_text. Re-import it from "
+            f"_canary_common rather than re-defining."
+        )
+
+
+def test_initialized_notif_single_definition(
+    loaded_modules: dict[str, object], common_module: object,
+) -> None:
+    """`_INITIALIZED_NOTIF` constant is the SAME object across all 4 callers."""
+    common_const = common_module._INITIALIZED_NOTIF
+    for name in _TOOL_CANARIES:
+        mod = loaded_modules[name]
+        assert mod._INITIALIZED_NOTIF is common_const, (
+            f"{name}._INITIALIZED_NOTIF drifted from "
+            f"_canary_common._INITIALIZED_NOTIF. Re-import it rather "
+            f"than re-defining the dict literal."
+        )
+
+
+def test_post_underlying_function_is_common(
+    loaded_modules: dict[str, object], common_module: object,
+) -> None:
+    """Each canary's `_post` wraps the SAME `_canary_common._post` function.
+
+    `_post` itself is `functools.partial(_post_raw, error_factory=...,
+    user_agent=...)` per canary — the partials are distinct instances but
+    the underlying `partial.func` must be the canonical implementation.
+    """
+    common_post = common_module._post
+    for name in _TOOL_CANARIES:
+        mod = loaded_modules[name]
+        # `wiki_canary._post` is imported from mcp_tool_canary (which IS
+        # a partial); follow the .func chain to land on `_canary_common._post`.
+        underlying = getattr(mod._post, "func", mod._post)
+        assert underlying is common_post, (
+            f"{name}._post is not backed by _canary_common._post "
+            f"(got underlying={underlying!r}). Re-bind via "
+            f"`functools.partial(_canary_common._post, ...)`."
+        )
+
+
+def test_init_payload_builder_single_definition(
+    loaded_modules: dict[str, object], common_module: object,
+) -> None:
+    """`_init_payload` builder lives in _canary_common only.
+
+    Each caller invokes it at module load to construct its own
+    `_INIT_PAYLOAD` (with a unique `clientInfo.name`). The builder
+    itself is single-source.
+    """
+    common_builder = common_module._init_payload
+    # Spot-check via call signature: each canary's _INIT_PAYLOAD must
+    # have been built by this builder. Sanity-check a known value.
+    expected_names = {
+        "mcp_tool_canary": "mcp-tool-canary",
+        "last_activity_canary": "last-activity-canary",
+        "revert_loop_canary": "revert-loop-canary",
+        "wiki_canary": "wiki-canary",
+    }
+    for name, expected_client_name in expected_names.items():
+        mod = loaded_modules[name]
+        payload = mod._INIT_PAYLOAD
+        assert payload == common_builder(expected_client_name), (
+            f"{name}._INIT_PAYLOAD does not match the canonical builder "
+            f"output for clientInfo.name={expected_client_name!r}. Drift "
+            f"means a manual dict literal crept back in — replace with "
+            f"`_init_payload({expected_client_name!r})`."
+        )

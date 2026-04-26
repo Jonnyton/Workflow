@@ -43,6 +43,7 @@ _REPO_ROOT = _SCRIPTS.parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+from _canary_common import _INITIALIZED_NOTIF, _init_payload  # noqa: E402
 from mcp_tool_canary import ToolCanaryError, _extract_tool_text, _post  # noqa: E402
 from uptime_canary import _append_log, _now_local_iso  # noqa: E402
 
@@ -61,17 +62,7 @@ _CANARY_CATEGORY = "notes"
 # the roundtrip check stays a simple substring match.
 _CANARY_CONTENT = "Workflow wiki uptime canary - automated write-roundtrip probe."
 
-_INIT_PAYLOAD = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "wiki-canary", "version": "1.0"},
-    },
-}
-_INITIALIZED_NOTIF = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+_INIT_PAYLOAD = _init_payload("wiki-canary")
 
 
 def _wiki_write_payload(call_id: int) -> dict:

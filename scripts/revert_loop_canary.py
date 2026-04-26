@@ -42,9 +42,19 @@ import json
 import os
 import re
 import sys
-import urllib.error
-import urllib.request
-from typing import Any
+from functools import partial
+from pathlib import Path
+
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+from _canary_common import (  # noqa: E402
+    _INITIALIZED_NOTIF,  # noqa: F401
+    _extract_tool_text,
+    _init_payload,
+)
+from _canary_common import _post as _post_raw  # noqa: E402
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
 DEFAULT_WARN_WINDOW_MIN = 10
@@ -68,17 +78,7 @@ _REVERT_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r"score\s+0\.0{1,2}\s*--\s*REVERT", re.IGNORECASE),
 )
 
-_INIT_PAYLOAD = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "revert-loop-canary", "version": "1.0"},
-    },
-}
-_INITIALIZED_NOTIF = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+_INIT_PAYLOAD = _init_payload("revert-loop-canary")
 
 
 class RevertLoopError(Exception):
@@ -88,6 +88,15 @@ class RevertLoopError(Exception):
         super().__init__(msg)
         self.code = code
         self.msg = msg
+
+
+# `_post` is the shared HTTP+parse path from `_canary_common`, partially
+# applied with this canary's exception constructor + User-Agent.
+_post = partial(
+    _post_raw,
+    error_factory=RevertLoopError,
+    user_agent="workflow-revert-loop-canary/1.0",
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -191,66 +200,8 @@ def classify_loop(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Network path (same shape as last_activity_canary).
+# Network path — `_post` + `_extract_tool_text` come from _canary_common.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _post(
-    url: str,
-    sid: str | None,
-    payload: dict[str, Any],
-    timeout: float,
-    *,
-    step_code: int,
-) -> tuple[dict | None, str | None]:
-    headers: dict[str, str] = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-        "User-Agent": "workflow-revert-loop-canary/1.0",
-    }
-    if sid:
-        headers["mcp-session-id"] = sid
-    req = urllib.request.Request(
-        url, data=json.dumps(payload).encode("utf-8"),
-        method="POST", headers=headers,
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            new_sid = resp.headers.get("mcp-session-id") or sid
-            body = resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raise RevertLoopError(
-            step_code,
-            f"HTTP {exc.code} on {payload.get('method','?')}: {exc.reason}",
-        ) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RevertLoopError(
-            step_code,
-            f"network error on {payload.get('method','?')}: {exc}",
-        ) from exc
-
-    parsed: dict | None = None
-    for line in body.splitlines():
-        line = line.strip()
-        if line.startswith("data:"):
-            try:
-                parsed = json.loads(line[5:].strip())
-            except json.JSONDecodeError:
-                pass
-        elif line.startswith("{"):
-            try:
-                parsed = json.loads(line)
-            except json.JSONDecodeError:
-                pass
-    return parsed, new_sid
-
-
-def _extract_tool_text(tool_result: dict[str, Any]) -> str:
-    return "".join(
-        item.get("text", "")
-        for item in tool_result.get("content", [])
-        if item.get("type") == "text"
-    )
 
 
 def fetch_status_activity_tail(
