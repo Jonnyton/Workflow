@@ -134,16 +134,51 @@ def test_systemd_unit_execstartpre_emits_canonical_marker():
 
 
 def test_deploy_prod_yaml_sed_sites_emit_canonical_marker():
-    text = _DEPLOY_YAML.read_text(encoding="utf-8")
-    # The canonical marker must be present in the failure paths of all three
-    # sed sites (scrub one-liner, deploy heredoc, rollback heredoc) plus the
-    # standalone assertion step.
-    occurrences = text.count(CANONICAL_MARKER)
-    # Expect at least 4: scrub + deploy heredoc + standalone assertion + rollback.
-    # (Comment mentions may add more; that's fine. Just guard the floor.)
-    assert occurrences >= 4, (
-        f"expected ≥4 canonical marker occurrences in deploy-prod.yml; "
-        f"got {occurrences}. Check that each sed site emits it on regression."
+    """Helper-mediated invariant: every env-mutation site in the YAML
+    invokes ``deploy/install-workflow-env.sh``, and the helper itself
+    emits the canonical ``ENV-UNREADABLE`` marker on the readability
+    failure path.
+
+    Task #9 Fix A centralized the marker into
+    ``deploy/install-workflow-env.sh::assert_readable()`` — replacing
+    the prior pattern of three inline marker emits in deploy-prod.yml
+    (scrub + deploy heredoc + rollback heredoc). The standalone
+    "Assert /etc/workflow/env readable by daemon user" step in the
+    YAML still emits the marker directly. So the new invariant is
+    cross-file: YAML invokes the helper from each mutation site AND
+    the helper file contains the marker.
+    """
+    yaml_text = _DEPLOY_YAML.read_text(encoding="utf-8")
+    helper_path = _REPO / "deploy" / "install-workflow-env.sh"
+    helper_text = helper_path.read_text(encoding="utf-8")
+
+    # Cross-file: helper carries the marker on its readability-fail path.
+    assert CANONICAL_MARKER in helper_text, (
+        f"deploy/install-workflow-env.sh must contain the canonical "
+        f"{CANONICAL_MARKER!r} marker so post-write readability failures "
+        f"surface in journalctl with the same token as the standalone "
+        f"assertions and the entrypoint."
+    )
+
+    # Within YAML: every env-mutation site routes through the helper.
+    # Three known mutation sites (scrub WIKI_PATH + deploy pin + rollback)
+    # plus the standalone assertion step that still inlines the marker.
+    helper_invocations = yaml_text.count("install-workflow-env.sh")
+    assert helper_invocations >= 3, (
+        f"expected ≥3 invocations of install-workflow-env.sh in "
+        f"deploy-prod.yml (scrub + deploy + rollback); got "
+        f"{helper_invocations}. A new sed-i site that mutates "
+        f"/etc/workflow/env without going through the helper would "
+        f"reintroduce the 2026-04-21 P0 perm-regression class."
+    )
+
+    # The standalone "Assert ... readable by daemon user" step still
+    # emits the marker directly (it's not a mutation site, just a
+    # steady-state canary). Confirm the YAML still carries the marker
+    # in at least one place so the standalone-assert path is intact.
+    assert CANONICAL_MARKER in yaml_text, (
+        f"deploy-prod.yml must still carry {CANONICAL_MARKER!r} for the "
+        f"standalone post-restart assertion step."
     )
 
 

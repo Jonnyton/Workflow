@@ -194,20 +194,22 @@ jobs:
       # Fall back to :latest. Log loudly: we've come off the pinned SHA,
       # which loses deterministic-deploy guarantees until the next
       # deploy-prod.yml run re-pins.
+      #
+      # Env mutation routes through deploy/install-workflow-env.sh —
+      # atomic install(1) write at root:workflow 640. Replaces the
+      # legacy sed -i + chown + chmod chain (RC-1 in
+      # docs/audits/2026-04-25-etc-workflow-env-mode-flip.md).
       - name: Repair — image pull failure (fall back to :latest)
         id: repair_pull
         if: steps.classify.outputs.class == 'image_pull_failure'
         run: |
           echo "::warning::image-pull failed — falling back to :latest (lose SHA pin)"
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/install-workflow-env.sh \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/install-workflow-env.sh"
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo sed -i 's|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=ghcr.io/jonnyton/workflow-daemon:latest|' /etc/workflow/env && \
-               sudo chown root:workflow /etc/workflow/env && \
-               sudo chmod 640 /etc/workflow/env && \
-               sudo -u workflow test -r /etc/workflow/env || { \
-                 echo 'ENV-UNREADABLE: fallback sed left /etc/workflow/env unreadable' >&2; \
-                 exit 1; \
-               }"
+              "printf '%s' 'ghcr.io/jonnyton/workflow-daemon:latest' | sudo bash /tmp/install-workflow-env.sh set WORKFLOW_IMAGE"
 
       # --- Repair branch 5: watchdog hot-loop --------------------------
       # stop → sleep 60 → start lets the systemd start-limit counter

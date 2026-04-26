@@ -115,13 +115,14 @@ jobs:
           echo "Previous: ${prev}"
 
       # INVARIANT — /etc/workflow/env must stay root:workflow 640.
-      # Every `sudo sed -i` on it MUST be followed by `sudo chown
-      # root:workflow ... && sudo chmod 640 ...`. `sed -i` writes to a
-      # temp file and renames, which drops group ownership + resets
-      # perms to umask (often 600). The systemd unit runs as
-      # user=workflow, which cannot read 600 root files → docker
-      # compose silently crash-loops → cloudflared never starts →
-      # public endpoint dark. Root cause of the 2026-04-21 P0 outage.
+      # All env mutations route through `deploy/install-workflow-env.sh`
+      # which uses `install -m 640 -o root -g workflow` for an atomic
+      # write. The legacy `sed -i + chown + chmod` chain (root cause of
+      # the 2026-04-21 P0 outage — see RC-1 in
+      # docs/audits/2026-04-25-etc-workflow-env-mode-flip.md) is gone.
+      # The helper asserts post-write readability by user=workflow, so
+      # any mode-flip class is caught at the call site, not later by
+      # systemd ExecStartPre.
       #
       # BUG-002 (2026-04-19): host's Windows WIKI_PATH leaked to the
       # droplet env file, making wiki_path() resolve to /app/C:\Users\...
@@ -131,40 +132,39 @@ jobs:
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo sed -i '/^WIKI_PATH=/d; /^WORKFLOW_WIKI_PATH=/d' /etc/workflow/env && sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env && (sudo -u workflow test -r /etc/workflow/env || { echo 'ENV-UNREADABLE: scrub step left /etc/workflow/env unreadable by user workflow' >&2; sudo ls -l /etc/workflow/env >&2; exit 1; })"
+              'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH' \
+              < deploy/install-workflow-env.sh
 
       - name: Deploy new image
         id: deploy
         run: |
           NEW_IMAGE="${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}"
           echo "Deploying: ${NEW_IMAGE}"
+          # Pin the new tag in /etc/workflow/env via the atomic helper.
+          # Helper enforces root:workflow 640 in a single install(1)
+          # call + asserts post-write readability by user=workflow.
+          # Replaces the legacy sed -i + chown + chmod chain that was
+          # the 2026-04-21 P0 root cause.
+          # First scp the helper to the droplet, then exec it with the
+          # new value piped in via stdin. Two SSH round-trips, but
+          # avoids stdin-multiplexing fragility on the runner shell.
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/install-workflow-env.sh \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/install-workflow-env.sh"
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" <<EOF
-            set -e
-            # Pin the new tag in /etc/workflow/env.
-            sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${NEW_IMAGE}|" /etc/workflow/env
-            # Restore owner/perms that sed -i clobbers (see P0 RCA comment above).
-            sudo chown root:workflow /etc/workflow/env
-            sudo chmod 640 /etc/workflow/env
-            # Assert the systemd unit's user can actually read the file.
-            # Without this, a perms regression silently bricks cloudflared.
-            if ! sudo -u workflow test -r /etc/workflow/env; then
-              # Canonical marker — greppable from journalctl, watchdog, and
-              # p0-outage-triage so auto-triage can self-repair this class
-              # without an SSH shell.
-              echo "ENV-UNREADABLE: deploy step left /etc/workflow/env unreadable by user workflow" >&2
-              sudo ls -l /etc/workflow/env >&2
-              exit 1
-            fi
-            # Pull + restart via the systemd unit (which runs docker
-            # compose down + up with the new env).
-            sudo docker pull "${NEW_IMAGE}"
-            sudo systemctl restart workflow-daemon
-          EOF
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "printf '%s' '${NEW_IMAGE}' | sudo bash /tmp/install-workflow-env.sh set WORKFLOW_IMAGE"
+          # Pull + restart via the systemd unit (which runs docker
+          # compose down + up with the new env).
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "set -e; sudo docker pull '${NEW_IMAGE}'; sudo systemctl restart workflow-daemon"
 
-      # Independent of the in-deploy assertion above: re-verify after the
-      # systemd restart has settled. Catches any out-of-band perm drift
-      # between the sed-and-restore and the post-restart steady state.
+      # Independent of the helper's in-call readability assert: re-verify
+      # after the systemd restart has settled. Steady-state canary that
+      # catches any out-of-band perm drift between the env install and
+      # the post-restart compose steady state (e.g. manual SSH edit
+      # racing the deploy step — RC-2 in the env mode-flip audit).
       - name: Assert /etc/workflow/env readable by daemon user
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
@@ -222,24 +222,23 @@ jobs:
 
       - name: Rollback on failure
         if: failure() && steps.deploy.outcome == 'success'
+        env:
+          PREV_IMAGE: ${{ steps.prev.outputs.previous }}
         run: |
-          echo "::warning::Rolling back to ${{ steps.prev.outputs.previous }}"
+          echo "::warning::Rolling back to ${PREV_IMAGE}"
+          # Restore previous tag via the atomic helper (same root:workflow
+          # 640 invariant as the deploy step). The helper is already in
+          # /tmp/install-workflow-env.sh from the deploy step's scp; if
+          # the deploy step failed before scp, push it again here.
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/install-workflow-env.sh \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/install-workflow-env.sh"
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" <<EOF
-            set -e
-            sudo sed -i "s|^WORKFLOW_IMAGE=.*|WORKFLOW_IMAGE=${{ steps.prev.outputs.previous }}|" /etc/workflow/env
-            # Restore owner/perms that sed -i clobbers (see P0 RCA comment above).
-            sudo chown root:workflow /etc/workflow/env
-            sudo chmod 640 /etc/workflow/env
-            if ! sudo -u workflow test -r /etc/workflow/env; then
-              # Canonical marker — greppable from journalctl + p0-outage-triage.
-              echo "ENV-UNREADABLE: rollback step left /etc/workflow/env unreadable by user workflow" >&2
-              sudo ls -l /etc/workflow/env >&2
-              exit 1
-            fi
-            sudo docker pull "${{ steps.prev.outputs.previous }}" || true
-            sudo systemctl restart workflow-daemon
-          EOF
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "printf '%s' '${PREV_IMAGE}' | sudo bash /tmp/install-workflow-env.sh set WORKFLOW_IMAGE"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "set -e; sudo docker pull '${PREV_IMAGE}' || true; sudo systemctl restart workflow-daemon"
           # Confirm rollback restored green.
           sleep 30
           python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
