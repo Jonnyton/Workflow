@@ -3771,6 +3771,12 @@ def extensions(
     contribution_kind: str = "remix",
     credit_share: float = 0.0,
     max_depth: int = 10,
+    # Surgical-rollback args (Task #22 Phase B). Routed via _RUN_ACTIONS
+    # to rollback_merge / get_rollback_history. `branch_version_id` is
+    # already declared above for run_branch_version.
+    reason: str = "",
+    severity: str = "P1",
+    since_days: int = 7,
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -3788,6 +3794,7 @@ def extensions(
       get_run_output.
     - Run extensions: wait_for_run, resume_run, query_runs, estimate_run_cost,
       run_branch_version.
+    - Surgical rollback: rollback_merge (host-only), get_rollback_history.
     - Versioning: publish_version, get_branch_version, list_branch_versions.
     - Scheduler: schedule_branch, unschedule_branch, list_schedules,
       subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
@@ -3934,6 +3941,7 @@ def extensions(
     # ── Phase 3: Graph Runner ──────────────────────────────────────────────
     run_kwargs: dict[str, Any] = {
         "branch_def_id": branch_def_id,
+        "branch_version_id": branch_version_id,
         "run_id": run_id,
         "inputs_json": inputs_json,
         "run_name": run_name,
@@ -3946,6 +3954,10 @@ def extensions(
         "filters_json": filters_json,
         "select": select,
         "aggregate_json": aggregate_json,
+        # Surgical-rollback args (Task #22 Phase B).
+        "reason": reason,
+        "severity": severity,
+        "since_days": since_days,
     }
     run_handler = _RUN_ACTIONS.get(action)
     if run_handler is not None:
@@ -8544,6 +8556,109 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
     return json.dumps(result)
 
 
+def _action_rollback_merge(kwargs: dict[str, Any]) -> str:
+    """Surgical-rollback (Task #22 Phase B). Host-only authority per
+    design §5 + Hard-Rule emergency-override pattern.
+
+    Required kwargs: ``branch_version_id`` (seed), ``reason``.
+    Optional kwargs: ``severity`` (P0/P1/P2; default P1).
+
+    Computes the dependency closure from the seed, atomically flips each
+    closure version to ``status='rolled_back'`` + emits one
+    ``caused_regression`` event per version (single runs-DB transaction),
+    then re-points any goal canonical pointing into the closure to the
+    nearest non-rolled-back ancestor (separate author_server-DB step
+    per cross-DB refinement; see ``workflow/rollback.py`` module
+    docstring).
+    """
+    from workflow.rollback import rollback_merge_orchestrator
+
+    bvid = (kwargs.get("branch_version_id") or "").strip()
+    reason = (kwargs.get("reason") or "").strip()
+    severity = (kwargs.get("severity") or "P1").strip().upper()
+    if not bvid:
+        return json.dumps({"error": "branch_version_id is required."})
+    if not reason:
+        return json.dumps({"error": "reason is required."})
+
+    actor = _current_actor()
+    host_actor = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+    if actor != host_actor:
+        return json.dumps({
+            "error": (
+                "host-only authority — only the host actor "
+                f"({host_actor!r}) may roll back versions. "
+                f"Request actor was {actor!r}."
+            ),
+        })
+
+    result = rollback_merge_orchestrator(
+        _base_path(),
+        bvid,
+        reason=reason,
+        set_by=actor,
+        severity=severity,
+    )
+    if result.get("status") == "rejected":
+        return json.dumps(result, default=str)
+
+    closure = result.get("closure", [])
+    repoint = result.get("repoint", {})
+    text_lines = [
+        f"**Rolled back** {len(closure)} branch_version(s) seeded from "
+        f"`{bvid}` (severity {severity}).",
+        f"Reason: {reason}",
+    ]
+    repointed_count = repoint.get("repointed_count", 0)
+    if repointed_count:
+        text_lines.append(
+            f"Re-pointed canonical bindings on {repointed_count} Goal(s) "
+            "to nearest non-rolled-back ancestor."
+        )
+    return json.dumps({
+        "text": "\n".join(text_lines),
+        **result,
+    }, default=str)
+
+
+def _action_get_rollback_history(kwargs: dict[str, Any]) -> str:
+    """Read-only rollback history surface. No authority restriction.
+
+    Optional kwargs: ``since_days`` (default 7).
+    """
+    from workflow.rollback import get_rollback_history
+
+    try:
+        since_days = int(kwargs.get("since_days", 7) or 7)
+    except (TypeError, ValueError):
+        since_days = 7
+    since_days = max(1, min(since_days, 365))
+
+    rollbacks = get_rollback_history(_base_path(), since_days=since_days)
+    if rollbacks:
+        text_lines = [
+            f"**{len(rollbacks)} rollback(s)** in the past {since_days} day(s):",
+            "",
+        ]
+        for r in rollbacks[:20]:
+            text_lines.append(
+                f"- `{r['branch_version_id']}` · "
+                f"{r['rolled_back_at']} · by `{r['rolled_back_by']}` · "
+                f"{r['rolled_back_reason']}"
+            )
+        if len(rollbacks) > 20:
+            text_lines.append(f"_… and {len(rollbacks) - 20} more._")
+        text = "\n".join(text_lines)
+    else:
+        text = f"_No rollbacks in the past {since_days} day(s)._"
+    return json.dumps({
+        "text": text,
+        "rollbacks": rollbacks,
+        "count": len(rollbacks),
+        "since_days": since_days,
+    }, default=str)
+
+
 _RUN_ACTIONS: dict[str, Any] = {
     "run_branch": _action_run_branch,
     "run_branch_version": _action_run_branch_version,
@@ -8558,10 +8673,13 @@ _RUN_ACTIONS: dict[str, Any] = {
     "query_runs": _action_query_runs,
     "get_routing_evidence": _action_run_routing_evidence,
     "get_memory_scope_status": _action_get_memory_scope_status,
+    "rollback_merge": _action_rollback_merge,
+    "get_rollback_history": _action_get_rollback_history,
 }
 
 _RUN_WRITE_ACTIONS: frozenset[str] = frozenset(
-    {"run_branch", "run_branch_version", "cancel_run", "resume_run"}
+    {"run_branch", "run_branch_version", "cancel_run", "resume_run",
+     "rollback_merge"}
 )
 
 
