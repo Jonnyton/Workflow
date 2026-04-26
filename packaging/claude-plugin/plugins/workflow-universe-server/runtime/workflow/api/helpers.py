@@ -11,6 +11,20 @@ Public surface (stable contract):
     _default_universe()        → str:  default universe ID
     _read_json(path)           → dict | list | None: safe JSON reader
     _read_text(path, default)  → str:  safe text reader
+
+ADDED 2026-04-26 (Task #8 — wiki-adjacent batch):
+    _wiki_root()               → Path: canonical wiki directory root
+    _wiki_pages_dir()          → Path: promoted-pages subtree (wiki_root/pages)
+    _wiki_drafts_dir()         → Path: drafts subtree (wiki_root/drafts)
+    _find_all_pages(directory) → list[Path]: recursive .md scan helper
+
+The 4 wiki-adjacent helpers move here (rather than into a new
+``wiki_helpers.py``) to keep the leaf-module count small and because
+``_wiki_pages_dir`` / ``_wiki_drafts_dir`` both call ``_wiki_root``;
+splitting them would create a `helpers.py → universe_server.py → helpers.py`
+cycle until the wiki extraction (Task #9) lands. See
+``docs/exec-plans/active/2026-04-26-decomp-step-1-prep.md`` for the
+helpers-already-extracted lesson that prompted this batch.
 """
 
 from __future__ import annotations
@@ -80,10 +94,49 @@ def _read_text(path: Path, default: str = "") -> str:
     return default
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Wiki-adjacent path helpers (Task #8, 2026-04-26)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _wiki_root() -> Path:
+    """Resolve the wiki root directory.
+
+    Delegates to ``workflow.storage.wiki_path`` — canonical env var
+    ``WORKFLOW_WIKI_PATH`` (legacy ``WIKI_PATH`` still honored with
+    deprecation warning). Platform default is ``data_dir() / "wiki"``.
+
+    Pre-2026-04-20 this hardcoded ``r"C:\\Users\\Jonathan\\Projects\\Wiki"``
+    as the fallback, which broke every non-host deploy. See
+    ``workflow.storage.wiki_path`` for the precedence + rationale.
+    """
+    from workflow.storage import wiki_path
+    return wiki_path()
+
+
+def _wiki_pages_dir() -> Path:
+    return _wiki_root() / "pages"
+
+
+def _wiki_drafts_dir() -> Path:
+    return _wiki_root() / "drafts"
+
+
+def _find_all_pages(directory: Path) -> list[Path]:
+    """Recursively find all .md files under a directory."""
+    if not directory.is_dir():
+        return []
+    return sorted(p for p in directory.rglob("*.md") if p.is_file())
+
+
 __all__ = [
     "_base_path",
     "_default_universe",
+    "_find_all_pages",
     "_read_json",
     "_read_text",
     "_universe_dir",
+    "_wiki_drafts_dir",
+    "_wiki_pages_dir",
+    "_wiki_root",
 ]

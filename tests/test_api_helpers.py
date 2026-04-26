@@ -9,9 +9,13 @@ import pytest
 from workflow.api.helpers import (
     _base_path,
     _default_universe,
+    _find_all_pages,
     _read_json,
     _read_text,
     _universe_dir,
+    _wiki_drafts_dir,
+    _wiki_pages_dir,
+    _wiki_root,
 )
 
 # ---------------------------------------------------------------------------
@@ -176,3 +180,87 @@ class TestReadText:
         p = tmp_path / "multi.txt"
         p.write_text(content, encoding="utf-8")
         assert _read_text(p) == content
+
+
+# ---------------------------------------------------------------------------
+# _wiki_root  (Task #8 — wiki-adjacent batch)
+# ---------------------------------------------------------------------------
+
+class TestWikiRoot:
+    def test_honours_workflow_wiki_path(self, tmp_path, monkeypatch):
+        target = tmp_path / "wiki-root"
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(target))
+        assert _wiki_root() == target.resolve()
+
+    def test_returns_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(tmp_path))
+        assert isinstance(_wiki_root(), Path)
+
+
+# ---------------------------------------------------------------------------
+# _wiki_pages_dir / _wiki_drafts_dir
+# ---------------------------------------------------------------------------
+
+class TestWikiSubdirs:
+    def test_pages_dir_under_root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(tmp_path))
+        assert _wiki_pages_dir() == _wiki_root() / "pages"
+
+    def test_drafts_dir_under_root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(tmp_path))
+        assert _wiki_drafts_dir() == _wiki_root() / "drafts"
+
+    def test_pages_drafts_distinct(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(tmp_path))
+        assert _wiki_pages_dir() != _wiki_drafts_dir()
+
+
+# ---------------------------------------------------------------------------
+# _find_all_pages
+# ---------------------------------------------------------------------------
+
+class TestFindAllPages:
+    def test_empty_directory(self, tmp_path):
+        assert _find_all_pages(tmp_path) == []
+
+    def test_nonexistent_directory(self, tmp_path):
+        assert _find_all_pages(tmp_path / "nope") == []
+
+    def test_finds_md_files(self, tmp_path):
+        (tmp_path / "a.md").write_text("a", encoding="utf-8")
+        (tmp_path / "b.md").write_text("b", encoding="utf-8")
+        result = _find_all_pages(tmp_path)
+        assert sorted(p.name for p in result) == ["a.md", "b.md"]
+
+    def test_skips_non_md_files(self, tmp_path):
+        (tmp_path / "page.md").write_text("md", encoding="utf-8")
+        (tmp_path / "data.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "notes.txt").write_text("txt", encoding="utf-8")
+        result = _find_all_pages(tmp_path)
+        assert [p.name for p in result] == ["page.md"]
+
+    def test_recursive(self, tmp_path):
+        (tmp_path / "top.md").write_text("t", encoding="utf-8")
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "nested.md").write_text("n", encoding="utf-8")
+        deep = sub / "deep"
+        deep.mkdir()
+        (deep / "leaf.md").write_text("l", encoding="utf-8")
+        result = _find_all_pages(tmp_path)
+        assert sorted(p.name for p in result) == ["leaf.md", "nested.md", "top.md"]
+
+    def test_returns_sorted(self, tmp_path):
+        (tmp_path / "z.md").write_text("z", encoding="utf-8")
+        (tmp_path / "a.md").write_text("a", encoding="utf-8")
+        (tmp_path / "m.md").write_text("m", encoding="utf-8")
+        result = _find_all_pages(tmp_path)
+        assert result == sorted(result)
+
+    def test_returns_files_only(self, tmp_path):
+        (tmp_path / "real.md").write_text("file", encoding="utf-8")
+        # Create a directory whose name ends with .md (rglob includes it)
+        d = tmp_path / "dir.md"
+        d.mkdir()
+        result = _find_all_pages(tmp_path)
+        assert [p.name for p in result] == ["real.md"]

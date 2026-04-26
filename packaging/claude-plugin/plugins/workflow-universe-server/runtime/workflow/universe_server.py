@@ -184,9 +184,13 @@ async def _landing_index(request):  # type: ignore[no-untyped-def]
 from workflow.api.helpers import (  # noqa: E402
     _base_path,
     _default_universe,
+    _find_all_pages,
     _read_json,
     _read_text,
     _universe_dir,
+    _wiki_drafts_dir,
+    _wiki_pages_dir,
+    _wiki_root,
 )
 
 
@@ -12061,28 +12065,9 @@ _STOP_WORDS = frozenset(
 _logger_wiki = logging.getLogger(__name__ + ".wiki")
 
 
-def _wiki_root() -> Path:
-    """Resolve the wiki root directory.
-
-    Delegates to ``workflow.storage.wiki_path`` — canonical env var
-    ``WORKFLOW_WIKI_PATH`` (legacy ``WIKI_PATH`` still honored with
-    deprecation warning). Platform default is
-    ``data_dir() / "wiki"``.
-
-    Pre-2026-04-20 this hardcoded ``r"C:\\Users\\Jonathan\\Projects\\Wiki"``
-    as the fallback, which broke every non-host deploy. See
-    ``workflow.storage.wiki_path`` for the precedence + rationale.
-    """
-    from workflow.storage import wiki_path
-    return wiki_path()
-
-
-def _wiki_pages_dir() -> Path:
-    return _wiki_root() / "pages"
-
-
-def _wiki_drafts_dir() -> Path:
-    return _wiki_root() / "drafts"
+# _wiki_root, _wiki_pages_dir, _wiki_drafts_dir extracted to
+# workflow.api.helpers in Task #8 (2026-04-26). Imported at module top
+# (line 184) so the rest of this module calls them unchanged.
 
 
 def _wiki_raw_dir() -> Path:
@@ -12149,11 +12134,7 @@ def _ensure_wiki_scaffold(wiki_root: Path) -> None:
             path.write_text(body, encoding="utf-8")
 
 
-def _find_all_pages(directory: Path) -> list[Path]:
-    """Recursively find all .md files under a directory."""
-    if not directory.is_dir():
-        return []
-    return sorted(p for p in directory.rglob("*.md") if p.is_file())
+# _find_all_pages extracted to workflow.api.helpers in Task #8.
 
 
 def _parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
