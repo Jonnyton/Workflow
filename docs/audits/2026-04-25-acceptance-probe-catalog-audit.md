@@ -27,10 +27,12 @@ The catalog itself is well-structured (validated date, source audit, prompt verb
 
 ## Defect 1: `mcp_public_canary.py` default URL is stale
 
+**Status: closed by `cd4e97c` (2026-04-26).** `DEFAULT_URL`, the docstring example, and the `--help` output now all point to `https://tinyassets.io/mcp`. Verified live: `python scripts/mcp_public_canary.py --verbose` → exit 0, `[canary] OK https://tinyassets.io/mcp` (2026-04-26).
+
 **File:** `scripts/mcp_public_canary.py`
-**Line 41:** `DEFAULT_URL = "https://mcp.tinyassets.io/mcp"`
-**Line 23 (docstring example):** `python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp`
-**`--help` output confirms:** `--url URL  MCP endpoint URL (default https://mcp.tinyassets.io/mcp)`
+**Line 41 (pre-fix):** `DEFAULT_URL = "https://mcp.tinyassets.io/mcp"`
+**Line 23 (pre-fix docstring example):** `python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp`
+**`--help` output (pre-fix):** `--url URL  MCP endpoint URL (default https://mcp.tinyassets.io/mcp)`
 
 **Why this matters.** AGENTS.md Hard Rule #10 is explicit:
 

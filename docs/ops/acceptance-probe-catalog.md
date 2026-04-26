@@ -216,6 +216,121 @@ python scripts/mcp_tool_canary.py --verbose --timeout 20
 
 ---
 
+## PROBE-005 — Last-activity freshness (node execution liveness)
+
+**Validated:** registration 2026-04-26 — script live since task #15 landed (tests at `tests/test_last_activity_canary.py`).
+**Source script:** `scripts/last_activity_canary.py`
+**Persona:** `last-activity-canary` (automated; client name `workflow-last-activity-canary/1.0`)
+**Connector URL under test:** `https://tinyassets.io/mcp`
+
+### Invocation
+
+```
+python scripts/last_activity_canary.py
+python scripts/last_activity_canary.py --url http://127.0.0.1:8001/mcp
+python scripts/last_activity_canary.py --threshold-min 60 --verbose
+```
+
+Env override: `WORKFLOW_LAST_ACTIVITY_THRESHOLD_MIN` sets the default threshold (minutes).
+
+### What it exercises
+
+| Layer | What's tested |
+|---|---|
+| System | MCP `initialize` + `notifications/initialized` handshake. |
+| System | `universe action=inspect` returns a `daemon.last_activity_at` timestamp. |
+| System | The timestamp is fresh — within `--threshold-min` (default 30) of now. |
+| User-impact | "MCP green but node execution stalled" failure class — exactly the live-2026-04-22 state before the cloud-side worker landed. |
+
+### Green criteria
+
+- Exit code 0.
+- `daemon.last_activity_at` is within the threshold (FRESH).
+
+### Red signals
+
+- Exit 2 — `last_activity_at` exceeds the threshold (STALE — paged regardless of queue depth; persistent stale-but-empty IS pageable per script docstring).
+- Exit 3 — daemon responded but no parseable `last_activity_at` (unexpected tool shape, null/malformed field).
+- Exit 4 — handshake / connectivity failure (distinct exit so operators can tell stale-execution from dark-daemon at a glance; overlaps with PROBE-001 deliberately).
+
+### Why this probe earns a catalog slot
+
+PROBE-001/002 prove the daemon answers MCP. PROBE-004 proves a tool handler runs. NEITHER proves the daemon is doing actual work — node execution can stall while every probe above stays green. The 2026-04-22 cloud-worker outage is the worked example: green Layer-1, green tool calls, zero scenes shipped. This probe is the only one in the catalog that catches that class.
+
+### When to use
+
+- After any change to dispatcher, executor, or the cloud worker.
+- As a continuous Layer-1.5 canary alongside PROBE-002.
+- Investigating user reports of "the daemon is up but nothing's happening."
+
+---
+
+## PROBE-006 — Revert-loop detection (busy-broken pathology)
+
+**Validated:** registration 2026-04-26 — script live since revert-loop spec landed; spec at `docs/design-notes/2026-04-23-revert-loop-canary-spec.md`.
+**Source script:** `scripts/revert_loop_canary.py`
+**Persona:** `revert-loop-canary` (automated; client name `revert-loop-canary/1.0`)
+**Connector URL under test:** `https://tinyassets.io/mcp`
+
+### Invocation
+
+```
+python scripts/revert_loop_canary.py
+python scripts/revert_loop_canary.py --url http://127.0.0.1:8001/mcp
+python scripts/revert_loop_canary.py --verbose
+```
+
+Env overrides:
+- `WORKFLOW_REVERT_CANARY_N` — WARN threshold (default 3)
+- `WORKFLOW_REVERT_CANARY_T_MIN` — WARN window minutes (default 10)
+- `WORKFLOW_REVERT_CANARY_N_CRITICAL` — CRITICAL threshold (default 5)
+- `WORKFLOW_REVERT_CANARY_T_CRITICAL` — CRITICAL window minutes (default 20)
+
+### What it exercises
+
+| Layer | What's tested |
+|---|---|
+| System | MCP handshake + `get_status.evidence.activity_log_tail` retrieval. |
+| System | Terminal REVERT-verdict count within a sliding time window. |
+| User-impact | "Daemon IS making progress but every scene REVERTs" — the 2026-04-23 P0 class (67 reverts on `concordance` before host noticed). |
+
+### Green criteria
+
+- Exit code 0 — REVERT count below WARN threshold.
+
+### Red signals
+
+- Exit 2 — WARN: ≥N_WARN REVERTs within T_WARN minutes (page priority=0).
+- Exit 3 — CRITICAL: ≥N_CRIT REVERTs within T_CRIT minutes (trigger auto-repair via p0-outage-triage).
+- Exit 4 — handshake / connectivity failure (distinct from stale/dark for diagnostics).
+- Exit 5 — daemon responded but `activity_log_tail` absent / unparseable.
+
+### Why this probe earns a catalog slot
+
+The 2026-04-23 P0 revert-loop concern is currently top-of-STATUS. PROBE-001 (handshake) and PROBE-005 (last_activity) both stay GREEN during a revert-loop because the daemon IS making progress — it's just throwing every commit away. Only this probe catches the busy-broken state. Spec-driven (Q2 mandate: count terminal REVERT verdicts only; Draft-FAILED retry-recovers within-scene and was explicitly rejected as noise).
+
+### When to use
+
+- After any change to the commit pipeline, scoring rubric, or provider-routing code.
+- As a continuous P0 canary — pair with PROBE-005 to cover both "stalled" and "busy-broken" failure modes.
+- After provider-quota / model-config changes (a degraded provider is a leading indicator of revert cascade).
+
+---
+
+## Borderline scripts — intentionally not catalogued
+
+These canary-adjacent scripts exist in the repo but do NOT earn standalone catalog slots per the audit's admission criteria. Listed here so future audits can confirm their omission is intentional, not accidental.
+
+| Script | Why no slot |
+|---|---|
+| `scripts/uptime_canary.py` | Thin wrapper around `mcp_public_canary.probe_result` that adds local-log persistence. Same surface as PROBE-001 — duplicating it as a slot would double-count. The wrapper is the Task-Scheduler-invoked form; PROBE-001 is the user-invocable form. |
+| `scripts/uptime_alarm.py` | Escalation **action**, not a probe. Tails `.agents/uptime.log` and emits alarm lines. Note: per task #20, prod alarm log moved to `/var/log/workflow/uptime_alarms.log` (env-overridable). |
+| `scripts/selfhost_smoke.py` | Time-bounded Row-F acceptance script (48h offline trial — hour 1, 24, 47). Targets both canonical AND the gated `mcp.tinyassets.io` tunnel for parity comparison; not a steady-state probe. Once Row F closes, this script is archived. |
+
+A "post-fix clean-use evidence" verification primitive (AGENTS.md Quality Gates) also has no automated probe today. This is intentional: the primitive is evidence-gathering against real-user traces, not a parseable green/red script.
+
+---
+
 ## Adding new probes
 
 A probe earns a catalog entry when:
