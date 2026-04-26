@@ -1,0 +1,392 @@
+"""Task #9 — direct tests for `workflow.api.wiki` after decomp Step 2.
+
+The legacy test files (`test_wiki_*.py`) import from `workflow.universe_server`
+and continue to pass via the back-compat re-export shim. This file exercises
+`workflow.api.wiki` directly to lock in the new public surface.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from workflow.api import wiki as wiki_mod
+from workflow.api.wiki import (
+    _BUG_DEDUP_THRESHOLD,
+    _BUGS_CATEGORY,
+    _KIND_ROUTING,
+    _VALID_BUG_KINDS,
+    _VALID_SEVERITIES,
+    _WIKI_CATEGORIES,
+    _bug_token_set,
+    _ensure_wiki_scaffold,
+    _extract_keywords,
+    _jaccard,
+    _next_id,
+    _parse_frontmatter,
+    _sanitize_slug,
+    _slugify_title,
+    _wiki_similarity_score,
+    wiki,
+)
+
+# ── fixtures ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def wiki_env(tmp_path, monkeypatch):
+    """Isolated wiki root, scaffold pre-built."""
+    wiki_root = tmp_path / "wiki"
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    _ensure_wiki_scaffold(wiki_root)
+    return wiki_root
+
+
+# ── module surface ──────────────────────────────────────────────────────────
+
+
+def test_module_exposes_expected_public_names():
+    """The new submodule's contract surface — guards against silent removal."""
+    expected = {
+        "wiki", "_ensure_wiki_scaffold", "_WIKI_CATEGORIES",
+        "_wiki_file_bug", "_wiki_cosign_bug",
+    }
+    missing = expected - set(dir(wiki_mod))
+    assert not missing, f"wiki.py is missing public names: {missing}"
+
+
+def test_wiki_categories_canonical_order():
+    """Category enum stays in a stable order — wiki-mcp/server.js mirrors it."""
+    assert _WIKI_CATEGORIES[0] == "projects"
+    assert _WIKI_CATEGORIES[-1] == "bugs"
+    assert _BUGS_CATEGORY in _WIKI_CATEGORIES
+    assert len(_WIKI_CATEGORIES) == 10
+
+
+def test_kind_routing_covers_all_valid_kinds():
+    assert set(_KIND_ROUTING.keys()) == set(_VALID_BUG_KINDS)
+    for kind, (subdir, prefix) in _KIND_ROUTING.items():
+        assert subdir, f"empty subdir for kind={kind}"
+        assert prefix, f"empty prefix for kind={kind}"
+
+
+# ── helper unit tests ───────────────────────────────────────────────────────
+
+
+def test_sanitize_slug_strips_extension_and_normalizes():
+    assert _sanitize_slug("My Page.md") == "my-page"
+    assert _sanitize_slug("UPPER_CASE") == "upper-case"
+    assert _sanitize_slug("a/b!c.md") == "a-b-c"
+
+
+def test_slugify_title_truncates_and_handles_empty():
+    long = "x" * 100
+    assert len(_slugify_title(long, max_len=20)) <= 20
+    assert _slugify_title("!!!") == "untitled"
+
+
+def test_parse_frontmatter_roundtrip():
+    raw = "---\ntitle: Foo\ntype: note\n---\nbody here\n"
+    meta, body = _parse_frontmatter(raw)
+    assert meta == {"title": "Foo", "type": "note"}
+    assert body == "body here\n"
+
+
+def test_parse_frontmatter_no_frontmatter_returns_empty_meta():
+    raw = "just body, no frontmatter"
+    meta, body = _parse_frontmatter(raw)
+    assert meta == {}
+    assert body == raw
+
+
+def test_extract_keywords_drops_stop_words():
+    kws = _extract_keywords("The quick brown fox jumps over the lazy dog")
+    assert "quick" in kws
+    assert "brown" in kws
+    assert "the" not in kws  # stop word
+    assert "a" not in kws
+
+
+def test_wiki_similarity_score_identical_pages_high():
+    meta = {"title": "Foo"}
+    body = "rabbit hops through forest with [[carrots]]"
+    score = _wiki_similarity_score(meta, body, meta, body)
+    assert score > 0.4  # same body + same title
+
+
+def test_wiki_similarity_score_disjoint_pages_low():
+    score = _wiki_similarity_score(
+        {"title": "A"}, "rabbits hop forest carrots",
+        {"title": "B"}, "elephants stomp savanna grass",
+    )
+    assert score < 0.2
+
+
+def test_jaccard_basic():
+    assert _jaccard(set(), set()) == 1.0
+    assert _jaccard({"a", "b"}, {"a", "b"}) == 1.0
+    assert _jaccard({"a", "b"}, {"c", "d"}) == 0.0
+    assert _jaccard({"a", "b", "c"}, {"b", "c", "d"}) == pytest.approx(0.5)
+
+
+def test_bug_token_set_filters_short_words():
+    tokens = _bug_token_set("To do or not to do, that is the question.")
+    assert "question" in tokens
+    assert "to" not in tokens  # too short
+    assert "do" not in tokens
+
+
+def test_bug_dedup_threshold_constant():
+    assert 0 < _BUG_DEDUP_THRESHOLD <= 1.0
+
+
+def test_next_id_starts_at_001_for_empty_dirs(tmp_path):
+    assert _next_id(tmp_path / "missing", tmp_path / "also_missing", "BUG") == "BUG-001"
+    pages = tmp_path / "pages"
+    drafts = tmp_path / "drafts"
+    pages.mkdir()
+    drafts.mkdir()
+    assert _next_id(pages, drafts, "BUG") == "BUG-001"
+
+
+def test_next_id_increments_past_existing(tmp_path):
+    pages = tmp_path / "pages"
+    drafts = tmp_path / "drafts"
+    pages.mkdir()
+    drafts.mkdir()
+    (pages / "BUG-001-foo.md").write_text("x")
+    (pages / "BUG-007-bar.md").write_text("x")
+    (drafts / "BUG-003-baz.md").write_text("x")
+    assert _next_id(pages, drafts, "BUG") == "BUG-008"
+
+
+# ── scaffold ────────────────────────────────────────────────────────────────
+
+
+def test_ensure_wiki_scaffold_creates_full_tree(tmp_path):
+    root = tmp_path / "fresh"
+    _ensure_wiki_scaffold(root)
+    for cat in _WIKI_CATEGORIES:
+        assert (root / "pages" / cat).is_dir()
+        assert (root / "drafts" / cat).is_dir()
+    assert (root / "raw").is_dir()
+    assert (root / "log").is_dir()
+    assert (root / "index.md").is_file()
+    assert (root / "WIKI.md").is_file()
+    assert (root / "log.md").is_file()
+
+
+def test_ensure_wiki_scaffold_idempotent_preserves_user_content(tmp_path):
+    root = tmp_path / "fresh"
+    _ensure_wiki_scaffold(root)
+    (root / "index.md").write_text("MY CUSTOM INDEX")
+    _ensure_wiki_scaffold(root)  # second call must not overwrite
+    assert (root / "index.md").read_text() == "MY CUSTOM INDEX"
+
+
+# ── dispatch entry ──────────────────────────────────────────────────────────
+
+
+def test_wiki_unknown_action_returns_error(wiki_env):
+    res = json.loads(wiki(action="bogus_action"))
+    assert "error" in res
+    assert "available_actions" in res
+    assert "read" in res["available_actions"]
+
+
+def test_wiki_list_returns_promoted_and_drafts_keys(wiki_env):
+    res = json.loads(wiki(action="list"))
+    assert "promoted" in res
+    assert "drafts" in res
+    assert "promoted_count" in res
+    assert "drafts_count" in res
+
+
+def test_wiki_search_requires_query(wiki_env):
+    res = json.loads(wiki(action="search", query=""))
+    assert "error" in res
+
+
+def test_wiki_search_no_results_returns_empty_list(wiki_env):
+    res = json.loads(wiki(action="search", query="zzz_nothing_should_match"))
+    assert res["results"] == []
+
+
+def test_wiki_read_requires_page(wiki_env):
+    res = json.loads(wiki(action="read", page=""))
+    assert "error" in res
+
+
+def test_wiki_read_index_after_scaffold(wiki_env):
+    res = json.loads(wiki(action="read", page="index"))
+    assert "content" in res
+    assert "Wiki Index" in res["content"]
+
+
+def test_wiki_write_requires_filename_and_content(wiki_env):
+    res = json.loads(wiki(action="write", category="notes"))
+    assert "error" in res
+
+
+def test_wiki_write_rejects_invalid_category(wiki_env):
+    res = json.loads(
+        wiki(action="write", category="bogus", filename="x", content="body")
+    )
+    assert "error" in res
+    assert "valid" in res
+
+
+def test_wiki_write_drafts_then_promote_roundtrip(wiki_env):
+    body = (
+        "---\ntitle: My Note\ntype: note\nsources: [scratch]\nconfidence: medium\n"
+        "---\nThis is the body of my note about [[topic-x]] and [[topic-y]] "
+        "with enough characters to clear the body-length lint floor.\n"
+    )
+    res = json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="my-note",
+            content=body,
+        )
+    )
+    assert res["status"] == "drafted"
+    assert "drafts/notes/my-note.md" in res["path"]
+
+    promoted = json.loads(wiki(action="promote", filename="my-note"))
+    assert promoted["status"] == "promoted"
+    assert "pages/notes/my-note.md" in promoted["path"]
+
+
+def test_wiki_promote_lint_blocks_when_required_fields_missing(wiki_env):
+    body = "---\ntitle: Skinny\n---\ntoo short\n"
+    json.loads(
+        wiki(action="write", category="notes", filename="skinny", content=body)
+    )
+    res = json.loads(wiki(action="promote", filename="skinny"))
+    assert "error" in res
+    assert res["error"] == "Promotion blocked."
+    assert any("Body too short" in i for i in res["issues"])
+
+
+def test_wiki_supersede_requires_three_args(wiki_env):
+    res = json.loads(wiki(action="supersede"))
+    assert "error" in res
+
+
+# ── bug-filing dispatch ─────────────────────────────────────────────────────
+
+
+def test_wiki_file_bug_requires_title_component_severity(wiki_env):
+    res = json.loads(wiki(action="file_bug"))
+    assert "error" in res
+    assert "title" in res["error"]
+
+
+def test_wiki_file_bug_rejects_invalid_severity(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_bug",
+            component="x",
+            severity="catastrophic",  # not a valid level
+            title="Something broke",
+        )
+    )
+    assert "error" in res
+    assert "valid" in res
+    assert set(res["valid"]) == set(_VALID_SEVERITIES)
+
+
+def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_bug",
+            component="universe.inspect",
+            severity="minor",
+            title="A unique never-seen title aardvark zeppelin",
+            observed="aardvark",
+            expected="zeppelin",
+            force_new=True,
+        )
+    )
+    assert res["status"] == "filed"
+    assert res["bug_id"].startswith("BUG-")
+
+
+def test_wiki_file_bug_dedup_returns_similar_found(wiki_env):
+    base = dict(
+        action="file_bug",
+        component="universe.inspect",
+        severity="minor",
+        title="Connector returns wrong universe id on inspect",
+        observed="inspect returned the wrong universe id under load",
+    )
+    json.loads(wiki(**base, force_new=True))
+    dup = json.loads(wiki(**base))  # no force_new — should dedup
+    assert dup["status"] == "similar_found"
+    assert dup["bug_id"] is None
+    assert isinstance(dup["similar"], list)
+    assert len(dup["similar"]) >= 1
+
+
+def test_wiki_cosign_bug_requires_args(wiki_env):
+    res = json.loads(wiki(action="cosign_bug"))
+    assert "error" in res
+    res = json.loads(wiki(action="cosign_bug", bug_id="BUG-001"))
+    assert "error" in res
+
+
+def test_wiki_cosign_bug_unknown_id_errors(wiki_env):
+    res = json.loads(
+        wiki(
+            action="cosign_bug",
+            bug_id="BUG-999",
+            reporter_context="me too on the dev box",
+        )
+    )
+    assert "error" in res
+
+
+def test_wiki_cosign_bug_appends_to_existing_filing(wiki_env):
+    filed = json.loads(
+        wiki(
+            action="file_bug",
+            component="x",
+            severity="minor",
+            title="The cosign smoke test bug uniquely worded",
+            observed="something broke uniquely",
+            force_new=True,
+        )
+    )
+    bug_id = filed["bug_id"]
+    res = json.loads(
+        wiki(
+            action="cosign_bug",
+            bug_id=bug_id,
+            reporter_context="seen on the staging tunnel as well",
+        )
+    )
+    assert res["status"] == "cosigned"
+    assert res["cosign_count"] == 1
+
+    # Second cosign increments the count.
+    res2 = json.loads(
+        wiki(
+            action="cosign_bug",
+            bug_id=bug_id,
+            reporter_context="and on local dev",
+        )
+    )
+    assert res2["cosign_count"] == 2
+
+    # Body now contains both contexts.
+    bugs_dir = wiki_env / "pages" / "bugs"
+    files = list(bugs_dir.glob(f"{bug_id.lower()}-*.md"))
+    assert files, f"expected the bug file in {bugs_dir}"
+    body = files[0].read_text(encoding="utf-8")
+    assert "## Cosigns" in body
+    assert "staging tunnel" in body
+    assert "local dev" in body
+    _ = filed  # path tracked via bug_id glob above

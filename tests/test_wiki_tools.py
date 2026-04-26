@@ -585,7 +585,7 @@ class TestWikiFileBugDispatch:
                 raise FileExistsError(path)
             return real_open(path, mode, *args, **kwargs)
 
-        with patch("workflow.universe_server.open", side_effect=fake_open, create=True):
+        with patch("workflow.api.wiki.open", side_effect=fake_open, create=True):
             out = json.loads(
                 wiki(
                     "file_bug",

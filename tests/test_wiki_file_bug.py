@@ -221,7 +221,7 @@ class TestFileBugCollisionRetry:
             return real_open(path, mode, *args, **kwargs)
 
         with patch(
-            "workflow.universe_server.open", side_effect=fake_open, create=True
+            "workflow.api.wiki.open", side_effect=fake_open, create=True
         ):
             out = json.loads(
                 _wiki_file_bug(
