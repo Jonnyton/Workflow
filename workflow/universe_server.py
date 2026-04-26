@@ -3782,9 +3782,16 @@ def extensions(
     - Branch composite (prefer): build_branch (spec_json), patch_branch (changes_json).
     - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
       add_state_field, update_node, validate_branch, delete_branch.
+    - Branch ops: continue_branch, fork_tree, patch_nodes.
     - Branch query: describe_branch, get_branch, list_branches, search_nodes.
     - Run (Phase 3): run_branch, get_run, list_runs, stream_run, cancel_run,
       get_run_output.
+    - Run extensions: wait_for_run, resume_run, query_runs, estimate_run_cost,
+      run_branch_version.
+    - Versioning: publish_version, get_branch_version, list_branch_versions.
+    - Scheduler: schedule_branch, unschedule_branch, list_schedules,
+      subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
+    - Project memory: project_memory_get, project_memory_set, project_memory_list.
     - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
     - Self-audit: get_routing_evidence, get_memory_scope_status.
@@ -10912,6 +10919,9 @@ def goals(
                    a new Goal instead.
       bind         Attach a Branch to a Goal. Pass goal_id="" to
                    unbind. Needs branch_def_id.
+      set_canonical Mark a branch_version_id as the Goal's canonical
+                   (best-known) branch. Author-only or host-only.
+                   Pass branch_version_id="" to unset.
       list         Browse Goals. Optional author, tags (CSV first
                    value only), limit. Soft-deleted Goals hidden.
       get          Full Goal view + bound Branches. Needs goal_id.

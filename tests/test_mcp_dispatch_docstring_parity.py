@@ -67,25 +67,24 @@ KNOWN_DEBT: dict[str, frozenset[str]] = {
     "universe": frozenset(),
     "gates": frozenset(),
     "wiki": frozenset(),
-    "goals": frozenset({"set_canonical"}),
+    "goals": frozenset(),
     "extensions": frozenset({
-        "attest_gate_event", "continue_branch",
-        "dispute_gate_event", "dry_inspect_node", "dry_inspect_patch",
-        "escrow_inspect", "escrow_lock", "escrow_refund", "escrow_release",
-        "estimate_run_cost", "fork_tree",
-        "get_branch_version", "get_gate_event", "get_outcome",
-        "get_provenance",
-        "list_branch_versions", "list_gate_events", "list_outcomes",
-        "list_scheduler_subscriptions", "list_schedules",
-        "messaging_ack", "messaging_receive", "messaging_send",
-        "patch_nodes", "pause_schedule",
-        "project_memory_get", "project_memory_list", "project_memory_set",
-        "publish_version", "query_runs",
-        "record_outcome", "record_remix",
-        "resume_run", "retract_gate_event", "run_branch_version",
-        "schedule_branch", "subscribe_branch",
-        "unpause_schedule", "unschedule_branch", "unsubscribe_branch",
-        "verify_gate_event", "wait_for_run",
+        # Escrow surface — chatbot-facing only after Phase 6 ladder lands.
+        "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
+        # Gate-event surface — chatbot-facing only after gate UX matures.
+        "attest_gate_event", "verify_gate_event", "dispute_gate_event",
+        "retract_gate_event", "get_gate_event", "list_gate_events",
+        # Outcome ledger — internal until Phase 6 surfaces it to chatbots.
+        "record_outcome", "list_outcomes", "get_outcome",
+        # Attribution / provenance — internal substrate.
+        "record_remix", "get_provenance",
+        # Dry-inspect surfaces — debug-only, not for normal chat use.
+        "dry_inspect_node", "dry_inspect_patch",
+        # Messaging surface — pre-launch, not yet chatbot-routed.
+        "messaging_send", "messaging_receive", "messaging_ack",
+        # Scheduler pause/unpause — sub-actions of the documented
+        # scheduler family, not standalone surface.
+        "pause_schedule", "unpause_schedule",
     }),
 }
 
