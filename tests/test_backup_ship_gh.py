@@ -82,6 +82,7 @@ def test_ensure_repo_creates_when_missing() -> None:
     idx = [0]
 
     def _post(req):
+        calls.append(req.full_url)
         resp = seq[idx[0]]
         idx[0] += 1
         if isinstance(resp, Exception):
@@ -90,7 +91,10 @@ def test_ensure_repo_creates_when_missing() -> None:
 
     bsg.ensure_repo("tok", "owner/newrepo", post_fn=_post)
     assert idx[0] == 2
-    assert "user/repos" in calls or True  # second call was create
+    assert calls == [
+        "https://api.github.com/repos/owner/newrepo",
+        "https://api.github.com/user/repos",
+    ]
 
 
 def test_ensure_repo_re_raises_non_404() -> None:
