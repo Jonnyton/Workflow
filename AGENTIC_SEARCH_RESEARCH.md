@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-06. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Agentic Search: Industry Convergence Research
 
 Research compiled 2026-04-06. Intended audience: any agent working on this

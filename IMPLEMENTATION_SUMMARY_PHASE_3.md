@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-06. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase 3.1 and 3.2 Implementation Summary
 
 **Status:** Complete

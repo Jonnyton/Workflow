@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-05. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Workflow Engine Restructure Plan
 
 **Date:** 2026-04-05

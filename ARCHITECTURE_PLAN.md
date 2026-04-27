@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-02 (reframed 2026-04-11). Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Workflow — Architecture (As-Built)
 
 **Last updated:** 2026-04-02 (reframed 2026-04-11)
