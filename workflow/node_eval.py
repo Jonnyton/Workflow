@@ -229,6 +229,7 @@ class NodeEvaluator:
                 ),
             )
             conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
 
             # Check if status should change
             self._check_transitions(conn, execution.node_id)
