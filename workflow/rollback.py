@@ -163,6 +163,7 @@ def auto_rollback_on_canary_red(
     replay_canary_at_version: Callable[[str], str | int] | None = None,
     max_suspects: int = MAX_BISECT_SUSPECTS,
     rollback_log_path: str | Path | None = None,
+    page_host_on_p0: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Handle a canary RED event using Phase C's suspect/bisect rules.
 
@@ -273,8 +274,37 @@ def auto_rollback_on_canary_red(
         "culprit_version_id": culprit,
         "rollback": rollback_result,
     }
+    if severity == "P0" and result["status"] == "rolled_back":
+        pager = page_host_on_p0 or _send_p0_pushover_page
+        result["host_page"] = pager(result)
     _append_rollback_log(base_path, result, rollback_log_path)
     return result
+
+
+def _send_p0_pushover_page(result: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from scripts.pushover_page import P0_EXPIRE_S, P0_RETRY_S, send_pushover
+    except ImportError as exc:
+        return {"status": "failed", "error": f"pushover helper unavailable: {exc}"}
+
+    title = f"P0 Workflow rollback - {result['canary_name']}"
+    message = (
+        f"{result['canary_name']} attributed a P0 regression to "
+        f"{result['culprit_version_id']} and auto-rolled it back."
+    )
+    ok, body = send_pushover(
+        title,
+        message,
+        priority=2,
+        retry=P0_RETRY_S,
+        expire=P0_EXPIRE_S,
+        sound="vibrate",
+    )
+    return {
+        "status": "sent" if ok else "failed",
+        "body": body,
+        "channel": "pushover",
+    }
 
 
 def _record_caused_regression_event(

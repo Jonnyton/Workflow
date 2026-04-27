@@ -405,6 +405,66 @@ class TestAutoRollbackOnCanaryRed:
             for bvid in version_ids
         )
 
+    def test_multiple_suspects_bisect_then_rolls_back_culprit(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        suspects = []
+        for idx in range(4):
+            bvid = _publish(tmp_path, f"multi-{idx}")
+            _set_watch_metadata(
+                tmp_path,
+                bvid,
+                published_at=now - timedelta(minutes=4 - idx),
+            )
+            suspects.append(bvid)
+
+        def replay(version_id):
+            return "RED" if version_id in {suspects[2], suspects[3]} else "GREEN"
+
+        result = auto_rollback_on_canary_red(
+            tmp_path,
+            canary_name="PROBE-002",
+            last_green_at=now - timedelta(hours=1),
+            severity="P1",
+            reason="bisect red",
+            set_by="host",
+            now=now,
+            replay_canary_at_version=replay,
+        )
+
+        assert result["status"] == "rolled_back"
+        assert result["culprit_version_id"] == suspects[2]
+        assert get_branch_version(tmp_path, suspects[2]).status == "rolled_back"
+        assert get_branch_version(tmp_path, suspects[3]).status == "active"
+
+    def test_p0_rollback_invokes_host_page_hook(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        suspect = _publish(tmp_path, "auto-p0")
+        _set_watch_metadata(
+            tmp_path,
+            suspect,
+            published_at=now - timedelta(minutes=10),
+        )
+        pages = []
+
+        def page_host(result):
+            pages.append(result["culprit_version_id"])
+            return {"status": "sent", "channel": "test"}
+
+        result = auto_rollback_on_canary_red(
+            tmp_path,
+            canary_name="PROBE-001",
+            last_green_at=now - timedelta(hours=1),
+            severity="P0",
+            reason="public MCP outage",
+            set_by="host",
+            now=now,
+            page_host_on_p0=page_host,
+        )
+
+        assert result["status"] == "rolled_back"
+        assert pages == [suspect]
+        assert result["host_page"] == {"status": "sent", "channel": "test"}
+
 
 class TestGetRollbackHistory:
     def test_empty_history(self, tmp_path):
