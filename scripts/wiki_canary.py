@@ -25,6 +25,7 @@ Usage
 -----
     python scripts/wiki_canary.py
     python scripts/wiki_canary.py --url http://127.0.0.1:8001/mcp --verbose
+    python scripts/wiki_canary.py --probe-id bisect-run-42
     python scripts/wiki_canary.py --once --format=gha   # GHA output mode
 
 Stdlib only.
@@ -34,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -63,9 +65,19 @@ _CANARY_CATEGORY = "notes"
 _CANARY_CONTENT = "Workflow wiki uptime canary - automated write-roundtrip probe."
 
 _INIT_PAYLOAD = _init_payload("wiki-canary")
+_PROBE_ID_SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
-def _wiki_write_payload(call_id: int) -> dict:
+def _filename_for_probe_id(probe_id: str | None) -> str:
+    if not probe_id:
+        return _CANARY_FILENAME
+    suffix = _PROBE_ID_SAFE_RE.sub("-", probe_id.strip()).strip("._-")
+    if not suffix:
+        raise ValueError("probe_id must contain at least one filename-safe character")
+    return f"{_CANARY_FILENAME}-{suffix[:80]}"
+
+
+def _wiki_write_payload(call_id: int, *, filename: str = _CANARY_FILENAME) -> dict:
     return {
         "jsonrpc": "2.0",
         "id": call_id,
@@ -74,7 +86,7 @@ def _wiki_write_payload(call_id: int) -> dict:
             "name": "wiki",
             "arguments": {
                 "action": "write",
-                "filename": _CANARY_FILENAME,
+                "filename": filename,
                 "category": _CANARY_CATEGORY,
                 "content": _CANARY_CONTENT,
             },
@@ -82,7 +94,7 @@ def _wiki_write_payload(call_id: int) -> dict:
     }
 
 
-def _wiki_read_payload(call_id: int) -> dict:
+def _wiki_read_payload(call_id: int, *, filename: str = _CANARY_FILENAME) -> dict:
     # `wiki action=read` takes a single `page=` arg (the slug); _resolve_page
     # locates it across pages/ + drafts/ subdirectories. No `category` /
     # `slug` kwargs — that mismatch was the 2026-04-26 canary RED root cause.
@@ -94,7 +106,7 @@ def _wiki_read_payload(call_id: int) -> dict:
             "name": "wiki",
             "arguments": {
                 "action": "read",
-                "page": _CANARY_FILENAME,
+                "page": filename,
             },
         },
     }
@@ -129,6 +141,7 @@ def run_canary(
     *,
     post_fn=None,
     verbose: bool = False,
+    canary_filename: str = _CANARY_FILENAME,
 ) -> None:
     """Run the wiki write-roundtrip canary.
 
@@ -150,7 +163,13 @@ def run_canary(
         print(f"[wiki-canary] handshake OK sid={sid!r}")
 
     # ---- Step 2: wiki write ----------------------------------------------
-    write_resp, _ = post(url, sid, _wiki_write_payload(2), timeout, step_code=6)
+    write_resp, _ = post(
+        url,
+        sid,
+        _wiki_write_payload(2, filename=canary_filename),
+        timeout,
+        step_code=6,
+    )
     if write_resp is None or "result" not in write_resp:
         raise ToolCanaryError(6, f"wiki write returned no result: {write_resp!r}")
     write_result = write_resp["result"]
@@ -176,7 +195,13 @@ def run_canary(
         print(f"[wiki-canary] wiki write OK: {write_obj.get('status')!r}")
 
     # ---- Step 3: wiki read roundtrip -------------------------------------
-    read_resp, _ = post(url, sid, _wiki_read_payload(3), timeout, step_code=7)
+    read_resp, _ = post(
+        url,
+        sid,
+        _wiki_read_payload(3, filename=canary_filename),
+        timeout,
+        step_code=7,
+    )
     if read_resp is None or "result" not in read_resp:
         raise ToolCanaryError(7, f"wiki read returned no result: {read_resp!r}")
     read_result = read_resp["result"]
@@ -197,13 +222,26 @@ def run_canary(
 
 
 def run_probe(
-    url: str, timeout: float, fmt: str = "log", *, post_fn=None, verbose: bool = False,
+    url: str,
+    timeout: float,
+    fmt: str = "log",
+    *,
+    post_fn=None,
+    verbose: bool = False,
+    probe_id: str | None = None,
 ) -> int:
     """Run one wiki roundtrip probe. Returns exit code (0=green, nonzero=red)."""
     ts = _now_local_iso()
     start = time.monotonic()
+    canary_filename = _filename_for_probe_id(probe_id)
     try:
-        run_canary(url, timeout, post_fn=post_fn, verbose=verbose)
+        run_canary(
+            url,
+            timeout,
+            post_fn=post_fn,
+            verbose=verbose,
+            canary_filename=canary_filename,
+        )
     except ToolCanaryError as exc:
         rtt_ms = int((time.monotonic() - start) * 1000)
         _append_log(_format_red(ts, url, exc.code, exc.msg, rtt_ms))
@@ -245,8 +283,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Output format: 'log' (default) or 'gha' ($GITHUB_OUTPUT).",
     )
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument(
+        "--probe-id",
+        help=(
+            "Optional replay/run id; writes to uptime-probe-<probe-id> "
+            "instead of the shared uptime-probe draft."
+        ),
+    )
     args = ap.parse_args(argv)
-    return run_probe(args.url, args.timeout, fmt=args.fmt, verbose=args.verbose)
+    return run_probe(
+        args.url,
+        args.timeout,
+        fmt=args.fmt,
+        verbose=args.verbose,
+        probe_id=args.probe_id,
+    )
 
 
 if __name__ == "__main__":

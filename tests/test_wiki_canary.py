@@ -34,6 +34,7 @@ class ScriptedPost:
         self.calls.append({
             "url": url, "sid": sid,
             "method": payload.get("method"),
+            "payload": payload,
             "step_code": step_code,
         })
         if not self._responses:
@@ -110,6 +111,25 @@ def _happy_scripted() -> ScriptedPost:
 
 def test_happy_path_run_canary_no_raise():
     wc.run_canary("https://fake/mcp", 5.0, post_fn=_happy_scripted())
+
+
+def test_run_canary_can_scope_filename_for_bisect_replay():
+    scripted = _happy_scripted()
+    wc.run_canary(
+        "https://fake/mcp",
+        5.0,
+        post_fn=scripted,
+        canary_filename="uptime-probe-bisect-run1",
+    )
+
+    write_args = scripted.calls[2]["payload"]["params"]["arguments"]
+    read_args = scripted.calls[3]["payload"]["params"]["arguments"]
+    assert write_args["filename"] == "uptime-probe-bisect-run1"
+    assert read_args["page"] == "uptime-probe-bisect-run1"
+
+
+def test_probe_id_sanitizes_to_scoped_filename():
+    assert wc._filename_for_probe_id("bisect run: 42") == "uptime-probe-bisect-run-42"
 
 
 def test_happy_path_run_probe_returns_zero(tmp_path):
