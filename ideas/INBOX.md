@@ -17,9 +17,9 @@ half-formed experiments.
   Next: evaluate whether this is a standalone file convention or a feature that needs a daemon_server.py table + MCP surface. Ilse persona (OSS-contributor tier) is the natural first user — good user-sim mission candidate.
   Links: -
 
-- [2026-04-25] (source: navigator-audit, owner: unassigned, status: captured) fantasy_daemon/phases/ entry-point comment — each phase file (orient.py, worldbuild.py, commit.py, etc.) lacks a one-line header comment naming which graph cycle invokes it and what the entry-point node is. Reading any phase file cold requires tracing back through book.py/chapter.py/universe.py to understand context. Simple docstring convention addition; no architecture change.
-  Next: quick fix — dev can add entry-point comments to all 7 phase files in a single small task. No spec needed; just a task with Files boundary `domains/fantasy_daemon/phases/*.py`.
-  Links: -
+- [2026-04-25] (source: navigator-audit, owner: dev-2, status: landed) fantasy_daemon/phases/ entry-point comment — each phase file lacked a one-line header comment naming graph cycle + entry-point node. Confirmed already implemented at lead session start 2026-04-27 (commit `be5f9b6` — "fantasy_daemon/phases — cycle-map header + orient docstring fold"). Capture was stale on filing; no work needed.
+  Links:
+  - commit `be5f9b6`
 
 - [2026-04-20] (source: host, owner: navigator-followup, status: captured,
   priority: post-uptime, size: large)
