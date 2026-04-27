@@ -14,6 +14,7 @@ from wiki_bug_sync import (  # noqa: E402
     SyncError,
     _bug_number,
     create_gh_issue,
+    fetch_bug_detail,
     list_new_bugs,
     read_cursor,
     sync,
@@ -67,6 +68,16 @@ def _make_post_fn(*responses):
         return next(it)
 
     return _post
+
+
+class CapturingPost:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def __call__(self, url, sid, payload, timeout):
+        self.calls.append(payload)
+        return self._responses.pop(0)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +200,23 @@ def test_create_gh_issue_no_token_raises():
             body_md="desc", dry_run=False,
         )
     assert exc_info.value.code == 3
+
+
+def test_fetch_bug_detail_reads_with_page_not_path():
+    post = CapturingPost([
+        (_wiki_read_resp({"title": "Bug", "severity": "high"}), "sid1"),
+    ])
+    detail = fetch_bug_detail(
+        "http://fake/mcp",
+        "sid1",
+        "pages/bugs/BUG-003-new.md",
+        5.0,
+        post_fn=post,
+    )
+
+    args = post.calls[0]["params"]["arguments"]
+    assert args == {"action": "read", "page": "BUG-003-new"}
+    assert detail["title"] == "Bug"
 
 
 # ---------------------------------------------------------------------------

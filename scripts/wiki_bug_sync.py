@@ -226,8 +226,9 @@ def fetch_bug_detail(
     post_fn=None,
 ) -> dict[str, Any]:
     """Call wiki action=read and parse the frontmatter fields we need."""
+    page = Path(path).stem or path
     result = _mcp_call_tool(
-        url, sid, "wiki", {"action": "read", "path": path}, timeout, post_fn
+        url, sid, "wiki", {"action": "read", "page": page}, timeout, post_fn
     )
     text = _parse_text_result(result)
     try:
