@@ -375,7 +375,7 @@ jobs:
             echo "- **Backup source:** \`$(basename ${BACKUP_PATH})\`"
             echo "- **Drill Droplet:** ID \`${DROPLET_ID}\`, IP \`${DRILL_IP}\`"
             echo "- **Size:** \`${{ inputs.drill_droplet_size }}\`"
-            echo "- **Probe:** green (direct HTTP to drill Droplet port 8001)"
+            echo "- **Probe:** green (MCP status via SSH port-forward to localhost:8001)"
             echo "- **Run:** ${run_url}"
           } >> "${LOG_FILE}"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -82,6 +82,13 @@ def _bootstrap_step_run() -> str:
     raise AssertionError("Bootstrap drill Droplet step missing")
 
 
+def _append_log_step_run() -> str:
+    for step in _steps(_load()):
+        if step.get("name") == "Append drill result to log":
+            return step.get("run", "")
+    raise AssertionError("Append drill result to log step missing")
+
+
 # ---------------------------------------------------------------------------
 # (a) YAML parses
 # ---------------------------------------------------------------------------
@@ -222,6 +229,13 @@ def test_pass_path_destroys_droplet():
 def test_pass_path_appends_to_log():
     text = _text()
     assert "dr-drill-log.md" in text
+
+
+def test_pass_log_describes_port_forward_probe():
+    run = _append_log_step_run()
+    assert "direct HTTP to drill Droplet port 8001" not in run
+    assert "SSH port-forward" in run
+    assert "localhost:8001" in run
 
 
 # ---------------------------------------------------------------------------
