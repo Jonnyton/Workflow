@@ -30,7 +30,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 ## Work
 
-2026-04-26 baseline: 6113p / 0f / 14 skipped (vs 2811p/42f at 2026-04-15). Decomp Step 1 LANDED (4f98654 helpers extraction); Step 2 (wiki.py) verifier-pending; Steps 3-5 prep docs landed (004afd9 + 3ea263a-followup). PROBE-003 wiki_canary CI wiring LANDED (3ea263a). Host decisions outstanding: R7 storage split, Mark-branch-canonical, cloud daemon redeploy, audit-doc review for #28/#29.
+2026-04-26 PM session (19 commits): Decomp Steps 1-7 LANDED (universe_server.py 14012 → 7778 LOC, -44.5%). New submodules: api/{helpers extension, wiki, status, runs, evaluation, runtime_ops, market}. Step 8 (branches.py) prep doc landed (110cd2c) — ready as next-session first dispatch. Plus: PROBE-003 wiki_canary CI wiring (3ea263a), canary helper consolidation (e6cc7ad), canary import/exception/URL-drift smoke tests (5797ec7+64b1fbb+ae391e8), BUG-029 taxonomy matrix (3adef1f), engine-domain coupling inventory (ee2202d), test_record_and_get_stats flake RCA doc (4021239). PLAN.md refreshed in ab61da5. Host decisions outstanding: R7 storage split, Mark-branch-canonical, cloud daemon redeploy, audit-doc review for #28/#29, Steps 9+10 (universe.py + engine_helpers.py) needed for full audit "100-LOC routing shell" target — see Step 8 prep §10.2.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|

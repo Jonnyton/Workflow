@@ -202,3 +202,41 @@ Pending host actions (in priority order): cloud daemon redeploy from current mai
 
 Memories landed this session: 14 new entries indexed in MEMORY.md. Mark persona stub at .claude/agent-memory/user/personas/mark/.
 
+
+2026-04-25T19:08:00-07:00 [claude-code lead] Session start, team workflow-dev spawned (dev/dev-2/verifier/navigator). Tasks closed: #2 (#36 author_server already landed in 72e696e/7dde417), #3 (#47 dispatcher already landed via d06a6d7→79a3c28→218d9ec→c686b48), #1 (canary green), #4 (REFLECTION merged → 2 new dev memories), #8 (audit summary memo @ docs/audits/2026-04-25-audit-summary-for-host-review.md). Active: #6 dev→verifier (phase __init__/orient docstrings; 22/24 already compliant), #7 dev-2 (MCP dispatch-docstring parity test, Option A allowlist; extensions has 42-action debt for #13 follow-up), #9 dev (corrected scope: workflow files + new deploy/install-workflow-env.sh helper). Queued: #10 BUG-029 structured failure_class+actionable_by, #11 BUG-030 patch_branch read-after-write, #12 output_keys str validation. Pending host: #5 stale worktree cleanup (destructive git ops), wiki-canary RED on tinyassets.io/mcp (Forever-Rule P0; navigator auditing slug/body sig in main vs canary), daemon watchdog-restart loop >30 since 18:19 UTC. Bounty-pool design vet PASS (greenlit pending Task #82 substrate). Audit memo Option A recommended (full accept #28+#29 universe_server refactor).
+
+2026-04-25T21:55:00-07:00 [claude-code lead] Session wrap. 14 commits landed: 782c7fb #6 phase docs, f7effed #7 dispatch parity test, fce37e4 navigator bundle (#8/#15/#16), b46112d #13 wiki canary fix (Forever-Rule P0), 87242fb #10 BUG-029 actionable_by, 04dd5fd #12 NodeDef strict validation, 69ad4fd #9 env Fix A bundle, be5cca7 #18 restart-loop audit (verdict-e test pollution), 0b228de #17+#20 watchdog observability + post-redeploy runbook, e67b620 #14 extensions+goals docstring backfill, a19d53c→37236a0 #21 set_canonical plumbing, 413b7c7 design notes bundle (bounty-pool + impl-discipline), 6d3c1a2 R1 Phase A schema, ce291f9 R1 Phase B engine. Plus 56 prior-session arc commits pushed in same drop.
+
+Major outcomes: wiki canary GREEN; BUG-029/030 chain closed at API surface (cloud redeploy needed for live surface); read-side NodeDef validation closes silent-corruption gap; watchdog "restart loop" diagnosed as test pollution + production observability fixed; post-redeploy runbook ready; gate-branch convention canonical; Mark drafts vetted PASS for promote-when-redeploy; R1 surgical rollback host-callable verb live (Phase A schema + Phase B engine; Phase C bisect+auto-trigger pending as #27).
+
+Build → deploy chain fired (37236a0, 6d3c1a2, ce291f9 each triggered build); first deploy in_progress at session wrap. Chronic CI failures (actionlint+packaging+docker-smoke since 2026-04-22) tracked as #26 for next session.
+
+Host directives this session: daemon paused-but-up confirmed-state; Q3 ship-everything-now; "all approved" host blanket on listed items; navigator-decides authority delegated; "keep dev busy all session."
+
+Pending host queue: cloud redeploy unblocks ~10 surfaces (BUG-028, set_canonical live, Mara user-facing, wiki status migration, Mark wiring); R7 storage-split decision; #28+#29 audit-doc review (Option A recommended); DR drill #3 fire; messaging_*/dry_inspect_* permanent allowlist verdict (defaults B if silent).
+
+Worktree state cleaned: 1 worktree (agent-a54683e4 preserved Phase 7.3 H2 WIP), 0 claude/* branches.
+
+Dev queue depth at wrap: #19 in_progress (dev-2 Py3.14 hang bisect, may have wedged), #23/#24/#25/#26/#27 pending. dev-2 #19 outcome unknown at shutdown — bisect started 03:48, no idle since ~03:48, watcher process polling.
+
+
+2026-04-26T16:18:00-07:00 [claude-code lead] PM session wrap. 19 commits landed: 4f98654 #8 helpers extension, 004afd9 prep docs 1-4, 3ea263a PROBE-003 CI, 96a00f7 Step 5 prep + STATUS, 32b919c #9 wiki extraction, 5797ec7 canary smoke + PROBE-005/006 catalog, e6cc7ad #14 _canary_common consolidation, ab61da5 #10 status extraction (bundled PLAN.md refresh from navigator stage-race), 80108fb #11 runs extraction, daceb84 Step 6 prep, 555712e #12 evaluation extraction, ee2202d engine-domain coupling inventory, 3adef1f BUG-029 taxonomy matrix, cdbafe3 #13 runtime_ops extraction, 4021239 flake RCA doc, 64b1fbb canary exception identity, ae391e8 DEFAULT_URL drift sentinel, 110cd2c Steps 7+8 prep docs, 217722e #14 market extraction.
+
+Major outcome: universe_server.py decomp Steps 1-7 of 8 SHIPPED today. 14012 → 7778 LOC (-44.5% in single session). 6 new api/ submodules + 1 helpers extension. All Pattern A2 (delegation wrapper preserved in universe_server.py with @mcp.tool decorator + plain handler in api/). All extractions zero rework. Re-export shim pattern matured to zero-test-edits across #12, #13, #14.
+
+Trajectory: Step 8 (branches.py, ~2,673 LOC, ~75 test imports, first @mcp.prompt) is queued as next-session first dispatch. Post-Step-8 universe_server.py projected ~5,100 LOC. Full audit "100-LOC routing shell" target requires Steps 9+10 (universe.py + engine_helpers.py) — flagged for host decision in Step 8 prep §10.2.
+
+Side outcomes: PROBE-003 wiki_canary now CI-scheduled (was forever-rule gap). Canary scripts hardened against drift (3 helper consolidation + import smoke + exception identity + URL drift sentinel = 4 layers of regression guard). BUG-029 failure taxonomy locked at 52 cases. Flake RCA documented (WAL multi-conn race; deferred fix per Fix A vs B options). Engine-domain coupling inventory ready for #28/#29 host audit-review.
+
+Host curation queue (per dev-2 Concerns audit, do NOT auto-edit per `feedback_status_md_host_managed`):
+- Concern #4 (flake): consider updating to point at docs/concerns/2026-04-26-test_record_and_get_stats_flake.md (4021239)
+- Concern #9 (modularity audit): consider striking `universe_server` (Steps 1-7 LANDED today; Step 8 + 9-10 queued); discovery + daemon_server seams remain
+- Concerns #2 + #8 are reference/architectural notes that could move to AGENTS.md / PLAN.md if host wants STATUS lighter
+- Concerns #11-#14 (ChatGPT-side) are not actionable from our side; host may want to reframe
+
+Pending host queue (unchanged): cloud daemon redeploy (BUG-028 alias-fix + this session's surfaces), R7 storage-split, Mark-branch canonical, #28/#29 audit-doc review (engine-domain inventory ee2202d adds new input), DR drill #3, Steps 9+10 decision.
+
+Worktree state: clean. .tmp-chatgpt-setup.png + docs/ops/post-redeploy-wiki-migration.md remain untracked across session (pre-existing). Tests: 6113+ pass baseline maintained throughout (broader sweeps SHIP-confirmed at each step).
+
+Verifier metrics: zero NEEDS WORK verdicts this session; every SHIP gated cleanly through both tests + diff review. Dev-2 shipped 8 tasks (canary hardening + finding-driven follow-ups). Navigator: 4 monitoring tasks (cursor + STATUS audit + Step 6 prep + PLAN.md refresh) all clean. PLAN.md staging-race lesson: when devs/navigator run concurrent commits, prefer separate stage windows.
+

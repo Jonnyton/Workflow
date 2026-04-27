@@ -2,3 +2,10 @@
 2026-04-19T17:42:32-07:00 GREEN layer=1 url=https://mcp.tinyassets.io/mcp rtt_ms=230
 2026-04-23T23:38:52-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=211
 2026-04-23T23:39:08-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=223
+2026-04-25T12:15:18-07:00 RED   layer=wiki url=https://tinyassets.io/mcp exit=6 surface=wiki_write rtt_ms=809 reason='wiki write isError=true: "2 validation errors for call[wiki]\\nslug\\n  Unexpected keyword argument [type=unexpected_keyword_argument, input_value=\'uptime-probe\', input_type=str]\\n    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument\\nbody\\n  Unexpected keyword argument [type=unexpected_ke"'
+2026-04-25T19:42:06-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=741
+2026-04-25T19:42:12-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=754
+2026-04-25T20:30:42-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=852
+2026-04-25T20:30:47-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=656
+2026-04-26T14:13:10-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=1031
+2026-04-26T14:30:35-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=800
