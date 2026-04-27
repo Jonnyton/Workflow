@@ -50,7 +50,7 @@ def _call_describe(branch_dict, validate_errors=None):
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.universe_server._base_path", return_value="/fake"),
         patch(
-            "workflow.universe_server._related_wiki_pages",
+            "workflow.api.branches._related_wiki_pages",
             return_value={"items": [], "truncated_count": 0},
         ),
         patch("workflow.branch_versions.list_branch_versions", return_value=[]),
@@ -70,7 +70,7 @@ def _call_get(branch_dict):
         patch("workflow.universe_server._current_actor", return_value="tester"),
         patch("workflow.universe_server._gates_enabled", return_value=False),
         patch(
-            "workflow.universe_server._related_wiki_pages",
+            "workflow.api.branches._related_wiki_pages",
             return_value={"items": [], "truncated_count": 0},
         ),
         patch("workflow.author_server.list_gate_claims", return_value=[]),

@@ -98,7 +98,7 @@ class TestDescribeBranchAcceptsName:
             patch("workflow.daemon_server.list_branch_definitions", return_value=[_BRANCH_A]),
             patch("workflow.universe_server._current_actor", return_value="user"),
             patch("workflow.universe_server._base_path", return_value="/fake"),
-            patch("workflow.universe_server._related_wiki_pages",
+            patch("workflow.api.branches._related_wiki_pages",
                   return_value={"items": [], "truncated_count": 0}),
             patch("workflow.branch_versions.list_branch_versions", return_value=[]),
             patch("workflow.daemon_server.list_branch_definitions", return_value=[_BRANCH_A]),

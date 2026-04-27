@@ -268,7 +268,7 @@ def _call_add_node(branch_dict, node_kwargs, verbose=None):
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
-        patch("workflow.universe_server._apply_node_spec", return_value=""),
+        patch("workflow.api.branches._apply_node_spec", return_value=""),
         patch("workflow.universe_server._storage_backend") as sb_mock,
         patch("workflow.universe_server._current_actor", return_value="tester"),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
