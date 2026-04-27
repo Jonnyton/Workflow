@@ -7,7 +7,8 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [2026-04-23] **P0 revert-loop: daemon PAUSED.** Auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [2026-04-20] Canonical public MCP: `tinyassets.io/mcp` -> 200; `mcp.tinyassets.io/mcp` -> gated internal origin only.
 - [2026-04-22→25] `/etc/workflow/env` mode flip — Fix A landed (bc079a0: atomic mutator); awaits host review of installer behavior.
-- [2026-04-20] `test_node_eval::test_record_and_get_stats_roundtrip` pre-existing flake. Passes alone, flaky in full suite.
+- [2026-04-20→27] `test_node_eval::test_record_and_get_stats_roundtrip` flake — Fix B landed (16d4823: wal_checkpoint(PASSIVE)); watching for recurrence ≥30d.
+- [2026-04-27] Methods-prose evaluator v1 design (Option 2: prose-versions + prose-reproducibility); host approval needed before spec + EvaluatorKind extension. Note: `docs/design-notes/2026-04-27-methods-prose-evaluator.md`.
 - [2026-04-17] Privacy mode note has 3 host Qs: `docs/design-notes/2026-04-18-privacy-modes-for-sensitive-workflows.md`.
 - [2026-04-18] `add_canon_from_path` sensitivity note has 3 host asks: `docs/design-notes/2026-04-18-add-canon-from-path-sensitivity.md`.
 - [2026-04-18] Claude.ai injection mitigation blocked on host-Q batch: `docs/design-notes/2026-04-18-claude-ai-injection-hallucination.md`.
@@ -34,6 +35,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
+| Uptime alarm false RECOVERED on SKIP | `scripts/uptime_alarm.py, tests/test_uptime_canary.py` | - | claimed:codex |
 | Cloud daemon redeploy — picks up BUG-028 + #30 + #14 + others | DO droplet | host | host-action |
 | R7 storage-split status confirmation | exec-plan: `docs/exec-plans/active/2026-04-19-rename-end-state.md` | host | host-decision |
 | Mark-branch canonical decision (Task #33 phase 0) | live MCP `goals action=propose/bind/set_canonical` | host | host-decision |

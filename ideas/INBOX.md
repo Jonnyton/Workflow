@@ -13,6 +13,32 @@ half-formed experiments.
 
 ## Inbox
 
+- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: captured, priority: post-uptime, size: medium) **`extensions action=my_recent_runs` + `goals action=my_recent` — user-scoped recency primitives.** Priya Session 2 (2026-04-20) signal #1: chatbot needs one tool call to answer "show me what I built recently" instead of fishing through `list_branches` + `query_runs` with author filter. Workspace-memory continuity gap — distinct from chatbot_assumes_workflow first-chat principle (this is N-th chat continuity).
+  Files (when scoped): `workflow/api/runs.py` (new `_action_my_recent_runs`); `workflow/api/market.py` (new `_action_my_recent_goals`); `tests/test_my_recent_primitives.py` (NEW).
+  Depends: Decomp Step 8 lands.
+  Verification: live MCP via `mcp_probe.py --tool extensions --args '{"action":"my_recent_runs","limit":5}'`.
+  Next: triage to PIPELINE — needs host approval to add new MCP surface area.
+  Links: navigator's 2026-04-27 chain-break review (chat record); persona memory `priya_ramaswamy/`.
+
+- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: captured, priority: post-uptime, size: medium) **`extensions action=continue_branch from_run_id=...` — explicit "extend prior run" primitive.** Priya signal #6 + Devin Session 2 echoed. "Extend the sweep" / "continue branch" has no clean Workflow verb — chatbot has to semantically infer "clone this branch, add nodes, re-run with extended inputs." Same root concern as INBOX 2026-04-24 entry but with concrete API shape proposal.
+  Files (when scoped): `workflow/api/runs.py` (new `_action_continue_branch_run` — DISTINCT from branches.py's authoring `_action_continue_branch`); `tests/test_continue_branch_run.py` (NEW).
+  Depends: Step 8 + my_recent_runs primitive (above) for dispatch-table conventions.
+  Verification: persona-replay on Priya Session 2 transcript — chatbot routes to continue_branch instead of re-scaffolding.
+  Next: merge with 2026-04-24 entry at triage; needs host approval (new MCP surface area).
+  Links: 2026-04-24 INBOX entry for "Extend run / continue branch as first-class primitive"; navigator's 2026-04-27 chain-break review.
+
+- [2026-04-27] (source: navigator-userim-review, owner: navigator, status: design-note-queued, priority: domain-skill, size: medium) **Methods-prose evaluator class — first-class evaluator for publication-grade prose correctness.** Priya signal #2: when chatbot generates publication-grade methods paragraph (library versions + CV description + algorithm config), nothing checks correctness. Cross-layer chain-break (pitch-vs-product gap): platform pitches "Evaluator-driven workflows" but methods-section prose has no evaluator. Either build new Evaluator type OR concede this stays human-review.
+  Next: navigator drafts design note `docs/design-notes/2026-04-27-methods-prose-evaluator.md` enumerating (a) library-version accuracy, (b) citation correctness, (c) methodological-step completeness, (d) reproducibility-claim verifiability. Decision required before any dev work.
+  Links: navigator's 2026-04-27 chain-break review.
+
+- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: captured, priority: knowledge-graph, size: large) **Cross-algorithm methodological-parity guidance — `node action=compatibility_with` or wiki concept page.** Priya signal #4: RF needs pseudo-absences, MaxEnt doesn't. Less-experienced users submit papers with flawed cross-algorithm comparisons because chatbot doesn't surface the differences. Lower urgency than recency / continue_branch primitives but real safety surface.
+  Next: triage after recency + continue_branch primitives land; needs design exploration.
+  Links: navigator's 2026-04-27 chain-break review.
+
+- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: captured, priority: observability, size: small) **Trust-graduation observability — "% users skipping dry-inspect on session N" as retention proxy.** Priya signal #7: skipped dry-inspect on Session 2 after using it on Session 1. No surface tracks this today. Platform-instrumentation, not chain-break per se.
+  Next: low priority, not urgent; capture in observability backlog.
+  Links: navigator's 2026-04-27 chain-break review.
+
 - [2026-04-25] (source: navigator-audit, owner: unassigned, status: captured) CONTRIBUTORS.md authoring surface — a canonical file listing node/branch authors with GitHub handles for Co-Authored-By attribution, seeded from the designer-royalties model (`project_designer_royalties_and_bounties`). Chatbot can read it to credit contributors in commit messages and pull request bodies.
   Next: evaluate whether this is a standalone file convention or a feature that needs a daemon_server.py table + MCP surface. Ilse persona (OSS-contributor tier) is the natural first user — good user-sim mission candidate.
   Links: -
