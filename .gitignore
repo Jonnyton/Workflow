@@ -47,6 +47,7 @@ wallet-seed*.txt
 .DS_Store
 Thumbs.db
 *.truncated
+.tmp-*
 
 # Obsidian (local vault config)
 .obsidian/
