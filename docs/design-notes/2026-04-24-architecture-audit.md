@@ -206,7 +206,7 @@ Effort: **1–2 days** after #3 lands.
 - `workflow/evaluation/structural.py` — clean domain module, graceful optional deps (spaCy, ASP).
 - `workflow/bid/` — partially complete, conformant shape. Verify whether `bid_ledger.py` is a separate gap or already folded into `execution_log.py`.
 - `workflow/storage/` — partially complete, conformant shape, progressing.
-- All other conformant subpackages: `auth/`, `catalog/`, `checkpointing/`, `constraints/`, `context/`, `evaluation/`, `ingestion/`, `judges/`, `knowledge/`, `learning/`, `memory/`, `planning/`, `providers/`, `retrieval/`, `desktop/`, `testing/`, `utils/`.
+- All other conformant subpackages: `auth/`, `catalog/`, `checkpointing/`, `constraints/`, `context/`, `evaluation/`, `ingestion/`, `knowledge/`, `learning/`, `memory/`, `planning/`, `providers/`, `retrieval/`, `desktop/`, `testing/`, `utils/`.
 
 ---
 

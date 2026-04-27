@@ -544,7 +544,6 @@ class LauncherApp:
         "domains.fantasy_author.phases",
         "workflow.providers",
         "workflow.evaluation",
-        "workflow.judges",
         "workflow.constraints",
         "workflow.planning",
         "workflow.knowledge",

@@ -198,6 +198,33 @@ audience: lead, host (final removal sequencing)
 
 **Status: cheapest immediate win. Recommend dispatching as a one-line dev task today.**
 
+#### POST-DISPATCH WRINKLE (2026-04-27, dev-2 surfaced during Task #22)
+
+The original "zero callers in canonical tree" claim above was **95% right but missed three references** that dev-2 caught while executing the deletion:
+
+1. **`fantasy_daemon/judges/__init__.py`** — sibling-tree shim, also being deleted with `workflow/judges/`. The sibling tree (`fantasy_daemon/`) carries its own `judges/` stub for the same reason; both die together. The audit grep saw it but classified it as "separate file" — should have classified it as "sibling-tree shim, in scope."
+2. **`workflow/desktop/launcher.py:547`** — `_RELOAD_PACKAGES` string-list constant references `"workflow.judges"` for desktop reloader cosmetic logic. Cosmetic (the package being absent at reload time degrades gracefully) but worth cleaning in the same commit so the allowlist doesn't drift.
+3. **`PLAN.md:63` + `docs/design-notes/2026-04-24-architecture-audit.md:209`** — both list `judges/` in "subpackages that already conform." Stale once the package is deleted; can't conform after deletion. Updated 2026-04-27 by navigator (this commit batch).
+
+**Lesson for future audits.** "Zero callers in canonical tree" is necessary but not sufficient. Future `git grep <symbol>` sweeps must also check:
+
+| Reference type | Where to look | Why missed in this audit |
+|---|---|---|
+| Sibling-tree shims | `fantasy_daemon/`, future sibling roots | Originally classified as "separate file, not in scope" — should have been "sibling shim, dies together." |
+| Launcher reload allowlists | `workflow/desktop/launcher.py` `_RELOAD_PACKAGES` | Cosmetic constants don't break runtime; easy to miss in caller-search; clean in same commit so allowlist stays accurate. |
+| Design-note conformance lists | `PLAN.md`, `docs/design-notes/*.md` | Documentation references "the package conforms" — stale post-deletion. Grep for the package name across all design notes + PLAN + AGENTS. |
+| Restore runbooks | `deploy/RESTORE.md`, `docs/ops/*.md` | Documentation that names the file/package by literal string. Grep for filename. |
+| Plugin-runtime mirror | `packaging/claude-plugin/plugins/*/runtime/` | Mirror copies the source tree; deletion must propagate via `python packaging/claude-plugin/build_plugin.py`. |
+
+Going-forward audit checklist (added to navigator's standing rule per `feedback_no_shims_ever` event-driven cadence):
+
+- [ ] Canonical-tree caller grep (this audit's baseline check).
+- [ ] Sibling-tree caller grep (across `domains/*/`, `fantasy_daemon/`, etc.).
+- [ ] Launcher reload allowlists + similar cosmetic constants.
+- [ ] Design-note + PLAN.md + AGENTS.md conformance lists.
+- [ ] Deploy + ops runbook references.
+- [ ] Plugin packaging mirror parity.
+
 ---
 
 ### Arc E — Storage-package legacy F401 re-exports (3 instances)
