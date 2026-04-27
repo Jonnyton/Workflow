@@ -11,6 +11,7 @@ as orphaned notes.
   `docs/design-notes/`, `docs/exec-plans/active/`, or `PLAN.md`.
 - `landed`: implemented and recorded in `ideas/SHIPPED.md`.
 - `dropped`: intentionally declined or deferred with a reason.
+- `reframed-community-build`: feature was approved as a concept but declined as a platform primitive per `project_community_build_over_platform_build` / `project_minimal_primitives_principle`; intent lives on as a community-build pattern (wiki rubric, chatbot composition, remixable node template) rather than platform code. Capture the composition path so the user-facing intent isn't lost.
 
 ## Promotion Paths
 

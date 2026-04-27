@@ -264,3 +264,25 @@ Pending host queue: methods-prose evaluator EvaluatorKind extension approval, pl
 
 Dev queue at wrap: dev on #1 Step 9 in_progress; dev-2 standing by post-#11 ship awaiting Step 8 verifier verdict ripple. Verifier metrics: zero NEEDS WORK this session; #6 SHIPped in 53s.
 2026-04-26T18:27:23-07:00 [codex] Hardened `migrate_secrets_to_vault` missing-key coverage by replacing an always-true assertion with exact dry-run success and missing-key failure expectations. Verified local: `python -m pytest tests/test_migrate_secrets_to_vault.py -q` = 21 passed; `python -m ruff check tests\test_migrate_secrets_to_vault.py` = pass.
+
+2026-04-26T20:00:00-07:00 [claude-code lead] Session start. Team workflow-2026-04-26 spawned (dev/dev-2/verifier/navigator, all opus-4-7). Dispatched: dev → Task #18 retarget sweep + Arc A/E shim deletion (1772 → ≤200 LOC target; 99/100 symbols pre-mapped in .tmp-retarget-symbol-map.txt). Navigator → wiki sweep + dev-2 task surfacing + Arc B/C prep docs + Phase 6 db rename review + user-sim ingest. Note: prior session's ROI doc recommended DEFER on retarget sweep, but host's STATUS.md + new no-shims-ever rule mandate it now. Public MCP green (tinyassets.io/mcp 406 = alive). Local 8001 down (tray-managed, not primary).
+
+2026-04-26T23:05:00-07:00 [claude-code lead] Cloud redeploy SHIPPED. 48 commits pushed to origin/main; deploy-prod for 0cbdea9 (Arc B Phase 1) and f650ce5 (fastapi lazy-import fix) both succeeded. Public canary green (https://tinyassets.io/mcp exit 0). Production now runs: universe_server.py decomp Steps 1-11 + Arc B Phase 1 caller migration (workflow/+domains/ tree) + fastapi lazy-import for MCPB stdio bundle. Pre-existing CI failures (Docker build smoke + actionlint shellcheck on uptime-canary.yml) not introduced today, not blocking. Navigator SWEEP 1 + SWEEP 2 audits both landed (~17KB each); 4 dispatch-ready cleanup tasks queued for dev-2 post-#9 (#16 top-level docs retire, #17 skill scrub, #18 exec-plan landed move, #19 design-note classify); A.1 fantasy_daemon/ unpack arc design note dispatched to navigator next. Methods-prose evaluator REFRAMED community-build per host directive; new memory rule project_community_build_over_platform_build.md added.
+
+2026-04-27T00:05:00-07:00 [claude-code lead] Session wrap. Long, dense session — major architectural principles landed + 6 commits pushed.
+
+Commits landed (6): 0cbdea9 Arc B caller migration phase 1 (workflow/+domains/, 20 files); f650ce5 fastapi lazy-import for MCPB stdio bundle; 23c7ea1 ideas idea-pipeline triage Task #9; 6ce641f skill-file Universe Server scrub Task #17; 2e92774 design-notes status classification Task #19 + A.1 fantasy_daemon unpack arc design note Task #23 (76 files); cf2254a Task #16 retire-stamp 7 top-level pre-rename docs (accidentally bundled #18 git-mvs); d8f09af Task #18 partial cross-ref repair (11/17 fixed, 6 deferred to post-dev-#18 as Task #26).
+
+Cloud redeploy SHIPPED (deploy-prod for f650ce5 success 1m34s; canary green https://tinyassets.io/mcp exit 0). Production now runs decomp Steps 1-11 + Arc B Phase 1 + fastapi lazy-import.
+
+Five foundational principles saved to memory: project_minimal_primitives_principle, project_community_build_over_platform_build, project_privacy_via_community_composition, project_user_capability_axis (with OSS-client tier), project_commons_first_architecture. Plus project_author_id_canonical_not_rename_leftover (audit safeguard) + visuals-first OSS-portability rule (markdown-table fallback). All foundational scoping rules — read MEMORY.md before any new scope decision.
+
+Navigator deliverables (massive): SWEEP 1 legacy branding audit + addendum + revision (47KB); SWEEP 2 architecture edges sweep (17KB); A.1 fantasy_daemon/ unpack design note (118-of-122-files-are-shims headline, 6-9h not multi-week); user-capability-axis implications audit (36KB, 35 findings); minimal primitive-set proposal (5+2 tools, persona-validated); engine primitive substrate companion (8 substrate primitives); Tomás Reyes persona charter (T1-ChatGPT-non-technical bilingual). Commons-first architecture audit (Task #29) dispatched — three more deliverables expected next session.
+
+dev's Task #18 retarget sweep WIP preserved in worktree — 87 files modified, universe_server.py 1772→972 LOC, Step 7/10. Resume next session by reading the WIP state. ROI §5.1 ≤200 target was internally inconsistent with §5.2 enumeration; realistic floor is ~940 LOC.
+
+5 ChatGPT-side STATUS Concerns reclassified P1 per provider-parity principle (BUG-034 + 4 ChatGPT approval/UX rows). Concern row added for `.codex/skills/` drift.
+
+Decision pile awaiting host (next session priority): primitive-set proposal §7 (10 asks), engine substrate §7 (4 asks), Tomás persona approval, A.1 fantasy_daemon unpack §7 (7 asks), Phase 6 db rename (6 asks), parked Q D (file-reading tool split), commons-first audit deliverables when nav lands them.
+
+Team status: dev silent on full-suite iteration (asked checkpoint, no response before wrap); dev-2 standing by; verifier idle; navigator mid-deliverables on Task #29. Graceful shutdown initiated.
