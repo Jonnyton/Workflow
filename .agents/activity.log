@@ -263,3 +263,4 @@ Side outcomes: All 5 Priya/Devin chain-break proposals captured in ideas/INBOX.m
 Pending host queue: methods-prose evaluator EvaluatorKind extension approval, plus carryover (cloud daemon redeploy, R7 storage-split, Mark-branch canonical, #28/#29 audit-doc review, DR drill #3, retarget-sweep accept/defer).
 
 Dev queue at wrap: dev on #1 Step 9 in_progress; dev-2 standing by post-#11 ship awaiting Step 8 verifier verdict ripple. Verifier metrics: zero NEEDS WORK this session; #6 SHIPped in 53s.
+2026-04-26T18:27:23-07:00 [codex] Hardened `migrate_secrets_to_vault` missing-key coverage by replacing an always-true assertion with exact dry-run success and missing-key failure expectations. Verified local: `python -m pytest tests/test_migrate_secrets_to_vault.py -q` = 21 passed; `python -m ruff check tests\test_migrate_secrets_to_vault.py` = pass.

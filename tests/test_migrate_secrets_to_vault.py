@@ -131,9 +131,8 @@ def test_migrate_missing_key_in_plaintext_is_failure():
         op_item_exists_fn=lambda k, v: False,
         bw_item_id_fn=lambda k: None,
     )
-    assert ("K1", pytest.approx) or any(k == "K1" for k, _ in succ)
-    fail_keys = [k for k, _ in fail]
-    assert "K2" in fail_keys
+    assert succ == [("K1", "DRY-RUN would write 4-char value")]
+    assert fail == [("K2", "missing from plaintext file")]
 
 
 def test_migrate_empty_value_is_failure():
