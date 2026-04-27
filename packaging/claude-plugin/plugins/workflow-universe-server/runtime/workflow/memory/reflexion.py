@@ -202,7 +202,7 @@ class ReflexionEngine:
 
         Returns the LLM response or empty string if unavailable.
         """
-        from domains.fantasy_author.phases._provider_stub import (
+        from domains.fantasy_daemon.phases._provider_stub import (
             _FORCE_MOCK,
             call_provider,
         )
@@ -257,7 +257,7 @@ class ReflexionEngine:
 
         Returns the LLM response or empty string if unavailable.
         """
-        from domains.fantasy_author.phases._provider_stub import (
+        from domains.fantasy_daemon.phases._provider_stub import (
             _FORCE_MOCK,
             call_provider,
         )

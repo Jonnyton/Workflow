@@ -256,8 +256,8 @@ def synthesize_source(
     list[str]
         Filenames of synthesized documents.
     """
-    from domains.fantasy_author.phases._provider_stub import call_provider, last_provider
-    from domains.fantasy_author.phases.worldbuild import _write_canon_file
+    from domains.fantasy_daemon.phases._provider_stub import call_provider, last_provider
+    from domains.fantasy_daemon.phases.worldbuild import _write_canon_file
 
     if not source_text.strip():
         return []

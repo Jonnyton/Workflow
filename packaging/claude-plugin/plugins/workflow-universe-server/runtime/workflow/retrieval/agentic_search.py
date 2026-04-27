@@ -137,8 +137,7 @@ def run_phase_retrieval(
 
         kg = runtime.knowledge_graph
         if kg is None:
-            from domains.fantasy_author.phases._paths import resolve_kg_path
-
+            from domains.fantasy_daemon.phases._paths import resolve_kg_path
             from workflow.knowledge.knowledge_graph import KnowledgeGraph
 
             kg_path = resolve_kg_path(state)
@@ -314,7 +313,7 @@ def build_phase_query(
 
 def _build_provider_call() -> Callable[[str, str, str], Any] | None:
     """Return the async decomposition callable when real providers are enabled."""
-    from domains.fantasy_author.phases import _provider_stub
+    from domains.fantasy_daemon.phases import _provider_stub
 
     if _provider_stub._FORCE_MOCK:
         return None

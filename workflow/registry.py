@@ -10,7 +10,7 @@ imports if static discovery is preferred.
 
 Usage:
     from workflow.registry import default_registry
-    from domains.fantasy_author.skill import FantasyAuthorDomain
+    from domains.fantasy_daemon.skill import FantasyAuthorDomain
 
     default_registry.register(FantasyAuthorDomain())
     domain = default_registry.get("fantasy_author")

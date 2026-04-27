@@ -34,7 +34,7 @@ class FantasyAuthorDomain:
     def state_extensions(self) -> dict[str, type]:
         """Return TypedDict extensions for Workflow state.
 
-        Fantasy-specific state fields are defined in domains/fantasy_author/state/
+        Fantasy-specific state fields are defined in domains/fantasy_daemon/state/
         and will be merged with the base engine state.
         """
         return {}  # Detailed state extensions defined in state/ modules

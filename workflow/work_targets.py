@@ -50,7 +50,7 @@ DISCARD_RETENTION_DAYS = 30
 
 EXECUTION_KIND_NOTES = "notes"
 # Phase C.2: BOOK/CHAPTER/SCENE moved to
-# domains/fantasy_author/work_kinds.py. Only NOTES stays here because
+# domains/fantasy_daemon/work_kinds.py. Only NOTES stays here because
 # every domain has notes-class work; the fantasy-specific kinds are no
 # longer engine concerns.
 

@@ -541,7 +541,7 @@ class LauncherApp:
 
     # Modules to reimport when code changes are detected.
     _RELOAD_PACKAGES = (
-        "domains.fantasy_author.phases",
+        "domains.fantasy_daemon.phases",
         "workflow.providers",
         "workflow.evaluation",
         "workflow.constraints",
@@ -549,9 +549,9 @@ class LauncherApp:
         "workflow.knowledge",
         "workflow.retrieval",
         "workflow.memory",
-        "domains.fantasy_author.graphs",
+        "domains.fantasy_daemon.graphs",
         "workflow.checkpointing",
-        "domains.fantasy_author.state",
+        "domains.fantasy_daemon.state",
         "workflow.learning",
     )
 

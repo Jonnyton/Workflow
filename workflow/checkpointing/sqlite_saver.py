@@ -164,7 +164,7 @@ def compile_all_graphs(
         Mapping from graph name to compiled graph:
         ``{"scene", "chapter", "book", "universe"}``.
     """
-    from domains.fantasy_author.graphs import (
+    from domains.fantasy_daemon.graphs import (
         build_book_graph,
         build_chapter_graph,
         build_scene_graph,

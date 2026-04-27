@@ -2,7 +2,7 @@
 
 Three producers wrap existing universe-cycle logic so the daemon can
 iterate them uniformly. Registration happens in
-``domains/fantasy_author/__init__.py`` at import time:
+``domains/fantasy_daemon/__init__.py`` at import time:
 
     SeedProducer           — origin="seed"
     FantasyAuthorialProducer — origin="fantasy_authorial"
@@ -104,7 +104,7 @@ def register_fantasy_producers() -> None:
     """Register the three fantasy producers in spec order.
 
     Idempotent: safe to call on module reload (re-register replaces
-    by name). Called from ``domains/fantasy_author/__init__.py``.
+    by name). Called from ``domains/fantasy_daemon/__init__.py``.
     """
     from workflow.producers import register
     register(SeedProducer())
