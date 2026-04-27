@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Science-First Architecture Refactor — Research Synthesis
 
 **Date:** 2026-03-31

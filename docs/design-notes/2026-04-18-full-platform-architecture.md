@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Full Platform Architecture — No Phases, Single-Build Target
 
 **Date:** 2026-04-18 (host directive this day)

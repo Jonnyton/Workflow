@@ -1,3 +1,7 @@
+---
+status: shipped
+---
+
 # Secrets vault integration
 
 **Status:** Tooling landed (task #7, 2026-04-22). Host migration pending.

@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Architecture Audit — 2026-04-24
 
 **Skills applied:** `domain-model` (stress-test against PLAN.md + actual domain boundaries) then `improve-codebase-architecture` (ranked findings with seam-level specifics).

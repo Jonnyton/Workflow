@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Uptime Canary — Layered Design
 
 **Date:** 2026-04-19

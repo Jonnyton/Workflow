@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Surgical Rollback — Atomic Set + Bisect-on-Canary
 
 **Date:** 2026-04-25

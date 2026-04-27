@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Named-Checkpoint Decision-Routing Contract
 
 **Date:** 2026-04-25

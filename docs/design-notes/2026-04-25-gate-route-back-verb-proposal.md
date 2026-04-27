@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Gate-Aware Route-Back — Verdict Extension Proposal
 
 **Date:** 2026-04-25

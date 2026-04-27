@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # `extensions action=author_patch_notes` — MCP Wrapper
 
 **Date:** 2026-04-25

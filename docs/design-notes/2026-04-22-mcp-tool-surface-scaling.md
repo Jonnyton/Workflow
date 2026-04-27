@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # MCP tool-surface scaling
 
 *Date:* 2026-04-22. *Author:* navigator. *Trigger:* host flagged that

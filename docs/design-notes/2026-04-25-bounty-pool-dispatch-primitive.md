@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Bounty-Pool Dispatch Primitive
 
 **Date:** 2026-04-25

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Private Universes: Payload-Redacted Enforcement Under Claude.ai Chat
 
 **Date:** 2026-04-18

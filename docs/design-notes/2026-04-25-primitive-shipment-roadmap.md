@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Primitive Shipment Roadmap
 
 **Date:** 2026-04-25

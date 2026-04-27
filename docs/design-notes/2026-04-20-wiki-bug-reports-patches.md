@@ -2,7 +2,8 @@
 title: Wiki bug-report convention — paste-ready code patches
 date: 2026-04-20
 author: navigator
-status: dispatch-ready
+status: active
+status_detail: dispatch-ready
 parent: docs/design-notes/2026-04-20-wiki-bug-reports-convention.md
 siblings: docs/design-notes/2026-04-20-wiki-bug-reports-seed-entries.md
 ---

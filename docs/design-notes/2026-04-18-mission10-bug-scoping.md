@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Mission 10 Bug Scoping — Fix-Ready Pointers
 
 **Date:** 2026-04-18

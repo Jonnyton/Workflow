@@ -2,7 +2,8 @@
 title: Layer-3 substrate design session — pre-reads
 date: 2026-04-23
 author: navigator
-status: DRAFT — companion to agenda doc
+status: active
+status_detail: DRAFT — companion to agenda doc
 companion: docs/design-notes/2026-04-23-layer-3-design-session-agenda.md
 ---
 

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # `workflow/storage/__init__.py` — Stale-Bytecode Mitigation Scoping
 
 **Date:** 2026-04-19 (post-P0)

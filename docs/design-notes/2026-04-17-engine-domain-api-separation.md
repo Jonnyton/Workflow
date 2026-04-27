@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Engine/Domain API Separation — ROI-First Proposal
 
 **Date:** 2026-04-17

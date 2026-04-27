@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Implementation Discipline Conventions
 
 **Date:** 2026-04-25

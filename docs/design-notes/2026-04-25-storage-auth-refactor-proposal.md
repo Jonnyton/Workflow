@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Storage-Layer Authority Refactor — Defense-in-Depth Auth
 
 **Date:** 2026-04-25

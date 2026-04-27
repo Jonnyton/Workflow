@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Modularity Audit
 
 **Date:** 2026-04-19  

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Layer-2 Canary — Scoping Doc
 
 **Date:** 2026-04-19 (post-P0)

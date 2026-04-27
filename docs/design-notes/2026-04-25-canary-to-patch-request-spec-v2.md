@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Canary → patch_request Seam — Design Spec (v2)
 
 **Date:** 2026-04-25

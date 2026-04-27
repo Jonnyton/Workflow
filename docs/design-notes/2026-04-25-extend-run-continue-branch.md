@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Design Note: Extend Run / Continue Branch as a First-Class Primitive
 
 **Date:** 2026-04-25

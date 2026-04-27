@@ -2,7 +2,8 @@
 title: `.author_server.db` filename data-format alias — migration plan
 date: 2026-04-27
 author: navigator
-status: design note — pre-stages host decision
+status: active
+status_detail: design note — pre-stages host decision
 companion:
   - docs/audits/2026-04-27-project-wide-shim-audit.md §3 item 17 (deferred from shim audit)
   - feedback_no_shims_ever (memory — host directive 2026-04-27; data-format aliases are shim-shaped at the data layer)

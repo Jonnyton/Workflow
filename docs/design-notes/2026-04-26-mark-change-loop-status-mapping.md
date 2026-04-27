@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Mark's `change_loop_v1` — Platform-Gap Mapping
 
 **Date:** 2026-04-26

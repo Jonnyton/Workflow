@@ -2,7 +2,8 @@
 title: Vault-only provider keys — removing GROQ/GEMINI/XAI from persistent droplet storage
 date: 2026-04-24
 author: navigator
-status: scoping note — open Qs for host before dev dispatch
+status: active
+status_detail: scoping note — open Qs for host before dev dispatch
 related:
   - docs/design-notes/2026-04-22-secrets-vault-integration.md
   - deploy/workflow-env.template

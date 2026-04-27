@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # 2026-04-09 Runtime Fiction Memory Graph
 
 ## Problem

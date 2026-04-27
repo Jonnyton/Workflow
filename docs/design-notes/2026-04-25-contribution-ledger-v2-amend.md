@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Contribution Ledger v2 Amend — Anonymous-Author Asymmetry
 
 **Date:** 2026-04-25

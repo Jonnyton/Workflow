@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Attribution Layer Specs
 
 **Date:** 2026-04-25

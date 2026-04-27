@@ -2,7 +2,8 @@
 title: Single canonical public entry point — execution options
 date: 2026-04-20
 author: navigator
-status: AWAITING LEAD RATIFICATION — do not execute until one option is selected
+status: active
+status_detail: AWAITING LEAD RATIFICATION — do not execute until one option is selected
 related:
   - docs/ops/dns-tunnel-single-entry-cutover.md (runbook — DRAFT, blocked on this doc)
   - deploy/cloudflare-worker/worker.js

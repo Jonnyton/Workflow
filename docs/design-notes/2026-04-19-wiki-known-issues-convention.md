@@ -2,7 +2,8 @@
 title: Wiki known-issues convention (chatbot auto-log)
 date: 2026-04-19
 author: navigator
-status: EXPLORATORY / SUPERSEDED — do not implement
+status: superseded
+status_detail: EXPLORATORY / SUPERSEDED — do not implement
 superseded_by: docs/design-notes/2026-04-20-wiki-bug-reports-convention.md
 ---
 

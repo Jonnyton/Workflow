@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Claude.ai Injection-Hallucination on Absolute-Path Uploads
 
 **Date:** 2026-04-18

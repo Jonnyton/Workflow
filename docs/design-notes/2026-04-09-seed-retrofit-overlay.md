@@ -1,3 +1,7 @@
+---
+status: shipped
+---
+
 # 2026-04-09 Seed Retrofit Overlay
 
 ## Problem

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Self-Evolving Platform Vision (v2)
 
 **Date:** 2026-04-25

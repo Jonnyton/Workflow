@@ -1,3 +1,7 @@
+---
+status: superseded
+---
+
 # Persistent Uptime Architecture — Control Plane + Data Plane
 
 **Status (2026-04-18 update):** **SUPERSEDED** by `2026-04-18-full-platform-architecture.md`. Host rejected the phased rollout (Phase 1 thin relay → Phase 2 state migration → Phase 3 paid failover) in favor of a single-build collaborative backend. Retained as historical reference for the plane-split analysis, hosting-option matrix, and Cloudflare-front deep-dive, which remain useful input to the successor note.

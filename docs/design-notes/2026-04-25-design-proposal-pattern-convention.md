@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Design-Proposal Pattern — Convention Doc
 
 **Date:** 2026-04-25

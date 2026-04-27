@@ -2,7 +2,8 @@
 title: Layer-3 substrate design session — agenda
 date: 2026-04-23
 author: navigator
-status: DRAFT — awaits host scheduling
+status: active
+status_detail: DRAFT — awaits host scheduling
 attendees: host, team-lead, navigator
 target: half-day session, 4 decisions shipped, 1 design-note commit
 pre-read: docs/design-notes/2026-04-23-layer-3-design-session-prereads.md

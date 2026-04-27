@@ -2,7 +2,8 @@
 title: Revert-loop canary + provider_exhaustion repair class — Lane 4 spec
 date: 2026-04-23
 author: navigator
-status: DRAFT — dev-claimable as STATUS.md Task #9
+status: active
+status_detail: DRAFT — dev-claimable as STATUS.md Task #9
 related:
   - docs/audits/2026-04-23-p0-auto-recovery-trace.md (the precipitating incident)
   - scripts/last_activity_canary.py (sibling canary)

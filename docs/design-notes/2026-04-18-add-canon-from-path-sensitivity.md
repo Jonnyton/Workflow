@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # `add_canon_from_path` — MCP Sensitivity Metadata Research
 
 **Date:** 2026-04-18

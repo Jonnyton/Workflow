@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Silent deploy-damage: class-of-bug + 24h-asleep-host survivability
 
 *Date:* 2026-04-22. *Author:* navigator. *Triggering incident:* ~18h dark on

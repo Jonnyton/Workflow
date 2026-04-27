@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # BUG-005 Sub-Branch Invocation — Closure Proposal
 
 **Date:** 2026-04-25

@@ -2,7 +2,8 @@
 title: Prod LLM binding strategy — minimum viable two-provider stance
 date: 2026-04-21
 author: navigator
-status: AWAITING LEAD RATIFICATION — no code changes until option selected
+status: active
+status_detail: AWAITING LEAD RATIFICATION — no code changes until option selected
 related:
   - workflow/providers/router.py
   - domains/fantasy_daemon/phases/_provider_stub.py

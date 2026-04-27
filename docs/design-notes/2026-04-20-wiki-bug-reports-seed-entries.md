@@ -2,7 +2,8 @@
 title: Wiki bug-report seed entries — BUG-001 + BUG-002
 date: 2026-04-20
 author: navigator
-status: dispatch-ready
+status: active
+status_detail: dispatch-ready
 parent: docs/design-notes/2026-04-20-wiki-bug-reports-convention.md
 siblings: docs/design-notes/2026-04-20-wiki-bug-reports-patches.md
 ---
@@ -60,7 +61,8 @@ created: 2026-04-20
 updated: 2026-04-20
 component: extensions.patch_branch
 severity: major
-status: open
+status: active
+status_detail: open
 reported_by: chatbot
 tags: [bug, extensions]
 ---
@@ -140,7 +142,8 @@ created: 2026-04-20
 updated: 2026-04-20
 component: storage.wiki_path
 severity: major
-status: open
+status: active
+status_detail: open
 reported_by: chatbot
 tags: [bug, storage]
 ---

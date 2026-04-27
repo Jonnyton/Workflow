@@ -1,3 +1,7 @@
+---
+status: superseded
+---
+
 # Self-Evolving Platform Vision (v1 outline)
 
 **Date:** 2026-04-25

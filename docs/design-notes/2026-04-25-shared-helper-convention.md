@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Shared-Helper Convention for Def/Version Sibling Primitives
 
 **Date:** 2026-04-25

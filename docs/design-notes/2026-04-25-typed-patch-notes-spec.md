@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # TypedPatchNotes Dataclass Spec
 
 **Date:** 2026-04-25

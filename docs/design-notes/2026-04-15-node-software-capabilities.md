@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Node Software Capabilities — First-Class Plug-and-Play
 
 **Status:** Promotion-ready. Explorer scout #36 + host §10 answers (Q1/Q2/Q3) + new Shape IV software-donation feature folded 2026-04-15. One remaining item pending host: explicit PLAN.md principle approval (§9).

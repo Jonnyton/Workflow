@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Design Note: `hyperparameter_importance` Evaluator Node
 
 **Date:** 2026-04-25

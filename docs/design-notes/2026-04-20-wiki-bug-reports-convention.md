@@ -2,7 +2,8 @@
 title: Wiki bug-report convention (chatbot-auto-file)
 date: 2026-04-20
 author: navigator
-status: CANONICAL — implement this design
+status: active
+status_detail: CANONICAL — implement this design
 supersedes: docs/design-notes/2026-04-19-wiki-known-issues-convention.md
 related_patches: docs/design-notes/2026-04-20-wiki-bug-reports-patches.md
 related_seed_entries: docs/design-notes/2026-04-20-wiki-bug-reports-seed-entries.md
@@ -158,7 +159,8 @@ created: YYYY-MM-DD
 updated: YYYY-MM-DD
 component: universe-server | wiki-mcp | tray | claude-chat-skill | ...
 severity: critical | major | minor | cosmetic
-status: open | investigating | fixed | wontfix | cannot-repro | duplicate
+status: active
+status_detail: open | investigating | fixed | wontfix | cannot-repro | duplicate
 reported_by: chatbot | user | navigator | ...
 repro_chat: (optional) URL or chat-id where the bug surfaced
 fixed_in_commit: (optional, populated on status=fixed)

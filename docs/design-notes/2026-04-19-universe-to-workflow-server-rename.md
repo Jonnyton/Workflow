@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Universe Server → Workflow Server: Layer-3 Rename Scoping
 
 **Date:** 2026-04-19

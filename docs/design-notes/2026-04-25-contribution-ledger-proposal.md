@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Contribution Ledger — Schema Proposal (A1 / E15)
 
 **Date:** 2026-04-25

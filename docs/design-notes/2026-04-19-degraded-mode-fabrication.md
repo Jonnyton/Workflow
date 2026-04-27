@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Degraded-Mode Fabrication — Pattern + Architectural Response
 
 **Date:** 2026-04-19

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # External PR → patch_request Bridge
 
 **Date:** 2026-04-25

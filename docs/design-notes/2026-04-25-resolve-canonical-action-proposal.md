@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # `goals action=resolve_canonical` — MCP Read Action
 
 **Date:** 2026-04-25

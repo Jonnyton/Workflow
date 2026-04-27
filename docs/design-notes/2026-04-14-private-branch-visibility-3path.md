@@ -1,3 +1,7 @@
+---
+status: shipped
+---
+
 # #56 Private-Branch Visibility Filter — 3-Path Comparison
 
 **Status:** Decided + landed. Path A shipped in `5fa8eda` ("Phase 6.2.2: Path A — Branch visibility column + filters") with follow-up `96a73ae` closing 2 leak sites. Tests in `tests/test_branch_visibility.py`. Retain for decision archaeology.

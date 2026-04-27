@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # NodeScope Unification — `node_scope.py` + `scoping.py`
 
 **Date:** 2026-04-18

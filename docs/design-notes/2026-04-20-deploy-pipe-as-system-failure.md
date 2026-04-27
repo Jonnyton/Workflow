@@ -2,7 +2,8 @@
 title: The deploy pipe is the real chain-break
 date: 2026-04-20
 author: navigator
-status: urgent — ship fix-1 this session
+status: active
+status_detail: urgent — ship fix-1 this session
 ---
 
 # The deploy pipe is the real chain-break

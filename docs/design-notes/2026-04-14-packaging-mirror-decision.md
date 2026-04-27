@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Packaging Mirror Decision
 
 **Status:** Planner + Explorer co-authored design spike. Explorer contract-check evidence confirmed 2026-04-15.

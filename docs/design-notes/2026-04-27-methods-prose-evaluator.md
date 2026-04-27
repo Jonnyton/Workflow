@@ -2,7 +2,8 @@
 title: Methods-prose evaluator — first-class evaluator for publication-grade prose correctness
 date: 2026-04-27
 author: navigator
-status: proposal — awaiting lead approval
+status: superseded
+status_detail: proposal — awaiting lead approval
 type: design-note
 companion:
   - docs/specs/INDEX.md (where this graduates if approved)

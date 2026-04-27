@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Scene-scoped KG cleanup — `seeded_scene` schema expansion
 
 **Date:** 2026-04-18

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Variant Canonicals — Schema Proposal
 
 **Date:** 2026-04-25

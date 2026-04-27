@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Shared-Account UX for Tier-2 Hosts
 
 **Date:** 2026-04-19 (promoted to ACTIVE 2026-04-19 post-P0 probe — second evidence point acquired)

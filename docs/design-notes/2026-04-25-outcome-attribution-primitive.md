@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Outcome Attribution — Event-Aggregation Primitive
 
 **Date:** 2026-04-25

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Tier-3 OSS Clone Nightly GHA — Spec
 
 **Date:** 2026-04-19

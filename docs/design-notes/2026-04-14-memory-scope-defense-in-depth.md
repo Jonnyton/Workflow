@@ -1,3 +1,7 @@
+---
+status: superseded
+---
+
 # Memory-Scope Defense-in-Depth
 
 **Status:** Design spike (planner). Promotes to dev task after host sign-off.

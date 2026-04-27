@@ -1,3 +1,7 @@
+---
+status: research
+---
+
 # Research Brief: Runtime Fiction Memory Graph — What Would Actually Work Best
 
 Date: 2026-04-09

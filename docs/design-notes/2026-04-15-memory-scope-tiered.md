@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Memory Scope — Tiered Multi-Domain Rethink
 
 **Status:** Planner rethink of Stage 2, host-refined 2026-04-15. Supersedes the Stage-2 proposal in `2026-04-14-memory-scope-defense-in-depth.md`. Stage 1 (`be84f7b` + `530a646`) stands as shipped. **Promotion-ready** pending review (all §9 Qs answered).

@@ -1,3 +1,7 @@
+---
+status: shipped
+---
+
 # 2026-04-19 — Option-Select "No Preference" Bug (claude_chat.py)
 
 **Status:** Fixed in this commit chain.

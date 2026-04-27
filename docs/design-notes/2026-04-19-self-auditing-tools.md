@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Self-Auditing Tools — A First-Class MCP Pattern for Trust-Critical Surfaces
 
 **Date:** 2026-04-19

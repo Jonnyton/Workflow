@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Arch Audit Finding #5 — R7 Split Scoping
 
 **Date:** 2026-04-25  

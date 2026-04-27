@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Minimum-Viable-Launch Narrowing Proposal
 
 **Date:** 2026-04-19

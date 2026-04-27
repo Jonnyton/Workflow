@@ -1,3 +1,7 @@
+---
+status: superseded
+---
+
 # Canary → patch_request Seam — Design Spec
 
 **Date:** 2026-04-25

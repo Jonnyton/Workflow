@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Runner branch_version_id Bridge — Sibling-Action Proposal
 
 **Date:** 2026-04-25

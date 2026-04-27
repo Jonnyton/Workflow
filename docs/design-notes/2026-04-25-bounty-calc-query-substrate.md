@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Bounty-Calc Query Template Substrate
 
 **Date:** 2026-04-25
