@@ -35,7 +35,6 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Uptime alarm false RECOVERED on SKIP | `scripts/uptime_alarm.py, tests/test_uptime_canary.py` | - | claimed:codex |
 | Cloud daemon redeploy — picks up BUG-028 + #30 + #14 + others | DO droplet | host | host-action |
 | R7 storage-split status confirmation | exec-plan: `docs/exec-plans/active/2026-04-19-rename-end-state.md` | host | host-decision |
 | Mark-branch canonical decision (Task #33 phase 0) | live MCP `goals action=propose/bind/set_canonical` | host | host-decision |

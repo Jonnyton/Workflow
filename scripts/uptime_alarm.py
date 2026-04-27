@@ -136,16 +136,16 @@ def _count_trailing_soft_yellows(parsed: list[dict[str, str]]) -> int:
     return count
 
 
-def _last_green_before_red_streak(parsed: list[dict[str, str]]) -> dict[str, str] | None:
-    seen_red = False
-    for entry in reversed(parsed):
+def _first_green_after_last_red(parsed: list[dict[str, str]]) -> dict[str, str] | None:
+    """Return the first GREEN entry after the latest RED in the scanned tail."""
+    last_red_index = -1
+    for index, entry in enumerate(parsed):
         if entry.get("status") == "RED":
-            seen_red = True
-            continue
-        if seen_red and entry.get("status") == "GREEN":
+            last_red_index = index
+
+    for entry in parsed[last_red_index + 1:]:
+        if entry.get("status") == "GREEN":
             return entry
-        if not seen_red:
-            return entry  # currently green — no streak
     return None
 
 
@@ -220,9 +220,12 @@ def evaluate() -> int:
         state.pop("last_soft_yellow_status", None)
         _save_state(state)
 
-    # Trailing green. If we were in a red-alarmed state, emit a RECOVERED line.
+    # If a GREEN arrived after the latest RED, emit a RECOVERED line.
+    # SKIP and SOFT_YELLOW are not outage recovery evidence.
     if last_alarm_status == "red":
-        recovered = _last_green_before_red_streak(parsed) or parsed[-1]
+        recovered = _first_green_after_last_red(parsed)
+        if recovered is None:
+            return written
         ts = _now_local_iso()
         url = recovered.get("url", "?")
         rtt_ms = recovered.get("rtt_ms", "?")

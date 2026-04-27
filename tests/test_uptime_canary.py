@@ -209,6 +209,13 @@ def _green(ts: str, rtt_ms: int = 200) -> str:
     return f"2026-04-19T{ts}-07:00 GREEN layer=1 url=https://x/mcp rtt_ms={rtt_ms}"
 
 
+def _skip(ts: str) -> str:
+    return (
+        f"2026-04-19T{ts}-07:00 SKIP  layer=1 url=https://x/mcp "
+        "exit=14 reason='probe_skipped'"
+    )
+
+
 def _alarm_lines(env) -> list[str]:
     if not env["alarm"].is_file():
         return []
@@ -273,6 +280,27 @@ def test_recovery_emits_recovered_line(tmp_log_env):
     assert "ALARM" in alarms[0]
     assert "RECOVERED" in alarms[1]
     assert "url=https://x/mcp" in alarms[1]
+
+
+def test_recovery_waits_for_green_not_skip(tmp_log_env):
+    _write_log(tmp_log_env, [_red("17:32:00"), _red("17:34:00")])
+    uptime_alarm.evaluate()  # alarm fires
+
+    with tmp_log_env["uptime"].open("a", encoding="utf-8") as fp:
+        fp.write(_skip("17:36:00") + "\n")
+    uptime_alarm.evaluate()
+
+    alarms = _alarm_lines(tmp_log_env)
+    assert len(alarms) == 1
+    assert "RECOVERED" not in "\n".join(alarms)
+
+    with tmp_log_env["uptime"].open("a", encoding="utf-8") as fp:
+        fp.write(_green("17:38:00") + "\n")
+    uptime_alarm.evaluate()
+
+    alarms = _alarm_lines(tmp_log_env)
+    assert len(alarms) == 2
+    assert "RECOVERED" in alarms[1]
 
 
 def test_recovery_resets_dedupe_so_next_red_alarms(tmp_log_env):
