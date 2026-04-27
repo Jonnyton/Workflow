@@ -19,10 +19,10 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from domains.fantasy_author.phases.authorial_priority_review import (
     authorial_priority_review,
 )
+
 from workflow.work_targets import (
     ROLE_NOTES,
     load_work_targets,
@@ -294,7 +294,9 @@ def test_submit_request_write_uses_centralized_filename_constant():
     """
     from pathlib import Path as _Path
 
-    src = _Path("workflow/universe_server.py").read_text(encoding="utf-8")
+    # Step 9 (decomp): _action_submit_request and _action_inspect_universe
+    # moved to workflow/api/universe.py. Scan there now.
+    src = _Path("workflow/api/universe.py").read_text(encoding="utf-8")
     # _action_submit_request and _action_inspect_universe should both
     # import REQUESTS_FILENAME rather than hardcoding "requests.json".
     # Two imports expected (one per action). Zero bare literals of the

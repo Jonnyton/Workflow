@@ -72,6 +72,7 @@ def universe_with_log(tmp_path, monkeypatch):
     rather than the host's real output directory.
     """
     from workflow import universe_server as us
+    from workflow.api import universe as uni
 
     udir = tmp_path / "test-universe"
     udir.mkdir()
@@ -86,6 +87,8 @@ def universe_with_log(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(us, "_default_universe", lambda: "test-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "test-universe")
     return udir
 
 
@@ -139,6 +142,7 @@ def test_tag_filter_no_match_returns_caveat(universe_with_log):
 def test_dispatch_guard_empty_match_adds_absence_caveat(tmp_path, monkeypatch):
     """tag='dispatch_guard' with zero matches must warn empty != no-overshoots."""
     from workflow import universe_server as us
+    from workflow.api import universe as uni
 
     udir = tmp_path / "no-dispatch-universe"
     udir.mkdir()
@@ -149,6 +153,8 @@ def test_dispatch_guard_empty_match_adds_absence_caveat(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(us, "_default_universe", lambda: "no-dispatch-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "no-dispatch-universe")
 
     response = _parse_response(_action_get_recent_events(tag="dispatch_guard"))
 
@@ -163,11 +169,14 @@ def test_dispatch_guard_empty_match_adds_absence_caveat(tmp_path, monkeypatch):
 def test_dispatch_guard_missing_log_adds_absence_caveat(tmp_path, monkeypatch):
     """tag='dispatch_guard' on a universe with no activity.log still warns."""
     from workflow import universe_server as us
+    from workflow.api import universe as uni
 
     udir = tmp_path / "fresh-dispatch-universe"
     udir.mkdir()
     monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(us, "_default_universe", lambda: "fresh-dispatch-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-dispatch-universe")
 
     response = _parse_response(_action_get_recent_events(tag="dispatch_guard"))
 
@@ -214,11 +223,14 @@ def test_untagged_caveat_when_no_filter(universe_with_log):
 
 def test_missing_log_returns_empty_with_caveat(tmp_path, monkeypatch):
     from workflow import universe_server as us
+    from workflow.api import universe as uni
 
     udir = tmp_path / "fresh-universe"
     udir.mkdir()  # no activity.log inside
     monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(us, "_default_universe", lambda: "fresh-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-universe")
 
     response = _parse_response(_action_get_recent_events())
 
