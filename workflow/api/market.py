@@ -532,7 +532,7 @@ _ATTRIBUTION_ACTIONS: dict[str, Any] = {
 def _current_actor_or_anon() -> str:
     """Wrapper around the existing ``_current_actor`` for clarity in
     the Goals surface. Identical behavior."""
-    from workflow.universe_server import _current_actor
+    from workflow.api.engine_helpers import _current_actor
 
     return _current_actor()
 
@@ -551,13 +551,15 @@ def _format_goal_catalog_line(g: dict[str, Any]) -> str:
 
 
 def _action_goal_propose(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.identity import git_author
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
         _split_csv,
-        _storage_backend,
     )
 
     name = (kwargs.get("name") or "").strip()
@@ -607,15 +609,17 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_update(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.daemon_server import get_goal
     from workflow.daemon_server import update_goal as _update
     from workflow.identity import git_author
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
         _split_csv,
-        _storage_backend,
     )
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -699,16 +703,18 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_bind(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.daemon_server import (
         get_branch_definition,
         get_goal,
         update_branch_definition,
     )
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
-        _storage_backend,
     )
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -826,13 +832,15 @@ def _action_goal_list(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_get(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+    )
     from workflow.daemon_server import (
         branches_for_goal,
         get_goal,
         goal_gate_summary,
     )
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
         _gates_enabled,
     )
@@ -957,12 +965,14 @@ _ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS + _GATE_EVENT_LEADERBOARD_MET
 
 
 def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+    )
     from workflow.daemon_server import (
         get_goal,
         goal_leaderboard,
     )
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
         _gates_enabled,
     )
@@ -1099,13 +1109,15 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+    )
     from workflow.daemon_server import (
         get_goal,
         goal_common_nodes,
         goal_common_nodes_all,
     )
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
     )
 
@@ -1228,9 +1240,11 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_set_canonical(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+    )
     from workflow.daemon_server import get_goal, set_canonical_branch
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
     )
 
@@ -1311,10 +1325,12 @@ def _dispatch_goal_action(
     and formats it as the structured ``local_edit_conflict`` payload so
     chat clients render actionable options rather than a raw traceback.
     """
-    from workflow.universe_server import (
-        _append_global_ledger,
+    from workflow.api.engine_helpers import (
         _format_dirty_file_conflict,
         _truncate,
+    )
+    from workflow.universe_server import (
+        _append_global_ledger,
     )
 
     try:
@@ -1486,14 +1502,16 @@ def _validate_evidence_url(url: str) -> str:
 
 
 def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.catalog.layout import slugify
     from workflow.daemon_server import get_goal
     from workflow.identity import git_author
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
-        _storage_backend,
     )
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -1607,6 +1625,11 @@ def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_claim(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.catalog.layout import slugify
     from workflow.daemon_server import (
         get_branch_definition,
@@ -1616,10 +1639,7 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
     )
     from workflow.identity import git_author
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
-        _storage_backend,
     )
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -1733,6 +1753,11 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_retract(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
     from workflow.catalog.layout import slugify
     from workflow.daemon_server import (
         get_branch_definition,
@@ -1741,10 +1766,7 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
     )
     from workflow.identity import git_author
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _format_commit_failed,
-        _storage_backend,
     )
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -1838,11 +1860,13 @@ _LIST_CLAIMS_LIMIT_CAP = 500
 
 
 def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _filter_claims_by_branch_visibility,
+    )
     from workflow.daemon_server import get_goal, list_gate_claims
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _filter_claims_by_branch_visibility,
     )
 
     bid = (kwargs.get("branch_def_id") or "").strip()
@@ -1898,15 +1922,17 @@ def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _filter_leaderboard_by_branch_visibility,
+    )
     from workflow.daemon_server import (
         gates_leaderboard,
         get_goal,
         get_goal_ladder,
     )
     from workflow.universe_server import (
-        _current_actor,
         _ensure_author_server_db,
-        _filter_leaderboard_by_branch_visibility,
     )
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -2082,8 +2108,8 @@ def _action_gates_release_bonus(kwargs: dict[str, Any]) -> str:
 
 
 def _action_attest_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.gate_events import attest_gate_event
-    from workflow.universe_server import _current_actor
 
     goal_id = (kwargs.get("goal_id") or "").strip()
     event_type = (kwargs.get("event_type") or "").strip()
@@ -2117,8 +2143,8 @@ def _action_attest_gate_event(kwargs: dict[str, Any]) -> str:
 
 
 def _action_verify_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.gate_events import verify_gate_event
-    from workflow.universe_server import _current_actor
 
     event_id = (kwargs.get("event_id") or "").strip()
     verifier_id = (kwargs.get("verifier_id") or _current_actor()).strip()
@@ -2134,8 +2160,8 @@ def _action_verify_gate_event(kwargs: dict[str, Any]) -> str:
 
 
 def _action_dispute_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.gate_events.store import dispute_gate_event
-    from workflow.universe_server import _current_actor
 
     event_id = (kwargs.get("event_id") or "").strip()
     disputed_by = (kwargs.get("disputed_by") or _current_actor()).strip()
@@ -2152,8 +2178,8 @@ def _action_dispute_gate_event(kwargs: dict[str, Any]) -> str:
 
 
 def _action_retract_gate_event(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.gate_events.store import retract_gate_event
-    from workflow.universe_server import _current_actor
 
     event_id = (kwargs.get("event_id") or "").strip()
     retracted_by = (kwargs.get("retracted_by") or _current_actor()).strip()
@@ -2334,8 +2360,10 @@ def gates(
                          payout on a "pass" release_bonus verdict.
       node_id: node target for stake_bonus.
     """
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _format_dirty_file_conflict,
+    )
+    from workflow.universe_server import (
         _gates_enabled,
     )
 

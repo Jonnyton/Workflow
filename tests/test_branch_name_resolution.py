@@ -28,49 +28,50 @@ def _patch_lookup(exists_ids=("uuid-abc-123",), all_branches=(_BRANCH_A, _BRANCH
         patch("workflow.author_server.get_branch_definition", side_effect=get_branch_def),
         patch("workflow.daemon_server.list_branch_definitions", return_value=list(all_branches)),
         patch("workflow.universe_server._current_actor", return_value="user"),
+        patch("workflow.api.engine_helpers._current_actor", return_value="user"),
     )
 
 
 class TestResolveBranchId:
     def test_exact_id_returned_unchanged(self):
         """If the input IS a valid branch_def_id, return it directly."""
-        p1, p2, p3 = _patch_lookup()
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup()
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("uuid-abc-123", "/fake")
         assert result == "uuid-abc-123"
 
     def test_name_resolved_to_id(self):
         """Case-insensitive name match returns the branch_def_id."""
-        p1, p2, p3 = _patch_lookup(exists_ids=())
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup(exists_ids=())
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("Town Climate Claim Checker", "/fake")
         assert result == "uuid-abc-123"
 
     def test_name_resolution_case_insensitive(self):
         """Name lookup is case-insensitive."""
-        p1, p2, p3 = _patch_lookup(exists_ids=())
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup(exists_ids=())
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("town climate claim checker", "/fake")
         assert result == "uuid-abc-123"
 
     def test_unknown_input_returned_unchanged(self):
         """If no ID or name match, original string returned (KeyError will fire downstream)."""
-        p1, p2, p3 = _patch_lookup(exists_ids=())
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup(exists_ids=())
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("nonexistent-branch", "/fake")
         assert result == "nonexistent-branch"
 
     def test_empty_string_returned_unchanged(self):
         """Empty input is returned unchanged (required-check fires in caller)."""
-        p1, p2, p3 = _patch_lookup()
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup()
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("", "/fake")
         assert result == ""
 
     def test_second_branch_resolved_by_name(self):
         """Name resolution works for any branch, not just the first."""
-        p1, p2, p3 = _patch_lookup(exists_ids=())
-        with p1, p2, p3:
+        p1, p2, p3, p4 = _patch_lookup(exists_ids=())
+        with p1, p2, p3, p4:
             result = _resolve_branch_id("Fantasy Story Builder", "/fake")
         assert result == "uuid-def-456"
 
@@ -97,6 +98,7 @@ class TestDescribeBranchAcceptsName:
             patch("workflow.author_server.get_branch_definition", side_effect=get_def),
             patch("workflow.daemon_server.list_branch_definitions", return_value=[_BRANCH_A]),
             patch("workflow.universe_server._current_actor", return_value="user"),
+            patch("workflow.api.engine_helpers._current_actor", return_value="user"),
             patch("workflow.universe_server._base_path", return_value="/fake"),
             patch("workflow.api.branches._related_wiki_pages",
                   return_value={"items": [], "truncated_count": 0}),

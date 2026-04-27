@@ -68,6 +68,7 @@ def _call_get(branch_dict):
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.universe_server._base_path", return_value="/fake"),
         patch("workflow.universe_server._current_actor", return_value="tester"),
+        patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
         patch("workflow.universe_server._gates_enabled", return_value=False),
         patch(
             "workflow.api.branches._related_wiki_pages",

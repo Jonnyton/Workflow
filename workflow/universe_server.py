@@ -40,11 +40,6 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from workflow.api.prompts import _CONTROL_STATION_PROMPT
-from workflow.catalog import (
-    CommitFailedError,
-    DirtyFileError,
-    get_backend,
-)
 
 logger = logging.getLogger("universe_server")
 
@@ -186,6 +181,30 @@ async def _landing_index(request):  # type: ignore[no-untyped-def]
 # ``_JUDGMENT_ACTIONS.get(action)`` and ``_BRANCH_VERSION_ACTIONS.get(action)``
 # dispatch reads continue to work, and any direct test imports keep resolving.
 # ───────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Phase-1 engine_helpers extraction (Task #8 - decomp Step 10) - back-compat
+# re-exports. The preamble engine helpers (upload-whitelist trio, public
+# action ledger trio, storage backend factory, error formatters,
+# branch-visibility filters) live in ``workflow.api.engine_helpers``. After
+# Step 10 the dependency graph is inverted: every Step-1-9 submodule
+# lazy-imports from ``workflow.api.engine_helpers`` directly; this shim
+# preserves the legacy ``from workflow.universe_server import _X`` test
+# import paths + the 13 ``mock.patch("workflow.universe_server._X", ...)``
+# / ``monkeypatch.setattr(us, "_X", ...)`` test-patch sites unchanged.
+# ---------------------------------------------------------------------------
+from workflow.api.engine_helpers import (  # noqa: E402, F401  - back-compat re-exports
+    _append_ledger,
+    _current_actor,
+    _filter_claims_by_branch_visibility,
+    _filter_leaderboard_by_branch_visibility,
+    _format_commit_failed,
+    _format_dirty_file_conflict,
+    _split_whitelist_entry,
+    _storage_backend,
+    _truncate,
+    _upload_whitelist_prefixes,
+    _warn_if_no_upload_whitelist,
+)
 from workflow.api.evaluation import (  # noqa: E402, F401  — back-compat re-exports
     _BRANCH_VERSION_ACTIONS,
     _JUDGMENT_ACTIONS,
@@ -346,303 +365,13 @@ from workflow.api.runtime_ops import (  # noqa: E402, F401  — back-compat re-e
     _load_branch_for_inspect,
 )
 
-
-def _upload_whitelist_prefixes() -> list[Path] | None:
-    """Return the configured upload whitelist, or ``None`` if unset.
-
-    Reads ``WORKFLOW_UPLOAD_WHITELIST`` at call time (consistent with
-    the other behavior-gate flags in this module). Values are split on
-    both ``;`` and ``:`` separators, stripped, resolved to absolute
-    paths. An unset or empty variable returns ``None`` meaning "no
-    whitelist enforcement" — preserving the open-by-default UX the
-    host wanted for the demo. ``None`` is NOT the same as an empty
-    list (the latter would forbid all uploads).
-    """
-    raw = os.environ.get("WORKFLOW_UPLOAD_WHITELIST", "").strip()
-    if not raw:
-        return None
-    # Accept both ``:`` (Unix PATH-style) and ``;`` (Windows PATH-style)
-    # so the same env-var syntax works on either platform. Drive-letter
-    # colons on Windows (``C:``) survive because the path gets split
-    # again inside ``_split_whitelist_entry``.
-    parts: list[Path] = []
-    for entry in _split_whitelist_entry(raw):
-        entry = entry.strip()
-        if not entry:
-            continue
-        parts.append(Path(entry).resolve())
-    return parts
-
-
-def _split_whitelist_entry(raw: str) -> list[str]:
-    """Split the env var on ``;`` (always) and on ``:`` except when the
-    colon is a Windows drive-letter separator (e.g. ``C:\\Users``).
-    """
-    chunks: list[str] = []
-    for semi_chunk in raw.split(";"):
-        # A bare ``:`` separator joins two paths; a drive-letter colon
-        # has a single letter to its left. Walk the string and split
-        # only on the first kind.
-        buffer = []
-        i = 0
-        while i < len(semi_chunk):
-            ch = semi_chunk[i]
-            if ch == ":":
-                # Drive letter iff this is position 1 of the current
-                # buffer AND the char before is a single letter AND
-                # the char after is a path separator.
-                if (
-                    len(buffer) == 1
-                    and buffer[0].isalpha()
-                    and i + 1 < len(semi_chunk)
-                    and semi_chunk[i + 1] in ("/", "\\")
-                ):
-                    buffer.append(ch)
-                    i += 1
-                    continue
-                # Otherwise this colon separates paths.
-                chunks.append("".join(buffer))
-                buffer = []
-                i += 1
-                continue
-            buffer.append(ch)
-            i += 1
-        if buffer:
-            chunks.append("".join(buffer))
-    return chunks
-
-
-def _warn_if_no_upload_whitelist() -> None:
-    """Log a WARNING once at import time if the whitelist is unset.
-
-    Reminds the host that ``add_canon_from_path`` accepts any absolute
-    path when ``WORKFLOW_UPLOAD_WHITELIST`` is empty. Best-effort —
-    logger failure must never block module import.
-    """
-    try:
-        if _upload_whitelist_prefixes() is None:
-            logger.warning(
-                "WORKFLOW_UPLOAD_WHITELIST is unset — add_canon_from_path "
-                "will accept any absolute path. Set the env var to a "
-                "colon/semicolon-separated list of prefixes to enforce.",
-            )
-    except Exception:
-        # Never let a logger-configuration edge case break import.
-        pass
-
-
+# Preserve the at-server-start whitelist warning (Step 10 prep §3.5 Option B).
+# Calling here keeps the import-time side effect even though the function body
+# moved. Without this, the warning would only fire if something else imports
+# engine_helpers, missing the at-server-start contract.
 _warn_if_no_upload_whitelist()
 
 
-# _read_json and _read_text imported from workflow.api.helpers above.
-
-
-# ---------------------------------------------------------------------------
-# Public action ledger
-# ---------------------------------------------------------------------------
-# PLAN.md Design Decision: "Private chats, public actions." Every universe-
-# affecting write must be publicly attributable. The ledger is the durable
-# record of who did what, when.
-
-
-def _current_actor() -> str:
-    """Resolve the acting user's identity for ledger attribution.
-
-    Falls back to 'anonymous' when no session identity is available.
-    """
-    return os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
-
-
-def _append_ledger(
-    udir: Path,
-    action: str,
-    *,
-    actor: str | None = None,
-    target: str = "",
-    summary: str = "",
-    payload: dict[str, Any] | None = None,
-) -> None:
-    """Append one entry to the universe's public action ledger.
-
-    Designed to never raise: ledger failures are logged but don't abort
-    the surrounding write. The mutation has already landed on disk by the
-    time this is called, so losing a ledger entry is strictly better than
-    rolling back a successful user action.
-    """
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "actor": actor or _current_actor(),
-        "action": action,
-        "target": target,
-        "summary": summary,
-    }
-    if payload:
-        entry["payload"] = payload
-
-    ledger_path = udir / "ledger.json"
-    try:
-        udir.mkdir(parents=True, exist_ok=True)
-        existing = _read_json(ledger_path)
-        if not isinstance(existing, list):
-            existing = []
-        existing.append(entry)
-        ledger_path.write_text(
-            json.dumps(existing, indent=2, default=str),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        logger.warning("Failed to append ledger entry at %s: %s", ledger_path, exc)
-
-
-def _truncate(text: str, limit: int = 140) -> str:
-    """Collapse whitespace and truncate for ledger summaries."""
-    collapsed = " ".join((text or "").split())
-    if len(collapsed) <= limit:
-        return collapsed
-    return collapsed[: limit - 1].rstrip() + "…"
-
-
-
-
-def _storage_backend():
-    """Resolve the memoized :class:`StorageBackend` for catalog writes.
-
-    Goals + Branches live at repo root per spec §phase7_github_as_catalog
-    (`goals/<slug>.yaml`, `branches/<slug>.yaml`). The repo root is
-    derived from ``_base_path().parent`` — production points
-    ``output/`` at the project root, so its parent IS the git repo
-    root. Tests using ``UNIVERSE_SERVER_BASE=<tmp_path>/output`` get
-    ``<tmp_path>`` as the repo root, which isn't a git repo, so
-    ``get_backend`` auto-probes to :class:`SqliteOnlyBackend` and
-    leaves the host project repo untouched.
-    """
-    base = _base_path()
-    return get_backend(base, repo_root=base.parent)
-
-
-def _format_dirty_file_conflict(exc: DirtyFileError) -> dict[str, Any]:
-    """Shape a :class:`DirtyFileError` for MCP clients.
-
-    The structured payload lets the chat-side render the conflict as
-    actionable options instead of an opaque traceback. Used by Phase 7.3
-    write handlers; the formatter is wired separately from the raising
-    sites so each handler can keep its existing return-shape idiom.
-    """
-    paths = [str(p) for p in getattr(exc, "paths", []) or []]
-    primary = paths[0] if paths else ""
-    return {
-        "status": "local_edit_conflict",
-        "conflicting_path": primary,
-        "all_conflicts": paths,
-        "options": [
-            "pass force=True to overwrite",
-            "commit or stash local edits first",
-        ],
-    }
-
-
-def _filter_claims_by_branch_visibility(
-    claims: list[dict[str, Any]],
-    *,
-    viewer: str,
-) -> list[dict[str, Any]]:
-    """Phase 6.2.2 — hide gate claims whose Branch is private.
-
-    A private Branch's claim is visible only to its author. Public
-    Branches are visible to everyone. The Goal's visibility is NOT
-    consulted here; private Branch on public Goal is a supported
-    product state.
-
-    Branches that have been deleted (no row) are treated as "orphan
-    claims" and left in the list — the caller's orphan tagging
-    handles that surface separately.
-    """
-    if not claims:
-        return claims
-    from workflow.daemon_server import get_branch_definition
-
-    visibility_cache: dict[str, tuple[str, str]] = {}
-    filtered: list[dict[str, Any]] = []
-    for claim in claims:
-        bid = claim.get("branch_def_id", "")
-        if not bid:
-            filtered.append(claim)
-            continue
-        if bid not in visibility_cache:
-            try:
-                branch = get_branch_definition(
-                    _base_path(), branch_def_id=bid,
-                )
-                visibility_cache[bid] = (
-                    branch.get("visibility", "public") or "public",
-                    branch.get("author", "") or "",
-                )
-            except KeyError:
-                # Orphan claim — branch row gone. Keep the claim.
-                visibility_cache[bid] = ("public", "")
-        branch_visibility, branch_author = visibility_cache[bid]
-        if branch_visibility == "private" and branch_author != viewer:
-            continue
-        filtered.append(claim)
-    return filtered
-
-
-def _filter_leaderboard_by_branch_visibility(
-    entries: list[dict[str, Any]],
-    *,
-    viewer: str,
-) -> list[dict[str, Any]]:
-    """Phase 6.2.2 — hide leaderboard entries whose Branch is private.
-
-    Same contract as :func:`_filter_claims_by_branch_visibility` but
-    operates on leaderboard shape (``branch_def_id`` key present).
-    """
-    if not entries:
-        return entries
-    from workflow.daemon_server import get_branch_definition
-
-    filtered: list[dict[str, Any]] = []
-    for entry in entries:
-        bid = entry.get("branch_def_id", "")
-        if not bid:
-            filtered.append(entry)
-            continue
-        try:
-            branch = get_branch_definition(
-                _base_path(), branch_def_id=bid,
-            )
-        except KeyError:
-            filtered.append(entry)
-            continue
-        visibility = branch.get("visibility", "public") or "public"
-        author = branch.get("author", "") or ""
-        if visibility == "private" and author != viewer:
-            continue
-        filtered.append(entry)
-    return filtered
-
-
-def _format_commit_failed(exc: CommitFailedError) -> dict[str, Any]:
-    """Shape a :class:`CommitFailedError` for MCP clients.
-
-    SQLite row is retained (Path A — SQLite is the accepted-write
-    boundary); YAML is rolled back; the write is queued in
-    ``unreconciled_writes`` for a future ``sync_commit`` replay.
-    """
-    paths = [str(p) for p in getattr(exc, "paths", []) or []]
-    return {
-        "status": "git_commit_failed",
-        "error": "git_commit_failed",
-        "helper": exc.helper,
-        "git_error": exc.git_error,
-        "paths": paths,
-        "row_ref": exc.row_ref,
-        "note": (
-            "SQLite write accepted; git commit failed and was rolled "
-            "back. Entry queued in unreconciled_writes for later "
-            "sync_commit replay."
-        ),
-    }
 
 
 

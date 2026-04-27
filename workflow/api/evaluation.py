@@ -59,10 +59,10 @@ def _split_tag_csv(raw: str) -> list[str]:
 
 def _action_judge_run(kwargs: dict[str, Any]) -> str:
     """Attach a natural-language judgment to a run (optionally to a node)."""
+    from workflow.api.engine_helpers import _current_actor
     from workflow.api.runs import _branch_name_for_run
     from workflow.runs import add_judgment
     from workflow.runs import get_run as _get_run
-    from workflow.universe_server import _current_actor
 
     rid = (kwargs.get("run_id") or "").strip()
     text = (kwargs.get("judgment_text") or "").strip()
@@ -785,7 +785,8 @@ def _dispatch_judgment_action(
 ) -> str:
     """Dispatch a Phase 4 action. ``judge_run`` is the only write; the
     rest are read-only and bypass the ledger."""
-    from workflow.universe_server import _append_global_ledger, _truncate
+    from workflow.api.engine_helpers import _truncate
+    from workflow.universe_server import _append_global_ledger
 
     result_str = handler(kwargs)
     if action not in _JUDGMENT_WRITE_ACTIONS:

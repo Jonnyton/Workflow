@@ -270,7 +270,9 @@ def _call_add_node(branch_dict, node_kwargs, verbose=None):
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.api.branches._apply_node_spec", return_value=""),
         patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.universe_server._current_actor", return_value="tester"),
+        patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
         sb_mock.return_value.save_branch_and_commit = MagicMock()
@@ -327,6 +329,7 @@ def _call_connect_nodes(branch_dict, from_node, to_node, verbose=None):
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.branches.EdgeDefinition", return_value=MagicMock()),
         patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
         sb_mock.return_value.save_branch_and_commit = MagicMock()
@@ -371,6 +374,7 @@ def _call_set_entry_point(branch_dict, node_id, verbose=None):
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
         sb_mock.return_value.save_branch_and_commit = MagicMock()
@@ -418,6 +422,7 @@ def _call_add_state_field(branch_dict, field_name, field_type="str", verbose=Non
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
         sb_mock.return_value.save_branch_and_commit = MagicMock()

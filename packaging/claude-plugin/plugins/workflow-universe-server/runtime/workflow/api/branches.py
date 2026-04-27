@@ -177,7 +177,7 @@ def _append_global_ledger(
     ledger target is the base_path rather than a universe directory. Never
     raises: failures are logged but don't roll back the mutation.
     """
-    from workflow.universe_server import _append_ledger
+    from workflow.api.engine_helpers import _append_ledger
 
     _append_ledger(
         _base_path(), action,
@@ -207,7 +207,7 @@ def _dispatch_branch_action(
     Write actions (create/add/connect/set/delete) are funneled here so no
     handler can silently skip attribution.
     """
-    from workflow.universe_server import _format_dirty_file_conflict, _truncate
+    from workflow.api.engine_helpers import _format_dirty_file_conflict, _truncate
 
     _ensure_author_server_db()
     try:
@@ -268,13 +268,13 @@ def _dispatch_branch_action(
 
 
 def _ext_branch_create(kwargs: dict[str, Any]) -> str:
-    from workflow.branches import BranchDefinition
-    from workflow.identity import git_author
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
         _storage_backend,
     )
+    from workflow.branches import BranchDefinition
+    from workflow.identity import git_author
 
     name = kwargs.get("name", "").strip()
     if not name:
@@ -314,8 +314,8 @@ def _resolve_branch_id(bid_or_name: str, base_path: str) -> str:
     Returns the original string unchanged if no match is found — the caller's
     KeyError handler will surface the "not found" error as usual.
     """
+    from workflow.api.engine_helpers import _current_actor
     from workflow.daemon_server import get_branch_definition, list_branch_definitions
-    from workflow.universe_server import _current_actor
 
     if not bid_or_name:
         return bid_or_name
@@ -332,9 +332,9 @@ def _resolve_branch_id(bid_or_name: str, base_path: str) -> str:
 
 
 def _ext_branch_get(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.api.market import _gates_enabled
     from workflow.daemon_server import get_branch_definition, list_gate_claims
-    from workflow.universe_server import _current_actor
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -374,8 +374,8 @@ def _ext_branch_get(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_list(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.daemon_server import list_branch_definitions
-    from workflow.universe_server import _current_actor
 
     # Phase 6.2.2 — visibility-aware listing. Viewer sees public
     # Branches and any private Branches they authored.
@@ -434,14 +434,14 @@ def _ext_branch_delete(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
-    from workflow.branches import BranchDefinition
-    from workflow.daemon_server import get_branch_definition
-    from workflow.identity import git_author
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
         _storage_backend,
     )
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
+    from workflow.identity import git_author
 
     verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
@@ -507,14 +507,14 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
-    from workflow.branches import BranchDefinition, EdgeDefinition
-    from workflow.daemon_server import get_branch_definition
-    from workflow.identity import git_author
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
         _storage_backend,
     )
+    from workflow.branches import BranchDefinition, EdgeDefinition
+    from workflow.daemon_server import get_branch_definition
+    from workflow.identity import git_author
 
     verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
@@ -554,14 +554,14 @@ def _ext_branch_connect_nodes(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
-    from workflow.branches import BranchDefinition
-    from workflow.daemon_server import get_branch_definition
-    from workflow.identity import git_author
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
         _storage_backend,
     )
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
+    from workflow.identity import git_author
 
     verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
@@ -599,14 +599,14 @@ def _ext_branch_set_entry_point(kwargs: dict[str, Any]) -> str:
 
 
 def _ext_branch_add_state_field(kwargs: dict[str, Any]) -> str:
-    from workflow.branches import BranchDefinition
-    from workflow.daemon_server import get_branch_definition
-    from workflow.identity import git_author
-    from workflow.universe_server import (
+    from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
         _storage_backend,
     )
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
+    from workflow.identity import git_author
 
     verbose = str(kwargs.get("verbose") or "").strip().lower() in ("true", "1", "yes")
     bid = kwargs.get("branch_def_id", "").strip()
@@ -1252,8 +1252,8 @@ def _lookup_node_body(
 
 
 def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.branches import GraphNodeRef, NodeDefinition
-    from workflow.universe_server import _current_actor
 
     resolved, err = _resolve_node_spec(raw)
     if err:
@@ -1379,8 +1379,8 @@ def _apply_state_field_spec(branch: Any, raw: dict[str, Any]) -> str:
 def _staged_branch_from_spec(
     spec: dict[str, Any],
 ) -> tuple[Any, list[str]]:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
-    from workflow.universe_server import _current_actor
 
     errors: list[str] = []
     branch = BranchDefinition(

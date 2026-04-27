@@ -81,8 +81,8 @@ def _action_project_memory_get(kwargs: dict[str, Any]) -> str:
 
 
 def _action_project_memory_set(kwargs: dict[str, Any]) -> str:
+    from workflow.api.engine_helpers import _current_actor
     from workflow.memory.project import project_memory_set
-    from workflow.universe_server import _current_actor
 
     project_id = kwargs.get("project_id", "").strip()
     key = kwargs.get("key", "").strip()

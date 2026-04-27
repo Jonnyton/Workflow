@@ -86,7 +86,7 @@ logger = logging.getLogger("universe_server.universe")
 def _extract_submit_request(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     return (
         str(result.get("request_id", "")),
         _truncate(kwargs.get("text", "")),
@@ -100,7 +100,7 @@ def _extract_submit_request(
 def _extract_give_direction(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     return (
         kwargs.get("target") or str(result.get("note_id", "")),
         _truncate(kwargs.get("text", "")),
@@ -114,7 +114,7 @@ def _extract_give_direction(
 def _extract_set_premise(
     kwargs: dict[str, Any], _result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     text = kwargs.get("text", "")
     return (
         "PROGRAM.md",
@@ -126,7 +126,7 @@ def _extract_set_premise(
 def _extract_add_canon(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     name = result.get("filename", "") or kwargs.get("filename", "")
     provenance = kwargs.get("provenance_tag", "")
     return (
@@ -143,7 +143,7 @@ def _extract_add_canon(
 def _extract_add_canon_from_path(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     name = result.get("filename", "") or Path(kwargs.get("path", "")).name
     provenance = kwargs.get("provenance_tag", "") or "user_upload"
     bytes_written = result.get("bytes_written", 0)
@@ -180,7 +180,7 @@ def _extract_switch_universe(
 def _extract_create_universe(
     kwargs: dict[str, Any], _result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     uid = kwargs.get("universe_id", "")
     text = kwargs.get("text", "")
     summary = _truncate(text) if text.strip() else f"created {uid}"
@@ -193,7 +193,7 @@ def _extract_create_universe(
 def _extract_queue_cancel(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     return (
         str(kwargs.get("branch_task_id", "")),
         _truncate(f"cancel {kwargs.get('branch_task_id', '')}"),
@@ -204,7 +204,7 @@ def _extract_queue_cancel(
 def _extract_subscribe_goal(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     g = str(kwargs.get("goal_id", ""))
     return (g, _truncate(f"subscribe {g}"), {"status": result.get("status", "")})
 
@@ -212,7 +212,7 @@ def _extract_subscribe_goal(
 def _extract_unsubscribe_goal(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     g = str(kwargs.get("goal_id", ""))
     return (g, _truncate(f"unsubscribe {g}"), {"status": result.get("status", "")})
 
@@ -220,7 +220,7 @@ def _extract_unsubscribe_goal(
 def _extract_post_to_goal_pool(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     g = str(kwargs.get("goal_id", ""))
     bd = str(kwargs.get("branch_def_id", ""))
     return (
@@ -237,7 +237,7 @@ def _extract_post_to_goal_pool(
 def _extract_submit_node_bid(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     nb = str(result.get("node_bid_id", ""))
     nd = str(kwargs.get("node_def_id", ""))
     bid = kwargs.get("bid", 0.0)
@@ -256,7 +256,7 @@ def _extract_submit_node_bid(
 def _extract_set_tier_config(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    from workflow.universe_server import _truncate
+    from workflow.api.engine_helpers import _truncate
     tier_name = str(kwargs.get("tier", ""))
     en = bool(kwargs.get("enabled", False))
     return (
@@ -358,7 +358,7 @@ def _dispatch_with_ledger(
     universe-scoped dict gets the `Universe: <id>` text lead-in and key
     reordering (#15).
     """
-    from workflow.universe_server import _append_ledger
+    from workflow.api.engine_helpers import _append_ledger
     result_str = handler(**kwargs)
 
     spec = WRITE_ACTIONS.get(action)
@@ -2240,7 +2240,7 @@ def _action_add_canon(
     uploads; the daemon's worldbuild node picks up the signal and
     synthesizes canon from the source.
     """
-    from workflow.universe_server import _current_actor
+    from workflow.api.engine_helpers import _current_actor
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
     canon_dir = udir / "canon"
@@ -2336,7 +2336,7 @@ def _action_add_canon_from_path(
         Source tag (e.g. "published novel", "rough notes"). Defaults
         to "user_upload".
     """
-    from workflow.universe_server import _current_actor, _upload_whitelist_prefixes
+    from workflow.api.engine_helpers import _current_actor, _upload_whitelist_prefixes
     if not path:
         return json.dumps({"error": "path is required."})
 

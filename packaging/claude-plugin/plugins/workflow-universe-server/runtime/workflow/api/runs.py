@@ -342,10 +342,11 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     available today; do not poll an ``interrupted`` run expecting it to
     flip back to ``running``.
     """
+    from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import execute_branch_async
-    from workflow.universe_server import _current_actor, _resolve_branch_id
+    from workflow.universe_server import _resolve_branch_id
 
     _ensure_runs_recovery()
 
@@ -860,10 +861,10 @@ def _action_resume_run(kwargs: dict[str, Any]) -> str:
     the run. If the run is already in RESUMED status, the call is
     idempotent and returns the existing run_id.
     """
+    from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import ResumeError, resume_run
-    from workflow.universe_server import _current_actor
 
     _ensure_runs_recovery()
 
@@ -1199,11 +1200,11 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
     the same async executor pool. Records the ``branch_version_id`` on
     the new ``runs.branch_version_id`` column for attribution.
     """
+    from workflow.api.engine_helpers import _current_actor
     from workflow.runs import (
         SnapshotSchemaDrift,
         execute_branch_version_async,
     )
-    from workflow.universe_server import _current_actor
 
     _ensure_runs_recovery()
 
@@ -1322,8 +1323,8 @@ def _action_rollback_merge(kwargs: dict[str, Any]) -> str:
     per cross-DB refinement; see ``workflow/rollback.py`` module
     docstring).
     """
+    from workflow.api.engine_helpers import _current_actor
     from workflow.rollback import rollback_merge_orchestrator
-    from workflow.universe_server import _current_actor
 
     bvid = (kwargs.get("branch_version_id") or "").strip()
     reason = (kwargs.get("reason") or "").strip()
@@ -1445,7 +1446,8 @@ def _dispatch_run_action(
     run_branch and cancel_run both mutate durable state so they land in
     the global ledger with the run_id as the target.
     """
-    from workflow.universe_server import _append_global_ledger, _truncate
+    from workflow.api.engine_helpers import _truncate
+    from workflow.universe_server import _append_global_ledger
 
     result_str = handler(kwargs)
     if action not in _RUN_WRITE_ACTIONS:
