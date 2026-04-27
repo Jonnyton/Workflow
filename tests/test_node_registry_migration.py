@@ -71,7 +71,7 @@ class TestNodeRegistryMigration:
         )
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             nodes = _load_nodes()
@@ -95,7 +95,7 @@ class TestNodeRegistryMigration:
         )
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             nodes = _load_nodes()
@@ -115,7 +115,7 @@ class TestNodeRegistryMigration:
         )
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             # Initialize
@@ -139,7 +139,7 @@ class TestNodeRegistryMigration:
 
     def test_migration_is_idempotent(self, server_base: Path):
         """Calling _load_nodes twice should not duplicate data."""
-        from workflow.universe_server import _load_nodes
+        from workflow.api.extensions import _load_nodes
 
         json_path = server_base / ".node_registry.json"
         json_path.write_text(
@@ -148,7 +148,7 @@ class TestNodeRegistryMigration:
         )
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             nodes1 = _load_nodes()
@@ -159,10 +159,10 @@ class TestNodeRegistryMigration:
 
     def test_register_and_load_round_trip(self, server_base: Path):
         """Full register -> load round trip through SQLite."""
-        from workflow.universe_server import _load_nodes, _save_nodes
+        from workflow.api.extensions import _load_nodes, _save_nodes
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             # Start empty
@@ -194,10 +194,10 @@ class TestNodeRegistryMigration:
 
     def test_remove_node_and_reload(self, server_base: Path):
         """Removing a node from the list and saving should persist."""
-        from workflow.universe_server import _load_nodes, _save_nodes
+        from workflow.api.extensions import _load_nodes, _save_nodes
 
         with patch(
-            "workflow.universe_server._base_path",
+            "workflow.api.extensions._base_path",
             return_value=server_base,
         ):
             # Start with two nodes

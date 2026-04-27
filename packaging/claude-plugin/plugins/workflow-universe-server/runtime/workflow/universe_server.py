@@ -28,13 +28,7 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -223,10 +217,10 @@ from workflow.api.evaluation import (  # noqa: E402, F401  — back-compat re-ex
     _split_tag_csv,
 )
 from workflow.api.helpers import (  # noqa: E402
-    _base_path,
+    _base_path,  # noqa: F401  (back-compat re-export; live use moved with extensions Step 11 — patched by tests/test_run_branch_failure_taxonomy.py + tests/test_run_branch_version.py + many others)
     _default_universe,  # noqa: F401  (back-compat re-export; live use moved with universe Step 9 — patched by tests/test_inspect_cross_surface_hint.py + tests/test_storage_utilization_universe.py)
     _find_all_pages,  # noqa: F401  (back-compat re-export; live use moved with branches Step 8)
-    _read_json,
+    _read_json,  # noqa: F401  (back-compat re-export; live use moved with extensions Step 11 — patched by tests/test_inspect_cross_surface_hint.py)
     _read_text,  # noqa: F401  (back-compat re-export; live use moved with universe Step 9 — patched by tests/test_inspect_cross_surface_hint.py)
     _universe_dir,  # noqa: F401  (back-compat re-export; live use moved with universe Step 9 — patched by tests/test_inspect_cross_surface_hint.py + tests/test_storage_utilization_universe.py)
     _wiki_drafts_dir,  # noqa: F401  (back-compat re-export; live use moved with branches Step 8)
@@ -705,144 +699,39 @@ def universe(
     )
 
 
-# ---------------------------------------------------------------------------
-# Universe action implementations
-# ---------------------------------------------------------------------------
-
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TOOL 2 — Extensions (node registration system)
+# TOOL 2 — Extensions (Pattern A2 wrapper) - Phase-1 extensions extraction
+# (Task #13 - decomp Step 11) - back-compat re-exports.
 # ═══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass
-class NodeRegistration:
-    """A user-contributed LangGraph node."""
-
-    node_id: str
-    display_name: str
-    description: str
-    phase: str  # orient, plan, draft, commit, learn, reflect, worldbuild, custom
-    input_keys: list[str]
-    output_keys: list[str]
-    source_code: str
-    dependencies: list[str] = field(default_factory=list)
-    author: str = "anonymous"
-    registered_at: str = ""
-    enabled: bool = True
-    approved: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> NodeRegistration:
-        return cls(**{
-            k: v for k, v in data.items()
-            if k in cls.__dataclass_fields__
-        })
-
-
-STANDALONE_NODES_BRANCH_ID = "__standalone_nodes__"
-"""Well-known branch definition ID for individually registered nodes
-that aren't part of a full graph topology yet."""
-
-
-def _nodes_path() -> Path:
-    """Path to the legacy JSON node registry (used for migration only)."""
-    return _base_path() / ".node_registry.json"
-
-
-def _ensure_standalone_branch(base_path: Path) -> None:
-    """Ensure the standalone-nodes branch definition exists in SQLite.
-
-    If the branch doesn't exist and a legacy .node_registry.json file
-    does, migrate its contents automatically.
-    """
-    from workflow.daemon_server import (
-        get_branch_definition,
-        initialize_author_server,
-        save_branch_definition,
-    )
-
-    initialize_author_server(base_path)
-
-    try:
-        get_branch_definition(base_path, branch_def_id=STANDALONE_NODES_BRANCH_ID)
-        return  # already exists
-    except KeyError:
-        pass
-
-    # Migrate from legacy JSON if it exists
-    legacy_nodes: list[dict[str, Any]] = []
-    json_path = _nodes_path()
-    if json_path.exists():
-        data = _read_json(json_path)
-        if isinstance(data, list):
-            legacy_nodes = data
-            logger.info(
-                "Migrating %d nodes from .node_registry.json to SQLite",
-                len(legacy_nodes),
-            )
-
-    save_branch_definition(
-        base_path,
-        branch_def={
-            "branch_def_id": STANDALONE_NODES_BRANCH_ID,
-            "name": "Standalone Nodes",
-            "description": "Individually registered nodes not yet part of a full graph topology.",
-            "author": "system",
-            "tags": ["system", "standalone"],
-            "nodes": legacy_nodes,
-            "edges": [],
-            "state_schema": [],
-            "published": False,
-        },
-    )
-
-
-def _load_nodes() -> list[dict[str, Any]]:
-    """Load all registered nodes from SQLite."""
-    from workflow.daemon_server import get_branch_definition
-
-    base = _base_path()
-    _ensure_standalone_branch(base)
-
-    try:
-        branch = get_branch_definition(
-            base, branch_def_id=STANDALONE_NODES_BRANCH_ID
-        )
-        return branch.get("graph", {}).get("nodes", [])
-    except KeyError:
-        return []
-
-
-def _save_nodes(nodes: list[dict[str, Any]]) -> None:
-    """Save the node registry to SQLite."""
-    from workflow.daemon_server import update_branch_definition
-
-    base = _base_path()
-    _ensure_standalone_branch(base)
-
-    update_branch_definition(
-        base,
-        branch_def_id=STANDALONE_NODES_BRANCH_ID,
-        updates={"nodes": nodes},
-    )
-
-
-VALID_PHASES = {
-    "orient", "plan", "draft", "commit", "learn",
-    "reflect", "worldbuild", "custom",
-}
-
-ALLOWED_DEPENDENCIES = {
-    "requests", "httpx", "json", "re", "datetime", "collections",
-    "dataclasses", "typing", "math", "statistics", "textwrap",
-    "difflib", "hashlib", "urllib", "pathlib",
-}
+# 4 ``_ext_*`` standalone-node handlers + ``_extensions_impl`` (Pattern A2
+# body) + ``NodeRegistration`` dataclass + ``_load_nodes``/``_save_nodes`` +
+# ``VALID_PHASES`` / ``ALLOWED_DEPENDENCIES`` constants live in
+# ``workflow.api.extensions`` (~790 LOC moved out). Re-exported here so
+# test files + the Pattern A2 wrapper below can keep importing
+# ``from workflow.universe_server import _ext_register, NodeRegistration, ...``.
+# The ``@mcp.tool() def extensions(...)`` registration below preserves the
+# FastMCP-introspection surface (decorator + 80+ arg signature + ~140-line
+# chatbot-facing docstring) wrapping a delegation to ``_extensions_impl``.
+# Same Pattern A2 shape as ``universe()`` (Step 9), ``goals``/``gates``
+# (Step 7), ``branch_design_guide`` @mcp.prompt (Step 8). See
+# ``docs/exec-plans/active/2026-04-26-decomp-step-11-prep.md``.
+from workflow.api.extensions import (  # noqa: E402, F401  - back-compat re-exports
+    ALLOWED_DEPENDENCIES,
+    STANDALONE_NODES_BRANCH_ID,
+    VALID_PHASES,
+    NodeRegistration,
+    _ensure_standalone_branch,
+    _ext_inspect,
+    _ext_list,
+    _ext_manage,
+    _ext_register,
+    _extensions_impl,
+    _load_nodes,
+    _nodes_path,
+    _save_nodes,
+)
 
 
 @mcp.tool(
@@ -988,12 +877,12 @@ def extensions(
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
     - Self-audit: get_routing_evidence, get_memory_scope_status.
 
-    Feature-flag caveats — some action groups are conditionally available
+    Feature-flag caveats - some action groups are conditionally available
     based on server flags (callers see structured `not_available` rather
     than tool-discovery hiding):
     - Outcome gates live in the separate `gates` tool, gated by
       GATES_ENABLED=1. When the flag is off, `gates` returns
-      `{"status": "not_available"}` — unrelated to this tool, but worth
+      `{"status": "not_available"}` - unrelated to this tool, but worth
       knowing when discussing outcomes.
     - Paid-market actions on `gates` (stake_bonus / unstake_bonus /
       release_bonus) additionally require WORKFLOW_PAID_MARKET=on.
@@ -1045,7 +934,7 @@ def extensions(
             "set_description"|"set_tags"|"set_published"|"set_goal"|
             "unset_goal", ...fields}. Branch-level metadata ops
             (set_name/description/tags/published) preserve the
-            branch_def_id, run history, and judgments — a label
+            branch_def_id, run history, and judgments - a label
             change no longer requires delete-and-rebuild.
         judgment_text: Natural-language judgment for judge_run. Required.
         judgment_id: Reserved for future cross-linking (unused in v1).
@@ -1054,7 +943,7 @@ def extensions(
         field: Optional single-field narrow for compare_runs and
             get_run_output.
         context: Optional extra user-context line for suggest_node_edit.
-        triggered_by_judgment_id: Optional attribution for update_node —
+        triggered_by_judgment_id: Optional attribution for update_node -
             the judgment that motivated this edit. Surfaces in the
             node_edit_audit row so lineage shows "edit triggered by
             judgment X".
@@ -1076,432 +965,117 @@ def extensions(
         force: override `local_edit_conflict` refusal on branch write
             actions (create_branch / add_node / connect_nodes /
             set_entry_point / add_state_field) when the target YAML has
-            uncommitted local edits. Default False — when a conflict
+            uncommitted local edits. Default False - when a conflict
             exists the server returns a structured envelope
             `{"status": "local_edit_conflict", "conflicting_file": "...",
             "options": ["commit", "stash", "discard", "force"]}` (not
             an error). Present the options to the user, then retry with
             `force=True` only if the user explicitly chooses "force".
     """
-    if action == "register":
-        return _ext_register(
-            node_id, display_name, description, phase,
-            input_keys, output_keys, source_code, dependencies,
-        )
-    elif action == "list":
-        return _ext_list(phase, enabled_only)
-    elif action == "inspect":
-        return _ext_inspect(node_id)
-    elif action in ("approve", "disable", "enable", "remove"):
-        return _ext_manage(node_id, action)
-
-    # ── Phase 2: Community Branches ────────────────────────────────────────
-    branch_kwargs: dict[str, Any] = {
-        "branch_def_id": branch_def_id,
-        "name": name,
-        "description": description,
-        "domain_id": domain_id,
-        "author": author,
-        "node_id": node_id,
-        "display_name": display_name,
-        "phase": phase,
-        "source_code": source_code,
-        "prompt_template": prompt_template,
-        "input_keys": input_keys,
-        "output_keys": output_keys,
-        "from_node": from_node,
-        "to_node": to_node,
-        "field_name": field_name,
-        "field_type": field_type,
-        "reducer": reducer,
-        "field_default": field_default,
-        "spec_json": spec_json,
-        "changes_json": changes_json,
-        "field": field,
-        "value": value,
-        "node_ids": node_ids,
-        "triggered_by_judgment_id": triggered_by_judgment_id,
-        "goal_id": goal_id,
-        "intent": intent,
-        "query": node_query,
-        "limit": limit,
-        "force": force,
-    }
-    if node_ref_json:
-        try:
-            parsed_ref = json.loads(node_ref_json)
-        except json.JSONDecodeError as exc:
-            return json.dumps({
-                "error": f"node_ref_json is not valid JSON: {exc}",
-            })
-        branch_kwargs["node_ref"] = parsed_ref
-    branch_handler = _BRANCH_ACTIONS.get(action)
-    if branch_handler is not None:
-        return _dispatch_branch_action(action, branch_handler, branch_kwargs)
-
-    # ── Phase 3: Graph Runner ──────────────────────────────────────────────
-    run_kwargs: dict[str, Any] = {
-        "branch_def_id": branch_def_id,
-        "branch_version_id": branch_version_id,
-        "run_id": run_id,
-        "inputs_json": inputs_json,
-        "run_name": run_name,
-        "status": status,
-        "since_step": since_step,
-        "max_wait_s": max_wait_s,
-        "limit": limit,
-        "field_name": field_name,
-        "recursion_limit_override": recursion_limit_override,
-        "filters_json": filters_json,
-        "select": select,
-        "aggregate_json": aggregate_json,
-        # Surgical-rollback args (Task #22 Phase B).
-        "reason": reason,
-        "severity": severity,
-        "since_days": since_days,
-    }
-    run_handler = _RUN_ACTIONS.get(action)
-    if run_handler is not None:
-        return _dispatch_run_action(action, run_handler, run_kwargs)
-
-    # ── Phase 4: Eval + iteration hooks ────────────────────────────────────
-    judgment_kwargs: dict[str, Any] = {
-        "branch_def_id": branch_def_id,
-        "run_id": run_id,
-        "node_id": node_id,
-        "judgment_text": judgment_text,
-        "judgment_id": judgment_id,
-        "tags": tags,
-        "run_a_id": run_a_id,
-        "run_b_id": run_b_id,
-        "field": field,
-        "context": context,
-        "limit": limit,
-        "to_version": to_version,
-    }
-    judgment_handler = _JUDGMENT_ACTIONS.get(action)
-    if judgment_handler is not None:
-        return _dispatch_judgment_action(
-            action, judgment_handler, judgment_kwargs,
-        )
-
-    # ── Project Memory ─────────────────────────────────────────────────────
-    pm_kwargs: dict[str, Any] = {
-        "project_id": project_id,
-        "key": key,
-        "key_prefix": key_prefix,
-        "value": value,
-        "expected_version": expected_version if expected_version else None,
-        "limit": limit,
-    }
-    pm_handler = _PROJECT_MEMORY_ACTIONS.get(action)
-    if pm_handler is not None:
-        result_str = pm_handler(pm_kwargs)
-        if action in _PROJECT_MEMORY_WRITE_ACTIONS:
-            try:
-                res = json.loads(result_str)
-                if isinstance(res, dict) and not res.get("error") and not res.get("conflict"):
-                    _append_global_ledger(
-                        action=action,
-                        target=f"{project_id}/{key}",
-                        summary=f"{action} project_id={project_id} key={key}",
-                    )
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return result_str
-
-    # ── Branch versioning ──────────────────────────────────────────────────
-    bv_handler = _BRANCH_VERSION_ACTIONS.get(action)
-    if bv_handler is not None:
-        bv_kwargs: dict[str, Any] = {
-            "branch_def_id": branch_def_id,
-            "branch_version_id": branch_version_id,
-            "parent_version_id": parent_version_id,
-            "notes": notes,
-            "publisher": os.environ.get("UNIVERSE_SERVER_USER", "anonymous"),
-            "limit": limit,
-        }
-        return bv_handler(bv_kwargs)
-
-    # ── Teammate messaging ─────────────────────────────────────────────────
-    messaging_handler = _MESSAGING_ACTIONS.get(action)
-    if messaging_handler is not None:
-        messaging_kwargs: dict[str, Any] = {
-            "from_run_id": from_run_id,
-            "to_node_id": to_node_id,
-            "message_type": message_type,
-            "body_json": body_json,
-            "reply_to_message_id": reply_to_message_id,
-            "message_types": message_types,
-            "node_id": node_id,
-            "message_id": message_id,
-            "since": since,
-            "limit": limit,
-        }
-        return messaging_handler(messaging_kwargs)
-
-    # ── Escrow ─────────────────────────────────────────────────────────────
-    escrow_handler = _ESCROW_ACTIONS.get(action)
-    if escrow_handler is not None:
-        escrow_kwargs: dict[str, Any] = {
-            "node_id": node_id,
-            "lock_id": lock_id,
-            "amount": escrow_amount,
-            "currency": escrow_currency,
-            "recipient_id": escrow_recipient_id,
-            "evidence": escrow_evidence,
-            "reason": escrow_reason,
-        }
-        return escrow_handler(escrow_kwargs)
-
-    # ── Gate events (real-world outcome attestation) ───────────────────────
-    gate_event_handler = _GATE_EVENT_ACTIONS.get(action)
-    if gate_event_handler is not None:
-        ge_kwargs: dict[str, Any] = {
-            "goal_id": goal_id,
-            "event_id": event_id,
-            "event_type": event_type,
-            "event_date": event_date,
-            "attested_by": attested_by,
-            "cites_json": cites_json,
-            "verifier_id": verifier_id,
-            "disputed_by": disputed_by,
-            "retracted_by": retracted_by,
-            "reason": notes,
-            "note": notes,
-            "branch_version_id": branch_version_id,
-            "since": since,
-            "limit": limit,
-        }
-        return gate_event_handler(ge_kwargs)
-
-    # ── Dry inspect ────────────────────────────────────────────────────────
-    inspect_dry_handler = _INSPECT_DRY_ACTIONS.get(action)
-    if inspect_dry_handler is not None:
-        di_kwargs: dict[str, Any] = {
-            "branch_def_id": branch_def_id,
-            "node_id": node_id,
-            "branch_spec_json": branch_spec_json,
-            "changes_json": changes_json,
-        }
-        return inspect_dry_handler(di_kwargs)
-
-    # ── Scheduler ──────────────────────────────────────────────────────────
-    scheduler_handler = _SCHEDULER_ACTIONS.get(action)
-    if scheduler_handler is not None:
-        sched_kwargs: dict[str, Any] = {
-            "branch_def_id": branch_def_id,
-            "cron_expr": cron_expr,
-            "interval_seconds": interval_seconds,
-            "owner_actor": owner_actor,  # empty = "all" for list; write handlers default to anon
-            "inputs_template_json": inputs_template_json,
-            "skip_if_running": skip_if_running,
-            "schedule_id": schedule_id,
-            "subscription_id": subscription_id,
-            "event_type": event_type,
-            "active_only": active_only,
-        }
-        return scheduler_handler(sched_kwargs)
-
-    # ── Outcome events ─────────────────────────────────────────────────────
-    outcome_handler = _OUTCOME_ACTIONS.get(action)
-    if outcome_handler is not None:
-        oc_kwargs: dict[str, Any] = {
-            "branch_def_id": branch_def_id,
-            "run_id": run_id,
-            "outcome_id": outcome_id,
-            "outcome_type": event_type,  # reuse event_type param
-            "evidence_url": evidence_url,
-            "gate_event_id": gate_event_id,
-            "payload_json": outcome_payload_json,
-            "note": outcome_note,
-            "limit": limit,
-        }
-        return outcome_handler(oc_kwargs)
-
-    # ── Attribution chain ──────────────────────────────────────────────────
-    attribution_handler = _ATTRIBUTION_ACTIONS.get(action)
-    if attribution_handler is not None:
-        attr_kwargs: dict[str, Any] = {
-            "parent_branch_def_id": parent_branch_def_id,
-            "child_branch_def_id": child_branch_def_id,
-            "contribution_kind": contribution_kind,
-            "credit_share": credit_share,
-            "max_depth": max_depth,
-            "actor_id": _current_actor(),
-        }
-        return attribution_handler(attr_kwargs)
-
-    return json.dumps({
-        "error": f"Unknown action '{action}'.",
-        "available_actions": [
-            "register", "list", "inspect",
-            "approve", "disable", "enable", "remove",
-            "build_branch", "patch_branch", "update_node",
-            "create_branch", "add_node", "connect_nodes",
-            "set_entry_point", "add_state_field",
-            "validate_branch", "describe_branch",
-            "get_branch", "list_branches", "delete_branch",
-            "run_branch", "get_run", "list_runs",
-            "stream_run", "cancel_run", "get_run_output",
-            "resume_run", "estimate_run_cost", "query_runs",
-            "judge_run", "list_judgments", "compare_runs",
-            "suggest_node_edit", "get_node_output",
-            "rollback_node", "list_node_versions",
-            "project_memory_get", "project_memory_set", "project_memory_list",
-            "dry_inspect_node", "dry_inspect_patch",
-            "messaging_send", "messaging_receive", "messaging_ack",
-            "publish_version", "get_branch_version", "list_branch_versions",
-            "continue_branch", "fork_tree",
-            "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
-            "attest_gate_event", "verify_gate_event", "dispute_gate_event",
-            "retract_gate_event", "get_gate_event", "list_gate_events",
-            "schedule_branch", "unschedule_branch", "list_schedules",
-            "subscribe_branch", "unsubscribe_branch",
-            "pause_schedule", "unpause_schedule", "list_scheduler_subscriptions",
-            "record_outcome", "list_outcomes", "get_outcome",
-            "record_remix", "get_provenance",
-        ],
-    })
-
-
-def _ext_register(
-    node_id: str,
-    display_name: str,
-    description: str,
-    phase: str,
-    input_keys: str,
-    output_keys: str,
-    source_code: str,
-    dependencies: str,
-) -> str:
-    if not node_id or not display_name or not source_code:
-        return json.dumps({"error": "node_id, display_name, and source_code are required."})
-
-    if phase not in VALID_PHASES:
-        return json.dumps({
-            "error": f"Invalid phase '{phase}'. Must be one of: {', '.join(sorted(VALID_PHASES))}",
-        })
-
-    in_keys = [k.strip() for k in input_keys.split(",") if k.strip()] if input_keys else []
-    out_keys = [k.strip() for k in output_keys.split(",") if k.strip()] if output_keys else []
-    deps = [d.strip() for d in dependencies.split(",") if d.strip()] if dependencies else []
-
-    disallowed = [d for d in deps if d.split("==")[0].split(">=")[0] not in ALLOWED_DEPENDENCIES]
-    if disallowed:
-        return json.dumps({
-            "error": f"Disallowed dependencies: {disallowed}. "
-            f"Allowed: {sorted(ALLOWED_DEPENDENCIES)}",
-        })
-
-    dangerous_patterns = ["os.system", "subprocess", "eval(", "exec(", "__import__"]
-    for pattern in dangerous_patterns:
-        if pattern in source_code:
-            return json.dumps({
-                "error": f"Source code contains disallowed pattern: '{pattern}'",
-            })
-
-    nodes = _load_nodes()
-    existing = [n for n in nodes if n.get("node_id") == node_id]
-    if existing:
-        return json.dumps({
-            "error": f"Node '{node_id}' already registered. Use a different ID.",
-        })
-
-    registration = NodeRegistration(
+    return _extensions_impl(
+        action=action,
         node_id=node_id,
         display_name=display_name,
         description=description,
         phase=phase,
-        input_keys=in_keys,
-        output_keys=out_keys,
+        input_keys=input_keys,
+        output_keys=output_keys,
         source_code=source_code,
-        dependencies=deps,
-        author=os.environ.get("UNIVERSE_SERVER_USER", "anonymous"),
-        registered_at=datetime.now(timezone.utc).isoformat(),
-        enabled=True,
-        approved=False,
+        dependencies=dependencies,
+        enabled_only=enabled_only,
+        branch_def_id=branch_def_id,
+        name=name,
+        domain_id=domain_id,
+        author=author,
+        from_node=from_node,
+        to_node=to_node,
+        prompt_template=prompt_template,
+        field_name=field_name,
+        field_type=field_type,
+        reducer=reducer,
+        field_default=field_default,
+        run_id=run_id,
+        inputs_json=inputs_json,
+        run_name=run_name,
+        status=status,
+        since_step=since_step,
+        max_wait_s=max_wait_s,
+        limit=limit,
+        spec_json=spec_json,
+        changes_json=changes_json,
+        judgment_text=judgment_text,
+        judgment_id=judgment_id,
+        tags=tags,
+        run_a_id=run_a_id,
+        run_b_id=run_b_id,
+        field=field,
+        value=value,
+        node_ids=node_ids,
+        context=context,
+        triggered_by_judgment_id=triggered_by_judgment_id,
+        to_version=to_version,
+        goal_id=goal_id,
+        node_ref_json=node_ref_json,
+        intent=intent,
+        node_query=node_query,
+        force=force,
+        project_id=project_id,
+        key=key,
+        key_prefix=key_prefix,
+        expected_version=expected_version,
+        recursion_limit_override=recursion_limit_override,
+        filters_json=filters_json,
+        select=select,
+        aggregate_json=aggregate_json,
+        branch_spec_json=branch_spec_json,
+        from_run_id=from_run_id,
+        to_node_id=to_node_id,
+        message_type=message_type,
+        body_json=body_json,
+        reply_to_message_id=reply_to_message_id,
+        message_types=message_types,
+        message_id=message_id,
+        since=since,
+        branch_version_id=branch_version_id,
+        parent_version_id=parent_version_id,
+        notes=notes,
+        lock_id=lock_id,
+        escrow_amount=escrow_amount,
+        escrow_currency=escrow_currency,
+        escrow_recipient_id=escrow_recipient_id,
+        escrow_evidence=escrow_evidence,
+        escrow_reason=escrow_reason,
+        event_id=event_id,
+        event_type=event_type,
+        event_date=event_date,
+        attested_by=attested_by,
+        cites_json=cites_json,
+        verifier_id=verifier_id,
+        disputed_by=disputed_by,
+        retracted_by=retracted_by,
+        schedule_id=schedule_id,
+        cron_expr=cron_expr,
+        interval_seconds=interval_seconds,
+        owner_actor=owner_actor,
+        inputs_template_json=inputs_template_json,
+        skip_if_running=skip_if_running,
+        subscription_id=subscription_id,
+        active_only=active_only,
+        outcome_id=outcome_id,
+        evidence_url=evidence_url,
+        gate_event_id=gate_event_id,
+        outcome_payload_json=outcome_payload_json,
+        outcome_note=outcome_note,
+        parent_branch_def_id=parent_branch_def_id,
+        child_branch_def_id=child_branch_def_id,
+        contribution_kind=contribution_kind,
+        credit_share=credit_share,
+        max_depth=max_depth,
+        reason=reason,
+        severity=severity,
+        since_days=since_days,
     )
 
-    nodes.append(registration.to_dict())
-    _save_nodes(nodes)
-
-    return json.dumps({
-        "node_id": node_id,
-        "status": "registered",
-        "approved": False,
-        "note": "Node registered. It will be available after host approval.",
-    })
-
-
-def _ext_list(phase: str = "", enabled_only: bool = True) -> str:
-    nodes = _load_nodes()
-
-    if phase:
-        nodes = [n for n in nodes if n.get("phase") == phase]
-    if enabled_only:
-        nodes = [n for n in nodes if n.get("enabled", True)]
-
-    summaries = [
-        {
-            "node_id": n.get("node_id"),
-            "display_name": n.get("display_name"),
-            "description": n.get("description"),
-            "phase": n.get("phase"),
-            "input_keys": n.get("input_keys"),
-            "output_keys": n.get("output_keys"),
-            "author": n.get("author"),
-            "approved": n.get("approved", False),
-            "enabled": n.get("enabled", True),
-        }
-        for n in nodes
-    ]
-
-    return json.dumps({"nodes": summaries, "count": len(summaries)})
-
-
-def _ext_inspect(node_id: str) -> str:
-    if not node_id:
-        return json.dumps({"error": "node_id is required."})
-    nodes = _load_nodes()
-    match = [n for n in nodes if n.get("node_id") == node_id]
-    if not match:
-        return json.dumps({"error": f"Node '{node_id}' not found."})
-    return json.dumps(match[0])
-
-
-def _ext_manage(node_id: str, action: str) -> str:
-    if not node_id:
-        return json.dumps({"error": "node_id is required."})
-
-    nodes = _load_nodes()
-    idx = next((i for i, n in enumerate(nodes) if n.get("node_id") == node_id), None)
-    if idx is None:
-        return json.dumps({"error": f"Node '{node_id}' not found."})
-
-    if action == "remove":
-        removed = nodes.pop(idx)
-        _save_nodes(nodes)
-        return json.dumps({
-            "node_id": node_id,
-            "action": "removed",
-            "note": f"Node '{removed.get('display_name')}' permanently removed.",
-        })
-
-    if action == "approve":
-        nodes[idx]["approved"] = True
-    elif action == "disable":
-        nodes[idx]["enabled"] = False
-    elif action == "enable":
-        nodes[idx]["enabled"] = True
-
-    _save_nodes(nodes)
-    return json.dumps({
-        "node_id": node_id,
-        "action": action,
-        "approved": nodes[idx].get("approved"),
-        "enabled": nodes[idx].get("enabled"),
-    })
 
 
 # ───────────────────────────────────────────────────────────────────────────

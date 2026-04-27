@@ -1121,7 +1121,7 @@ def _resolve_node_spec(
     ``intent="reference"`` is reserved for a future live-reference
     mode. v1 only supports ``intent="copy"``; other values error.
     """
-    from workflow.universe_server import _load_nodes
+    from workflow.api.extensions import _load_nodes
 
     nid = (raw.get("node_id") or "").strip()
     intent = (raw.get("intent") or "").strip().lower()
@@ -1193,7 +1193,7 @@ def _lookup_node_body(
     the standalone node registry) or a branch_def_id (look in that
     branch's ``node_defs``).
     """
-    from workflow.universe_server import _load_nodes
+    from workflow.api.extensions import _load_nodes
 
     if source == "standalone":
         try:
@@ -1885,12 +1885,12 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
     name; this standalone action bumps BranchDefinition.version (+1)
     so downstream lineage can distinguish pre/post-edit runs.
     """
+    from workflow.api.extensions import VALID_PHASES
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.universe_server import VALID_PHASES
 
     bid = _resolve_branch_id(
         (kwargs.get("branch_def_id") or "").strip(), str(_base_path())
@@ -2232,12 +2232,12 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
     ``node_ids`` (default: all nodes on the branch). Atomic — if any
     node rejects, nothing is written.
     """
+    from workflow.api.extensions import VALID_PHASES
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import (
         get_branch_definition,
         save_branch_definition,
     )
-    from workflow.universe_server import VALID_PHASES
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     if not bid:
