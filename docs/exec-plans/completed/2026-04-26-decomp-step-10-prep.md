@@ -3,7 +3,7 @@ title: Step 10 prep — workflow/api/engine_helpers.py extraction scope
 date: 2026-04-26
 author: navigator
 status: pre-flight scoping (no edits yet)
-companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10 are post-original-8-step extension); docs/exec-plans/active/2026-04-26-decomp-step-9-prep.md
+companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10 are post-original-8-step extension); docs/exec-plans/completed/2026-04-26-decomp-step-9-prep.md
 target_task: Decomp post-Step-9 — Extract workflow/api/engine_helpers.py (preamble engine functions: ledger trio, upload-whitelist, dirty-file/commit error formatters, branch-visibility filters, MCP-prompt registrations)
 gates_on: Step 8 (`branches.py`) + Step 9 (`universe.py`) MUST land first. Step 10 is the LAST extraction in the planned decomposition. After Step 10, residual universe_server.py is the projected ~650-LOC routing shell — close to (but not identical to) audit's "~100-LOC routing shell" target.
 ---

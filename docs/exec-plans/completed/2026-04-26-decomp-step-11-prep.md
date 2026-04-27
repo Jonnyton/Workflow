@@ -3,7 +3,7 @@ title: Step 11 prep — workflow/api/extensions.py extraction scope
 date: 2026-04-26
 author: navigator
 status: pre-flight scoping (no edits yet)
-companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10+11 are post-original-8-step extension); docs/exec-plans/active/2026-04-26-decomp-step-{9,10}-prep.md
+companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10+11 are post-original-8-step extension); docs/exec-plans/completed/2026-04-26-decomp-step-{9,10}-prep.md
 target_task: Decomp post-Step-10 — Extract workflow/api/extensions.py (the `extensions()` MCP tool body + standalone-node infrastructure: NodeRegistration class + `_load_nodes`/`_save_nodes` + `_ext_*` handlers). FINAL extraction in the planned decomposition; lands the audit's "~100-LOC routing shell" target.
 gates_on: Steps 8 + 9 + 10 MUST land first. Step 11 depends on Step 9 (universe.py) for the Pattern A2 pattern proof, and on Steps 4-8 for the dispatch-table extractions that `extensions()` consumes.
 ---

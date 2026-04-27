@@ -5,7 +5,7 @@ author: navigator
 status: read-only ROI analysis — host decision pending
 companion:
   - docs/audits/2026-04-25-universe-server-decomposition.md (audit's "~100-LOC routing shell" target)
-  - docs/exec-plans/active/2026-04-26-decomp-step-{8,9,10,11}-prep.md (Steps 8-11 prep series; this doc continues from Step 11 prep §9.7)
+  - docs/exec-plans/completed/2026-04-26-decomp-step-{8,9,10,11}-prep.md (Steps 8-11 prep series; this doc continues from Step 11 prep §9.7)
 load-bearing-question: Does the ~6-hour mechanical retarget sweep (1,400 → 150 LOC) earn its keep, or is post-Step-11 ~1,400 LOC the right steady state?
 audience: lead, host (final scope decision)
 ---
@@ -210,7 +210,7 @@ Trigger conditions that would justify dispatching the sweep:
 ## 8. Cross-references
 
 - `docs/audits/2026-04-25-universe-server-decomposition.md` — original audit + "~100-LOC routing shell" target.
-- `docs/exec-plans/active/2026-04-26-decomp-step-11-prep.md` §9.7 — surfaced this analysis as decision-needed.
+- `docs/exec-plans/completed/2026-04-26-decomp-step-11-prep.md` §9.7 — surfaced this analysis as decision-needed.
 - `STATUS.md` Concerns — methods-prose evaluator row (2026-04-27) is a higher-leverage alternative.
 - `ideas/INBOX.md` 2026-04-27 entries — 5 chain-break proposals from Priya/Devin sessions; each is a higher-leverage alternative.
 - `feedback_status_md_host_managed` — host curates STATUS; navigator proposes only.

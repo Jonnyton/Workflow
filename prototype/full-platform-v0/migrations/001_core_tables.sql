@@ -1,5 +1,5 @@
 -- Track A — Daemon-economy first-draft core tables.
--- Spec: docs/exec-plans/active/2026-04-19-track-a-schema-auth-rls.md §2.
+-- Spec: docs/exec-plans/completed/2026-04-19-track-a-schema-auth-rls.md §2.
 -- Scope: 9 in-scope tables. Foundation shape — alter/add only, never re-shape.
 -- Subset of docs/specs/2026-04-18-full-platform-schema-sketch.md.
 --

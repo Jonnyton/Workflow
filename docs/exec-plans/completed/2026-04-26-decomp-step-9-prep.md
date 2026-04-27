@@ -3,7 +3,7 @@ title: Step 9 prep — workflow/api/universe.py extraction scope
 date: 2026-04-26
 author: navigator
 status: pre-flight scoping (no edits yet)
-companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10 are post-original-8-step extension); docs/exec-plans/active/2026-04-26-decomp-step-8-prep.md §10.2
+companion: docs/audits/2026-04-25-universe-server-decomposition.md (audit's "100-LOC routing shell" target — Steps 9+10 are post-original-8-step extension); docs/exec-plans/completed/2026-04-26-decomp-step-8-prep.md §10.2
 target_task: Decomp post-Step-8 — Extract workflow/api/universe.py (the `universe()` MCP tool body + 28 `_action_*` handlers + WRITE_ACTIONS + ledger dispatcher + daemon-liveness telemetry)
 gates_on: Step 8 (`branches.py`, ~2,673 LOC) MUST land first. Step 8 + Step 9 both edit `workflow/universe_server.py` re-export shim block. Step 9 is otherwise independent of Step 8 (no symbol overlap — branches.py owns `_BRANCH_ACTIONS` table; universe.py owns the `universe()` tool dispatch table).
 ---
