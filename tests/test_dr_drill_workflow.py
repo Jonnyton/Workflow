@@ -16,6 +16,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,24 @@ def _step_names(wf: dict) -> list[str]:
     return [(s.get("name") or "").lower() for s in _steps(wf)]
 
 
+def _dispatch_inputs(wf: dict) -> dict:
+    return _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+
+
+def _workflow_input_default(input_name: str) -> str:
+    inputs = _dispatch_inputs(_load())
+    assert input_name in inputs, f"{input_name} input missing"
+    return str(inputs[input_name].get("default", ""))
+
+
+def _runbook_input_default(input_name: str) -> str:
+    text = _RUNBOOK.read_text(encoding="utf-8")
+    pattern = rf"\| `{re.escape(input_name)}` \| `([^`]+)` \|"
+    match = re.search(pattern, text)
+    assert match, f"{input_name} default missing from DR runbook inputs table"
+    return match.group(1)
+
+
 def _bootstrap_step_run() -> str:
     for step in _steps(_load()):
         if step.get("name") == "Bootstrap drill Droplet":
@@ -90,19 +109,19 @@ def test_only_workflow_dispatch_trigger():
 
 def test_has_drill_droplet_size_input():
     wf = _load()
-    inputs = _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+    inputs = _dispatch_inputs(wf)
     assert "drill_droplet_size" in inputs
 
 
 def test_has_backup_source_input():
     wf = _load()
-    inputs = _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+    inputs = _dispatch_inputs(wf)
     assert "backup_source" in inputs
 
 
 def test_has_destroy_on_failure_input():
     wf = _load()
-    inputs = _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+    inputs = _dispatch_inputs(wf)
     assert "destroy_on_failure" in inputs
 
 
@@ -242,6 +261,18 @@ def test_dr_drill_runbook_mentions_pass_fail():
     assert "pass" in text and "fail" in text
 
 
+def test_dr_drill_runbook_size_default_matches_workflow():
+    assert _runbook_input_default("drill_droplet_size") == (
+        _workflow_input_default("drill_droplet_size")
+    )
+
+
+def test_dr_drill_runbook_mentions_ssh_port_forward_probe():
+    text = _RUNBOOK.read_text(encoding="utf-8").lower()
+    assert "ssh port-forward" in text
+    assert "localhost:8001" in text
+
+
 # ---------------------------------------------------------------------------
 # Task #66 — pipefail fix + size bump + mid-job cleanup
 # ---------------------------------------------------------------------------
@@ -303,7 +334,7 @@ def test_bootstrap_step_surfaces_tail_before_exit():
 def test_default_drill_size_is_not_1gb():
     """s-1vcpu-1gb OOMs on apt+docker install; default must be at least 2GB."""
     wf = _load()
-    inputs = _triggers(wf).get("workflow_dispatch", {}).get("inputs", {})
+    inputs = _dispatch_inputs(wf)
     default_size = inputs.get("drill_droplet_size", {}).get("default", "")
     assert default_size != "s-1vcpu-1gb", (
         f"Default size {default_size!r} is known to OOM; bump to s-2vcpu-2gb or larger"

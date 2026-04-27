@@ -16,7 +16,7 @@ Inputs:
 
 | Input | Default | Notes |
 |---|---|---|
-| `drill_droplet_size` | `s-1vcpu-1gb` | Match prod size (`s-1vcpu-1gb`) for full parity. |
+| `drill_droplet_size` | `s-2vcpu-2gb` | Minimum tested size for apt + Docker bootstrap; `s-1vcpu-1gb` OOMs. |
 | `backup_source` | (latest on primary) | Override with a specific path, e.g. `2026-04-01` tarball for point-in-time test. |
 | `destroy_on_failure` | `false` | Set `true` to auto-destroy on failure; default keeps the Droplet up for inspection. |
 
@@ -29,11 +29,11 @@ Inputs:
 5. Streams the backup tarball from the primary Droplet directly to the drill Droplet.
 6. Runs `deploy/backup-restore.sh` on the drill Droplet.
 7. Starts `docker compose up -d`, waits 30s.
-8. Probes `http://<drill-ip>:8001/mcp` directly via `scripts/mcp_probe.py` (no tunnel — drill has no CF tunnel).
+8. Opens an SSH port-forward to the drill Droplet's loopback port, then probes `http://localhost:8001/mcp` via `scripts/mcp_probe.py status` (no Cloudflare tunnel required).
 
 ## Pass / fail criteria
 
-**Pass:** `mcp_probe.py` exits 0 (MCP initialize + tools/list succeeds).
+**Pass:** `mcp_probe.py status` exits 0 (MCP initialize + session + `get_status` tool call succeeds).
 
 Workflow on pass:
 - Appends a timestamped entry to `docs/ops/dr-drill-log.md` + commits.
