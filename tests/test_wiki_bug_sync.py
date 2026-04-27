@@ -191,6 +191,18 @@ def test_create_gh_issue_dry_run_returns_marker():
     assert url == "[dry-run]"
 
 
+def test_create_gh_issue_labels_canonical_wiki_severity(capsys):
+    url = create_gh_issue(
+        token="", repo="owner/repo",
+        bug_id="BUG-001", title="Critical bug",
+        severity="critical", component="wiki",
+        body_md="desc", dry_run=True,
+    )
+    out = capsys.readouterr().out
+    assert url == "[dry-run]"
+    assert "severity:critical" in out
+
+
 def test_create_gh_issue_no_token_raises():
     with pytest.raises(SyncError) as exc_info:
         create_gh_issue(
@@ -362,6 +374,9 @@ def test_sync_network_error_returns_code2(tmp_path):
 
 def test_severity_labels_all_present():
     from wiki_bug_sync import _SEVERITY_LABELS
-    for sev in ("low", "medium", "high", "blocker"):
+    for sev in (
+        "critical", "major", "minor", "cosmetic",
+        "low", "medium", "high", "blocker",
+    ):
         assert sev in _SEVERITY_LABELS
         assert _SEVERITY_LABELS[sev].startswith("severity:")

@@ -79,6 +79,10 @@ after it's created.
 
 | Wiki severity | GH label |
 |---|---|
+| `critical` | `severity:critical` |
+| `major` | `severity:major` |
+| `minor` | `severity:minor` |
+| `cosmetic` | `severity:cosmetic` |
 | `low` | `severity:low` |
 | `medium` | `severity:medium` |
 | `high` | `severity:high` |

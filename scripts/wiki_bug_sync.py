@@ -46,6 +46,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 CURSOR_PATH = _REPO_ROOT / ".agents" / ".wiki_bug_sync_cursor"
 
 _SEVERITY_LABELS: dict[str, str] = {
+    # Canonical `wiki action=file_bug` severities.
+    "critical": "severity:critical",
+    "major": "severity:major",
+    "minor": "severity:minor",
+    "cosmetic": "severity:cosmetic",
+    # Legacy seed/runbook severities kept for already-authored pages.
     "low": "severity:low",
     "medium": "severity:medium",
     "high": "severity:high",
