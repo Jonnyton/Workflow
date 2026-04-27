@@ -10,9 +10,7 @@ import from fantasy_daemon.api directly, not from this package.
 
 from __future__ import annotations
 
-from typing import Any
-
-from fastapi import FastAPI
+from typing import TYPE_CHECKING, Any
 
 from workflow.api.helpers import (
     _base_path,
@@ -22,14 +20,20 @@ from workflow.api.helpers import (
     _universe_dir,
 )
 
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
 
 def create_app(registry: Any | None = None) -> FastAPI:
     """Return a bare FastAPI app shell.
 
     Once the FastMCP api/* submodules are built (PLAN.md target), this will
     mount them. Until then it returns an empty app so callers have a stable
-    import surface.
+    import surface. fastapi is imported lazily so the MCPB stdio bundle —
+    which doesn't ship fastapi — can import this package.
     """
+    from fastapi import FastAPI
+
     return FastAPI(title="Workflow Engine API")
 
 
