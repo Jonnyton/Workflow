@@ -17,6 +17,22 @@ audience: lead, host, future dev/spec author
 
 # Methods-prose evaluator
 
+## REFRAME (2026-04-27 host directive — supersedes auto-invocation framing below)
+
+Host directive Q1=b + Q6=b: **platform's job is to make any user-design possible; users own design and quality.** Evaluators are user-callable primitives, NEVER auto-run quality gates.
+
+This note's §4.4 step 1 ("chatbot auto-runs the evaluator when the run produced artifacts") and §5 ask 4 ("approve auto-invocation default?") are SUPERSEDED. The v1 spec must:
+- Frame each evaluator as a user-callable primitive.
+- Document explicitly: platform never auto-invokes; user (or chatbot acting on user behalf) decides when to run it.
+- Rewrite chatbot integration as: chatbot offers the verification when user asks "is this prose correct?" — does NOT presume.
+- Drop the trust-graduation framing that depends on auto-blocking; the evaluator surfaces results when called, never blocks delivery.
+
+Option 2 (prose-versions + prose-reproducibility v1 pair) remains the right SHAPE — substrate decision is unchanged. Only the invocation surface is reframed.
+
+The remainder of this note preserves the original design-space exploration as historical context. v1 spec (after host approval on `EvaluatorKind` literal extension) will rewrite §4.4 + §5 ask 4 per this reframe.
+
+---
+
 ## TL;DR
 
 Priya signal #2 (2026-04-20) surfaced a chain-break: when the chatbot generates publication-grade methods prose ("Sensitivity sweeps were performed using `maxnet` v0.1.4 with kernels {linear, quadratic, hinge} × regmult {0.5, 1.0, 2.0}, evaluated by 5-fold spatial cross-validation, mean AUC ranked..."), nothing on the platform verifies the prose is correct. This is a **cross-layer chain-break (pitch-vs-product gap):** the platform's positioning ("evaluator-driven workflows") promises correctness verification at every step, but methods-section prose has no first-class evaluator.
