@@ -37,12 +37,19 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.branch_versions import _connect as _runs_connect
+from workflow.branch_versions import (
+    _connect as _runs_connect,
+)
+from workflow.branch_versions import (
+    get_branch_version,
+    initialize_branch_versions_db,
+    is_within_watch_window,
+)
 from workflow.contribution_events import (
     initialize_contribution_events_db,
     record_contribution_event,
@@ -60,6 +67,316 @@ ROLLBACK_WEIGHTS: dict[str, int] = {
 # Auto-rollback fires for weight ≤ this value (per design §5: P1+).
 # P2 (weight -1) emits the event but does NOT auto-rollback.
 AUTO_ROLLBACK_WEIGHT_THRESHOLD: int = -3
+MAX_BISECT_SUSPECTS: int = 32
+
+
+# ─── Phase C canary auto-trigger helpers ────────────────────────────────────
+
+
+def list_watch_window_suspects(
+    base_path: str | Path,
+    *,
+    last_green_at: datetime | str | int | float,
+    now: datetime | None = None,
+) -> list[str]:
+    """Return active branch versions eligible for a canary-RED attribution.
+
+    Implements the suspect-set query from design §4:
+    "within watch-window AND published since the last green canary run".
+    Results are sorted oldest to newest by ``published_at`` so callers can
+    feed them directly into ``bisect_canary``.
+    """
+    initialize_branch_versions_db(base_path)
+    cutoff = _coerce_utc_datetime(last_green_at, field_name="last_green_at")
+    resolved_now = (
+        datetime.now(timezone.utc)
+        if now is None
+        else _coerce_utc_datetime(now, field_name="now")
+    )
+
+    suspects: list[tuple[datetime, str]] = []
+    with _runs_connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT branch_version_id
+              FROM branch_versions
+             WHERE status = 'active'
+             ORDER BY published_at ASC, branch_version_id ASC
+            """
+        ).fetchall()
+
+    for row in rows:
+        bvid = row["branch_version_id"]
+        version = get_branch_version(base_path, bvid)
+        if version is None:
+            continue
+        published_at = _try_coerce_utc_datetime(version.published_at)
+        if published_at is None or published_at <= cutoff:
+            continue
+        if is_within_watch_window(version, now=resolved_now):
+            suspects.append((published_at, bvid))
+
+    return [bvid for _, bvid in sorted(suspects)]
+
+
+def bisect_canary(
+    suspect_versions: list[str],
+    replay_canary_at_version: Callable[[str], str | int],
+) -> str | None:
+    """Binary-search the suspect set for the first reproducible RED version.
+
+    ``suspect_versions`` must be oldest-to-newest. The replay callable returns
+    ``"GREEN"``/``"RED"`` or a canary-style exit code where ``0`` is green and
+    non-zero is red. The final candidate is replayed once more; a green
+    confirmation returns ``None`` to avoid attributing a flaky one-shot.
+    """
+    if not suspect_versions:
+        return None
+
+    lo = 0
+    hi = len(suspect_versions) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        result = _normalize_canary_result(
+            replay_canary_at_version(suspect_versions[mid])
+        )
+        if result == "GREEN":
+            lo = mid + 1
+        else:
+            hi = mid
+
+    confirm = _normalize_canary_result(
+        replay_canary_at_version(suspect_versions[lo])
+    )
+    return suspect_versions[lo] if confirm == "RED" else None
+
+
+def auto_rollback_on_canary_red(
+    base_path: str | Path,
+    *,
+    canary_name: str,
+    last_green_at: datetime | str | int | float,
+    severity: str,
+    reason: str,
+    set_by: str,
+    now: datetime | None = None,
+    replay_canary_at_version: Callable[[str], str | int] | None = None,
+    max_suspects: int = MAX_BISECT_SUSPECTS,
+    rollback_log_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Handle a canary RED event using Phase C's suspect/bisect rules.
+
+    P1/P0 regressions auto-run the existing rollback orchestrator. P2
+    regressions only emit ``caused_regression`` evidence and leave the branch
+    version active for human/chatbot review.
+    """
+    if severity not in ROLLBACK_WEIGHTS:
+        return {
+            "status": "rejected",
+            "error": f"severity must be one of {sorted(ROLLBACK_WEIGHTS)}; got {severity!r}.",
+        }
+    if max_suspects < 1:
+        return {"status": "rejected", "error": "max_suspects must be >= 1."}
+
+    suspects = list_watch_window_suspects(
+        base_path,
+        last_green_at=last_green_at,
+        now=now,
+    )
+    if not suspects:
+        result = {
+            "status": "no_suspects",
+            "canary_name": canary_name,
+            "suspect_count": 0,
+            "suspects": [],
+        }
+        _append_rollback_log(base_path, result, rollback_log_path)
+        return result
+    if len(suspects) > max_suspects:
+        result = {
+            "status": "escalate",
+            "canary_name": canary_name,
+            "suspect_count": len(suspects),
+            "suspects": suspects,
+            "error": (
+                f"{len(suspects)} suspects exceed bisect cap "
+                f"{max_suspects}; host merge-throttling review required."
+            ),
+        }
+        _append_rollback_log(base_path, result, rollback_log_path)
+        return result
+
+    if len(suspects) == 1:
+        culprit = suspects[0]
+    else:
+        if replay_canary_at_version is None:
+            return {
+                "status": "rejected",
+                "canary_name": canary_name,
+                "suspect_count": len(suspects),
+                "suspects": suspects,
+                "error": (
+                    "replay_canary_at_version is required when multiple "
+                    "suspects need bisection."
+                ),
+            }
+        culprit = bisect_canary(suspects, replay_canary_at_version)
+        if culprit is None:
+            result = {
+                "status": "inconclusive",
+                "canary_name": canary_name,
+                "suspect_count": len(suspects),
+                "suspects": suspects,
+                "error": "bisect confirmation turned GREEN; transient canary suspected.",
+            }
+            _append_rollback_log(base_path, result, rollback_log_path)
+            return result
+
+    weight = ROLLBACK_WEIGHTS[severity]
+    if weight > AUTO_ROLLBACK_WEIGHT_THRESHOLD:
+        event = _record_caused_regression_event(
+            base_path,
+            branch_version_id=culprit,
+            canary_name=canary_name,
+            reason=reason,
+            severity=severity,
+            set_by=set_by,
+            now=now,
+        )
+        result = {
+            "status": "recorded_only",
+            "canary_name": canary_name,
+            "suspect_count": len(suspects),
+            "suspects": suspects,
+            "culprit_version_id": culprit,
+            "event": event,
+        }
+        _append_rollback_log(base_path, result, rollback_log_path)
+        return result
+
+    rollback_result = rollback_merge_orchestrator(
+        base_path,
+        culprit,
+        reason=f"{canary_name}: {reason}",
+        set_by=set_by,
+        severity=severity,
+    )
+    result = {
+        "status": (
+            "rolled_back"
+            if rollback_result.get("status") == "ok"
+            else rollback_result.get("status", "rejected")
+        ),
+        "canary_name": canary_name,
+        "suspect_count": len(suspects),
+        "suspects": suspects,
+        "culprit_version_id": culprit,
+        "rollback": rollback_result,
+    }
+    _append_rollback_log(base_path, result, rollback_log_path)
+    return result
+
+
+def _record_caused_regression_event(
+    base_path: str | Path,
+    *,
+    branch_version_id: str,
+    canary_name: str,
+    reason: str,
+    severity: str,
+    set_by: str,
+    now: datetime | None,
+) -> dict[str, Any]:
+    initialize_contribution_events_db(base_path)
+    occurred = (
+        datetime.now(timezone.utc)
+        if now is None
+        else _coerce_utc_datetime(now, field_name="now")
+    )
+    event_id = (
+        f"caused_regression:{branch_version_id}:"
+        f"{canary_name}:{occurred.isoformat()}"
+    )
+    weight = ROLLBACK_WEIGHTS[severity]
+    inserted = record_contribution_event(
+        base_path,
+        event_id=event_id,
+        event_type="caused_regression",
+        actor_id=set_by,
+        source_artifact_id=branch_version_id,
+        source_artifact_kind="branch_version",
+        weight=float(weight),
+        occurred_at=occurred.timestamp(),
+        metadata_json=json.dumps({
+            "canary_name": canary_name,
+            "reason": reason,
+            "severity": severity,
+            "auto_rollback": False,
+        }),
+    )
+    return {
+        "event_id": event_id,
+        "inserted": inserted,
+        "weight": weight,
+        "severity": severity,
+    }
+
+
+def _append_rollback_log(
+    base_path: str | Path,
+    result: dict[str, Any],
+    rollback_log_path: str | Path | None,
+) -> None:
+    log_path = (
+        Path(rollback_log_path)
+        if rollback_log_path is not None
+        else Path(base_path) / ".agents" / "rollback.log"
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True, default=str) + "\n")
+
+
+def _normalize_canary_result(result: str | int) -> str:
+    if isinstance(result, int):
+        return "GREEN" if result == 0 else "RED"
+    normalized = str(result).strip().upper()
+    if normalized in {"GREEN", "RED"}:
+        return normalized
+    if normalized == "0":
+        return "GREEN"
+    if normalized.isdigit():
+        return "RED"
+    raise ValueError(f"Unsupported canary result: {result!r}")
+
+
+def _try_coerce_utc_datetime(value: Any) -> datetime | None:
+    try:
+        return _coerce_utc_datetime(value, field_name="datetime")
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_utc_datetime(
+    value: datetime | str | int | float,
+    *,
+    field_name: str,
+) -> datetime:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, (int, float)):
+        dt = datetime.fromtimestamp(value, tz=timezone.utc)
+    elif isinstance(value, str):
+        dt = datetime.fromisoformat(value)
+    else:
+        raise TypeError(f"{field_name} must be datetime, ISO string, or epoch seconds.")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 # ─── Closure walk ────────────────────────────────────────────────────────
@@ -519,10 +836,14 @@ def _seconds_as_timedelta(seconds: int):
 
 __all__ = [
     "AUTO_ROLLBACK_WEIGHT_THRESHOLD",
+    "MAX_BISECT_SUSPECTS",
     "ROLLBACK_WEIGHTS",
+    "auto_rollback_on_canary_red",
+    "bisect_canary",
     "compute_rollback_set",
     "execute_rollback_set",
     "get_rollback_history",
+    "list_watch_window_suspects",
     "repoint_goals_after_rollback",
     "rollback_merge_orchestrator",
 ]

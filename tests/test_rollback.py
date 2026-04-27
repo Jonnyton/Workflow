@@ -20,9 +20,13 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from workflow.branch_versions import (
+    _connect as _branch_versions_connect,
+)
 from workflow.branch_versions import (
     get_branch_version,
     publish_branch_version,
@@ -31,9 +35,12 @@ from workflow.contribution_events import initialize_contribution_events_db
 from workflow.rollback import (
     AUTO_ROLLBACK_WEIGHT_THRESHOLD,
     ROLLBACK_WEIGHTS,
+    auto_rollback_on_canary_red,
+    bisect_canary,
     compute_rollback_set,
     execute_rollback_set,
     get_rollback_history,
+    list_watch_window_suspects,
     rollback_merge_orchestrator,
 )
 
@@ -97,6 +104,32 @@ def _fork_branch(tmp_path, fork_def_id, fork_from_bvid):
     return publish_branch_version(
         tmp_path, branch.to_dict(), publisher="alice",
     ).branch_version_id
+
+
+def _set_watch_metadata(
+    tmp_path,
+    branch_version_id,
+    *,
+    published_at,
+    watch_window_seconds=86400,
+    status="active",
+):
+    with _branch_versions_connect(tmp_path) as conn:
+        conn.execute(
+            """
+            UPDATE branch_versions
+               SET published_at = ?,
+                   watch_window_seconds = ?,
+                   status = ?
+             WHERE branch_version_id = ?
+            """,
+            (
+                published_at.isoformat(),
+                watch_window_seconds,
+                status,
+                branch_version_id,
+            ),
+        )
 
 
 # ─── compute_rollback_set ─────────────────────────────────────────────────
@@ -227,6 +260,150 @@ class TestExecuteRollbackSet:
 
 
 # ─── get_rollback_history ─────────────────────────────────────────────────
+
+
+class TestWatchWindowSuspects:
+    def test_suspects_are_active_within_window_after_last_green(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        last_green = now - timedelta(hours=2)
+
+        before_green = _publish(tmp_path, "suspect-before-green")
+        expired = _publish(tmp_path, "suspect-expired")
+        rolled_back = _publish(tmp_path, "suspect-rolled")
+        eligible = _publish(tmp_path, "suspect-eligible")
+
+        _set_watch_metadata(
+            tmp_path,
+            before_green,
+            published_at=last_green - timedelta(minutes=1),
+        )
+        _set_watch_metadata(
+            tmp_path,
+            expired,
+            published_at=now - timedelta(hours=3),
+            watch_window_seconds=60,
+        )
+        _set_watch_metadata(
+            tmp_path,
+            rolled_back,
+            published_at=now - timedelta(minutes=30),
+            status="rolled_back",
+        )
+        _set_watch_metadata(
+            tmp_path,
+            eligible,
+            published_at=now - timedelta(minutes=10),
+        )
+
+        assert list_watch_window_suspects(
+            tmp_path,
+            last_green_at=last_green,
+            now=now,
+        ) == [eligible]
+
+
+class TestBisectCanary:
+    def test_bisect_returns_first_red_version_with_confirmation(self):
+        suspects = ["v1", "v2", "v3", "v4"]
+        calls = []
+
+        def replay(version_id):
+            calls.append(version_id)
+            return "RED" if version_id in {"v3", "v4"} else "GREEN"
+
+        assert bisect_canary(suspects, replay) == "v3"
+        assert calls[-1] == "v3"
+
+    def test_bisect_returns_none_when_confirmation_turns_green(self):
+        suspects = ["v1", "v2"]
+        calls = []
+
+        def replay(version_id):
+            calls.append(version_id)
+            return "RED" if len(calls) == 1 else "GREEN"
+
+        assert bisect_canary(suspects, replay) is None
+
+
+class TestAutoRollbackOnCanaryRed:
+    def test_single_p1_suspect_rolls_back_and_logs_without_replay(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        last_green = now - timedelta(hours=1)
+        suspect = _publish(tmp_path, "auto-p1")
+        _set_watch_metadata(
+            tmp_path,
+            suspect,
+            published_at=now - timedelta(minutes=10),
+        )
+
+        result = auto_rollback_on_canary_red(
+            tmp_path,
+            canary_name="PROBE-001",
+            last_green_at=last_green,
+            severity="P1",
+            reason="canary red",
+            set_by="host",
+            now=now,
+            replay_canary_at_version=lambda _: pytest.fail("not needed"),
+        )
+
+        assert result["status"] == "rolled_back"
+        assert result["culprit_version_id"] == suspect
+        assert get_branch_version(tmp_path, suspect).status == "rolled_back"
+        log_path = tmp_path / ".agents" / "rollback.log"
+        assert "PROBE-001" in log_path.read_text(encoding="utf-8")
+
+    def test_p2_suspect_records_event_without_rollback(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        suspect = _publish(tmp_path, "auto-p2")
+        _set_watch_metadata(
+            tmp_path,
+            suspect,
+            published_at=now - timedelta(minutes=10),
+        )
+
+        result = auto_rollback_on_canary_red(
+            tmp_path,
+            canary_name="PROBE-004",
+            last_green_at=now - timedelta(hours=1),
+            severity="P2",
+            reason="low-severity canary red",
+            set_by="host",
+            now=now,
+        )
+
+        assert result["status"] == "recorded_only"
+        assert get_branch_version(tmp_path, suspect).status == "active"
+        assert result["event"]["weight"] == ROLLBACK_WEIGHTS["P2"]
+
+    def test_many_suspects_escalate_without_rollback(self, tmp_path):
+        now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+        version_ids = []
+        for idx in range(33):
+            bvid = _publish(tmp_path, f"too-many-{idx}")
+            _set_watch_metadata(
+                tmp_path,
+                bvid,
+                published_at=now - timedelta(minutes=33 - idx),
+            )
+            version_ids.append(bvid)
+
+        result = auto_rollback_on_canary_red(
+            tmp_path,
+            canary_name="PROBE-001",
+            last_green_at=now - timedelta(hours=1),
+            severity="P1",
+            reason="too many suspects",
+            set_by="host",
+            now=now,
+        )
+
+        assert result["status"] == "escalate"
+        assert result["suspect_count"] == 33
+        assert all(
+            get_branch_version(tmp_path, bvid).status == "active"
+            for bvid in version_ids
+        )
 
 
 class TestGetRollbackHistory:
