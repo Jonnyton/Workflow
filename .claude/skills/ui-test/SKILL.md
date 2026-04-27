@@ -1,18 +1,18 @@
 ---
 name: ui-test
-description: Simulate a Claude.ai phone user driving the Universe Server via the custom MCP connector. Use when testing the live end-user surface. You type into the real Claude.ai chat UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
+description: Simulate a Claude.ai phone user driving the Workflow daemon via the custom MCP connector. Use when testing the live end-user surface. You type into the real Claude.ai chat UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
 ---
 
 # ui-test
 
-You simulate a real person chatting with Claude.ai on their phone or laptop, using the Universe Server MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile; this is the canonical URL installed by users — routed via a Cloudflare Worker to the tunnel-internal origin at `mcp.tinyassets.io/mcp`). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
+You simulate a real person chatting with Claude.ai on their phone or laptop, using the Workflow MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile; this is the canonical URL installed by users — routed via a Cloudflare Worker to the tunnel-internal origin at `mcp.tinyassets.io/mcp`). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
 
 The human host is watching the browser tab. Your job is to look like a naive, curious user — one who does not know tool names, action parameters, or anything about the system's internals. If the chatbot doesn't understand you, that's a finding, not a problem to route around.
 
 ## Driver routes
 
 - **Claude Code route:** use the host-visible Chrome profile through `scripts/claude_chat.py`. This remains the default route for Claude team user-sim.
-- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use it only to drive the same live Claude.ai session/profile that has the real Universe Server connector installed. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
+- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use it only to drive the same live Claude.ai session/profile that has the real Workflow MCP connector installed. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
 
 The verification target is the rendered Claude.ai conversation using the installed connector. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
 
@@ -35,7 +35,7 @@ The host launches Chrome with:
 powershell -Command "Start-Process 'C:\\Users\\Jonathan\\AppData\\Local\\ms-playwright\\chromium-1208\\chrome-win64\\chrome.exe' -ArgumentList '--user-data-dir=C:\\Users\\Jonathan\\.claude-ai-profile','--remote-debugging-port=9222','--no-first-run','--disable-blink-features=AutomationControlled','https://claude.ai/new'"
 ```
 
-logs into claude.ai in that window **if the profile's session is not already persisted** (the `--user-data-dir` caches auth; a returning host is often already logged in and goes straight to the chat), confirms the Universe Server connector is on, and keeps the window visible. Before you act, verify with:
+logs into claude.ai in that window **if the profile's session is not already persisted** (the `--user-data-dir` caches auth; a returning host is often already logged in and goes straight to the chat), confirms the Workflow connector is on, and keeps the window visible. Before you act, verify with:
 
 ```bash
 python scripts/claude_chat.py status
@@ -58,13 +58,13 @@ This rule supersedes convenience. A stalled mission is better than a mission the
 
 ## CRITICAL — watch for the connector's per-tool approval dialog
 
-The Universe Server connector pops a per-tool approval dialog the FIRST time Claude.ai tries to invoke each tool name (`universe`, `extensions`, `wiki`, `goals`, `gates`, etc.). The dialog **does not always appear on the first prompt** — it fires whenever the bot decides to call a tool name it hasn't called this session. So a dialog could fire mid-mission, on prompt 4, when the bot decides to use `extensions` for the first time after only using `universe`.
+The Workflow MCP connector pops a per-tool approval dialog the FIRST time Claude.ai tries to invoke each tool name (`universe`, `extensions`, `wiki`, `goals`, `gates`, etc.). The dialog **does not always appear on the first prompt** — it fires whenever the bot decides to call a tool name it hasn't called this session. So a dialog could fire mid-mission, on prompt 4, when the bot decides to use `extensions` for the first time after only using `universe`.
 
 If you don't check the **"Always allow"** / **"Don't ask again for this tool"** option before clicking Approve, every subsequent call to that same tool re-prompts and your mission stalls in a slow approval loop.
 
 **Protocol — applies every time a dialog appears, not just once:**
 
-1. After each `ask`, watch the response. If it shows a tool-approval dialog (Claude.ai usually says something like "Allow Universe Server to use the `<tool>` tool?"), the bot has paused waiting for your approval.
+1. After each `ask`, watch the response. If it shows a tool-approval dialog (Claude.ai's wording uses the connector's installed display name + "use the `<tool>` tool?"; the exact phrasing is Claude.ai's own UI, not authored by us), the bot has paused waiting for your approval.
 2. **Check the "Always allow" / "Don't ask again for this tool" option FIRST** — Claude.ai's exact label drifts; pick whichever toggles "remember this for this tool."
 3. Then click Approve.
 4. Note in the session log: `## [...] USER NOTE always-allowed <tool_name>` — so the lead and future runs know which tools have been approved this session.
@@ -131,7 +131,7 @@ If your opening prompt doesn't pull Claude.ai into the Workflow connector contex
 **Rule: every new chat begins with an opening prompt that explicitly references the connector.** Examples:
 
 - "i added the workflow builder connector — can you use it to help me make something new?"
-- "use my universe server connector for this: i want to build ___"
+- "use my workflow connector for this: i want to build ___"
 - "i want to try the workflow thing i installed. help me make one for ___"
 - "is my workflow connector working? help me build something small with it"
 
