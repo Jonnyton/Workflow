@@ -262,11 +262,12 @@ because it has not landed yet.
 
 ### Pre-claim collision guard
 
-`claim_check.py` warns if your prospective claim's Files overlap any
-in-flight row's Files. Substring match either direction. If overlap
-fires, EITHER add a Depends edge (the overlap is real coordination)
-OR refine your row's Files to be narrower (the overlap was a hint, not
-a real write).
+Before adding a new row or broadening a Files cell, run
+`python scripts/claim_check.py --provider <yourname> --check-files "path/a.py, docs/foo.md"`.
+It warns if your prospective claim's Files overlap any in-flight row's
+Files. Substring match either direction. If overlap fires, EITHER add a
+Depends edge (the overlap is real coordination) OR refine your row's
+Files to be narrower (the overlap was a hint, not a real write).
 
 ### Staying unblocked
 
