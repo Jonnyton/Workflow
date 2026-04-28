@@ -50,7 +50,7 @@ providers may be reading these concurrently. They are the shared state.
 |------|-------------------|--------------------------|
 | **AGENTS.md** | How to work on this project. Behavior, norms, hard rules. | Architecture, design decisions, principles (→ PLAN.md) |
 | **PLAN.md** | How the system works and why. Architecture, principles, design decisions, module specs. | Live state, task tracking (→ STATUS.md). Behavioral norms (→ AGENTS.md) |
-| **STATUS.md** | What's happening now. Live task board, concerns, next actions. ≤4 KB / 60 lines. | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). Backlog parking. |
+| **STATUS.md** | What's happening now. Live task board, concerns, next actions. ≤60 lines (canonical; ~4 KB approximate). | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). Backlog parking. |
 
 If it's about the project's architecture or design → PLAN.md.
 If it's about how to work on the project → AGENTS.md.
@@ -63,7 +63,7 @@ If it's about what's happening right now → STATUS.md.
 ### Orient
 
 1. Read `STATUS.md` (live coordination board, concerns, current work). **Trim check:** when reading or writing it, delete resolved concerns, landing records, entries marked DONE, duplicated host asks, and rows no provider can act on. STATUS.md has a 4 KB / 60-line budget; every reader is a janitor.
-2. `PLAN.md` is the design reference (18 KB). Load it based on task scope:
+2. `PLAN.md` is the design reference (~50 KB). Load it based on task scope:
    - **Full load** when: planning or scoping a new feature, making or evaluating
      a design decision, checking alignment with project principles, working on
      module architecture or cross-cutting concerns.
@@ -107,6 +107,8 @@ If it's about what's happening right now → STATUS.md.
 - **Reality audits are diagnostic, not a fourth living source of truth.** Use them to reconstruct confidence when trust is damaged, then push stable conclusions back into `AGENTS.md`, `PLAN.md`, and `STATUS.md`.
 - **Landed items leave STATUS.md.** Don't mark concerns DONE — delete them. If trust in a claim matters, use labels `current:`, `historical:`, `contradicted:`, `unknown:` with date + environment.
 - **Verification claims must be freshness-stamped.** If a claim depends on tests, lint, runtime behavior, or environment state, include the date, environment, and evidence/command.
+- **STATUS.md Concern row date-stamp format.** Every Concern row begins with `[filed:YYYY-MM-DD]` (when added) and gains `verified:YYYY-MM-DD` once someone re-checks the concern is still valid: `[filed:2026-04-23 verified:2026-04-28]`. Severity prefix optional and goes outside the bracket: `**[P1 filed:... verified:...]**`. Rationale: per `docs/audits/2026-04-28-status-md-coordination-gap.md` Rule 1, single-date stamps decay into stale state without explicit re-verification semantics.
+- **Server-bug Concerns cross-reference their wiki BUG.** When a STATUS Concern row maps to a wiki `BUG-NNN` page, append `(see BUG-NNN)` inline. When a wiki BUG-NNN page is severity P0/P1, its header should reference the STATUS row. Rationale: per audit Rule 3, BUG-034 + duplicate Concern rows drifted as 3 separate items for 4 days because no cross-reference convention existed.
 - **Contradictions must be downgraded immediately.** If current code, runtime artifacts, or verification output contradict an older claim, rewrite the `STATUS.md` claim or add a Concern before responding. Do not leave stale certainty in place.
 - **Revalidate `PLAN.md` section by section when trust is damaged.** Treat the plan as candidate design intent until the relevant sections are confirmed against code and runtime evidence.
 
@@ -166,7 +168,7 @@ Three patterns keep agent output trustworthy:
 
 **Verification is structural.** Every substantive change needs test/check evidence and an independent review path before it is treated as landed. Claude Code's `TaskCompleted` -> verifier loop is the preferred team implementation. Codex/Cowork satisfy the same invariant with focused tests plus independent diff/subagent review where available. Self-review alone is not enough for public-surface, storage, auth, migration, concurrency, or data-loss-risk changes.
 
-**Final chatbot-surface verification is live Claude.ai.** For changes affecting public MCP behavior, Claude.ai UX, connector tool descriptions, user-visible node/workflow state, or `tinyassets.io`, final acceptance must use the real Claude.ai chat state with the installed Universe Server MCP connector at `https://tinyassets.io/mcp`, following `ui-test`. Direct MCP calls, local scripts, tests, and canaries are supporting evidence, not final user-surface proof. The proof is rendered chatbot behavior in the live conversation, logged in `output/claude_chat_trace.md` and summarized in `output/user_sim_session.md`.
+**Final chatbot-surface verification is live Claude.ai.** For changes affecting public MCP behavior, Claude.ai UX, connector tool descriptions, user-visible node/workflow state, or `tinyassets.io`, final acceptance must use the real Claude.ai chat state with the installed Workflow MCP connector at `https://tinyassets.io/mcp`, following `ui-test`. Direct MCP calls, local scripts, tests, and canaries are supporting evidence, not final user-surface proof. The proof is rendered chatbot behavior in the live conversation, logged in `output/claude_chat_trace.md` and summarized in `output/user_sim_session.md`.
 
 **Post-fix clean-use evidence.** After the fix and `ui-test`, final verification must also look for evidence that actual users have used the affected feature cleanly since the fix landed. Use available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Freshness-stamp the evidence. If no post-fix real-user use is visible yet, say that explicitly and, for public-surface or high-risk changes, leave a short watch item in `STATUS.md` instead of claiming proven clean use.
 
@@ -191,43 +193,88 @@ The project uses two coordination layers that serve different purposes:
 
 ## Parallel Dispatch
 
-Multiple providers (Claude Code, Codex, Cowork) work on this project
-concurrently. Each uses worktree isolation. Coordination happens through
-the STATUS.md Work table, not through locks or runtime signaling.
+**Multi-provider concurrent execution is the default operating mode.**
+Multiple providers (Claude Code, Codex, Cursor, Cowork, future) work on
+this project at the same time. The host does not announce when a new
+provider is started; coordination flows through STATUS.md, not through
+chat. Treat any session-start as "the team is already running; what's
+safe to claim?"
 
-### Breaking work for parallel execution
+The complete coordination contract is: **STATUS.md Work table is the
+authoritative claim surface.** No external locks. No runtime signaling.
+A provider with a fresh checkout, no chat history, and no announcement
+should be able to start working productively in under a minute.
 
-Before dispatching a large plan to any provider, break it into the
-Work table as separate rows. Each row must have:
+### Provider session-start ritual
+
+Every provider, every session, in this order:
+
+1. **Read STATUS.md.** Concerns + Work table + Next.
+2. **Run `python scripts/claim_check.py --provider <yourname>`.**
+   Output classifies every Work row into CLAIMABLE / BLOCKED / IN-FLIGHT
+   / HOST-OWNED / STALE-CLAIM. The CLAIMABLE list is what's safe to
+   start on right now; BLOCKED tells you why something isn't; IN-FLIGHT
+   shows files off-limits.
+3. **Claim by editing STATUS.md.** Change the chosen row's Status cell
+   to `claimed:<yourname>`. Use a session-specific provider name when
+   more than one session from the same tool may be active (for example
+   `codex-gpt5-desktop`, `codex-cli-2`, `cursor-gpt55`). Commit that
+   edit on your branch (or directly to main if you're operating without
+   a worktree). The edit IS the claim — no other notification required.
+4. **Work in a worktree or branch.** `git worktree add ../wf-<task>` or
+   feature branch. Do not write outside your row's Files write-set
+   without first updating STATUS.md to reflect the new write-set.
+5. **On land**, change Status → `done` and delete the row in the same
+   commit. The commit is the audit trail.
+
+### Work-table row schema
+
+Every row must have:
 
 - **Files** — specific files or directories this task will write.
-  This is the collision boundary. Be concrete: `api.py, author_server.py`
-  not `backend`. Read-only dependencies go in Depends, not Files.
+  This is the collision boundary. Be concrete: `workflow/api/wiki.py, workflow/storage/__init__.py`
+  not `backend`. Read-only dependencies go in Depends, not Files. Use
+  comma or semicolon between atoms.
 - **Depends** — which tasks must merge first. Include both task
-  dependencies and file-read dependencies. If your task needs to read
-  `api.py` after another task rewrites it, that is a dependency.
-- **Status** — `pending`, `claimed:provider`, `done`, or the existing
-  states. Provider is the tool name: `codex`, `claude-code`, `cowork`.
+  dependencies (`#18, #23`) and file-read dependencies. If your task
+  needs to read `api.py` after another task rewrites it, that is a
+  dependency.
+- **Status** — one of: `pending`, `claimed:<provider>`, `in-flight`,
+  `dev-ready`, `host-action`, `host-decision`, `host-review`,
+  `monitoring`, `done`. Provider is the tool/session name: `codex`,
+  `claude-code`, `cursor`, `cowork`, or a more specific label such as
+  `codex-gpt5-desktop` / `cursor-gpt55` when generic names would be
+  ambiguous. `claimed:*` and `in-flight` mean the row's Files are
+  off-limits to others until status flips.
 
-### Claiming and executing
+### Stale-claim reaping
 
-Any provider can claim any pending task whose Depends are all `done`.
-Claim by updating the Status column to `claimed:yourname`. Work in a
-worktree or branch. When finished, merge sequentially — one branch at
-a time, rebase remaining branches onto updated main.
+A claim is stale if its Files have seen no commits in 24h and the row
+has no fresh active-date heartbeat. `claim_check.py` flags these as
+STALE-CLAIM CANDIDATES. Any provider may reap a stale claim by editing
+the row Status to `reaped:<yourname>:no-activity-24h`, then re-claiming
+as their own (`claimed:<yourname>`). No daemon, no permission needed;
+the convention is the policy. If a provider is actively building or
+testing before a commit lands, add `ACTIVE YYYY-MM-DD` to the Work row
+task text or status note. That heartbeat keeps the claim live for the
+date shown and prevents uncommitted active work from being reaped just
+because it has not landed yet.
 
-### What the dispatcher checks
+### Pre-claim collision guard
 
-Before assigning two tasks to run concurrently, verify their Files
-columns do not overlap. If they overlap, one must depend on the other.
-Read-only overlap is fine — add it as a Depends instead.
+`claim_check.py` warns if your prospective claim's Files overlap any
+in-flight row's Files. Substring match either direction. If overlap
+fires, EITHER add a Depends edge (the overlap is real coordination)
+OR refine your row's Files to be narrower (the overlap was a hint, not
+a real write).
 
 ### Staying unblocked
 
-If you finish early and no pending tasks have satisfied dependencies,
-look for tasks in other areas of the project (docs, skills, tests,
-MCP surfaces) that don't overlap with in-progress work. The goal is maximum
-useful concurrency, not waiting.
+If `claim_check.py` shows zero CLAIMABLE rows, look for cross-cutting
+work that doesn't appear in the Work table: docs hygiene, skill audits,
+test surface, design-note classifications, audit follow-ups. Add a new
+Work row for the task you pick up rather than working off-table — that
+keeps the next provider's `claim_check.py` accurate.
 
 ---
 
@@ -365,6 +412,7 @@ Canonical list of keys: `scripts/secrets_keys.txt` (edit there, not in shell pro
 | `notes.json` | Daemon + sessions | Per-universe unified notes (user, editor, structural, system). |
 | `scripts/docview.py` | Any AI, any tool | Scoped reader for large Markdown/text/JSON artifacts that should not be read raw. |
 | `scripts/capture_idea.py` | Any AI, any tool | Fast append helper for the idea inbox. |
+| `scripts/claim_check.py` | Any AI, any tool | Multi-provider session-start helper. Classifies STATUS.md Work rows as CLAIMABLE / BLOCKED / IN-FLIGHT / HOST-OWNED / STALE. Run with `--provider <yourname>` before claiming work. |
 | `scripts/sync-skills.ps1` | Repo maintenance | Re-sync `.agents/skills/` into `.claude/skills/`. |
 | `CLAUDE.md` | Claude Code only | Thin routing layer. |
 | `CLAUDE_LEAD_OPS.md` | Claude Code lead | Situational: user-sim loops, dev team management, token efficiency. Not auto-loaded. |
