@@ -143,7 +143,10 @@ half-formed experiments.
   Triaged 2026-04-27: PIPELINE row "hyperparameter_importance evaluator node" — waitlist
   until science-domain skill catalog exists. Cheap-to-add parity win.
   Promoted 2026-04-27: domain pre-spec landed at `docs/specs/2026-04-27-hyperparameter-importance-evaluator-node.md` (inputs/outputs/errors/tests frozen); implementation remains module-lane blocked.
+  Promoted 2026-04-27 (execution-ready): fixture pack + implementation cards landed at `docs/specs/2026-04-27-hyperparameter-importance-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-hyperparameter-importance-implementation-cards.md`.
   Links:
   - `docs/audits/user-chat-intelligence/2026-04-24-competitor-trials-sweep.md` Signal 4
   - `ideas/PIPELINE.md` "hyperparameter_importance evaluator node" row
   - `docs/specs/2026-04-27-hyperparameter-importance-evaluator-node.md`
+  - `docs/specs/2026-04-27-hyperparameter-importance-fixture-pack.md`
+  - `docs/exec-plans/active/2026-04-27-hyperparameter-importance-implementation-cards.md`
