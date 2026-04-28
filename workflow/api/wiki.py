@@ -3,7 +3,7 @@
 The wiki action handlers, helpers, constants, and dispatch live here so
 they're independently testable and the decomposition audit's Step 2 ships
 clean. The MCP tool decoration stays in `workflow/universe_server.py`
-(Pattern A2 from `docs/exec-plans/active/2026-04-26-decomp-step-2-prep.md`):
+(Pattern A2 from `docs/exec-plans/completed/2026-04-26-decomp-step-2-prep.md`):
 the decorated tool there delegates to the plain `wiki(...)` function below.
 
 Public surface (test imports):
@@ -266,6 +266,49 @@ def _sanitize_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", clean.lower()).strip("-")
 
 
+def _resolve_bugs_canonical(parent: Path, slug: str) -> Path | None:
+    """Find the canonical bugs/<slug>.md path, preferring uppercase + trailing-hyphen variants.
+
+    Three corner cases this resolves:
+
+    1. **Direct case-sensitive hit on the slug.** If `<slug>.md` exists, it's
+       canonical only when there's no uppercase sibling that lowercases to it
+       (BUG-003 fix: lowercase duplicate must NOT win when an uppercase BUG
+       canonical exists).
+    2. **Wrong-case canonical** (BUG-028). e.g. slug=`bug-007-foo`, canonical
+       on disk is `BUG-007-foo.md` — match the canonical.
+    3. **Trailing-hyphen canonical** (BUG-018). The slug sanitizer strips
+       trailing hyphens; if the canonical filename actually has one, match
+       `<slug>-.md` (case-insensitive).
+
+    Returns the resolved canonical Path, or None if no match.
+    Preference order when multiple candidates match:
+      uppercase BUG-prefix > exact-case > anything else
+    """
+    direct = parent / (slug + ".md")
+    direct_dash = parent / (slug + "-.md")
+
+    candidates: list[Path] = []
+    for candidate in parent.glob("*.md"):
+        cstem = candidate.stem
+        if cstem.lower() == slug or cstem.lower() == slug + "-":
+            candidates.append(candidate)
+
+    if not candidates:
+        return None
+
+    def _rank(p: Path) -> tuple[int, int, str]:
+        name = p.name
+        # Lower number wins. Prefer uppercase BUG-prefix (canonical convention)
+        # then prefer exact slug-name match over trailing-hyphen variant.
+        is_upper_bug = 0 if name.startswith("BUG-") else 1
+        is_exact = 0 if p == direct else (1 if p == direct_dash else 2)
+        return (is_upper_bug, is_exact, name)
+
+    candidates.sort(key=_rank)
+    return candidates[0]
+
+
 # ---------------------------------------------------------------------------
 # Wiki action implementations
 # ---------------------------------------------------------------------------
@@ -403,24 +446,30 @@ def _wiki_write(
     slug = _sanitize_slug(filename)
     promoted_path = _wiki_pages_dir() / category / (slug + ".md")
 
-    # Alias-resolution: if the lowercase slug doesn't match an existing file
-    # but a wrong-case variant does (e.g. BUG-001-... vs bug-001-...), resolve
-    # to the existing file and warn so the operator can clean up the duplicate.
-    if not promoted_path.exists() and category == _BUGS_CATEGORY:
+    # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
+    # so a pre-existing lowercase-duplicate (BUG-003) or trailing-hyphen
+    # canonical (BUG-018) cannot bypass canonical-preferring resolution.
+    #
+    # BUG-003: lowercase duplicate already exists alongside an uppercase
+    # canonical → we must prefer the uppercase canonical.
+    # BUG-028: file_bug filename is lowercase but a wrong-case canonical
+    # already exists → resolve to canonical.
+    # BUG-018: canonical filename has a trailing hyphen the slug sanitizer
+    # strips → match a "<slug>-.md" sibling as the canonical.
+    if category == _BUGS_CATEGORY:
         parent = _wiki_pages_dir() / category
         if parent.is_dir():
-            for candidate in parent.glob("*.md"):
-                if candidate.stem.lower() == slug:
-                    _logger_wiki.warning(
-                        "BUG-028 slug-case alias: '%s' resolved to '%s'. "
-                        "Rename '%s' → '%s' to eliminate the duplicate.",
-                        slug,
-                        candidate.name,
-                        candidate.name,
-                        slug + ".md",
-                    )
-                    promoted_path = candidate
-                    break
+            canonical = _resolve_bugs_canonical(parent, slug)
+            if canonical is not None and canonical != promoted_path:
+                _logger_wiki.warning(
+                    "wiki write alias: '%s' resolved to canonical '%s'. "
+                    "Rename '%s' → '%s' (or remove duplicate) to eliminate.",
+                    slug + ".md",
+                    canonical.name,
+                    canonical.name if canonical.name != (slug + ".md") else slug,
+                    slug + ".md",
+                )
+                promoted_path = canonical
 
     if promoted_path.exists():
         try:
