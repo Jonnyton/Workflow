@@ -12,6 +12,7 @@ Usage
     python scripts/claim_check.py --provider codex-gpt5-desktop --check-files scripts/claim_check.py
     python scripts/claim_check.py --provider codex-gpt5-desktop \
         --check-files "workflow/api/runs.py, tests/"
+    python scripts/claim_check.py --provider codex-gpt5-desktop --json
     python scripts/claim_check.py --provider cursor --reap
     python scripts/claim_check.py --provider cursor-gpt55 --reap
 
@@ -52,6 +53,7 @@ The STATUS.md Work-table row schema is:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -444,6 +446,74 @@ def render_prospective_check(
     return out
 
 
+def row_payload(row: Row) -> dict[str, object]:
+    return {
+        "line_no": row.line_no,
+        "task": row.raw_task,
+        "task_label": row.task_label,
+        "files": row.files,
+        "depends": row.depends_raw,
+        "status": row.status,
+        "claimer": row.claimer,
+        "task_ids": row.task_ids,
+        "depends_ids": row.depends_ids,
+    }
+
+
+def build_payload(
+    provider: str,
+    claimable: list[Row],
+    blocked: list[tuple[Row, list[str]]],
+    in_flight: list[Row],
+    host_owned: list[Row],
+    stale: list[tuple[Row, str]],
+    show_reap: bool,
+    prospective_files: list[str] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "provider": provider,
+        "counts": {
+            "claimable": len(claimable),
+            "blocked": len(blocked),
+            "in_flight": len(in_flight),
+            "host_owned": len(host_owned),
+            "stale": len(stale),
+        },
+        "claimable": [row_payload(row) for row in claimable],
+        "blocked": [
+            {"row": row_payload(row), "reasons": reasons} for row, reasons in blocked
+        ],
+        "in_flight": [row_payload(row) for row in in_flight],
+        "host_owned": [row_payload(row) for row in host_owned],
+        "stale": [
+            {
+                "row": row_payload(row),
+                "reason": reason,
+                "suggested_reap_status": (
+                    f"reaped:{provider}:no-activity-24h" if show_reap else None
+                ),
+            }
+            for row, reason in stale
+        ],
+    }
+    if prospective_files is not None:
+        conflicts, own_overlaps = prospective_conflicts(
+            prospective_files, in_flight, provider
+        )
+        payload["prospective_file_check"] = {
+            "files": prospective_files,
+            "clear": not conflicts,
+            "conflicts": [
+                {"row": row_payload(row), "overlap": hits} for row, hits in conflicts
+            ],
+            "own_overlaps": [
+                {"row": row_payload(row), "overlap": hits}
+                for row, hits in own_overlaps
+            ],
+        }
+    return payload
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Multi-provider claim helper for STATUS.md.")
     ap.add_argument(
@@ -464,6 +534,11 @@ def main(argv: list[str]) -> int:
             "Accepts one or more arguments; each may be comma- or semicolon-separated."
         ),
     )
+    ap.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON report instead of the human text report.",
+    )
     args = ap.parse_args(argv)
 
     if not STATUS_PATH.exists():
@@ -474,6 +549,19 @@ def main(argv: list[str]) -> int:
     claimable, blocked, in_flight, host_owned = classify(rows, args.provider)
     stale = find_stale_claims(rows)
     prospective_files = split_cli_files(args.check_files)
+    if args.json:
+        payload = build_payload(
+            args.provider,
+            claimable,
+            blocked,
+            in_flight,
+            host_owned,
+            stale,
+            args.reap,
+            prospective_files,
+        )
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
     print(
         render(
             args.provider,
