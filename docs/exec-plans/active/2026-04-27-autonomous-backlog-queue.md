@@ -12,6 +12,21 @@ Keep shipping without waiting on prompts by repeatedly:
 2. converting ambiguity into execution artifacts,
 3. updating pipeline/inbox links so handoff is instant.
 
+## Claude team memory guardrails applied
+
+This queue follows the Claude Code team-memory constraints the host asked us to
+reuse:
+
+- Developer memory: do not touch `workflow/*` while #18/#23 and plugin mirrors
+  are locked; build docs/specs/cards only.
+- Navigator memory: run the irreducibility test before proposing any new
+  primitive; prefer community/wiki composition unless a structural blocker is
+  proven.
+- Navigator memory: audit and status citations can be stale; verify artifact
+  existence and current consumers before dispatching follow-up work.
+- Dev-2 memory: verify examples against shipped artifacts and keep file
+  boundaries concrete enough for `claim_check.py --check-files`.
+
 ## Queue
 
 1. **User-sim verification bundle for promoted backlog items**
@@ -44,7 +59,18 @@ Keep shipping without waiting on prompts by repeatedly:
 10. **Hyperparameter importance execution hardening (fixtures + cards)**
     Status: landed
 
-11. **Continue autonomous burn-down (discover and land next slices)**
+11. **Late-promoted artifact user-sim coverage**
+    Status: blocked by Mission 10 `user-sim` claim
+    Scope: add scripts for runtime memory graph, hyperparameter importance,
+    trust observability, and agent-team scoping after `claimed:user` clears.
+
+12. **Reference integrity pass for completed-note moves**
+    Status: next
+    Scope: update only queue/user-sim/index links when note artifacts are moved
+    from `docs/notes/` to `docs/notes/completed/`; do not commit someone
+    else's staged renames.
+
+13. **Continue autonomous burn-down (discover and land next slices)**
     Status: next
 
 ## Stop conditions
