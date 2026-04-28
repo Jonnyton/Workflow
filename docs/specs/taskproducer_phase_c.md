@@ -1,3 +1,9 @@
+---
+status: shipped
+shipped_date: 2026-04-13
+shipped_in: ba83254  # Phase C.3: TaskProducer protocol + registry (no producers yet)
+---
+
 # Phase C — TaskProducer Protocol + execution_kind Genericization
 
 **Status:** spec-first — planner-authored, awaiting reviewer audit then dev claim.

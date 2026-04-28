@@ -4,28 +4,28 @@
 **Author:** dev-2
 **Source catalog:** `docs/ops/acceptance-probe-catalog.md` (rev 2026-04-20)
 **Scope:** verify every named probe (path, invocation, canonical endpoint) and surface coverage gaps
-**Mode:** read-only audit — no code changes.
+**Mode:** original read-only audit; refreshed 2026-04-28 to close completed follow-ups.
 
 ---
 
 ## Summary
 
-Two named probes (PROBE-001, PROBE-002) are documented in the catalog. Both target the canonical `https://tinyassets.io/mcp` endpoint correctly at the catalog level. **One stale-endpoint defect** exists in the underlying script `scripts/mcp_public_canary.py` (default URL still `mcp.tinyassets.io/mcp`). At least **eight additional probe scripts** exist in the repo that test uptime surfaces but are NOT registered in the catalog — coverage gap or simple under-documentation, depending on intent.
+The catalog has grown from the original two named probes to PROBE-001 through PROBE-009. They target the canonical `https://tinyassets.io/mcp` endpoint where public MCP probing is intended, and the original stale-endpoint defect in `scripts/mcp_public_canary.py` is closed as of `cd4e97c` (2026-04-26).
 
-The catalog itself is well-structured (validated date, source audit, prompt verbatim, green/red criteria, baseline evidence). It just hasn't kept pace with the proliferation of canary scripts since the 2026-04-20 selfhost cutover.
+The remaining uncatalogued scripts are wrappers, alarm actions, or time-bounded acceptance checks rather than standalone steady-state probes.
 
 ---
 
-## Per-probe table
+## Original per-probe table
 
 | Name | Doc'd path | Doc'd invocation | Status | Notes |
 |---|---|---|---|---|
-| PROBE-001 | `scripts/mcp_public_canary.py` (implied via Hard Rule #10) | Catalog: paste-prompt against `tinyassets.io/mcp`. Hard Rule #10: `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` | **YELLOW** — script exists, catalog target URL correct, but the script's DEFAULT_URL is stale (`mcp.tinyassets.io/mcp`). Operators MUST pass `--url` explicitly to be Hard-Rule-#10-compliant. | See Defect 1 below. |
+| PROBE-001 | `scripts/mcp_public_canary.py` (implied via Hard Rule #10) | Catalog: paste-prompt against `tinyassets.io/mcp`. Hard Rule #10: `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` | **GREEN** — script exists, catalog target URL correct, and the script default now points at `https://tinyassets.io/mcp`. | See Defect 1 closure below. |
 | PROBE-002 | `scripts/uptime_canary_layer2.py` (implied — catalog says "once `scripts/uptime_canary.py` Layer-2 path is implemented", but the Layer-2 path is now its own file) | Manual prompt via Claude.ai persona; designed-but-not-live | **GREEN-design** | Catalog correctly notes "design-validated (not yet live-run)". Consistent with catalog's own admission criteria. |
 
 ---
 
-## Defect 1: `mcp_public_canary.py` default URL is stale
+## Historical Defect 1: `mcp_public_canary.py` default URL was stale
 
 **Status: closed by `cd4e97c` (2026-04-26).** `DEFAULT_URL`, the docstring example, and the `--help` output now all point to `https://tinyassets.io/mcp`. Verified live: `python scripts/mcp_public_canary.py --verbose` → exit 0, `[canary] OK https://tinyassets.io/mcp` (2026-04-26).
 
@@ -38,7 +38,7 @@ The catalog itself is well-structured (validated date, source audit, prompt verb
 
 > Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts.
 
-The canary script itself, by virtue of its `--help` output and docstring, currently violates "do not document or share `mcp.tinyassets.io` in user-facing contexts." A bare `python scripts/mcp_public_canary.py` invocation will probe the gated origin and red-canary on 401/403 — falsely indicating an outage when the canonical endpoint is fine.
+Before `cd4e97c`, the canary script itself, by virtue of its `--help` output and docstring, violated "do not document or share `mcp.tinyassets.io` in user-facing contexts." A bare `python scripts/mcp_public_canary.py` invocation probed the gated origin and red-canaryed on 401/403 — falsely indicating an outage when the canonical endpoint was fine. Current script defaults are canonical.
 
 **Evidence in `.agents/uptime.log`:**
 ```
@@ -47,49 +47,46 @@ The canary script itself, by virtue of its `--help` output and docstring, curren
 ```
 Pre-cutover entries (2026-04-19) hit the deprecated host. Post-cutover (2026-04-23) hit canonical via the wrapper `uptime_canary.py` which has the correct `DEFAULT_URL = "https://tinyassets.io/mcp"`. The wrapper masks the bug; direct calls do not.
 
-**Recommendation.** Three lines change:
-- Line 23 docstring example: switch the deprecated URL to canonical.
-- Line 41: `DEFAULT_URL = "https://tinyassets.io/mcp"`.
-- Optionally add a sentence to the docstring explaining `mcp.tinyassets.io/mcp` was the historical origin and is no longer user-facing.
+**Closure.** No remaining code action. The default URL and visible examples now use the canonical endpoint; historical-origin details stay in this audit only as pre-fix evidence.
 
 ---
 
-## Coverage gap: probes not in the catalog
+## Original coverage gap: probes not in the catalog
 
-The catalog says "Named, validated probes for testing the full System → Chatbot → User chain." Since the 2026-04-20 cutover, eight additional canary scripts have been added that probe uptime surfaces. None are catalogued.
+The original audit found that several canary scripts probed uptime surfaces without catalog slots. As of the 2026-04-28 refresh, the permanent green/red probes are registered; only wrappers, alarm actions, and time-bounded acceptance scripts remain intentionally uncatalogued.
 
 | Script | Surface tested | Currently registered? | Catalog admission status |
 |---|---|---|---|
 | `scripts/mcp_public_canary.py` | MCP `initialize` handshake | implicitly via PROBE-001 | covered (just stale default — see Defect 1) |
 | `scripts/uptime_canary.py` | Layer-1 wrapper around `mcp_public_canary` w/ logging | not separately listed | borderline — wrapper, not a unique surface |
 | `scripts/uptime_canary_layer2.py` | Claude.ai connector liveness via persona | implicitly PROBE-002 | covered |
-| `scripts/mcp_tool_canary.py` | end-to-end MCP `tools/list` + `universe action=inspect` | not catalogued | **GAP** — tests "handshake green, tool handler crashed" failure class explicitly named in script docstring (task #6) |
-| `scripts/wiki_canary.py` | wiki write+read roundtrip (P0 — Forever Rule auto-heal pipeline) | not catalogued | **GAP** — explicit P0 surface per script docstring; closes BUG-028 silent-bug class |
-| `scripts/last_activity_canary.py` | activity log freshness | not catalogued | **GAP** — exists with its own test file `tests/test_last_activity_canary.py` |
-| `scripts/revert_loop_canary.py` | guards against revert-loop pathology (cf. STATUS Concern 2026-04-23 P0) | not catalogued | **GAP** — has spec at `docs/design-notes/2026-04-23-revert-loop-canary-spec.md` |
+| `scripts/mcp_tool_canary.py` | end-to-end MCP `tools/list` + `universe action=inspect` | PROBE-004 | registered |
+| `scripts/wiki_canary.py` | wiki write+read roundtrip (P0 — Forever Rule auto-heal pipeline) | PROBE-003 | registered |
+| `scripts/last_activity_canary.py` | activity log freshness | PROBE-005 | registered |
+| `scripts/revert_loop_canary.py` | guards against revert-loop pathology (cf. STATUS Concern 2026-04-23 P0) | PROBE-006 | registered |
 | `scripts/uptime_alarm.py` | escalation/Pushover paging | not catalogued | maybe-not-a-probe (it's the alarm action, not a probe per se) |
 | `scripts/selfhost_smoke.py` | parity between canonical + tunnel during 48h offline acceptance | not catalogued | borderline — explicitly time-bounded (Row F acceptance) |
 
-The `wiki_canary.py` and `mcp_tool_canary.py` gaps are the most urgent because:
+The original `wiki_canary.py` and `mcp_tool_canary.py` gaps were urgent because:
 1. Both target Forever-Rule uptime surfaces (wiki write = auto-heal pipeline; tool-invocation = "tier-1 chatbot users create / browse / collaborate" path).
 2. Both have green-criteria parseable without human judgment (catalog admission criterion #3).
 3. Both have validated invocations — `--help` works; signature matches the catalog's expected pattern.
 
-The `revert_loop_canary.py` gap is interesting because the P0 revert-loop concern is currently the top-of-STATUS Concern. A catalogued reference probe for it would close the loop between Concern → Probe → green-baseline.
+The `revert_loop_canary.py` gap is now closed by PROBE-006.
 
 ---
 
-## Coverage gap: PROBE-002 implementation drift
+## Original coverage gap: PROBE-002 implementation drift
 
 The catalog (line 118) says:
 
 > Automated hourly Layer-2 canary (once `scripts/uptime_canary.py` Layer-2 path is implemented).
 
-This is now stale — the Layer-2 canary lives at `scripts/uptime_canary_layer2.py` (its own file, not a path inside `uptime_canary.py`). PROBE-002's "When to use" section needs an update to point at the actual script. The probe's logic itself is correctly implemented; only the catalog's pointer is wrong.
+This original drift is closed: PROBE-002 now points at `scripts/uptime_canary_layer2.py` (its own file, not a path inside `uptime_canary.py`).
 
 ---
 
-## Coverage gap: post-fix clean-use evidence is not a probe
+## Residual note: post-fix clean-use evidence is not a probe
 
 AGENTS.md Quality Gates section names "Post-fix clean-use evidence" as a verification primitive — checking that real users have used the affected feature cleanly since a fix landed. The catalog has no probe for this. Per the catalog's admission criteria this might not qualify (it's evidence-gathering, not a parseable probe), but it's worth flagging because it's a verification primitive that has no automation hook today.
 
@@ -97,19 +94,19 @@ AGENTS.md Quality Gates section names "Post-fix clean-use evidence" as a verific
 
 ## Verifying the catalog itself
 
-Catalog file lives at `docs/ops/acceptance-probe-catalog.md`. Last modified 2026-04-20. All section headings and the validated/source/persona/connector-URL fields match the documented structure. No dead links found in the audit-source paths it references. Catalog text correctly states `tinyassets.io/mcp` is canonical and notes the single-URL architecture amendment.
+Catalog file lives at `docs/ops/acceptance-probe-catalog.md`. Refreshed through 2026-04-28. All section headings and the validated/source/persona/connector-URL fields match the documented structure. No dead links found in the audit-source paths it references. Catalog text correctly states `tinyassets.io/mcp` is canonical and notes the single-URL architecture amendment.
 
 ---
 
-## Recommendations (no code changes in this audit)
+## Recommendations
 
-Lead routes any follow-up tasks separately. Suggestions, in priority order:
+Original follow-ups have been absorbed into the catalog or closed in code:
 
-1. **Fix Defect 1** (3-line edit to `mcp_public_canary.py`): retire stale `DEFAULT_URL`. Trivial dev task; can ship in any docs/test bundle.
-2. **Add `wiki_canary` and `mcp_tool_canary` as PROBE-003 / PROBE-004** in the catalog. Both meet the admission criteria; both target Forever-Rule surfaces.
-3. **Update PROBE-002 implementation pointer** from `scripts/uptime_canary.py` to `scripts/uptime_canary_layer2.py`.
-4. **Decide: catalog `revert_loop_canary` or leave it as a Concern-side artifact?** Either is defensible; the choice depends on whether the revert-loop class is a permanent uptime invariant or a transient post-mortem-driven check.
-5. **Optional:** add a "post-fix clean-use evidence" section noting it's a verification primitive without a current probe automation hook, so future engineers know this is intentional vs accidental.
+1. **Defect 1 closed** by `cd4e97c`: `mcp_public_canary.py` defaults and examples are canonical.
+2. **PROBE-003 / PROBE-004 registered** in `docs/ops/acceptance-probe-catalog.md` for `wiki_canary` and `mcp_tool_canary`.
+3. **PROBE-002 pointer updated** to `scripts/uptime_canary_layer2.py`.
+4. **`revert_loop_canary` registered** as PROBE-006.
+5. **Post-fix clean-use evidence documented** as an intentional non-probe verification primitive.
 
 ---
 

@@ -74,15 +74,18 @@ class TestSetCanonicalResponseShape:
     """Shape tests that don't require live universe_server state."""
 
     def test_set_canonical_action_in_goal_available_actions(self):
-        from workflow.universe_server import _GOAL_ACTIONS
+        from workflow.api.market import _GOAL_ACTIONS
         assert "set_canonical" in _GOAL_ACTIONS
 
     def test_set_canonical_in_goal_write_actions(self):
-        from workflow.universe_server import _GOAL_WRITE_ACTIONS
+        from workflow.api.market import _GOAL_WRITE_ACTIONS
         assert "set_canonical" in _GOAL_WRITE_ACTIONS
 
     def test_set_canonical_in_all_goal_actions(self):
-        from workflow.universe_server import _GOAL_ACTIONS, _GOAL_WRITE_ACTIONS
+        from workflow.api.market import (
+            _GOAL_ACTIONS,
+            _GOAL_WRITE_ACTIONS,
+        )
         assert "set_canonical" in _GOAL_ACTIONS
         assert "set_canonical" in _GOAL_WRITE_ACTIONS
 
@@ -112,18 +115,19 @@ class TestRunBranchVersionWiring:
     """Phase A item 6 (Task #65b) — sibling-action runs the canonical bvid."""
 
     def test_run_branch_version_action_wired(self):
-        from workflow.universe_server import _RUN_ACTIONS
+        from workflow.api.runs import _RUN_ACTIONS
         assert "run_branch_version" in _RUN_ACTIONS
 
     def test_run_branch_version_in_run_write_actions(self):
-        from workflow.universe_server import _RUN_WRITE_ACTIONS
+        from workflow.api.runs import _RUN_WRITE_ACTIONS
         assert "run_branch_version" in _RUN_WRITE_ACTIONS
 
     def test_set_canonical_and_run_version_actions_compose(self):
         """End-to-end wiring: a set_canonical -> run_branch_version pipeline
         depends on both actions being registered together. Confirms the
         action namespace pair that gate-routing (Task #53) will rely on."""
-        from workflow.universe_server import _GOAL_ACTIONS, _RUN_ACTIONS
+        from workflow.api.market import _GOAL_ACTIONS
+        from workflow.api.runs import _RUN_ACTIONS
         assert "set_canonical" in _GOAL_ACTIONS
         assert "run_branch_version" in _RUN_ACTIONS
 

@@ -141,7 +141,7 @@ Every MCP connection begins with an `initialize` request ([MCP spec 2025-03-26 l
 }
 ```
 
-Universe Server should:
+Workflow Server should:
 
 - **Parse and log `clientInfo.name` + `Origin` header** on every session. Claude.ai connects from `https://claude.ai`; Claude Desktop reports differently; direct API calls identify themselves.
 - **Stamp every tool response with `client_id`** — the resolved client identity for the session. Host auditing ("did anything confidential go out through Claude.ai?") becomes a query against an audit log, not a trust question.

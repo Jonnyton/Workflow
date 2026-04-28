@@ -8,8 +8,9 @@ scopes to dialog containers, so it can't see this and returns 0.
 
 This helper is scoped: it looks for a <button> whose visible text equals
 "Always allow" and whose ancestor contains the phrase "wants to use" or
-"Universe Server" (the permission-card text shell). It clicks that button
-and only that button.
+"Workflow Server" (the permission-card text shell — matches the connector's
+shipped display_name from packaging/conway/panel-metadata.json). It clicks
+that button and only that button.
 
 The detector logic has been folded into ``claude_chat.py`` itself
 (``_dismiss_inline_permission_card``). This script remains as a
@@ -54,8 +55,8 @@ def _click_inline_always_allow(page) -> dict:
           if (!/Claude wants to use/i.test(allText)) {
             return {found: false, reason: 'no permission card text on page'};
           }
-          if (!/Universe Server/i.test(allText)) {
-            return {found: false, reason: 'permission card not Universe Server'};
+          if (!/Workflow(?: Server)?/i.test(allText)) {
+            return {found: false, reason: 'permission card not Workflow Server'};
           }
           const buttons = Array.from(document.querySelectorAll('button'));
           const btn = buttons.find(b => {

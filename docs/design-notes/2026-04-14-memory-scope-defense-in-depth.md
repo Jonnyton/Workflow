@@ -1,5 +1,6 @@
 ---
 status: superseded
+superseded_by: docs/design-notes/2026-04-15-memory-scope-tiered.md
 ---
 
 # Memory-Scope Defense-in-Depth

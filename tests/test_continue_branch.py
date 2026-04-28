@@ -137,7 +137,6 @@ class TestContinueBranchAction:
         _seed_run(tmp_path)
         _seed_run(tmp_path)
         from workflow.universe_server import extensions
-
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
         assert "run_history" in result
@@ -149,7 +148,6 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
         from workflow.universe_server import extensions
-
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
         assert result["run_history"] == []
@@ -162,7 +160,6 @@ class TestContinueBranchAction:
         # TODO: seed notes.json with 2 open user notes for branch b1.
         # Notes seeding requires notes.json writer — implement alongside action.
         from workflow.universe_server import extensions
-
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
         assert "chatbot_summary" in result
@@ -173,7 +170,6 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
         from workflow.universe_server import extensions
-
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
         # When no prior session exists, prior_session_available must be False
@@ -193,9 +189,7 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
         _seed_run(tmp_path)
-        from workflow.universe_server import extensions
-
-        # After a run exists, prior_session_available may be True
+        from workflow.universe_server import extensions  # After a run exists, prior_session_available may be True
         # and chatbot_summary should mention a timestamp.
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
@@ -205,7 +199,6 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
         from workflow.universe_server import extensions
-
         r1 = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         r2 = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(r1)
@@ -220,7 +213,6 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         from workflow.daemon_server import initialize_author_server
         from workflow.universe_server import extensions
-
         initialize_author_server(tmp_path)
         result = json.loads(
             extensions(action="continue_branch", branch_def_id="does_not_exist")
@@ -240,7 +232,6 @@ class TestContinueBranchAction:
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
         from workflow.universe_server import extensions
-
         result = json.loads(extensions(action="continue_branch", branch_def_id="b1"))
         _assert_action_recognized(result)
         assert "session_boundary" in result
@@ -257,9 +248,7 @@ class TestContinueBranchAlias:
     ):
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path)
-        from workflow.universe_server import extensions
-
-        # extensions() dispatches to branch() internally for patch_branch.
+        from workflow.universe_server import extensions  # extensions() dispatches to branch() internally for patch_branch.
         # This test uses extensions directly with action=continue_branch
         # and verifies the alias produces the same output shape.
         direct = json.loads(

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Daemon-Host Tray Changes — Track D
 
 **Date:** 2026-04-18

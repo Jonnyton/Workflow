@@ -2082,13 +2082,13 @@ def main() -> None:
     parser.add_argument(
         "--universe-server",
         action="store_true",
-        help="Start the Universe Server (remote MCP interface)",
+        help="Start the Workflow MCP server (remote MCP interface)",
     )
     parser.add_argument(
         "--mcp-port",
         type=int,
         default=8001,
-        help="Universe Server MCP port (default: 8001)",
+        help="Workflow MCP server port (default: 8001)",
     )
     parser.add_argument(
         "--mcp-transport",
@@ -2143,11 +2143,11 @@ def main() -> None:
         return
 
     if args.universe_server:
-        # Set base path for Universe Server (resolves universe directories)
+        # Set base path for the Workflow MCP server (resolves universe directories)
         base = str(Path(args.universe).resolve())
         os.environ.setdefault("UNIVERSE_SERVER_BASE", base)
         logger.info(
-            "Starting Universe Server on %s:%d (transport=%s, base=%s)",
+            "Starting Workflow MCP server on %s:%d (transport=%s, base=%s)",
             args.host, args.mcp_port, args.mcp_transport, base,
         )
 

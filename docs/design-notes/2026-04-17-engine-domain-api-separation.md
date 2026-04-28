@@ -1,5 +1,6 @@
 ---
 status: active
+status_detail: Principle landed in PLAN.md; A.1 fantasy_daemon unpack arc multi-week pending (per docs/design-notes/2026-04-26-fantasy-daemon-unpack-arc.md)
 ---
 
 # Engine/Domain API Separation — ROI-First Proposal

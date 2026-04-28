@@ -1,5 +1,8 @@
 ---
-status: active
+status: shipped
+shipped_date: 2026-04-19
+shipped_in: a4cb975  # Layer 1; subsequent layers in 4c02e31 (Row H GHA) + 964bc8d (Lane 4 revert-loop)
+canonical_in: docs/ops/acceptance-probe-catalog.md (PROBE-001..009)
 ---
 
 # Uptime Canary — Layered Design
@@ -15,7 +18,7 @@ status: active
 
 SUCCESSION.md §165 specifies a **weekly** cron pinging `tinyassets.io` + WHOIS expiry. The 2026-04-19 outage demonstrated:
 
-- Public `mcp.tinyassets.io/mcp` was down for an unknown window before host noticed it via live Claude.ai chat breakage.
+- Public `tinyassets.io/mcp` was unreachable for an unknown window before host noticed it via live Claude.ai chat breakage.
 - Weekly coarse-grained check could have missed the outage entirely if the window landed between pings.
 - Existing pre-commit hooks (mirror parity, mojibake, ruff) do NOT exercise the public routing surface.
 - localhost:8001 was healthy the whole time — *internal* health tells us nothing about the *public* surface the chatbot actually hits.
@@ -35,7 +38,7 @@ SUCCESSION.md §165 specifies a **weekly** cron pinging `tinyassets.io` + WHOIS 
 **Shape:**
 
 - Stdlib Python (`urllib.request` + `json`). **Zero third-party deps** — the canary must NOT break when pip state is dirty.
-- POST to `https://mcp.tinyassets.io/mcp` with `jsonrpc:"2.0"` / `method:"initialize"` / standard capabilities payload.
+- POST to `https://tinyassets.io/mcp` with `jsonrpc:"2.0"` / `method:"initialize"` / standard capabilities payload.
 - Expect: `200 OK` + parseable JSON-RPC response with matching `id` + `result.serverInfo`.
 - Then POST `tools/list`; expect non-empty `tools[]` array with ≥1 known tool name (e.g., `get_status`).
 - Total round-trip budget: 10 s hard cap.
@@ -49,8 +52,8 @@ SUCCESSION.md §165 specifies a **weekly** cron pinging `tinyassets.io` + WHOIS 
 **Log output:** append one line per probe to `.agents/uptime.log`:
 
 ```
-2026-04-19T17:30:00-07:00 GREEN layer=1 url=mcp.tinyassets.io/mcp rtt_ms=412 tools=37
-2026-04-19T17:32:00-07:00 RED   layer=1 url=mcp.tinyassets.io/mcp exit=2 reason=dns_nxdomain rtt_ms=5001
+2026-04-19T17:30:00-07:00 GREEN layer=1 url=tinyassets.io/mcp rtt_ms=412 tools=37
+2026-04-19T17:32:00-07:00 RED   layer=1 url=tinyassets.io/mcp exit=2 reason=dns_nxdomain rtt_ms=5001
 ```
 
 Single-line format so `grep RED .agents/uptime.log | tail -5` gives instant status.

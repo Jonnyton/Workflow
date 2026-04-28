@@ -555,7 +555,7 @@ def test_submit_node_bid_flag_off_returns_not_available(
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
-    from workflow.universe_server import _action_submit_node_bid
+    from workflow.api.universe import _action_submit_node_bid
     resp = json.loads(_action_submit_node_bid(
         universe_id=uid, node_def_id="foo", inputs_json="{}", bid=1.0,
     ))
@@ -563,7 +563,7 @@ def test_submit_node_bid_flag_off_returns_not_available(
 
 
 def test_submit_node_bid_valid_writes_yaml(mcp_harness):
-    from workflow.universe_server import _action_submit_node_bid
+    from workflow.api.universe import _action_submit_node_bid
     resp = json.loads(_action_submit_node_bid(
         universe_id=mcp_harness["uid"],
         node_def_id="extract_entities",
@@ -580,7 +580,7 @@ def test_submit_node_bid_valid_writes_yaml(mcp_harness):
 
 
 def test_submit_node_bid_response_has_git_push_hint(mcp_harness):
-    from workflow.universe_server import _action_submit_node_bid
+    from workflow.api.universe import _action_submit_node_bid
     resp = json.loads(_action_submit_node_bid(
         universe_id=mcp_harness["uid"],
         node_def_id="extract_entities",
@@ -592,7 +592,7 @@ def test_submit_node_bid_response_has_git_push_hint(mcp_harness):
 
 
 def test_submit_node_bid_rejects_nested_inputs(mcp_harness):
-    from workflow.universe_server import _action_submit_node_bid
+    from workflow.api.universe import _action_submit_node_bid
     resp = json.loads(_action_submit_node_bid(
         universe_id=mcp_harness["uid"],
         node_def_id="f",
@@ -604,7 +604,7 @@ def test_submit_node_bid_rejects_nested_inputs(mcp_harness):
 
 
 def test_submit_node_bid_rejects_negative_bid(mcp_harness):
-    from workflow.universe_server import _action_submit_node_bid
+    from workflow.api.universe import _action_submit_node_bid
     resp = json.loads(_action_submit_node_bid(
         universe_id=mcp_harness["uid"],
         node_def_id="f",

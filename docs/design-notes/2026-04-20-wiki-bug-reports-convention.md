@@ -2,8 +2,10 @@
 title: Wiki bug-report convention (chatbot-auto-file)
 date: 2026-04-20
 author: navigator
-status: active
-status_detail: CANONICAL — implement this design
+status: shipped
+shipped_date: 2026-04-20
+shipped_in: 529ecd5  # wiki: file_bug tool action + bugs category + BUG-001/002 seed
+status_detail: canonical convention shipped; BUG-001..034+ filed via the live tool
 supersedes: docs/design-notes/2026-04-19-wiki-known-issues-convention.md
 related_patches: docs/design-notes/2026-04-20-wiki-bug-reports-patches.md
 related_seed_entries: docs/design-notes/2026-04-20-wiki-bug-reports-seed-entries.md
@@ -29,7 +31,7 @@ Related artifacts (same package):
 ## Problem
 
 When a chatbot (Claude.ai, future clients) hits a defect in the Workflow
-Universe Server mid-conversation, the current options are all bad:
+MCP server mid-conversation, the current options are all bad:
 
 - Silently work around it and move on (most common) — the bug dies in chat
   history, host never learns about it.
@@ -88,9 +90,9 @@ Why top-level (not `notes/bugs/` or `meta/bugs/`):
 otherwise use nested top-level folders, and `meta/` implies
 "about-the-wiki", not "about-any-project's-software".
 
-## Decision 2 — scope: any software defect, not just Universe Server
+## Decision 2 — scope: any software defect, not just the Workflow MCP server
 
-Initial framing was "bugs in the Universe Server". Broaden: any software
+Initial framing was "bugs in the Workflow MCP server". Broaden: any software
 defect a chatbot or user hits while working on any project the wiki
 covers. The `component` front-matter field tells the reader which
 project/surface is affected (e.g. `universe-server`, `wiki-mcp`, `tray`,

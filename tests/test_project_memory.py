@@ -216,21 +216,21 @@ class TestHistoryTable:
 
 class TestExtensionsProjectMemoryGet:
     def test_missing_project_id_returns_error(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_get
+        from workflow.api.runtime_ops import _action_project_memory_get
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_project_memory_get({"project_id": "", "key": "k"}))
         assert "error" in result
 
     def test_missing_key_returns_error(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_get
+        from workflow.api.runtime_ops import _action_project_memory_get
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_project_memory_get({"project_id": "p1", "key": ""}))
         assert "error" in result
 
     def test_get_not_found_returns_found_false(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_get
+        from workflow.api.runtime_ops import _action_project_memory_get
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
@@ -239,8 +239,8 @@ class TestExtensionsProjectMemoryGet:
         assert result["found"] is False
 
     def test_get_found_returns_found_true(self, tmp_path: Path, monkeypatch) -> None:
+        from workflow.api.runtime_ops import _action_project_memory_get
         from workflow.memory.project import project_memory_set
-        from workflow.universe_server import _action_project_memory_get
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         project_memory_set(tmp_path, project_id="proj1", key="k1", value="hello")
@@ -253,7 +253,7 @@ class TestExtensionsProjectMemoryGet:
 
 class TestExtensionsProjectMemorySet:
     def test_missing_project_id_returns_error(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_set
+        from workflow.api.runtime_ops import _action_project_memory_set
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
@@ -262,7 +262,7 @@ class TestExtensionsProjectMemorySet:
         assert "error" in result
 
     def test_set_returns_ok(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_set
+        from workflow.api.runtime_ops import _action_project_memory_set
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
@@ -274,7 +274,10 @@ class TestExtensionsProjectMemorySet:
         assert result["version"] == 1
 
     def test_set_with_json_value_string(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_get, _action_project_memory_set
+        from workflow.api.runtime_ops import (
+            _action_project_memory_get,
+            _action_project_memory_set,
+        )
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _action_project_memory_set(
@@ -286,7 +289,7 @@ class TestExtensionsProjectMemorySet:
         assert result["value"] == {"x": 99}
 
     def test_set_conflict_on_wrong_version(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_set
+        from workflow.api.runtime_ops import _action_project_memory_set
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _action_project_memory_set(
@@ -305,7 +308,7 @@ class TestExtensionsProjectMemorySet:
         assert result.get("conflict") is True
 
     def test_invalid_expected_version_returns_error(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_set
+        from workflow.api.runtime_ops import _action_project_memory_set
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
@@ -323,14 +326,14 @@ class TestExtensionsProjectMemorySet:
 
 class TestExtensionsProjectMemoryList:
     def test_missing_project_id_returns_error(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_list
+        from workflow.api.runtime_ops import _action_project_memory_list
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_project_memory_list({"project_id": ""}))
         assert "error" in result
 
     def test_list_empty_project(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_project_memory_list
+        from workflow.api.runtime_ops import _action_project_memory_list
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_project_memory_list({"project_id": "proj1"}))
@@ -338,8 +341,8 @@ class TestExtensionsProjectMemoryList:
         assert result["count"] == 0
 
     def test_list_returns_entries(self, tmp_path: Path, monkeypatch) -> None:
+        from workflow.api.runtime_ops import _action_project_memory_list
         from workflow.memory.project import project_memory_set
-        from workflow.universe_server import _action_project_memory_list
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         project_memory_set(tmp_path, project_id="proj1", key="a", value=1)
@@ -349,8 +352,8 @@ class TestExtensionsProjectMemoryList:
         assert len(result["entries"]) == 2
 
     def test_list_prefix_filter_forwarded(self, tmp_path: Path, monkeypatch) -> None:
+        from workflow.api.runtime_ops import _action_project_memory_list
         from workflow.memory.project import project_memory_set
-        from workflow.universe_server import _action_project_memory_list
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         project_memory_set(tmp_path, project_id="proj1", key="foo/1", value=1)
@@ -367,7 +370,6 @@ class TestExtensionsRouting:
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(extensions(action="not_real_action_xyz"))
         assert "error" in result
@@ -378,7 +380,6 @@ class TestExtensionsRouting:
 
     def test_extensions_routes_project_memory_set(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
             extensions(
@@ -392,7 +393,6 @@ class TestExtensionsRouting:
 
     def test_extensions_routes_project_memory_get(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         extensions(
             action="project_memory_set",
@@ -408,7 +408,6 @@ class TestExtensionsRouting:
 
     def test_extensions_routes_project_memory_list(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         extensions(
             action="project_memory_set",

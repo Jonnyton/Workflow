@@ -1,3 +1,9 @@
+---
+status: shipped
+shipped_date: 2026-04-12
+shipped_in: c85efa1  # Phase 2-5 bundle that introduced workflow/branches.py + composite actions
+---
+
 # Composite Branch Actions — `build_branch` and `patch_branch`
 
 **Status:** proposed (fast-track — blocking Mission 4).

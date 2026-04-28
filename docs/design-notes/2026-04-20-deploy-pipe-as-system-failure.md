@@ -2,8 +2,10 @@
 title: The deploy pipe is the real chain-break
 date: 2026-04-20
 author: navigator
-status: active
-status_detail: urgent — ship fix-1 this session
+status: shipped
+shipped_date: 2026-04-20
+shipped_in: deploy-prod.yml § "Verify secrets present" (L81-89) + "Open deploy-failed issue" (L246+); fix-1 (deploy-failure GH-Issue alarm) live
+status_detail: fix-1 shipped (deploy-failed alarm with secrets verification); fixes 2-5 each have separate downstream notes/tasks
 ---
 
 # The deploy pipe is the real chain-break

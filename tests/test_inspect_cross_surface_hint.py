@@ -7,7 +7,7 @@ from workflow.api.prompts import _CONTROL_STATION_PROMPT
 
 
 def _call_inspect(universe_id="test-u"):
-    from workflow.universe_server import _action_inspect_universe
+    from workflow.api.universe import _action_inspect_universe
 
     fake_udir = Path("/fake") / universe_id
 
@@ -15,19 +15,22 @@ def _call_inspect(universe_id="test-u"):
         return True
 
     with (
-        patch("workflow.universe_server._default_universe", return_value=universe_id),
-        patch("workflow.universe_server._universe_dir", return_value=fake_udir),
+        # _action_inspect_universe lives in workflow.api.universe and
+        # imports these symbols directly (not via re-export). Patch at the
+        # consumer site (api.universe) for it to take effect.
+        patch("workflow.api.universe._default_universe", return_value=universe_id),
+        patch("workflow.api.universe._universe_dir", return_value=fake_udir),
         patch.object(Path, "is_dir", return_value=True),
-        patch("workflow.universe_server._read_json", return_value=None),
-        patch("workflow.universe_server._read_text", return_value=""),
-        patch("workflow.universe_server._daemon_liveness", return_value={
+        patch("workflow.api.universe._read_json", return_value=None),
+        patch("workflow.api.universe._read_text", return_value=""),
+        patch("workflow.api.universe._daemon_liveness", return_value={
             "phase": "idle", "phase_human": "Idle", "is_paused": False,
             "has_premise": False, "has_work": False, "last_activity_at": "",
             "staleness": "fresh", "word_count": 0, "word_count_sample": "",
             "accept_rate": 0, "accept_rate_sample": "",
         }),
-        patch("workflow.universe_server._list_output_tree", return_value=[]),
-        patch("workflow.universe_server._base_path", return_value=Path("/fake")),
+        patch("workflow.api.universe._list_output_tree", return_value=[]),
+        patch("workflow.api.universe._base_path", return_value=Path("/fake")),
     ):
         return json.loads(_action_inspect_universe(universe_id=universe_id))
 

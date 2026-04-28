@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch
 
-from workflow.universe_server import _resolve_branch_id
+from workflow.api.branches import _resolve_branch_id
 
 _BRANCH_A = {
     "branch_def_id": "uuid-abc-123",
@@ -27,7 +27,7 @@ def _patch_lookup(exists_ids=("uuid-abc-123",), all_branches=(_BRANCH_A, _BRANCH
     return (
         patch("workflow.author_server.get_branch_definition", side_effect=get_branch_def),
         patch("workflow.daemon_server.list_branch_definitions", return_value=list(all_branches)),
-        patch("workflow.universe_server._current_actor", return_value="user"),
+        patch("workflow.api.engine_helpers._current_actor", return_value="user"),
         patch("workflow.api.engine_helpers._current_actor", return_value="user"),
     )
 
@@ -92,14 +92,14 @@ class TestDescribeBranchAcceptsName:
                 return branch_dict
             raise KeyError(branch_def_id)
 
-        from workflow.universe_server import _ext_branch_describe
+        from workflow.api.branches import _ext_branch_describe
 
         with (
             patch("workflow.author_server.get_branch_definition", side_effect=get_def),
             patch("workflow.daemon_server.list_branch_definitions", return_value=[_BRANCH_A]),
-            patch("workflow.universe_server._current_actor", return_value="user"),
             patch("workflow.api.engine_helpers._current_actor", return_value="user"),
-            patch("workflow.universe_server._base_path", return_value="/fake"),
+            patch("workflow.api.engine_helpers._current_actor", return_value="user"),
+            patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.api.branches._related_wiki_pages",
                   return_value={"items": [], "truncated_count": 0}),
             patch("workflow.branch_versions.list_branch_versions", return_value=[]),

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Scene Commit Packet Spec
 
 **Status:** Phase 1a — schema defined, not yet emitted  

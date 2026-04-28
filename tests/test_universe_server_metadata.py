@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 
 from workflow.universe_server import mcp
-
-
 def _list_tools():
     return asyncio.run(mcp.list_tools(run_middleware=False))
 

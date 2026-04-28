@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Plan-B Self-Host Migration Playbook
 
 **Date:** 2026-04-19
@@ -103,7 +107,7 @@ Don't wait for a crisis. Each of these keeps the migration path warm:
    - `mcp.tinyassets.io` A record → Hetzner gateway-1 IP (and gateway-2 as second record for round-robin).
    - `tinyassets.io` CNAME/flatten → Hetzner gateway-1 (SvelteKit dynamic routes) OR keep GitHub Pages for static catalog content (static/dynamic split holds even on self-host).
 4. **Cloudflare Origin CA certs:** valid for 15 years per uptime note §3.5.3 — no new cert needed; existing one works against any origin.
-5. **Propagation window (~5-10 min at 60s TTL):** monitor `tinyassets.io/mcp/health` (canonical apex) AND `mcp.tinyassets.io/mcp/health` (direct-tunnel parity). Some traffic hits old Supabase until propagation completes; readers get cached data, writers retry.
+5. **Propagation window (~5-10 min at 60s TTL):** monitor `tinyassets.io/mcp/health` (canonical apex). Check `mcp.tinyassets.io` only with the internal Access/service-token path when debugging tunnel parity. Some traffic hits old Supabase until propagation completes; readers get cached data, writers retry.
 
 ### Phase 4: Verify + decommission (first week post-cutover)
 

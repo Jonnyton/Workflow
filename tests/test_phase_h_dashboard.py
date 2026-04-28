@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from workflow.universe_server import (
+from workflow.api.universe import (
     WRITE_ACTIONS,
     _action_daemon_overview,
     _action_set_tier_config,
@@ -46,7 +46,7 @@ def universe_harness(tmp_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
     # Clear the cache between tests to avoid cross-contamination.
-    from workflow.universe_server import _OVERVIEW_CACHE
+    from workflow.api.universe import _OVERVIEW_CACHE
     _OVERVIEW_CACHE.clear()
     return {"base": base, "uid": uid, "repo": repo}
 
@@ -153,7 +153,7 @@ def test_daemon_overview_flag_off_shows_paid_bid_not_live(
     cfg_path = udir / "dispatcher_config.yaml"
     if cfg_path.exists():
         cfg_path.unlink()
-    from workflow.universe_server import _OVERVIEW_CACHE
+    from workflow.api.universe import _OVERVIEW_CACHE
     _OVERVIEW_CACHE.clear()
     resp = json.loads(_action_daemon_overview(
         universe_id=universe_harness["uid"],
@@ -173,7 +173,7 @@ def test_daemon_overview_drift_surfaces(universe_harness, monkeypatch):
         json.dumps({"goals": [], "updated_at": ""}), encoding="utf-8",
     )
 
-    from workflow.universe_server import _OVERVIEW_CACHE
+    from workflow.api.universe import _OVERVIEW_CACHE
     _OVERVIEW_CACHE.clear()
     resp = json.loads(_action_daemon_overview(
         universe_id=universe_harness["uid"],
@@ -195,7 +195,7 @@ def test_daemon_overview_settlements_count_accurate(universe_harness):
     )
     record_settlement_event(repo_root, bid, result, "daemon-a")
 
-    from workflow.universe_server import _OVERVIEW_CACHE
+    from workflow.api.universe import _OVERVIEW_CACHE
     _OVERVIEW_CACHE.clear()
     resp = json.loads(_action_daemon_overview(
         universe_id=universe_harness["uid"],
@@ -347,29 +347,23 @@ def test_no_new_mcp_tools_added_by_phase_h():
     """Phase H adds actions to the existing `universe` tool, NOT new
     top-level tools. Enforced by the tool-registry introspection.
     """
-    from workflow import universe_server as us
-    # Phase H pre-existing MCP tools (count by looking at @mcp.tool
-    # decorated functions in the module).
-    # The assertion is weak without a tool-registry API, but having
-    # it as a pinned test catches accidental @mcp.tool additions.
-    # For v1 we simply assert the new action handlers exist at module
-    # level (they do if the module imported successfully).
-    assert hasattr(us, "_action_daemon_overview")
-    assert hasattr(us, "_action_set_tier_config")
+    from workflow.api import universe as uni
+    # Phase H action handlers live in workflow.api.universe after
+    # decomp Step 9. Assert they exist there as a regression guard
+    # against accidental removal.
+    assert hasattr(uni, "_action_daemon_overview")
+    assert hasattr(uni, "_action_set_tier_config")
 
 
 def test_phase_h_adds_exactly_two_actions_to_universe():
     """Introspective: daemon_overview + set_tier_config are the only
     two new `universe` tool actions Phase H adds."""
-    from workflow import universe_server as us
+    from workflow.api import universe as uni
     phase_h_actions = {"daemon_overview", "set_tier_config"}
     for action in phase_h_actions:
-        # Verify each is registered in either the main dispatch or
-        # WRITE_ACTIONS (set_tier_config is in WRITE_ACTIONS).
         if action == "set_tier_config":
-            assert action in us.WRITE_ACTIONS
-        # daemon_overview is a read — just check the handler exists.
-        assert hasattr(us, f"_action_{action}")
+            assert action in uni.WRITE_ACTIONS
+        assert hasattr(uni, f"_action_{action}")
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -431,7 +425,7 @@ def test_bid_execution_log_reads_legacy_filename(tmp_path):
 def test_trim_overview_under_cap_passes_through():
     """Response under the byte cap is returned unchanged, no
     `truncated` marker."""
-    from workflow.universe_server import _trim_overview_for_bytes
+    from workflow.api.universe import _trim_overview_for_bytes
 
     response = {"ok": True, "queue": {"top": [1, 2, 3]}}
     out = _trim_overview_for_bytes(response, cap=10_000)
@@ -444,7 +438,7 @@ def test_trim_overview_activity_tail_first():
     gates + dispatcher + subscriptions fields are NEVER trimmed —
     load-bearing per reviewer polish #5.
     """
-    from workflow.universe_server import (
+    from workflow.api.universe import (
         DAEMON_OVERVIEW_MAX_BYTES,
         _trim_overview_for_bytes,
     )
@@ -482,7 +476,7 @@ def test_trim_overview_activity_keeps_tail_not_head():
     the latest entries must survive so operators still see recent
     events in the trimmed response.
     """
-    from workflow.universe_server import _trim_overview_for_bytes
+    from workflow.api.universe import _trim_overview_for_bytes
 
     lines = [f"event-{i:04d}" + ("x" * 200) for i in range(500)]
     response = {"activity_tail": list(lines)}
@@ -497,7 +491,7 @@ def test_trim_overview_preserves_count_fields():
     """After a trim, `*_count` fields remain authoritative. Consumers
     learn the ACTUAL totals via counts, even when lists are halved.
     """
-    from workflow.universe_server import _trim_overview_for_bytes
+    from workflow.api.universe import _trim_overview_for_bytes
 
     response = {
         "queue": {

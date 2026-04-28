@@ -1,5 +1,7 @@
 ---
 status: shipped
+shipped_date: 2026-04-14
+shipped_in: 5fa8eda  # Phase 6.2.2: Path A — Branch visibility column + filters
 ---
 
 # #56 Private-Branch Visibility Filter — 3-Path Comparison

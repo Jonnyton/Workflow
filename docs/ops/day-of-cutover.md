@@ -79,7 +79,7 @@ GITHUB_OAUTH_CLIENT_SECRET=abcdef0123456789...
 
 - `https://one.dash.cloudflare.com` → your account → **Networks → Tunnels.**
 - If `workflow-daemon-prod` tunnel does not exist: **Create a tunnel → Cloudflared → name `workflow-daemon-prod` → Save.** Click the tunnel → **Connectors → Install connector** → copy the **Token** field (long JWT-looking string). Skip the "install on this machine" page; just copy.
-- **Public Hostname tab → Add a public hostname:** hostname = `mcp.tinyassets.io`, service = `http://localhost:8001`, save.
+- **Public Hostname tab → Add a public hostname:** hostname = `mcp.tinyassets.io` (the Access-gated tunnel origin, not the user-facing connector URL), service = `http://localhost:8001`, save.
 
 **Paste back to me:**
 ```
@@ -241,11 +241,10 @@ ssh -i ~/.ssh/workflow_deploy root@<DROPLET_IP> \
 
 ```bash
 python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --verbose
-python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp --verbose
-# Expected: both print "[canary] OK" + exit 0.
+# Expected: prints "[canary] OK" + exit 0.
 ```
 
-If asymmetric, I diagnose per `deploy/HETZNER-DEPLOY.md` "Diagnosis split" table and report back before proceeding.
+If red, I diagnose per `deploy/HETZNER-DEPLOY.md` and report back before proceeding.
 
 ### 2.7 Verify GHA cloud canary running
 
@@ -270,10 +269,9 @@ I ask you once:
 for i in {1..5}; do
     date
     python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp
-    python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp
     sleep 120
 done
-# Expected: 5 pairs of [canary] OK.
+# Expected: 5 consecutive [canary] OK results.
 ```
 
 If all green: I report cutover succeeded. You're free to hibernate the home machine for the 48h trial at your discretion.
@@ -362,7 +360,7 @@ Rules of the road:
 If anything goes red between §2.5 and §2.8 (home machine still up), rollback is additive-clean:
 
 - Lead runs: `ssh ... 'sudo systemctl stop workflow-daemon'` on Hetzner.
-- Home cloudflared is still running. `mcp.tinyassets.io` resolves back to home via Cloudflare tunnel DNS.
+- Home cloudflared is still running. The Worker keeps serving canonical `https://tinyassets.io/mcp` while `mcp.tinyassets.io` resolves back to the home tunnel origin.
 - Lead re-verifies canary on home tunnel + opens a GitHub issue titled `Cutover rollback: <date>` with the red output. Troubleshoot + retry later.
 
 If red occurs *after* §2.8 (home already stopped): lead asks you to restart the home cloudflared via tray. You need to be at your machine 10 min post-§2.8 in case this happens. Pick a cutover window where you're available.

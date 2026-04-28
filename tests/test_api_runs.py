@@ -195,31 +195,6 @@ def test_action_run_branch_returns_str():
     assert isinstance(out, str)
 
 
-# ── back-compat re-export sanity ────────────────────────────────────────────
-
-
-def test_universe_server_reexports_run_actions():
-    """Tests rely on `from workflow.universe_server import _RUN_ACTIONS, ...`"""
-    from workflow import universe_server as us
-    assert us._RUN_ACTIONS is _RUN_ACTIONS
-    assert us._RUN_WRITE_ACTIONS is _RUN_WRITE_ACTIONS
-    assert us._action_run_branch is _action_run_branch
-    assert us._classify_run_error is _classify_run_error
-
-
-@pytest.mark.parametrize("name", [
-    "_action_run_branch", "_action_run_branch_version",
-    "_action_get_run", "_action_list_runs", "_action_cancel_run",
-    "_action_resume_run", "_action_query_runs",
-    "_action_get_memory_scope_status", "_action_rollback_merge",
-    "_action_get_rollback_history", "_dispatch_run_action",
-    "_classify_run_error", "_classify_run_outcome_error",
-    "_ensure_runs_recovery", "_FAILURE_TAXONOMY", "_RUN_ACTIONS",
-    "_RUN_WRITE_ACTIONS",
-])
-def test_universe_server_reexport_identity(name):
-    """Every re-exported name in universe_server is the same object as in runs."""
-    from workflow import universe_server as us
-    assert getattr(us, name) is getattr(runs_mod, name), (
-        f"universe_server.{name} is not the same object as runs.{name}"
-    )
+# Arc A re-export shims removed in Task #18 retarget sweep — the
+# `test_universe_server_reexports_run_actions` + parametrized identity tests
+# are gone alongside the shim block.

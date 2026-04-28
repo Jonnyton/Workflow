@@ -1,5 +1,8 @@
 ---
-status: active
+status: shipped
+shipped_date: 2026-04-19
+shipped_in: 052985a (Option A — lazy __getattr__ co-shipped with R7), 0bad5b4 (Option B — import-graph smoke + pre-commit + tier-3 GHA)
+status_detail: Options A + B shipped per §4 recommendation; C and D explicitly deferred in the doc and remain so.
 ---
 
 # `workflow/storage/__init__.py` — Stale-Bytecode Mitigation Scoping

@@ -239,8 +239,8 @@ class TestReusePromptNudges:
         assert "node_ref" in text
 
     def test_branch_design_guide_points_at_search_first(self, ext_env):
-        us, _ = ext_env
-        text = us._BRANCH_DESIGN_GUIDE.lower()
+        from workflow.api.branches import _BRANCH_DESIGN_GUIDE
+        text = _BRANCH_DESIGN_GUIDE.lower()
         assert "search_nodes" in text
         assert "node_ref" in text
         # The guide must position search BEFORE the author flow.

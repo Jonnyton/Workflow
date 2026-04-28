@@ -143,30 +143,9 @@ def test_action_publish_version_missing_branch_def_id_returns_error():
     assert "error" in out
 
 
-# ── back-compat re-export sanity ────────────────────────────────────────────
-
-
-def test_universe_server_reexports_judgment_actions():
-    """Tests + extensions() rely on the universe_server re-exports."""
-    from workflow import universe_server as us
-    assert us._JUDGMENT_ACTIONS is _JUDGMENT_ACTIONS
-    assert us._BRANCH_VERSION_ACTIONS is _BRANCH_VERSION_ACTIONS
-    assert us._JUDGMENT_WRITE_ACTIONS is _JUDGMENT_WRITE_ACTIONS
-
-
-@pytest.mark.parametrize("name", [
-    "_JUDGMENT_ACTIONS", "_JUDGMENT_WRITE_ACTIONS",
-    "_dispatch_judgment_action", "_BRANCH_VERSION_ACTIONS",
-    "_action_judge_run", "_action_list_judgments", "_action_compare_runs",
-    "_action_suggest_node_edit", "_action_get_node_output",
-    "_action_list_node_versions", "_action_rollback_node",
-    "_action_publish_version", "_action_get_branch_version",
-    "_action_list_branch_versions", "_split_tag_csv",
-])
-def test_universe_server_reexport_identity(name):
-    """Every re-exported name in universe_server is the same object as in
-    evaluation."""
-    from workflow import universe_server as us
-    assert getattr(us, name) is getattr(eval_mod, name), (
-        f"universe_server.{name} is not the same object as evaluation.{name}"
-    )
+# Arc A re-export shims removed in Task #18 retarget sweep.
+# The legacy `from workflow.universe_server import _JUDGMENT_ACTIONS, ...`
+# imports were rewritten to canonical `workflow.api.evaluation` paths during
+# the sweep. The shim-identity tests that previously lived here would now
+# tautologically fail and contradict the no-shims-ever rule, so they were
+# deleted alongside the shim block.

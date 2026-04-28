@@ -193,7 +193,7 @@ Chatbots need a stable vocabulary so `Surface:` values aggregate
 cleanly across entries. Propose: `<tool>.<action>` for MCP-tool bugs,
 bare subsystem name for everything else. Enumeration:
 
-**MCP tool surfaces** (five coarse tools on the Universe Server,
+**MCP tool surfaces** (five coarse tools on the Workflow MCP server,
 plus the stdio shim — confirmed against `workflow/universe_server.py`
 @mcp.tool definitions):
 
@@ -265,7 +265,7 @@ descriptions. No re-derivation needed.
   container); storage.wiki_path()
 - **Severity:** high
 - **Status:** open
-- **Repro:** Deploy the Universe Server in Docker with
+- **Repro:** Deploy the Workflow MCP server in Docker with
   `WORKFLOW_WIKI_PATH=C:\Users\Jonathan\Projects\Wiki` (or legacy
   `WIKI_PATH`) inherited from a Windows host's env. Call any `wiki`
   action inside the container.

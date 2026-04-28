@@ -1,3 +1,7 @@
+---
+status: historical
+---
+
 # Investigation Findings — 2026-04-10
 
 Durable record of findings from this session so future sessions don't

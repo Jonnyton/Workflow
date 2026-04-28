@@ -1,12 +1,14 @@
 ---
-status: active
+status: integrated-into-PLAN
+integrated_date: 2026-04-28
+canonical_in: PLAN.md §"Full-Platform Architecture (Canonical)"
 ---
 
 # Full Platform Architecture — No Phases, Single-Build Target
 
 **Date:** 2026-04-18 (host directive this day)
 **Author:** navigator
-**Status:** Design note. Host reviews, picks direction, becomes the new Work roadmap.
+**Status:** Integrated into PLAN.md as canonical architecture (2026-04-28). This design note is retained as the integrated detail surface — full reasoning, tradeoff analysis, scale-audit numbers, host-decision lineage. PLAN.md §"Full-Platform Architecture (Canonical)" is the principle-level reference; sections of this note are cited from PLAN.md as decision rationale.
 
 **Replaces:** the phased rollout in `docs/design-notes/2026-04-18-persistent-uptime-architecture.md` §7 Phase 1/2/3. Supersedes `docs/exec-plans/active/2026-04-18-uptime-phase-1a-static-landing.md` — phased plan rejected by host.
 

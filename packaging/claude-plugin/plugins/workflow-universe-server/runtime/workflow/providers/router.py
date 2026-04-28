@@ -121,6 +121,35 @@ class ProviderRouter:
             return chain
         return [preferred] + [p for p in chain if p != preferred]
 
+    @staticmethod
+    def _current_allowlist() -> list[str] | None:
+        """Read the active universe's `allowed_providers` allowlist, or None.
+
+        Q6.3 enforcement primitive — see UniverseConfig.allowed_providers.
+        Returns None when no universe config is bound or the field is unset
+        (full fallback chain preserved, backwards-compatible).
+        """
+        try:
+            from workflow import runtime_singletons as runtime
+
+            return runtime.universe_config.allowed_providers
+        except Exception:
+            return None
+
+    @staticmethod
+    def _apply_allowlist(
+        chain: list[str], allowlist: list[str] | None,
+    ) -> list[str]:
+        """Filter *chain* down to providers in *allowlist*.
+
+        ``allowlist=None`` is a no-op (returns chain unchanged). An empty list
+        filters everything out — the caller is responsible for hard-failing
+        with ``AllProvidersExhaustedError`` so the policy block is visible.
+        """
+        if allowlist is None:
+            return chain
+        return [p for p in chain if p in allowlist]
+
     async def call(
         self,
         role: str,
@@ -155,6 +184,36 @@ class ProviderRouter:
                     chain = self._apply_preference(chain, ucfg.preferred_judge)
             except Exception:
                 pass
+
+        # Q6.3 — apply per-universe allowlist (privacy primitive). Pin already
+        # narrowed chain to [pin_writer] above; the filter then enforces
+        # pin × allowlist composition. None = no-op (backwards-compat).
+        allowlist = self._current_allowlist()
+        if allowlist is not None:
+            filtered = self._apply_allowlist(chain, allowlist)
+            if not filtered:
+                if is_pinned_writer:
+                    logger.warning(
+                        "Q6.3 allowlist empties chain: pinned writer %r is not "
+                        "in allowed_providers=%s; hard-failing.",
+                        pin_writer, allowlist,
+                    )
+                    raise AllProvidersExhaustedError(
+                        f"Pinned writer {pin_writer!r} is not in the universe's "
+                        f"allowed_providers={allowlist!r}. Either add the "
+                        f"provider to the allowlist or clear WORKFLOW_PIN_WRITER."
+                    )
+                logger.warning(
+                    "Q6.3 allowlist empties chain for role=%s: chain=%s "
+                    "filtered against allowed_providers=%s; hard-failing.",
+                    role, chain, allowlist,
+                )
+                raise AllProvidersExhaustedError(
+                    f"All providers for role={role!r} are blocked by the "
+                    f"universe's allowed_providers={allowlist!r}. Daemon will "
+                    f"not silently fall back to a disallowed provider."
+                )
+            chain = filtered
 
         for provider_name in chain:
             provider = self._providers.get(provider_name)
@@ -322,6 +381,22 @@ class ProviderRouter:
                 if p and p not in attempt_order:
                     attempt_order.append(p)
 
+        # Q6.3 — filter policy attempt order by per-universe allowlist.
+        # If the universe disallows a provider the policy named, skip it
+        # rather than attempt and leak. If everything filters out the
+        # method falls through to the role-based ``call()`` below, which
+        # applies the same allowlist and hard-fails.
+        allowlist = self._current_allowlist()
+        if allowlist is not None:
+            filtered_order = self._apply_allowlist(attempt_order, allowlist)
+            if attempt_order and not filtered_order:
+                logger.warning(
+                    "Q6.3 allowlist removes all policy providers (%s) for "
+                    "role=%s; falling through to role chain.",
+                    attempt_order, role,
+                )
+            attempt_order = filtered_order
+
         # Try policy-derived providers
         for provider_name in attempt_order:
             provider = self._providers.get(provider_name)
@@ -470,9 +545,21 @@ class ProviderRouter:
         """
         cfg = config or _default_config()
 
+        # Q6.3 — filter judge ensemble by per-universe allowlist (privacy
+        # primitive). Empty filter => empty list, matching the existing
+        # "no judges available" contract at L484-486.
+        allowlist = self._current_allowlist()
+        ensemble = self._apply_allowlist(list(_JUDGE_PROVIDERS), allowlist)
+        if allowlist is not None and not ensemble:
+            logger.warning(
+                "Q6.3 allowlist empties judge ensemble: allowed_providers=%s "
+                "intersected with %s yields no judges.",
+                allowlist, _JUDGE_PROVIDERS,
+            )
+
         # Find all available judge providers
         available: list[tuple[str, BaseProvider]] = []
-        for name in _JUDGE_PROVIDERS:
+        for name in ensemble:
             provider = self._providers.get(name)
             if provider is None:
                 continue

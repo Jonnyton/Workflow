@@ -14,9 +14,8 @@ import json
 
 import pytest
 
-from workflow.universe_server import _action_list_universes, get_status
-
-
+from workflow.api.universe import _action_list_universes
+from workflow.universe_server import get_status
 @pytest.fixture
 def empty_base(tmp_path, monkeypatch):
     """Point WORKFLOW_DATA_DIR at an empty existing directory."""

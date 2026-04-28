@@ -1,5 +1,6 @@
 ---
 status: active
+status_detail: F2 ACCEPTED by host 2026-04-28 (drop Recency, fold continue_branch into run_branch resume_from=<run_id> param); impl pending dev pickup post-Task-#18
 ---
 
 # Design Note: Extend Run / Continue Branch as a First-Class Primitive

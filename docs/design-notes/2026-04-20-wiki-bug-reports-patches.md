@@ -2,8 +2,10 @@
 title: Wiki bug-report convention — paste-ready code patches
 date: 2026-04-20
 author: navigator
-status: active
-status_detail: dispatch-ready
+status: shipped
+shipped_date: 2026-04-20
+shipped_in: 529ecd5  # wiki: file_bug tool action + bugs category + BUG-001/002 seed
+status_detail: paste-ready patches dispatched; bugs flow live (BUG-001..034+ filed via the tool)
 parent: docs/design-notes/2026-04-20-wiki-bug-reports-convention.md
 siblings: docs/design-notes/2026-04-20-wiki-bug-reports-seed-entries.md
 ---

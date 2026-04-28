@@ -173,7 +173,7 @@ def actionable_by_table() -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def actionable_by_helper():
-    from workflow.universe_server import _actionable_by
+    from workflow.api.runs import _actionable_by
     return _actionable_by
 
 
@@ -230,7 +230,7 @@ _OUTCOME_ERROR_FIXTURES: tuple[tuple[str, str], ...] = (
 
 @pytest.fixture(scope="module")
 def classify_outcome():
-    from workflow.universe_server import _classify_run_outcome_error
+    from workflow.api.runs import _classify_run_outcome_error
     return _classify_run_outcome_error
 
 

@@ -1,3 +1,9 @@
+---
+status: historical
+---
+
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-14. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase F Pre-Flight — Goal Subscription + Pool Producer
 
 Planner draft, 2026-04-14. For dev handoff on task #5 Phase F rollout row.
@@ -192,7 +198,7 @@ Aim: ~41 tests. Many share fixtures — a `_two_universe_fixture` helper providi
 **Flag-on rollout gate:** user-sim Mission 9 (after Mission 8 flips Phase D default on) runs an end-to-end pool post-and-pick between two pytest temp universes. When that passes, flag can default to on.
 
 **If Phase F breaks in live after flag on:**
-1. **Immediate:** `WORKFLOW_GOAL_POOL=0` + Universe Server restart. Pool producer unregisters; subscriber queues stop receiving new pool tasks; existing queued pool tasks get cancelled OR execute normally (dev picks: recommend "remain queued, marked cancelled on next cycle under flag-off"). No data loss.
+1. **Immediate:** `WORKFLOW_GOAL_POOL=0` + Workflow daemon restart. Pool producer unregisters; subscriber queues stop receiving new pool tasks; existing queued pool tasks get cancelled OR execute normally (dev picks: recommend "remain queued, marked cancelled on next cycle under flag-off"). No data loss.
 2. **Short-term:** if flag-off doesn't stabilize, set `WORKFLOW_DISPATCHER_ENABLED=0`. Now all tier-aware selection is off; daemon falls back to pre-Phase-E default fantasy selection. Pool tasks stay in files but nothing reads them.
 3. **Full rollback:** revert the Phase F commit. Files in `goal_pool/` remain harmlessly in repo. Subscription files in `<universe>/subscriptions.json` remain. Nothing reads them.
 

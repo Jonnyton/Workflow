@@ -1,3 +1,9 @@
+---
+status: shipped
+shipped_date: 2026-04-12
+shipped_in: c85efa1  # Community Branches Phases 2-5 + cross-universe cluster + user-sim harness
+---
+
 # Community Branches Phase 2 — Graph & State Design MCP Tools
 
 **Status:** proposed (awaiting lead approval)

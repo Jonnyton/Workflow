@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Multi-Provider Concurrent Daemon Runtime in Tray
 
 **Status:** draft r6, 2026-04-12 (pin mechanism corrected to env var — verified against landed code)

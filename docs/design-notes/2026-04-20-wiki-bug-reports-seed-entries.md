@@ -2,8 +2,10 @@
 title: Wiki bug-report seed entries — BUG-001 + BUG-002
 date: 2026-04-20
 author: navigator
-status: active
-status_detail: dispatch-ready
+status: shipped
+shipped_date: 2026-04-20
+shipped_in: 529ecd5  # wiki: file_bug tool action + bugs category + BUG-001/002 seed
+status_detail: BUG-001 + BUG-002 seed entries landed alongside the convention
 parent: docs/design-notes/2026-04-20-wiki-bug-reports-convention.md
 siblings: docs/design-notes/2026-04-20-wiki-bug-reports-patches.md
 ---
@@ -121,7 +123,7 @@ wiki action=file_bug
   component="storage.wiki_path"
   severity="major"
   title="WIKI_PATH Windows-style value leaks into Linux container as /app/C:\\..."
-  repro="Deploy the Universe Server in Docker with WORKFLOW_WIKI_PATH=C:\\Users\\Jonathan\\Projects\\Wiki (or legacy WIKI_PATH) inherited from a Windows host's env. Call any wiki action inside the container."
+  repro="Deploy the Workflow MCP server in Docker with WORKFLOW_WIKI_PATH=C:\\Users\\Jonathan\\Projects\\Wiki (or legacy WIKI_PATH) inherited from a Windows host's env. Call any wiki action inside the container."
   observed="Server replies \"Wiki not found at /app/C:\\Users\\Jonathan\\Projects\\Wiki\". Linux Path(\"/app\") / \"C:\\\\Users\\\\...\" treats the Windows absolute path as relative (no drive-letter detection), so /app prefixes the Windows path instead of replacing it."
   expected="Per hard-rule #8 (fail loudly), the resolver should detect a Windows-style path on a Linux runtime and either reject with a clear error (\"WORKFLOW_WIKI_PATH=... is a Windows path but we're on Linux — refusing\") or fall back to $WORKFLOW_DATA_DIR/wiki with a loud warning. Silent join is the failure mode."
   workaround="Set WORKFLOW_WIKI_PATH=/data/wiki (or another POSIX absolute path) explicitly in the container's environment overrides. Do not inherit the host-machine value."
@@ -160,7 +162,7 @@ Per hard-rule #8 (fail loudly), the resolver should detect a Windows-style path 
 
 ## Repro
 
-Deploy the Universe Server in Docker with WORKFLOW_WIKI_PATH=C:\Users\Jonathan\Projects\Wiki (or legacy WIKI_PATH) inherited from a Windows host's env. Call any wiki action inside the container.
+Deploy the Workflow MCP server in Docker with WORKFLOW_WIKI_PATH=C:\Users\Jonathan\Projects\Wiki (or legacy WIKI_PATH) inherited from a Windows host's env. Call any wiki action inside the container.
 
 ## Workaround
 

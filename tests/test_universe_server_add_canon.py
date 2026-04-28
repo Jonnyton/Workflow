@@ -21,7 +21,8 @@ from pathlib import Path
 
 import pytest
 
-import workflow.universe_server as us
+import workflow.api.universe as us
+import workflow.api.engine_helpers as eh
 
 
 def _call(action: str, **kwargs) -> dict:
@@ -350,7 +351,7 @@ class TestAddCanonFromPathWhitelist:
             "WORKFLOW_UPLOAD_WHITELIST",
             r"C:\Users\Jonathan\Desktop;D:\data",
         )
-        prefixes = us._upload_whitelist_prefixes()
+        prefixes = eh._upload_whitelist_prefixes()
         assert prefixes is not None
         # Whatever resolve produces, both drive-rooted paths must survive
         # as a single prefix each — not split at the drive colon.
@@ -364,13 +365,13 @@ class TestAddCanonFromPathWhitelist:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("WORKFLOW_UPLOAD_WHITELIST", raising=False)
-        assert us._upload_whitelist_prefixes() is None
+        assert eh._upload_whitelist_prefixes() is None
 
     def test_whitelist_empty_string_is_none(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", "")
-        assert us._upload_whitelist_prefixes() is None
+        assert eh._upload_whitelist_prefixes() is None
 
 
 class TestAddCanonFromPathPreview:

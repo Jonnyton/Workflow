@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import re
 
-from workflow.universe_server import _CONTROL_STATION_PROMPT, control_station
-
-
+from workflow.api.prompts import _CONTROL_STATION_PROMPT
+from workflow.universe_server import control_station
 def _prompt_text() -> str:
     """Canonical: prompt body as the chatbot receives it."""
     return control_station()

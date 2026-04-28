@@ -194,7 +194,6 @@ class TestGetStatusIntegration:
         (isolated_data_dir / "default-universe").mkdir()
 
         from workflow.universe_server import get_status
-
         raw = get_status("default-universe")
         payload = json.loads(raw)
 

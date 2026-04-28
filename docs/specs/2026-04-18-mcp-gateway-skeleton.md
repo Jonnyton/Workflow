@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # MCP Gateway Skeleton — Track C (Uptime)
 
 **Date:** 2026-04-18

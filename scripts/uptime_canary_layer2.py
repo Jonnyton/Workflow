@@ -189,27 +189,85 @@ AuthExpiredError = _AuthExpiredError
 # Real browser probe (invoked in production; not exercised by unit tests)
 # ---------------------------------------------------------------------------
 
-def _real_browser_probe(url: str, message: str) -> tuple[str, int]:  # pragma: no cover
-    """Navigate to ``url``, type ``message``, wait for response, return text + ms.
+# Subprocess timeout for the Claude.ai chat round-trip. Layer-2 SOFT_YELLOW
+# fires at 150s; allow extra for navigation + dialog-dismiss + tool roundtrip.
+_PROBE_SUBPROCESS_TIMEOUT_S = 240
 
-    This is the production implementation that calls lead_browser + claude_chat.
-    Not exercised by unit tests (they inject ``_probe_fn``).
+
+def _read_last_assistant_block(trace_path: Path) -> str | None:
+    """Return the body of the most recent CLAUDE -> USER_SIM block, or None.
+
+    The trace file uses ``## [<ts>] CLAUDE -> USER_SIM`` headers per
+    `claude_chat._append_trace`. We scan from the end for the last such
+    header and return everything below it (until the next ``## `` header
+    or EOF).
     """
-    import claude_chat
-    import lead_browser  # local import — not available in all test environments
+    if not trace_path.exists():
+        return None
+    text = trace_path.read_text(encoding="utf-8", errors="replace")
+    marker = "] CLAUDE -> USER_SIM\n"
+    idx = text.rfind(marker)
+    if idx == -1:
+        return None
+    body_start = idx + len(marker)
+    next_header = text.find("\n## ", body_start)
+    body = text[body_start:next_header] if next_header != -1 else text[body_start:]
+    return body.strip() or None
 
+
+def _real_browser_probe(url: str, message: str) -> tuple[str, int]:  # pragma: no cover
+    """Send ``message`` via the live claude_chat.py subprocess, return response + ms.
+
+    The canary doesn't navigate explicitly — ``claude_chat ask`` handles
+    page-state via ``_ensure_claude_page``. The probe URL is informational
+    (logged in green/red lines). The actual chat round-trip uses the same
+    subprocess entry point user-sim uses, so this exercises the canonical
+    production path.
+
+    Failure-mode mapping:
+      - subprocess exit != 0     → _BrowserLoadError (covers playwright-not-installed,
+                                   CDP unreachable, no chat input found, dialog stuck).
+      - subprocess timeout       → _BrowserLoadError (claude.ai unresponsive).
+      - exit 0 but no assistant trace block found → _BrowserLoadError (probe completed
+        but trace missing — usually a claude_chat write-failure or stale trace path).
+
+    Auth-expired (exit=15) is a hypothetical future signal — claude_chat.py does NOT
+    currently surface auth-loop detection, so we cannot raise _AuthExpiredError yet.
+    Add a stderr-pattern match or dedicated exit code to claude_chat.py + branch here
+    when that signal becomes available.
+    """
+    import subprocess
+
+    chat_script = _REPO_ROOT / "scripts" / "claude_chat.py"
     start = time.monotonic()
     try:
-        lead_browser.navigate(url)
-    except Exception as exc:
-        raise _BrowserLoadError(str(exc)) from exc
-
-    try:
-        response = claude_chat.send_and_wait(message)
-    except claude_chat.AuthError as exc:
-        raise _AuthExpiredError(str(exc)) from exc
+        result = subprocess.run(
+            [sys.executable, str(chat_script), "ask", message],
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_SUBPROCESS_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _BrowserLoadError(
+            f"claude_chat ask timed out after {_PROBE_SUBPROCESS_TIMEOUT_S}s"
+        ) from exc
+    except OSError as exc:  # missing python, permissions, etc.
+        raise _BrowserLoadError(f"claude_chat subprocess failed to launch: {exc}") from exc
 
     rtt_ms = int((time.monotonic() - start) * 1000)
+
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or "").strip().splitlines()[-3:]
+        reason = "; ".join(stderr_tail) or f"exit={result.returncode}"
+        raise _BrowserLoadError(f"claude_chat exit={result.returncode}: {reason}")
+
+    trace_path = _REPO_ROOT / "output" / "claude_chat_trace.md"
+    response = _read_last_assistant_block(trace_path)
+    if response is None:
+        raise _BrowserLoadError(
+            f"claude_chat exit=0 but no assistant block in {trace_path}"
+        )
     return response, rtt_ms
 
 

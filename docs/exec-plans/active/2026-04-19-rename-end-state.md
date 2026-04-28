@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-19 (refined post host's Foundation-vs-Feature clarification)
 **Author:** navigator
-**Status:** Re-scope of `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md` §5 (A1-D2 sequence) per host's **"Foundation End-State vs Feature Iteration"** standing rule (CLAUDE_LEAD_OPS.md, `557b051` refined).
+**Status:** Re-scope of `docs/exec-plans/completed/2026-04-19-author-to-daemon-rename-status.md` §5 (A1-D2 sequence) per host's **"Foundation End-State vs Feature Iteration"** standing rule (CLAUDE_LEAD_OPS.md, `557b051` refined).
 **Foundation/Feature classification:** **FOUNDATION.** Module paths and identifiers are load-bearing for everything else (every import, every test fixture, every doc cross-reference depends on the final shape). Per the rule: foundation builds to end-state in one commit, no phases. **Path B (freeze aliases as permanent feature) is no longer viable** — would lock in dual-naming as load-bearing infrastructure forever, contradicting the foundation classification.
 **Supersedes:** §5 of the rename-status doc. The A1 → A2 → A3 → A4 → A5 → B1 → C1 → C2 → D1 → D2 ladder is **abandoned**.
 **Prior work preserved:** `72e696e` (Phase 1 Part 1) + `7dde417` (Phase 1 Part 2.5) + `acfeeeb` etc. all stay landed. Compat shims in place via `_rename_compat.py` are working as transition mechanism — but now retire in the end-state commit, not as permanent infrastructure.
@@ -84,7 +84,7 @@ Per host's framing — "atomic and final means no bailout points" — the estima
 ## 3. Sequencing relative to other in-flight work
 
 - **Independent of refactor R1-R13.** R2 (bid promotion), R3 (compat deletion), R7 (storage split) all touch different files. R7 (storage split) renames `daemon_server.py` to `workflow/storage/daemons.py`; the rename end-state commit can absorb that move if R7 hasn't shipped, OR follow R7 if R7 ships first. **Recommend:** R7 ships first (~2 dev-days), then rename end-state commits with the new module locations already established.
-- **Cancels remaining §5 sequence (A1-D2) in `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md`.** Update that doc to mark §5 as superseded by this one.
+- **Cancels remaining §5 sequence (A1-D2) in `docs/exec-plans/completed/2026-04-19-author-to-daemon-rename-status.md`.** Update that doc to mark §5 as superseded by this one.
 - **Layer-3 universe→workflow rename (Q10-Q12) follows the same pattern.** Per host directive on Path A, the layer-3 rename should also collapse to one end-state commit. Recommend separate exec plan for layer-3 end-state — same shape, different surface.
 
 ---
@@ -101,7 +101,7 @@ Per host's framing — "atomic and final means no bailout points" — the estima
 
 Once lead decides Path A or B:
 
-- **If A:** mark §5 of `docs/exec-plans/active/2026-04-19-author-to-daemon-rename-status.md` as SUPERSEDED, link to this doc as the current spec.
+- **If A:** mark §5 of `docs/exec-plans/completed/2026-04-19-author-to-daemon-rename-status.md` as SUPERSEDED, link to this doc as the current spec.
 - **If B:** mark §5 as ABANDONED, document the freeze-as-feature decision in `_rename_compat.py` docstring + add to PLAN.md Module Layout section.
 
 Either way, the §5 task list (A1-D2) stops being a dispatch candidate.

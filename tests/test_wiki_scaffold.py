@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import pytest
 
-from workflow.universe_server import _WIKI_CATEGORIES, _ensure_wiki_scaffold
+from workflow.api.wiki import (
+    _WIKI_CATEGORIES,
+    _ensure_wiki_scaffold,
+)
 
 
 @pytest.fixture

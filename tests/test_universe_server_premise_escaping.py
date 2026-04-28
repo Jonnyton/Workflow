@@ -21,7 +21,7 @@ def us(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base = tmp_path / "output"
     base.mkdir()
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
-    import workflow.universe_server as module
+    import workflow.api.universe as module
 
     importlib.reload(module)
     yield module
@@ -119,7 +119,7 @@ def test_read_premise_reports_missing_premise(us):
 
 
 def test_create_universe_normalizes_embedded_premise(us):
-    from workflow.universe_server import _action_create_universe
+    from workflow.api.universe import _action_create_universe
 
     base = Path(us._base_path())
     corrupt = "# New Universe\\n\\nFirst premise line."

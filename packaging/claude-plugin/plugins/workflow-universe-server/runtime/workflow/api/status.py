@@ -117,7 +117,7 @@ def get_status(universe_id: str = "") -> str:
                 # Lazy-import _parse_activity_line — defined in universe_server
                 # which back-compat-imports get_status from this module. Lazy
                 # avoids the load-time cycle.
-                from workflow.universe_server import _parse_activity_line
+                from workflow.api.universe import _parse_activity_line
                 lines = content.splitlines()
                 total_log_lines = len(lines)
                 activity_tail = lines[-20:]

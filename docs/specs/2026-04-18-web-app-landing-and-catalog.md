@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Web App — Landing + Catalog + Per-Tier Onboarding (Track B)
 
 **Date:** 2026-04-18

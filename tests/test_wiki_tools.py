@@ -7,11 +7,13 @@ import json
 
 import pytest
 
-from workflow.universe_server import (
+from workflow.api.wiki import (
     _extract_keywords,
     _parse_frontmatter,
     _sanitize_slug,
     _wiki_similarity_score,
+)
+from workflow.universe_server import (
     mcp,
     wiki,
 )
@@ -271,7 +273,7 @@ class TestWikiWrite:
     def test_wiki_categories_enum_matches_expanded_taxonomy(self):
         """Lock-in: the module constant carries all ten categories in
         the canonical order."""
-        from workflow.universe_server import _WIKI_CATEGORIES
+        from workflow.api.wiki import _WIKI_CATEGORIES
 
         assert _WIKI_CATEGORIES == (
             "projects", "concepts", "people", "research",

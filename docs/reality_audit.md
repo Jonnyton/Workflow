@@ -2,6 +2,11 @@
 
 Date: 2026-04-08
 
+> Historical snapshot. This audit reconstructed project truth on 2026-04-08;
+> it is not the current coordination or design source. Use `STATUS.md` for live
+> state and `PLAN.md` for current architecture, then consult newer audits for
+> any claim that depends on post-2026-04-08 implementation state.
+
 ## Purpose
 
 Reconstruct current project truth without assuming that any single file is
@@ -56,7 +61,7 @@ The strongest surviving truths are:
 
 - the project is actively running live on April 8, 2026
 - the workflow/domain extraction exists on disk
-- the Universe Server and multiplayer/MCP surfaces exist and are active
+- the Workflow MCP server and multiplayer/MCP surfaces exist and are active
 - the extracted engine is still partially bridged back through
   `fantasy_author.*`
 - the current verification story is stale
@@ -83,7 +88,7 @@ Observed directly during this audit:
 | Claim | Strongest evidence | Status | Confidence | Notes |
 |------|---------------------|--------|------------|-------|
 | Workflow extraction exists | `workflow/`, `domains/fantasy_author/`, `domains/research_probe/` present and compile | implemented | High | Structural extraction is real |
-| Universe Server exists and is being used | `fantasy_author/universe_server.py`, `logs/mcp_server.log` | runtime-proven | High | This is not just planned; it is live |
+| Workflow MCP server exists and is being used | `fantasy_author/universe_server.py`, `logs/mcp_server.log` | runtime-proven | High | This is not just planned; it is live |
 | Multiplayer HTTP/API wiring exists | `fantasy_author/api.py` routes into `author_server` | implemented | High | Current code exposes session/author/branch/runtime/ledger endpoints |
 | Engine/runtime extraction is complete and independent | `workflow/__main__.py`, `workflow/api/__init__.py` still delegate/re-export `fantasy_author.*` | contradicted | High | Engine split exists, but execution and API are still bridge-mode |
 | First live smoke test is still pending | active universe + fresh logs/db writes | contradicted | High | The system has already moved into live use |
@@ -125,7 +130,7 @@ Assessment:
 - Status: `implemented`
 - Confidence: High
 
-### 3. The public interface is shifting from Custom GPT toward MCP/Universe Server
+### 3. The public interface is shifting from Custom GPT toward Workflow MCP
 
 Evidence:
 

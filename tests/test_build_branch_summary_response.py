@@ -63,7 +63,7 @@ def _make_branch_dict(branch_def_id="b1", name="test-branch", entry_point="n1",
 
 
 def _call_build(spec_dict, verbose=None):
-    from workflow.universe_server import _ext_branch_build
+    from workflow.api.branches import _ext_branch_build
 
     saved = _make_branch_dict(
         branch_def_id="b_built",
@@ -79,7 +79,7 @@ def _call_build(spec_dict, verbose=None):
 
     with (
         patch("workflow.author_server.save_branch_definition", save_mock),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):
         result = _ext_branch_build(kwargs)
@@ -87,7 +87,7 @@ def _call_build(spec_dict, verbose=None):
 
 
 def _call_patch(branch_before, branch_after, changes_json, verbose=None):
-    from workflow.universe_server import _ext_branch_patch
+    from workflow.api.branches import _ext_branch_patch
 
     save_mock = MagicMock(return_value=branch_after)
 
@@ -101,7 +101,7 @@ def _call_patch(branch_before, branch_after, changes_json, verbose=None):
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_before),
         patch("workflow.author_server.save_branch_definition", save_mock),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):
         result = _ext_branch_patch(kwargs)
@@ -151,13 +151,13 @@ class TestBuildBranchSummaryDefault:
         assert "branch" not in result
 
     def test_verbose_string_true_includes_branch(self):
-        from workflow.universe_server import _ext_branch_build
+        from workflow.api.branches import _ext_branch_build
         spec = self._spec()
         saved = _make_branch_dict(name=spec["name"])
         save_mock = MagicMock(return_value=saved)
         with (
             patch("workflow.author_server.save_branch_definition", save_mock),
-            patch("workflow.universe_server._base_path", return_value="/fake"),
+            patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.branches.BranchDefinition.validate", return_value=[]),
         ):
             result = json.loads(_ext_branch_build(
@@ -253,7 +253,7 @@ class TestPatchBranchSummaryDefault:
 # ── add_node ──────────────────────────────────────────────────────────────────
 
 def _call_add_node(branch_dict, node_kwargs, verbose=None):
-    from workflow.universe_server import _ext_branch_add_node
+    from workflow.api.branches import _ext_branch_add_node
 
     branch_mock = MagicMock()
     node_mock = MagicMock()
@@ -269,9 +269,9 @@ def _call_add_node(branch_dict, node_kwargs, verbose=None):
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.api.branches._apply_node_spec", return_value=""),
-        patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
-        patch("workflow.universe_server._current_actor", return_value="tester"),
+        patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
         patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
@@ -311,7 +311,7 @@ class TestAddNodeSummaryDefault:
 # ── connect_nodes ─────────────────────────────────────────────────────────────
 
 def _call_connect_nodes(branch_dict, from_node, to_node, verbose=None):
-    from workflow.universe_server import _ext_branch_connect_nodes
+    from workflow.api.branches import _ext_branch_connect_nodes
 
     branch_mock = MagicMock()
     branch_mock.edges = []
@@ -328,7 +328,7 @@ def _call_connect_nodes(branch_dict, from_node, to_node, verbose=None):
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.branches.EdgeDefinition", return_value=MagicMock()),
-        patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
@@ -361,7 +361,7 @@ class TestConnectNodesSummaryDefault:
 # ── set_entry_point ───────────────────────────────────────────────────────────
 
 def _call_set_entry_point(branch_dict, node_id, verbose=None):
-    from workflow.universe_server import _ext_branch_set_entry_point
+    from workflow.api.branches import _ext_branch_set_entry_point
 
     branch_mock = MagicMock()
     branch_mock.node_defs = []
@@ -373,7 +373,7 @@ def _call_set_entry_point(branch_dict, node_id, verbose=None):
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
-        patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):
@@ -405,7 +405,7 @@ class TestSetEntryPointSummaryDefault:
 # ── add_state_field ───────────────────────────────────────────────────────────
 
 def _call_add_state_field(branch_dict, field_name, field_type="str", verbose=None):
-    from workflow.universe_server import _ext_branch_add_state_field
+    from workflow.api.branches import _ext_branch_add_state_field
 
     branch_mock = MagicMock()
     branch_mock.state_schema = []
@@ -421,7 +421,7 @@ def _call_add_state_field(branch_dict, field_name, field_type="str", verbose=Non
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
-        patch("workflow.universe_server._storage_backend") as sb_mock,
+        patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
         patch("workflow.identity.git_author", return_value="tester <t@t>"),
     ):

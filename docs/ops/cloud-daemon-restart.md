@@ -20,20 +20,18 @@ Related docs:
 
 ## Quick-start: diagnose by canary color
 
-Run both canary probes first. The color pair tells you exactly which layer is broken.
+Run the public canary first. The canonical endpoint is `https://tinyassets.io/mcp`.
+The tunnel origin is Access-gated and is not a public probe target.
 
 ```bash
 # From your laptop:
 python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --verbose
-python scripts/mcp_public_canary.py --url https://mcp.tinyassets.io/mcp --verbose
 ```
 
-| `tinyassets.io/mcp` | `mcp.tinyassets.io/mcp` | Go to |
-|---|---|---|
-| green | green | All healthy — no action needed. |
-| red | green | [Cloudflare Worker broken](#cloudflare-worker-broken) |
-| green | red | [Tunnel or daemon down](#tunnel-or-daemon-down) |
-| red | red | [Tunnel or daemon down](#tunnel-or-daemon-down) |
+| `tinyassets.io/mcp` | Go to |
+|---|---|
+| green | All healthy — no action needed. |
+| red | [Tunnel or daemon down](#tunnel-or-daemon-down), then check [Cloudflare Worker broken](#cloudflare-worker-broken) if the daemon and tunnel are healthy. |
 
 ---
 

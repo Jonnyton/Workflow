@@ -1,3 +1,9 @@
+---
+status: historical
+---
+
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-14. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase G Pre-Flight — NodeBid Executor + Paid Market Priority Weights
 
 Planner draft, 2026-04-14. For dev handoff on Phase G rollout row.

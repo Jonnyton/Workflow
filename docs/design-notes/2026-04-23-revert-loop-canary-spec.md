@@ -2,8 +2,11 @@
 title: Revert-loop canary + provider_exhaustion repair class — Lane 4 spec
 date: 2026-04-23
 author: navigator
-status: active
-status_detail: DRAFT — dev-claimable as STATUS.md Task #9
+status: shipped
+shipped_date: 2026-04-23
+shipped_in: 964bc8d  # storage observability + Lane 4 revert-loop canary bundle
+canonical_in: docs/ops/acceptance-probe-catalog.md PROBE-006
+status_detail: spec; canary live (PROBE-006); provider_exhaustion repair-class wired in p0-outage-triage.yml
 related:
   - docs/audits/2026-04-23-p0-auto-recovery-trace.md (the precipitating incident)
   - scripts/last_activity_canary.py (sibling canary)

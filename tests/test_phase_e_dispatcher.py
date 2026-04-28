@@ -275,7 +275,7 @@ def server_base(tmp_path: Path, monkeypatch):
 
 
 def _call_submit(**kwargs):
-    from workflow.universe_server import _action_submit_request
+    from workflow.api.universe import _action_submit_request
 
     return json.loads(_action_submit_request(**kwargs))
 
@@ -551,7 +551,7 @@ def test_invariant_2_cancel_branch_task_preserves_work_target(
 ):
     """WorkTarget (in requests.json) persists even when its BranchTask
     is cancelled. Invariant §4.3 #2."""
-    from workflow.universe_server import _action_queue_cancel
+    from workflow.api.universe import _action_queue_cancel
     from workflow.work_targets import REQUESTS_FILENAME
 
     _, uid = server_base
@@ -686,7 +686,7 @@ def test_invariant_9_priority_weight_clamp_at_submission(
 
 
 def test_queue_list_returns_sorted_scored_queue(server_base, monkeypatch):
-    from workflow.universe_server import _action_queue_list
+    from workflow.api.universe import _action_queue_list
 
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
@@ -718,8 +718,8 @@ def test_queue_cancel_on_running_task_as_host_requests_cancel(
     host identity is now one of two authorized actors (the other is
     the claiming daemon). See test_queue_cancel_on_running_task_unauthorized
     for the rejection path."""
+    from workflow.api.universe import _action_queue_cancel
     from workflow.branch_tasks import is_task_cancel_requested
-    from workflow.universe_server import _action_queue_cancel
 
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "host")
@@ -746,8 +746,8 @@ def test_queue_cancel_on_running_task_as_owner_requests_cancel(
     server_base, monkeypatch,
 ):
     """Task #21: the claiming daemon can self-cancel its running task."""
+    from workflow.api.universe import _action_queue_cancel
     from workflow.branch_tasks import is_task_cancel_requested
-    from workflow.universe_server import _action_queue_cancel
 
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "daemon-1")
@@ -773,7 +773,7 @@ def test_queue_cancel_on_running_task_unauthorized(
     Carries forward the original test's intent — running tasks require
     authorization — but narrows it to the actually-unauthorized case
     instead of the now-always-host case."""
-    from workflow.universe_server import _action_queue_cancel
+    from workflow.api.universe import _action_queue_cancel
 
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "random-guest")
@@ -792,7 +792,7 @@ def test_queue_cancel_on_running_task_unauthorized(
 
 
 def test_queue_cancel_missing_id_rejects():
-    from workflow.universe_server import _action_queue_cancel
+    from workflow.api.universe import _action_queue_cancel
 
     resp = json.loads(_action_queue_cancel(universe_id="anything"))
     assert "error" in resp

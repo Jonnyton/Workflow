@@ -170,7 +170,7 @@ class TestMcpRecursionLimitOverride:
     """_action_run_branch MCP handler validates recursion_limit_override."""
 
     def test_unset_uses_default(self, tmp_path, monkeypatch):
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         # No branch → quick error return before recursion_limit check
@@ -204,7 +204,7 @@ class TestMcpRecursionLimitOverride:
     def test_override_below_min_rejected(self, tmp_path, monkeypatch):
         import json
 
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         self._stub_valid_branch(monkeypatch)
@@ -218,7 +218,7 @@ class TestMcpRecursionLimitOverride:
     def test_override_above_max_rejected(self, tmp_path, monkeypatch):
         import json
 
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         self._stub_valid_branch(monkeypatch)
@@ -232,7 +232,7 @@ class TestMcpRecursionLimitOverride:
     def test_override_not_integer_rejected(self, tmp_path, monkeypatch):
         import json
 
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         self._stub_valid_branch(monkeypatch)
@@ -247,7 +247,7 @@ class TestGetRunRecursionLimit:
     """get_run snapshot includes recursion_limit from events."""
 
     def test_recursion_limit_in_snapshot_when_event_present(self):
-        from workflow.universe_server import _compose_run_snapshot
+        from workflow.api.runs import _compose_run_snapshot
 
         dummy_record = {
             "run_id": "r1",
@@ -276,7 +276,7 @@ class TestGetRunRecursionLimit:
         assert snapshot["recursion_limit"] == 75
 
     def test_recursion_limit_none_when_no_system_event(self):
-        from workflow.universe_server import _compose_run_snapshot
+        from workflow.api.runs import _compose_run_snapshot
 
         dummy_record = {
             "run_id": "r1",

@@ -358,7 +358,7 @@ def test_list_subscriptions_returns_current_set(universe_dir):
 def test_list_subscriptions_mcp_drift_pool_enabled_no_subs(
     tmp_path, monkeypatch, pool_flag_on,
 ):
-    from workflow.universe_server import _action_list_subscriptions
+    from workflow.api.universe import _action_list_subscriptions
 
     base = tmp_path / "output"
     base.mkdir()
@@ -383,7 +383,7 @@ def test_list_subscriptions_mcp_drift_pool_enabled_no_subs(
 def test_list_subscriptions_mcp_drift_subs_but_pool_disabled(
     tmp_path, monkeypatch, pool_flag_on,
 ):
-    from workflow.universe_server import _action_list_subscriptions
+    from workflow.api.universe import _action_list_subscriptions
 
     base = tmp_path / "output"
     base.mkdir()
@@ -421,7 +421,7 @@ def mcp_harness(tmp_path, monkeypatch, pool_flag_on):
 
 
 def test_post_to_goal_pool_valid_writes_yaml(mcp_harness):
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
 
     resp = json.loads(_action_post_to_goal_pool(
         universe_id=mcp_harness["uid"],
@@ -434,7 +434,7 @@ def test_post_to_goal_pool_valid_writes_yaml(mcp_harness):
 
 
 def test_post_to_goal_pool_response_has_git_push_hint(mcp_harness):
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
 
     resp = json.loads(_action_post_to_goal_pool(
         universe_id=mcp_harness["uid"],
@@ -450,7 +450,7 @@ def test_post_to_goal_pool_response_has_git_push_hint(mcp_harness):
 def test_post_to_goal_pool_host_priority_weight_persists(
     mcp_harness, monkeypatch,
 ):
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
 
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "host")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
@@ -470,7 +470,7 @@ def test_post_to_goal_pool_non_host_priority_weight_clamped(
     mcp_harness, monkeypatch,
 ):
     """Invariant 7."""
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
 
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
@@ -488,7 +488,7 @@ def test_post_to_goal_pool_non_host_priority_weight_clamped(
 
 def test_post_to_goal_pool_rejects_universe_path_in_inputs(mcp_harness):
     """R4 symmetry: server-side rejects the same inputs the producer would."""
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
 
     resp = json.loads(_action_post_to_goal_pool(
         universe_id=mcp_harness["uid"],
@@ -517,7 +517,7 @@ def test_flag_matrix_f_off_mcp_post_returns_not_available(
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
-    from workflow.universe_server import _action_post_to_goal_pool
+    from workflow.api.universe import _action_post_to_goal_pool
     resp = json.loads(_action_post_to_goal_pool(
         universe_id=uid, goal_id="maintenance",
         branch_def_id="fantasy_author:universe_cycle_wrapper",
@@ -917,7 +917,7 @@ def test_idempotent_append_via_dispatcher(
 def test_subscribe_unsubscribe_when_pool_flag_off_returns_not_available(
     tmp_path, monkeypatch,
 ):
-    from workflow.universe_server import (
+    from workflow.api.universe import (
         _action_list_subscriptions,
         _action_subscribe_goal,
         _action_unsubscribe_goal,

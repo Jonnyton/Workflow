@@ -10,4 +10,4 @@ criteria before implementation.
 - [`phase_d_preflight.md`](phase_d_preflight.md) — Phase D preflight: fantasy loop as BranchDefinition. Landed at `c5f29bb`.
 - [`phase_e_preflight.md`](phase_e_preflight.md) — Phase E preflight: tier-aware DaemonController + BranchTask queue. Landed at `29a71a7`.
 - [`phase_f_preflight.md`](phase_f_preflight.md) — Phase F preflight: goal subscription + pool producer. Landed at `1d02903`.
-- [`phase_g_preflight.md`](phase_g_preflight.md) — Phase G preflight: NodeBid executor + paid market priority weights. Planner draft 2026-04-14; pending dev claim.
+- [`phase_g_preflight.md`](phase_g_preflight.md) — Phase G preflight: NodeBid executor + paid market priority weights. Shipped; retire-with-stamp applied 2026-04-26.

@@ -58,7 +58,7 @@ def _legacy_nodes() -> list[dict]:
 class TestNodeRegistryMigration:
     def test_migration_from_json_file(self, server_base: Path):
         """Legacy .node_registry.json should be migrated on first access."""
-        from workflow.universe_server import (
+        from workflow.api.extensions import (
             STANDALONE_NODES_BRANCH_ID,
             _load_nodes,
         )
@@ -89,7 +89,7 @@ class TestNodeRegistryMigration:
 
     def test_no_legacy_file_creates_empty_branch(self, server_base: Path):
         """If no .node_registry.json exists, an empty standalone branch is created."""
-        from workflow.universe_server import (
+        from workflow.api.extensions import (
             STANDALONE_NODES_BRANCH_ID,
             _load_nodes,
         )
@@ -109,7 +109,7 @@ class TestNodeRegistryMigration:
 
     def test_save_nodes_persists_to_sqlite(self, server_base: Path):
         """_save_nodes should write to SQLite, not JSON file."""
-        from workflow.universe_server import (
+        from workflow.api.extensions import (
             _load_nodes,
             _save_nodes,
         )

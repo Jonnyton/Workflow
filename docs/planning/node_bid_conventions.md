@@ -65,4 +65,4 @@ Records are **immutable in v1**. A future token-launch phase reads this ledger, 
 
 ## Flag gating
 
-`WORKFLOW_PAID_MARKET=off` by default. Import-time registration; flipping at runtime requires a Universe Server restart.
+`WORKFLOW_PAID_MARKET=off` by default. Import-time registration; flipping at runtime requires a Workflow daemon restart.

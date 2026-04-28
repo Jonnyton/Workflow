@@ -19,7 +19,8 @@ half-formed experiments.
   Verification: live MCP via `mcp_probe.py --tool extensions --args '{"action":"my_recent_runs","limit":5}'`.
   Triaged 2026-04-27; refreshed 2026-04-28: PIPELINE row "Recency primitives" — host-approved as `extensions`/`goals` action verbs, blocked for code by #18's `workflow/api/runs.py` lock.
   Promoted 2026-04-27: pre-implementation contracts landed at `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md` (signatures + envelopes frozen for immediate post-#18 implementation).
-  Links: navigator's 2026-04-27 chain-break review (chat record); persona memory `priya_ramaswamy/`; `ideas/PIPELINE.md` "Recency primitives" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`.
+  Promoted 2026-04-27 (execution-ready): fixture pack + implementation cards landed at `docs/specs/2026-04-27-recency-continue-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
+  Links: navigator's 2026-04-27 chain-break review (chat record); persona memory `priya_ramaswamy/`; `ideas/PIPELINE.md` "Recency primitives" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`; `docs/specs/2026-04-27-recency-continue-fixture-pack.md`; `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
 
 - [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: triaged, priority: post-uptime, size: medium) **`extensions action=continue_branch from_run_id=...` — explicit "extend prior run" primitive.** Priya signal #6 + Devin Session 2 echoed. "Extend the sweep" / "continue branch" has no clean Workflow verb — chatbot has to semantically infer "clone this branch, add nodes, re-run with extended inputs." Same root concern as INBOX 2026-04-24 entry but with concrete API shape proposal.
   Files (when scoped): `workflow/api/runs.py` (new `_action_continue_branch_run` — DISTINCT from branches.py's authoring `_action_continue_branch`); `tests/test_continue_branch_run.py` (NEW).
@@ -27,26 +28,32 @@ half-formed experiments.
   Verification: persona-replay on Priya Session 2 transcript — chatbot routes to continue_branch instead of re-scaffolding.
   Triaged 2026-04-27; refreshed 2026-04-28: MERGED with 2026-04-24 "Extend run / continue branch" entry into PIPELINE row "Continue-branch run primitive". Host-approved as an `extensions` action verb; code remains blocked by #18.
   Promoted 2026-04-27: semantics + v1 envelope landed in `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md` (sibling-branch mode, carry-over contract, deterministic errors).
-  Links: 2026-04-24 INBOX entry (merged into same PIPELINE row); navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Continue-branch run primitive" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`.
+  Promoted 2026-04-27 (execution-ready): fixture pack + implementation cards landed at `docs/specs/2026-04-27-recency-continue-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
+  Links: 2026-04-24 INBOX entry (merged into same PIPELINE row); navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Continue-branch run primitive" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`; `docs/specs/2026-04-27-recency-continue-fixture-pack.md`; `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
 
 - [2026-04-27] (source: navigator-userim-review, owner: navigator, status: reframed-community-build, priority: domain-skill, size: medium) **Methods-prose evaluator class — publication-grade methods correctness.** Priya signal #2: when chatbot generates publication-grade methods paragraph (library versions + CV description + algorithm config), nothing checks correctness. Cross-layer chain-break (pitch-vs-product gap): platform pitches "Evaluator-driven workflows" but methods-section prose has no evaluator.
   Triaged 2026-04-27; refreshed 2026-04-28: host declined a new platform primitive. Next slice is a docs-only reframe of `docs/design-notes/2026-04-27-methods-prose-evaluator.md` to preserve the intent as chatbot + wiki composition guidance. No `EvaluatorKind` extension.
-  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Methods-prose evaluator" row.
+  Promoted 2026-04-27 (content-ready): wiki rubric starter content landed at `docs/notes/2026-04-27-methods-prose-rubric-starter-pack.md`.
+  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Methods-prose evaluator" row; `docs/notes/2026-04-27-methods-prose-rubric-starter-pack.md`.
 
 - [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: triaged, priority: knowledge-graph, size: large) **Cross-algorithm methodological-parity guidance — `node action=compatibility_with` or wiki concept page.** Priya signal #4: RF needs pseudo-absences, MaxEnt doesn't. Less-experienced users submit papers with flawed cross-algorithm comparisons because chatbot doesn't surface the differences. Lower urgency than recency / continue_branch primitives but real safety surface.
   Triaged 2026-04-27: PIPELINE row "Cross-algorithm methodological-parity guidance" — needed design-note first to choose surface (verb vs wiki).
   Promoted 2026-04-27: wiki-first template path selected in `docs/design-notes/2026-04-27-cross-algorithm-methodological-parity-guidance.md`; next step is a concrete wiki concept page + one user-sim retrieval pass.
-  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md`; `docs/design-notes/2026-04-27-cross-algorithm-methodological-parity-guidance.md`.
+  Promoted 2026-04-27 (content-ready): wiki publish template + RF-vs-MaxEnt seed landed at `docs/notes/2026-04-27-cross-algorithm-parity-wiki-template.md`.
+  Promoted 2026-04-27 (publish-ready): publication checklist landed at `docs/notes/2026-04-27-cross-algorithm-parity-publication-checklist.md`.
+  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md`; `docs/design-notes/2026-04-27-cross-algorithm-methodological-parity-guidance.md`; `docs/notes/2026-04-27-cross-algorithm-parity-wiki-template.md`; `docs/notes/2026-04-27-cross-algorithm-parity-publication-checklist.md`.
 
 - [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: triaged, priority: observability, size: small) **Trust-graduation observability — "% users skipping dry-inspect on session N" as retention proxy.** Priya signal #7: skipped dry-inspect on Session 2 after using it on Session 1. No surface tracks this today. Platform-instrumentation, not chain-break per se.
   Triaged 2026-04-27: PIPELINE row "Trust-graduation observability" — observability backlog.
   Promoted 2026-04-27: metric/event pre-spec landed at `docs/design-notes/2026-04-27-trust-graduation-observability-metric.md` (`pct_skip_dry_inspect_on_session_n` + event contract). Implementation remains observability-lane blocked.
-  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md`; `docs/design-notes/2026-04-27-trust-graduation-observability-metric.md`.
+  Promoted 2026-04-27 (query-ready): SQL/dashboard pack landed at `docs/notes/2026-04-27-trust-graduation-query-pack.md`.
+  Links: navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md`; `docs/design-notes/2026-04-27-trust-graduation-observability-metric.md`; `docs/notes/2026-04-27-trust-graduation-query-pack.md`.
 
 - [2026-04-25] (source: navigator-audit, owner: unassigned, status: triaged) CONTRIBUTORS.md authoring surface — a canonical file listing node/branch authors with GitHub handles for Co-Authored-By attribution, seeded from the designer-royalties model (`project_designer_royalties_and_bounties`). Chatbot can read it to credit contributors in commit messages and pull request bodies.
   Triaged 2026-04-27: PIPELINE row "CONTRIBUTORS.md authoring surface" — needed design-note (standalone-file vs. daemon_server.py table + MCP surface).
   Promoted 2026-04-27: file-first canonical decision landed in `docs/design-notes/2026-04-27-contributors-authoring-surface.md`; daemon/MCP API explicitly deferred behind volume/pain triggers.
-  Links: `ideas/PIPELINE.md`; AGENTS.md Hard Rule #10; `docs/design-notes/2026-04-27-contributors-authoring-surface.md`.
+  Promoted 2026-04-27 (ops-ready): maintenance/hygiene runbook landed at `docs/notes/2026-04-27-contributors-maintenance-runbook.md`.
+  Links: `ideas/PIPELINE.md`; AGENTS.md Hard Rule #10; `docs/design-notes/2026-04-27-contributors-authoring-surface.md`; `docs/notes/2026-04-27-contributors-maintenance-runbook.md`.
 
 - [2026-04-20] (source: host, owner: navigator-followup, status: triaged,
   priority: post-uptime, size: large)
@@ -91,10 +98,12 @@ half-formed experiments.
   seams map cleanly onto our primitives — claw-code now Rust-primary, less
   ideal base). Blocked on uptime-track close + daemon-economy first-draft.
   Scoping exercise opens after both unblock.
+  Promoted 2026-04-27: post-unblock execution checklist landed at `docs/notes/2026-04-27-agent-teams-post-uptime-scoping-checklist.md` (entry gates + phase checks + escalation criteria).
   Links:
   - **`docs/notes/2026-04-20-agent-teams-on-workflow-research.md` —
     navigator research + thinking note. 11-seam gap analysis, viral-
     moment considerations, foundation/UX/commons work item ranking.**
+  - `docs/notes/2026-04-27-agent-teams-post-uptime-scoping-checklist.md`
   - `project_daemon_product_voice.md` — "summoning the daemon" brand fit.
   - `project_convergent_design_commons.md` — teammate-definition sharing.
   - `project_daemon_default_behavior.md` — multi-spawn policy needs
@@ -133,6 +142,8 @@ half-formed experiments.
   not the engine. CV-as-first-class-primitive is the structural moat; this is a parity win.
   Triaged 2026-04-27: PIPELINE row "hyperparameter_importance evaluator node" — waitlist
   until science-domain skill catalog exists. Cheap-to-add parity win.
+  Promoted 2026-04-27: domain pre-spec landed at `docs/specs/2026-04-27-hyperparameter-importance-evaluator-node.md` (inputs/outputs/errors/tests frozen); implementation remains module-lane blocked.
   Links:
   - `docs/audits/user-chat-intelligence/2026-04-24-competitor-trials-sweep.md` Signal 4
   - `ideas/PIPELINE.md` "hyperparameter_importance evaluator node" row
+  - `docs/specs/2026-04-27-hyperparameter-importance-evaluator-node.md`

@@ -352,3 +352,166 @@ def test_red_alarm_also_mirrored_in_gha_mode(tmp_env, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "[uptime-alarm]" in out
     assert "PUBLIC_MCP_OUTAGE" in out
+
+
+# ---- _real_browser_probe integration tests --------------------------------
+#
+# These don't drive a real browser. They exercise `_real_browser_probe` against
+# a stubbed claude_chat.py subprocess so the canary's production path is
+# protected from the regression class that broke it 2026-04-27 (calling
+# `lead_browser.navigate()` when no such symbol existed). The 22 unit tests
+# above all inject `_probe_fn`, bypassing this path entirely; without these
+# tests, the production code can drift away from the actual scripts/
+# module APIs and CI stays green.
+
+
+def _stub_claude_chat(tmp_path, *, exit_code: int, trace_body: str | None = None,
+                     stderr: str = "", hang: bool = False) -> Path:
+    """Write a stub `claude_chat.py` that exits with `exit_code` and optionally
+    writes `trace_body` to `<tmp>/output/claude_chat_trace.md` before exiting.
+
+    Returns the directory path containing the stub script (caller monkeypatches
+    `_REPO_ROOT` to this so subprocess invocation finds the stub instead of
+    the real script).
+    """
+    repo = tmp_path / "stub_repo"
+    (repo / "scripts").mkdir(parents=True)
+    output_dir = repo / "output"
+    output_dir.mkdir()
+    trace_path = output_dir / "claude_chat_trace.md"
+    if trace_body is not None:
+        trace_path.write_text(trace_body, encoding="utf-8")
+
+    if hang:
+        body = (
+            "import time, sys\n"
+            "time.sleep(600)\n"
+            "sys.exit(0)\n"
+        )
+    else:
+        # Append a fresh assistant block to the trace BEFORE exiting (mimics
+        # cmd_ask flow). We only do this when caller didn't pre-populate.
+        body_lines = ["import sys"]
+        if trace_body is None and exit_code == 0:
+            stub_block = (
+                "\n\n## [2026-04-28T00:00:00.000-07:00] CLAUDE -> USER_SIM\n"
+                "stub response calling get_status; llm_endpoint_bound=ok\n"
+            )
+            body_lines += [
+                "from pathlib import Path",
+                "trace = (Path(__file__).resolve().parent.parent / "
+                "'output' / 'claude_chat_trace.md')",
+                "trace.parent.mkdir(parents=True, exist_ok=True)",
+                f"trace.write_text({stub_block!r}, encoding='utf-8')",
+            ]
+        if stderr:
+            body_lines.append(f"sys.stderr.write({stderr!r})")
+        body_lines.append(f"sys.exit({exit_code})")
+        body = "\n".join(body_lines) + "\n"
+
+    (repo / "scripts" / "claude_chat.py").write_text(body, encoding="utf-8")
+    return repo
+
+
+def test_real_browser_probe_green_with_subprocess_stub(tmp_path, monkeypatch):
+    """Stub claude_chat exits 0 + writes a trace block → returns response + ms."""
+    repo = _stub_claude_chat(tmp_path, exit_code=0)
+    monkeypatch.setattr(l2, "_REPO_ROOT", repo)
+
+    response, rtt_ms = l2._real_browser_probe(l2.PROBE_URL, "stub message")
+
+    assert "get_status" in response
+    assert "llm_endpoint_bound" in response
+    assert isinstance(rtt_ms, int) and rtt_ms >= 0
+
+
+def test_real_browser_probe_subprocess_nonzero_raises_browser_load_error(tmp_path, monkeypatch):
+    """Stub claude_chat exits 3 (input-not-found) → _BrowserLoadError with stderr tail."""
+    repo = _stub_claude_chat(tmp_path, exit_code=3, stderr="ERROR: chat input gone\n")
+    monkeypatch.setattr(l2, "_REPO_ROOT", repo)
+
+    with pytest.raises(l2._BrowserLoadError) as exc_info:
+        l2._real_browser_probe(l2.PROBE_URL, "stub message")
+
+    assert "exit=3" in str(exc_info.value)
+    assert "chat input gone" in str(exc_info.value)
+
+
+def test_real_browser_probe_exit_zero_no_trace_raises(tmp_path, monkeypatch):
+    """Stub exits 0 but never writes a trace block → _BrowserLoadError."""
+    # Create empty output dir without a trace file, and a stub that just exits 0.
+    repo = tmp_path / "stub_repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "output").mkdir()
+    (repo / "scripts" / "claude_chat.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+    monkeypatch.setattr(l2, "_REPO_ROOT", repo)
+
+    with pytest.raises(l2._BrowserLoadError) as exc_info:
+        l2._real_browser_probe(l2.PROBE_URL, "stub message")
+
+    assert "no assistant block" in str(exc_info.value)
+
+
+def test_real_browser_probe_subprocess_timeout_raises(tmp_path, monkeypatch):
+    """Stub hangs forever → subprocess timeout → _BrowserLoadError."""
+    repo = _stub_claude_chat(tmp_path, exit_code=0, hang=True)
+    monkeypatch.setattr(l2, "_REPO_ROOT", repo)
+    monkeypatch.setattr(l2, "_PROBE_SUBPROCESS_TIMEOUT_S", 1)  # 1s for the test
+
+    with pytest.raises(l2._BrowserLoadError) as exc_info:
+        l2._real_browser_probe(l2.PROBE_URL, "stub message")
+
+    assert "timed out" in str(exc_info.value)
+
+
+# ---- API-contract regression tests ----------------------------------------
+# These pin down the exact module attributes _real_browser_probe relies on.
+# When claude_chat.py refactors, these surface the break BEFORE production
+# (the 2026-04-27 incident was lead_browser.navigate disappearing silently;
+# unit tests bypassed _real_browser_probe so CI stayed green).
+
+
+def test_claude_chat_subprocess_invocation_shape():
+    """The probe invokes `python claude_chat.py ask <message>`; verify ask subcommand exists."""
+    import claude_chat
+    # claude_chat exposes cmd_ask as the canonical entry the canary's subprocess
+    # form drives via the `ask` argparse subparser. If this disappears, the
+    # canary's subprocess will exit 2 (argparse error) before any browser work.
+    assert hasattr(claude_chat, "cmd_ask"), (
+        "claude_chat.cmd_ask is the canonical message-send entry"
+    )
+
+
+def test_trace_file_path_is_canonical():
+    """The probe reads `output/claude_chat_trace.md`; verify claude_chat writes there."""
+    import claude_chat
+    expected = (
+        Path(claude_chat.__file__).resolve().parent.parent
+        / "output" / "claude_chat_trace.md"
+    )
+    assert claude_chat.TRACE.resolve() == expected.resolve(), (
+        "claude_chat.TRACE diverged from output/claude_chat_trace.md; "
+        "uptime_canary_layer2._read_last_assistant_block must be updated to match."
+    )
+
+
+def test_trace_assistant_block_marker_is_canonical(tmp_path):
+    """Verify _append_trace emits the marker the canary scans for."""
+    # The canary's _read_last_assistant_block scans for `] CLAUDE -> USER_SIM\n`.
+    # Pin that marker via _append_trace's actual output, redirected to tmp_path
+    # so we don't pollute the real trace file.
+    import claude_chat as _cc
+    fake_path = tmp_path / "_test_trace_probe.md"
+    saved = _cc.TRACE
+    _cc.TRACE = fake_path
+    try:
+        _cc._append_trace("CLAUDE -> USER_SIM", "probe body")
+        written = fake_path.read_text(encoding="utf-8")
+    finally:
+        _cc.TRACE = saved
+
+    assert "] CLAUDE -> USER_SIM\n" in written, (
+        "claude_chat._append_trace no longer emits the "
+        "`] CLAUDE -> USER_SIM\\n` marker; "
+        "uptime_canary_layer2._read_last_assistant_block parses on it."
+    )

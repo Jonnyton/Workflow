@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from workflow.universe_server import (
+from workflow.api.universe import (
     _action_get_recent_events,
     _parse_activity_line,
 )
@@ -85,8 +85,8 @@ def universe_with_log(tmp_path, monkeypatch):
         "[2026-04-19 10:04:00] Worldbuild: 3 canon docs generated\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
-    monkeypatch.setattr(us, "_default_universe", lambda: "test-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "test-universe")
     monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(uni, "_default_universe", lambda: "test-universe")
     return udir
@@ -151,8 +151,8 @@ def test_dispatch_guard_empty_match_adds_absence_caveat(tmp_path, monkeypatch):
         "[2026-04-19 10:01:00] Commit: evaluating scene-1\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
-    monkeypatch.setattr(us, "_default_universe", lambda: "no-dispatch-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "no-dispatch-universe")
     monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(uni, "_default_universe", lambda: "no-dispatch-universe")
 
@@ -173,8 +173,8 @@ def test_dispatch_guard_missing_log_adds_absence_caveat(tmp_path, monkeypatch):
 
     udir = tmp_path / "fresh-dispatch-universe"
     udir.mkdir()
-    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
-    monkeypatch.setattr(us, "_default_universe", lambda: "fresh-dispatch-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-dispatch-universe")
     monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-dispatch-universe")
 
@@ -227,8 +227,8 @@ def test_missing_log_returns_empty_with_caveat(tmp_path, monkeypatch):
 
     udir = tmp_path / "fresh-universe"
     udir.mkdir()  # no activity.log inside
-    monkeypatch.setattr(us, "_universe_dir", lambda uid: udir)
-    monkeypatch.setattr(us, "_default_universe", lambda: "fresh-universe")
+    monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
+    monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-universe")
     monkeypatch.setattr(uni, "_universe_dir", lambda uid: udir)
     monkeypatch.setattr(uni, "_default_universe", lambda: "fresh-universe")
 

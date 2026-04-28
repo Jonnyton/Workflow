@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-08. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # PLAN Revalidation
 
 Date: 2026-04-08
@@ -30,7 +32,7 @@ Why:
   with state, tools, evaluation, and providers underneath.
 - But the diagram is stale in emphasis. The project is no longer best
   described primarily as `User <-> Custom GPT <-> FastAPI / MCP`.
-- Current runtime evidence shows live MCP traffic and active Universe Server
+- Current runtime evidence shows live MCP traffic and active Workflow MCP server
   usage.
 
 Evidence:
@@ -193,7 +195,7 @@ Why:
 
 - The control-station principle still broadly holds: the daemon remains the
   author, not the GPT surface.
-- But the section underweights the current Universe Server/MCP interface,
+- But the section underweights the current Workflow MCP interface,
   which is now a live primary path.
 
 Evidence:
@@ -272,7 +274,7 @@ them more than it contradicts them.
 
 Do not apply automatically. These are proposed edits for approval later.
 
-1. Update `System Shape` to show MCP/Universe Server as a first-class public
+1. Update `System Shape` to show the Workflow MCP surface as a first-class public
    interface, not only Custom GPT.
 2. Revise `Retrieval And Memory` to say the tool-driven surface is partially
    implemented and still coexists with pre-assembled compatibility context.
@@ -297,7 +299,7 @@ It still holds up well as:
 It is least trustworthy where it:
 
 - declares extraction or verification complete in a present-tense way
-- under-describes the MCP/Universe Server shift
+- under-describes the Workflow MCP shift
 - describes target-state thinness/tool-driven context as if the transitional
   bridge is already gone
 

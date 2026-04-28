@@ -189,7 +189,7 @@ class TestMcpDryInspectNode:
         return branch.to_dict()
 
     def test_action_with_branch_def_id(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         branch_dict = self._make_branch_dict(prompt_template="Say {word}")
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -205,7 +205,7 @@ class TestMcpDryInspectNode:
         assert "placeholder_validation" in result
 
     def test_action_with_branch_spec_json(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         branch_dict = self._make_branch_dict(prompt_template="Write {topic}")
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -216,7 +216,7 @@ class TestMcpDryInspectNode:
         assert result["node_id"] == "n1"
 
     def test_action_no_node_id_returns_all_nodes(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         nd1 = NodeDefinition(node_id="n1", display_name="n1")
         nd2 = NodeDefinition(node_id="n2", display_name="n2")
@@ -231,7 +231,7 @@ class TestMcpDryInspectNode:
     def test_action_nonexistent_node_id_returns_error(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         branch_dict = self._make_branch_dict()
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -244,7 +244,7 @@ class TestMcpDryInspectNode:
     def test_action_missing_branch_returns_error(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         with patch(
@@ -257,14 +257,14 @@ class TestMcpDryInspectNode:
     def test_action_invalid_spec_json_returns_error(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_dry_inspect_node({"branch_spec_json": "not-json"}))
         assert "error" in result
 
     def test_no_provider_calls(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_node
+        from workflow.api.runtime_ops import _action_dry_inspect_node
 
         branch_dict = self._make_branch_dict(prompt_template="Say {word}")
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -288,7 +288,7 @@ class TestMcpDryInspectPatch:
         return branch.to_dict()
 
     def test_add_node_op_visible_in_result(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_patch
+        from workflow.api.runtime_ops import _action_dry_inspect_patch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         ops = [{"op": "add_node", "node_id": "n2", "display_name": "n2", "phase": "custom"}]
@@ -302,7 +302,7 @@ class TestMcpDryInspectPatch:
         assert "n2" in node_ids
 
     def test_update_node_op_reflected(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_patch
+        from workflow.api.runtime_ops import _action_dry_inspect_patch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         ops = [{"op": "update_node", "node_id": "n1", "display_name": "Updated"}]
@@ -314,7 +314,7 @@ class TestMcpDryInspectPatch:
         assert result["node_def"]["display_name"] == "Updated"
 
     def test_add_state_field_expands_schema(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_dry_inspect_patch
+        from workflow.api.runtime_ops import _action_dry_inspect_patch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         ops = [{"op": "add_state_field", "field_name": "new_field", "field_type": "str"}]
@@ -329,7 +329,7 @@ class TestMcpDryInspectPatch:
     def test_missing_changes_json_returns_error(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        from workflow.universe_server import _action_dry_inspect_patch
+        from workflow.api.runtime_ops import _action_dry_inspect_patch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_dry_inspect_patch({
@@ -340,7 +340,7 @@ class TestMcpDryInspectPatch:
     def test_invalid_changes_json_returns_error(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        from workflow.universe_server import _action_dry_inspect_patch
+        from workflow.api.runtime_ops import _action_dry_inspect_patch
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_dry_inspect_patch({
@@ -353,7 +353,6 @@ class TestMcpDryInspectPatch:
 class TestExtensionsRoutingDryInspect:
     def test_extensions_routes_dry_inspect_node(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         nd = NodeDefinition(node_id="n1", display_name="n1")
         branch = BranchDefinition(branch_def_id="b1", name="t", node_defs=[nd])
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -368,7 +367,6 @@ class TestExtensionsRoutingDryInspect:
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from workflow.universe_server import extensions
-
         nd = NodeDefinition(node_id="n1", display_name="n1", phase="custom")
         branch = BranchDefinition(branch_def_id="b1", name="t", node_defs=[nd])
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
@@ -384,7 +382,6 @@ class TestExtensionsRoutingDryInspect:
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(extensions(action="nonexistent_xyz_dry"))
         available = result.get("available_actions", [])

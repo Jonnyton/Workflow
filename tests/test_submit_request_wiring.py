@@ -212,7 +212,7 @@ def test_submit_request_rejects_oversize_text(tmp_path, monkeypatch):
     (base / "test-universe").mkdir()
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
-    from workflow import universe_server as us
+    from workflow.api import universe as us
     importlib.reload(us)
     try:
         oversize = "x" * (us._SUBMIT_REQUEST_MAX_BYTES + 1)
@@ -239,7 +239,7 @@ def test_submit_request_accepts_text_at_cap(tmp_path, monkeypatch):
     (base / "test-universe").mkdir()
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
-    from workflow import universe_server as us
+    from workflow.api import universe as us
     importlib.reload(us)
     try:
         at_cap = "x" * us._SUBMIT_REQUEST_MAX_BYTES
@@ -267,7 +267,7 @@ def test_submit_request_response_includes_queue_position(monkeypatch, tmp_path):
     universe_dir.mkdir(parents=True)
     monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow import universe_server as us
+    from workflow.api import universe as us
     importlib.reload(us)
     try:
         first = json.loads(us._action_submit_request(

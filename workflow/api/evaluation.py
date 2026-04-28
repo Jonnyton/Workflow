@@ -270,6 +270,7 @@ def _action_suggest_node_edit(kwargs: dict[str, Any]) -> str:
     Per spec: this does NOT call an LLM. It assembles context. The
     calling client proposes the edit.
     """
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import (
@@ -281,7 +282,6 @@ def _action_suggest_node_edit(kwargs: dict[str, Any]) -> str:
     from workflow.runs import (
         node_output_from_run,
     )
-    from workflow.universe_server import _ensure_author_server_db
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     nid = (kwargs.get("node_id") or "").strip()
@@ -480,10 +480,10 @@ def _node_body_summary(node_def: dict[str, Any]) -> str:
 
 def _action_list_node_versions(kwargs: dict[str, Any]) -> str:
     """Return the version history for a single node on a branch."""
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import list_node_edit_audits
-    from workflow.universe_server import _ensure_author_server_db
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     nid = (kwargs.get("node_id") or "").strip()
@@ -596,6 +596,7 @@ def _action_rollback_node(kwargs: dict[str, Any]) -> str:
     audit row with ``edit_kind="rollback"``. Forward history is never
     destroyed — the old body stays retrievable via list_node_versions.
     """
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition, NodeDefinition
     from workflow.daemon_server import (
         get_branch_definition,
@@ -606,7 +607,6 @@ def _action_rollback_node(kwargs: dict[str, Any]) -> str:
         list_node_edit_audits,
         record_node_edit_audit,
     )
-    from workflow.universe_server import _ensure_author_server_db
 
     bid = (kwargs.get("branch_def_id") or "").strip()
     nid = (kwargs.get("node_id") or "").strip()
@@ -785,8 +785,8 @@ def _dispatch_judgment_action(
 ) -> str:
     """Dispatch a Phase 4 action. ``judge_run`` is the only write; the
     rest are read-only and bypass the ledger."""
+    from workflow.api.branches import _append_global_ledger
     from workflow.api.engine_helpers import _truncate
-    from workflow.universe_server import _append_global_ledger
 
     result_str = handler(kwargs)
     if action not in _JUDGMENT_WRITE_ACTIONS:

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Track N — Vibe-Coding Node Authoring + Sandbox
 
 **Date:** 2026-04-19

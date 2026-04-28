@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import asyncio
 
+from workflow.api.prompts import _CONTROL_STATION_PROMPT
 from workflow.universe_server import (
-    _CONTROL_STATION_PROMPT,
     _EXTENSION_GUIDE_PROMPT,
     mcp,
 )

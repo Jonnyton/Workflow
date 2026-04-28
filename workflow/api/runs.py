@@ -69,9 +69,12 @@ def _run_mermaid_from_events(
     embeds this in the `summary` markdown and as a top-level field so
     Claude.ai auto-renders.
     """
+    from workflow.api.branches import (
+        _mermaid_label,
+        _mermaid_node_id,
+    )
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
-    from workflow.universe_server import _mermaid_label, _mermaid_node_id
 
     try:
         source_dict = get_branch_definition(
@@ -342,11 +345,11 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     available today; do not poll an ``interrupted`` run expecting it to
     flip back to ``running``.
     """
+    from workflow.api.branches import _resolve_branch_id
     from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import execute_branch_async
-    from workflow.universe_server import _resolve_branch_id
 
     _ensure_runs_recovery()
 
@@ -1446,8 +1449,8 @@ def _dispatch_run_action(
     run_branch and cancel_run both mutate durable state so they land in
     the global ledger with the run_id as the target.
     """
+    from workflow.api.branches import _append_global_ledger
     from workflow.api.engine_helpers import _truncate
-    from workflow.universe_server import _append_global_ledger
 
     result_str = handler(kwargs)
     if action not in _RUN_WRITE_ACTIONS:

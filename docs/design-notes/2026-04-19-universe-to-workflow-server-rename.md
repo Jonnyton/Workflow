@@ -1,5 +1,7 @@
 ---
-status: active
+status: superseded
+superseded_by: docs/exec-plans/completed/2026-04-19-author-to-daemon-rename-status.md
+status_detail: Layer-3 rename obsoleted by universe_server.py decomposition arc 2026-04-26+
 ---
 
 # Universe Server → Workflow Server: Layer-3 Rename Scoping

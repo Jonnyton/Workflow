@@ -1,5 +1,6 @@
 ---
 status: shipped
+shipped_date: 2026-04-19
 ---
 
 # 2026-04-19 — Option-Select "No Preference" Bug (claude_chat.py)

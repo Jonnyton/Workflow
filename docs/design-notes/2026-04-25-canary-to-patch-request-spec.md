@@ -1,5 +1,6 @@
 ---
 status: superseded
+superseded_by: docs/design-notes/2026-04-25-canary-to-patch-request-spec-v2.md
 ---
 
 # Canary → patch_request Seam — Design Spec

@@ -1,36 +1,47 @@
 ---
-title: Methods-prose evaluator — first-class evaluator for publication-grade prose correctness
+title: Methods-prose evaluator — REFRAMED community-build (was: first-class platform evaluator)
 date: 2026-04-27
 author: navigator
-status: superseded
-status_detail: proposal — awaiting lead approval
+status: REFRAMED community-build per host directive 2026-04-26
+status_detail: platform will NOT ship methods-prose evaluator subtypes as primitives; chatbot composes correctness checks from the existing Evaluator surface + wiki-published rubrics. Pre-reframe content preserved below as historical context.
 type: design-note
 companion:
-  - docs/specs/INDEX.md (where this graduates if approved)
-  - workflow/evaluation/__init__.py (existing Evaluator Protocol)
+  - workflow/evaluation/__init__.py (existing Evaluator Protocol — the user-callable primitive surface)
+  - .claude/agent-memory/lead/project_community_build_over_platform_build.md
+  - .claude/agent-memory/lead/project_privacy_via_community_composition.md (sibling case — same reframe pattern)
+  - .claude/agent-memory/lead/project_minimal_primitives_principle.md
   - .claude/agent-memory/user/personas/priya_ramaswamy/sessions.md (Priya signal #2 — provenance)
   - ideas/INBOX.md 2026-04-27 entry — Methods-prose evaluator class
-  - navigator's 2026-04-27 chain-break review (Proposal C)
   - project_evaluation_layers_unifying_frame (host 2026-04-19 unification doctrine)
 load-bearing-question: Does this make the user's chatbot better at serving the user's real goal?
 audience: lead, host, future dev/spec author
 ---
 
-# Methods-prose evaluator
+# Methods-prose evaluator — REFRAMED community-build
 
-## REFRAME (2026-04-27 host directive — supersedes auto-invocation framing below)
+## Reframe (2026-04-26 host directive — supersedes the proposal below)
 
-Host directive Q1=b + Q6=b: **platform's job is to make any user-design possible; users own design and quality.** Evaluators are user-callable primitives, NEVER auto-run quality gates.
+**Status: this note no longer proposes a platform feature.** Per host directive 2026-04-26 (community-build over platform-build) the platform will **not** ship methods-prose evaluator subtypes as primitives. There is no upcoming spec, no `EvaluatorKind` extension, no reference implementation, and no v1/v2 rollout to land.
 
-This note's §4.4 step 1 ("chatbot auto-runs the evaluator when the run produced artifacts") and §5 ask 4 ("approve auto-invocation default?") are SUPERSEDED. The v1 spec must:
-- Frame each evaluator as a user-callable primitive.
-- Document explicitly: platform never auto-invokes; user (or chatbot acting on user behalf) decides when to run it.
-- Rewrite chatbot integration as: chatbot offers the verification when user asks "is this prose correct?" — does NOT presume.
-- Drop the trust-graduation framing that depends on auto-blocking; the evaluator surfaces results when called, never blocks delivery.
+What ships instead:
 
-Option 2 (prose-versions + prose-reproducibility v1 pair) remains the right SHAPE — substrate decision is unchanged. Only the invocation surface is reframed.
+- **The existing `Evaluator` Protocol at `workflow/evaluation/__init__.py:60`** is the user-callable primitive. It already has `EvaluatorKind = "custom"` and the inputs/outputs needed for prose correctness checks (run state, artifact paths, package manifest, generated text).
+- **The chatbot composes prose-correctness checks for the user** by chaining existing primitives: read run state → diff against drafted prose → call existing custom evaluator(s) → present mismatch report. No new platform code.
+- **Community-published rubrics on the wiki** — e.g. "methods-section reproducibility check for ecology MaxEnt sweeps" — give chatbots a recipe to pull, parameterize, and run. Discovery + remix is the feature engine, not platform-shipped subtypes.
 
-The remainder of this note preserves the original design-space exploration as historical context. v1 spec (after host approval on `EvaluatorKind` literal extension) will rewrite §4.4 + §5 ask 4 per this reframe.
+Why the reframe: per `project_community_build_over_platform_build`, when proposing a feature we now ask FIRST "could the user's chatbot easily compose this from existing primitives?" — and for methods-prose verification the answer is yes (the chatbot already has run state, package manifest, drafted prose, and a `kind="custom"` Evaluator surface to invoke). Per `project_minimal_primitives_principle`, tool count is a budget that shrinks toward irreducible building blocks; named prose-* subtypes would expand the primitive surface for capability the existing surface already covers. Per `project_privacy_via_community_composition`, this is the same pattern as the privacy-modes reframe: platform owns the enforcement primitives, community evolves the recipes.
+
+The original 2026-04-27 §1 chain-break (Priya's reviewer-2 risk) is still a real chain-break — but the **platform** chain is unbroken once the chatbot composes the check. The chain-break framing in the proposal below misdiagnosed a community-recipe gap as a platform-primitive gap.
+
+The earlier in-line REFRAME (2026-04-27 host directive Q1=b + Q6=b — user-callable primitives, never auto-run gates) is consistent with this directive but did not go far enough; it kept the platform-primitive shape and only reshaped the invocation surface. The 2026-04-26 directive supersedes both: don't ship the primitive at all.
+
+**STATUS Concern row** filed 2026-04-26 ("Methods-prose evaluator REFRAMED community-build") tracks this reframe. The Concern can be deleted once this note's header lands; the reframe IS the resolution.
+
+---
+
+## Pre-reframe design (historical)
+
+The remainder of this note is the original platform-primitive proposal, preserved verbatim so future readers can see why the platform-build framing was rejected. Do not implement from this section. If a future host directive re-opens platform-primitive prose evaluators, start a fresh design note that grounds itself in the current commons-first / community-build doctrine rather than reviving this one.
 
 ---
 

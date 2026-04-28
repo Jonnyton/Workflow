@@ -26,7 +26,7 @@ def wiki_env(tmp_path, monkeypatch):
     wiki_root = tmp_path / "wiki"
     monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
-    from workflow.universe_server import _ensure_wiki_scaffold
+    from workflow.api.wiki import _ensure_wiki_scaffold
     _ensure_wiki_scaffold(wiki_root)
     return wiki_root
 

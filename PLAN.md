@@ -18,6 +18,62 @@ The system should get simpler as models improve. Every scaffold is temporary unl
 
 ---
 
+## Scoping Rules
+
+These five rules govern what features, primitives, and architecture get built — and what does not. They run in scoping cadence: irreducibility test first, then composition test, then privacy specialization, then architectural placement, then runtime tier targeting. Any new feature, design note, or audit recommendation must clear all five before it is shippable as platform code. Cross-provider readers (Codex, Cursor, OSS contributors): read these before proposing a new tool, action, evaluator, or primitive. Depth and worked examples live in lead memory files; PLAN.md carries the rule + why + how-to-apply only.
+
+### 1. Minimal primitives — fewest building blocks that compose to everything
+
+**Rule:** The platform's tool surface is a small, fixed set of fundamental primitives. Every proposed new tool answers: "is this a primitive (irreducible building block) or a convenience (composable from existing primitives)?" Conveniences don't ship. Treat tool count as a budget that should shrink, not grow.
+
+**Why:** Every new tool taxes user cognition, chatbot tool-list metadata (more confusion + hallucination surface), maintenance cost, documentation burden, and discovery friction. The natural reflex when a user wants X is "let's add X." This rule overrides that with: "what minimal primitive(s) does the user need to compose X themselves?" Per host directive 2026-04-26.
+
+**How to apply:** Before adding a tool, verb, action, EvaluatorKind, or any primitive: (1) is this fundamentally NEW capability, or convenience over existing capability? (2) Could you build THIS from a smaller combination of existing primitives? If yes, don't ship it — document the composition pattern instead. (3) Two primitives that overlap are one too many. (4) The decision rule for "convenience that's so useful it should ship": would a competent chatbot reliably compose this from primitives in <5 reasoning steps? If yes → community-build, no platform ship. If no (composition is fragile, requires nondeterministic reasoning, or hits a structural gap) → THAT gap is the actual primitive worth shipping. See `composition-patterns` wiki page for a cataloged set of chatbot-built compositions over the canonical primitive surface.
+
+Depth: lead memory `project_minimal_primitives_principle.md`.
+
+### 2. Community-build over platform-build
+
+**Rule:** When a feature is proposed, the FIRST question is "could the community evolve this?" — not "should we build this?" Platform-build is the fallback, not the default. Imagine the implementation; sketch how a chatbot would compose it from existing primitives + wiki rubrics + remix material; if that sketch works, don't ship platform code.
+
+**Why:** Workflow's product soul is users + chatbots evolving the system through wiki + remix + autoresearch. Platform-shipped primitives are scarce, intentional, and expensive — they crowd out community evolution and lock users into our taste. Community-buildable features compound: every new primitive composition becomes a remixable artifact other users discover and extend. Platform-shipped features are frozen at ship date; community-evolved features iterate continuously across thousands of remixes.
+
+**How to apply:** Imagine the implementation first. Then ask: could the user's chatbot easily compose this from existing primitives (workflow nodes, evaluators, branches, gates, autoresearch, wiki content)? If yes → don't ship as platform primitive; surface the community-build path in the design note + idea triage. If no (structural gap) → identify the gap precisely, ship the smallest primitive that closes it, not the policy. Platform-build is justified only when the gap is structurally impossible to compose around, OR the platform-shipped version unblocks 10x more community evolution than it crowds out.
+
+Depth: lead memory `project_community_build_over_platform_build.md`.
+
+### 3. Privacy + threat-model patterns are community-build
+
+**Rule:** Privacy mode is a special case of rule 2. Do NOT ship privacy as platform primitives (sensitivity_tier flags, private_output/ trees, server-side response redactors, threat-model presets, pre-baked HIPAA/SOC2 modes). The chatbot composes privacy patterns per user request, using existing primitives + community-evolved best practices.
+
+**Why:** Per host directive 2026-04-26: for well-known sensitive categories (invoices, medical, legal, financial, PII), the chatbot uses community-evolved best practices — wiki pages, remixable node compositions, soul-policy templates. For complex/novel sensitive workflows, the community is BETTER at evolving patterns than the platform — they meet the user in their own vocabulary, with their own judgment about what matters. Platform-built privacy features ship a frozen taxonomy; user threat models are open-ended.
+
+**How to apply:** When a sensitive-workflow request comes in (privacy mode, redaction, threat-model preset), the FIRST response is "the chatbot composes this from existing primitives + community best practices." Design-note recommendation: a how-to-compose guide, plus a pointer to community-evolved templates. Platform action ONLY if a primitive is structurally missing — and then ship the smallest primitive, not the policy. The platform DOES still own primitive enforcement boundaries: `WORKFLOW_UPLOAD_WHITELIST`, local-LLM-only routing, file-path enforcement at write time, MCP approval surface. Those are primitives, not policies.
+
+Depth: lead memory `project_privacy_via_community_composition.md`.
+
+### 4. Commons-first architecture
+
+**Rule:** Private data lives on host machines; public data lives in the platform commons. Three parts: (a) when a user builds a private branch / canon / universe, the data lives on a host; the platform/server **never stores** private content. (b) Platform-stored data is the open-source community commons — public-by-definition. (c) Community designs published to the commons become the tool surface for next users via discovery + similarity + remix; the platform doesn't build features, the community evolves them.
+
+**Why:** Per host directive 2026-04-27. Security architecture, not security policy — privacy is enforced by the platform never having the data. Identity alignment — Workflow is open-source community first, the platform's data space is for the community. Resource alignment — storage / serving / moderation costs of private data fall on the host. And the commons + remix engine is what makes minimal-primitives + community-build viable at scale: the platform ships discovery/similarity/ranking/attribution primitives; community ships features.
+
+**How to apply:** Before adding ANY platform feature, ask: "Could a user compose this from existing primitives + community remix?" If yes, the answer is to make discovery / similarity / remix work well, not to ship the feature. All platform-stored data is public-by-definition — no `is_private` flag on platform records (those records don't exist). Private branches don't have rows in platform metadata; the chatbot composes "this is private, keep it on host" without the platform's knowledge. Async availability is acceptable — private content is gated on a host being online; users-with-access who arrive when no host is online wait or get a graceful "no host online" signal. Anti-patterns: storing private data with platform-side encryption (still platform-resident), soft-private branches (a "private" flag breaks the architecture), discovery surfaces that bias toward platform-built content (commons content is equal first-class).
+
+Depth: lead memory `project_commons_first_architecture.md`.
+
+### 5. User capability axis — browser-only vs local-app, across providers
+
+**Rule:** Workflow has two basic user shapes for product-design purposes: **browser-only** (phone or computer; chats through web client — Claude.ai web, ChatGPT web; no local file system or code execution) and **local-app** (computer with chat-client app + computer-use access — Claude Code, ChatGPT desktop with computer-use; local file system, local code execution, daemon hosting). Orthogonal axis: chat provider — primary targets are Claude users and OpenAI users; long tail of OSS clients (OpenClaw, Cline, Aider, Continue, OpenWebUI, LibreChat) gets best-effort support via MCP-to-spec.
+
+**Why:** "Use Claude.ai instead" or "use Claude Code instead" is an anti-pattern. A real user is on whatever client they chose, and the platform reaches them there. Bugs that work on one provider but not another are P1 product bugs, not "use the other one." Don't second-class browser-only users — compensate via cleverness (host the daemon for them, publish results to shareable URLs, stream long outputs, save state to universe, compose chains that produce tangible deliverables, use platform scalability advantages like parallelism + retries + evaluators that no single browser session could do alone).
+
+**How to apply:** Every feature design names its target capability tier and provider coverage. Local-app: daemon hosting, file system I/O, local program invocation, autoresearch overnight, multi-tenant tray, OSS-clone-and-extend. Browser-only: cloud-mediated equivalents for everything actionable. Provider parity: test on both Claude and ChatGPT before claiming feature ships. A primitive earns its keep MORE if it works equivalently across both capability tiers + both providers; a primitive that only helps local-app users is a much higher bar to ship. Hopeful future: the gap collapses (Claude.ai gaining computer-use, ChatGPT gaining MCP local-file capabilities, browser sandboxing improving) — primitives should compose the same way regardless of capability tier; tier just determines leverage paths, not feature existence.
+
+Depth: lead memory `project_user_capability_axis.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
+
+---
+
 ## Cross-Cutting Principles
 
 **Agentic hybrid search is memory.** Durable memory is a policy over multiple stores (KG traversal, vector similarity, hierarchical summaries, notes, world-state, direct tool calls). No single backend owns truth. Routing matters more than any one store.
@@ -132,6 +188,18 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 **Real-time strategy — versioned rows + broadcast, NOT CRDT.** User collaboration is coarse-grained: users edit different nodes concurrently, or edit the same node with last-write-wins + update-since-you-viewed conflicts. Comments are append-only. Versioned Postgres rows + Supabase Realtime + presence channels covers this at a fraction of CRDT's complexity. CRDT is an escalation path for any specific artifact needing it later, not a baseline requirement. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §2.2`.)
 
 **Single canonical public entry point.** The daemon surface has exactly one public URL: `https://tinyassets.io/mcp`. Debug/diagnostic access is via Cloudflare Worker observability + tunnel logs, NOT a second public DNS record. Tradeoff explicitly accepted: losing the cheap dual-probe URL localization trick in exchange for a smaller attack surface and zero ambiguity about what users should connect to. The 2026-04-19 P0 outage (`api.tinyassets.io` appearing then disappearing) is additional evidence against multiple public entry points. Implementation caveat: the Cloudflare Worker requires a `mcp.tinyassets.io` hostname for internal tunnel-routing subrequests; this record is retained as Access-gated internal plumbing, not a second public surface. The principle is "one URL users connect to"; the implementation allows an Access-protected internal record that is functionally unreachable from the public internet. (Host directive 2026-04-20; options analysis: `docs/design-notes/2026-04-20-single-entry-execution-options.md`; cutover runbook: `docs/ops/dns-tunnel-single-entry-cutover.md`.)
+
+---
+
+## Full-Platform Architecture (Canonical)
+
+**Status: integrated.** The architectural commitments below — multi-tenant multiplayer platform, Postgres-canonical catalog with GitHub as export sink, versioned-rows real-time strategy, opt-in daemon hosting, paid-market on top of a free authoring substrate, full uptime with zero hosts online, three user tiers, evaluation-as-platform-primitive, node discovery + remix surface — are the durable canonical architecture. They are not a future proposal.
+
+**Single source of detail:** `docs/design-notes/2026-04-18-full-platform-architecture.md` (~3000 LOC) carries the full reasoning, tradeoff analysis, scale-audit numbers, and host-decision lineage. PLAN.md is the principle-level reference; the design note is the integrated detail. Future readers consult both — PLAN.md to understand WHY each principle holds, the design note to understand HOW each principle was reached.
+
+**Phased rollout — explicitly rejected.** The earlier "Phase 1 thin relay → Phase 2 state migration → Phase 3 paid failover" plan was rejected by host on 2026-04-18 on the grounds that (a) authoring must work with zero daemons running, which Phase 1 ships 0% of, and (b) building the final shape in one push avoids three throwaway migrations that each require re-teaching users + re-cutting Claude.ai connectors. The single-build target ("weeks not months") is the canonical sequencing model. The historical phased plan (`docs/design-notes/2026-04-18-persistent-uptime-architecture.md`) is retained as superseded historical context only.
+
+**Where the design note lives in PLAN.md:** the principles below already cite specific sections of the design note as decision rationale — Supabase stack (§3.2), GitHub OAuth at MCP edge (§7), versioned-rows over CRDT (§2.2), host-pool registry (§5), zero-daemons-for-authoring (§1), per-piece privacy (§17). When in doubt about an architectural commitment, the citation chain is: PLAN.md principle → design-note section → host-decision lineage. No layer is skipped.
 
 ---
 

@@ -1,5 +1,6 @@
 ---
 status: shipped
+shipped_date: 2026-04-09
 ---
 
 # 2026-04-09 Seed Retrofit Overlay

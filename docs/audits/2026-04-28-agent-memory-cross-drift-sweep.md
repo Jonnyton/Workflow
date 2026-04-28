@@ -2,7 +2,7 @@
 title: Agent-memory cross-drift sweep — contradictions, gaps, duplicates, stale refs
 date: 2026-04-28
 author: dev-2
-status: read-only audit — lead reviews + applies; per-finding action recommended but not executed
+status: original read-only audit; refreshed 2026-04-28 to mark lead-memory stale-branding item as lead-environment-only
 companion:
   - feedback_audits_can_be_already_done (memory) — verify before scoping
   - feedback_status_cites_means_active (memory) — consumption pattern trumps internal status
@@ -14,7 +14,7 @@ audience: lead, host (selectively)
 
 ## TL;DR
 
-5 lead-reviewable findings across 12 agent dirs (~250 memory files total). One real contradiction (verifier vs dev/navigator/lead on `git stash` for diagnostics). One stale-branding gap (lead MEMORY.md still cites "Universe Server" in 2 index entries — same retired branding the rest of the codebase scrubbed earlier this session). Two coverage gaps (dev-2 missing destructive-git rule; SendMessage rule absent from navigator memory). One pattern: triplicate audit-staleness rule across dev/navigator/dev-2 + lead — same lesson, four files.
+5 lead-reviewable findings across 12 agent dirs (~250 memory files total). One real contradiction (verifier vs dev/navigator/lead on `git stash` for diagnostics). One stale-branding gap is lead-environment-only: the referenced lead `MEMORY.md` is not present in this checkout. Two coverage gaps remain (dev-2 missing destructive-git rule; SendMessage rule absent from navigator memory). One pattern: triplicate audit-staleness rule across dev/navigator/dev-2 + lead — same lesson, four files.
 
 ## Per-agent file count
 
@@ -39,7 +39,7 @@ audience: lead, host (selectively)
 | # | Severity | Title | Affected agents | Recommended action |
 |---|---|---|---|---|
 | 1 | **DRIFT (contradiction)** | `git stash` for diagnostics — verifier ALLOWS, dev/navigator/lead all FORBID | verifier (allow) vs dev + navigator + lead + dev-2-via-no-rule (forbid) | Resolve: either retire verifier's `feedback_stash_diagnostic.md` OR carve an exception clause into the no-stash rules. Recommend: retire verifier's. The forbid-stash rule is host-explicit (`feedback_git_destructive`); verifier's "diagnostic stash" workaround is the same exception navigator slipped on 2026-04-18 + apologized for. Use `git show HEAD:path` or `git diff HEAD` instead. |
-| 2 | **STALE** | Lead MEMORY.md cites "Universe Server" in 2 index entries (L28, L35) | Lead | "MCP Universe Server is the live public interface" + "Restart daemon/Universe Server via tray" — both use retired branding per `tests/test_vocabulary_hygiene.py` LIVE-F7. Replace with "Workflow MCP server" / "the daemon" per the convention scrubbed across `.claude/skills/ui-test/` (Task #17 commit 6ce641f) + 8 user-facing docs (Task #10 this session). |
+| 2 | **LEAD-ENV ONLY** | Lead MEMORY.md cites "Universe Server" in 2 index entries (L28, L35) | Lead | The referenced Lead `MEMORY.md` is not present in this checkout as of 2026-04-28 (`.claude/**/MEMORY.md` has no matches). If that memory exists in the lead runtime environment, replace "MCP Universe Server" / "Restart daemon/Universe Server" with "Workflow MCP server" / "the daemon"; no repo-local edit remains. |
 | 3 | **MISSING-MIRROR** | dev-2 has NO destructive-git rule | dev-2 | dev (`feedback_no_git_stash_for_diagnostics`), navigator (`feedback_no_diagnostic_stash`), lead (`feedback_git_destructive`) all carry it. dev-2 is the floater that swaps into dev tasks — same risk profile, same rule needed. Recommend: add the rule to dev-2 memory (1-line MEMORY.md entry + small file). |
 | 4 | **MISSING-MIRROR** | SendMessage rule missing from navigator memory | navigator | dev (`feedback_sendmessage_not_text`) + verifier (`feedback_sendmessage_required`) both carry "plain text doesn't reach lead; always SendMessage." Navigator messages lead constantly during sessions; same rule applies but isn't in navigator memory. Recommend: navigator adds. |
 | 5 | **DUPLICATE / NEAR-DUPLICATE (4 copies of audit-staleness rule)** | Audit-staleness pattern lives in 4 agent memories with different framings | dev (`feedback_audits_often_stale.md`), navigator (`feedback_audit_freshness_check.md`), lead (`feedback_audit_freshness_check.md`), dev-2 (`feedback_audits_can_be_already_done.md`) | Same load-bearing rule across 4 files, 4 framings, 4 examples. Could be: (a) accepted as fine — different agents need different framings of the same rule. (b) consolidated to one canonical file in lead memory with cross-refs. **My take:** keep as-is. Each memory captures the example most relevant to that role (dev hit it on extractions, navigator on prescriptions, dev-2 on classify-from-scratch tasks, lead on dispatch). Consolidating would lose the role-specific examples. Just flag for awareness. |
@@ -81,7 +81,7 @@ dev-2 is the floater role per `feedback_floating_fifth_teammate` (lead memory). 
 
 1. **Finding #1 — verifier stash conflict.** Highest priority. Resolve the dev/navigator/lead-vs-verifier divergence on `git stash`. Verifier's diagnostic-stash workflow is the failure mode the no-stash rule was created to prevent.
 
-2. **Finding #2 — lead MEMORY.md "Universe Server" stale refs.** Lowest effort, highest user-facing risk. 2-line edit. Lead memory feeds back into Claude memory across sessions — branding hygiene matters.
+2. **Finding #2 — lead MEMORY.md "Universe Server" stale refs.** Lead-environment-only: no `MEMORY.md` file exists in this checkout. If present in the lead runtime environment, apply the 2-line branding edit there.
 
 3. **Findings #3 + #4 — coverage gaps.** Add the missing rule entries to dev-2 + navigator memories. ~5 min each.
 

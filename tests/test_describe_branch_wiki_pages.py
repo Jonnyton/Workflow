@@ -47,7 +47,7 @@ def _branch_dict(
 
 
 def test_matching_page_returned(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "plans", "my-branch-plan", textwrap.dedent("""\
@@ -65,7 +65,7 @@ def test_matching_page_returned(tmp_path):
 
 
 def test_no_matches_returns_empty_list(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     result = _related_wiki_pages(_branch_dict("no-such-branch-xyz"))
     assert result["items"] == []
@@ -73,7 +73,7 @@ def test_no_matches_returns_empty_list(tmp_path):
 
 
 def test_related_wiki_pages_key_never_missing(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     result = _related_wiki_pages(_branch_dict("ghost-branch"))
     assert "items" in result
@@ -81,7 +81,7 @@ def test_related_wiki_pages_key_never_missing(tmp_path):
 
 
 def test_matched_via_reflects_matching_terms(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "plans", "node-and-branch", textwrap.dedent("""\
@@ -100,7 +100,7 @@ def test_matched_via_reflects_matching_terms(tmp_path):
 
 
 def test_summary_truncates_at_140_chars(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     long_body = "x" * 200
@@ -119,7 +119,7 @@ def test_summary_truncates_at_140_chars(tmp_path):
 
 
 def test_top_20_cap_sets_truncated_count(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     for i in range(25):
@@ -137,14 +137,14 @@ def test_top_20_cap_sets_truncated_count(tmp_path):
 
 
 def test_empty_branch_dict_returns_empty():
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     result = _related_wiki_pages({})
     assert result == {"items": [], "truncated_count": 0}
 
 
 def test_branch_with_no_node_defs_still_matches_by_branch_id(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "notes", "branch-only", textwrap.dedent("""\
@@ -160,7 +160,7 @@ def test_branch_with_no_node_defs_still_matches_by_branch_id(tmp_path):
 
 
 def test_node_match_only_also_returned(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "notes", "node-only", textwrap.dedent("""\
@@ -178,7 +178,7 @@ def test_node_match_only_also_returned(tmp_path):
 
 
 def test_sorted_by_match_count_descending(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "notes", "both-match", textwrap.dedent("""\
@@ -205,7 +205,7 @@ def test_sorted_by_match_count_descending(tmp_path):
 
 
 def test_each_item_has_required_fields(tmp_path):
-    from workflow.universe_server import _related_wiki_pages
+    from workflow.api.branches import _related_wiki_pages
 
     wiki_root = Path(os.environ["WORKFLOW_WIKI_PATH"])
     _make_page(wiki_root, "notes", "fields-check", textwrap.dedent("""\
@@ -233,7 +233,7 @@ def test_describe_branch_response_contains_related_wiki_pages_key(tmp_path, monk
     """describe_branch JSON must include related_wiki_pages field."""
     from unittest.mock import patch
 
-    from workflow.universe_server import _ext_branch_describe
+    from workflow.api.branches import _ext_branch_describe
 
     branch_data = {
         "branch_def_id": "my-integration-branch",
@@ -263,7 +263,7 @@ def test_get_branch_response_contains_related_wiki_pages_key(tmp_path, monkeypat
     """get_branch JSON must include related_wiki_pages field."""
     from unittest.mock import patch
 
-    from workflow.universe_server import _ext_branch_get
+    from workflow.api.branches import _ext_branch_get
 
     branch_data = {
         "branch_def_id": "my-get-branch",
@@ -278,7 +278,7 @@ def test_get_branch_response_contains_related_wiki_pages_key(tmp_path, monkeypat
     with (
         patch("workflow.daemon_server.get_branch_definition", return_value=branch_data),
         patch("workflow.daemon_server.list_gate_claims", return_value=[]),
-        patch("workflow.universe_server._gates_enabled", return_value=False),
+        patch("workflow.api.market._gates_enabled", return_value=False),
     ):
         result_json = _ext_branch_get({"branch_def_id": "my-get-branch"})
 
@@ -293,7 +293,7 @@ def test_describe_branch_related_wiki_pages_not_missing_when_no_matches(tmp_path
     """related_wiki_pages must be [] not missing when no wiki pages match."""
     from unittest.mock import patch
 
-    from workflow.universe_server import _ext_branch_describe
+    from workflow.api.branches import _ext_branch_describe
 
     branch_data = {
         "branch_def_id": "orphan-branch-no-wiki",

@@ -20,7 +20,7 @@ git push workflow, subscription management, and race semantics.
       <task-id>.yaml
 ```
 
-`<repo_root>` is the git repo the Universe Server runs inside.
+`<repo_root>` is the git repo the Workflow daemon runs inside.
 Each directory under `goal_pool/` is a **Goal slug** (kebab-case). Slugs should
 match the `goal_id` in the Goals table where applicable.
 
@@ -191,7 +191,7 @@ import time by the `register_if_enabled()` side-effect at the bottom of
 Server has no effect until the process restarts — the producer was either
 registered at startup or it wasn't.
 
-Operators: after changing `WORKFLOW_GOAL_POOL`, restart the Universe Server
+Operators: after changing `WORKFLOW_GOAL_POOL`, restart the Workflow daemon
 (tray → "Restart All" or equivalent). Verify via the MCP `list_subscriptions`
 response — `config_vs_subscriptions_drift` will read `"ok"` or
 `"pool_enabled_no_subs"` when the producer registered; pool MCP actions return
@@ -213,7 +213,7 @@ universe lives outside the repo checkout, or the `.git/` directory is elsewhere
 (e.g. worktrees, submodules, or a detached layout). The walk may also settle on
 the wrong `.git` if your universe is nested under an unrelated repo.
 
-Fix: set `WORKFLOW_REPO_ROOT` in the Universe Server environment to the
+Fix: set `WORKFLOW_REPO_ROOT` in the Workflow daemon environment to the
 absolute path of the repo that owns `goal_pool/`. This takes precedence over
 the walk. `WORKFLOW_REPO_ROOT` is read on every resolution call, so it takes
 effect on the next producer cycle without restart.

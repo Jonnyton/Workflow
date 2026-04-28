@@ -6,7 +6,9 @@
 **Duration:** lower bound ~90 min (first commit in suspect window to first confirmed detection); upper bound undetermined (no sub-daily monitoring existed).
 **Status:** dev remediation in flight as of writing; canary design shipping concurrently (see `docs/design-notes/2026-04-19-uptime-canary-layered.md`).
 
-**Post-incident correction (2026-04-19 evening):** dev browser-probe of Cloudflare Zero Trust revealed the tunnel's Published Application Route is `mcp.tinyassets.io` (path `*` → `http://localhost:8001`), NOT `api.tinyassets.io`. `api.` was never created; NXDOMAIN has always been the state. The real root cause is a **URL mismatch**: the Claude.ai connector was configured for `https://tinyassets.io/mcp` (apex+path) while the tunnel serves `mcp.tinyassets.io` (subdomain+catch-all). Fix = update the connector URL in Claude.ai, not reconfigure Cloudflare. This postmortem's §1 timeline + §2.1 diagnosis references to `api.tinyassets.io` reflect the hypothesis at incident time; leaving the narrative unedited for audit-history integrity. Canonical production URL going forward is `mcp.tinyassets.io/mcp`; `api.` remains reserved as a future alias.
+**Post-incident correction (2026-04-19 evening):** dev browser-probe of Cloudflare Zero Trust revealed the tunnel's Published Application Route is `mcp.tinyassets.io` (path `*` → `http://localhost:8001`), NOT `api.tinyassets.io`. `api.` was never created; NXDOMAIN has always been the state. The real root cause is a **URL mismatch**: the Claude.ai connector was configured for `https://tinyassets.io/mcp` (apex+path) while the tunnel serves `mcp.tinyassets.io` (subdomain+catch-all). Fix = update the connector URL in Claude.ai, not reconfigure Cloudflare. This postmortem's §1 timeline + §2.1 diagnosis references to `api.tinyassets.io` reflect the hypothesis at incident time; leaving the narrative unedited for audit-history integrity. At the time, the team treated `mcp.tinyassets.io/mcp` as the production URL; `api.` remains reserved as a future alias.
+
+**Superseding endpoint note (2026-04-20):** the canonical user-facing MCP URL is now `https://tinyassets.io/mcp`. `mcp.tinyassets.io` remains the Access-gated tunnel origin only and should not be used in user-facing connector setup or public canary commands.
 
 ---
 
@@ -63,7 +65,7 @@ Three candidate causes; evidence scores them.
 Three gaps exposed:
 
 1. **Weekly cadence is far too coarse.** A 69-minute outage lives entirely inside a weekly-probe's blind spot with ~99.3% probability.
-2. **`tinyassets.io` root check doesn't probe the MCP path.** Even if the weekly ping had fired mid-outage, it would have hit the GoDaddy W+M landing (200 OK) and reported green. The apex stayed up via W+M while `api.tinyassets.io/mcp` was dead — the monitor was watching the wrong surface.
+2. **`tinyassets.io` root check doesn't probe the MCP path.** Even if the weekly ping had fired mid-outage, it would have hit the GoDaddy W+M landing (200 OK) and reported green. The apex landing stayed up while the MCP path was dead — the monitor was watching the wrong surface. Incident-time notes below still mention `api.tinyassets.io`; that was the pre-correction hypothesis, not the current endpoint.
 3. **No connector-layer probe.** Even a frequent curl of `/mcp` would not catch Claude.ai-specific failure modes (auth-session TTL, connector authentication handshake regressions, prompt-directive breakage). No surface exists that exercises what real users experience.
 
 Pre-commit hooks exercised: mirror-parity, mojibake, ruff, mock-banner. None of them probe the public routing surface. There was no reason to expect them to; routing is not a commit-local invariant. But the absence of any cross-cutting liveness signal is the gap.
@@ -96,7 +98,7 @@ The right shape is the Layer-1 canary (see `docs/design-notes/2026-04-19-uptime-
 
 Add under `## Hard Rules`:
 
-> 10. **Public surface changes verify post-change.** After any edit to DNS records, tunnel config, Cloudflare settings, GoDaddy W+M config, or any surface that affects `tinyassets.io` / `api.tinyassets.io`, run `python scripts/uptime_canary.py --once` before considering the change complete. DNS changes that pass locally but break the public surface are P0 incidents.
+> 10. **Public surface changes verify post-change.** After any edit to DNS records, tunnel config, Cloudflare settings, GoDaddy W+M config, or any surface that affects `tinyassets.io/mcp`, run `python scripts/uptime_canary.py --once` before considering the change complete. DNS changes that pass locally but break the public surface are P0 incidents.
 
 The hook can't enforce this (it's a dashboard, not a commit), but the rule is crisp and enforceable by the lead + by the canary itself (red alarm within 4 min means the change broke something).
 
@@ -105,7 +107,7 @@ The hook can't enforce this (it's a dashboard, not a commit), but the rule is cr
 Per the forever rule (§1 of AGENTS.md: "complete-system 24/7 uptime is top priority"), the canary should cover every public surface. Current design covers Layer 1 (curl /mcp) + Layer 2 (Claude.ai connector). Expand to:
 
 - `tinyassets.io/` root (catches the opposite failure: W+M landing gone + tunnel-only works).
-- `api.tinyassets.io/health` if FastMCP supports a health endpoint (or fall back to initialize).
+- `tinyassets.io/mcp` initialize/tools-list (canonical MCP path).
 - GitHub Actions independent-vantage probe (catches failures invisible to host-machine DNS resolver).
 
 Recommend all three as incremental ~0.25 dev-day additions to the canary's first-draft commit.
@@ -118,7 +120,7 @@ Inventoried per the four uptime surfaces from the AGENTS.md Forever Rule:
 
 | Surface | Current monitoring | Silent-outage risk | Recommendation |
 |---|---|---|---|
-| **tier-1 chatbot MCP** (`api.tinyassets.io/mcp`) | NONE (until canary lands) | Materialized today. | Layer-1 + Layer-2 canary (in flight). |
+| **tier-1 chatbot MCP** (`tinyassets.io/mcp`) | NONE (until canary lands) | Materialized today. | Layer-1 + Layer-2 canary (in flight). |
 | **tier-3 OSS `git clone`** | NONE | HIGH — a dirty-tree commit breaking `pip install -e .` or `pytest` on fresh clone would go undetected until a contributor tries. | Add a GitHub Action that runs nightly on a fresh runner: `git clone` → `python -m venv` → `pip install -e .` → `pytest tests/smoke/` — fail loudly on regression. ~0.5 dev-day. |
 | **tier-2 tray one-click install** | NONE | HIGH — packaging mirror drift, entry-point regression, cloudflared missing, singleton-lock bug. Host notices only when trying to install on a fresh machine. | Manual quarterly fresh-install rehearsal (documented as runbook) + canary that probes `localhost:8001/mcp` on the primary host (out of scope for this postmortem but belongs on the list). |
 | **Node discovery / remix / converge** (`discover_nodes` MCP action) | NONE | MEDIUM — feature isn't live yet, but the moment it ships it joins this list. | Add a canary probe calling `discover_nodes` once it's live. Track-H-first-draft follow-up. |

@@ -171,7 +171,7 @@ class TestQueryRunsLimit:
 
 class TestMcpQueryRunsAction:
     def test_action_returns_rows_shape(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_query_runs
+        from workflow.api.runs import _action_query_runs
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_run(tmp_path, status="completed")
@@ -180,14 +180,14 @@ class TestMcpQueryRunsAction:
         assert "count" in result
 
     def test_action_invalid_filters_json(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_query_runs
+        from workflow.api.runs import _action_query_runs
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(_action_query_runs({"filters_json": "not-json"}))
         assert "error" in result
 
     def test_action_invalid_aggregate_fn(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_query_runs
+        from workflow.api.runs import _action_query_runs
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(
@@ -198,7 +198,7 @@ class TestMcpQueryRunsAction:
         assert "error" in result
 
     def test_action_with_select_string(self, tmp_path: Path, monkeypatch) -> None:
-        from workflow.universe_server import _action_query_runs
+        from workflow.api.runs import _action_query_runs
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_run(tmp_path, output={"word_count": 42})
@@ -209,7 +209,6 @@ class TestMcpQueryRunsAction:
 
     def test_extensions_routes_query_runs(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_run(tmp_path)
         result = json.loads(extensions(action="query_runs"))
@@ -217,7 +216,6 @@ class TestMcpQueryRunsAction:
 
     def test_unknown_action_lists_query_runs(self, tmp_path: Path, monkeypatch) -> None:
         from workflow.universe_server import extensions
-
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         result = json.loads(extensions(action="nonexistent_xyz"))
         assert "query_runs" in result.get("available_actions", [])

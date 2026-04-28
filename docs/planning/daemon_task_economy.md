@@ -17,7 +17,7 @@ Four primitives exist in the code. They are each real and each load-bearing, but
 
 **Universe.** A filesystem subtree under `output/<universe_id>/` holding `notes.json`, `work_targets.json`, `hard_priorities.json`, `PROGRAM.md` (premise), `activity.log`, `status.json`, `canon/`, `output/book-*`, per-universe DBs (`story.db`, `checkpoints.db`). Universe is not an ID-keyed object — it's a *path binding*. `workflow/runtime.py:39-51` holds module-level singletons (`memory_manager`, `knowledge_graph`, `vector_store`, `raptor_tree`, `embed_fn`, `universe_config`) set by `DaemonController.start()` and bound to exactly one universe per process. Switching universes requires `runtime.reset()` + a new process; violating this was the root cause of the 2026-04 Ashwater cross-universe leak (documented in `runtime.py` module docstring).
 
-**BranchDefinition** (`workflow/branches.py:338`). Portable graph topology dataclass. Fields: `branch_def_id`, `name`, `author`, `domain_id`, `goal_id` (Phase 5; nullable, empty-string default at `workflow/branches.py:364`), `tags`, `version`, `parent_def_id`, `graph_nodes`, `edges`, `conditional_edges`, `entry_point`, `node_defs`, `state_schema`, `published`, `stats`. Validates reachability and cycle-has-exit (`workflow/branches.py:511-629`). Persists to `branches/<slug>.yaml` at the repo root. Does **not** know about universes — no `universe_id` field anywhere.
+**BranchDefinition** (`workflow/branches.py:338`). Portable graph topology dataclass. Fields: `branch_def_id`, `name`, `author`, `domain_id`, `goal_id` (nullable, empty-string default at `workflow/branches.py:364`), `tags`, `version`, `parent_def_id`, `graph_nodes`, `edges`, `conditional_edges`, `entry_point`, `node_defs`, `state_schema`, `published`, `stats`. Validates reachability and cycle-has-exit (`workflow/branches.py:511-629`). Persists to `branches/<slug>.yaml` at the repo root. Does **not** know about universes — no `universe_id` field anywhere.
 
 **Goal.** Not a typed class anywhere in `workflow/`. Goals are YAML dicts on disk at `goals/<slug>.yaml` (`workflow/storage/layout.py:68`). Accessed via `goals` MCP tool (`workflow/universe_server.py:6504`) with propose/update/bind/list/get/search/leaderboard/common_nodes actions. `Branch.goal_id` is a string FK; empty string = unbound.
 
@@ -28,7 +28,7 @@ Four primitives exist in the code. They are each real and each load-bearing, but
 The word "branch" refers to three disjoint concepts in this repo:
 
 1. **`BranchDefinition`** — a portable workflow topology (above). `branches/<slug>.yaml`.
-2. **Git-style per-universe fork branches** — SQL table `branches` in the author-server DB (`workflow/author_server.py:195` table schema, `:829` `ensure_default_branch`, `:900` `list_universe_forks`). Every universe gets a `free-roam` branch auto-created; `branch_heads` points to a snapshot. Intended for future universe-internal variant history. The former `universe action=list_branches` MCP action + `output/<uid>/branches.json` stub were killed in Phase A (2026-04-14) — the `list_branches` name now belongs exclusively to `extensions` (BranchDefinition catalog).
+2. **Git-style per-universe fork branches** — SQL table `branches` in the Workflow daemon DB (`workflow/author_server.py:195` table schema, `:829` `ensure_default_branch`, `:900` `list_universe_forks`). Every universe gets a `free-roam` branch auto-created; `branch_heads` points to a snapshot. Intended for future universe-internal variant history. The former `universe action=list_branches` MCP action + `output/<uid>/branches.json` stub were removed during the rename cleanup (2026-04-14) — the `list_branches` name now belongs exclusively to `extensions` (BranchDefinition catalog).
 3. **LangGraph conditional edges** — the internal graph-library term for routing. Not user-visible.
 
 `#1` and `#2` share the name and nothing else. `#2` is universe-scoped SQL state; `#1` is a repo-global YAML file. `list_branches` over MCP returns `#2` (or the default stub); `run_branch` over MCP executes `#1`. The name collision is an active UX hazard.
@@ -106,7 +106,7 @@ Consequence: "the daemon ran my workflow" and "my workflow ran" are different ev
 
 ### 2.2 "Who owns what?"
 
-Universes own: canon, notes, rules, priorities, work targets, one running daemon, one filesystem tree. Branches own: topology, state schema, node defs, fork lineage. Goals own: intent, ladder (Phase 6), bound branches.
+Universes own: canon, notes, rules, priorities, work targets, one running daemon, one filesystem tree. Branches own: topology, state schema, node defs, fork lineage. Goals own: intent, outcome ladder, bound branches.
 
 None of these own each other cleanly:
 - A Branch is universe-free in its dataclass, but operationally it gets a default `free-roam` branch per universe (`author_server.py:829`), which implies the opposite.
@@ -139,7 +139,7 @@ After reviewing the code and the PLAN.md design decisions, the cleanest model is
 
 **Key claim:** these three axes are each complete design primitives. They do not subsume each other. A Branch is not "inside" a Universe; it is a design artifact that CAN be instantiated into one or more Universes. A Goal is not "above" a Branch in containment terms; it is the intent layer Branches BIND to.
 
-**Note on the existing operational coupling.** Today `author_server.py:829` creates a default "free-roam" branch per universe. That `branch` is the SQL-table sense (§1.2 concept #2) — a git-style in-universe fork — NOT a `BranchDefinition`. `BranchDefinition` and `Universe` are already orthogonal in dataclass terms (explorer confirmed: zero cross-references). This model formalizes that orthogonality and retires the name collision via Phase A of the rollout plan.
+**Note on the existing operational coupling.** Today `author_server.py:829` creates a default "free-roam" branch per universe. That `branch` is the SQL-table sense (§1.2 concept #2) — a git-style in-universe fork — NOT a `BranchDefinition`. `BranchDefinition` and `Universe` are already orthogonal in dataclass terms (explorer confirmed: zero cross-references). This model formalizes that orthogonality and retires the name collision through the rollout plan.
 
 ### 3.2 Two runnable shapes: BranchTask and NodeBid
 
@@ -189,17 +189,17 @@ NodeBids run one node, not a graph. They live in a **repo-root bid queue** (`bid
 ### 3.3 Why this preserves every current design decision
 
 - Universe isolation (PLAN.md "Universe = single consistent reality") — unchanged. Tasks execute against a single universe_id; the runtime.py singleton binding still holds.
-- Branch as forkable topology — unchanged. Branches still live at `branches/<slug>.yaml`, still Goal-bound (Phase 5).
-- Goal as pursuit intent — unchanged. Goals still above Branches; Phase 6 outcome gates still ride on the Goal.
+- Branch as forkable topology — unchanged. Branches still live at `branches/<slug>.yaml`, still Goal-bound.
+- Goal as pursuit intent — unchanged. Goals still above Branches; outcome gates still ride on the Goal.
 - WorkTarget as unit of intentional work — unchanged. Now referenced by Tasks rather than consumed directly by the universe-cycle graph.
 
 ### 3.4 What changes
 
-- **The three-way `branch` name collision retires.** Concept #2 (SQL-table in-universe fork at `author_server.py:195 / :829`) is renamed `universe_fork` in Phase A of the rollout plan. `BranchDefinition` keeps the public-facing "Branch" name. LangGraph's internal conditional edges are out of scope — they're LangGraph's term, not ours.
+- **The three-way `branch` name collision retires.** Concept #2 (SQL-table in-universe fork at `author_server.py:195 / :829`) is renamed `universe_fork` by the rollout plan. `BranchDefinition` keeps the public-facing "Branch" name. LangGraph's internal conditional edges are out of scope — they're LangGraph's term, not ours.
 - **The fantasy universe-cycle graph becomes an inspectable Branch — aspirationally, via opaque-node wrapping.** The daemon's "autonomous loop" becomes "repeatedly run the fantasy universe-cycle Branch against this universe." Two bridging options per §1.3 and explorer's §5.1:
-  - **(b) Opaque-node wrapping (preferred for Phase D).** The fantasy graph runs as a single-node Branch — one `BranchDefinition` whose sole node invokes the existing `build_universe_graph()` StateGraph. Preserves unification at the queue + inspection layer; does NOT force every fantasy phase through sandbox compilation. Lower migration cost, ships the UX win sooner.
+  - **(b) Opaque-node wrapping (preferred path).** The fantasy graph runs as a single-node Branch — one `BranchDefinition` whose sole node invokes the existing `build_universe_graph()` StateGraph. Preserves unification at the queue + inspection layer; does NOT force every fantasy phase through sandbox compilation. Lower migration cost, ships the UX win sooner.
   - **(a) Trusted-domain carve-out (future work).** `BranchDefinition` gains a `trusted_domain` flag that exempts domain-registered graphs from sandbox approval when `domain_id` matches the host's trusted-domain list. Unlocks per-phase inspection + per-phase user extensions. Higher migration cost — fantasy phases must be audited for compile compatibility.
-  Rollout plan Phase D ships option (b); option (a) is future work when more domains arrive and per-phase inspection matters more.
+  The rollout plan ships option (b); option (a) is future work when more domains arrive and per-phase inspection matters more.
 - **One dispatcher per daemon, two executors.** Tiered selection (see §4) picks from a merged source list; BranchTasks route to `execute_branch_async` (universe-bound, may include trusted-domain graphs), NodeBids route to a new sandboxed single-node executor. Same dispatcher, different execution paths — reflects the real security + scope differences.
 
 ### 3.5 UX check
@@ -253,7 +253,7 @@ The daemon applies a **hard LLM-type filter** first (applicable to NodeBids; Bra
 
 **Hard filter.** A daemon can only consider work whose `required_llm_type` it can serve. This is structural — a daemon running Opus can't fulfill a NodeBid that requires a specific fine-tuned model. The filter happens before scoring; unmatched work is invisible to this daemon.
 
-**Tier ordering** maps 1-to-1 with the §4.1 cascade, high priority → low priority:
+**Tier ordering** maps 1-to-1 with the default behavior cascade, high priority → low priority:
 
 1. **host_request BranchTask** — host's own box, first priority.
 2. **owner_queued BranchTask** — this universe's WorkTargets, scheduled by the user or by authorial review.
@@ -262,7 +262,7 @@ The daemon applies a **hard LLM-type filter** first (applicable to NodeBids; Bra
 5. **NodeBid** — cross-universe bid-market, LLM-filtered, bid-sorted, gated.
 6. **opportunistic** — daemon-generated housekeeping. Always last; never empty.
 
-Within a tier, work sorts by score (see §4.3). Host can reshape the ladder via dashboard; ordering is config, not code.
+Within a tier, work sorts by score. Host can reshape the ladder via dashboard; ordering is config, not code.
 
 ### 4.3 The priority function — concept, not code
 
@@ -290,7 +290,7 @@ All weights exposed in config, inspectable by the user, adjustable without a cod
 
 **Earnings dashboard implied.** If the daemon accepts paid work, the host needs a view of: accepted offers, earnings/hour, offers declined (and why — LLM mismatch, budget, lower than another open offer). This is a visibility surface, not a policy; lives in the host dashboard not the MCP tool.
 
-**Outcome-gate sybil risk.** Paid claims need evidence that the Task actually ran and produced the right output. Ties to #56 outcome gates — the evidence_url of a gate claim doubles as the receipt of paid completion. Memo notes the coupling; Phase 6.x design will work out the details.
+**Outcome-gate sybil risk.** Paid claims need evidence that the Task actually ran and produced the right output. Ties to #56 outcome gates — the evidence_url of a gate claim doubles as the receipt of paid completion. Memo notes the coupling; follow-up gate design will work out the details.
 
 ### 4.4 Chatbot-does-it vs user-hosts-own-daemon — where the line falls
 
@@ -378,7 +378,7 @@ End-to-end loop, concrete enough to reconstruct:
 
 Concrete migration steps, in order:
 
-1. **Register the fantasy universe-cycle graph as a Branch — via opaque-node wrapping.** Per §3.4 option (b) and §1.3, a single-node `BranchDefinition(domain_id="fantasy_author", name="universe-cycle", ...)` whose one node invokes the existing `build_universe_graph()` StateGraph. This is the primary Phase D approach: lower migration cost, no forced sandbox-compilation of every fantasy phase, unification happens at the queue/inspection layer rather than at the per-phase level. Option (a) — trusted-domain carve-out allowing full per-phase inspection — is future work when per-phase user extension matters more.
+1. **Register the fantasy universe-cycle graph as a Branch — via opaque-node wrapping.** Per §3.4 option (b) and §1.3, a single-node `BranchDefinition(domain_id="fantasy_author", name="universe-cycle", ...)` whose one node invokes the existing `build_universe_graph()` StateGraph. This is the primary approach: lower migration cost, no forced sandbox-compilation of every fantasy phase, unification happens at the queue/inspection layer rather than at the per-phase level. Option (a) — trusted-domain carve-out allowing full per-phase inspection — is future work when per-phase user extension matters more.
 2. **WorkTarget becomes Task-input, not daemon-input.** `choose_authorial_targets` stays — but instead of being the daemon's only selector, it emits a Task with `trigger_source=owner_queued`, `branch_def_id=fantasy_author/universe-cycle`, `universe_id=<this>`, `inputs.work_target_ref=<target_id>`.
 3. **DaemonController becomes a tier-aware loop.** Instead of "run universe graph forever," the controller walks tiers, picks Tasks, dispatches to the `execute_branch` path. Fantasy-specific code disappears from the outer loop — it moves to the Branch it executes.
 4. **Default Goal subscription: the fantasy domain's Goals** (`fantasy-novel`, maybe `worldbuilding-notes`). Host can add or remove subscriptions.
@@ -408,9 +408,9 @@ Design choices that need host sign-off before implementation can scope:
 
 ### Q1. Is Universe default-private or default-public?
 
-Today universes are host-local filesystems. In the shared-state Phase 7 world, some could be pushed to git. If a user registers a Universe under a Goal, should it be public by default (inviting collaboration) or private (explicit promotion required)? Recommend: **private by default**; explicit `publish_universe` action to make it visible. Matches PLAN.md "Privacy default: Public-by-default; users can mark a branch private for drafting" — but for reality scopes (where personal canon lives), default-private is safer.
+Today universes are host-local filesystems. In a shared-state world, some could be pushed to git. If a user registers a Universe under a Goal, should it be public by default (inviting collaboration) or private (explicit promotion required)? Recommend: **private by default**; explicit `publish_universe` action to make it visible. Matches PLAN.md "Privacy default: Public-by-default; users can mark a branch private for drafting" — but for reality scopes (where personal canon lives), default-private is safer.
 
-**Resolved by implementation:** Universes stayed host-local filesystems through Phase C-H; no `publish_universe` action shipped. Default is effectively private-by-filesystem-scope. Revisit when shared-state publishing surfaces.
+**Resolved by implementation:** Universes stayed host-local filesystems through the shipped implementation; no `publish_universe` action shipped. Default is effectively private-by-filesystem-scope. Revisit when shared-state publishing surfaces.
 
 ### Q2. Paid-request market — confirming the model and its edges
 
@@ -419,46 +419,46 @@ Host has specified the model (2026-04-14): project-native cryptocurrency; reques
 - **Escrow / settlement.** Is bid held in escrow at submission and released on completion, or paid on-completion trust-first? Recommend: **escrow**, to prevent requester-side fraud (submit a huge bid, cancel after daemon starts). Settlement on outcome-gate evidence (ties to #56).
 - **Can a host accept ONLY paid work?** i.e. turn off zero-bid opportunistic. Recommend: **yes, per-tier pause switch**. "Accept goal_pool work: paid only" is a valid dashboard toggle.
 - **Bid transparency.** Does the daemon see all open bids for a Task (to compete) or only the bid on the Task it's considering? Recommend: **see all**, so the bid-sort is meaningful. An open auction surface also makes the market legible to users.
-- **Reputation / daemon identity.** Does a requester get to filter by daemon reputation (past completion rate, evidence-gated success)? Recommend: **yes, but Phase-6.x-equivalent** — not blocking for v1 paid market, but note the slot.
+- **Reputation / daemon identity.** Does a requester get to filter by daemon reputation (past completion rate, evidence-gated success)? Recommend: **yes, later** — not blocking for v1 paid market, but note the slot.
 
 These aren't blockers for §3-4 adoption; they're the next memo when the paid market moves from "project memory" to "executable spec."
 
-**Status:** still host-blocking. Phase G (`cb7482f`) shipped the NodeBid executor and priority weighting without escrow, transparency, or reputation surfaces — the four edges above remain open design choices. Phase H may need escrow; flag for host before the paid-market default flip.
+**Status:** still host-blocking. The NodeBid executor and priority weighting shipped in `cb7482f` without escrow, transparency, or reputation surfaces — the four edges above remain open design choices. Flag escrow for host before the paid-market default flip.
 
 ### Q3. Can a single daemon serve multiple Universes?
 
-Today: one daemon = one universe (runtime.py singleton). Tomorrow: should one daemon be able to rotate across several of a user's Universes? If yes, the runtime singleton has to break; if no, "user hosts own daemon" scales per-universe. Recommend: **one daemon per Universe for now**, revisit when the singleton contract breaks anyway for Phase 7.4+ multi-tenancy. Simpler mental model for users.
+Today: one daemon = one universe (runtime.py singleton). Tomorrow: should one daemon be able to rotate across several of a user's Universes? If yes, the runtime singleton has to break; if no, "user hosts own daemon" scales per-universe. Recommend: **one daemon per Universe for now**, revisit when the singleton contract breaks for multi-tenancy. Simpler mental model for users.
 
-**Resolved by implementation:** one-daemon-per-universe preserved through Phase E tier-aware DaemonController (`29a71a7`) and Phase H dashboard (`3d7acb0`). Singleton contract unchanged.
+**Resolved by implementation:** one-daemon-per-universe preserved through the tier-aware DaemonController (`29a71a7`) and dashboard (`3d7acb0`). Singleton contract unchanged.
 
 ### Q4. What's the "opportunistic tier" allowed to touch?
 
 Opportunistic is the fallthrough that keeps daemons alive. If the daemon is truly idle, can it edit canon? Modify WorkTargets? Spawn new ones? Recommend: **read/verify/consolidate only**. No net-new content without a higher-tier Task. Otherwise the daemon invents work the user didn't ask for — bad for trust and bad for the UX doctrine.
 
-**Resolved by implementation:** Phase E tier system (`29a71a7`) and Phase G NodeBid executor (`cb7482f`) preserved the "no net-new content from opportunistic tier" contract — bids/pool-work are task-scoped, not free-form. Opportunistic surface remains read/verify/consolidate-only.
+**Resolved by implementation:** the tier system (`29a71a7`) and NodeBid executor (`cb7482f`) preserved the "no net-new content from opportunistic tier" contract — bids/pool-work are task-scoped, not free-form. Opportunistic surface remains read/verify/consolidate-only.
 
 ### Q5. Does `goal_pool` subscription require host approval per Task?
 
 If a daemon subscribes to `fantasy-novel` and someone submits 200 Tasks to the Goal pool, does the daemon auto-accept or does each pull require the host to approve? Recommend: **auto-accept up to a daily Task count / cost budget the host sets; above that, require approval**. Default budget low enough that default behavior is "a few opportunistic pulls per day, user sees them in the queue."
 
-**Resolved by implementation:** followed recommended default in Phase F (`1d02903`) — goal_pool producer auto-accepts within tier-budgeted cycle count. Per-Task approval deferred; revisit if Phase H surfaces a flood.
+**Resolved by implementation:** followed recommended default in `1d02903` — goal_pool producer auto-accepts within tier-budgeted cycle count. Per-Task approval deferred; revisit if dashboard usage surfaces a flood.
 
 ### Q6. Chatbot-held state — is there any persistence we're leaving on the table?
 
 We said chatbots can't hold long-horizon state. But MCP sessions DO have a tool surface that could write to durable artifacts. Is there a class of work the chatbot should handle directly (quick design iteration, small synthesis tasks) without ever invoking a daemon? Recommend: **yes, but only for actions that write to durable artifacts the daemon can later consume** — Branch authoring, Goal creation, Task submission. Never direct content generation against a Universe; that always goes through a daemon.
 
-**Resolved by implementation:** MCP tool surface (Universe Server) consistently restricts chatbot actions to artifact authoring (Branches, Goals, Task submission); content generation routes through the daemon. The "HARD RULE — NO SIMULATION" instruction at the MCP level enforces it.
+**Resolved by implementation:** the Workflow MCP tool surface consistently restricts chatbot actions to artifact authoring (Branches, Goals, Task submission); content generation routes through the daemon. The "HARD RULE — NO SIMULATION" instruction at the MCP level enforces it.
 
 ### Q7. Can high-tier work starve lower tiers indefinitely?
 
-The cascade (§4.1) walks tiers in priority order, first-non-empty-wins. This correctly prevents paid work from pre-empting the host's own queued work. But a busy host can indefinitely block paid / Goal-pool work from ever running on their daemon — tiers 4-7 only fire when tiers 1-3 empty. Two views:
+The cascade walks tiers in priority order, first-non-empty-wins. This correctly prevents paid work from pre-empting the host's own queued work. But a busy host can indefinitely block paid / Goal-pool work from ever running on their daemon — tiers 4-7 only fire when tiers 1-3 empty. Two views:
 
 - **View A: this is correct.** The host is providing the hardware; their priorities dominate. If a paid request must run, it belongs on a different host's daemon. The bid market finds a host with capacity naturally — tier starvation is a signal, not a bug.
 - **View B: some fairness-interleaving is needed.** A weighted round-robin below a cost threshold (e.g. "once per 10 host tasks, run one paid/pool task if one matches") keeps paid work moving through networks where many hosts are always somewhat busy, avoiding a "tragedy of the commons" where no host ever runs paid work.
 
-Recommend: **View A for v1** — simpler, honest, starvation is user-visible via the dashboard queue. Revisit if paid-market throughput becomes a real complaint; a fairness_interleave coefficient in the priority function (§4.3) is a cheap retrofit later.
+Recommend: **View A for v1** — simpler, honest, starvation is user-visible via the dashboard queue. Revisit if paid-market throughput becomes a real complaint; a fairness_interleave coefficient in the priority function is a cheap retrofit later.
 
-**Resolved by implementation:** View A shipped in Phase E tier cascade (`29a71a7`); Phase G NodeBid (`cb7482f`) respects the cascade without fairness-interleave. No starvation complaint surfaced. Retrofit slot preserved in §4.3 priority function.
+**Resolved by implementation:** View A shipped in the tier cascade (`29a71a7`); NodeBid (`cb7482f`) respects the cascade without fairness-interleave. No starvation complaint surfaced. Retrofit slot preserved in the priority function.
 
 ---
 
@@ -468,6 +468,6 @@ All sections drafted and converged. §1 + §5.1 authored by explorer; §2, §3, 
 
 **Next steps:**
 1. Reviewer audits for PLAN.md alignment and UX-doctrine adherence.
-2. Host rules on the open questions in §6 — as of Phase H landing, only Q2 (paid-market edges: escrow/transparency/reputation) remains host-blocking. Q1/Q3/Q4/Q5/Q6/Q7 resolved by implementation through Phase C-H.
-3. Rollout plan at `docs/exec-plans/daemon_task_economy_rollout.md` sequences Phases A-H; each phase's work-table row is ready for dev to claim once host lands decisions.
-4. Per-phase implementation specs derive into `docs/specs/` as phases start.
+2. Host rules on the open questions in §6 — only Q2 (paid-market edges: escrow/transparency/reputation) remains host-blocking. Q1/Q3/Q4/Q5/Q6/Q7 resolved by implementation.
+3. Rollout plan at `docs/exec-plans/daemon_task_economy_rollout.md` sequences the historical implementation batches; each work-table row is ready for dev to claim once host lands decisions.
+4. Implementation specs derive into `docs/specs/` as batches start.

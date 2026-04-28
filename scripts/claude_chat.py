@@ -649,7 +649,7 @@ def _dismiss_inline_permission_card(page) -> int:
 
     The newer UX is NOT a modal (no role=dialog / aria-modal). It's an
     inline card in the chat transcript — which the dialog-scoped
-    selectors miss. Scoped to Universe-Server cards only to avoid
+    selectors miss. Scoped to Workflow-Server cards only to avoid
     random clicks. Returns 1 on click, 0 on no-op / miss.
     """
     try:
@@ -696,7 +696,7 @@ def _dismiss_dialogs(page) -> int:
     _drain_auto_dismiss_log(page)
     # Inline permission card (Claude.ai's newer non-modal UX) first —
     # the dialog-scoped selectors below can't see it. Strictly gated
-    # to Universe-Server cards so we never click arbitrary buttons.
+    # to Workflow-Server cards so we never click arbitrary buttons.
     inline_clicked = _dismiss_inline_permission_card(page)
     if inline_clicked:
         _dismiss_cooldown_until = time.monotonic() + 3.0

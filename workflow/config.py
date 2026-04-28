@@ -33,6 +33,25 @@ class UniverseConfig:
     preferred_judge: str = ""
     """Preferred judge provider. Empty = use all available."""
 
+    allowed_providers: list[str] | None = None
+    """Per-universe provider allowlist (Q6.3 privacy primitive).
+
+    None = no allowlist; the full fallback chain is preserved
+    (backwards-compatible default). A list = strict allowlist; the
+    router filters every fallback chain (writer/judge/extract) and the
+    judge ensemble down to providers whose name appears here. If the
+    filter empties a chain, the call hard-fails with
+    ``AllProvidersExhaustedError`` rather than silently leaking to a
+    disallowed third-party provider.
+
+    Composes with ``WORKFLOW_PIN_WRITER``: the pin sets the chain to a
+    single provider first, then the allowlist filter applies; if the
+    pinned provider is not in the allowlist the call hard-fails.
+
+    See ``docs/design-notes/2026-04-27-q63-third-party-provider-privacy.md``
+    and ``.claude/agent-memory/navigator/q63_section4_dispositions.md``
+    for the design rationale."""
+
     # Model parameters
     temperature: float = 0.7
     """LLM temperature for creative generation."""

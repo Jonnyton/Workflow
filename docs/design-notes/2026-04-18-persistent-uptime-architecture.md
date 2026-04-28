@@ -1,5 +1,6 @@
 ---
 status: superseded
+superseded_by: docs/design-notes/2026-04-18-full-platform-architecture.md
 ---
 
 # Persistent Uptime Architecture — Control Plane + Data Plane

@@ -1,3 +1,9 @@
+---
+status: historical
+---
+
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-14. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase E Pre-Flight — Tier-aware DaemonController + BranchTask queue
 
 Planner draft, 2026-04-14. For dev handoff on task #5's follow-up (Phase E rollout row).
@@ -159,7 +165,7 @@ Aim: ~38 tests. If dev finds a test that's ambiguous about "identical behavior" 
 **Landing state:** Phase E flag `WORKFLOW_DISPATCHER_ENABLED=on` by default once landed. Merging is safe because Phase D's flag is off by default — so the dispatcher is observational only at merge time. Takes effect as a live surface only when Phase D's flag flips on (scheduled after user-sim Mission 8 gate per STATUS.md 2026-04-14).
 
 **If Phase E breaks in live after Phase D flag-on flip:**
-1. **Immediate:** host sets `WORKFLOW_DISPATCHER_ENABLED=0` and restarts Universe Server. Dispatcher short-circuits; fantasy daemon falls back to R7 (direct fantasy universe-cycle Branch with default inputs). Submitted requests continue to queue in `branch_tasks.json` but the daemon ignores the queue until flag flips back on. No data loss.
+1. **Immediate:** host sets `WORKFLOW_DISPATCHER_ENABLED=0` and restarts the Workflow daemon. Dispatcher short-circuits; fantasy daemon falls back to R7 (direct fantasy universe-cycle Branch with default inputs). Submitted requests continue to queue in `branch_tasks.json` but the daemon ignores the queue until flag flips back on. No data loss.
 2. **Short-term:** if `WORKFLOW_DISPATCHER_ENABLED=off` doesn't stabilize, host sets `WORKFLOW_UNIFIED_EXECUTION=off` as the deeper revert. Everything falls back to pre-Phase-D direct-graph behavior; Phase E is inert.
 3. **Full rollback:** revert Phase E landing commit. `branch_tasks.json` files remain on disk but unused; they're harmless. Phase E flag stays defined but unreferenced.
 

@@ -179,6 +179,7 @@ def test_update_force_overrides_dirty(repo_env):
 
 def _seed_branch(us, name: str = "Demo branch") -> str:
     """Create a minimal branch via build_branch → return branch_def_id."""
+    from workflow.api.helpers import _base_path
     from workflow.branches import (
         BranchDefinition,
         EdgeDefinition,
@@ -195,7 +196,7 @@ def _seed_branch(us, name: str = "Demo branch") -> str:
         EdgeDefinition(from_node="n1", to_node="END"),
     ]
     saved = save_branch_definition(
-        Path(us._base_path()), branch_def=b.to_dict(),
+        Path(_base_path()), branch_def=b.to_dict(),
     )
     return saved["branch_def_id"]
 

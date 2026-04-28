@@ -1,5 +1,6 @@
 ---
 status: active
+status_detail: Task #88 partial impl landed (15c897a); ongoing surface expansion
 ---
 
 # Self-Auditing Tools — A First-Class MCP Pattern for Trust-Critical Surfaces

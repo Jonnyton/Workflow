@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Cross-Repo Export Sync — `Workflow/` + `Workflow-catalog/` (Track G)
 
 **Date:** 2026-04-18

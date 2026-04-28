@@ -1,5 +1,9 @@
 ---
-status: active
+status: superseded
+superseded_by:
+  - docs/exec-plans/active/2026-04-26-decomp-arc-b-prep.md
+  - docs/exec-plans/active/2026-04-19-rename-end-state.md
+status_detail: Items 1-5 covered by Arc B/C; 6+7 OBVIATED 2026-04-28 (audit doc); 8 by Task #25 STATUS format
 ---
 
 # Arch Audit Finding #5 — R7 Split Scoping

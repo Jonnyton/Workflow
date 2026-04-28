@@ -172,7 +172,6 @@ def test_goals_action_search_multi_token(tmp_path, monkeypatch):
     results via the MCP dispatch surface."""
     from workflow.daemon_server import initialize_author_server, save_goal
     from workflow.universe_server import goals
-
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     initialize_author_server(tmp_path)
     save_goal(tmp_path, goal={"name": "Complete a software project end-to-end",

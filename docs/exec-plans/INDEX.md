@@ -6,17 +6,35 @@ row but should still be driven to a shipped outcome.
 ## Active
 
 - [active/README.md](active/README.md)
-- [active/2026-04-09-runtime-fiction-memory-graph.md](active/2026-04-09-runtime-fiction-memory-graph.md)
-- [active/2026-04-15-author-to-daemon-rename.md](active/2026-04-15-author-to-daemon-rename.md) — Phased mass-rename of `author`→`daemon` across ~1,200 Python files, 3 DB tables, user-visible strings. 6-7 dev days across 5 phases with shim-based back-compat.
-- [active/2026-04-16-memory-scope-stage-2b.md](active/2026-04-16-memory-scope-stage-2b.md) — `MemoryScope` redesign + write-site threading (5-tier orthogonal composition). ~3 dev sessions, flag-gated behind `WORKFLOW_TIERED_SCOPE`.
+- [active/2026-04-09-runtime-fiction-memory-graph.md](active/2026-04-09-runtime-fiction-memory-graph.md) — Runtime fiction memory graph: scene packets, typed entities, temporal/promise/relationship/epistemic ledgers. Multi-month plan.
+- [active/2026-04-19-daemon-economy-first-draft.md](active/2026-04-19-daemon-economy-first-draft.md) — Foundation scoping for the daemon economy: minimum surface where a tier-1 user posts a paid request and a tier-2 daemon claims+fulfills it end-to-end.
+- [active/2026-04-19-entry-point-discovery.md](active/2026-04-19-entry-point-discovery.md) — R10 — replace `workflow/discovery.py` filesystem scan with `importlib.metadata.entry_points(group="workflow.domains")`. Gated on Phase 5 (R8) compat-shim removal.
+- [active/2026-04-19-rename-end-state.md](active/2026-04-19-rename-end-state.md) — Author→Daemon rename **end-state spec** (Path A, atomic). Foundation classification per host's Foundation-vs-Feature rule. Supersedes the abandoned A1-D2 ladder.
+- [active/2026-04-19-sporemarch-c16-s3-diagnostic-plan.md](active/2026-04-19-sporemarch-c16-s3-diagnostic-plan.md) — Pre-staged diagnostic for the C16-S3 score-plateau. Dispatch-ready when Sporemarch resumes post-Fix-E migration.
+- [active/2026-04-20-selfhost-uptime-migration.md](active/2026-04-20-selfhost-uptime-migration.md) — Move MCP + tunnel origin off the host machine (cloud provider) so full uptime no longer depends on host's computer. Post-P0 host directive 2026-04-19.
+- [active/2026-04-20-track-e-paid-market-wave-1.md](active/2026-04-20-track-e-paid-market-wave-1.md) — Track E Wave 1: first-draft paid-market flow on top of Track A schema (commit `98055aa`) + Track D Wave 1 host_pool client (commit `72e86a2`).
+- [active/2026-04-25-file-bug-wiring.md](active/2026-04-25-file-bug-wiring.md) — `file_bug` → `bug_investigation` 3-trigger contract (forward + startup-backfill + safety-net). Helper landed; forward call site UNWIRED (verifier-2 territory); backfill + safety-net unwired.
+- [active/2026-04-26-decomp-arc-b-prep.md](active/2026-04-26-decomp-arc-b-prep.md) — Arc B prep: Author→Daemon rename infrastructure deletion (~366 LOC + caller migration). STATUS Work #23. Phase 1 LANDED (commit `0cbdea9`); Phase 2/3 blocked on #18 SHIP.
+- [active/2026-04-26-decomp-arc-c-prep.md](active/2026-04-26-decomp-arc-c-prep.md) — Arc C prep: env-var deprecation alias deletion (UNIVERSE_SERVER_BASE, WIKI_PATH). STATUS Work #24. Blocked on Arc B.
+- [active/2026-04-26-engine-domain-coupling-inventory.md](active/2026-04-26-engine-domain-coupling-inventory.md) — Read-only inventory of every `workflow/` import that reaches into `domains.fantasy_*`. Input for Task #11/#28/#29 host-review queue.
+- [active/2026-04-27-step-11plus-retarget-sweep-roi.md](active/2026-04-27-step-11plus-retarget-sweep-roi.md) — ROI analysis for the post-Step-11 retarget sweep (audit's "~100-LOC routing shell" target). Host decision pending.
 
 ## Completed
 
 - [completed/README.md](completed/README.md)
+- [completed/2026-04-15-author-to-daemon-rename.md](completed/2026-04-15-author-to-daemon-rename.md) — Original 5-phase rename plan with shim-based back-compat. **Superseded** by `active/2026-04-19-rename-end-state.md` (Path A, atomic) per host's Foundation-vs-Feature rule.
+- [completed/2026-04-16-memory-scope-stage-2b.md](completed/2026-04-16-memory-scope-stage-2b.md) — Stage 2b 1/2/3 all shipped (commits `5944ca1`, `d053468`, `e25bd3b`). STATUS now tracks Stage 2c flag flip.
+- [completed/2026-04-17-author-rename-phase0-audit.md](completed/2026-04-17-author-rename-phase0-audit.md) — Phase 0 preflight DONE (commit `07b75d8`). Companion to the parent rename plan.
 - [completed/2026-04-18-uptime-phase-1a-static-landing.md](completed/2026-04-18-uptime-phase-1a-static-landing.md) — Superseded by `docs/design-notes/2026-04-18-full-platform-architecture.md` (host rejected phased rollout for single-build).
+- [completed/2026-04-19-author-to-daemon-rename-status.md](completed/2026-04-19-author-to-daemon-rename-status.md) — Phase 1+ delta audit + A1-D2 dispatch ladder. **Superseded** by `active/2026-04-19-rename-end-state.md` (ladder explicitly abandoned per Foundation rule).
 - [completed/2026-04-19-bid-package-promotion.md](completed/2026-04-19-bid-package-promotion.md) — R2 dispatch sequence; bid surface promoted to `workflow/bid/` package (commit 3b83798).
 - [completed/2026-04-19-compat-naming-cleanup.md](completed/2026-04-19-compat-naming-cleanup.md) — R3 dispatch sequence; `workflow/compat.py` deleted (commit d7a455e).
+- [completed/2026-04-19-r7a-phase7-to-catalog.md](completed/2026-04-19-r7a-phase7-to-catalog.md) — R7a — Phase 7 storage moved to `workflow/catalog/`. Shipped (`workflow/catalog/{__init__,backend,layout,serializer}.py` exist).
+- [completed/2026-04-19-refactor-dispatch-sequence.md](completed/2026-04-19-refactor-dispatch-sequence.md) — R-ladder dispatch plan (R1-R13). **Superseded** by post-decomp Arc B/C/Phase 6 framing in STATUS Work table; multiple Rs landed (R1 STEERING removal, R4 layer-3 rename, R5 universe_server decomp, R7 storage split).
+- [completed/2026-04-19-steering-md-removal.md](completed/2026-04-19-steering-md-removal.md) — STEERING.md deleted from repo root. Three of four directives migrated to AGENTS.md / PLAN.md; replaced functionally by `notes.json`.
+- [completed/2026-04-19-storage-package-split.md](completed/2026-04-19-storage-package-split.md) — R7 — `daemon_server.py` split into `workflow/storage/` package (accounts.py, caps.py, rotation.py, etc.). Shipped.
 - [completed/2026-04-19-track-a-schema-auth-rls.md](completed/2026-04-19-track-a-schema-auth-rls.md) — Track A daemon-economy schema + auth + RLS (commits 98055aa + 029a5ec).
+- [completed/2026-04-20-wiki-file-bug-test-draft.md](completed/2026-04-20-wiki-file-bug-test-draft.md) — Pre-drafted test file for Task #3. `tests/test_wiki_file_bug.py` exists (in canonical tree).
 - [completed/2026-04-21-plan-md-migration-diff.md](completed/2026-04-21-plan-md-migration-diff.md) — APPLIED 2026-04-21; all 5 changes written to PLAN.md.
 - [completed/2026-04-26-decomp-step-1-prep.md](completed/2026-04-26-decomp-step-1-prep.md) — universe_server.py decomp Step 1 prep (Steps 1-11 LANDED per STATUS).
 - [completed/2026-04-26-decomp-step-2-prep.md](completed/2026-04-26-decomp-step-2-prep.md) — Step 2 prep.

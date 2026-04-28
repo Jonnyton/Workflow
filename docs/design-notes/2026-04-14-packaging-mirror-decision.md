@@ -1,5 +1,7 @@
 ---
-status: active
+status: shipped
+shipped_date: 2026-04-14
+shipped_in: d79df2d  # Packaging Option 1: auto-build bundle + plugin from workflow/
 ---
 
 # Packaging Mirror Decision

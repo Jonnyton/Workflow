@@ -39,6 +39,12 @@ import re
 import pytest
 
 from workflow import universe_server as us
+from workflow.api import branches as branches_mod
+from workflow.api import evaluation as evaluation_mod
+from workflow.api import market as market_mod
+from workflow.api import runs as runs_mod
+from workflow.api import runtime_ops as runtime_ops_mod
+from workflow.api import universe as universe_mod  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # KNOWN_DEBT — pre-existing undocumented dispatch keys.
@@ -129,18 +135,18 @@ def _extensions_dispatch_keys() -> set[str]:
     }
     return (
         inline
-        | set(us._BRANCH_ACTIONS.keys())
-        | set(us._RUN_ACTIONS.keys())
-        | set(us._JUDGMENT_ACTIONS.keys())
-        | set(us._PROJECT_MEMORY_ACTIONS.keys())
-        | set(us._BRANCH_VERSION_ACTIONS.keys())
-        | set(us._MESSAGING_ACTIONS.keys())
-        | set(us._ESCROW_ACTIONS.keys())
-        | set(us._GATE_EVENT_ACTIONS.keys())
-        | set(us._INSPECT_DRY_ACTIONS.keys())
-        | set(us._SCHEDULER_ACTIONS.keys())
-        | set(us._OUTCOME_ACTIONS.keys())
-        | set(us._ATTRIBUTION_ACTIONS.keys())
+        | set(branches_mod._BRANCH_ACTIONS.keys())
+        | set(runs_mod._RUN_ACTIONS.keys())
+        | set(evaluation_mod._JUDGMENT_ACTIONS.keys())
+        | set(runtime_ops_mod._PROJECT_MEMORY_ACTIONS.keys())
+        | set(evaluation_mod._BRANCH_VERSION_ACTIONS.keys())
+        | set(runtime_ops_mod._MESSAGING_ACTIONS.keys())
+        | set(market_mod._ESCROW_ACTIONS.keys())
+        | set(market_mod._GATE_EVENT_ACTIONS.keys())
+        | set(runtime_ops_mod._INSPECT_DRY_ACTIONS.keys())
+        | set(runtime_ops_mod._SCHEDULER_ACTIONS.keys())
+        | set(market_mod._OUTCOME_ACTIONS.keys())
+        | set(market_mod._ATTRIBUTION_ACTIONS.keys())
     )
 
 
@@ -300,7 +306,7 @@ _PARITY_CASES = [
     ),
     pytest.param(
         "gates", us.gates,
-        set(us._GATES_ACTIONS.keys()),
+        set(market_mod._GATES_ACTIONS.keys()),
         _docstring_actions_gates(),
         id="gates",
     ),
@@ -312,7 +318,7 @@ _PARITY_CASES = [
     ),
     pytest.param(
         "goals", us.goals,
-        set(us._GOAL_ACTIONS.keys()),
+        set(market_mod._GOAL_ACTIONS.keys()),
         _docstring_actions_goals(),
         id="goals",
     ),

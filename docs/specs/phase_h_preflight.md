@@ -1,3 +1,9 @@
+---
+status: historical
+---
+
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-14. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase H Pre-Flight — Host Dashboard + MCP Inspect Surfaces
 
 Planner draft, 2026-04-14. For dev handoff on Phase H rollout row.
@@ -240,7 +246,7 @@ Each flip is a ~3-line commit: the `os.environ.get("...", "on")` default changes
 3. **Full rollback:** revert Phase H landing commit. MCP actions `daemon_overview` + `set_tier_config` go away; existing per-surface actions (queue_list, list_subscriptions, list_open_bids) remain.
 
 **If a flag-flip destabilizes in live:**
-1. **Immediate:** revert the flag-flip commit (3-line change). Universe Server restart. Flag reverts to off.
+1. **Immediate:** revert the flag-flip commit (3-line change). Restart the Workflow daemon. Flag reverts to off.
 2. Re-run user-sim mission with the failing fix applied.
 
 **Do NOT:**

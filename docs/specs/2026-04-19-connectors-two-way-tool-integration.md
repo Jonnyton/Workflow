@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Connectors — Two-Way Tool Integration (§28 Exec Spec)
 
 **Date:** 2026-04-19

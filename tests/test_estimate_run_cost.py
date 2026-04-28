@@ -175,5 +175,5 @@ class TestEstimateRunCostReadOnly:
         assert r1 == r2
 
     def test_not_in_write_actions(self):
-        from workflow.universe_server import _RUN_WRITE_ACTIONS
+        from workflow.api.runs import _RUN_WRITE_ACTIONS
         assert "estimate_run_cost" not in _RUN_WRITE_ACTIONS

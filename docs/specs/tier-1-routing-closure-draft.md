@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Tier-1 Routing Investigation — Closing Paragraph (Draft)
 
 **Date:** 2026-04-25

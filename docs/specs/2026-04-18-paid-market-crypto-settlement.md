@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Paid-Market + Crypto Settlement (Base L2 Testnet) — Track E
 
 **Date:** 2026-04-18

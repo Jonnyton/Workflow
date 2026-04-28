@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Moderation MVP — Track F
 
 **Date:** 2026-04-18

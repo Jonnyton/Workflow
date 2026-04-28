@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from workflow.api.helpers import _base_path as _helpers_base_path
+
 
 @pytest.fixture
 def p5_env(tmp_path, monkeypatch):
@@ -308,14 +310,14 @@ def test_leaderboard_run_count(p5_env):
 
     for _ in range(1):
         br = BranchDefinition.from_dict(
-            get_branch_definition(Path(us._base_path()), branch_def_id=b1)
+            get_branch_definition(Path(_helpers_base_path()), branch_def_id=b1)
         )
-        execute_branch(us._base_path(), branch=br, inputs={"x": "a"})
+        execute_branch(_helpers_base_path(), branch=br, inputs={"x": "a"})
     for _ in range(2):
         br = BranchDefinition.from_dict(
-            get_branch_definition(Path(us._base_path()), branch_def_id=b2)
+            get_branch_definition(Path(_helpers_base_path()), branch_def_id=b2)
         )
-        execute_branch(us._base_path(), branch=br, inputs={"x": "a"})
+        execute_branch(_helpers_base_path(), branch=br, inputs={"x": "a"})
 
     result = _call(us, "goals", "leaderboard",
                    goal_id=gid, metric="run_count")
@@ -365,7 +367,7 @@ def test_leaderboard_forks_counts_parent_chain(p5_env):
     for i in range(2):
         forked = parent.fork(new_name=f"Fork{i}", author="tester")
         forked.goal_id = gid  # bind fork too so leaderboard sees both
-        save_branch_definition(us._base_path(), branch_def=forked.to_dict())
+        save_branch_definition(_helpers_base_path(), branch_def=forked.to_dict())
 
     result = _call(us, "goals", "leaderboard",
                    goal_id=gid, metric="forks")

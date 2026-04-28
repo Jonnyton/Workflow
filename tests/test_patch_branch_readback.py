@@ -33,14 +33,14 @@ def _make_branch_dict(branch_def_id="b1", name="Old Name", entry_point="n1",
 
 
 def _call_patch(branch_before, branch_after, changes_json):
-    from workflow.universe_server import _ext_branch_patch
+    from workflow.api.branches import _ext_branch_patch
 
     save_mock = MagicMock(return_value=branch_after)
 
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_before),
         patch("workflow.author_server.save_branch_definition", save_mock),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):
         result = _ext_branch_patch({

@@ -178,7 +178,7 @@ def test_whitespace_only_env_treated_as_unset(clean_env):
 
 def test_universe_server_base_path_uses_data_dir(clean_env, tmp_path):
     """workflow.universe_server._base_path() delegates to data_dir()."""
-    from workflow.universe_server import _base_path
+    from workflow.api.helpers import _base_path
 
     target = tmp_path / "universe-server-root"
     clean_env.setenv("WORKFLOW_DATA_DIR", str(target))

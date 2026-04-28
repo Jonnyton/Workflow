@@ -184,37 +184,5 @@ def test_action_schedule_branch_missing_args_returns_error_dict():
     assert "error" in out
 
 
-# ── back-compat re-export sanity ────────────────────────────────────────────
-
-
-def test_universe_server_reexports_dispatch_tables():
-    """`extensions()` body relies on the universe_server re-exports."""
-    from workflow import universe_server as us
-    assert us._PROJECT_MEMORY_ACTIONS is _PROJECT_MEMORY_ACTIONS
-    assert us._PROJECT_MEMORY_WRITE_ACTIONS is _PROJECT_MEMORY_WRITE_ACTIONS
-    assert us._INSPECT_DRY_ACTIONS is _INSPECT_DRY_ACTIONS
-    assert us._MESSAGING_ACTIONS is _MESSAGING_ACTIONS
-    assert us._SCHEDULER_ACTIONS is _SCHEDULER_ACTIONS
-
-
-@pytest.mark.parametrize("name", [
-    "_PROJECT_MEMORY_ACTIONS", "_PROJECT_MEMORY_WRITE_ACTIONS",
-    "_INSPECT_DRY_ACTIONS", "_MESSAGING_ACTIONS", "_SCHEDULER_ACTIONS",
-    "_action_project_memory_get", "_action_project_memory_set",
-    "_action_project_memory_list",
-    "_action_dry_inspect_node", "_action_dry_inspect_patch",
-    "_load_branch_for_inspect", "_apply_patch_ops",
-    "_action_messaging_send", "_action_messaging_receive",
-    "_action_messaging_ack",
-    "_action_schedule_branch", "_action_unschedule_branch",
-    "_action_list_schedules", "_action_subscribe_branch",
-    "_action_unsubscribe_branch", "_action_pause_schedule",
-    "_action_unpause_schedule", "_action_list_scheduler_subscriptions",
-])
-def test_universe_server_reexport_identity(name):
-    """Every re-exported name in universe_server is the same object as in
-    runtime_ops."""
-    from workflow import universe_server as us
-    assert getattr(us, name) is getattr(rt_mod, name), (
-        f"universe_server.{name} is not the same object as runtime_ops.{name}"
-    )
+# Arc A re-export shims removed in Task #18 retarget sweep — the dispatch-table
+# identity tests are gone alongside the shim block.

@@ -155,7 +155,8 @@ class TestMemoryScopeStatusMismatchWarnings:
 
         # Write a fake activity.log with a mismatch line into the default universe dir.
         from workflow import universe_server as us
-        uid = us._default_universe()
+        from workflow.api.helpers import _default_universe
+        uid = _default_universe()
         udir = base / uid
         udir.mkdir(parents=True, exist_ok=True)
         log = udir / "activity.log"

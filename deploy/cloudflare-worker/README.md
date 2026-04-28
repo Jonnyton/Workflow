@@ -1,9 +1,9 @@
 # Cloudflare Worker — `tinyassets.io/mcp` path router
 
-**Status:** Drafted 2026-04-20. Real fix for the 2026-04-19 P0 URL-mismatch
-outage. Deploys to route `tinyassets.io/mcp*` → the tunnel origin at
-`mcp.tinyassets.io`, while leaving the GoDaddy Website Builder landing
-intact for all other paths.
+**Status:** Shipped after the 2026-04-20 single-entry cutover. This is the real
+fix for the 2026-04-19 P0 URL-mismatch outage: route `tinyassets.io/mcp*`
+to the tunnel origin at `mcp.tinyassets.io`, while leaving the GoDaddy
+Website Builder landing intact for all other paths.
 
 **After deploy:** the canonical public MCP URL returns to
 `https://tinyassets.io/mcp`. Installed Claude.ai connectors pointing at
@@ -115,7 +115,7 @@ Post-deploy:
 | URL | Purpose |
 |---|---|
 | `https://tinyassets.io/mcp` | **Canonical — installed Claude.ai connectors.** Worker routes to tunnel. |
-| `https://mcp.tinyassets.io/mcp` | Direct-tunnel origin — Access-gated, not user-facing. Used by canary parity probes + debug. |
+| `https://mcp.tinyassets.io/mcp` | Direct-tunnel origin — Access-gated, not user-facing. Use only for internal Access/service-token debugging. |
 | `https://tinyassets.io/` | GoDaddy Website Builder landing (unchanged). |
 
 ---

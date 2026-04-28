@@ -1,7 +1,7 @@
 # Launch-Readiness Checklist
 
 **Status:** v1. Living document — PR changes per `SUCCESSION.md` §1.7 admin-pool rule.
-**Last updated:** 2026-04-19.
+**Last reviewed:** 2026-04-28 metadata-only; unchecked boxes still require host verification before launch.
 **Owner:** admin pool (joint).
 
 Single authoritative gate. **Every box below MUST be checked before any public launch announcement.** No soft "we'll fix it after launch" items; this list is the launch-blocking set. Nice-to-haves live elsewhere.
@@ -102,7 +102,7 @@ Single authoritative gate. **Every box below MUST be checked before any public l
 - [ ] **Privacy policy live at `tinyassets.io/legal/privacy`**.
 - [ ] **Terms of Service live at `tinyassets.io/legal/terms`**.
 - [ ] **`docs/catalogs/privacy-principles-and-data-leak-taxonomy.md` v1 published** + referenced by chatbot instructions.
-- [ ] **`control_station` prompt rendered as canonical from `docs/audits/2026-04-18-universe-server-directive-relocation-plan.md` §3** in production MCP gateway.
+- [ ] **`control_station` prompt rendered from the directive-relocation audit §3** in production MCP gateway (historical filename: `docs/audits/2026-04-18-universe-server-directive-relocation-plan.md`).
 - [ ] **DMCA counter-notice email address** published in ToS.
 - [ ] **Security report channel `security@tinyassets.io` monitored** + initial response SLA documented.
 

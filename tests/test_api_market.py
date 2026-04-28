@@ -239,20 +239,7 @@ def test_gates_enabled_truthy_values(monkeypatch):
         assert _gates_enabled() is True, f"expected True for GATES_ENABLED={v!r}"
 
 
-# ── back-compat re-export sanity ────────────────────────────────────────────
-
-
-def test_universe_server_reexports_dispatch_tables():
-    """`extensions()` body relies on the universe_server re-exports for
-    escrow/outcome/attribution; tests rely on goals/gates re-exports."""
-    from workflow import universe_server as us
-    assert us._ESCROW_ACTIONS is _ESCROW_ACTIONS
-    assert us._OUTCOME_ACTIONS is _OUTCOME_ACTIONS
-    assert us._ATTRIBUTION_ACTIONS is _ATTRIBUTION_ACTIONS
-    assert us._GOAL_ACTIONS is _GOAL_ACTIONS
-    assert us._GATES_ACTIONS is _GATES_ACTIONS
-    assert us._GATE_EVENT_ACTIONS is _GATE_EVENT_ACTIONS
-    assert us._gates_enabled is _gates_enabled
+# ── universe_server.goals/gates wrapper sanity ──────────────────────────────
 
 
 def test_universe_server_goals_and_gates_are_decorated_wrappers():
@@ -260,37 +247,11 @@ def test_universe_server_goals_and_gates_are_decorated_wrappers():
     market.goals + market.gates. They are NOT the same object as the
     market plain callables (because @mcp.tool wraps them)."""
     from workflow import universe_server as us
-    # FastMCP wraps the function; just verify they're callable + return same shape.
+    # FastMCP wraps the function; just verify they're callable.
     assert callable(us.goals)
     assert callable(us.gates)
 
 
-@pytest.mark.parametrize("name", [
-    "_ESCROW_ACTIONS", "_OUTCOME_ACTIONS", "_ATTRIBUTION_ACTIONS",
-    "_GOAL_ACTIONS", "_GOAL_WRITE_ACTIONS", "_dispatch_goal_action",
-    "_GATES_ACTIONS", "_GATE_EVENT_ACTIONS",
-    "_action_escrow_lock", "_action_escrow_release",
-    "_action_escrow_refund", "_action_escrow_inspect",
-    "_action_record_outcome", "_action_list_outcomes", "_action_get_outcome",
-    "_action_record_remix", "_action_get_provenance",
-    "_action_goal_propose", "_action_goal_update", "_action_goal_bind",
-    "_action_goal_list", "_action_goal_get", "_action_goal_search",
-    "_action_goal_leaderboard", "_action_goal_common_nodes",
-    "_action_goal_set_canonical",
-    "_action_gates_define_ladder", "_action_gates_get_ladder",
-    "_action_gates_claim", "_action_gates_retract",
-    "_action_gates_list_claims", "_action_gates_leaderboard",
-    "_action_gates_stake_bonus", "_action_gates_unstake_bonus",
-    "_action_gates_release_bonus",
-    "_action_attest_gate_event", "_action_verify_gate_event",
-    "_action_dispute_gate_event", "_action_retract_gate_event",
-    "_action_get_gate_event", "_action_list_gate_events",
-    "_current_actor_or_anon", "_gates_enabled",
-])
-def test_universe_server_reexport_identity(name):
-    """Every re-exported name in universe_server is the same object as in
-    market (excluding goals/gates which are wrapped)."""
-    from workflow import universe_server as us
-    assert getattr(us, name) is getattr(mkt_mod, name), (
-        f"universe_server.{name} is not the same object as market.{name}"
-    )
+# Arc A re-export shims removed in Task #18 retarget sweep — the parametrized
+# `test_universe_server_reexport_identity` covering 40+ market symbols is gone
+# alongside the shim block.

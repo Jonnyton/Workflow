@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Full-Platform Schema + RLS + `discover_nodes` — Pre-Draft
 
 **Date:** 2026-04-18

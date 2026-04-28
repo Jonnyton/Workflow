@@ -41,14 +41,14 @@ def _make_branch_dict(node_defs=None, branch_def_id="b1", name="TestBranch"):
 
 
 def _call_describe(branch_dict, validate_errors=None):
-    from workflow.universe_server import _ext_branch_describe
+    from workflow.api.branches import _ext_branch_describe
 
     if validate_errors is None:
         validate_errors = []
 
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch(
             "workflow.api.branches._related_wiki_pages",
             return_value={"items": [], "truncated_count": 0},
@@ -62,14 +62,14 @@ def _call_describe(branch_dict, validate_errors=None):
 
 
 def _call_get(branch_dict):
-    from workflow.universe_server import _ext_branch_get
+    from workflow.api.branches import _ext_branch_get
 
     with (
         patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
-        patch("workflow.universe_server._current_actor", return_value="tester"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
-        patch("workflow.universe_server._gates_enabled", return_value=False),
+        patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
+        patch("workflow.api.market._gates_enabled", return_value=False),
         patch(
             "workflow.api.branches._related_wiki_pages",
             return_value={"items": [], "truncated_count": 0},
@@ -81,14 +81,14 @@ def _call_get(branch_dict):
 
 
 def _call_validate(branch_dict, validate_errors=None):
-    from workflow.universe_server import _ext_branch_validate
+    from workflow.api.branches import _ext_branch_validate
 
     if validate_errors is None:
         validate_errors = []
 
     with (
         patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
-        patch("workflow.universe_server._base_path", return_value="/fake"),
+        patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=validate_errors),
         patch(
             "workflow.providers.base.get_sandbox_status",

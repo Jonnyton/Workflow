@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Handoffs — Real-World Pipeline (§30 Exec Spec)
 
 **Date:** 2026-04-19

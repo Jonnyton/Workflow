@@ -34,15 +34,13 @@ if _missing:
         allow_module_level=True,
     )
 
-from workflow.universe_server import (  # noqa: E402
+from workflow.api.wiki import (
     _next_bug_id,
     _render_bug_markdown,
     _slugify_title,
     _wiki_file_bug,
-    wiki,
 )
-
-
+from workflow.universe_server import wiki
 @pytest.fixture
 def wiki_dir(tmp_path, monkeypatch):
     """Temporary wiki tree with a `bugs` category pre-created."""
@@ -250,7 +248,7 @@ class TestFileBugViaWikiDispatch:
 
     def test_bugs_in_valid_categories(self):
         """Smoke test that 'bugs' is registered via patch (a)."""
-        from workflow.universe_server import _WIKI_CATEGORIES
+        from workflow.api.wiki import _WIKI_CATEGORIES
         assert "bugs" in _WIKI_CATEGORIES
 
 
@@ -584,8 +582,7 @@ class TestFileBugKindRouting:
 
     def test_cosign_bug_unknown_prefix_falls_back_to_bugs_dir(self, wiki_dir):
         """Unrecognized prefix → bugs/ fallback (backward compat)."""
-        from workflow.universe_server import wiki
-        # File a regular bug to give cosign something to find
+        from workflow.universe_server import wiki  # File a regular bug to give cosign something to find
         b = json.loads(_wiki_file_bug(
             component="x", severity="minor", title="legit bug",
         ))

@@ -15,7 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 
-from workflow.universe_server import get_status, mcp
+from workflow.universe_server import (
+    get_status,
+    mcp,
+)
 
 
 def _list_tools():

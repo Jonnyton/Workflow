@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Remix (Track I) + Convergence (Track K) — Detail Spec
 
 **Date:** 2026-04-18

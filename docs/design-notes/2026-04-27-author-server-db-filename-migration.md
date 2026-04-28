@@ -3,7 +3,7 @@ title: `.author_server.db` filename data-format alias — migration plan
 date: 2026-04-27
 author: navigator
 status: active
-status_detail: design note — pre-stages host decision
+status_detail: Phase 6 DECIDED 2026-04-28 — `.workflow.db` filename, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. Impl pending Arc C ship (STATUS row 40)
 companion:
   - docs/audits/2026-04-27-project-wide-shim-audit.md §3 item 17 (deferred from shim audit)
   - feedback_no_shims_ever (memory — host directive 2026-04-27; data-format aliases are shim-shaped at the data layer)

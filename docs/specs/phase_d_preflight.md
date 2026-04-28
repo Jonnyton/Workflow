@@ -1,3 +1,9 @@
+---
+status: historical
+---
+
+> **HISTORICAL — superseded.** This doc captured architecture intent as of 2026-04-14. Current architecture lives in PLAN.md. Kept for git/decision history. Do not edit, do not extend, do not cite as live.
+
 # Phase D Pre-Flight — Fantasy Universe-Cycle as Registered Branch
 
 Planner draft, 2026-04-14. For dev handoff on task #5.
@@ -137,7 +143,7 @@ Aim: ~24 new tests. If dev hits a test that's ambiguous about what "identical be
 **Flag-on rollout gate:** user-sim must complete one full mission (write at least one scene, restart at least once, see dashboard liveness) with `WORKFLOW_UNIFIED_EXECUTION=1` before the flag default flips to on. Lead enforces this gate.
 
 **If flag-on breaks in live:** three escalating steps, in order:
-1. **Immediate:** host sets `WORKFLOW_UNIFIED_EXECUTION=0` (or unsets it) in the tray/environment and restarts the Universe Server. Daemon resumes on the direct path. No data loss; SqliteSaver checkpoint is shared between paths by design.
+1. **Immediate:** host sets `WORKFLOW_UNIFIED_EXECUTION=0` (or unsets it) in the tray/environment and restarts the Workflow daemon. Daemon resumes on the direct path. No data loss; SqliteSaver checkpoint is shared between paths by design.
 2. **Short-term:** git revert of the `fantasy_author/__main__.py` flag-gate edit if the flag itself is not holding. Wrapper module + compiler extension stay in place — they're inert without the caller.
 3. **Full rollback:** revert the Phase D landing commit entirely. Reverts wrapper, compiler extension, seed YAML, tests. Flag stays defined but unreferenced — no harm.
 

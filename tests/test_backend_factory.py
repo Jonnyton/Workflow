@@ -142,12 +142,12 @@ def test_invalidate_also_clears_git_bridge_cache(tmp_path):
 def test_format_dirty_file_conflict_shape():
     # Reload universe_server to ensure the helper is imported fresh
     # (other tests in the suite reload this module; do it once here).
-    from workflow import universe_server
-    importlib.reload(universe_server)
+    from workflow.api import engine_helpers as eh
+    importlib.reload(eh)
 
     paths = [Path("branches/foo.yaml"), Path("nodes/foo/n1.yaml")]
     exc = DirtyFileError(paths)
-    payload = universe_server._format_dirty_file_conflict(exc)
+    payload = eh._format_dirty_file_conflict(exc)
 
     assert payload["status"] == "local_edit_conflict"
     assert payload["conflicting_path"] == str(paths[0])
@@ -160,9 +160,9 @@ def test_format_dirty_file_conflict_shape():
 
 def test_format_dirty_file_conflict_handles_empty_paths():
     """DirtyFileError with no paths shouldn't crash the formatter."""
-    from workflow import universe_server
+    from workflow.api import engine_helpers as eh
     exc = DirtyFileError([])
-    payload = universe_server._format_dirty_file_conflict(exc)
+    payload = eh._format_dirty_file_conflict(exc)
     assert payload["status"] == "local_edit_conflict"
     assert payload["conflicting_path"] == ""
     assert payload["all_conflicts"] == []

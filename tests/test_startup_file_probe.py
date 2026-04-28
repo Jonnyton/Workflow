@@ -76,7 +76,6 @@ class TestGetStatusMissingDataFiles:
         (tmp_path / "default-universe").mkdir()
 
         from workflow.universe_server import get_status
-
         raw = get_status("default-universe")
         payload = json.loads(raw)
 
@@ -90,7 +89,6 @@ class TestGetStatusMissingDataFiles:
         (tmp_path / "default-universe").mkdir()
 
         from workflow.universe_server import get_status
-
         raw = get_status("default-universe")
         payload = json.loads(raw)
 

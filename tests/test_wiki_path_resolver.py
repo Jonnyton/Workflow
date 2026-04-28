@@ -134,7 +134,7 @@ def test_whitespace_only_env_treated_as_unset(clean_env, tmp_path):
 
 
 def test_universe_server_wiki_root_uses_resolver(clean_env, tmp_path):
-    from workflow.universe_server import _wiki_root
+    from workflow.api.helpers import _wiki_root
 
     target = tmp_path / "via-univ-server"
     clean_env.setenv("WORKFLOW_WIKI_PATH", str(target))

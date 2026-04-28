@@ -1,3 +1,9 @@
+---
+status: shipped
+shipped_date: 2026-04-12
+shipped_in: c85efa1  # Community Branches Phases 2-5 + cross-universe cluster + user-sim harness
+---
+
 # Community Branches Phase 4 — Eval + Iteration Hooks
 
 **Status:** executable (addendum below converges the directional surface).

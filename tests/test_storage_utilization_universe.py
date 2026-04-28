@@ -60,7 +60,6 @@ def _make_universe(tmp_path: Path, *, log_bytes: int, output_bytes: int) -> tupl
 def test_get_status_activity_log_bytes_nonzero(tmp_path, monkeypatch):
     """get_status must report nonzero bytes for activity_log when the file exists."""
     from workflow.universe_server import get_status
-
     udir, uid = _make_universe(tmp_path, log_bytes=400, output_bytes=100)
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
 
@@ -68,8 +67,8 @@ def test_get_status_activity_log_bytes_nonzero(tmp_path, monkeypatch):
     with (
         patch("workflow.dispatcher.load_dispatcher_config", return_value=_cfg),
         patch("workflow.dispatcher.paid_market_enabled", return_value=False),
-        patch("workflow.universe_server._default_universe", return_value=uid),
-        patch("workflow.universe_server._universe_dir", return_value=udir),
+        patch("workflow.api.helpers._default_universe", return_value=uid),
+        patch("workflow.api.helpers._universe_dir", return_value=udir),
     ):
         raw = get_status(universe_id=uid)
 
@@ -85,7 +84,6 @@ def test_get_status_activity_log_bytes_nonzero(tmp_path, monkeypatch):
 def test_get_status_universe_outputs_bytes_nonzero(tmp_path, monkeypatch):
     """get_status must report nonzero bytes for universe_outputs when files exist."""
     from workflow.universe_server import get_status
-
     udir, uid = _make_universe(tmp_path, log_bytes=10, output_bytes=800)
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
 
@@ -93,8 +91,8 @@ def test_get_status_universe_outputs_bytes_nonzero(tmp_path, monkeypatch):
     with (
         patch("workflow.dispatcher.load_dispatcher_config", return_value=_cfg),
         patch("workflow.dispatcher.paid_market_enabled", return_value=False),
-        patch("workflow.universe_server._default_universe", return_value=uid),
-        patch("workflow.universe_server._universe_dir", return_value=udir),
+        patch("workflow.api.helpers._default_universe", return_value=uid),
+        patch("workflow.api.helpers._universe_dir", return_value=udir),
     ):
         raw = get_status(universe_id=uid)
 
@@ -109,7 +107,6 @@ def test_get_status_universe_outputs_bytes_nonzero(tmp_path, monkeypatch):
 def test_get_status_activity_log_path_points_into_udir(tmp_path, monkeypatch):
     """The reported path for activity_log must be inside udir, not data_dir root."""
     from workflow.universe_server import get_status
-
     udir, uid = _make_universe(tmp_path, log_bytes=50, output_bytes=50)
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
 
@@ -117,8 +114,8 @@ def test_get_status_activity_log_path_points_into_udir(tmp_path, monkeypatch):
     with (
         patch("workflow.dispatcher.load_dispatcher_config", return_value=_cfg),
         patch("workflow.dispatcher.paid_market_enabled", return_value=False),
-        patch("workflow.universe_server._default_universe", return_value=uid),
-        patch("workflow.universe_server._universe_dir", return_value=udir),
+        patch("workflow.api.helpers._default_universe", return_value=uid),
+        patch("workflow.api.helpers._universe_dir", return_value=udir),
     ):
         raw = get_status(universe_id=uid)
 
@@ -131,9 +128,7 @@ def test_get_status_activity_log_path_points_into_udir(tmp_path, monkeypatch):
 
 def test_get_status_missing_log_and_output_still_reports_zero_not_error(tmp_path, monkeypatch):
     """Missing activity.log + output/ must yield bytes=0, not crash."""
-    from workflow.universe_server import get_status
-
-    # Universe dir exists but no activity.log or output/
+    from workflow.universe_server import get_status  # Universe dir exists but no activity.log or output/
     uid = "empty-universe"
     udir = tmp_path / uid
     udir.mkdir()
@@ -143,8 +138,8 @@ def test_get_status_missing_log_and_output_still_reports_zero_not_error(tmp_path
     with (
         patch("workflow.dispatcher.load_dispatcher_config", return_value=_cfg),
         patch("workflow.dispatcher.paid_market_enabled", return_value=False),
-        patch("workflow.universe_server._default_universe", return_value=uid),
-        patch("workflow.universe_server._universe_dir", return_value=udir),
+        patch("workflow.api.helpers._default_universe", return_value=uid),
+        patch("workflow.api.helpers._universe_dir", return_value=udir),
     ):
         raw = get_status(universe_id=uid)
 

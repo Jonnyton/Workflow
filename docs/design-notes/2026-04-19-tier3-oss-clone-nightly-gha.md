@@ -1,5 +1,8 @@
 ---
-status: active
+status: shipped
+shipped_date: 2026-04-19
+shipped_in: a4cb975  # uptime: canary Layer 1 + tier-3 OSS clone nightly GHA
+canonical_in: docs/ops/acceptance-probe-catalog.md PROBE-009
 ---
 
 # Tier-3 OSS Clone Nightly GHA — Spec

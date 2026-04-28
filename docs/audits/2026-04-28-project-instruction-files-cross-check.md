@@ -15,7 +15,7 @@ audience: lead, host (selectively)
 ## TL;DR
 
 Read 4 files (~750 lines total). Found:
-- **2 STALE-BRANDING hits** ("Universe Server" still appearing in AGENTS.md L169 + CLAUDE_LEAD_OPS.md L129 — same retired branding scrubbed from skills + 8 user-facing docs earlier this session per `tests/test_vocabulary_hygiene.py`).
+- **0 open STALE-BRANDING hits** after 2026-04-28 cleanup. Original AGENTS.md + CLAUDE_LEAD_OPS.md hits are resolved; see finding rows #1-2.
 - **1 STALE-EXAMPLE hit** (AGENTS.md L204 cites `author_server.py` as a Files-column example — that file is the in-flight Arc B rename target).
 - **3 COVERAGE GAPS** vs rules in agent memory: no-destructive-git, plugin-mirror-rebuild, audit-staleness — all are repeat-rules across multiple agent memories with no shared codification in AGENTS.md.
 - **1 INTERNAL CONTRADICTION** (low severity): AGENTS.md "Three Living Files" table at L49-53 says STATUS.md ≤4 KB / 60 lines. STATUS.md current (2026-04-28) is at 60 lines but ~5.2 KB — exceeds the byte budget. Unclear which is canonical.
@@ -25,8 +25,8 @@ Read 4 files (~750 lines total). Found:
 
 | # | Severity | File:line | Finding | Recommended action |
 |---|---|---|---|---|
-| 1 | **STALE-BRANDING** | `AGENTS.md:169` | "the installed Universe Server MCP connector at https://tinyassets.io/mcp" — same retired branding per `tests/test_vocabulary_hygiene.py`. The connector's actual `display_name` is "Workflow Server" per `packaging/conway/panel-metadata.json:5` + `packaging/mcpb/manifest.json:4`. | Replace "Universe Server MCP connector" → "Workflow MCP connector" or "the installed Workflow MCP server". Lead approval required (AGENTS.md is a project-instruction file). Same pattern as Task #10 substitution policy. |
-| 2 | **STALE-BRANDING** | `CLAUDE_LEAD_OPS.md:129` | "Restart the Universe Server when new code needs to go live." | Replace "Universe Server" → "Workflow MCP server" or "the daemon". Consistent with the 2 already-scrubbed surfaces (skills/ui-test, scripts/claude_chat.py + always_allow_watch.py from Task #14). |
+| 1 | **RESOLVED 2026-04-28** | `AGENTS.md:169` | Original stale branding ("Universe Server MCP connector") is gone; current text says "installed Workflow MCP connector at `https://tinyassets.io/mcp`". | No action. |
+| 2 | **RESOLVED 2026-04-28** | `CLAUDE_LEAD_OPS.md:129` | Original stale branding ("Restart the Universe Server") is gone; current text says "Restart the Workflow MCP server when new code needs to go live." | No action. |
 | 3 | **STALE-EXAMPLE** | `AGENTS.md:204` | "Be concrete: `api.py, author_server.py` not `backend`." `author_server.py` is the in-flight Arc B rename target — already a `_rename_compat` shim per current state, scheduled for deletion in Phase 5. Using it as a "be-concrete" example teaches future contributors a name that's about to disappear. | Replace example with two stable canonical-tree filenames, e.g. `api.py, daemon_server.py` or `runs.py, market.py`. |
 | 4 | **COVERAGE GAP** | `AGENTS.md` (no section) | No-destructive-git rule is host-explicit standing rule per lead memory `feedback_git_destructive` + dev memory `feedback_no_git_stash_for_diagnostics` + navigator memory `feedback_no_diagnostic_stash` + (just-saved) dev-2 memory. Rule lives in 4 agent memories but NOT in AGENTS.md proper. New contributor / new agent without those memories doesn't see the rule. | Add a 1-line "**No destructive git ops without approval.**" entry under either Hard Rules or a new "Git Discipline" subsection. References agent memory for fuller context. |
 | 5 | **COVERAGE GAP** | `AGENTS.md` (no section) | Plugin-mirror-rebuild rule (`python packaging/claude-plugin/build_plugin.py` after `workflow/*` canonical edits, otherwise pre-commit blocks the commit) lives in dev memory + navigator memory + (just-saved) dev-2 memory. Not codified in AGENTS.md or any shared truth file. | Add a 1-line entry under Testing or a new "Packaging Mirrors" subsection. References `packaging/INDEX.md` for the broader packaging map. |
@@ -60,7 +60,7 @@ Internal consistency: clean. References `docs/audits/2026-04-25-despawn-chain-pr
 
 Situational lead guidance: foundation-vs-feature, daemon-economy-as-foundation, code-before-agents (invariant hooks), name-collision awareness, tool-use-limit-as-architectural-signal, minimum-active-dev-floor, continuous-live-shipping, token-efficiency, user-sim lifecycle.
 
-One stale-branding hit at L129 (finding #2). Otherwise content is current and aligned with agent-memory rules (continuous-dev-queue, dev-always-busy, never-idle).
+Original stale-branding hit at L129 is resolved. Otherwise content is current and aligned with agent-memory rules (continuous-dev-queue, dev-always-busy, never-idle).
 
 ## Cross-file consistency check
 

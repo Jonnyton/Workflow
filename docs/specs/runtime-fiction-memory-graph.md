@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Runtime Fiction Memory Graph Spec
 
 ## Goal

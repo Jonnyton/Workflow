@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-import workflow.universe_server as us
+import workflow.api.universe as us
 
 
 @pytest.fixture

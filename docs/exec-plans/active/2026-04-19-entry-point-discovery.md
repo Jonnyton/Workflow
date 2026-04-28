@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-19
 **Author:** navigator
-**Status:** Pre-staged plan — not implementation. Sequenced as R10 in `docs/exec-plans/active/2026-04-19-refactor-dispatch-sequence.md`. Closes the residual exec-plan ask from codex's `docs/design-notes/2026-04-19-modularity-audit.md` §4 #2 and the navigator's spaghetti-audit hotspot #6.
+**Status:** Pre-staged plan — not implementation. Sequenced as R10 in `docs/exec-plans/completed/2026-04-19-refactor-dispatch-sequence.md`. Closes the residual exec-plan ask from codex's `docs/design-notes/2026-04-19-modularity-audit.md` §4 #2 and the navigator's spaghetti-audit hotspot #6.
 **Gating:** Depends on R8 (Author→Daemon Phase 5 — shim deletion + flag flip), so the alias-injection branch in `discovery.py:65-66` can disappear simultaneously.
 **Effort:** ~1 dev-day (single contributor; no parallelism opportunity).
 
@@ -168,7 +168,7 @@ fallback (WORKFLOW_DISCOVERY_DEV_FALLBACK env). Removes rename-compat alias
 injection from discover_domains() — alias remains active at the import-shim
 layer (workflow/_rename_compat.py), not the discovery contract.
 
-R10 of docs/exec-plans/active/2026-04-19-refactor-dispatch-sequence.md.
+R10 of docs/exec-plans/completed/2026-04-19-refactor-dispatch-sequence.md.
 Closes docs/design-notes/2026-04-19-modularity-audit.md §4 ask #2.
 ```
 

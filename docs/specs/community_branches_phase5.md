@@ -1,3 +1,9 @@
+---
+status: shipped
+shipped_date: 2026-04-12
+shipped_in: c85efa1  # Community Branches Phases 2-5 + cross-universe cluster + user-sim harness
+---
+
 # Community Branches Phase 5 — Goal as First-Class Shared Primitive
 
 **Status:** executable — dev-2 draft + planner-approved addendum below.

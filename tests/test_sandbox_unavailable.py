@@ -219,7 +219,7 @@ class TestNodeDefinitionRequiresSandbox:
 
 class TestExtBranchValidateSandboxWarnings:
     def _call_validate(self, branch_dict: dict, bwrap_status: dict) -> dict:
-        from workflow.universe_server import _ext_branch_validate
+        from workflow.api.branches import _ext_branch_validate
 
         with patch("workflow.author_server.get_branch_definition", return_value=branch_dict):
             with patch("workflow.providers.base.get_sandbox_status", return_value=bwrap_status):
@@ -255,14 +255,14 @@ class TestExtBranchValidateSandboxWarnings:
         assert result["sandbox_warnings"] == []
 
     def test_missing_branch_returns_error(self):
-        from workflow.universe_server import _ext_branch_validate
+        from workflow.api.branches import _ext_branch_validate
 
         with patch("workflow.author_server.get_branch_definition", side_effect=KeyError("b1")):
             result = json.loads(_ext_branch_validate({"branch_def_id": "b1"}))
         assert "error" in result
 
     def test_missing_branch_def_id_returns_error(self):
-        from workflow.universe_server import _ext_branch_validate
+        from workflow.api.branches import _ext_branch_validate
 
         result = json.loads(_ext_branch_validate({}))
         assert "error" in result
@@ -274,7 +274,7 @@ class TestExtBranchValidateSandboxWarnings:
 
 class TestExtBranchListSandboxFilter:
     def _call_list(self, rows: list[dict], rs_filter: str = "") -> dict:
-        from workflow.universe_server import _ext_branch_list
+        from workflow.api.branches import _ext_branch_list
 
         with patch("workflow.author_server.list_branch_definitions", return_value=rows):
             kwargs: dict = {}
@@ -335,7 +335,6 @@ class TestExtBranchListSandboxFilter:
 class TestGetStatusSandboxStatus:
     def test_sandbox_status_key_present(self):
         from workflow.universe_server import get_status
-
         fake_status = {"bwrap_available": False, "reason": "test host"}
         with patch("workflow.providers.base.get_sandbox_status", return_value=fake_status):
             result = json.loads(get_status())
@@ -344,7 +343,6 @@ class TestGetStatusSandboxStatus:
 
     def test_sandbox_status_survives_probe_exception(self):
         from workflow.universe_server import get_status
-
         _target = "workflow.providers.base.get_sandbox_status"
         with patch(_target, side_effect=RuntimeError("probe fail")):
             result = json.loads(get_status())

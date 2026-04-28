@@ -1,5 +1,6 @@
 ---
 status: superseded
+superseded_by: docs/design-notes/2026-04-25-self-evolving-platform-vision-v2.md
 ---
 
 # Self-Evolving Platform Vision (v1 outline)

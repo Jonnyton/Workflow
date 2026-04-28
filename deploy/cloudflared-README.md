@@ -3,11 +3,11 @@
 Self-host migration Row C per
 `docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md`.
 
-The Workflow MCP daemon binds `0.0.0.0:8001` locally. To expose it at a
-public hostname (e.g. `mcp.tinyassets.io/mcp`) without opening a port
-through the host's NAT, run a Cloudflare tunnel that connects outbound
-from the container to Cloudflare's edge and proxies inbound requests
-back.
+The Workflow MCP daemon binds `0.0.0.0:8001` locally. To expose it
+through the canonical public endpoint (`https://tinyassets.io/mcp`)
+without opening a port through the host's NAT, run a Cloudflare tunnel
+that connects outbound from the container to Cloudflare's edge and
+proxies Worker subrequests back to the daemon.
 
 This directory holds the provider-agnostic tunnel artifacts:
 
@@ -29,10 +29,11 @@ tunnel — mixing them conflicts on ingress ownership.
 ### Shape A — Token-based (dashboard-managed ingress)
 
 **Use when:** you want to manage ingress rules via the Cloudflare Zero
-Trust dashboard UI. Production 2026-04-19 is shape A — the live tunnel
-`universe-server` (ID `b59f3cd9-a47a-4c97-80e4-7826513de630`) routes
-`mcp.tinyassets.io/*` → `http://localhost:8001` via a dashboard-managed
-Public Hostname rule.
+Trust dashboard UI. The 2026-04-19 live tunnel used shape A: a
+dashboard-managed Public Hostname rule routed the tunnel origin
+`mcp.tinyassets.io/*` → `http://localhost:8001`. After the single-entry
+cutover, that origin is Access-gated and is reached publicly only
+through the Worker at `https://tinyassets.io/mcp`.
 
 **Setup:**
 
@@ -40,7 +41,8 @@ Public Hostname rule.
 2. Pick a name (e.g. `workflow-daemon-prod`). Dashboard issues a token;
    copy it. Never commit the token to the repo.
 3. Under the new tunnel's Public Hostnames tab, add:
-   - Hostname: your public URL (e.g. `mcp.tinyassets.io`)
+   - Hostname: your tunnel-origin hostname (for example, `mcp.tinyassets.io`;
+     not the user-facing connector URL)
    - Path: `*`  (catch-all under the hostname; MCP lives at `/mcp`)
    - Service: `http://localhost:8001`
 4. Verify DNS: `dig +short <hostname>` — Cloudflare auto-adds the CNAME.
@@ -89,7 +91,7 @@ reviewable at commit time.
 ```bash
 export TUNNEL_ID="<UUID-from-step-2>"
 export TUNNEL_CREDENTIALS_FILE="$HOME/.cloudflared/${TUNNEL_ID}.json"
-export WORKFLOW_PUBLIC_HOSTNAME="mcp.tinyassets.io"    # prefer this over HOSTNAME
+export WORKFLOW_PUBLIC_HOSTNAME="mcp.tinyassets.io"    # tunnel origin, not public connector URL
 export ORIGIN_PORT=8001                                # optional; default 8001
 
 ./scripts/run-tunnel.sh
@@ -148,7 +150,7 @@ TUNNEL_TOKEN="eyJhIjoi..." scripts/run-tunnel.sh
 ```
 
 Expect log output `Registered connIndex=0 connection=…` within 2-5s,
-then the public URL serves the local daemon.
+then the configured tunnel origin can reach the local daemon.
 
 Shape B — after `cloudflared tunnel create` completes:
 
@@ -159,13 +161,20 @@ HOSTNAME=test.example.com \
   scripts/run-tunnel.sh
 ```
 
-In both cases, verify the public endpoint from another host:
+For production, verify the canonical public endpoint from another host:
+
+```bash
+python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --verbose
+```
+
+For a throwaway non-Access-gated hostname, you can probe that hostname
+directly:
 
 ```bash
 python scripts/mcp_public_canary.py --url https://<hostname>/mcp --verbose
 ```
 
-Exit 0 = tunnel is serving the daemon correctly.
+Exit 0 = the route under test is serving the daemon correctly.
 
 ---
 

@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Load-Test Harness Plan — Track J (Uptime Scale Proof)
 
 **Date:** 2026-04-18

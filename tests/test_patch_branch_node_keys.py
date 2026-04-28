@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from workflow.api.branches import _coerce_node_keys
+
 
 @pytest.fixture
 def ext_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -98,62 +100,62 @@ class TestCoerceNodeKeys:
 
     def test_none_returns_empty(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys(None, "input_keys")
+        keys, err = _coerce_node_keys(None, "input_keys")
         assert keys == []
         assert err == ""
 
     def test_list_of_strings(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys(["a", " b ", "c"], "input_keys")
+        keys, err = _coerce_node_keys(["a", " b ", "c"], "input_keys")
         assert keys == ["a", "b", "c"]
         assert err == ""
 
     def test_list_with_empty_entry_rejects(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys(["a", "", "c"], "input_keys")
+        keys, err = _coerce_node_keys(["a", "", "c"], "input_keys")
         assert keys == []
         assert "input_keys[1]" in err and "empty" in err
 
     def test_list_with_non_string_rejects(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys(["a", 3], "input_keys")
+        keys, err = _coerce_node_keys(["a", 3], "input_keys")
         assert keys == []
         assert "input_keys[1]" in err and "string" in err
 
     def test_json_encoded_list(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys('["a","b","c"]', "input_keys")
+        keys, err = _coerce_node_keys('["a","b","c"]', "input_keys")
         assert keys == ["a", "b", "c"]
         assert err == ""
 
     def test_bare_token_single_key(self, ext_env):
         """The original bug: 'node.output' used to char-split."""
         us, _ = ext_env
-        keys, err = us._coerce_node_keys("node.output", "input_keys")
+        keys, err = _coerce_node_keys("node.output", "input_keys")
         assert keys == ["node.output"]
         assert err == ""
 
     def test_csv_string(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys("a, b ,c", "input_keys")
+        keys, err = _coerce_node_keys("a, b ,c", "input_keys")
         assert keys == ["a", "b", "c"]
         assert err == ""
 
     def test_empty_string_returns_empty(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys("   ", "input_keys")
+        keys, err = _coerce_node_keys("   ", "input_keys")
         assert keys == []
         assert err == ""
 
     def test_invalid_type_rejects(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys(42, "input_keys")
+        keys, err = _coerce_node_keys(42, "input_keys")
         assert keys == []
         assert "must be a list or string" in err
 
     def test_json_non_list_rejects(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys('{"a":1}', "input_keys")
+        keys, err = _coerce_node_keys('{"a":1}', "input_keys")
         # Starts with { so falls into CSV path, not JSON path — "a":1 is
         # a single bare token. This is documented helper behavior: only
         # strings starting with '[' trigger JSON parsing.
@@ -162,7 +164,7 @@ class TestCoerceNodeKeys:
 
     def test_json_bracketed_but_invalid_rejects(self, ext_env):
         us, _ = ext_env
-        keys, err = us._coerce_node_keys("[not json", "input_keys")
+        keys, err = _coerce_node_keys("[not json", "input_keys")
         assert keys == []
         assert "input_keys" in err and "JSON" in err
 

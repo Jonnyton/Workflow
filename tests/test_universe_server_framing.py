@@ -14,8 +14,6 @@ from __future__ import annotations
 import asyncio
 
 from workflow.universe_server import mcp
-
-
 def _list_tools():
     return asyncio.run(mcp.list_tools(run_middleware=False))
 
@@ -133,7 +131,7 @@ def test_control_station_prompt_carries_the_rules() -> None:
     to sentence-case + dropped 'Silently simulating breaks user trust'
     distinctive lexical fingerprint).
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Broad framing.
     assert "workflow builder" in text or "workflow" in text
@@ -168,7 +166,7 @@ def test_control_station_prompts_list_first_for_query_intent() -> None:
     phrase enumeration moved from extensions tool description to
     control_station prompt's canonical Intent-Disambiguation section.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # list_branches is the query-intent routing target.
     assert "list_branches" in text
@@ -207,7 +205,7 @@ def test_branch_design_guide_prompt_covers_branch_authoring() -> None:
     guidance is light content in the guide; the guide's primary role is
     teaching the branch-authoring contract.
     """
-    from workflow.universe_server import _BRANCH_DESIGN_GUIDE
+    from workflow.api.branches import _BRANCH_DESIGN_GUIDE
     text = _BRANCH_DESIGN_GUIDE.lower()
     # Guide covers branches as the core concept.
     assert "branch" in text
@@ -225,7 +223,7 @@ def test_control_station_pins_register_explicit_ask_rule() -> None:
     (explicit-ask / route-queries-to-list) lives where clients load it
     on orient, not in tool-metadata space.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Intent-disambiguation section carries the rule.
     assert "intent disambiguation" in text or "explicit user" in text
@@ -249,7 +247,7 @@ def test_control_station_pins_build_branch_explicit_ask_rule() -> None:
     consent rule moved to control_station prompt alongside register's.
     Same canonical site — query-intent routes to list_branches.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     assert "build_branch" in text or "build" in text
     # list_branches as the query-intent alternative.
@@ -278,7 +276,7 @@ def test_control_station_prompt_has_cross_universe_section() -> None:
     across universes. Named section so a future reword can't silently
     drop the whole block.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Named section header.
     assert "cross-universe" in text
@@ -295,7 +293,7 @@ def test_control_station_prompt_has_intent_disambiguation() -> None:
     picking a tool. Query / Build / Run must each have a clear routing
     rule, and ambiguity must route to ASK, not write.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     assert "intent disambiguation" in text
     # Each intent class must be present with at least one cue phrase.
@@ -327,7 +325,7 @@ def test_control_station_prompt_has_rule_7_assume_workflow() -> None:
     rather than present a disambiguation picker. Rule 7 in control_station
     hard rules.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Aggressive-assume directive present.
     assert "assume workflow" in text or "aggressive assumption is a feature" in text
@@ -348,7 +346,7 @@ def test_control_station_prompt_has_rule_8_no_fabrication() -> None:
     """LIVE-F2 (Maya Yardi BLOCKER): chatbot must not fabricate prior-
     conversation content. Rule 8 in control_station hard rules.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Core fabrication prohibition.
     assert "never fabricate prior-conversation content" in text \
@@ -363,7 +361,7 @@ def test_control_station_prompt_has_rule_9_user_vocabulary() -> None:
     """LIVE-F3 (Maya): chatbot must speak in the user's vocabulary, not
     engine-internal terms. Rule 9 in control_station hard rules.
     """
-    from workflow.universe_server import _CONTROL_STATION_PROMPT
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
     text = _CONTROL_STATION_PROMPT.lower()
     # Core user-vocabulary directive.
     assert "speak in the user's vocabulary" in text

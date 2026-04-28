@@ -4,9 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
+from workflow.api.runs import (
+    _classify_run_error,
+    _classify_run_outcome_error,
+)
 from workflow.graph_compiler import EmptyResponseError
 from workflow.runs import RunOutcome
-from workflow.universe_server import _classify_run_error, _classify_run_outcome_error
 
 
 class TestClassifyRunError:
@@ -101,7 +104,7 @@ class TestRunBranchTaxonomyIntegration:
     """Integration tests: mock execute_branch_async to raise, verify MCP response shape."""
 
     def _call_run_branch(self, exc_to_raise):
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         branch_dict = {
             "branch_def_id": "b1", "name": "Test", "description": "",
@@ -119,10 +122,10 @@ class TestRunBranchTaxonomyIntegration:
 
         with (
             patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
-            patch("workflow.universe_server._base_path", return_value="/fake"),
-            patch("workflow.universe_server._current_actor", return_value="tester"),
+            patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
-            patch("workflow.universe_server._ensure_runs_recovery"),
+            patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
+            patch("workflow.api.runs._ensure_runs_recovery"),
             patch("workflow.branches.BranchDefinition.validate", return_value=[]),
             patch("workflow.runs.execute_branch_async", side_effect=raise_exc),
         ):
@@ -267,14 +270,14 @@ class TestAsyncRunOutcomeEnrichment:
     }
 
     def _call_run_branch_with_outcome(self, outcome: RunOutcome) -> dict:
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         with (
             patch("workflow.daemon_server.get_branch_definition", return_value=self._BRANCH_DICT),
-            patch("workflow.universe_server._base_path", return_value="/fake"),
-            patch("workflow.universe_server._current_actor", return_value="tester"),
+            patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
-            patch("workflow.universe_server._ensure_runs_recovery"),
+            patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
+            patch("workflow.api.runs._ensure_runs_recovery"),
             patch("workflow.branches.BranchDefinition.validate", return_value=[]),
             patch("workflow.runs.execute_branch_async", return_value=outcome),
         ):
@@ -322,7 +325,7 @@ class TestComposeRunSnapshotEnrichment:
     """Test that _compose_run_snapshot enriches failed runs with failure_class/suggested_action."""
 
     def _make_snapshot(self, status: str, error: str) -> dict:
-        from workflow.universe_server import _compose_run_snapshot
+        from workflow.api.runs import _compose_run_snapshot
 
         run_record = {
             "run_id": "r1",
@@ -336,7 +339,7 @@ class TestComposeRunSnapshotEnrichment:
         with (
             patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")),
             patch("workflow.runs.build_node_status_map", return_value=[]),
-            patch("workflow.universe_server._run_mermaid_from_events", return_value=""),
+            patch("workflow.api.runs._run_mermaid_from_events", return_value=""),
         ):
             return _compose_run_snapshot(run_record, [])
 
@@ -498,14 +501,14 @@ class TestActionableByOnAsyncOutcomePath:
     }
 
     def _call(self, outcome):
-        from workflow.universe_server import _action_run_branch
+        from workflow.api.runs import _action_run_branch
 
         with (
             patch("workflow.daemon_server.get_branch_definition", return_value=self._BRANCH_DICT),
-            patch("workflow.universe_server._base_path", return_value="/fake"),
-            patch("workflow.universe_server._current_actor", return_value="tester"),
+            patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
-            patch("workflow.universe_server._ensure_runs_recovery"),
+            patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
+            patch("workflow.api.runs._ensure_runs_recovery"),
             patch("workflow.branches.BranchDefinition.validate", return_value=[]),
             patch("workflow.runs.execute_branch_async", return_value=outcome),
         ):
@@ -560,7 +563,7 @@ class TestActionableByOnGetRunSnapshot:
     """`_compose_run_snapshot` includes actionable_by — what `get_run` actually returns."""
 
     def _make_snapshot(self, status, error):
-        from workflow.universe_server import _compose_run_snapshot
+        from workflow.api.runs import _compose_run_snapshot
 
         run_record = {
             "run_id": "r1", "branch_def_id": "b1", "status": status,
@@ -570,7 +573,7 @@ class TestActionableByOnGetRunSnapshot:
         with (
             patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")),
             patch("workflow.runs.build_node_status_map", return_value=[]),
-            patch("workflow.universe_server._run_mermaid_from_events", return_value=""),
+            patch("workflow.api.runs._run_mermaid_from_events", return_value=""),
         ):
             return _compose_run_snapshot(run_record, [])
 

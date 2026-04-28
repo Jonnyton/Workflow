@@ -22,7 +22,7 @@ All commands default to `https://tinyassets.io/mcp`.
 Override with `--url`:
 
 ```bash
-workflow-probe --url https://mcp.tinyassets.io/mcp status
+workflow-probe --url https://tinyassets.io/mcp status
 ```
 
 ## Subcommands

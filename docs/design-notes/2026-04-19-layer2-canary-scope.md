@@ -1,5 +1,6 @@
 ---
-status: active
+status: superseded
+superseded_by: docs/design-notes/2026-04-19-uptime-canary-layered.md
 ---
 
 # Layer-2 Canary — Scoping Doc
@@ -245,3 +246,49 @@ One change: add a Layer-2-specific alarm path that only fires after 3+ Layer-2 r
 - **Next commit:** 4 files, ~300 LOC total. Not in this commit.
 
 Would have caught today's P0 in ≤3 hours with distinct "connector regression" signal rather than infra-outage signal.
+
+---
+
+## §Wiring runbook (added 2026-04-28 post code-fix)
+
+The original `_real_browser_probe` referenced two symbols that don't exist (`lead_browser.navigate` + `claude_chat.send_and_wait`). 2026-04-28 fix reimplements the probe as a `claude_chat.py ask` subprocess + trace-block parser. This section pins down the API contract the live probe depends on so future refactors of `claude_chat.py` or `lead_browser.py` surface the break before production.
+
+### API contract `_real_browser_probe` depends on
+
+| Module | Symbol | Shape | Used for |
+|---|---|---|---|
+| `scripts/claude_chat.py` | `cmd_ask(message)` (CLI subcommand `ask <message>`) | Subprocess; exit 0 on success, non-zero on failure (3 = input not found, 2 = playwright missing, 1 = generic) | Sends probe message to live Claude.ai chat |
+| `scripts/claude_chat.py` | `TRACE` constant + `_append_trace(kind, body)` writer | Writes `## [<ts>] CLAUDE -> USER_SIM\n<body>` blocks to `output/claude_chat_trace.md` | Probe parses last assistant block as response |
+| `scripts/uptime_canary_layer2.py` | `_PROBE_SUBPROCESS_TIMEOUT_S` (default 240s) | int seconds | Subprocess hard cap; exceeds Layer-2 SOFT_YELLOW (150s) but bounded |
+| `scripts/browser_lock.py` | `acquire(owner, intent)` / `release(owner)` / `read()` / `is_held_by(owner)` | Yields cooperatively; never force | Single-tab discipline; SKIP on contention |
+
+The 2026-04-27 incident (`module 'lead_browser' has no attribute 'navigate'`) happened because the original implementation referenced an API that never existed and unit tests bypassed `_real_browser_probe` via `_probe_fn` injection. The post-fix integration tests at `tests/test_uptime_canary_layer2.py::test_real_browser_probe_*` exercise the production path through stubbed subprocesses, plus three API-contract regression tests pin the symbols above. When `claude_chat.py` refactors, those contract tests will fail before CI, surfacing the break at commit time rather than at the next 5-min canary run.
+
+### Host wiring runbook
+
+After `python scripts/uptime_canary_layer2.py --once` returns 0 (GREEN) or 14 (SKIP, browser lock held) — NOT 13 (RED browser-load) — wire Task Scheduler:
+
+```powershell
+# Run as Administrator from C:\Users\Jonathan\Projects\Workflow
+schtasks /Create `
+  /TN "Workflow-Canary-L2" `
+  /TR "python C:\Users\Jonathan\Projects\Workflow\scripts\uptime_canary_layer2.py" `
+  /SC HOURLY `
+  /ST 00:30 `
+  /F
+```
+
+Verify firing:
+
+```powershell
+schtasks /Query /TN "Workflow-Canary-L2" /V /FO LIST
+# Tail .agents/uptime.log for `layer=2` entries
+```
+
+### Auth-expired exit code 15 — currently unreachable
+
+The exit-code table includes `15 = persona auth expired / login loop`. As of 2026-04-28, `claude_chat.py` does not surface a distinct auth-expired signal — login-loop conditions present as `cmd_ask` exit 3 (input not found) plus a stderr dump. The `_AuthExpiredError` exception in `uptime_canary_layer2.py` is reserved for a future claude_chat refactor that emits a dedicated exit code or stderr pattern. Until then, auth-expired conditions surface as exit 13 RED with a `claude_chat exit=3: ...` reason — informative enough to triage, but not auto-distinguished from generic browser-load failure.
+
+### Cross-host caveat (unchanged)
+
+Task Scheduler entry binds Layer-2 visibility to the host machine's availability. CI (GHA) runs the script every 5 min and exits 14 SKIP (no browser); CI green ≠ host-Layer-2 green. A long-term host-independent Layer-2 (Browserbase, hosted Playwright with persistent cookies) is a separate follow-on tracked in `docs/audits/2026-04-27-probe-catalog-state.md` §3.

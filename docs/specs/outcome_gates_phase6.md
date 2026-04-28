@@ -1,3 +1,7 @@
+---
+status: active
+---
+
 # Phase 6 — Outcome Gates
 
 **Status:** spec-first draft — planner-authored, awaiting dev claim.

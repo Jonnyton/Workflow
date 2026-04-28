@@ -1,5 +1,6 @@
 ---
 status: shipped
+shipped_date: 2026-04-22
 ---
 
 # Secrets vault integration
