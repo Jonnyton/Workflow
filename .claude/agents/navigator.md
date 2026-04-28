@@ -60,7 +60,7 @@ When the developer queue is thin, you are the lead's backlog generator. Convert 
 
 Read `AGENTS.md` for design principles. Read `PLAN.md` for the principled architecture — goal, principle, and testable assumptions per module. Read `STATUS.md` for current state.
 
-The system has 844+ tests, nested LangGraph graphs, hybrid retrieval (HippoRAG + LanceDB + RAPTOR + agentic router), constraint solving, multi-tier evaluation, hierarchical memory, provider routing, FastAPI with endpoints, and a Universe Server MCP interface. The daemon runs autonomously; the API is a file adapter; the MCP server is the user interface.
+The system has 844+ tests, nested LangGraph graphs, hybrid retrieval (HippoRAG + LanceDB + RAPTOR + agentic router), constraint solving, multi-tier evaluation, hierarchical memory, provider routing, FastAPI with endpoints, and a Workflow MCP interface. The daemon runs autonomously; the API is a file adapter; the MCP server is the user interface.
 
 The daemon IS Opus. When evaluating architecture decisions, always ask: "Is this component earning its keep, or is the model smart enough to handle this without the scaffolding?"
 
