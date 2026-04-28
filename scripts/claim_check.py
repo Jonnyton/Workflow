@@ -9,11 +9,16 @@ Usage
     python scripts/claim_check.py
     python scripts/claim_check.py --provider codex
     python scripts/claim_check.py --provider codex-gpt5-desktop
+    python scripts/claim_check.py --provider codex-gpt5-desktop --check-files scripts/claim_check.py
+    python scripts/claim_check.py --provider codex-gpt5-desktop \
+        --check-files "workflow/api/runs.py, tests/"
     python scripts/claim_check.py --provider cursor --reap
     python scripts/claim_check.py --provider cursor-gpt55 --reap
 
 Output sections
 ---------------
+- PROSPECTIVE FILE CHECK: optional `--check-files` report showing whether
+  a proposed Files cell overlaps another provider's active claim.
 - CLAIMABLE: rows where status=pending, all Depends are done, and Files
   write-set does not overlap any in-flight or claimed row.
 - BLOCKED: pending rows whose Depends are not yet done.
@@ -156,6 +161,16 @@ def _split_files(raw: str) -> list[str]:
     cleaned = raw.replace("`", "")
     parts = re.split(r"[,;]", cleaned)
     return [p.strip() for p in parts if p.strip() and p.strip() != "-"]
+
+
+def split_cli_files(raw_parts: list[str] | None) -> list[str] | None:
+    """Split one or more CLI --check-files arguments into Files-cell atoms."""
+    if raw_parts is None:
+        return None
+    atoms: list[str] = []
+    for raw in raw_parts:
+        atoms.extend(_split_files(raw))
+    return atoms
 
 
 def files_overlap(a: list[str], b: list[str]) -> list[str]:
@@ -320,6 +335,25 @@ def classify(
     return claimable, blocked, in_flight, host_owned
 
 
+def prospective_conflicts(
+    proposed_files: list[str],
+    in_flight: list[Row],
+    provider: str,
+) -> tuple[list[tuple[Row, list[str]]], list[tuple[Row, list[str]]]]:
+    """Return (other_provider_conflicts, own_claim_overlaps)."""
+    conflicts: list[tuple[Row, list[str]]] = []
+    own_overlaps: list[tuple[Row, list[str]]] = []
+    for row in in_flight:
+        overlap = files_overlap(proposed_files, row.files)
+        if not overlap:
+            continue
+        if row.claimer == provider:
+            own_overlaps.append((row, overlap))
+        else:
+            conflicts.append((row, overlap))
+    return conflicts, own_overlaps
+
+
 def render(
     provider: str,
     claimable: list[Row],
@@ -328,10 +362,14 @@ def render(
     host_owned: list[Row],
     stale: list[tuple[Row, str]],
     show_reap: bool,
+    prospective_files: list[str] | None = None,
 ) -> str:
     out: list[str] = []
     out.append(f"# claim_check — provider: {provider}")
     out.append("")
+    if prospective_files is not None:
+        out.extend(render_prospective_check(provider, prospective_files, in_flight))
+        out.append("")
     out.append(f"## CLAIMABLE ({len(claimable)})")
     if not claimable:
         out.append("- (none — see BLOCKED below or wait for in-flight to land)")
@@ -377,6 +415,35 @@ def render(
     return "\n".join(out)
 
 
+def render_prospective_check(
+    provider: str, proposed_files: list[str], in_flight: list[Row]
+) -> list[str]:
+    out: list[str] = []
+    out.append("## PROSPECTIVE FILE CHECK")
+    if not proposed_files:
+        out.append(
+            "- No proposed files parsed. Pass comma-separated Files atoms after --check-files."
+        )
+        return out
+
+    out.append(f"- Proposed Files: {', '.join(proposed_files)}")
+    conflicts, own_overlaps = prospective_conflicts(proposed_files, in_flight, provider)
+    if not conflicts:
+        out.append("- CLEAR: no overlap with another provider's claimed/in-flight Files.")
+    else:
+        out.append("- BLOCKED: overlaps another provider's claimed/in-flight Files.")
+        for row, hits in conflicts:
+            claim_label = row.claimer or "in-flight"
+            out.append(f"    L{row.line_no}: claimed:{claim_label} overlaps {', '.join(hits)}")
+            out.append(f"    Task: {row.task_label}")
+
+    if own_overlaps:
+        out.append("- Own active claim overlap:")
+        for row, hits in own_overlaps:
+            out.append(f"    L{row.line_no}: {', '.join(hits)} ({row.task_label})")
+    return out
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Multi-provider claim helper for STATUS.md.")
     ap.add_argument(
@@ -389,6 +456,14 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="Show suggested STATUS.md edits to reap stale claims.",
     )
+    ap.add_argument(
+        "--check-files",
+        nargs="+",
+        help=(
+            "Prospective Files-cell atoms to check against active claims. "
+            "Accepts one or more arguments; each may be comma- or semicolon-separated."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if not STATUS_PATH.exists():
@@ -398,7 +473,19 @@ def main(argv: list[str]) -> int:
     rows = parse_status()
     claimable, blocked, in_flight, host_owned = classify(rows, args.provider)
     stale = find_stale_claims(rows)
-    print(render(args.provider, claimable, blocked, in_flight, host_owned, stale, args.reap))
+    prospective_files = split_cli_files(args.check_files)
+    print(
+        render(
+            args.provider,
+            claimable,
+            blocked,
+            in_flight,
+            host_owned,
+            stale,
+            args.reap,
+            prospective_files,
+        )
+    )
     return 0
 
 
