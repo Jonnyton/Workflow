@@ -1,23 +1,23 @@
-"""Phase E tier-aware BranchTask dispatcher.
+"""Tier-aware BranchTask dispatcher.
 
 Stateless selection function over ``branch_tasks.json``. Called
 exactly twice per ``_run_graph`` invocation — once at daemon startup
 (before first graph compile) and once at each cycle boundary (between
-wrapper returns). No internal timer, no continuous polling loop
-(preflight §4.1 #2).
+wrapper returns). No internal timer, no continuous polling loop.
 
-Priority function in Phase E is the minimum viable subset of memo §4.3:
+Priority scoring starts with the minimum viable tier model:
 
     score = tier_weight[trigger_source]
           + recency_decay(queued_at)
           + user_boost(priority_weight)
 
 Deferred terms (``bid``, ``goal_affinity``, ``cost_penalty``) are
-zero. Their coefficients sit in :class:`DispatcherConfig` so Phase
-F/G can wire them in without re-shaping ``score_task``.
+zero. Their coefficients sit in :class:`DispatcherConfig` so later
+market and goal-affinity work can wire them in without re-shaping
+``score_task``.
 
-R9 — dispatcher reads the queue only. Producers run inside the
-graph's review gates; the dispatcher does not invoke them.
+The dispatcher reads the queue only. Producers run inside the graph's
+review gates; the dispatcher does not invoke them.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from workflow.branch_tasks import BranchTask, append_task, read_queue
 
 logger = logging.getLogger(__name__)
 
-# Default tier weights per preflight §4.1 #2 + §4.3 Q2.
+# Default tier weights for the dispatcher scoring contract.
 _DEFAULT_TIER_WEIGHTS: dict[str, float] = {
     "host_request": 100.0,
     "owner_queued": 80.0,
@@ -75,7 +75,7 @@ class DispatcherConfig:
         return False
 
     def tier_status_map(self) -> dict[str, str]:
-        """Self-documenting status per tier (R11)."""
+        """Self-documenting status per tier."""
         return {
             "host_request": "live",
             "user_request": (
@@ -83,7 +83,7 @@ class DispatcherConfig:
             ),
             "owner_queued": "live",
             "goal_pool": (
-                "live" if self.accept_goal_pool else "stubbed (Phase F)"
+                "live" if self.accept_goal_pool else "stubbed"
             ),
             "paid_bid": (
                 "live" if self.accept_paid_bids else "disabled"
@@ -101,7 +101,7 @@ def dispatcher_enabled() -> bool:
 
 
 def paid_market_enabled() -> bool:
-    """Read ``WORKFLOW_PAID_MARKET``. Default OFF. Phase G flag."""
+    """Read ``WORKFLOW_PAID_MARKET``. Default OFF."""
     value = os.environ.get("WORKFLOW_PAID_MARKET", "off")
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
@@ -150,10 +150,10 @@ def score_task(
     now_iso: str,
     config: DispatcherConfig,
 ) -> float:
-    """Deterministic Phase E score.
+    """Deterministic BranchTask priority score.
 
     ``tier_weight + recency_decay + user_boost``. Other coefficients
-    multiply zero in v1 but remain wired so Phase F/G slot in.
+    multiply zero in v1 but remain wired for later market and goal terms.
     """
     tier = config.tier_weights.get(task.trigger_source, 0.0)
 
@@ -167,8 +167,8 @@ def score_task(
 
     boost = max(0.0, float(task.priority_weight))
 
-    # Phase G: paid-bid term, capped to prevent a high bid from
-    # swamping the host_request tier (preflight R4).
+    # Paid-bid term, capped to prevent a high bid from swamping the
+    # host_request tier.
     raw_bid_term = config.bid_coefficient * float(task.bid)
     bid_term = min(raw_bid_term, config.bid_term_cap)
     goal_term = config.goal_affinity_coefficient  # coefficient only; no signal
@@ -183,14 +183,14 @@ def run_branch_task_producers_into_queue(
     subscribed_goals: list[str],
     producer_config: dict | None = None,
 ) -> int:
-    """Phase F: invoke every registered ``BranchTaskProducer`` and
+    """Invoke every registered ``BranchTaskProducer`` and
     append emitted tasks into ``branch_tasks.json``.
 
     Called at the dispatcher boundary (cycle boundary), BEFORE
     ``select_next_task``. Idempotency is enforced at the queue
     level: a task whose ``branch_task_id`` is already present is
-    NOT appended again (dedupe-on-append semantics preserve Phase F
-    invariant 4).
+    NOT appended again (dedupe-on-append semantics preserve the producer
+    idempotency invariant).
 
     Returns the count appended.
     """
@@ -253,7 +253,7 @@ def select_next_task(
             continue
         if not config.tier_enabled(task.trigger_source):
             continue
-        # Phase G LLM-type filter. Both sides non-empty and non-matching
+        # LLM-type filter. Both sides non-empty and non-matching
         # → skip. Empty ``served_llm_type`` means "serve all types";
         # empty ``task.required_llm_type`` means "any daemon welcome".
         if (
@@ -280,12 +280,12 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
     """Read ``<universe>/dispatcher_config.yaml``; defaults if missing.
 
     YAML keys mirror :class:`DispatcherConfig` field names. Missing
-    file or missing keys silently fall back to defaults — the config
-    is optional (preflight §4.1 #6).
+    file or missing keys silently fall back to defaults; the config is
+    optional.
     """
     cfg_path = Path(universe_path) / "dispatcher_config.yaml"
     if not cfg_path.exists():
-        # Phase G: flag-on + no config → paid market defaults enabled.
+        # Flag-on + no config means paid market defaults enabled.
         if paid_market_enabled():
             return DispatcherConfig(
                 bid_coefficient=1.0, accept_paid_bids=True,
@@ -329,7 +329,7 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
                 continue
         kwargs["tier_weights"] = weights
 
-    # Phase G: if the paid-market flag is on and the YAML didn't pin
+    # If the paid-market flag is on and the YAML didn't pin
     # values, default ``bid_coefficient`` to 1.0 and enable paid_bid
     # acceptance. Explicit YAML values win — allows ``bid_coefficient: 0.0``
     # to keep paid scoring neutral even under flag-on.

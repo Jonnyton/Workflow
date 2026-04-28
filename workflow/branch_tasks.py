@@ -1,19 +1,18 @@
-"""Phase E durable BranchTask queue.
+"""Durable BranchTask queue.
 
 A BranchTask is a queued *execution intent*: "run branch X against
 universe Y with inputs Z." Distinct from WorkTargets, which are
 content (the scene, the canon repair, the plan). One WorkTarget may
-spawn zero or many BranchTasks. See preflight §R2 and invariants
-§4.3 #2.
+spawn zero or many BranchTasks.
 
 The queue is per-universe (``<universe>/branch_tasks.json``) — sibling
 to ``work_targets.json``. All mutations go through a sidecar ``.lock``
 file so concurrent ``submit_request`` + daemon-claim + mark-status
 paths can't clobber one another. This is the codebase's first
-file-lock primitive; the pattern is also exercised by the Phase E
+file-lock primitive; the pattern is also exercised by the queue
 race tests.
 
-Startup GC (invariant §4.3 #10) moves terminal tasks older than
+Startup GC moves terminal tasks older than
 ``ARCHIVE_AFTER_DAYS`` into ``branch_tasks_archive.json``. The
 archive is append-only and never read by the dispatcher.
 """
@@ -69,9 +68,9 @@ _VALID_TRANSITIONS = {
 class BranchTask:
     """Durable execution-intent record.
 
-    Field order matches preflight §4.1 #1. Reserved fields (bid,
-    goal_id, required_llm_type, evidence_url) are present in v1 with
-    empty defaults so Phase F/G can populate without migration.
+    Reserved fields (bid, goal_id, required_llm_type, evidence_url)
+    are present in v1 with empty defaults so later producers can
+    populate them without migration.
     """
 
     branch_task_id: str
@@ -120,8 +119,8 @@ def _file_lock(universe_path: Path) -> Iterator[None]:
 
     Windows uses ``msvcrt.locking`` with ``LK_LOCK`` (blocking with
     retry); POSIX uses ``fcntl.flock``. The sidecar pattern avoids
-    racing with the JSON-read path (preflight §4.1 #1: opening the
-    data file with r+ for a lock serializes with json-read on Windows).
+    racing with the JSON-read path: opening the data file with r+ for
+    a lock serializes with json-read on Windows.
 
     The lock file is created on demand and left in place between
     operations; that is intentional — deleting it while another
@@ -341,9 +340,9 @@ def is_task_cancel_requested(universe_path: Path, task_id: str) -> bool:
 def recover_claimed_tasks(universe_path: Path) -> int:
     """Restart recovery: reset any ``running`` rows to ``pending``.
 
-    Invariant §4.3 #7: claimed-but-unfinished tasks at daemon startup
-    can't know whether the previous daemon finished them; safest is
-    to re-queue. Returns the count reset.
+    Claimed-but-unfinished tasks at daemon startup can't know whether
+    the previous daemon finished them; safest is to re-queue. Returns
+    the count reset.
     """
     qp = queue_path(universe_path)
     if not qp.exists():
@@ -372,7 +371,7 @@ def garbage_collect(
     archive_after_days: int | None = None,
     now: datetime | None = None,
 ) -> dict:
-    """Invariant §4.3 #10: move old terminal tasks to archive.
+    """Move old terminal tasks to archive.
 
     Pending/running tasks are never archived regardless of age.
     Constant ``archive_after_days`` exposed for test override. Returns

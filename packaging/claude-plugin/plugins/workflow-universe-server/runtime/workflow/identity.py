@@ -1,4 +1,4 @@
-"""Phase 7.4 v1 — git author identity for commits.
+"""Git-author identity for daemon and user commits.
 
 Maps the env-var actor to a well-formed ``git`` author line. v1 is
 deliberately narrow: no FastMCP request-context threading, no GitHub
@@ -17,8 +17,8 @@ Resolution order (first hit wins):
 Using a ``users.noreply.workflow.local`` domain keeps commits
 attributable (the slug identifies which actor made the change) without
 pretending to be a verified email (users don't own that domain;
-GitHub won't match the commit to a profile). §7.4 §5c in the scope
-doc flagged the unverified-email risk; noreply defuses it.
+GitHub won't match the commit to a profile). The identity scope doc
+flagged the unverified-email risk; noreply defuses it.
 """
 
 from __future__ import annotations

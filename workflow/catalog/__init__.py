@@ -1,9 +1,8 @@
-"""Phase 7 — git-native storage backend.
+"""Git-native catalog backend for branch, node, goal, and bid YAML.
 
-Spec: ``docs/specs/phase7_github_as_catalog.md``. Phase 7.1 is the
-storage layout + serializer with no git seam yet. Subsequent phases
-bolt on ``git_bridge.py`` (7.2) and cutover the ~12 MCP write handlers
-(7.3).
+Spec: ``docs/specs/phase7_github_as_catalog.md``. The initial scope is
+the storage layout + serializer with no git seam yet. Follow-up work
+bolts on ``git_bridge.py`` and cuts over the MCP write handlers.
 
 Exports:
 
@@ -15,12 +14,11 @@ Exports:
   Goal dicts.
 - ``StorageBackend`` protocol with ``SqliteOnlyBackend`` (current
   default) and ``SqliteCachedBackend`` (writes YAML alongside the
-  SQLite mirror; git op deferred to 7.2).
+  SQLite mirror; git operation deferred).
 
 Reads stay through the SQLite cache for query performance. Writes go
 through both backends when the cached variant is enabled. On clone /
-pull the cache rebuilds from YAML via a separate tool (7.1 ships the
-writer; 7.2 ships the reader-rehydration path).
+pull the cache rebuilds from YAML via a separate tool.
 """
 
 from workflow.catalog.backend import (

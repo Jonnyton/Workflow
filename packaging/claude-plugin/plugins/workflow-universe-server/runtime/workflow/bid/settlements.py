@@ -1,4 +1,4 @@
-"""Phase G cross-host immutable settlement ledger.
+"""Cross-host immutable settlement ledger for paid-market node bids.
 
 Distinct from ``workflow/bid_ledger.py`` (per-universe daemon-local
 activity log) — this module writes the repo-root-level, public,
@@ -8,8 +8,8 @@ activity log) — this module writes the repo-root-level, public,
 Records are write-once: a second call to
 ``record_settlement_event`` with the same ``(bid_id, daemon_id)``
 pair raises ``SettlementExistsError`` rather than overwriting.
-This is the preflight §4.1 #5b contract: v1 records outlive the
-token-launch migration byte-for-byte. A future phase may emit v2
+This is the immutable v1 settlement contract: v1 records outlive the
+token-launch migration byte-for-byte. Future migrations may emit v2
 records alongside v1; v1 must never be rewritten.
 
 Schema v1 fields:
@@ -73,9 +73,9 @@ def record_settlement_event(
 ) -> Path:
     """Write an immutable settlement record for a completed bid.
 
-    Preflight §4.1 #5b + invariant 8. One YAML per ``(bid, daemon)``
-    pair. Raises :class:`SettlementExistsError` if the record
-    already exists — v1 records must not be rewritten.
+    One YAML per ``(bid, daemon)`` pair. Raises
+    :class:`SettlementExistsError` if the record already exists; v1
+    records must not be rewritten.
 
     ``outcome_status`` is one of ``"succeeded"`` / ``"failed"`` —
     NOT a bool. v1 schema is locked; token-launch migration keys
@@ -95,7 +95,7 @@ def record_settlement_event(
     if path.exists():
         raise SettlementExistsError(
             f"Settlement already exists at {path}; v1 records are "
-            "immutable (preflight §4.1 #5b).",
+            "immutable.",
         )
 
     payload = {
