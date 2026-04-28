@@ -50,7 +50,7 @@ providers may be reading these concurrently. They are the shared state.
 |------|-------------------|--------------------------|
 | **AGENTS.md** | How to work on this project. Behavior, norms, hard rules. | Architecture, design decisions, principles (→ PLAN.md) |
 | **PLAN.md** | How the system works and why. Architecture, principles, design decisions, module specs. | Live state, task tracking (→ STATUS.md). Behavioral norms (→ AGENTS.md) |
-| **STATUS.md** | What's happening now. Live task board, concerns, next actions. ≤60 lines (canonical; ~4 KB approximate). | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). Backlog parking. |
+| **STATUS.md** | What's happening now. Live task board, concerns, next actions. ≤60 lines canonical (~4 KB guidance). | Architecture (→ PLAN.md). How-to-work (→ AGENTS.md). Session logs (→ `activity.log`). Landing records (→ git log). Backlog parking. |
 
 If it's about the project's architecture or design → PLAN.md.
 If it's about how to work on the project → AGENTS.md.
@@ -62,7 +62,7 @@ If it's about what's happening right now → STATUS.md.
 
 ### Orient
 
-1. Read `STATUS.md` (live coordination board, concerns, current work). **Trim check:** when reading or writing it, delete resolved concerns, landing records, entries marked DONE, duplicated host asks, and rows no provider can act on. STATUS.md has a 4 KB / 60-line budget; every reader is a janitor.
+1. Read `STATUS.md` (live coordination board, concerns, current work). **Trim check:** when reading or writing it, delete resolved concerns, landing records, entries marked DONE, duplicated host asks, and rows no provider can act on. STATUS.md has a 60-line canonical budget (~4 KB guidance); every reader is a janitor.
 2. `PLAN.md` is the design reference (~50 KB). Load it based on task scope:
    - **Full load** when: planning or scoping a new feature, making or evaluating
      a design decision, checking alignment with project principles, working on
@@ -111,6 +111,7 @@ If it's about what's happening right now → STATUS.md.
 - **Server-bug Concerns cross-reference their wiki BUG.** When a STATUS Concern row maps to a wiki `BUG-NNN` page, append `(see BUG-NNN)` inline. When a wiki BUG-NNN page is severity P0/P1, its header should reference the STATUS row. Rationale: per audit Rule 3, BUG-034 + duplicate Concern rows drifted as 3 separate items for 4 days because no cross-reference convention existed.
 - **Contradictions must be downgraded immediately.** If current code, runtime artifacts, or verification output contradict an older claim, rewrite the `STATUS.md` claim or add a Concern before responding. Do not leave stale certainty in place.
 - **Revalidate `PLAN.md` section by section when trust is damaged.** Treat the plan as candidate design intent until the relevant sections are confirmed against code and runtime evidence.
+- **Audit docs decay too.** Before dispatching prescriptions from an audit older than ~24h, run a freshness check (git log, search, spot-read) and stamp any claim that still matters.
 
 ### Client Conversations Are Bug Reports
 
@@ -292,6 +293,7 @@ keeps the next provider's `claim_check.py` accurate.
 9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
 10. **Contributor attribution uses `CONTRIBUTORS.md`.** When a branch or node ships and `attribution_credit` rows exist, read `CONTRIBUTORS.md` to map each `actor_id` to a GitHub handle and emit `Co-Authored-By:` lines in the commit message. Format: `Co-Authored-By: Display Name <handle@users.noreply.github.com>`. If an actor_id is not in the table, skip silently — never block a commit on missing attribution.
 11. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe. This canary is required evidence, not final chatbot-surface proof; MCP/chatbot-facing changes also require the live Claude.ai `ui-test` check above before final acceptance. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
+12. **No destructive git ops without explicit approval.** Do not use `git reset --hard`, `git checkout --`, `git restore`, `git clean`, force-push, or stash/drop as cleanup or diagnostics unless the host explicitly asks for that operation.
 
 ---
 
@@ -299,6 +301,7 @@ keeps the next provider's `claim_check.py` accurate.
 
 - `pytest` for the full suite. `ruff check` before committing.
 - Every module must have tests. Nodes must never crash.
+- After canonical `workflow/*` edits that affect the Claude plugin runtime, rebuild/check the mirror with `python packaging/claude-plugin/build_plugin.py`; pre-commit mirror parity is the guardrail. See `packaging/INDEX.md`.
 - `actionlint` for GH Actions workflow edits. Install: `choco install actionlint -y` (Windows) / `brew install actionlint` (macOS) / `go install github.com/rhysd/actionlint/cmd/actionlint@latest` (Go). Pre-commit invariant #7 runs it on staged `.github/workflows/*.yml`; CI (`.github/workflows/actionlint.yml`) is the authoritative gate.
 
 ---
