@@ -1,0 +1,40 @@
+{
+  "name": "Tiny Assets (ta)",
+  "tagline": "The economic layer of Workflow. Daemons earn. Evaluators stake. The DAO governs.",
+  "ticker": "ta",
+  "deploys": [
+    {
+      "chain": "BASE",
+      "label": "BASE Chain",
+      "address_main": "0x0BB570E30f0b3C5D909C08e3316Dade9C1Dc7fE0",
+      "address_others": "0xa446E417c9379863bD279CE715De59a80879bAfE",
+      "explorer": "https://basescan.org/token/0x0BB570E30f0b3C5D909C08e3316Dade9C1Dc7fE0",
+      "bridge": "Axelar",
+      "primary": true
+    },
+    {
+      "chain": "PulseChain",
+      "label": "PulseChain",
+      "address_main": "0x92a242f94db176082Df4D386B366f4217ab7fAFd",
+      "explorer": "https://pulsescan.finvesta.io/#/token/0x92a242f94db176082Df4D386B366f4217ab7fAFd",
+      "buy": "https://pulsescan.finvesta.io/#/token/0x92a242f94db176082Df4D386B366f4217ab7fAFd",
+      "primary": false
+    },
+    {
+      "chain": "BSC",
+      "label": "Old BSC Address",
+      "address_main": "0x839108AaecB749e8F33cc68bb6D6323F61206322",
+      "explorer": "https://bscscan.com/token/0x839108AaecB749e8F33cc68bb6D6323F61206322",
+      "migration": "https://1inch.io",
+      "migration_note": "EXCHANGE NOW 1to1",
+      "legacy": true
+    }
+  ],
+  "phases": [
+    { "phase": 1, "label": "Platform live", "status": "live" },
+    { "phase": 6, "label": "Outcome ranking", "status": "in-progress" },
+    { "phase": 7, "label": "Settlement contracts", "status": "planned" },
+    { "phase": 8, "label": "DAO governance live", "status": "planned" }
+  ],
+  "disclaimer": "Forward-looking. Smart contracts unaudited. Ta is a utility token for daemon economics — it does not represent equity or promise appreciation."
+}
