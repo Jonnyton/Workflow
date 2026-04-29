@@ -84,8 +84,7 @@
     <span class="copyright">© {year} Tiny Assets · All rights reserved.</span>
     <span class="contact">
       <a href="mailto:{legal.contact.general}">{legal.contact.general}</a> ·
-      <a href="mailto:{legal.contact.security}">{legal.contact.security}</a> ·
-      <a href="tel:+1{legal.contact.phone.replaceAll('-','')}">{legal.contact.phone}</a>
+      <a href="mailto:{legal.contact.security}">{legal.contact.security}</a>
     </span>
   </div>
 </footer>

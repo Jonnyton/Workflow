@@ -125,8 +125,7 @@
       General: <a href="mailto:{legal.contact.general}">{legal.contact.general}</a><br>
       Security: <a href="mailto:{legal.contact.security}">{legal.contact.security}</a><br>
       Legal: <a href="mailto:{legal.contact.legal}">{legal.contact.legal}</a><br>
-      DMCA agent: <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a><br>
-      Phone: <a href="tel:+1{legal.contact.phone.replaceAll('-','')}">{legal.contact.phone}</a>
+      DMCA agent: <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a>
     </p>
     <p>Response SLA per <a href="https://github.com/Jonnyton/Workflow/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">CONTRIBUTING.md</a> — 48h first response, 5 calendar days for full review.</p>
 
