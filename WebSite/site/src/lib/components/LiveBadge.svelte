@@ -1,13 +1,21 @@
 <!--
   LiveBadge — small status pill showing whether data is from the live MCP
   feed or the baked snapshot, with an "X ago" relative timestamp.
+
+  ago is computed only on the client (inside $effect) to avoid SSR/CSR
+  hydration mismatch — Date.now() at SSR build time differs from Date.now()
+  in the user's browser by hours/days, which Svelte 5 detects as a
+  hydration mismatch and warns about. Computing client-only matches the
+  intent (the ago is meant to be relative to the user's NOW).
 -->
 <script lang="ts">
   let { fetchedAt = '', source = '', loading = false } = $props<{ fetchedAt?: string; source?: string; loading?: boolean }>();
 
-  const ago = $derived.by(() => {
-    if (!fetchedAt) return '';
-    const ms = Date.now() - new Date(fetchedAt).getTime();
+  let ago = $state('');
+
+  function computeAgo(at: string): string {
+    if (!at) return '';
+    const ms = Date.now() - new Date(at).getTime();
     const sec = Math.round(ms / 1000);
     if (sec < 60) return `${sec}s ago`;
     const min = Math.round(sec / 60);
@@ -15,6 +23,13 @@
     const hr = Math.round(min / 60);
     if (hr < 24) return `${hr}h ago`;
     return `${Math.round(hr / 24)}d ago`;
+  }
+
+  $effect(() => {
+    ago = computeAgo(fetchedAt);
+    // Re-tick once a minute so the user sees freshness change without reload.
+    const t = setInterval(() => { ago = computeAgo(fetchedAt); }, 60_000);
+    return () => clearInterval(t);
   });
 
   const isLive = $derived(source.includes('live'));
@@ -23,7 +38,7 @@
 <span class="badge" class:live={isLive} class:loading>
   <span class="dot"></span>
   <span class="label">
-    {#if loading}fetching live…{:else if isLive}live · {ago}{:else}snapshot · {ago}{/if}
+    {#if loading}fetching live…{:else if isLive}live{#if ago} · {ago}{/if}{:else}snapshot{#if ago} · {ago}{/if}{/if}
   </span>
 </span>
 

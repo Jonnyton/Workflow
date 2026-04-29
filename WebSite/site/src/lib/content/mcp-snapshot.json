@@ -1,8 +1,8 @@
 {
-  "fetched_at": "2026-04-29T08:06:57.665Z",
+  "fetched_at": "2026-04-29T17:51:14.740Z",
   "source": "tinyassets.io/mcp",
   "stats": {
-    "wiki_promoted": 47,
+    "wiki_promoted": 45,
     "wiki_drafts": 8,
     "goals": 4,
     "universes": 2,
@@ -64,8 +64,8 @@
     {
       "id": "concordance",
       "phase": "paused",
-      "word_count": 49494,
-      "last_activity_at": "2026-04-28T06:49:11.970204+00:00",
+      "word_count": 51484,
+      "last_activity_at": "2026-04-29T17:48:42.301217+00:00",
       "accept_rate": 1
     },
     {
@@ -247,16 +247,6 @@
         "id": "BUG-034",
         "title": "All extensions actions return 'No approval received' while goals/wiki/universe/get_status work normally",
         "slug": "pages/bugs/BUG-034-all-extensions-actions-return-no-approval-received-while-goa.md"
-      },
-      {
-        "id": "BUG-003",
-        "title": "build_branch and patch_branch do not expose conditional_edges, blocking in-graph routing and iteration loops",
-        "slug": "pages/bugs/bug-003-build-branch-and-patch-branch-do-not-expose-conditional-edge.md"
-      },
-      {
-        "id": "BUG-023",
-        "title": "Daemon disk full after one heavy wiki session — no storage budget, no rotation, no observability",
-        "slug": "pages/bugs/bug-023-daemon-disk-full-after-one-heavy-wiki-session-no-storage-bud.md"
       }
     ],
     "concepts": [
@@ -361,6 +351,11 @@
       "kind": "ref"
     },
     {
+      "from": "bug:BUG-019",
+      "to": "bug:BUG-003",
+      "kind": "ref"
+    },
+    {
       "from": "bug:BUG-018",
       "to": "bug:BUG-014",
       "kind": "ref"
@@ -373,11 +368,6 @@
     {
       "from": "bug:BUG-018",
       "to": "bug:BUG-006",
-      "kind": "ref"
-    },
-    {
-      "from": "bug:BUG-019",
-      "to": "bug:BUG-003",
       "kind": "ref"
     },
     {
@@ -429,6 +419,51 @@
       "from": "concept:cross-algorithm-parity-rf-vs-maxent",
       "to": "note:2026-04-27-cross-algorithm-parity-publication-checklist",
       "kind": "source"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-005",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-003",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-018",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-034",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-017",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "concept:structured-json-node-outputs",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-015",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "bug:BUG-016",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:chatbot-builder-behaviors",
+      "to": "note:builder-notes-agent-teams",
+      "kind": "ref"
     },
     {
       "from": "concept:structured-json-node-outputs",
@@ -606,51 +641,6 @@
       "kind": "source"
     },
     {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-005",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-003",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-018",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-034",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-017",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "concept:structured-json-node-outputs",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-015",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "bug:BUG-016",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:chatbot-builder-behaviors",
-      "to": "note:builder-notes-agent-teams",
-      "kind": "ref"
-    },
-    {
       "from": "plan:composition-patterns",
       "to": "bug:BUG-031",
       "kind": "ref"
@@ -661,114 +651,14 @@
       "kind": "ref"
     },
     {
-      "from": "plan:feature-describe-branch-related-wiki-pages",
-      "to": "bug:BUG-018",
-      "kind": "ref"
-    },
-    {
       "from": "plan:feature-prompt-template-literal-braces-and-build-time-validation",
       "to": "bug:BUG-014",
       "kind": "ref"
     },
     {
-      "from": "plan:methods-prose-rubric",
-      "to": "plan:composition-patterns",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:methods-prose-rubric",
-      "to": "concept:cross-algorithm-parity-rf-vs-maxent",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:methods-prose-rubric",
-      "to": "plan:chatbot-builder-behaviors",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:methods-prose-rubric",
-      "to": "plan:strategic-synthesis-2026-04-24",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:methods-prose-rubric",
-      "to": "note:2026-04-27-methods-prose-rubric-starter-pack",
-      "kind": "source"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "plan:next-level-primitives-roadmap",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-023",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
+      "from": "plan:feature-describe-branch-related-wiki-pages",
       "to": "bug:BUG-018",
       "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-005",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-006",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-022",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "plan:tier-1-investigation-routing-resolver",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-019",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-021",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-011",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-019",
-      "kind": "source"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-021",
-      "kind": "source"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-022",
-      "kind": "source"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "bug:BUG-023",
-      "kind": "source"
-    },
-    {
-      "from": "plan:strategic-synthesis-2026-04-24",
-      "to": "note:builder-notes-agent-teams",
-      "kind": "source"
     },
     {
       "from": "plan:next-level-primitives-roadmap",
@@ -901,6 +791,106 @@
       "kind": "source"
     },
     {
+      "from": "plan:methods-prose-rubric",
+      "to": "plan:composition-patterns",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:methods-prose-rubric",
+      "to": "concept:cross-algorithm-parity-rf-vs-maxent",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:methods-prose-rubric",
+      "to": "plan:chatbot-builder-behaviors",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:methods-prose-rubric",
+      "to": "plan:strategic-synthesis-2026-04-24",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:methods-prose-rubric",
+      "to": "note:2026-04-27-methods-prose-rubric-starter-pack",
+      "kind": "source"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "plan:next-level-primitives-roadmap",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-023",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-018",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-005",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-006",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-022",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "plan:tier-1-investigation-routing-resolver",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-019",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-021",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-011",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-019",
+      "kind": "source"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-021",
+      "kind": "source"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-022",
+      "kind": "source"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "bug:BUG-023",
+      "kind": "source"
+    },
+    {
+      "from": "plan:strategic-synthesis-2026-04-24",
+      "to": "note:builder-notes-agent-teams",
+      "kind": "source"
+    },
+    {
       "from": "plan:tier-1-investigation-routing-resolver",
       "to": "bug:BUG-019",
       "kind": "ref"
@@ -977,6 +967,10 @@
     }
   ],
   "tags": {
+    "bug:BUG-003": [
+      "bug",
+      "extensions"
+    ],
     "bug:BUG-002": [
       "bug",
       "extensions"
@@ -1001,10 +995,6 @@
       "bug",
       "extensions"
     ],
-    "bug:BUG-003": [
-      "bug",
-      "extensions"
-    ],
     "bug:BUG-008": [
       "bug",
       "extensions"
@@ -1025,15 +1015,19 @@
       "bug",
       "extensions"
     ],
-    "bug:BUG-013": [
-      "bug",
-      "wiki"
-    ],
     "bug:BUG-014": [
       "bug",
       "extensions"
     ],
+    "bug:BUG-013": [
+      "bug",
+      "wiki"
+    ],
     "bug:BUG-015": [
+      "bug",
+      "extensions"
+    ],
+    "bug:BUG-016": [
       "bug",
       "extensions"
     ],
@@ -1041,15 +1035,11 @@
       "bug",
       "daemon runtime / sandboxing / bubblewrap config"
     ],
-    "bug:BUG-016": [
+    "bug:BUG-019": [
       "bug",
       "extensions"
     ],
     "bug:BUG-018": [
-      "bug",
-      "extensions"
-    ],
-    "bug:BUG-019": [
       "bug",
       "extensions"
     ],
@@ -1069,10 +1059,6 @@
       "bug",
       "workflow"
     ],
-    "bug:BUG-025": [
-      "bug",
-      "providers"
-    ],
     "bug:BUG-026": [
       "bug",
       "constraints"
@@ -1080,6 +1066,10 @@
     "bug:BUG-027": [
       "bug",
       "startup"
+    ],
+    "bug:BUG-025": [
+      "bug",
+      "providers"
     ],
     "bug:BUG-028": [
       "bug",
@@ -1089,11 +1079,11 @@
       "bug",
       "extensions"
     ],
-    "bug:BUG-030": [
+    "bug:BUG-031": [
       "bug",
       "extensions"
     ],
-    "bug:BUG-031": [
+    "bug:BUG-030": [
       "bug",
       "extensions"
     ],
@@ -1101,13 +1091,13 @@
       "bug",
       "get_status"
     ],
-    "bug:BUG-033": [
-      "bug",
-      "goals"
-    ],
     "bug:BUG-034": [
       "bug",
       "extensions"
+    ],
+    "bug:BUG-033": [
+      "bug",
+      "goals"
     ],
     "concept:structured-json-node-outputs": [
       "pattern",
@@ -1120,16 +1110,22 @@
       "agent-teams",
       "workflow"
     ],
+    "plan:feature-prompt-template-literal-braces-and-build-time-validation": [
+      "feature",
+      "compiler",
+      "prompt-template"
+    ],
     "plan:feature-describe-branch-related-wiki-pages": [
       "feature",
       "extensions",
       "wiki",
       "convergent-commons"
     ],
-    "plan:feature-prompt-template-literal-braces-and-build-time-validation": [
-      "feature",
-      "compiler",
-      "prompt-template"
+    "plan:next-level-primitives-roadmap": [
+      "roadmap",
+      "primitives",
+      "architecture",
+      "agent-teams"
     ],
     "plan:strategic-synthesis-2026-04-24": [
       "strategy",
@@ -1139,12 +1135,6 @@
       "positioning",
       "forkable",
       "distribution"
-    ],
-    "plan:next-level-primitives-roadmap": [
-      "roadmap",
-      "primitives",
-      "architecture",
-      "agent-teams"
     ],
     "plan:tier-1-investigation-routing-resolver": [
       "investigation",

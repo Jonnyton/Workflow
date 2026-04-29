@@ -229,7 +229,7 @@
   <div class="canvas">
     <svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet" class="graph" onclick={() => (pinned = null)} role="presentation">
       <g class="edges">
-        {#each edges as e (e.from + '|' + e.to)}
+        {#each edges as e (e.from + '|' + e.to + '|' + e.kind)}
           {@const a = nodeById.get(e.from)}
           {@const b = nodeById.get(e.to)}
           {#if a && b}

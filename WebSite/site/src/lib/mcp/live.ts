@@ -152,6 +152,26 @@ export function liveToSnapshotShape(live: LiveResult, baked: Snapshot): Snapshot
     wiki.drafts.push({ slug: p.path ?? '', title: p.title ?? p.path });
   }
 
+  // Dedup by canonical id/slug — live MCP sometimes returns case variants
+  // (e.g. BUG-003-... and bug-003-...) that pad to the same canonical id.
+  // Without this dedup, Svelte's keyed {#each} blocks throw each_key_duplicate.
+  function dedupBy<T>(arr: T[], keyFn: (x: T) => string): T[] {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const item of arr) {
+      const k = keyFn(item);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(item);
+    }
+    return out;
+  }
+  wiki.bugs = dedupBy(wiki.bugs, (b: any) => b.id);
+  wiki.concepts = dedupBy(wiki.concepts, (c: any) => c.slug);
+  wiki.notes = dedupBy(wiki.notes, (n: any) => n.slug);
+  wiki.plans = dedupBy(wiki.plans, (pl: any) => pl.slug);
+  wiki.drafts = dedupBy(wiki.drafts, (d: any) => d.slug);
+
   const promoted = wiki.bugs.length + wiki.concepts.length + wiki.notes.length + wiki.plans.length + wiki.other.length;
 
   return {

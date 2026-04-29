@@ -235,6 +235,26 @@ async function main() {
       wiki.drafts.push({ slug: p.path ?? '', title: p.title ?? p.path });
     }
 
+    // Dedup by canonical id/slug — live MCP sometimes returns case variants
+    // (e.g. BUG-003-... and bug-003-...) that pad to the same canonical id.
+    // Without this dedup, Svelte's keyed {#each} blocks throw each_key_duplicate.
+    function dedupBy(arr, keyFn) {
+      const seen = new Set();
+      const out = [];
+      for (const item of arr) {
+        const k = keyFn(item);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(item);
+      }
+      return out;
+    }
+    wiki.bugs = dedupBy(wiki.bugs, (b) => b.id);
+    wiki.concepts = dedupBy(wiki.concepts, (c) => c.slug);
+    wiki.notes = dedupBy(wiki.notes, (n) => n.slug);
+    wiki.plans = dedupBy(wiki.plans, (pl) => pl.slug);
+    wiki.drafts = dedupBy(wiki.drafts, (d) => d.slug);
+
     // Build the set of known node IDs for ref resolution.
     const knownIds = new Set();
     for (const b of wiki.bugs) knownIds.add(`bug:${b.id}`);
