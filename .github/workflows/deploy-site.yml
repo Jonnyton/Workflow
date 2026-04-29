@@ -47,16 +47,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: WebSite/site/package-lock.json
 
-      - name: Diag (pre-install)
-        working-directory: WebSite/site
-        run: |
-          echo "PWD=$(pwd)"
-          ls -la
-          echo "lockfile head:"
-          head -5 package-lock.json || echo "NO LOCKFILE"
-
       - name: Install
-        working-directory: WebSite/site
         run: npm ci
 
       # Optional snapshot refresh — only runs when manually dispatched with the toggle.
