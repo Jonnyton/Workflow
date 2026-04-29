@@ -1,0 +1,60 @@
+project:
+  name: Echoes Of The Cosmos
+  slug: echoes-of-the-cosmos
+  status: public-draft
+  public_visibility: public-ready-after-scan
+  portfolio_role: domain-world
+  primary_repo: https://github.com/Jonnyton/echoes-of-the-cosmos
+
+summary:
+  short: Open science-fantasy universe intended for public contribution.
+  current_state: Public-draft canon and contribution model; clean Workflow universe not yet created.
+  public_pitch: A community-contributed science-fantasy universe that will use Workflow as its live-state contribution and canon-review engine.
+
+lineage:
+  preceded_by:
+    - physical-hex-board-game
+    - hex-strategy-lab
+  evolved_into: []
+  influenced:
+    - fantasy-agent-workflow-lab
+    - workflow
+  related:
+    - Workflow
+    - Hex Strategy Lab
+    - Fantasy Writer
+    - Fantasy Author
+
+evidence:
+  local_paths:
+    - C:\Users\Jonathan\Desktop\Echoes of the Cosmos
+    - C:\Users\Jonathan\Projects\ECHOES OF THE COSMOS.md
+  public_links:
+    - https://www.reddit.com/r/EchoesoftheCosmos/
+  live_links: []
+
+skills:
+  languages: []
+  systems:
+    - Workflow live-state universe
+    - Reddit source import
+    - public canon docs
+  themes:
+    - open universe
+    - community contribution
+    - canon governance
+    - science fantasy
+    - source ingestion
+
+maintenance:
+  update_profile_readme: true
+  update_workflow_lineage: true
+  safe_to_auto_publish: false
+  requires_human_publish_gate: true
+  default_visibility_policy: public_until_marked_private
+
+privacy:
+  private_examples:
+    - OpenClaw conversation memories
+    - NemoClaw private memory/state
+  notes: Public by default does not override explicit private memories, private conversations, credentials, or uncertain source/licensing status.

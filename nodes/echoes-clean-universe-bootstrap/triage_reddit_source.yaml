@@ -1,0 +1,16 @@
+id: triage_reddit_source
+display_name: Triage Reddit source channel
+phase: custom
+prompt_template: |
+  Review Reddit source material from {reddit_source_url} as proposal material, not final canon.
+
+  Use the canon index:
+  {canon_index}
+
+  Produce a contribution packet that preserves source URL, contributor attribution where visible, date, summary, affected canon area, and proposed status.
+output_keys:
+- contribution_packet
+timeout_seconds: 300.0
+approved: true
+enabled: true
+author: Jonathan Farnsworth

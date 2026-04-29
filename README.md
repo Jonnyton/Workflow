@@ -29,10 +29,11 @@ Cross-platform notes:
 1. Read [STATUS.md](STATUS.md) for live state.
 2. Read [PLAN.md](PLAN.md) for architecture and design intent.
 3. Read [AGENTS.md](AGENTS.md) for process rules.
-4. Use [INDEX.md](INDEX.md) as the repo map.
-5. Use `python scripts/docview.py` for large Markdown, text, and JSON files
+4. Read [docs/project-lineage.md](docs/project-lineage.md) for how Workflow grew out of the earlier Hex, Echoes, Fantasy Writer, and Fantasy Author work.
+5. Use [INDEX.md](INDEX.md) as the repo map.
+6. Use `python scripts/docview.py` for large Markdown, text, and JSON files
    before any raw whole-file read.
-6. Capture loose user ideas in [ideas/INBOX.md](ideas/INBOX.md) or with
+7. Capture loose user ideas in [ideas/INBOX.md](ideas/INBOX.md) or with
    `python scripts/capture_idea.py "Idea summary"`.
 
 ## Core Hubs
@@ -42,6 +43,7 @@ Cross-platform notes:
 - [AGENTS.md](AGENTS.md): process truth.
 - [PLAN.md](PLAN.md): design truth.
 - [STATUS.md](STATUS.md): live-state truth.
+- [docs/portfolio/README.md](docs/portfolio/README.md): public project graph, lineage, and auto-maintenance standard.
 - [ideas/INDEX.md](ideas/INDEX.md): idea capture, triage, and shipped ledger.
 - [knowledge/INDEX.md](knowledge/INDEX.md): human-readable knowledge map.
 
