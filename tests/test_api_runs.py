@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from workflow.api import runs as runs_mod
 from workflow.api.runs import (
     _FAILURE_TAXONOMY,
@@ -198,3 +196,63 @@ def test_action_run_branch_returns_str():
 # Arc A re-export shims removed in Task #18 retarget sweep — the
 # `test_universe_server_reexports_run_actions` + parametrized identity tests
 # are gone alongside the shim block.
+
+
+def test_compile_failure_records_actionable_run_error(tmp_path, monkeypatch):
+    """Compile-time failures must not collapse into background-worker crash."""
+    from workflow.branches import (
+        BranchDefinition,
+        EdgeDefinition,
+        GraphNodeRef,
+        NodeDefinition,
+    )
+    from workflow.runs import (
+        execute_branch_async,
+        get_run,
+        shutdown_executor,
+        wait_for,
+    )
+
+    def boom(*_args, **_kwargs):
+        raise ValueError("'source_manifest' is already being used as a state key")
+
+    monkeypatch.setattr("workflow.runs.compile_branch", boom)
+
+    branch = BranchDefinition(name="Compile failure", entry_point="node_a")
+    branch.node_defs = [
+        NodeDefinition(
+            node_id="node_a",
+            display_name="Node A",
+            prompt_template="hello",
+            output_keys=["source_manifest"],
+        )
+    ]
+    branch.graph_nodes = [
+        GraphNodeRef(id="node_a", node_def_id="node_a", position=0)
+    ]
+    branch.edges = [
+        EdgeDefinition(from_node="START", to_node="node_a"),
+        EdgeDefinition(from_node="node_a", to_node="END"),
+    ]
+    branch.state_schema = [{"name": "source_manifest", "type": "str"}]
+
+    outcome = execute_branch_async(tmp_path, branch=branch, inputs={})
+    try:
+        wait_for(outcome.run_id, timeout=10.0)
+        run = get_run(tmp_path, outcome.run_id)
+    finally:
+        shutdown_executor()
+
+    assert run is not None
+    assert run["status"] == "failed"
+    assert run["error"].startswith("Compile failed: ValueError:")
+    assert "already being used as a state key" in run["error"]
+    assert "Background worker crashed" not in run["error"]
+
+
+def test_compile_failed_outcome_is_classified():
+    out = _classify_run_outcome_error(
+        "Compile failed: ValueError: 'x' is already being used as a state key"
+    )
+    assert out is not None
+    assert out[0] == "compile_error"

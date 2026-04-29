@@ -9,6 +9,7 @@ This folder connects Workflow to Jonathan Farnsworth's broader public project gr
 - [Portfolio graph standard](portfolio-graph-standard.md)
 - [Legacy branch plan](legacy-branch-plan.md)
 - [Echoes of the Cosmos public universe seed](echoes-of-the-cosmos/README.md)
+- [Echoes public source intake](echoes-of-the-cosmos/community/workflow-public-source-intake.md)
 
 ## Public Repos
 

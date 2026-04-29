@@ -1,0 +1,19 @@
+id: build_contribution_packet
+display_name: Contribution packet
+description: Turn imported Reddit material into reviewable contribution packets without promoting canon.
+phase: plan
+input_keys:
+- source_manifest
+- source_snapshot
+output_keys:
+- contribution_packet
+prompt_template: |
+  Using this source manifest: {source_manifest}
+
+  And this source snapshot: {source_snapshot}
+
+  Extract proposed contribution packets. Preserve attribution and source links. Group by canon area, summarize the idea, identify dependencies/conflicts, and assign an initial state from submitted, triaged, draft-canon, needs-review, accepted-canon, rejected, archived. Do not mark accepted-canon unless the snapshot contains explicit prior approval evidence.
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: Jonathan Farnsworth

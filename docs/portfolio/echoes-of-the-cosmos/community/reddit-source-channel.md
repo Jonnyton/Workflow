@@ -2,6 +2,20 @@
 
 Reddit should remain useful, but it should not be the final canon authority.
 
+Live source URLs:
+
+- Subreddit: https://www.reddit.com/r/EchoesoftheCosmos/
+- RSS: https://www.reddit.com/r/EchoesoftheCosmos/.rss
+- JSON listing: https://www.reddit.com/r/EchoesoftheCosmos/.json?limit=25
+
+Live Workflow wiring:
+
+- Universe: `echoes-of-the-cosmos`
+- Goal: `dd187997039b`
+- Intake branch: `f8053c7ae22a`
+- Canonical branch version: `f8053c7ae22a@aa8ee9e6`
+- Reddit source snapshot imported on 2026-04-29 as proposal material, not canon.
+
 ## Role
 
 The subreddit is a public contribution and discussion surface:
@@ -47,8 +61,14 @@ When importing Reddit ideas into Workflow, preserve attribution where possible:
 
 ## Near-Term Workflow
 
-1. Create clean Echoes universe in Workflow from public canon docs.
-2. Add a source-import convention for Reddit posts/comments.
-3. Make a wiki page or branch for each proposed canon change.
-4. Gate canon promotion through review.
-5. Publish accepted changes back into the Echoes repo.
+1. A user or chatbot fetches the subreddit, RSS, or JSON listing.
+2. The fetched snapshot is submitted to Workflow MCP as imported source material.
+3. The `Echoes Reddit source intake` branch builds a source manifest and contribution packet.
+4. A canon gate marks each packet as `needs-review`, `draft-canon`, `accepted-canon`, `rejected`, or `archived`.
+5. Accepted material is promoted into canon or a GitHub PR only after review.
+
+## Current Boundary
+
+Workflow stores, reviews, and gates imported source snapshots. The branch does not yet fetch the web by itself; the caller's browser or chatbot web tool supplies the source snapshot. This is intentional for now because public publishing should stay gated.
+
+The live smoke run for the intake branch reached the first LLM node but failed with an empty-provider response. That is a Workflow host/provider follow-up, not an Echoes source-wiring issue.

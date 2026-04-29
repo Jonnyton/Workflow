@@ -1300,6 +1300,19 @@ def _invoke_graph(
             run_id=run_id, status=RUN_STATUS_FAILED,
             output={}, error=str(exc),
         )
+    except Exception as exc:
+        logger.exception("Run %s failed during compile", run_id)
+        msg = f"Compile failed: {type(exc).__name__}: {exc}"
+        update_run_status(
+            base_path, run_id,
+            status=RUN_STATUS_FAILED,
+            error=msg,
+            finished_at=_now(),
+        )
+        return RunOutcome(
+            run_id=run_id, status=RUN_STATUS_FAILED,
+            output={}, error=msg,
+        )
 
     update_run_status(base_path, run_id, status=RUN_STATUS_RUNNING)
 
@@ -2702,6 +2715,7 @@ ACTIONABLE_BY: dict[str, str] = {
     "timeout": "chatbot",
     "context_length_exceeded": "chatbot",
     "state_mutation_conflict": "chatbot",
+    "compile_error": "chatbot",
     "snapshot_schema_drift": "chatbot",
     "interrupted": "chatbot",
     # user — opaque/internal; chatbot escalates raw error for human judgment

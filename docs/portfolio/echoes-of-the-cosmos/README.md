@@ -6,25 +6,29 @@ It should stand as its own public universe project. Workflow is the current best
 
 ## Current Status
 
-Public-draft refactor.
+Echoes is now wired as a public Workflow universe and source-intake example.
 
-Existing pieces:
+Live pieces:
 
 - canon reference guide
 - Resonance magic-system reference
 - live Workflow universe: `echoes-of-the-cosmos`
-- early Reddit surface: https://www.reddit.com/r/EchoesoftheCosmos/
+- Reddit source channel: https://www.reddit.com/r/EchoesoftheCosmos/
+- Reddit RSS source channel: https://www.reddit.com/r/EchoesoftheCosmos/.rss
+- Workflow public-source goal: `dd187997039b`
+- Workflow intake branch: `f8053c7ae22a`
+- canonical branch version: `f8053c7ae22a@aa8ee9e6`
 - prior use as source material for Fantasy Writer / Fantasy Author testing
 
-Not yet complete:
+Still in progress:
 
-- contribution loop from Reddit/source docs into live Workflow state
+- generated/promoted canon output from the first Reddit intake run
 - public contributor guide
-- review/promotion rules for canon changes
+- long-running daemon/provider execution for recurring imports
 
 ## Relationship To Workflow
 
-Workflow will be the live-state layer:
+Workflow is the live-state layer:
 
 - source ingestion
 - branchable canon updates
@@ -53,11 +57,11 @@ Current staged canon:
 
 ## Contribution Surfaces
 
-Primary planned surface:
+Primary surface:
 
 - Workflow-hosted live universe
 
-Secondary/import source:
+Secondary/import sources:
 
 - Reddit posts and comments
 - GitHub issues/discussions if enabled later
@@ -65,11 +69,20 @@ Secondary/import source:
 
 Reddit should be treated as an import/source channel into the canon workflow, not the final source of truth.
 
+The current MCP pattern is:
+
+1. A user or chatbot fetches a public source, such as the subreddit RSS feed.
+2. Workflow stores that snapshot in the `echoes-of-the-cosmos` universe as imported source material.
+3. The source-intake branch produces a manifest, contribution packet, and canon-gate decision.
+4. Reviewed material can become canon or a GitHub PR.
+
+The branch is live and runnable, but generated output depends on a connected Workflow LLM host. The first smoke run reached the first LLM node and exposed a provider empty-response issue, so the wiring is live while daemon execution remains a runtime follow-up.
+
 ## Honest Public Framing
 
 Use:
 
-> Echoes of the Cosmos is an open science-fantasy universe being refactored into a Workflow-hosted public canon system. The current public community surface is early, and the next step is a clean live universe that can receive, review, and promote contributions.
+> Echoes of the Cosmos is an open science-fantasy universe wired into Workflow as a public canon/source-intake system. Reddit is the first public source channel; imported material is reviewed through Workflow gates before it becomes canon.
 
 Avoid:
 
@@ -77,4 +90,4 @@ Avoid:
 
 ## Next Step
 
-Build the contribution path from Reddit/source docs into the live Workflow universe, then promote reviewed additions into public canon through gates.
+Run a configured daemon/provider against the live intake branch, review the generated contribution packets, and promote accepted additions into public canon through gates.

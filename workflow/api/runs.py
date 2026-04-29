@@ -235,6 +235,12 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
         )
+    if "compile failed" in msg or "already being used as a state key" in msg:
+        return _failure_payload(
+            exc, "compile_error",
+            "Inspect the branch definition, node ids, state_schema, and graph"
+            " edges; patch the branch and rerun.",
+        )
     if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
         return _failure_payload(
             exc, "provider_unavailable",
@@ -316,6 +322,12 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "state_mutation_conflict",
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
+        )
+    if "compile failed" in msg or "already being used as a state key" in msg:
+        return (
+            "compile_error",
+            "Inspect the branch definition, node ids, state_schema, and graph"
+            " edges; patch the branch and rerun.",
         )
     if "provider" in msg or "api key" in msg or "api_key" in msg:
         return (
