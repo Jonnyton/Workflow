@@ -12,12 +12,12 @@ Existing pieces:
 
 - canon reference guide
 - Resonance magic-system reference
+- live Workflow universe: `echoes-of-the-cosmos`
 - early Reddit surface: https://www.reddit.com/r/EchoesoftheCosmos/
 - prior use as source material for Fantasy Writer / Fantasy Author testing
 
 Not yet complete:
 
-- clean Workflow-hosted Echoes universe
 - contribution loop from Reddit/source docs into live Workflow state
 - public contributor guide
 - review/promotion rules for canon changes
@@ -47,6 +47,7 @@ The intent is for all core canon to be public.
 
 Current staged canon:
 
+- [CANON_INDEX.md](canon/CANON_INDEX.md)
 - [ECHOES_OF_THE_COSMOS.md](canon/ECHOES_OF_THE_COSMOS.md)
 - [THE_RESONANCE_Magic_System.md](canon/THE_RESONANCE_Magic_System.md)
 
@@ -76,4 +77,4 @@ Avoid:
 
 ## Next Step
 
-Create a clean Echoes universe inside Workflow from the public canon files, instead of attaching this project to an older test universe.
+Build the contribution path from Reddit/source docs into the live Workflow universe, then promote reviewed additions into public canon through gates.

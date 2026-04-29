@@ -6,6 +6,7 @@ This folder contains the public source-canon draft for Echoes of the Cosmos.
 
 - `ECHOES_OF_THE_COSMOS.md` - main canon reference guide.
 - `THE_RESONANCE_Magic_System.md` - magic/system reference for Resonance.
+- `CANON_INDEX.md` - short live-canon anchor and contribution policy.
 
 ## Policy
 
