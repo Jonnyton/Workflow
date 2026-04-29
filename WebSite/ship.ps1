@@ -1,15 +1,8 @@
 # ship.ps1 — push the prepared website-ship.bundle to GitHub.
-# Run from Windows PowerShell. Uses YOUR git credentials (sandbox has none).
+# Run from Windows PowerShell. Uses YOUR git credentials.
 #
-# What it does:
-#   1. Clones a fresh copy of Jonnyton/Workflow main into $env:TEMP\wf-ship
-#      (avoids touching the in-progress work in C:\Users\Jonathan\Projects\Workflow)
-#   2. Fetches the bundle Claude prepared (WebSite/website-ship.bundle)
-#   3. Pushes the website/ship-prototype branch to origin
-#   4. Prints the GitHub URL where you can open a PR or merge to main
-#
-# After merge to main, deploy-site.yml fires automatically and ships to
-# tinyassets.io via GitHub Pages.
+# Current bundle: branch website/fix-live-crashes (one commit beyond main).
+# Fixes the live-state crashes found by the post-deploy crawl.
 
 $ErrorActionPreference = 'Stop'
 $bundle = Join-Path $PSScriptRoot 'website-ship.bundle'
@@ -31,16 +24,20 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Set-Location $workdir
 
 Write-Host "2/4  Fetching bundle $bundle ..."
-git fetch $bundle 'refs/heads/website/ship-prototype:refs/heads/website/ship-prototype'
+git fetch $bundle 'refs/heads/website/fix-live-crashes:refs/heads/website/fix-live-crashes'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "3/4  Pushing branch website/ship-prototype to origin ..."
-git push -u origin website/ship-prototype
+Write-Host "3/4  Pushing branch website/fix-live-crashes to origin ..."
+git push -u origin website/fix-live-crashes
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""
-Write-Host "4/4  Pushed. Open a PR or fast-forward main:"
-Write-Host "     https://github.com/Jonnyton/Workflow/compare/main...website/ship-prototype?expand=1"
+Write-Host "4/4  Pushed. Fast-forward main to ship the fix:"
+Write-Host "     git push origin website/fix-live-crashes:main"
 Write-Host ""
-Write-Host "After merge to main, .github/workflows/deploy-site.yml deploys to GitHub Pages"
-Write-Host "and tinyassets.io serves the new site via Cloudflare."
+Write-Host "Or open a PR:"
+Write-Host "     https://github.com/Jonnyton/Workflow/compare/main...website/fix-live-crashes?expand=1"
+Write-Host ""
+Write-Host "After merge, .github/workflows/deploy-site.yml redeploys to GitHub Pages"
+Write-Host "and tinyassets.io serves the patched site (/wiki, /graph fixed; favicon.ico"
+Write-Host "200; no more hydration warnings)."

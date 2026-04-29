@@ -1,8 +1,23 @@
-<!-- /alliance — recruiting + community-mission form, carry-over from legacy tinyassets.io/tiny-alliance -->
+<!-- /alliance — recruiting + community-mission. Form opens an email draft (no fake backend). -->
 <script lang="ts">
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
   import Button from '$lib/components/Primitives/Button.svelte';
   import legal from '$lib/content/legal-info.json';
+
+  let name = $state('');
+  let email = $state('');
+  let phone = $state('');
+  let mission = $state('');
+
+  function handleSubmit(e: Event) {
+    e.preventDefault();
+    const subject = encodeURIComponent('Tiny Alliance — ' + (name || 'new member'));
+    const body = encodeURIComponent(
+      `Name: ${name}\nEmail: ${email}\nPhone: ${phone || '(not provided)'}\n\nMission:\n${mission}\n\n— sent from tinyassets.io/alliance`
+    );
+    // Opens user's mail client — works in every browser, no backend, no broken promises.
+    window.location.href = `mailto:${legal.contact.general}?subject=${subject}&body=${body}`;
+  }
 </script>
 
 <svelte:head>
@@ -20,16 +35,16 @@
 
 <section class="form-block">
   <div class="container">
-    <form class="form" onsubmit={(e) => { e.preventDefault(); alert('Form submission lands in Phase 1.5 — for now please email ops@tinyassets.io'); }}>
+    <form class="form" onsubmit={handleSubmit}>
       <RitualLabel>Send a message</RitualLabel>
-      <label>Name <input type="text" required /></label>
-      <label>Email <input type="email" required /></label>
-      <label>Phone (optional) <input type="tel" /></label>
+      <label>Name <input type="text" name="name" required bind:value={name} /></label>
+      <label>Email <input type="email" name="email" required bind:value={email} /></label>
+      <label>Phone (optional) <input type="tel" name="phone" bind:value={phone} /></label>
       <label class="full">What community mission are you most passionate about?
-        <textarea rows="5" required placeholder="A real-world goal you'd want a daemon to help pursue — your own or someone else's."></textarea>
+        <textarea name="mission" rows="5" required bind:value={mission} placeholder="A real-world goal you'd want a daemon to help pursue — your own or someone else's."></textarea>
       </label>
-      <Button variant="primary" >Send message</Button>
-      <p class="meta">Form delivery lands in Phase 1.5. For now: <a href="mailto:ops@tinyassets.io">ops@tinyassets.io</a></p>
+      <Button variant="primary">Send via email →</Button>
+      <p class="meta">Opens your email client with the message pre-filled. Or write us directly: <a href="mailto:{legal.contact.general}">{legal.contact.general}</a></p>
     </form>
 
     <aside class="book">
@@ -37,8 +52,8 @@
       <h3>30 min · free.</h3>
       <p>Faster than the form. We talk through what you'd want to ship and where the Alliance fits.</p>
       <ul class="slots">
-        <li><span>Interview</span><span class="meta-small">30 min · free</span><Button variant="ghost" >Book ↗</Button></li>
-        <li><span>Consultation</span><span class="meta-small">30 min · free</span><Button variant="ghost" >Book ↗</Button></li>
+        <li><span>Interview</span><span class="meta-small">30 min · free</span><Button variant="ghost" href="mailto:{legal.contact.general}?subject=Alliance%20interview%20request">Book ↗</Button></li>
+        <li><span>Consultation</span><span class="meta-small">30 min · free</span><Button variant="ghost" href="mailto:{legal.contact.general}?subject=Alliance%20consultation%20request">Book ↗</Button></li>
       </ul>
       <p class="phone">Or call <a href="tel:+1{legal.contact.phone.replaceAll('-','')}">{legal.contact.phone}</a></p>
     </aside>
