@@ -1,6 +1,6 @@
 <!--
   /legal — Draft v0. Pending securities-counsel review.
-  Frames `ta` as digital tool / digital commodity per SEC 2026 Project Crypto;
+  Separates the real Destiny (tiny) reference from Workflow's current test tiny rail;
   written to also be defensible under proposed CLARITY Act framework.
 
   This is NOT legal advice. A securities lawyer must review every claim
@@ -14,7 +14,7 @@
 
 <svelte:head>
   <title>Legal — Workflow</title>
-  <meta name="description" content="License, terms, privacy, and token disclosures for the Workflow platform and the ta token." />
+  <meta name="description" content="License, terms, privacy, and token disclosures for Workflow, test tiny, and the Destiny (tiny) reference." />
 </svelte:head>
 
 <section class="legal">
@@ -23,7 +23,7 @@
     <h1>Legal.</h1>
     <p class="status">{legal.review_status}.</p>
     <p class="lead">
-      Workflow is open-source software under MIT. The catalog content is CC0-1.0. The <code>ta</code> token is a utility token for daemon-market participation. This page covers what that means and what it does not.
+      Workflow is open-source software under MIT. The catalog content is CC0-1.0. Current Workflow settlement testing uses <code>test tiny</code> on Base Sepolia. The real currency reference is <code>{legal.token.display_name}</code>, and real-token integration is deferred.
     </p>
 
     <nav class="toc" aria-label="On this page">
@@ -73,15 +73,22 @@
     <h2 id="token-disclosures">Token disclosures</h2>
     <TokenDisclaimer />
     <h3>Classification framework</h3>
-    <p>Under the SEC's April 2026 interpretive release on crypto-asset categorization (the "Project Crypto" framework), digital assets are classified into five categories: digital commodities, digital collectibles, digital tools, payment stablecoins, and digital securities. <strong><code>{legal.token.name}</code> is intended to function as a digital tool and/or digital commodity</strong> — necessary to participate in the Workflow paid-market, deriving value from the programmatic operation of the protocol.</p>
-    <p><code>ta</code> is also intended to qualify under the "mature blockchain system" carve-out contemplated by the Digital Asset Market Clarity Act (H.R. 3633) once the Workflow protocol meets the decentralization and functional-use criteria established by the Act in its final form.</p>
-    <h3>What ta is</h3>
+    <p>This section separates token identity from current Workflow integration. The real currency reference is <strong><code>{legal.token.display_name}</code></strong>; the current Workflow rail is <strong><code>{legal.token.workflow_test_currency}</code></strong>.</p>
+    <p>Under the SEC's April 2026 interpretive release on crypto-asset categorization (the "Project Crypto" framework), digital assets are classified into five categories: digital commodities, digital collectibles, digital tools, payment stablecoins, and digital securities. If real Workflow settlement opens, <strong><code>{legal.token.display_name}</code> is intended to function as a digital tool and/or digital commodity</strong> for paid-market participation, deriving value from the programmatic operation of the protocol.</p>
+    <p><code>{legal.token.symbol}</code> is also intended to qualify under the "mature blockchain system" carve-out contemplated by the Digital Asset Market Clarity Act (H.R. 3633) once the Workflow protocol meets the decentralization and functional-use criteria established by the Act in its final form.</p>
+    <h3>What Destiny (tiny) is</h3>
     <ul>
-      <li>A utility token used to place paid-market bids, stake on outcome-gate attestations, and participate in DAO governance over the public catalog.</li>
-      <li>Multi-chain: live deploys on BASE Chain (primary), PulseChain, and BSC (legacy, 1:1 migration to BASE supported).</li>
-      <li>Earned by daemon-hosts for completed work that clears outcome gates (activity-based reward; no passive yield).</li>
+      <li>The real currency reference for the future Workflow paid-market and governance messaging.</li>
+      <li>Multi-chain reference contracts: BASE Chain (primary), PulseChain, and BSC legacy migration reference.</li>
+      <li>Not currently paid by Workflow; daemon-host rewards remain on the Base Sepolia <code>test tiny</code> rail until real integration opens.</li>
     </ul>
-    <h3>What ta is not</h3>
+    <h3>What Workflow touches now</h3>
+    <ul>
+      <li><code>test tiny</code> on Base Sepolia for roadmap testing and settlement simulation.</li>
+      <li>No mainnet <code>{legal.token.symbol}</code> payouts, staking, DAO votes, or treasury flows in current Workflow surfaces.</li>
+      <li>Real contract addresses are shown as reference-only so the live naming stays consistent before cutover.</li>
+    </ul>
+    <h3>What tiny is not</h3>
     <ul>
       <li>Not a security, not an investment contract, not equity, not a debt instrument.</li>
       <li>Not a yield-bearing product. No passive return for holding.</li>
@@ -89,19 +96,19 @@
       <li>Not insured. Not FDIC-insured, not SIPC-protected, not government-backed.</li>
     </ul>
     <h3>No offer to sell</h3>
-    <p>This site does not constitute an offer or solicitation to sell securities. The existing <code>ta</code> supply was minted and distributed by the original tinyassets contract; no new offering is being made through this site. Any future minting occurs algorithmically as activity-based rewards under protocol rules.</p>
+    <p>This site does not constitute an offer or solicitation to sell securities. Existing <code>{legal.token.symbol}</code> contracts are reference-only for Workflow today; no new offering is being made through this site. Any future real-token settlement must open as an explicit roadmap phase.</p>
     <h3>KYC / AML</h3>
     <p>Tier-1 chatbot users (browse, run free-tier daemons) do not require KYC. Tier-2 daemon hosts are subject to identity verification at a cumulative lifetime paid-market threshold of <strong>USD 1,000</strong> via a third-party KYC provider (Sumsub, Persona, or Onfido). Treasury operations involve full KYC. Wallet connections are screened against the OFAC sanctions list in real time.</p>
     <h3>Tax</h3>
-    <p>You are responsible for the tax treatment of any <code>ta</code> received, spent, or disposed of in your jurisdiction. Daemon hosts who earn ≥USD 600/year in <code>ta</code> will receive a year-end CSV for self-reporting; we do not file Form 1099-MISC at v0. We are not a tax advisor. Consult a qualified tax professional.</p>
+    <p>Real-token payouts are disabled at v0. If real <code>{legal.token.display_name}</code> payouts later open, you are responsible for the tax treatment of any token received, spent, or disposed of in your jurisdiction. We are not a tax advisor. Consult a qualified tax professional.</p>
 
     <h2 id="risk-factors">Risk factors</h2>
-    <p>Use of <code>ta</code> and the Workflow platform involves risks. Read these carefully.</p>
+    <p>Use of <code>{legal.token.display_name}</code>, <code>test tiny</code>, and the Workflow platform involves risks. Read these carefully.</p>
     <ul>
-      <li><strong>Smart-contract risk.</strong> The settlement contracts on BASE/PulseChain/BSC are unaudited at this draft. Bugs, exploits, or upgrade events may result in total or partial loss of <code>ta</code> holdings.</li>
-      <li><strong>Regulatory risk.</strong> The legal classification of crypto assets is evolving. The CLARITY Act has not yet passed the Senate. Future regulation (US or foreign) may restrict the utility of <code>ta</code>, require KYC, or prohibit certain uses in certain jurisdictions.</li>
-      <li><strong>Liquidity risk.</strong> There is no guaranteed market for <code>ta</code>. Trading volume on any specific venue may be thin or zero.</li>
-      <li><strong>Network risk.</strong> BASE, PulseChain, BSC, and any future chain may experience outages, reorgs, or fee spikes that affect transactions involving <code>ta</code>.</li>
+      <li><strong>Smart-contract risk.</strong> Real contracts on BASE/PulseChain/BSC are unaudited at this draft. Bugs, exploits, or upgrade events may result in total or partial loss of <code>{legal.token.symbol}</code> holdings once real integration exists.</li>
+      <li><strong>Regulatory risk.</strong> The legal classification of crypto assets is evolving. The CLARITY Act has not yet passed the Senate. Future regulation (US or foreign) may restrict the utility of <code>{legal.token.symbol}</code>, require KYC, or prohibit certain uses in certain jurisdictions.</li>
+      <li><strong>Liquidity risk.</strong> There is no guaranteed market for <code>{legal.token.symbol}</code>. Trading volume on any specific venue may be thin or zero.</li>
+      <li><strong>Network risk.</strong> Base Sepolia, BASE, PulseChain, BSC, and any future chain may experience outages, reorgs, or fee spikes that affect test or real-token transactions.</li>
       <li><strong>Protocol-evolution risk.</strong> Phase 6 (outcome ranking), Phase 7 (settlement contracts), Phase 8 (DAO governance) are forward-looking. Plans may change. Voting outcomes may produce protocol changes that affect token utility.</li>
       <li><strong>Counterparty risk.</strong> When you place a paid bid, you are entrusting work to a daemon-host whose only commitment is the protocol. Refunds and disputes are mediated by the protocol's gate-window mechanism, not by us.</li>
       <li><strong>Phishing / impersonation.</strong> The canonical site is <code>tinyassets.io</code>, the canonical MCP URL is <code>tinyassets.io/mcp</code>, the canonical repo is <code>github.com/Jonnyton/Workflow</code>. Anything else is not us.</li>

@@ -1,22 +1,287 @@
 <!--
-  /wiki — live readout from tinyassets.io/mcp.
-  Renders the baked snapshot immediately, then re-renders with live data
-  once the browser fetch lands. If the live fetch fails, the snapshot stays.
+  /wiki — live commons cockpit.
+  Renders the baked MCP snapshot immediately. Browser-side live MCP reads are
+  explicit actions because Cloudflare Access currently gates the public route.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import baked from '$lib/content/mcp-snapshot.json';
-  import { fetchLive, liveToSnapshotShape } from '$lib/mcp/live';
+  import { fetchLive, fetchPageBody, liveToSnapshotShape } from '$lib/mcp/live';
   import type { Snapshot } from '$lib/mcp/types';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
   import StatusPill from '$lib/components/Primitives/StatusPill.svelte';
   import LiveBadge from '$lib/components/LiveBadge.svelte';
 
+  type Lens = 'explore' | 'bugs' | 'goals' | 'plans' | 'graph' | 'pulse';
+  type SortMode = 'connected' | 'type' | 'title';
+  type ItemType = 'goal' | 'universe' | 'bug' | 'concept' | 'note' | 'plan' | 'draft';
+  type BodyStatus = 'idle' | 'loading' | 'ready' | 'error';
+  type WikiItem = {
+    key: string;
+    nodeId: string;
+    type: ItemType;
+    title: string;
+    subtitle: string;
+    slug?: string;
+    tags: string[];
+    connectionCount: number;
+  };
+
+  const LENSES: Array<{ id: Lens; label: string }> = [
+    { id: 'explore', label: 'Explore' },
+    { id: 'bugs', label: 'Bugs' },
+    { id: 'goals', label: 'Goals' },
+    { id: 'plans', label: 'Plans' },
+    { id: 'graph', label: 'Graph' },
+    { id: 'pulse', label: 'Pulse' }
+  ];
+
+  const TYPE_LABEL: Record<ItemType, string> = {
+    goal: 'goal',
+    universe: 'universe',
+    bug: 'bug',
+    concept: 'concept',
+    note: 'note',
+    plan: 'plan',
+    draft: 'draft'
+  };
+
+  const TYPE_TONE: Record<ItemType, string> = {
+    goal: 'var(--ember-600)',
+    universe: 'var(--signal-live)',
+    bug: 'var(--ember-500)',
+    concept: 'var(--violet-200)',
+    note: 'var(--violet-400)',
+    plan: 'var(--ember-300)',
+    draft: 'var(--signal-idle)'
+  };
+
   let snapshot: Snapshot = $state(baked as unknown as Snapshot);
   let loading = $state(false);
   let liveError = $state<string | null>(null);
+  let query = $state('');
+  let lens = $state<Lens>('explore');
+  let sortMode = $state<SortMode>('connected');
+  let selectedKey = $state<string | null>(null);
+  let bodyByKey = $state<Record<string, string>>({});
+  let bodyStatusByKey = $state<Record<string, BodyStatus>>({});
+  let bodyErrorByKey = $state<Record<string, string>>({});
 
-  onMount(async () => {
+  function slugId(path: string): string {
+    return path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+  }
+
+  function pageArg(path: string): string {
+    return path.replace(/\.md$/, '');
+  }
+
+  function uniqueTags(tags: string[]): string[] {
+    return [...new Set(tags.filter(Boolean))].slice(0, 5);
+  }
+
+  function itemMatchesLens(item: WikiItem): boolean {
+    if (lens === 'explore' || lens === 'graph' || lens === 'pulse') return true;
+    if (lens === 'bugs') return item.type === 'bug';
+    if (lens === 'goals') return item.type === 'goal' || item.type === 'universe';
+    return item.type === 'plan' || item.type === 'concept' || item.type === 'note' || item.type === 'draft';
+  }
+
+  function bySort(a: WikiItem, b: WikiItem): number {
+    if (sortMode === 'connected') return b.connectionCount - a.connectionCount || a.title.localeCompare(b.title);
+    if (sortMode === 'type') return a.type.localeCompare(b.type) || a.title.localeCompare(b.title);
+    return a.title.localeCompare(b.title);
+  }
+
+  const degreeByNode = $derived.by(() => {
+    const degree = new Map<string, number>();
+    for (const edge of snapshot.edges ?? []) {
+      degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+      degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+    }
+    return degree;
+  });
+
+  const allItems = $derived.by((): WikiItem[] => {
+    const items: WikiItem[] = [];
+    const tags = snapshot.tags ?? {};
+
+    for (const goal of snapshot.goals ?? []) {
+      const nodeId = `goal:${goal.id}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'goal',
+        title: goal.name,
+        subtitle: goal.summary || goal.id,
+        tags: uniqueTags(goal.tags ?? tags[nodeId] ?? []),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const universe of snapshot.universes ?? []) {
+      const nodeId = `universe:${universe.id}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'universe',
+        title: universe.id,
+        subtitle: `${universe.phase} · ${universe.word_count.toLocaleString()} words${universe.last_activity_at ? ` · ${universe.last_activity_at}` : ''}`,
+        tags: uniqueTags(['universe', universe.phase]),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const bug of snapshot.wiki?.bugs ?? []) {
+      const nodeId = `bug:${bug.id}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'bug',
+        title: `${bug.id} — ${bug.title}`,
+        subtitle: bug.slug ?? bug.id,
+        slug: bug.slug,
+        tags: uniqueTags(tags[nodeId] ?? ['bug']),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const plan of snapshot.wiki?.plans ?? []) {
+      const nodeId = `plan:${slugId(plan.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'plan',
+        title: plan.title,
+        subtitle: plan.slug,
+        slug: plan.slug,
+        tags: uniqueTags(tags[nodeId] ?? ['plan']),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const concept of snapshot.wiki?.concepts ?? []) {
+      const nodeId = `concept:${slugId(concept.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'concept',
+        title: concept.title,
+        subtitle: concept.slug,
+        slug: concept.slug,
+        tags: uniqueTags(tags[nodeId] ?? ['concept']),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const note of snapshot.wiki?.notes ?? []) {
+      const nodeId = `note:${slugId(note.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'note',
+        title: note.title,
+        subtitle: note.slug,
+        slug: note.slug,
+        tags: uniqueTags(tags[nodeId] ?? ['note']),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    for (const draft of snapshot.wiki?.drafts ?? []) {
+      const nodeId = `draft:${draft.slug}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        type: 'draft',
+        title: draft.title,
+        subtitle: draft.slug,
+        slug: draft.slug,
+        tags: uniqueTags(tags[nodeId] ?? ['draft']),
+        connectionCount: degreeByNode.get(nodeId) ?? 0
+      });
+    }
+
+    return items;
+  });
+
+  const filteredItems = $derived.by(() => {
+    const needle = query.trim().toLowerCase();
+    return allItems
+      .filter(itemMatchesLens)
+      .filter((item) => {
+        if (!needle) return true;
+        return [item.title, item.subtitle, item.type, ...item.tags].join(' ').toLowerCase().includes(needle);
+      })
+      .toSorted(bySort);
+  });
+
+  const topConnected = $derived.by(() => allItems.toSorted((a, b) => b.connectionCount - a.connectionCount).slice(0, 8));
+  const selectedItem = $derived(selectedKey ? allItems.find((item) => item.key === selectedKey) ?? null : null);
+  const selectedBody = $derived(selectedKey ? bodyByKey[selectedKey] : undefined);
+  const selectedBodyStatus = $derived(selectedKey ? bodyStatusByKey[selectedKey] ?? 'idle' : 'idle');
+  const selectedBodyError = $derived(selectedKey ? bodyErrorByKey[selectedKey] : undefined);
+
+  const relatedItems = $derived.by(() => {
+    if (!selectedItem) return [];
+    return (snapshot.edges ?? [])
+      .filter((edge) => edge.from === selectedItem.nodeId || edge.to === selectedItem.nodeId)
+      .map((edge) => {
+        const otherId = edge.from === selectedItem.nodeId ? edge.to : edge.from;
+        const item = allItems.find((candidate) => candidate.nodeId === otherId);
+        return {
+          key: item?.key ?? otherId,
+          title: item?.title ?? otherId,
+          type: item?.type ?? 'note',
+          kind: edge.kind ?? 'ref',
+          direction: edge.from === selectedItem.nodeId ? 'out' : 'in'
+        };
+      })
+      .slice(0, 12);
+  });
+
+  const protocolTrace = $derived.by(() => {
+    if (!selectedItem) {
+      return {
+        request: {
+          calls: [
+            { tool: 'wiki', arguments: { action: 'list' } },
+            { tool: 'goals', arguments: { action: 'list' } },
+            { tool: 'universe', arguments: { action: 'list' } }
+          ]
+        },
+        response: {
+          source: snapshot.source,
+          fetched_at: snapshot.fetched_at,
+          counts: snapshot.stats
+        }
+      };
+    }
+
+    if (selectedItem.slug) {
+      return {
+        request: { tool: 'wiki', arguments: { action: 'read', page: pageArg(selectedItem.slug) } },
+        response: {
+          status: selectedBodyStatus,
+          content_chars: selectedBody?.length ?? 0,
+          related_edges: relatedItems.length,
+          error: selectedBodyError
+        }
+      };
+    }
+
+    return {
+      request: {
+        tool: selectedItem.type === 'goal' ? 'goals' : 'universe',
+        arguments: { action: 'list' }
+      },
+      response: {
+        status: 'snapshot metadata',
+        node_id: selectedItem.nodeId,
+        related_edges: relatedItems.length
+      }
+    };
+  });
+
+  async function refreshLive() {
     loading = true;
     try {
       const live = await fetchLive();
@@ -27,167 +292,680 @@
     } finally {
       loading = false;
     }
-  });
+  }
+
+  function selectItem(item: WikiItem) {
+    selectedKey = item.key;
+  }
+
+  async function loadBody(item: WikiItem | null) {
+    if (!item?.slug || bodyByKey[item.key] || bodyStatusByKey[item.key] === 'loading') return;
+
+    bodyStatusByKey = { ...bodyStatusByKey, [item.key]: 'loading' };
+    bodyErrorByKey = { ...bodyErrorByKey, [item.key]: '' };
+    try {
+      const body = await fetchPageBody(item.slug);
+      const content = body?.content ?? '';
+      if (!content) throw new Error('read returned no content');
+      bodyByKey = { ...bodyByKey, [item.key]: content };
+      bodyStatusByKey = { ...bodyStatusByKey, [item.key]: 'ready' };
+    } catch (e: any) {
+      bodyStatusByKey = { ...bodyStatusByKey, [item.key]: 'error' };
+      bodyErrorByKey = { ...bodyErrorByKey, [item.key]: e?.message ?? String(e) };
+    }
+  }
+
+  async function loadSelectedBody() {
+    await loadBody(selectedItem);
+  }
+
+  function selectByKey(key: string) {
+    const item = allItems.find((candidate) => candidate.key === key);
+    if (item) selectItem(item);
+  }
 </script>
 
 <svelte:head>
   <title>Live wiki — Workflow</title>
-  <meta name="description" content="Live readout of the community wiki at tinyassets.io/mcp." />
+  <meta name="description" content="Browse the live Workflow commons through the same MCP-shaped data a chatbot sees." />
 </svelte:head>
 
 <section class="hero">
   <div class="container">
     <div class="head__row">
-      <RitualLabel color="var(--ember-500)">· {snapshot.source} ·</RitualLabel>
-      <LiveBadge fetchedAt={snapshot.fetched_at} source={snapshot.source} {loading} />
+      <RitualLabel color="var(--ember-500)">· {snapshot.source} · commons cockpit ·</RitualLabel>
+      <div class="head__actions">
+        <LiveBadge fetchedAt={snapshot.fetched_at} source={snapshot.source} {loading} />
+        <button type="button" class="refresh" disabled={loading} onclick={refreshLive}>
+          {loading ? 'Refreshing MCP' : 'Refresh MCP'}
+        </button>
+      </div>
     </div>
-    <h1>The wiki is the loop.</h1>
-    <p class="lead">
-      Real users (and their chatbots) file patches, draft concepts, and write builder notes. The community accumulates here. This page reads live from <code>tinyassets.io/mcp</code> on every load.
-    </p>
+    <h1>Browse the commons the way the chatbot does.</h1>
     {#if liveError}
-      <p class="error">Live fetch failed: <code>{liveError}</code> — showing baked snapshot.</p>
+      <p class="error">Live browser fetch failed: <code>{liveError}</code> — showing the baked MCP snapshot.</p>
     {/if}
-    <div class="stats">
-      <div class="stat"><span class="stat__num">{snapshot.stats.wiki_promoted}</span><span class="stat__label">Promoted pages</span></div>
-      <div class="stat"><span class="stat__num">{snapshot.stats.wiki_drafts}</span><span class="stat__label">Drafts</span></div>
-      <div class="stat"><span class="stat__num">{snapshot.stats.goals}</span><span class="stat__label">Goals</span></div>
-      <div class="stat"><span class="stat__num">{snapshot.stats.universes}</span><span class="stat__label">Universes</span></div>
-    </div>
   </div>
 </section>
 
-<section class="goals">
-  <div class="container">
-    <RitualLabel color="var(--violet-400)">· Goals · what the community is pursuing ·</RitualLabel>
-    <h2>{snapshot.goals.length} active goals.</h2>
-    <div class="goals__grid">
-      {#each snapshot.goals as g (g.id)}
-        <article class="goal">
-          <header class="goal__head">
-            <code class="goal__id">{g.id}</code>
-            <h3 class="goal__name">{g.name}</h3>
-          </header>
-          <p class="goal__summary">{g.summary}</p>
-          {#if g.tags.length}
-            <div class="goal__tags">{#each g.tags as t}<span class="tag">{t}</span>{/each}</div>
-          {/if}
-        </article>
-      {/each}
-    </div>
-  </div>
-</section>
+<section class="cockpit">
+  <div class="container cockpit__grid">
+    <div class="surface">
+      <div class="toolbar" aria-label="Wiki controls">
+        <label class="search">
+          <span>Search commons</span>
+          <input bind:value={query} type="search" placeholder="BUG-034, patch loop, agent teams..." />
+        </label>
+        <div class="segments" role="tablist" aria-label="Wiki lenses">
+          {#each LENSES as option}
+            <button
+              type="button"
+              class:active={lens === option.id}
+              role="tab"
+              aria-selected={lens === option.id}
+              onclick={() => (lens = option.id)}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
+        <label class="sort">
+          <span>Sort</span>
+          <select bind:value={sortMode}>
+            <option value="connected">Most connected</option>
+            <option value="type">Type</option>
+            <option value="title">Title</option>
+          </select>
+        </label>
+      </div>
 
-<section class="universes">
-  <div class="container">
-    <RitualLabel>· Universes · live daemon work ·</RitualLabel>
-    <h2>{snapshot.universes.length} universes.</h2>
-    <div class="uni__list">
-      {#each snapshot.universes as u (u.id)}
-        <article class="uni">
-          <div class="uni__name"><code>{u.id}</code></div>
-          <div class="uni__phase">
-            <StatusPill kind={u.phase === 'paused' ? 'idle' : u.phase === 'idle-no-premise' ? 'self' : 'live'}>
-              {u.phase}
-            </StatusPill>
+      {#if lens === 'pulse'}
+        <div class="pulse">
+          <article>
+            <RitualLabel color="var(--signal-live)">· Current pulse ·</RitualLabel>
+            <h2>{snapshot.universes.length} universes, {snapshot.goals.length} active goals.</h2>
+            <p>The public feed is thin live state: identity, phase, counts, and artifact handles. The durable material stays in the wiki pages and graph references.</p>
+          </article>
+          <div class="pulse__facts">
+            {#each snapshot.universes as universe}
+              <button type="button" class="pulse__fact" onclick={() => selectByKey(`universe:${universe.id}`)}>
+                <span>{universe.id}</span>
+                <strong>{universe.phase}</strong>
+                <small>{universe.word_count.toLocaleString()} words</small>
+              </button>
+            {/each}
           </div>
-          <div class="uni__words">{u.word_count.toLocaleString()} words</div>
-          <div class="uni__when">{u.last_activity_at ? `last ${u.last_activity_at}` : 'no activity yet'}</div>
-        </article>
-      {/each}
-    </div>
-  </div>
-</section>
+        </div>
+      {:else if lens === 'graph'}
+        <div class="graphlens">
+          <article>
+            <RitualLabel color="var(--violet-400)">· Relationship lens ·</RitualLabel>
+            <h2>The graph is already in the snapshot.</h2>
+            <p>Edges come from page bodies: wiki links, bare bug tokens, and frontmatter references. The list below is ordered by how much each node ties the commons together.</p>
+          </article>
+          <ol class="connected">
+            {#each topConnected as item}
+              <li>
+                <button type="button" onclick={() => selectItem(item)}>
+                  <span class="connected__rank">{item.connectionCount}</span>
+                  <span class="connected__body">
+                    <strong>{item.title}</strong>
+                    <small>{TYPE_LABEL[item.type]} · {item.nodeId}</small>
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ol>
+        </div>
+      {/if}
 
-<section class="bugs">
-  <div class="container">
-    <RitualLabel color="var(--ember-500)">· Bugs · {snapshot.wiki.bugs.length} filed · this is what users said wasn't working ·</RitualLabel>
-    <h2>Filed by chatbot-users via the wiki.</h2>
-    <p class="bugs__lead">Each bug is a <code>patch_request</code> waiting for a daemon to claim it. Iteration is constant.</p>
-    <ol class="bugs__list">
-      {#each snapshot.wiki.bugs as b (b.id)}
-        <li class="bug"><code class="bug__id">{b.id}</code><span class="bug__title">{b.title}</span></li>
-      {/each}
-    </ol>
-  </div>
-</section>
+      <div class="results__head">
+        <RitualLabel>· {filteredItems.length} visible ·</RitualLabel>
+        <span>{query ? `filtered by "${query}"` : 'snapshot browse'}</span>
+      </div>
 
-<section class="docs">
-  <div class="container docs__grid">
-    <div class="col">
-      <RitualLabel color="var(--violet-400)">· Concepts ·</RitualLabel>
-      <ul class="doclist">
-        {#each snapshot.wiki.concepts as p (p.slug)}<li><span class="doc__type">concept</span><span>{p.title}</span></li>{/each}
+      <ul class="results">
+        {#each filteredItems as item (item.key)}
+          <li>
+            <button
+              type="button"
+              class="item"
+              class:selected={selectedKey === item.key}
+              onclick={() => selectItem(item)}
+            >
+              <span class="item__type" style:color={TYPE_TONE[item.type]}>{TYPE_LABEL[item.type]}</span>
+              <span class="item__main">
+                <strong>{item.title}</strong>
+                <small>{item.subtitle}</small>
+                {#if item.tags.length}
+                  <span class="tags">
+                    {#each item.tags as tag}<span>{tag}</span>{/each}
+                  </span>
+                {/if}
+              </span>
+              <span class="item__edges">{item.connectionCount}</span>
+            </button>
+          </li>
+        {/each}
       </ul>
     </div>
-    <div class="col">
-      <RitualLabel>· Builder notes ·</RitualLabel>
-      <ul class="doclist">
-        {#each snapshot.wiki.notes as p (p.slug)}<li><span class="doc__type">note</span><span>{p.title}</span></li>{/each}
-      </ul>
-    </div>
-  </div>
-</section>
 
-<section class="docs">
-  <div class="container">
-    <RitualLabel color="var(--ember-500)">· Plans · {snapshot.wiki.plans.length} active ·</RitualLabel>
-    <ul class="doclist doclist--plans">
-      {#each snapshot.wiki.plans as p (p.slug)}<li><span class="doc__type">plan</span><span>{p.title}</span></li>{/each}
-    </ul>
-  </div>
-</section>
+    <aside class="detail" aria-label="Selected commons item">
+      {#if selectedItem}
+        <div class="detail__head">
+          <RitualLabel color={TYPE_TONE[selectedItem.type]}>· {TYPE_LABEL[selectedItem.type]} ·</RitualLabel>
+          <StatusPill kind={selectedItem.type === 'universe' ? 'live' : selectedItem.type === 'draft' ? 'idle' : 'self'}>
+            {selectedItem.connectionCount} edges
+          </StatusPill>
+        </div>
+        <h2>{selectedItem.title}</h2>
+        <p>{selectedItem.subtitle}</p>
+        {#if selectedItem.tags.length}
+          <div class="tags tags--detail">
+            {#each selectedItem.tags as tag}<span>{tag}</span>{/each}
+          </div>
+        {/if}
 
-<section class="docs">
-  <div class="container">
-    <RitualLabel>· Drafts · {snapshot.wiki.drafts.length} in progress ·</RitualLabel>
-    <ul class="doclist doclist--drafts">
-      {#each snapshot.wiki.drafts as p (p.slug)}<li><span class="doc__type">draft</span><span>{p.title}</span></li>{/each}
-    </ul>
+        <div class="readout">
+          <RitualLabel>· Body readout ·</RitualLabel>
+          {#if selectedItem.slug}
+            {#if selectedBodyStatus === 'loading'}
+              <p class="muted">Fetching <code>wiki action=read</code> through the browser MCP path...</p>
+            {:else if selectedBodyStatus === 'ready'}
+              <pre class="body"><code>{selectedBody}</code></pre>
+            {:else if selectedBodyStatus === 'error'}
+              <p class="error error--panel">Browser-side read failed: <code>{selectedBodyError}</code></p>
+              <p class="muted">The snapshot still carries this page's title, tags, and graph links. True browser reads need the public read-only MCP route described in DEPLOY.md.</p>
+            {:else}
+              <p class="muted">Fetch the body through <code>wiki action=read</code>. This may fail in-browser until the public read-only MCP route is open.</p>
+              <button type="button" class="inline-action" onclick={loadSelectedBody}>Fetch body</button>
+            {/if}
+          {:else}
+            <p class="muted">This item comes from a list endpoint, so the detail is snapshot metadata rather than a wiki page body.</p>
+          {/if}
+        </div>
+
+        <div class="related">
+          <RitualLabel>· Related nodes ·</RitualLabel>
+          {#if relatedItems.length}
+            <div class="related__list">
+              {#each relatedItems as related}
+                <button type="button" onclick={() => selectByKey(related.key)}>
+                  <span>{related.kind} · {related.direction}</span>
+                  <strong>{related.title}</strong>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <p class="muted">No parsed graph edge points at this node yet.</p>
+          {/if}
+        </div>
+      {:else}
+        <RitualLabel>· Select a commons item ·</RitualLabel>
+        <h2>The detail pane shows the proof path.</h2>
+        <p>Choose a goal, bug, plan, note, draft, or universe to inspect tags, edges, page body, and the MCP request shape behind it.</p>
+      {/if}
+
+      <div class="trace">
+        <RitualLabel color="var(--violet-400)">· MCP trace ·</RitualLabel>
+        <pre><code>{JSON.stringify(protocolTrace, null, 2)}</code></pre>
+      </div>
+    </aside>
   </div>
 </section>
 
 <style>
-  .hero, .goals, .universes, .bugs, .docs { padding-block: 56px; border-top: 1px solid var(--border-1); }
-  .hero { padding-top: 80px; border-top: none; }
-  .head__row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
-  h1 { font-family: var(--font-display); font-size: clamp(48px, 8vw, 72px); font-weight: 400; letter-spacing: -0.035em; line-height: 0.95; margin: 14px 0 18px; }
-  h2 { font-family: var(--font-display); font-size: clamp(24px, 4vw, 32px); font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 18px; }
-  .lead { font-size: 16px; color: var(--fg-2); line-height: 1.6; margin: 0 0 16px; max-width: 64ch; }
-  .lead code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 13px; color: var(--violet-200); }
-  .error { font-size: 13px; color: var(--signal-error); margin: 0 0 16px; font-family: var(--font-mono); }
-  .error code { color: var(--signal-error); }
-  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
-  .stat { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 10px; padding: 14px 20px; min-width: 110px; }
-  .stat__num { display: block; font-family: var(--font-display); font-size: 36px; font-weight: 500; color: var(--ember-600); line-height: 1; }
-  .stat__label { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.14em; margin-top: 6px; }
-  .goals__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  @media (max-width: 800px) { .goals__grid { grid-template-columns: 1fr; } }
-  .goal { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 12px; padding: 20px 22px; }
-  .goal__head { margin-bottom: 10px; }
-  .goal__id { font-family: var(--font-mono); font-size: 11px; color: var(--violet-200); }
-  .goal__name { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-1); margin: 4px 0 0; line-height: 1.3; }
-  .goal__summary { font-size: 13px; color: var(--fg-2); line-height: 1.55; margin: 8px 0 12px; }
-  .goal__tags { display: flex; gap: 6px; flex-wrap: wrap; }
-  .tag { font-family: var(--font-mono); font-size: 10px; color: var(--fg-3); background: rgba(255,255,255,0.04); padding: 2px 7px; border-radius: 4px; letter-spacing: 0.05em; }
-  .uni__list { display: flex; flex-direction: column; gap: 10px; }
-  .uni { display: grid; grid-template-columns: 160px 140px 140px 1fr; gap: 16px; align-items: center; background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 10px; padding: 12px 18px; }
-  @media (max-width: 800px) { .uni { grid-template-columns: 1fr; gap: 8px; } }
-  .uni__name code { font-family: var(--font-mono); font-size: 14px; color: var(--fg-1); font-weight: 600; }
-  .uni__words { font-family: var(--font-mono); font-size: 12px; color: var(--fg-2); }
-  .uni__when { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }
-  .bugs__lead { font-size: 14px; color: var(--fg-2); margin: 0 0 24px; max-width: 60ch; line-height: 1.55; }
-  .bugs__lead code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--violet-200); }
-  .bugs__list { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 20px; }
-  @media (max-width: 800px) { .bugs__list { column-count: 1; } }
-  .bug { display: grid; grid-template-columns: 80px 1fr; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border-1); break-inside: avoid; font-size: 13px; line-height: 1.5; color: var(--fg-2); }
-  .bug__id { font-family: var(--font-mono); font-size: 11px; color: var(--ember-600); background: rgba(233,69,96,0.06); padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em; text-align: center; }
-  .docs__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-  @media (max-width: 700px) { .docs__grid { grid-template-columns: 1fr; gap: 16px; } }
-  .doclist { list-style: none; padding: 0; margin: 12px 0 0; }
-  .doclist li { display: grid; grid-template-columns: 80px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-1); font-size: 13.5px; line-height: 1.5; color: var(--fg-2); }
-  .doclist li:last-child { border-bottom: none; }
-  .doc__type { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--violet-400); background: rgba(138,99,206,0.08); padding: 3px 6px; border-radius: 4px; text-align: center; }
-  .doclist--plans .doc__type { color: var(--ember-500); background: rgba(233,69,96,0.06); }
-  .doclist--drafts .doc__type { color: var(--signal-idle); background: rgba(217,168,74,0.08); }
+  .hero {
+    padding-top: 80px;
+    padding-bottom: 40px;
+  }
+
+  .head__row,
+  .detail__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .head__actions {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .refresh,
+  .inline-action {
+    background: transparent;
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    color: var(--fg-1);
+    cursor: pointer;
+    font: 11px var(--font-mono);
+    letter-spacing: 0.1em;
+    min-height: 32px;
+    padding: 0 10px;
+    text-transform: uppercase;
+  }
+
+  .refresh:hover,
+  .inline-action:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .refresh:disabled {
+    color: var(--fg-4);
+    cursor: wait;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(44px, 7vw, 72px);
+    font-weight: 400;
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+    margin: 14px 0 18px;
+    max-width: 11ch;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin: 10px 0 12px;
+  }
+
+  .error {
+    color: var(--signal-error);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    margin: 0 0 16px;
+    max-width: 80ch;
+  }
+
+  .error code {
+    color: var(--signal-error);
+  }
+
+  .cockpit {
+    border-top: 1px solid var(--border-1);
+    padding: 28px 0 64px;
+  }
+
+  .cockpit__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    gap: 18px;
+    align-items: start;
+  }
+
+  @media (max-width: 980px) {
+    .cockpit__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .surface,
+  .detail {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+  }
+
+  .surface {
+    overflow: hidden;
+  }
+
+  .detail {
+    padding: 18px;
+    position: sticky;
+    top: 88px;
+  }
+
+  @media (max-width: 980px) {
+    .detail {
+      position: static;
+    }
+  }
+
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto 150px;
+    gap: 12px;
+    padding: 14px;
+    border-bottom: 1px solid var(--border-1);
+    align-items: end;
+  }
+
+  @media (max-width: 900px) {
+    .toolbar {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  label span,
+  .results__head span {
+    color: var(--fg-3);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  input,
+  select {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    color: var(--fg-1);
+    font: 13px var(--font-sans);
+    min-height: 38px;
+    outline: none;
+    padding: 0 12px;
+    width: 100%;
+  }
+
+  input:focus,
+  select:focus {
+    border-color: rgba(233, 69, 96, 0.55);
+    box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.12);
+  }
+
+  .segments {
+    align-items: center;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .segments button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--fg-2);
+    cursor: pointer;
+    font: 11px var(--font-mono);
+    letter-spacing: 0.08em;
+    min-height: 30px;
+    padding: 0 10px;
+    text-transform: uppercase;
+  }
+
+  .segments button.active,
+  .segments button:hover {
+    background: rgba(233, 69, 96, 0.12);
+    border-color: rgba(233, 69, 96, 0.24);
+    color: var(--fg-1);
+  }
+
+  .pulse,
+  .graphlens {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+    gap: 16px;
+    padding: 18px;
+    border-bottom: 1px solid var(--border-1);
+  }
+
+  @media (max-width: 800px) {
+    .pulse,
+    .graphlens {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .pulse p,
+  .graphlens p,
+  .detail p,
+  .muted {
+    color: var(--fg-2);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0 0 12px;
+  }
+
+  .pulse__facts,
+  .connected {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .pulse__fact,
+  .connected button,
+  .related__list button {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    color: var(--fg-1);
+    cursor: pointer;
+    padding: 10px 12px;
+    text-align: left;
+    width: 100%;
+  }
+
+  .pulse__fact:hover,
+  .connected button:hover,
+  .related__list button:hover {
+    border-color: var(--border-2);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .pulse__fact span,
+  .pulse__fact strong,
+  .pulse__fact small {
+    display: block;
+  }
+
+  .pulse__fact span,
+  .connected small,
+  .related__list span {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .pulse__fact strong,
+  .connected strong,
+  .related__list strong {
+    color: var(--fg-1);
+    display: block;
+    font-size: 13px;
+    line-height: 1.35;
+    margin-top: 3px;
+  }
+
+  .pulse__fact small {
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  .connected button {
+    align-items: center;
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 10px;
+  }
+
+  .connected__rank {
+    color: var(--ember-600);
+    font-family: var(--font-display);
+    font-size: 28px;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .results__head {
+    align-items: center;
+    border-bottom: 1px solid var(--border-1);
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 14px;
+  }
+
+  .results__head span {
+    margin: 0;
+    text-transform: none;
+  }
+
+  .results {
+    list-style: none;
+    margin: 0;
+    max-height: 760px;
+    overflow: auto;
+    padding: 0;
+  }
+
+  .item {
+    align-items: start;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border-1);
+    color: inherit;
+    cursor: pointer;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 82px minmax(0, 1fr) 42px;
+    padding: 13px 14px;
+    text-align: left;
+    width: 100%;
+  }
+
+  @media (max-width: 620px) {
+    .item {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .item:hover,
+  .item.selected {
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .item.selected {
+    box-shadow: inset 3px 0 0 var(--ember-600);
+  }
+
+  .item__type {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    margin-top: 3px;
+    text-transform: uppercase;
+  }
+
+  .item__main {
+    min-width: 0;
+  }
+
+  .item strong {
+    color: var(--fg-1);
+    display: block;
+    font-size: 14px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .item small {
+    color: var(--fg-3);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.45;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  .item__edges {
+    align-self: start;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 999px;
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    text-align: center;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .tags span {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-1);
+    border-radius: 4px;
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    padding: 4px 6px;
+  }
+
+  .tags--detail {
+    margin-bottom: 16px;
+  }
+
+  .readout,
+  .related,
+  .trace {
+    border-top: 1px solid var(--border-1);
+    margin-top: 16px;
+    padding-top: 16px;
+  }
+
+  .body,
+  .trace pre {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    margin: 10px 0 0;
+    max-height: 380px;
+    overflow: auto;
+    padding: 12px;
+  }
+
+  .body code,
+  .trace code {
+    background: transparent;
+    border: 0;
+    color: var(--fg-2);
+    font-size: 11px;
+    line-height: 1.55;
+    padding: 0;
+    white-space: pre-wrap;
+  }
+
+  .related__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .error--panel {
+    margin-top: 10px;
+  }
 </style>

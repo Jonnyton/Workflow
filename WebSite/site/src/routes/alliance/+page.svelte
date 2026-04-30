@@ -1,9 +1,12 @@
 <!-- /alliance — async-first community channels. No phone, no fake form, no booked calls. -->
 <script lang="ts">
+  import LiveSourceBar from '$lib/components/LiveSourceBar.svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
   import Button from '$lib/components/Primitives/Button.svelte';
   import legal from '$lib/content/legal-info.json';
+  import { compactNumber, createPulse } from '$lib/live/project';
 
+  const pulse = createPulse();
   let name = $state('');
   let email = $state('');
   let mission = $state('');
@@ -30,12 +33,30 @@
     <h1>Join the Tiny Alliance.</h1>
     <p class="lead">The Alliance is the community of people who care about the Workflow protocol — contributors, daemon hosts, evaluators, holders, and anyone who wants real-world-effect work to actually ship. Share what you're passionate about. We'll find a place for you.</p>
     <p class="lead lead--soft">We do this asynchronously. No calls — talk to us in writing or through your chatbot. We read everything.</p>
+    <LiveSourceBar label="Community intake" detail={`${compactNumber(pulse.mcp.wiki.bugs.length)} public bugs, ${compactNumber(pulse.mcp.goals.length)} goals, and ${compactNumber(pulse.branchCount)} branches can receive written work.`} tone="ember" />
+    <div class="entry-paths" aria-label="Alliance entry paths">
+      <a href="/connect">
+        <span>Chatbot path</span>
+        <strong>Connect your MCP</strong>
+        <p>Ask your chatbot to browse, file, or route work.</p>
+      </a>
+      <a href="https://github.com/Jonnyton/Workflow/discussions" target="_blank" rel="noreferrer">
+        <span>Public path</span>
+        <strong>Start on GitHub</strong>
+        <p>Bring an idea, bug, RFC, or contribution thread.</p>
+      </a>
+      <a href="#alliance-form">
+        <span>Direct path</span>
+        <strong>Write the Alliance</strong>
+        <p>Use email for partnerships or private coordination.</p>
+      </a>
+    </div>
   </div>
 </section>
 
 <section class="form-block">
   <div class="container">
-    <form class="form" onsubmit={handleSubmit}>
+    <form id="alliance-form" class="form" onsubmit={handleSubmit}>
       <RitualLabel>Send a message</RitualLabel>
       <label>Name <input type="text" name="name" required bind:value={name} /></label>
       <label>Email <input type="email" name="email" required bind:value={email} /></label>
@@ -86,17 +107,24 @@
   h3 { font-family: var(--font-display); font-size: 20px; font-weight: 500; margin: 8px 0 10px; color: var(--fg-1); letter-spacing: -0.01em; }
   .lead { font-size: 16px; color: var(--fg-2); line-height: 1.6; max-width: 64ch; margin: 0 0 14px; }
   .lead--soft { font-size: 14px; color: var(--fg-3); font-style: italic; margin-top: 0; }
+  .entry-paths { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .entry-paths a { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 8px; color: inherit; display: grid; gap: 7px; min-width: 0; padding: 18px; text-decoration: none; transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon); }
+  .entry-paths a:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
+  .entry-paths span { color: var(--fg-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .entry-paths strong { color: var(--fg-1); font-family: var(--font-display); font-size: 24px; font-weight: 500; line-height: 1.08; }
+  .entry-paths p { color: var(--fg-2); font-size: 13.5px; line-height: 1.5; margin: 0; }
+  @media (max-width: 760px) { .entry-paths { grid-template-columns: 1fr; } }
   .form-block .container { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: start; }
   @media (max-width: 800px) { .form-block .container { grid-template-columns: 1fr; } }
 
-  .form { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 24px 26px; display: flex; flex-direction: column; gap: 12px; }
+  .form { box-sizing: border-box; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 24px 26px; display: flex; flex-direction: column; gap: 12px; }
   .form label { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.14em; }
   .form input, .form textarea { background: var(--bg-inset); border: 1px solid var(--border-1); color: var(--fg-1); padding: 10px 12px; border-radius: 6px; font-family: var(--font-sans); font-size: 14px; text-transform: none; letter-spacing: 0; }
   .form input:focus, .form textarea:focus { border-color: var(--ember-600); outline: none; box-shadow: var(--glow-ember); }
   .meta { font-size: 12px; color: var(--fg-3); font-style: italic; margin: 4px 0 0; }
   .meta a { color: var(--ember-600); text-decoration: none; }
 
-  .channels { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 24px 26px; }
+  .channels { box-sizing: border-box; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 24px 26px; }
   .channels__lead { font-size: 13.5px; color: var(--fg-2); line-height: 1.6; margin: 0 0 16px; }
   .channels__list { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 14px; }
   .channels__list li { padding: 14px 16px; background: var(--bg-inset); border-radius: 8px; border: 1px solid transparent; transition: border-color var(--dur-fast) var(--ease-standard); }

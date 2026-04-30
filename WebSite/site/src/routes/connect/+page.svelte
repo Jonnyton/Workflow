@@ -4,10 +4,28 @@
 -->
 <script lang="ts">
   import strings from '$lib/i18n/en.json';
+  import LiveSourceBar from '$lib/components/LiveSourceBar.svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
 
   const t = strings.connect;
-  const url = t.mcp_url; // https://api.tinyassets.io/mcp from en.json (note: per spec the canonical apex is tinyassets.io/mcp — verify)
+  const url = t.mcp_url;
+  const requestEnvelope = JSON.stringify(
+    {
+      server: 'tinyassets.io/mcp',
+      calls: [
+        { tool: 'wiki', arguments: { action: 'list' } },
+        { tool: 'goals', arguments: { action: 'list' } },
+        { tool: 'universe', arguments: { action: 'list' } }
+      ]
+    },
+    null,
+    2
+  );
+  const protocolFacts = [
+    { label: 'read commons', href: '/wiki' },
+    { label: 'browse goals', href: '/catalog' },
+    { label: 'inspect universes', href: '/host' }
+  ];
 
   let copied = $state(false);
   async function copyUrl() {
@@ -28,13 +46,15 @@
 
 <section class="connect">
   <div class="wrap">
-    <RitualLabel color="var(--violet-400)">· Zero install · two steps ·</RitualLabel>
-    <h1 class="title">Add the connector. Then talk.</h1>
+    <RitualLabel color="var(--signal-live)">· User entry · tinyassets.io/mcp ·</RitualLabel>
+    <h1 class="title">Connect your MCP.</h1>
     <p class="lead">
-      Paste one URL into your chatbot's connector settings. That's it. Your chatbot can now browse goals, fork branches, and summon daemons — just ask it to.
+      Paste one URL into your chatbot's connector settings. Your chatbot can browse the commons, read goals, inspect universes, and route work into the same loop the site shows.
     </p>
 
-    <div class="card">
+    <LiveSourceBar label="Connector proof" detail="Refresh the public MCP route or GitHub source before copying the URL." />
+
+    <div class="card" id="mcp-server-url">
       <div class="card__label">MCP Server URL</div>
       <div class="row">
         <input class="row__input" readonly value={url} aria-label="MCP server URL" />
@@ -49,21 +69,35 @@
       </div>
     </div>
 
+    <div class="protocol">
+      <div>
+        <RitualLabel color="var(--signal-live)">· What the connector unlocks ·</RitualLabel>
+        <h3>Same URL for chatbots and site proof.</h3>
+        <p>The refresh controls and your chatbot both point at the same public MCP surface. The difference is only who renders the response.</p>
+        <div class="protocol__facts">
+          {#each protocolFacts as fact}
+            <a href={fact.href}>{fact.label}</a>
+          {/each}
+        </div>
+      </div>
+      <pre><code>{requestEnvelope}</code></pre>
+    </div>
+
     <div class="steps">
-      <article class="step">
+      <a class="step" href="#mcp-server-url">
         <div class="step__num">1</div>
         <div class="step__title">Add it.</div>
         <p class="step__body">
           In your chatbot (Claude.ai, etc.), open connector settings and paste the URL. Approve.
         </p>
-      </article>
-      <article class="step">
+      </a>
+      <a class="step" href="/wiki">
         <div class="step__num">2</div>
         <div class="step__title">Talk.</div>
         <p class="step__body">
           Start a new chat. Say: "browse research-paper branches" or "fork fantasy-novel / claim-first." Your chatbot steers.
         </p>
-      </article>
+      </a>
     </div>
 
     <div class="step-by-step">
@@ -102,9 +136,9 @@
   .card {
     background: var(--bg-2);
     border: 1px solid var(--border-1);
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 28px;
-    margin-bottom: 48px;
+    margin-bottom: 16px;
   }
   .card__label {
     font-family: var(--font-mono);
@@ -144,6 +178,19 @@
     background: var(--signal-live);
     color: #0e2b1d;
   }
+  @media (max-width: 560px) {
+    .row { display: grid; grid-template-columns: 1fr; }
+    .row__input {
+      min-width: 0;
+      border-right: 1px solid var(--border-1);
+      border-radius: 8px 8px 0 0;
+    }
+    .row__btn {
+      min-width: 0;
+      border-radius: 0 0 8px 8px;
+      padding: 12px 16px;
+    }
+  }
   .steps {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -157,8 +204,13 @@
     background: var(--bg-2);
     border: 1px solid var(--border-1);
     border-radius: 12px;
+    color: inherit;
+    display: block;
     padding: 24px 26px;
+    text-decoration: none;
+    transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon);
   }
+  .step:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
   .step__num {
     font-family: var(--font-display);
     font-size: 48px;
@@ -190,4 +242,65 @@
     line-height: 1.7;
   }
   .step-by-step ol li { margin-bottom: 6px; }
+  .protocol {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+    gap: 16px;
+    margin-bottom: 48px;
+    padding: 22px;
+  }
+  .protocol h3 {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.05;
+    margin: 12px 0 10px;
+  }
+  .protocol p {
+    color: var(--fg-2);
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin: 0 0 14px;
+  }
+  .protocol pre {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    margin: 0;
+    overflow-x: auto;
+    padding: 14px;
+  }
+  .protocol code {
+    color: var(--fg-1);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .protocol__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .protocol__facts a {
+    border: 1px solid var(--border-1);
+    border-radius: 4px;
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    padding: 4px 7px;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: border-color var(--dur-base) var(--ease-summon), color var(--dur-base) var(--ease-summon);
+  }
+  .protocol__facts a:hover { border-color: rgba(109, 211, 166, 0.42); color: var(--signal-live); }
+  @media (max-width: 760px) {
+    .protocol { grid-template-columns: 1fr; }
+  }
 </style>

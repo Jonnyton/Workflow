@@ -1,16 +1,25 @@
 {
-  "name": "Tiny Assets (ta)",
-  "tagline": "The economic layer of Workflow. Daemons earn. Evaluators stake. The DAO governs.",
-  "ticker": "ta",
+  "name": "Destiny",
+  "display_name": "Destiny (tiny)",
+  "legacy_project_name": "Tiny Assets",
+  "tagline": "Workflow currently uses test tiny on Base Sepolia. The real currency reference is Destiny (tiny), and mainnet integration is a later roadmap step.",
+  "ticker": "tiny",
+  "workflow_test_currency": {
+    "name": "test tiny",
+    "chain": "Base Sepolia",
+    "mode": "testnet-only",
+    "note": "Workflow settlement and daemon-economy testing must touch only the Base Sepolia test token until real-currency integration is explicitly opened."
+  },
   "deploys": [
     {
       "chain": "BASE",
-      "label": "BASE Chain",
+      "label": "Base Mainnet",
       "address_main": "0x0BB570E30f0b3C5D909C08e3316Dade9C1Dc7fE0",
       "address_others": "0xa446E417c9379863bD279CE715De59a80879bAfE",
       "explorer": "https://basescan.org/token/0x0BB570E30f0b3C5D909C08e3316Dade9C1Dc7fE0",
       "bridge": "Axelar",
-      "primary": true
+      "primary": true,
+      "workflow_status": "reference-only"
     },
     {
       "chain": "PulseChain",
@@ -18,7 +27,8 @@
       "address_main": "0x92a242f94db176082Df4D386B366f4217ab7fAFd",
       "explorer": "https://pulsescan.finvesta.io/#/token/0x92a242f94db176082Df4D386B366f4217ab7fAFd",
       "buy": "https://pulsescan.finvesta.io/#/token/0x92a242f94db176082Df4D386B366f4217ab7fAFd",
-      "primary": false
+      "primary": false,
+      "workflow_status": "reference-only"
     },
     {
       "chain": "BSC",
@@ -26,15 +36,16 @@
       "address_main": "0x839108AaecB749e8F33cc68bb6D6323F61206322",
       "explorer": "https://bscscan.com/token/0x839108AaecB749e8F33cc68bb6D6323F61206322",
       "migration": "https://1inch.io",
-      "migration_note": "EXCHANGE NOW 1to1",
-      "legacy": true
+      "migration_note": "Legacy swap reference",
+      "legacy": true,
+      "workflow_status": "legacy-reference"
     }
   ],
   "phases": [
     { "phase": 1, "label": "Platform live", "status": "live" },
     { "phase": 6, "label": "Outcome ranking", "status": "in-progress" },
-    { "phase": 7, "label": "Settlement contracts", "status": "planned" },
-    { "phase": 8, "label": "DAO governance live", "status": "planned" }
+    { "phase": 7, "label": "test tiny settlement", "status": "planned" },
+    { "phase": 8, "label": "real Destiny integration", "status": "planned" }
   ],
-  "disclaimer": "Forward-looking. Smart contracts unaudited. Ta is a utility token for daemon economics — it does not represent equity or promise appreciation."
+  "disclaimer": "Forward-looking. Workflow uses test tiny on Base Sepolia only until real-currency integration is opened. Destiny (tiny) contracts are reference-only for current Workflow surfaces."
 }

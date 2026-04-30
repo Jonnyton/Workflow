@@ -1,130 +1,66 @@
 <!--
-  PatternsTease — landing strip for the community handbook.
-  Frame: the chatbot is the interface; real chatbot-users are the iteration pipeline;
-  user-sim is an internal Claude Code agent that dogfoods that loop ahead of real users.
+  Home-page strip introducing the iteration loop.
+  Used to be "Patterns from the canon" (architecture-doc framing).
+  Now: "The loop." — a 5-step horizontal walkthrough teasing the full
+  community-driven iteration cycle, with a CTA into /loop/.
 -->
 <script lang="ts">
   import RitualLabel from './Primitives/RitualLabel.svelte';
   import Button from './Primitives/Button.svelte';
-  import patterns from '$lib/content/patterns.json';
 
-  // Three most visually informative for the tease.
-  const featured = ['01', '06', '08']
-    .map((n) => patterns.diagrams.find((d) => d.n === n))
-    .filter((d): d is typeof patterns.diagrams[number] => Boolean(d));
+  // Five compressed beats from the full continued conversation on /loop/.
+  const beats = [
+    { n: '01', label: 'Real work',     blurb: "You ask your chatbot for the thing. A daemon does it. CSV, draft, synthesis, BOM — the actual artifact, not a description." },
+    { n: '02', label: 'Friction',      blurb: "Almost. One thing's missing — a feature, a fix, a finer evaluator. You say so naturally." },
+    { n: '03', label: 'Patch filed',   blurb: "Your chatbot files a patch_request to the wiki. No git, no GitHub, no command. Stays in chat." },
+    { n: '04', label: 'Daemon ships',  blurb: "A daemon picks the patch up, drafts a fix, clears gates, opens a PR. The fix doesn't merge until it's real." },
+    { n: '05', label: 'Loop evolves',  blurb: "Same flow edits the catalog itself — goals, gates, branches. The substrate changes through the loop." }
+  ];
 </script>
 
-<section class="patterns">
+<section class="loop">
   <div class="container">
     <div class="head">
-      <div>
-        <RitualLabel color="var(--ember-500)">· Vol. 1 · community handbook · 10 diagrams · CC0 ·</RitualLabel>
-        <h2 class="title">Patterns from the canon.</h2>
-        <p class="lead">
-          The interface is your chatbot. The iteration pipeline is the community of chatbot-users — files patches, ships fixes, ranks branches by real-world outcome. These ten diagrams are how a chatbot-user thinks about the system; an internal <code>user-sim</code> agent drafted them ahead of public launch by dogfooding the same channels real users will use.
-        </p>
-        <Button variant="primary" href="/patterns">See all 10 →</Button>
-      </div>
+      <RitualLabel color="var(--violet-400)">· How the project evolves itself ·</RitualLabel>
+      <h2 class="title">The loop.</h2>
+      <p class="lead">
+        Your chatbot doesn't just <em>use</em> Workflow — it helps build it. A user has a real-world thing they want done. A daemon does the work. The user notices what's missing. The chatbot files a patch. A different daemon picks it up. The fix ships. Settlement mints. The next user benefits — and the catalog itself, the rules of the game, gets forked and re-tuned by the people running the loop.
+      </p>
+      <p class="origin">
+        <strong>Even this loop — the very first version of it — was built by users.</strong> Drawn out of <code>user-sim</code> sessions where chatbot-personas filed the first patches, named what was missing, forked what didn't fit. The protocol's first patches are the protocol. There has never been a separate design committee.
+      </p>
+      <Button variant="primary" href="/loop">Walk the whole loop →</Button>
     </div>
 
-    <div class="thumbs">
-      {#each featured as d (d.n)}
-        <a class="thumb" href="/patterns#{d.n}" aria-label={d.title}>
-          <div class="thumb__img">
-            <img src="/teams/{d.file}" alt={d.title} loading="lazy" />
-          </div>
-          <div class="thumb__meta">
-            <span class="thumb__n">{d.n}</span>
-            <span class="thumb__title">{d.title}</span>
-          </div>
-        </a>
+    <ol class="beats">
+      {#each beats as b (b.n)}
+        <li class="beat">
+          <span class="beat__n">{b.n}</span>
+          <span class="beat__label">{b.label}</span>
+          <p class="beat__blurb">{b.blurb}</p>
+        </li>
       {/each}
-    </div>
+    </ol>
   </div>
 </section>
 
 <style>
-  .patterns {
-    border-top: 1px solid var(--border-1);
-  }
-  .head {
-    margin-bottom: 32px;
-  }
-  .title {
-    font-family: var(--font-display);
-    font-size: clamp(28px, 5vw, 40px);
-    font-weight: 500;
-    letter-spacing: -0.02em;
-    margin: 14px 0 14px;
-  }
-  .lead {
-    font-size: 15.5px;
-    color: var(--fg-2);
-    line-height: 1.6;
-    margin: 0 0 20px;
-    max-width: 64ch;
-  }
-  .lead code {
-    background: rgba(255, 255, 255, 0.06);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 13px;
-    color: var(--violet-200);
-  }
-  .thumbs {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
-  }
-  @media (max-width: 800px) {
-    .thumbs { grid-template-columns: 1fr; }
-  }
-  .thumb {
-    text-decoration: none;
-    color: inherit;
-    background: var(--bg-2);
-    border: 1px solid var(--border-1);
-    border-radius: 12px;
-    overflow: hidden;
-    display: block;
-    transition: all var(--dur-base) var(--ease-summon);
-  }
-  .thumb:hover {
-    border-color: rgba(233, 69, 96, 0.35);
-    box-shadow: var(--glow-ember);
-    transform: translateY(-2px);
-  }
-  .thumb__img {
-    background: #faf6ee;
-    padding: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    aspect-ratio: 4 / 3;
-  }
-  .thumb__img img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    display: block;
-  }
-  .thumb__meta {
-    padding: 14px 16px;
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-  }
-  .thumb__n {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--ember-600);
-    letter-spacing: 0.14em;
-  }
-  .thumb__title {
-    font-family: var(--font-display);
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--fg-1);
-    letter-spacing: -0.01em;
-  }
+  .loop { border-top: 1px solid var(--border-1); }
+  .head { margin-bottom: 28px; max-width: 72ch; }
+  .title { font-family: var(--font-display); font-size: clamp(36px, 6vw, 56px); font-weight: 400; letter-spacing: -0.03em; margin: 14px 0 14px; line-height: 1; }
+  .lead { font-size: 16px; color: var(--fg-2); line-height: 1.65; margin: 0 0 14px; max-width: 64ch; }
+  .lead em { color: var(--fg-1); font-style: italic; }
+  .origin { font-size: 14px; color: var(--fg-2); line-height: 1.6; margin: 0 0 20px; padding: 14px 18px; background: rgba(138,99,206,0.06); border-left: 2px solid var(--violet-400); border-radius: 0 8px 8px 0; max-width: 64ch; }
+  .origin strong { color: var(--fg-1); font-weight: 600; }
+  .origin code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12.5px; color: var(--violet-200); }
+
+  .beats { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; counter-reset: beat; position: relative; }
+  @media (max-width: 1100px) { .beats { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 700px)  { .beats { grid-template-columns: 1fr; } }
+  .beat { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 12px; padding: 18px 18px 16px; position: relative; transition: border-color var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon); }
+  .beat:hover { border-color: rgba(138,99,206,0.35); transform: translateY(-2px); }
+  .beat__n { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--violet-400); letter-spacing: 0.16em; }
+  .beat__label { display: block; font-family: var(--font-display); font-size: 17px; font-weight: 500; color: var(--fg-1); letter-spacing: -0.01em; margin: 4px 0 8px; }
+  .beat__blurb { font-size: 13px; color: var(--fg-2); line-height: 1.55; margin: 0; }
+  .beat__blurb :global(code) { background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px; font-family: var(--font-mono); font-size: 11.5px; color: var(--violet-200); }
 </style>

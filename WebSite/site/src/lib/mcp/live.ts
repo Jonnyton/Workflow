@@ -57,9 +57,9 @@ async function rpc(method: string, params: any = {}): Promise<any> {
 async function ensureInit(): Promise<void> {
   if (initialized) return;
   await rpc('initialize', {
-    protocolVersion: '2024-11-05',
-    capabilities: {},
-    clientInfo: { name: 'tinyassets-site-live', version: '0.1.0' }
+    protocolVersion: '2025-06-18',
+    clientInfo: { name: 'tinyassets-site-live', version: '0.1.0' },
+    capabilities: {}
   });
   // Some servers require a notifications/initialized after — best effort.
   try {
@@ -67,7 +67,7 @@ async function ensureInit(): Promise<void> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json',
+        Accept: 'application/json, text/event-stream',
         ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
       },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })

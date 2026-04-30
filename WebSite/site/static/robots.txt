@@ -7,7 +7,7 @@ Allow: /economy
 Allow: /graph
 Allow: /host
 Allow: /legal
-Allow: /patterns
+Allow: /loop
 Allow: /wiki
 Allow: /alliance
 Disallow: /auth/

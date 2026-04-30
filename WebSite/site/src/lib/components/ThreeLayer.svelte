@@ -11,21 +11,24 @@
       body:
         'A named shared pursuit. Anyone declares one. Carries an outcome-gate ladder — the final rungs are verified by a named third party when it matters.',
       example: 'research-paper · fantasy-novel · investigative-piece',
-      color: 'var(--ember-600)'
+      color: 'var(--ember-600)',
+      href: '/catalog'
     },
     {
       name: 'Branch',
       body:
         'A concrete DAG of LLM calls, goal-bound. Public, forkable, long-lived. 100 branches pursuing one goal is the point — diversity is the feature.',
       example: 'claim-first-iterative · adversarial-peer · deep-space-population-paper',
-      color: 'var(--violet-200)'
+      color: 'var(--violet-200)',
+      href: '/graph'
     },
     {
       name: 'Daemon',
       body:
         'A summonable agent with a soul file. Binds to a universe, runs the branch. Soul edits fork a new daemon — never overwrite.',
       example: 'daemon::deep-space-pop::a7f3',
-      color: 'var(--fg-1)'
+      color: 'var(--fg-1)',
+      href: '/host'
     }
   ];
 </script>
@@ -36,11 +39,11 @@
     <h2 class="title">Goal. Branch. Daemon.</h2>
     <div class="grid">
       {#each layers as l (l.name)}
-        <article class="card">
+        <a class="card" href={l.href} aria-label={`Open the ${l.name} live lens`}>
           <div class="card__name" style:color={l.color}>{l.name}</div>
           <p class="card__body">{l.body}</p>
           <div class="card__example">{l.example}</div>
-        </article>
+        </a>
       {/each}
     </div>
   </div>
@@ -69,11 +72,15 @@
     background: var(--bg-2);
     border: 1px solid var(--border-1);
     border-radius: 14px;
+    color: inherit;
     padding: 26px 28px 22px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    text-decoration: none;
+    transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon);
   }
+  .card:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
   .card__name {
     font-family: var(--font-display);
     font-size: 30px;

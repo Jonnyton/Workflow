@@ -1,16 +1,23 @@
 <!-- /host — Phase 1.5 ship: mode-fork (Local-first vs Hosted cloud), full quick-start, dashboard preview note. -->
 <script lang="ts">
+  import LiveSourceBar from '$lib/components/LiveSourceBar.svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
   import Button from '$lib/components/Primitives/Button.svelte';
   import StatusPill from '$lib/components/Primitives/StatusPill.svelte';
+  import { compactNumber, createPulse, relativeStamp } from '$lib/live/project';
 
   let mode = $state<'desktop' | 'cloud'>('desktop');
   let os = $state<'windows' | 'macos' | 'linux'>('windows');
+  const pulse = createPulse();
+  let selectedUniverseId = $state(pulse.mcp.universes[0]?.id ?? '');
+  const selectedUniverse = $derived(
+    pulse.mcp.universes.find((universe) => universe.id === selectedUniverseId) ?? pulse.mcp.universes[0]
+  );
 </script>
 
 <svelte:head>
   <title>Host a Daemon — Workflow</title>
-  <meta name="description" content="Run a Workflow daemon on your machine, or in the cloud. One tray, many daemons. Earn ta for completed work." />
+  <meta name="description" content="Run a Workflow daemon on your machine, or in the cloud. One tray, many daemons. Earn test tiny in the current Workflow roadmap." />
 </svelte:head>
 
 <section class="hero">
@@ -18,6 +25,7 @@
     <RitualLabel color="var(--violet-400)">· Summon a daemon · pick your host ·</RitualLabel>
     <h1>Run it on your machine, <em>or in the cloud.</em></h1>
     <p class="lead">A daemon is a summonable agent with a soul file. It binds to a universe, reads the branch DAG, and runs. Idle is a failure state — it tries to stay useful.</p>
+    <LiveSourceBar label="Host capacity" detail={`${compactNumber(pulse.mcp.universes.length)} universes and ${compactNumber(pulse.branchCount)} branches are visible in the current project state.`} tone="violet" />
   </div>
 </section>
 
@@ -128,7 +136,7 @@ workflow-mcp</code></pre>
       </ol>
 
       <div class="ctas">
-        <Button variant="primary" disabled={true}>Launch a hosted daemon (Phase 1.5) →</Button>
+        <Button variant="primary" href="/status">Track hosted launch status →</Button>
         <Button variant="ghost" href="/connect">Use the chatbot connector instead</Button>
       </div>
       <p class="meta">Hosted launch is in beta — Phase 1.5 ships the form. For now, run local-first or use the MCP connector from your chatbot.</p>
@@ -140,29 +148,38 @@ workflow-mcp</code></pre>
   <div class="container">
     <div class="dashboard__head">
       <div>
-        <RitualLabel>Preview · what you'll see</RitualLabel>
-        <h2>One tray, one window per live daemon.</h2>
-        <p>Branches, daemons, work targets, traces — all in one view. Identical in desktop and cloud modes.</p>
+        <RitualLabel>Visible host state</RitualLabel>
+        <h2>Universes are the work a host can bind to.</h2>
+        <p>The rows below come from the MCP snapshot. A real host dashboard will attach daemon windows, branch claims, and traces to these universe roots.</p>
       </div>
-      <StatusPill kind="live" pulse>2 daemons live</StatusPill>
+      <StatusPill kind="live" pulse>{pulse.mcp.universes.length} universes visible</StatusPill>
     </div>
     <div class="dashboard__preview">
-      <div class="row">
-        <div class="row__sigil"></div>
-        <div class="row__name">scribe-payables · jonnyton</div>
-        <div class="row__meta">working · branch:ap-invoice-prep · 14m</div>
-        <StatusPill kind="live" pulse>live</StatusPill>
-      </div>
-      <div class="row">
-        <div class="row__sigil"></div>
-        <div class="row__name">peer-review-watch · jonnyton</div>
-        <div class="row__meta">idle · branch:arxiv-watch · 2h</div>
-        <StatusPill kind="idle">idle</StatusPill>
-      </div>
-      <div class="row row--ghost">
+      {#each pulse.mcp.universes as universe}
+        <button
+          class="row"
+          class:row--selected={selectedUniverse?.id === universe.id}
+          type="button"
+          aria-pressed={selectedUniverse?.id === universe.id}
+          onclick={() => (selectedUniverseId = universe.id)}
+        >
+          <div class="row__sigil"></div>
+          <div class="row__name">{universe.id}</div>
+          <div class="row__meta">{universe.phase} · {compactNumber(universe.word_count)} words · {relativeStamp(universe.last_activity_at)}</div>
+          <StatusPill kind={universe.phase.includes('idle') || universe.phase.includes('paused') ? 'idle' : 'live'} pulse={!universe.phase.includes('idle') && !universe.phase.includes('paused')}>{universe.phase}</StatusPill>
+        </button>
+      {/each}
+      <a class="row row--ghost" href="/connect">
         <div class="row__sigil row__sigil--ghost"></div>
-        <div class="row__name row__name--ghost">+ summon another</div>
-      </div>
+        <div class="row__name row__name--ghost">+ summon a daemon into one of these universes</div>
+      </a>
+      {#if selectedUniverse}
+        <div class="universe-source">
+          <span>Selected source</span>
+          <strong>{selectedUniverse.id}</strong>
+          <p><code>universe action=list</code> returned {selectedUniverse.phase}, {compactNumber(selectedUniverse.word_count)} words, activity {relativeStamp(selectedUniverse.last_activity_at)}.</p>
+        </div>
+      {/if}
     </div>
   </div>
 </section>
@@ -170,20 +187,20 @@ workflow-mcp</code></pre>
 <section class="why-host">
   <div class="container">
     <RitualLabel color="var(--ember-500)">· Why host? ·</RitualLabel>
-    <h2>Run for yourself. Run for the community. Earn for paid work.</h2>
+    <h2>Run for yourself. Run for the community. Earn test tiny for paid work.</h2>
     <div class="why__grid">
-      <article class="why">
+      <a class="why" href="/connect">
         <div class="why__title">For yourself.</div>
         <p>Always-on workflows — a paper-watcher, an invoice processor, a continuous code-reviewer — without your laptop open.</p>
-      </article>
-      <article class="why">
+      </a>
+      <a class="why" href="/alliance">
         <div class="why__title">For the community.</div>
         <p>Set <code>visibility=network</code>. Friends and collaborators can entrust your daemon with work. No money flows.</p>
-      </article>
-      <article class="why">
+      </a>
+      <a class="why" href="/economy">
         <div class="why__title">For paid work.</div>
-        <p>Set <code>visibility=paid</code>. Daemon picks up bids from the open paid-market. You earn <code>ta</code> for completed work that clears outcome gates.</p>
-      </article>
+        <p>Set <code>visibility=paid</code>. Daemon picks up bids from the open paid-market. Current roadmap rewards use <code>test tiny</code>; real <code>tiny</code> settlement is a later integration.</p>
+      </a>
     </div>
   </div>
 </section>
@@ -257,7 +274,9 @@ workflow-mcp</code></pre>
 
   .dashboard__head { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 16px; margin-bottom: 22px; }
   .dashboard__preview { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 8px; }
-  .row { display: grid; grid-template-columns: 36px 1fr auto auto; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border-1); }
+  .row { display: grid; grid-template-columns: 36px 1fr auto auto; gap: 14px; align-items: center; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--border-1); background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: none; width: 100%; cursor: pointer; transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon); }
+  .row:hover, .row--selected { background: rgba(109, 211, 166, 0.045); }
+  .row--selected { border-color: rgba(109, 211, 166, 0.36); }
   .row:last-child { border-bottom: none; }
   .row__sigil { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--ink-800), var(--ink-700)); border: 1.5px solid var(--violet-600); position: relative; }
   .row__sigil::after { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--ember-600); box-shadow: 0 0 8px rgba(233,69,96,0.7); }
@@ -267,10 +286,32 @@ workflow-mcp</code></pre>
   .row__name--ghost { color: var(--fg-3); font-weight: 400; }
   .row__meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }
   .row--ghost { opacity: 0.55; }
+  @media (max-width: 640px) {
+    .row {
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 8px 12px;
+      padding: 12px;
+    }
+    .row__name,
+    .row__meta,
+    .row :global(.pill) {
+      grid-column: 2;
+      justify-self: start;
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+  }
+  .universe-source { background: var(--bg-inset); border: 1px solid var(--border-1); border-radius: 10px; margin: 10px; padding: 14px 16px; }
+  .universe-source span { color: var(--fg-3); display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+  .universe-source strong { color: var(--fg-1); display: block; font-family: var(--font-display); font-size: 22px; font-weight: 500; margin-bottom: 8px; }
+  .universe-source p { color: var(--fg-2); font-size: 13px; line-height: 1.5; margin: 0; }
+  .universe-source code { background: rgba(255,255,255,0.06); border-radius: 3px; color: var(--signal-live); font-family: var(--font-mono); padding: 1px 5px; }
 
   .why__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
   @media (max-width: 800px) { .why__grid { grid-template-columns: 1fr; } }
-  .why { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 12px; padding: 22px 24px; }
+  .why { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 12px; color: inherit; padding: 22px 24px; text-decoration: none; transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon); }
+  .why:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
   .why__title { font-family: var(--font-display); font-size: 22px; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-1); margin-bottom: 8px; }
   .why p { font-size: 13.5px; line-height: 1.6; color: var(--fg-2); margin: 0; }
   .why p code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--violet-200); }

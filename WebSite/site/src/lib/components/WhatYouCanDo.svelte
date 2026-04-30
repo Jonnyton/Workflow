@@ -18,13 +18,13 @@
 
     <div class="grid">
       {#each examples as ex (ex.category)}
-        <article class="card">
+        <a class="card" href="/connect" aria-label={`Connect a chatbot to run the ${ex.category} workflow`}>
           <header class="card__head">
             <span class="card__cat">{ex.category}</span>
           </header>
           <div class="card__invoke"><span class="prefix">Workflow:</span>{ex.invocation.replace(/^Workflow:\s*/, '')}</div>
           <p class="card__outcome">{ex.outcome}</p>
-        </article>
+        </a>
       {/each}
     </div>
   </div>
@@ -61,11 +61,15 @@
     background: var(--bg-2);
     border: 1px solid var(--border-1);
     border-radius: 12px;
+    color: inherit;
     padding: 22px 24px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    text-decoration: none;
+    transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon);
   }
+  .card:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
   .card__head {
     display: flex;
     align-items: center;
