@@ -17,7 +17,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Internal-scoping items moved off host queue per `feedback_dont_ask_host_internal_scoping`: Phase 6 db rename + fantasy_author_original timing + R7 state + ChatGPT P1 fold-in are navigator+lead autonomous now.
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
 - **[P1 filed:2026-04-30]** Castles II live branch run `28479d8ddfb44488` failed `provider_exhausted` at `candidate_discovery`; blocks branch-run proof (see BUG-038).
-- [filed:2026-04-30 verified:2026-04-30] Scorched Tanks canonical `db3401df02d3@a084a818` run `f076724d2d1340e3` blocks on missing local-desktop MCP install/shortcut capability.
+- [filed:2026-04-30 verified:2026-04-30] Scorched Tanks: live branch `db3401df02d3@a084a818` + local branch `eeafdf4bdb87` prove Workflow MCP runtime is not Windows-local; node_repl is Windows-local MCP; install awaits action-time approval. (see BUG-043)
 
 ## Approved Specs
 
