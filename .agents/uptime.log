@@ -12,3 +12,6 @@
 2026-04-27T21:53:22-07:00 RED   layer=2 url=https://claude.ai/new exit=13 rtt_ms=133 reason="module 'lead_browser' has no attribute 'navigate'"
 2026-04-27T22:34:59-07:00 RED   layer=2 url=https://claude.ai/new exit=10 rtt_ms=49588 reason='tool_not_invoked'
 2026-04-29T19:44:02-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=311
+2026-04-29T20:09:41-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=342
+2026-04-29T20:24:55-07:00 RED   layer=1 url=https://tinyassets.io/mcp exit=2 rtt_ms=125 reason='HTTP 502 from https://tinyassets.io/mcp: Bad Gateway'
+2026-04-29T20:25:50-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=165

@@ -78,6 +78,12 @@ GitHub API.
   workflow and surfaced pre-existing shellcheck findings in unrelated workflow
   files. The follow-up patch narrows push linting to changed workflow files;
   manual dispatch remains the all-workflows audit.
+- `wiki-bug-sync` still did not fire through 2026-04-30T03:20Z, so BUG-044
+  was manually bridged to GitHub issue #89 through the GitHub connector and
+  labeled in two steps (`severity:major`, then `auto-bug`). That real
+  `issues:labeled` event triggered `Auto-fix bug` run 3, which marked #89
+  `needs-human` with the same no-Claude-auth comment. `.agents/.wiki_bug_sync_cursor`
+  is advanced to 44 in the follow-up commit to prevent a later duplicate issue.
 - Local `gh` is not authenticated, so live GitHub checks used the public REST
   API. Authenticated issue/PR mutation still needs GitHub app or a configured
   token.
