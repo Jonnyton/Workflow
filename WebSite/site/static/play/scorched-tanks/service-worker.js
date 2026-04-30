@@ -1,11 +1,11 @@
-const CACHE_NAME = "scorched-tanks-original-amiga-v2";
+const CACHE_NAME = "scorched-tanks-original-amiga-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./original.js",
   "./app.js",
-  "./assets/scorched-tanks-v1.90.adf",
+  "./assets/scorched-tanks-v1.90-autostart.adf",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

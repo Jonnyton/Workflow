@@ -1,7 +1,7 @@
 (function () {
   const VAMIGA_ORIGIN = "https://vamigaweb.github.io";
   const VAMIGA_URL = `${VAMIGA_ORIGIN}/`;
-  const ADF_URL = "./assets/scorched-tanks-v1.90.adf";
+  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart.adf";
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -93,7 +93,7 @@
       };
 
       frame.contentWindow.postMessage(payload, VAMIGA_ORIGIN);
-      setMediaStatus("Original v1.90 ADF assigned to df0");
+      setMediaStatus("Original v1.90 autostart ADF assigned to df0");
       setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
     } catch (error) {
       pendingLaunch = launch;
@@ -122,7 +122,7 @@
 
   function startWithAros() {
     setRomStatus("AROS trial; use ROM if stuck");
-    setMediaStatus("Original v1.90 ADF assigned to df0");
+    setMediaStatus("Original v1.90 autostart ADF assigned to df0");
     mountEmulator(
       baseConfig({
         AROS: true,
@@ -242,6 +242,6 @@
   kickstartInput.addEventListener("change", onKickstartSelected);
 
   bindInstall();
-  setMediaStatus("Original v1.90 ADF ready");
+  setMediaStatus("Original v1.90 autostart ADF ready");
   startWithAros();
 })();
