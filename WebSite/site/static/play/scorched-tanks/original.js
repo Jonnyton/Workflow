@@ -115,7 +115,7 @@
   }
 
   function startWithAros() {
-    setRomStatus("Open AROS ROM selected");
+    setRomStatus("AROS trial; use ROM if stuck");
     setMediaStatus("Original v1.90 ADF assigned to df0");
     mountEmulator(
       baseConfig({
@@ -207,7 +207,7 @@
 
     if (event.data?.msg === "render_run_state") {
       if (!pendingLaunch) {
-        setRuntimeStatus(event.data.value ? "Running with open AROS ROM" : "Runtime ready");
+        setRuntimeStatus(event.data.value ? "Running AROS trial" : "Runtime ready");
       }
       injectKickstart();
     }
