@@ -45,7 +45,7 @@ on:
         required: false
         type: string
   workflow_run:
-    workflows: ["Wiki bug sync"]
+    workflows: ["Wiki bug sync", "Deploy prod"]
     types: [completed]
   schedule:
     - cron: "7,22,37,52 * * * *"

@@ -69,9 +69,10 @@ Actions, the workflow:
 - Exits 0 so the pipeline stays green
 
 Change attempts begin automatically the moment an approved subscription writer
-secret is added. The scheduled backfill retries `needs-human` requests that
-have not had a real writer attempt yet once subscription writer auth is
-visible, and clears the auth-missing labels before attempting the fix.
+secret is added and `Deploy prod` completes. That deploy-completion wakeup plus
+the scheduled backfill retries `needs-human` requests that have not had a real
+writer attempt yet once subscription writer auth is visible, and clears the
+auth-missing labels before attempting the fix.
 
 ## Disable toggle
 
@@ -142,8 +143,8 @@ gh issue edit <N> --add-label daemon-request
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `needs-human` added, comment says "no auth" | No approved subscription-backed writer secret visible to GitHub Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` |
-| `needs-human` + `auto-fix-auth-missing` persists after adding auth | Backfill has not run yet, or the issue already has `auto-fix-attempted` from a real writer failure | Wait for the 15-minute schedule or manually dispatch the workflow for that issue |
+| `needs-human` added, comment says "no auth" | No approved subscription-backed writer secret visible to GitHub Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` or `WORKFLOW_CODEX_AUTH_JSON_B64` |
+| `needs-human` + `auto-fix-auth-missing` persists after adding auth | Deploy-completion wakeup/backfill has not run yet, or the issue already has `auto-fix-attempted` from a real writer failure | Wait for `Deploy prod`/15-minute schedule or manually dispatch the workflow for that issue |
 | `auto-fix-claude-subscription-missing` appears | The intended Claude subscription daemon lane is offline/not visible to Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` |
 | `auto-fix-provider-exhausted` appears | Selected subscription-backed provider returned quota/rate/capacity exhaustion | Restore subscription capacity or bring another subscription-backed approved writer lane online |
 | Claude path rate-limited | Claude action failed and no subscription-backed Codex lane is wired | Issue is marked `needs-human`; do not fall through to API-key billing |

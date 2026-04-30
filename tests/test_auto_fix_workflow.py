@@ -35,6 +35,15 @@ def test_triggers_on_issues_labeled(wf):
     )
 
 
+def test_deploy_completion_retries_auth_blocked_queue(wf):
+    triggers = wf.get(True, wf.get("on", {}))
+    workflows = triggers["workflow_run"].get("workflows", [])
+    assert "Deploy prod" in workflows, (
+        "Auto-fix must retry stale auth-blocked requests when deploy makes "
+        "subscription auth visible."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
