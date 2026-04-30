@@ -180,6 +180,8 @@
   }
 
   function bindInstall() {
+    installButton.disabled = false;
+
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
@@ -196,13 +198,14 @@
 
     installButton.addEventListener("click", async () => {
       if (!installPrompt) {
-        setRuntimeStatus("Install unavailable in this browser");
+        setRuntimeStatus("Use the browser menu to install this app");
         return;
       }
       installButton.disabled = true;
       installPrompt.prompt();
       await installPrompt.userChoice;
       installPrompt = null;
+      installButton.disabled = false;
     });
   }
 
