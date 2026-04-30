@@ -281,6 +281,10 @@ Acceptance:
 - Writer path is one claimant on the daemon request bus: Claude action if
   configured, Codex CLI path when available, manual fallback otherwise. Claude
   failures fall through to Codex when `OPENAI_API_KEY` is available.
+- No-auth blocks self-heal: issues marked `needs-human` before writer auth was
+  visible are rediscovered by scheduled backfill once approved Claude/Codex
+  writer auth appears, unless a real writer attempt already marked the issue
+  `auto-fix-attempted`.
 - PRs record `writer:*` and `checker:*` labels; `writer:claude` requires
   `checker:codex`, and `writer:codex` requires `checker:claude`.
 
