@@ -129,7 +129,10 @@ PRs require review before merge. Host reviews the diff.
 Re-label the issue: remove `daemon-request` then re-add it. `auto-change` and
 legacy BUG-only `auto-bug` issues are still discovered for compatibility. Or
 use workflow_dispatch via the Actions UI:
-select "Auto-fix change" -> Run workflow.
+select "Auto-fix change" -> Run workflow. Explicit re-labels and
+`workflow_dispatch` runs retry issues that already carry `auto-fix-attempted`;
+scheduled backfill does not, so normal unattended polling cannot churn the same
+writer failure forever.
 
 To retry a specific issue from the CLI:
 

@@ -106,14 +106,17 @@ jobs:
             const rows = [];
             const seenIssueNumbers = new Set();
 
-            function pushIfPending(issue) {
+            function pushIfPending(issue, options = {}) {
               if (!issue || issue.pull_request || seenIssueNumbers.has(issue.number)) {
                 return;
               }
               const needsHuman = hasLabel(issue, 'needs-human');
               const attempted = hasLabel(issue, 'auto-fix-attempted');
-              if (attempted) {
+              if (attempted && !options.retryAttempted) {
                 return;
+              }
+              if (attempted) {
+                core.info(`Retrying previously attempted issue #${issue.number} by explicit trigger.`);
               }
               if (needsHuman && (autoFixDisabled || !hasWriterAuth)) {
                 return;
@@ -132,15 +135,14 @@ jobs:
               const label = context.payload.label;
               if (
                 autoLabels.includes(label?.name) &&
-                !issue.pull_request &&
-                !hasLabel(issue, 'auto-fix-attempted')
+                !issue.pull_request
               ) {
-                pushIfPending(issue);
+                pushIfPending(issue, { retryAttempted: true });
               }
             } else if (context.eventName === 'workflow_dispatch' && core.getInput('issue_number')) {
               const issue = await issueFromNumber(core.getInput('issue_number'));
               if (issue) {
-                pushIfPending(issue);
+                pushIfPending(issue, { retryAttempted: true });
               }
             } else {
               for (const labelName of autoLabels) {
@@ -627,6 +629,7 @@ jobs:
           npm install --prefix "${RUNNER_TEMP}/codex-install" @openai/codex
           echo "${RUNNER_TEMP}/codex-install/node_modules/.bin" >> "$GITHUB_PATH"
           "${RUNNER_TEMP}/codex-install/node_modules/.bin/codex" --version
+          "${RUNNER_TEMP}/codex-install/node_modules/.bin/codex" exec --help | grep -F -- "--full-auto"
 
       - name: Run Codex CLI writer
         id: codex-write
@@ -689,7 +692,7 @@ jobs:
           print(path)
           PY
 
-          codex exec --sandbox workspace-write -a never --skip-git-repo-check -C "${GITHUB_WORKSPACE}" < "${RUNNER_TEMP}/codex-auto-fix-prompt.md"
+          codex exec --full-auto --sandbox workspace-write --skip-git-repo-check -C "${GITHUB_WORKSPACE}" < "${RUNNER_TEMP}/codex-auto-fix-prompt.md"
 
           if git diff --quiet && git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
