@@ -44,13 +44,19 @@ This is the intended steady-state Claude daemon path because it runs through
 the host's Claude subscription. The workflow uses the official
 `anthropics/claude-code-action@v1`.
 
-### Path B - Future Codex subscription lane
+### Path B - Codex subscription lane
 
-Codex remains an approved writer family only when it can run through a
-subscription-backed auth path. `OPENAI_API_KEY` is not an approved default daemon
-writer lane for this project. Add a Codex subscription lane here only after the
-CLI/action supports a non-API-key subscription credential suitable for GitHub
-Actions.
+Add secret `WORKFLOW_CODEX_AUTH_JSON_B64`:
+1. On a host already logged into Codex subscription auth, base64 encode
+   `~/.codex/auth.json`.
+2. GitHub -> repo Settings -> Secrets and variables -> Actions -> New repository secret
+3. Name: `WORKFLOW_CODEX_AUTH_JSON_B64`, value: paste the base64 output
+
+The workflow installs the bundle into `~/.codex/auth.json`, runs
+`@openai/codex`, commits any working-tree changes to a branch, and opens a PR
+with `Writer family: Codex` / `Required checker family: Claude`.
+
+`OPENAI_API_KEY` is not an approved default daemon writer lane for this project.
 
 ### Path C - No subscription auth (graceful-skip)
 

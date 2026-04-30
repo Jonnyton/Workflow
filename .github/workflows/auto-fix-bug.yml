@@ -16,7 +16,7 @@ name: Auto-fix change
 #
 # Auth priority for this reference writer:
 #   1. CLAUDE_CODE_OAUTH_TOKEN (primary subscription-backed Claude writer)
-#   2. Future subscription-backed Codex auth path once available
+#   2. WORKFLOW_CODEX_AUTH_JSON_B64 (subscription-backed Codex writer)
 #   3. None visible            -> graceful-skip: add `needs-human` label +
 #                                comment explaining which writer auth is missing;
 #                                exit 0.
@@ -71,7 +71,7 @@ jobs:
         id: discover
         uses: actions/github-script@v7
         env:
-          HAS_WRITER_AUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_WRITER_AUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.WORKFLOW_CODEX_AUTH_JSON_B64 != '' }}
           AUTO_FIX_DISABLED: ${{ vars.AUTO_FIX_DISABLED }}
         with:
           script: |
@@ -236,6 +236,11 @@ jobs:
                 description: 'Preferred subscription-backed Claude Code OAuth token was not visible to GitHub Actions.',
               },
               {
+                name: 'auto-fix-codex-subscription-missing',
+                color: 'd93f0b',
+                description: 'Subscription-backed Codex auth bundle was not visible to GitHub Actions.',
+              },
+              {
                 name: 'auto-fix-attempted',
                 color: 'fbca04',
                 description: 'Automated fix workflow already attempted this issue.',
@@ -319,6 +324,7 @@ jobs:
         id: auth
         env:
           HAS_CLAUDE_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_CODEX_AUTH_BUNDLE: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 != '' }}
           HAS_OPENAI_API_KEY_CONFIGURED: ${{ secrets.OPENAI_API_KEY != '' }}
           HAS_ANTHROPIC_API_KEY_CONFIGURED: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: |
@@ -326,6 +332,10 @@ jobs:
             mode="claude_oauth"
             writer_family="anthropic"
             checker_family="openai"
+          elif [[ "${HAS_CODEX_AUTH_BUNDLE}" == "true" ]]; then
+            mode="codex_subscription"
+            writer_family="openai"
+            checker_family="anthropic"
           else
             mode="none"
             writer_family="none"
@@ -334,7 +344,7 @@ jobs:
 
           {
             echo "has_claude_oauth=${HAS_CLAUDE_OAUTH}"
-            echo "has_codex=false"
+            echo "has_codex=${HAS_CODEX_AUTH_BUNDLE}"
             echo "has_claude_api=false"
             echo "has_openai_api_key_configured=${HAS_OPENAI_API_KEY_CONFIGURED}"
             echo "has_anthropic_api_key_configured=${HAS_ANTHROPIC_API_KEY_CONFIGURED}"
@@ -349,6 +359,7 @@ jobs:
             echo "| Subscription daemon auth | Visible to GitHub Actions |"
             echo "|---|---|"
             echo "| CLAUDE_CODE_OAUTH_TOKEN | ${HAS_CLAUDE_OAUTH} |"
+            echo "| WORKFLOW_CODEX_AUTH_JSON_B64 | ${HAS_CODEX_AUTH_BUNDLE} |"
             echo ""
             echo "- selected writer mode: \`${mode}\`"
             echo "- required checker family: \`${checker_family}\`"
@@ -369,7 +380,12 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              labels: ['needs-human', 'auto-fix-auth-missing', 'auto-fix-claude-subscription-missing'],
+              labels: [
+                'needs-human',
+                'auto-fix-auth-missing',
+                'auto-fix-claude-subscription-missing',
+                'auto-fix-codex-subscription-missing',
+              ],
             });
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -382,9 +398,9 @@ jobs:
                 '',
                 'Approved subscription writer secrets:',
                 '- `CLAUDE_CODE_OAUTH_TOKEN` *(primary subscription-backed Claude writer)* - from https://claude.ai/settings',
+                '- `WORKFLOW_CODEX_AUTH_JSON_B64` *(subscription-backed Codex writer)* - base64 of subscription `~/.codex/auth.json`',
                 '',
                 '`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are intentionally ignored for default daemon writers under the subscription-only policy.',
-                'A future subscription-backed Codex auth path can be added as a second approved lane once supported.',
                 '',
                 'Settings -> Secrets and variables -> Actions -> New repository secret.',
                 '',
@@ -403,6 +419,9 @@ jobs:
             const labelsToClear = ['needs-human', 'auto-fix-auth-missing', 'auto-fix-provider-exhausted'];
             if ('${{ steps.auth.outputs.has_claude_oauth }}' === 'true') {
               labelsToClear.push('auto-fix-claude-subscription-missing');
+            }
+            if ('${{ steps.auth.outputs.has_codex }}' === 'true') {
+              labelsToClear.push('auto-fix-codex-subscription-missing');
             }
             for (const label of labelsToClear) {
               try {
@@ -520,17 +539,140 @@ jobs:
             If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
 
+      - name: Run Codex CLI (subscription)
+        id: codex-subscription
+        continue-on-error: true
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'codex_subscription'
+        env:
+          WORKFLOW_CODEX_AUTH_JSON_B64: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          branch="auto-change/issue-${{ steps.meta.outputs.issue_number }}-codex-${GITHUB_RUN_ID}"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+          mkdir -p "$HOME/.codex"
+          printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | base64 -d > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
+          unset WORKFLOW_CODEX_AUTH_JSON_B64
+          unset OPENAI_API_KEY ANTHROPIC_API_KEY ANTHROPIC_BASE_URL GEMINI_API_KEY GROQ_API_KEY XAI_API_KEY
+
+          npm install -g @openai/codex
+          git checkout -B "$branch"
+
+          codex exec --full-auto --skip-git-repo-check --cd "$GITHUB_WORKSPACE" --output-last-message "$RUNNER_TEMP/codex-last-message.md" - <<'PROMPT'
+          You are handling a community change request in the Workflow repository.
+
+          Request ID: ${{ steps.meta.outputs.request_id }}
+          Request kind: ${{ steps.meta.outputs.request_kind }}
+          Issue #${{ steps.meta.outputs.issue_number }}: ${{ steps.meta.outputs.short_title }}
+
+          Issue body:
+          ${{ steps.meta.outputs.issue_body }}
+
+          Instructions:
+          1. Read AGENTS.md and STATUS.md for project context.
+          2. Classify the request as bug, patch, feature, docs/ops, branch refinement, or project design.
+          3. For bugs, reproduce or reason about the root cause. For non-bug requests, identify the smallest useful project change.
+          4. Implement a minimal, targeted change; no refactoring beyond what's needed.
+          5. Add or update tests/docs/checks appropriate to the risk.
+          6. Run `python -m ruff check` on touched files and fix any violations.
+          7. Do not commit, push, or open a PR. Leave any changes in the working tree for this workflow to commit.
+          8. Do not redesign community-authored branches unless the issue explicitly asks for that.
+
+          If you cannot find a safe targeted change or are not confident, leave the
+          working tree unchanged and explain why in your final message. Do not guess.
+          PROMPT
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git status --short
+          git config user.name "workflow-daemon[bot]"
+          git config user.email "workflow-daemon[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "${{ steps.meta.outputs.pr_title }}" \
+            -m "Fixes #${{ steps.meta.outputs.issue_number }}" \
+            -m "Writer family: Codex" \
+            -m "Required checker family: Claude"
+          git push --set-upstream origin "$branch"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create Codex PR
+        id: codex-pr-create
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'codex_subscription' &&
+          steps.codex-subscription.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        env:
+          CODEX_BRANCH: ${{ steps.codex-subscription.outputs.branch }}
+          PR_TITLE: ${{ steps.meta.outputs.pr_title }}
+          ISSUE_NUMBER: ${{ steps.meta.outputs.issue_number }}
+        with:
+          script: |
+            const branch = process.env.CODEX_BRANCH;
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const { data: existing } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${branch}`,
+              per_page: 5,
+            });
+            const pr = existing[0] || (await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: process.env.PR_TITLE,
+              head: branch,
+              base: 'main',
+              body: [
+                `Fixes #${issueNumber}`,
+                '',
+                'Writer family: Codex',
+                'Required checker family: Claude',
+                '',
+                'Automated community-loop change produced by the subscription-backed Codex lane.',
+              ].join('\n'),
+            })).data;
+            core.setOutput('number', String(pr.number));
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              labels: ['writer:codex', 'checker:claude'],
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: [
+                '**Loop review policy**',
+                '',
+                '- Writer family: Codex',
+                '- Required checker family: Claude',
+                '',
+                'Do not accept this PR with a same-family checker.',
+              ].join('\n'),
+            });
+
       - name: Find Claude PR and label checker policy
         id: claude-pr
         if: >
           always() &&
           steps.check-disabled.outputs.disabled == 'false' &&
-          steps.auth.outputs.mode != 'none'
+          steps.auth.outputs.mode == 'claude_oauth'
         uses: actions/github-script@v7
         with:
           script: |
             const issueNumber = Number('${{ matrix.issue.issue_number }}');
-            const branch = `auto-change/issue-${issueNumber}`;
+            const mode = '${{ steps.auth.outputs.mode }}';
+            const branch = mode === 'codex_subscription'
+              ? '${{ steps.codex-subscription.outputs.branch }}'
+              : `auto-change/issue-${issueNumber}`;
             const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -588,9 +730,11 @@ jobs:
             }
 
             const claudeSubscriptionVisible = '${{ steps.auth.outputs.has_claude_oauth }}' === 'true';
+            const codexSubscriptionVisible = '${{ steps.auth.outputs.has_codex }}' === 'true';
             const labels = ['needs-human'];
-            if (!claudeSubscriptionVisible) {
+            if (!claudeSubscriptionVisible && !codexSubscriptionVisible) {
               labels.push('auto-fix-claude-subscription-missing');
+              labels.push('auto-fix-codex-subscription-missing');
             }
 
             await github.rest.issues.addLabels({
@@ -613,9 +757,10 @@ jobs:
                 `Anthropic API key configured but ignored: \`${{ steps.auth.outputs.has_anthropic_api_key_configured }}\``,
                 '',
                 `Claude OAuth outcome: \`${{ steps.claude-oauth.outcome }}\``,
+                `Codex subscription outcome: \`${{ steps.codex-subscription.outcome }}\``,
                 '',
-                !claudeSubscriptionVisible
-                  ? 'The preferred subscription-backed Claude daemon lane is not callable because `CLAUDE_CODE_OAUTH_TOKEN` was not visible to GitHub Actions.'
+                !claudeSubscriptionVisible && !codexSubscriptionVisible
+                  ? 'No approved subscription-backed daemon lane was visible to GitHub Actions.'
                   : '',
                 'API-key billing lanes are intentionally not used for default daemon writers.',
                 'The issue is marked `needs-human` so it does not loop silently.',

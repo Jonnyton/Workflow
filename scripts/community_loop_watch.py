@@ -40,6 +40,7 @@ ATTEMPTED_LABEL = "auto-fix-attempted"
 P0_OUTAGE_LABEL = "p0-outage"
 AUTH_MISSING_LABEL = "auto-fix-auth-missing"
 CLAUDE_SUBSCRIPTION_MISSING_LABEL = "auto-fix-claude-subscription-missing"
+CODEX_SUBSCRIPTION_MISSING_LABEL = "auto-fix-codex-subscription-missing"
 PROVIDER_EXHAUSTED_LABEL = "auto-fix-provider-exhausted"
 
 STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}
@@ -281,6 +282,7 @@ def queue_stage(
     issues = list_loop_issues(repo, api=api, token=token, timeout=timeout)
     needs_human: list[dict[str, Any]] = []
     missing_subscription: list[dict[str, Any]] = []
+    missing_codex_subscription: list[dict[str, Any]] = []
     auth_missing: list[dict[str, Any]] = []
     provider_exhausted: list[dict[str, Any]] = []
     attempted: list[dict[str, Any]] = []
@@ -293,7 +295,9 @@ def queue_stage(
             needs_human.append(issue)
             if CLAUDE_SUBSCRIPTION_MISSING_LABEL in labels:
                 missing_subscription.append(issue)
-            elif AUTH_MISSING_LABEL in labels:
+            if CODEX_SUBSCRIPTION_MISSING_LABEL in labels:
+                missing_codex_subscription.append(issue)
+            if AUTH_MISSING_LABEL in labels:
                 auth_missing.append(issue)
             elif PROVIDER_EXHAUSTED_LABEL in labels:
                 provider_exhausted.append(issue)
@@ -311,6 +315,9 @@ def queue_stage(
         "missing_claude_subscription": [
             issue.get("number") for issue in missing_subscription
         ],
+        "missing_codex_subscription": [
+            issue.get("number") for issue in missing_codex_subscription
+        ],
         "auth_missing": [issue.get("number") for issue in auth_missing],
         "provider_exhausted": [issue.get("number") for issue in provider_exhausted],
         "pending": [issue.get("number") for issue in pending],
@@ -322,9 +329,18 @@ def queue_stage(
     if needs_human:
         first = needs_human[0]
         root_cause = "automated writer is blocked"
-        if missing_subscription:
+        if missing_subscription and missing_codex_subscription:
+            root_cause = (
+                "Claude subscription OAuth and Codex subscription auth bundle "
+                "are not visible to GitHub Actions"
+            )
+        elif missing_subscription:
             root_cause = (
                 "Claude subscription OAuth is not visible to GitHub Actions"
+            )
+        elif missing_codex_subscription:
+            root_cause = (
+                "Codex subscription auth bundle is not visible to GitHub Actions"
             )
         elif auth_missing:
             root_cause = "approved subscription-backed writer auth is missing"

@@ -130,12 +130,25 @@ def test_auth_step_checks_oauth_token(wf):
     )
 
 
-def test_auth_step_checks_api_key_fallback(wf):
+def test_auth_step_checks_codex_subscription_bundle(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    auth_step = next(s for s in steps if s.get("id") == "auth")
+    run_script = auth_step.get("run", "")
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in str(auth_step.get("env", {}))
+    assert "codex_subscription" in run_script, (
+        "Auth step must route to the Codex subscription writer when its bundle is visible"
+    )
+
+
+def test_auth_step_reports_api_keys_as_diagnostics_only(wf):
     steps = wf["jobs"]["fix"]["steps"]
     auth_step = next(s for s in steps if s.get("id") == "auth")
     run_script = auth_step.get("run", "")
     assert "ANTHROPIC_API_KEY" in run_script, (
-        "Auth step must check ANTHROPIC_API_KEY as fallback"
+        "Auth step should still report API-key secrets as ignored diagnostics"
+    )
+    assert "api_key" not in str(auth_step.get("if", "")), (
+        "API-key secrets must not select a writer mode"
     )
 
 
@@ -196,6 +209,27 @@ def test_no_api_key_step_uses_claude_code_action(wf):
     assert api_step is None, (
         "Default daemon writers must not use API-key-authenticated Claude action steps"
     )
+
+
+def test_codex_subscription_step_uses_codex_cli(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert codex_step is not None, "Must have a Codex subscription writer step"
+    run_script = codex_step.get("run", "")
+    assert "npm install -g @openai/codex" in run_script
+    assert "codex exec --full-auto" in run_script
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in str(codex_step.get("env", {}))
+    assert "OPENAI_API_KEY" in run_script and "unset OPENAI_API_KEY" in run_script
+
+
+def test_codex_pr_gets_cross_family_checker(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+    script = str(codex_pr_step.get("with", {}).get("script", ""))
+    assert "writer:codex" in script
+    assert "checker:claude" in script
+    assert "Required checker family: Claude" in script
 
 
 def test_branch_naming_convention(wf):
