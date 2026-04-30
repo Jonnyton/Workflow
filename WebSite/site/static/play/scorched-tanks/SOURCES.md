@@ -6,7 +6,7 @@
   - SHA256 `E95E9EBFAC31A6BAB8C182E4DE0E53167C04424AB7B0733A071A2294CC17F953`
   - SHA1 `8797D9CE33DCAA5E39D78676258542C30F774A00`
   - MD5 `CA16CDF1F81DAFDE22157866F0CAF6C1`
-- Browser launch asset: `assets/scorched-tanks-v1.90-autostart.adf`.
+- Browser launch asset: `assets/scorched-tanks-v1.90-autostart-0fd8b963.adf` (`assets/scorched-tanks-v1.90-autostart.adf` is retained as a corrected compatibility alias).
 - Launch patch: `S/Startup-Sequence` changes from `LoadWB\nendcli\n` to `cd ScorchedTanks:\nScorched_TanksV1.90\nendcli\n`; game executable and data assets are unchanged.
 - Launch asset hashes:
   - SHA256 `0FD8B963AB38D917FD3EED9866A11A776AFA4D2022A47DB8B80E06A47F040A94`

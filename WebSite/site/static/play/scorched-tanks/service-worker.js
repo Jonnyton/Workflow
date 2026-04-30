@@ -5,7 +5,7 @@ const ASSETS = [
   "./styles.css?v=0fd8b963",
   "./original.js?v=0fd8b963",
   "./app.js?v=0fd8b963",
-  "./assets/scorched-tanks-v1.90-autostart.adf?v=0fd8b963ab38",
+  "./assets/scorched-tanks-v1.90-autostart-0fd8b963.adf",
   "./manifest.webmanifest?v=0fd8b963",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
