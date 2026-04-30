@@ -256,3 +256,12 @@ def test_compile_failed_outcome_is_classified():
     )
     assert out is not None
     assert out[0] == "compile_error"
+
+
+def test_provider_exhausted_outcome_is_classified():
+    out = _classify_run_outcome_error(
+        "Provider call failed in node 'make_source_manifest': "
+        "All providers exhausted for role=writer. Daemon should retry with backoff."
+    )
+    assert out is not None
+    assert out[0] == "provider_exhausted"

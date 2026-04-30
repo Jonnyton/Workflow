@@ -212,6 +212,12 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
         )
+    if "all providers exhausted" in msg or "providers exhausted" in msg:
+        return _failure_payload(
+            exc, "provider_exhausted",
+            "Provider chain exhausted; check provider credentials/config or"
+            " rerun after cooldown.",
+        )
     if "auth expir" in msg or "token expir" in msg or "credential" in msg:
         return _failure_payload(
             exc, "permission_denied:auth_expired",
@@ -276,6 +282,12 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "quota_exhausted",
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
+        )
+    if "all providers exhausted" in msg or "providers exhausted" in msg:
+        return (
+            "provider_exhausted",
+            "Provider chain exhausted; check provider credentials/config or"
+            " rerun after cooldown.",
         )
     if "overload" in msg or "503" in msg or "service unavailable" in msg or "server error" in msg:
         return (
