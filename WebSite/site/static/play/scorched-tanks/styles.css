@@ -1,7 +1,12 @@
 :root {
   color-scheme: dark;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
   background: #161a18;
   color: #f4efe3;
@@ -14,11 +19,14 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background: #161a18;
+  min-height: 100%;
+  background: #070807;
 }
 
 a {
@@ -26,22 +34,30 @@ a {
 }
 
 .shell {
-  min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  background: #161a18;
+  position: relative;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #070807;
 }
 
-.topbar,
-.provenance {
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 0.85rem;
-  background: #20231d;
+  background: rgba(22, 26, 24, 0.9);
   border-bottom: 1px solid rgba(244, 239, 227, 0.14);
+  backdrop-filter: blur(14px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .identity {
@@ -145,20 +161,31 @@ summary:focus-visible {
 }
 
 .emulator-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  background: #10120f;
+  background: #000;
 }
 
 .runtime-toolbar {
+  position: fixed;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 30;
   display: grid;
-  grid-template-columns: minmax(16rem, 1fr) auto;
+  grid-template-columns: minmax(14rem, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
   padding: 0.65rem 0.85rem;
-  background: #20231d;
-  border-bottom: 1px solid rgba(244, 239, 227, 0.14);
+  background: rgba(22, 26, 24, 0.9);
+  border: 1px solid rgba(244, 239, 227, 0.14);
+  border-radius: 6px;
+  backdrop-filter: blur(14px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .runtime-state {
@@ -186,19 +213,16 @@ summary:focus-visible {
 }
 
 .emulator-frame-wrap {
-  min-height: 18rem;
-  display: grid;
-  align-items: center;
-  justify-items: center;
-  padding: 0.85rem;
-  background: #070807;
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  background: #000;
 }
 
 .emulator-frame-host {
-  width: min(100%, 1180px);
-  aspect-ratio: 320 / 212;
+  width: 100%;
+  height: 100%;
   background: #000;
-  border: 1px solid rgba(244, 239, 227, 0.18);
 }
 
 #vAmigaWeb {
@@ -210,8 +234,24 @@ summary:focus-visible {
 }
 
 .compatibility-port {
-  background: #20231d;
-  border-top: 1px solid rgba(244, 239, 227, 0.14);
+  position: fixed;
+  left: 0.75rem;
+  bottom: 4.8rem;
+  z-index: 40;
+  max-width: min(42rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 8.8rem);
+  overflow: auto;
+  background: rgba(32, 35, 29, 0.96);
+  border: 1px solid rgba(244, 239, 227, 0.14);
+  border-radius: 6px;
+  backdrop-filter: blur(14px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.compatibility-port[open] {
+  width: min(64rem, calc(100vw - 1.5rem));
 }
 
 .compatibility-port summary {
@@ -224,7 +264,8 @@ summary:focus-visible {
 }
 
 .compat-stage {
-  min-height: 28rem;
+  height: min(70dvh, 38rem);
+  min-height: 24rem;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   background: #070807;
@@ -311,11 +352,28 @@ select {
 }
 
 .provenance {
-  min-height: 2.45rem;
-  border-top: 1px solid rgba(244, 239, 227, 0.14);
-  border-bottom: 0;
+  position: fixed;
+  left: 50%;
+  bottom: 0.35rem;
+  z-index: 20;
+  width: min(48rem, calc(100vw - 1.5rem));
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  background: rgba(22, 26, 24, 0.9);
+  border: 1px solid rgba(244, 239, 227, 0.14);
+  border-radius: 6px;
   color: #c7c4b6;
   font-size: 0.78rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(100% + 0.5rem));
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .provenance span {
@@ -323,12 +381,10 @@ select {
 }
 
 @media (max-width: 980px) {
-  .shell {
-    min-height: 100dvh;
-  }
-
   .runtime-toolbar {
     grid-template-columns: 1fr;
+    max-height: calc(100dvh - 5rem);
+    overflow: auto;
   }
 
   .runtime-actions {
@@ -341,7 +397,9 @@ select {
   }
 
   .compat-stage {
-    grid-template-rows: minmax(20rem, 1fr) auto;
+    height: min(68dvh, 34rem);
+    min-height: 22rem;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .hud {
@@ -378,13 +436,9 @@ select {
     width: 100%;
   }
 
-  .emulator-frame-wrap {
-    min-height: 15rem;
-    padding: 0.55rem;
-  }
-
   .compat-stage {
-    grid-template-rows: minmax(18rem, 1fr) auto;
+    min-height: 20rem;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .hud {
@@ -397,5 +451,30 @@ select {
 
   .provenance {
     font-size: 0.74rem;
+  }
+}
+
+body:not(.is-playing) .provenance,
+.provenance:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+@media (hover: hover) {
+  body.is-playing .topbar:not(:hover):not(:focus-within) {
+    opacity: 0.72;
+    transform: translateY(calc(-100% + 0.45rem));
+  }
+
+  body.is-playing .runtime-toolbar:not(:hover):not(:focus-within) {
+    opacity: 0.72;
+    transform: translateY(calc(100% - 0.45rem));
+  }
+
+  body.is-playing
+    .compatibility-port:not([open]):not(:hover):not(:focus-within) {
+    opacity: 0.72;
+    transform: translateX(calc(-100% + 0.45rem));
   }
 }

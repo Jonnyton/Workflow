@@ -4,7 +4,9 @@
   const ADF_URL = "./assets/scorched-tanks-v1.90.adf";
 
   const installButton = document.getElementById("install-button");
-  const fullscreenButton = document.getElementById("emulator-fullscreen-button");
+  const fullscreenButton = document.getElementById(
+    "emulator-fullscreen-button",
+  );
   const arosButton = document.getElementById("start-aros-button");
   const kickstartButton = document.getElementById("start-kickstart-button");
   const resetButton = document.getElementById("reset-emulator-button");
@@ -50,12 +52,14 @@
     return {
       navbar: false,
       wide: true,
+      display: "adaptive",
       border: false,
+      dialog_on_disk: false,
       port2: true,
       touch: browserTouchMode(),
       warpto: 1200,
       url: absoluteAdfUrl(),
-      ...extra
+      ...extra,
     };
   }
 
@@ -85,7 +89,7 @@
     try {
       const payload = {
         cmd: "load",
-        kickstart_rom: launch.kickstartRom.bytes
+        kickstart_rom: launch.kickstartRom.bytes,
       };
 
       frame.contentWindow.postMessage(payload, VAMIGA_ORIGIN);
@@ -101,6 +105,7 @@
     pendingLaunch = launch.kickstartRom ? launch : null;
     currentLaunch = launch;
     clearPoller();
+    document.body.classList.remove("is-playing");
     emulatorFrameHost.textContent = "";
     frame = document.createElement("iframe");
     frame.id = "vAmigaWeb";
@@ -109,6 +114,7 @@
     frame.src = emulatorSrc(config);
     frame.addEventListener("load", () => {
       setRuntimeStatus("Runtime booting");
+      document.body.classList.add("is-playing");
       startPoller();
     });
     emulatorFrameHost.appendChild(frame);
@@ -119,9 +125,9 @@
     setMediaStatus("Original v1.90 ADF assigned to df0");
     mountEmulator(
       baseConfig({
-        AROS: true
+        AROS: true,
       }),
-      { kickstartRom: null }
+      { kickstartRom: null },
     );
   }
 
@@ -134,9 +140,9 @@
     mountEmulator(
       baseConfig({
         AROS: false,
-        wait_for_kickstart_injection: true
+        wait_for_kickstart_injection: true,
       }),
-      { kickstartRom }
+      { kickstartRom },
     );
   }
 
@@ -150,9 +156,9 @@
       baseConfig(
         relaunch.kickstartRom
           ? { AROS: false, wait_for_kickstart_injection: true }
-          : { AROS: true }
+          : { AROS: true },
       ),
-      relaunch
+      relaunch,
     );
   }
 
@@ -167,7 +173,7 @@
 
     kickstartRom = {
       name: file.name,
-      bytes: new Uint8Array(await file.arrayBuffer())
+      bytes: new Uint8Array(await file.arrayBuffer()),
     };
     kickstartButton.disabled = false;
     setRomStatus(`${file.name} ready locally`);
@@ -201,13 +207,18 @@
   }
 
   window.addEventListener("message", (event) => {
-    if (event.origin !== VAMIGA_ORIGIN || event.source !== frame?.contentWindow) {
+    if (
+      event.origin !== VAMIGA_ORIGIN ||
+      event.source !== frame?.contentWindow
+    ) {
       return;
     }
 
     if (event.data?.msg === "render_run_state") {
       if (!pendingLaunch) {
-        setRuntimeStatus(event.data.value ? "Running AROS trial" : "Runtime ready");
+        setRuntimeStatus(
+          event.data.value ? "Running AROS trial" : "Runtime ready",
+        );
       }
       injectKickstart();
     }

@@ -25,12 +25,20 @@
           </div>
         </div>
         <div class="actions">
-          <button id="install-button" class="button" type="button" disabled>Install</button>
-          <button id="emulator-fullscreen-button" class="button" type="button">Fullscreen</button>
+          <button id="install-button" class="button" type="button" disabled>
+            Install
+          </button>
+          <button id="emulator-fullscreen-button" class="button" type="button">
+            Fullscreen
+          </button>
         </div>
       </header>
 
-      <section id="emulator-panel" class="emulator-panel" aria-label="Original Amiga runtime">
+      <section
+        id="emulator-panel"
+        class="emulator-panel"
+        aria-label="Original Amiga runtime"
+      >
         <div class="runtime-toolbar">
           <div class="runtime-state">
             <span id="runtime-status" role="status">Runtime booting</span>
@@ -38,15 +46,24 @@
             <span id="rom-status">AROS trial; use ROM if stuck</span>
           </div>
           <div class="runtime-actions">
-            <button id="start-aros-button" class="button primary" type="button">Start Original Disk</button>
+            <button id="start-aros-button" class="button primary" type="button">
+              Restart Disk
+            </button>
             <label class="file-button">
               <input id="kickstart-input" type="file" accept=".rom,.bin" />
               Kickstart ROM
             </label>
-            <button id="start-kickstart-button" class="button" type="button" disabled>
+            <button
+              id="start-kickstart-button"
+              class="button"
+              type="button"
+              disabled
+            >
               Run With ROM
             </button>
-            <button id="reset-emulator-button" class="button" type="button">Reset</button>
+            <button id="reset-emulator-button" class="button" type="button">
+              Reset
+            </button>
           </div>
         </div>
 
@@ -57,7 +74,10 @@
 
       <details id="compatibility-port" class="compatibility-port">
         <summary>Compatibility port fallback</summary>
-        <section class="compat-stage" aria-label="Browser-native Scorched Tanks fallback">
+        <section
+          class="compat-stage"
+          aria-label="Browser-native Scorched Tanks fallback"
+        >
           <canvas id="game" width="960" height="540"></canvas>
           <div class="hud" aria-label="Turn controls">
             <div class="readout">
@@ -67,12 +87,24 @@
             </div>
             <label>
               <span>Angle</span>
-              <input id="angle-control" type="range" min="5" max="175" value="45" />
+              <input
+                id="angle-control"
+                type="range"
+                min="5"
+                max="175"
+                value="45"
+              />
               <strong id="angle-value">45</strong>
             </label>
             <label>
               <span>Power</span>
-              <input id="power-control" type="range" min="25" max="100" value="68" />
+              <input
+                id="power-control"
+                type="range"
+                min="25"
+                max="100"
+                value="68"
+              />
               <strong id="power-value">68</strong>
             </label>
             <label>
@@ -84,15 +116,24 @@
                 <option value="split">Scatter Shot</option>
               </select>
             </label>
-            <button id="fire-button" class="button primary" type="button">Fire</button>
-            <button id="new-round-button" class="button" type="button">New Round</button>
-            <button id="compat-fullscreen-button" class="button" type="button">Fullscreen</button>
+            <button id="fire-button" class="button primary" type="button">
+              Fire
+            </button>
+            <button id="new-round-button" class="button" type="button">
+              New Round
+            </button>
+            <button id="compat-fullscreen-button" class="button" type="button">
+              Fullscreen
+            </button>
           </div>
         </section>
       </details>
 
       <footer class="provenance" aria-label="Source provenance">
-        <a href="https://www.retro32.com/gaming/amiga-public-domain/26042020710-scorched-tanks-v1-90-1994-dark-unicorn-amiga-public-domain-game">ADF source</a>
+        <a
+          href="https://www.retro32.com/gaming/amiga-public-domain/26042020710-scorched-tanks-v1-90-1994-dark-unicorn-amiga-public-domain-game"
+          >ADF source</a
+        >
         <span>Original media first. Fallback is explicitly a port.</span>
         <a href="https://github.com/vAmigaWeb/vAmigaWeb">vAmigaWeb runtime</a>
       </footer>
