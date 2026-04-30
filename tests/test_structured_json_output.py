@@ -26,7 +26,12 @@ from __future__ import annotations
 
 import pytest
 
-from workflow.branches import NodeDefinition
+from workflow.branches import (
+    BranchDefinition,
+    EdgeDefinition,
+    GraphNodeRef,
+    NodeDefinition,
+)
 from workflow.graph_compiler import (
     CompilerError,
     _build_prompt_template_node,
@@ -34,6 +39,7 @@ from workflow.graph_compiler import (
     _extract_json_object,
     _needs_json_contract,
     _state_type_map,
+    compile_branch,
 )
 
 
@@ -268,3 +274,51 @@ def test_typed_output_list_passes_through():
         state_schema=state_schema,
     )
     assert fn({}) == {"items": ["a", "b", "c"]}
+
+
+def test_compiled_prompt_node_writes_typed_output_to_state():
+    """Regression guard for BUG-016's original gate shape.
+
+    The helper-level tests above prove the node adapter returns the
+    typed field. This proves LangGraph receives and keeps that update in
+    the compiled branch state.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    branch = BranchDefinition(
+        branch_def_id="bug-016-typed-output",
+        name="BUG-016 typed output writeback",
+        entry_point="gate",
+        graph_nodes=[GraphNodeRef(id="gate", node_def_id="gate")],
+        edges=[
+            EdgeDefinition(from_node="START", to_node="gate"),
+            EdgeDefinition(from_node="gate", to_node="END"),
+        ],
+        node_defs=[
+            NodeDefinition(
+                node_id="gate",
+                display_name="Gate",
+                prompt_template="decide",
+                output_keys=["gate_decision", "retry_count"],
+            )
+        ],
+        state_schema=[
+            {"name": "gate_decision", "type": "str"},
+            {"name": "retry_count", "type": "int"},
+        ],
+    )
+    app = compile_branch(
+        branch,
+        provider_call=lambda prompt, system, role="writer": (
+            '{"gate_decision": "LOOP_TO: dev", "retry_count": 1}'
+        ),
+    ).graph.compile(checkpointer=InMemorySaver())
+
+    result = app.invoke(
+        {"retry_count": 0},
+        config={"configurable": {"thread_id": "bug-016"}},
+    )
+
+    assert result["gate_decision"] == "LOOP_TO: dev"
+    assert result["retry_count"] == 1
+    assert isinstance(result["retry_count"], int)
