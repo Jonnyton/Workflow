@@ -28,6 +28,8 @@ import re
 
 from workflow.api.prompts import _CONTROL_STATION_PROMPT
 from workflow.universe_server import control_station
+
+
 def _prompt_text() -> str:
     """Canonical: prompt body as the chatbot receives it."""
     return control_station()
@@ -91,8 +93,8 @@ def test_directive_names_multiple_failure_triggers():
     )
 
 
-def test_directive_covers_all_six_coarse_tools():
-    """Directive must name all six coarse tools whose failure triggers the rule.
+def test_directive_covers_all_connector_tools():
+    """Directive must name every connector tool whose failure triggers the rule.
 
     `gates` was added after verifier's second-pass audit flagged the enumeration
     didn't match the actual @mcp.tool set (6 tools, rule originally named 5).
@@ -106,7 +108,10 @@ def test_directive_covers_all_six_coarse_tools():
     )
     assert rule_10_match, "could not locate rule 10 block"
     rule_10 = rule_10_match.group(0)
-    for tool in ["universe", "extensions", "goals", "gates", "wiki", "get_status"]:
+    for tool in [
+        "universe", "extensions", "extension_call",
+        "goals", "gates", "wiki", "get_status",
+    ]:
         assert f"`{tool}`" in rule_10, (
             f"rule 10 doesn't name the `{tool}` tool — partial coverage risks "
             f"the chatbot applying the rule to some tools but not others"

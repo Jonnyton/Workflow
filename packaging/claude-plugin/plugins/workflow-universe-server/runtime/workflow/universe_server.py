@@ -26,6 +26,7 @@ delegate to plain callables in those submodules (Pattern A2).
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastmcp import FastMCP
@@ -162,6 +163,10 @@ async def _landing_index(request):  # type: ignore[no-untyped-def]
 
 # Preserve the at-server-start whitelist warning (Step 10 prep §3.5 Option B).
 _warn_if_no_upload_whitelist()
+
+_EXTENSIONS_IMPL_ARGS = set(
+    _extensions_impl.__code__.co_varnames[:_extensions_impl.__code__.co_argcount]
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -645,6 +650,99 @@ def extensions(
         severity=severity,
         since_days=since_days,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TOOL 2b — Compact Extensions (ChatGPT approval fallback)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _extension_call_payload(
+    action: str,
+    args_json: str,
+    **overrides: object,
+) -> dict[str, object]:
+    """Build kwargs for the compact extension-call compatibility surface."""
+    payload: dict[str, object] = {}
+    if args_json:
+        try:
+            parsed = json.loads(args_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"args_json is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("args_json must decode to a JSON object")
+        payload.update(parsed)
+
+    if action:
+        payload["action"] = action
+    elif not payload.get("action"):
+        raise ValueError("action is required")
+
+    for key, value in overrides.items():
+        if value not in ("", False, None):
+            payload[key] = value
+
+    return {
+        key: value for key, value in payload.items()
+        if key in _EXTENSIONS_IMPL_ARGS
+    }
+
+
+@mcp.tool(
+    title="Extension Action",
+    tags={"extensions", "workflow-builder", "chatgpt-compatible"},
+    annotations=ToolAnnotations(
+        title="Extension Action",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+def extension_call(
+    action: str,
+    args_json: str = "",
+    branch_def_id: str = "",
+    node_id: str = "",
+    spec_json: str = "",
+    changes_json: str = "",
+    inputs_json: str = "",
+    limit: int = 50,
+    force: bool = False,
+) -> str:
+    """Compact compatibility route for `extensions` actions.
+
+    Same action handlers as `extensions`, but with a small MCP parameter
+    schema for clients whose approval prompt fails on the larger
+    `extensions` tool schema. Pass uncommon parameters in `args_json`.
+
+    Common args:
+        action: Any action accepted by `extensions`.
+        args_json: Optional JSON object of additional `extensions`
+            parameters, e.g. {"name": "...", "domain_id": "..."}.
+        branch_def_id: Workflow id or name for branch/run actions.
+        node_id: Node id for node actions.
+        spec_json: Full build_branch spec.
+        changes_json: patch_branch operations list as JSON.
+        inputs_json: run_branch inputs as JSON.
+        limit: Read/list limit.
+        force: Override local-edit conflict guards where supported.
+    """
+    try:
+        payload = _extension_call_payload(
+            action=action,
+            args_json=args_json,
+            branch_def_id=branch_def_id,
+            node_id=node_id,
+            spec_json=spec_json,
+            changes_json=changes_json,
+            inputs_json=inputs_json,
+            limit=limit,
+            force=force,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return _extensions_impl(**payload)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
