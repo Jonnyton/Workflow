@@ -17,7 +17,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
 - **[P1 filed:2026-04-30]** Castles II live branch run `28479d8ddfb44488` failed `provider_exhausted` at `candidate_discovery`; blocks branch-run proof (see BUG-038).
 - [filed:2026-04-30 verified:2026-04-30] Scorched Tanks canonical `db3401df02d3@a084a818` run `f076724d2d1340e3` blocks on missing local-desktop MCP install/shortcut capability.
-- [filed:2026-04-30 verified:2026-04-30] Claude.ai rendered `ui-test` blocked by usage limit until 2026-05-01 19:00 PT; ChatGPT/Codex app MCP fallback green.
+- [filed:2026-04-30 verified:2026-04-30] Claude.ai rendered `ui-test` blocked until 2026-05-01 19:00 PT; ChatGPT connector fallback green; rendered ChatGPT UI pending login/browser control.
 
 ## Approved Specs
 
