@@ -116,6 +116,14 @@ GitHub API.
   `uptime-canary.yml` latest run is failed/stale, and open P0 issue #79 is
   still live. This is the first cloud-visible status contract for the website
   to render after preview approval.
+- Slice 6 shipped to `main` on 2026-04-30 at commit `dd7bed4`. Live proof:
+  `Community loop watch` run `25147557573` failed intentionally on RED state,
+  issue #90 (`community-loop-red`) opened with the status JSON, `actionlint`
+  run `25147557593` passed after shellcheck fixes, `build-image` run
+  `25147557592` passed, `Deploy prod` run `25147567091` passed, and
+  `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp
+  --verbose` was green locally. The loop is now visible as down rather than
+  falsely green.
 
 ## Existing Pieces
 
