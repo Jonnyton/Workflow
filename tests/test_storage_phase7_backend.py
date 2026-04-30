@@ -203,7 +203,7 @@ def test_cached_backend_sqlite_write_short_circuits_on_failure(
         raise RuntimeError("sqlite write refused")
 
     monkeypatch.setattr(
-        "workflow.author_server.save_branch_definition", _boom,
+        "workflow.daemon_server.save_branch_definition", _boom,
     )
     with pytest.raises(RuntimeError):
         backend.save_branch(_make_branch())

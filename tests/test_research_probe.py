@@ -130,7 +130,7 @@ class TestResearchGraphTopology:
         The fantasy domain uses 4-level hierarchy (scene/chapter/book/universe).
         Research probe uses flat loop with revision (gather→analyze→...→review→loop).
         """
-        from domains.fantasy_author.graphs import build_universe_graph
+        from domains.fantasy_daemon.graphs import build_universe_graph
 
         fantasy_graph = build_universe_graph()
         research_graph = domain_instance.build_graph()
@@ -196,7 +196,7 @@ class TestNoFantasyAuthorImports:
         # Should have workflow imports
         assert "workflow.protocols" in source
         # Should not have fantasy_author imports
-        assert "domains.fantasy_author" not in source
+        assert "domains.fantasy_daemon" not in source
 
 
 class TestResearchDomainRegistration:

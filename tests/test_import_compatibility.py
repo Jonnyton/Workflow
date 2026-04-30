@@ -2,13 +2,13 @@
 
 During Phase 2, code was restructured into:
   - workflow/ (shared infrastructure)
-  - domains/fantasy_author/ (domain-specific fantasy author code)
+  - domains/fantasy_daemon/ (domain-specific fantasy author code)
   - fantasy_author/ (original package, now transitional shim)
 
 This test verifies:
 1. Old imports from fantasy_author.* still work (backward compatibility)
 2. New imports from workflow.* work (new canonical paths)
-3. New imports from domains.fantasy_author.* work (domain-specific)
+3. New imports from domains.fantasy_daemon.* work (domain-specific)
 4. Both old and new paths can coexist in the same process
 """
 
@@ -18,8 +18,7 @@ from __future__ import annotations
 def test_fantasy_author_imports_still_work():
     """Test that existing code importing from fantasy_author.* still works."""
     # These are the import paths used by existing tests and __main__.py
-    from domains.fantasy_author.state import SceneState, UniverseState
-
+    from domains.fantasy_daemon.state import SceneState, UniverseState
     from workflow.exceptions import CheckpointError, ProviderError
     from workflow.memory.manager import MemoryManager
     from workflow.providers.base import BaseProvider, ModelConfig
@@ -53,11 +52,10 @@ def test_workflow_imports_work():
 
 
 def test_domain_imports_work():
-    """Test that new domains.fantasy_author.* imports work."""
-    from domains.fantasy_author.graphs import build_universe_graph
-    from domains.fantasy_author.state import SceneState, UniverseState
-
-    from domains.fantasy_author.phases import commit, draft, orient, plan
+    """Test that new domains.fantasy_daemon.* imports work."""
+    from domains.fantasy_daemon.graphs import build_universe_graph
+    from domains.fantasy_daemon.phases import commit, draft, orient, plan
+    from domains.fantasy_daemon.state import SceneState, UniverseState
 
     assert SceneState is not None
     assert UniverseState is not None
@@ -105,7 +103,7 @@ def test_providers_import_paths():
 
 def test_state_imports_from_domain():
     """Test state imports from domain-specific location."""
-    from domains.fantasy_author.state import (
+    from domains.fantasy_daemon.state import (
         BookState,
         ChapterState,
         SceneState,
@@ -121,7 +119,7 @@ def test_state_imports_from_domain():
 
 def test_graph_imports_from_domain():
     """Test graph builder imports from domain-specific location."""
-    from domains.fantasy_author.graphs import (
+    from domains.fantasy_daemon.graphs import (
         build_book_graph,
         build_chapter_graph,
         build_scene_graph,
@@ -137,7 +135,7 @@ def test_graph_imports_from_domain():
 
 def test_phase_imports_from_domain():
     """Test phase implementations from domain-specific location."""
-    from domains.fantasy_author.phases import (
+    from domains.fantasy_daemon.phases import (
         book_close,
         commit,
         consolidate,

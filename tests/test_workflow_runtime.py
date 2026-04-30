@@ -18,13 +18,13 @@ import pytest
 
 
 def test_discover_domains() -> None:
-    """Test that domain discovery finds fantasy_author and research_probe."""
+    """Test that domain discovery finds fantasy_daemon and research_probe."""
     from workflow.discovery import discover_domains
 
     domains = discover_domains()
 
     assert isinstance(domains, list)
-    assert "fantasy_author" in domains
+    assert "fantasy_daemon" in domains
     assert "research_probe" in domains
     # Verify deterministic order
     assert domains == sorted(domains)
@@ -46,7 +46,7 @@ def test_discover_domains_empty_nonexistent() -> None:
 
 def test_fantasy_author_skill_loadable() -> None:
     """Test that workflow.skill.FantasyAuthorDomain can be imported."""
-    from domains.fantasy_author.skill import FantasyAuthorDomain
+    from domains.fantasy_daemon.skill import FantasyAuthorDomain
 
     domain = FantasyAuthorDomain()
     assert domain is not None
@@ -86,6 +86,8 @@ def test_auto_register_populates_registry() -> None:
     auto_register(registry)
 
     domains = registry.list_domains()
+    # Phase 2 migrates import paths only; the domain config name remains legacy
+    # until the registry contract is deliberately flipped.
     assert "fantasy_author" in domains
     assert "research_probe" in domains
     assert len(domains) == 2
@@ -282,7 +284,7 @@ def test_workflow_all_exports_complete() -> None:
 
 def test_fantasy_author_domain_implements_protocol() -> None:
     """Test that FantasyAuthorDomain implements the Domain protocol."""
-    from domains.fantasy_author.skill import FantasyAuthorDomain
+    from domains.fantasy_daemon.skill import FantasyAuthorDomain
 
     domain = FantasyAuthorDomain()
 
@@ -332,7 +334,7 @@ def test_research_probe_domain_implements_protocol() -> None:
 
 def test_fantasy_author_config_valid() -> None:
     """Test that FantasyAuthorDomain.config is valid."""
-    from domains.fantasy_author.skill import FantasyAuthorDomain
+    from domains.fantasy_daemon.skill import FantasyAuthorDomain
 
     domain = FantasyAuthorDomain()
     config = domain.config
@@ -358,7 +360,7 @@ def test_research_probe_config_valid() -> None:
 
 def test_fantasy_author_build_graph_succeeds() -> None:
     """Test that FantasyAuthorDomain.build_graph() succeeds."""
-    from domains.fantasy_author.skill import FantasyAuthorDomain
+    from domains.fantasy_daemon.skill import FantasyAuthorDomain
 
     domain = FantasyAuthorDomain()
     graph = domain.build_graph()

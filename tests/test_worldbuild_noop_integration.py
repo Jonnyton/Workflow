@@ -32,15 +32,15 @@ from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
-from domains.fantasy_author.graphs.universe import should_continue_universe
-from domains.fantasy_author.phases.universe_cycle import universe_cycle
-from domains.fantasy_author.state.universe_state import UniverseState
+from domains.fantasy_daemon.graphs.universe import should_continue_universe
+from domains.fantasy_daemon.phases.universe_cycle import universe_cycle
+from domains.fantasy_daemon.state.universe_state import UniverseState
 
 # The parent package's __init__ re-exports the `worldbuild` function
 # under the same name, shadowing the submodule. `importlib` gets us
 # the actual module object so we can read `_MAX_WORLDBUILD_NOOP_STREAK`.
 worldbuild_mod = importlib.import_module(
-    "domains.fantasy_author.phases.worldbuild"
+    "domains.fantasy_daemon.phases.worldbuild"
 )
 
 

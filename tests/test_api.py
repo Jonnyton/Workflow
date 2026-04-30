@@ -659,7 +659,7 @@ class TestProgress:
 class TestFacts:
     def test_returns_facts(self, client, universe_dir):
         """Should return facts stored in the world state DB."""
-        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_daemon.phases.world_state_db import connect, init_db, store_fact
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -685,7 +685,7 @@ class TestFacts:
 
     def test_filter_by_chapter(self, client, universe_dir):
         """Should filter facts by chapter number."""
-        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_daemon.phases.world_state_db import connect, init_db, store_fact
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -721,7 +721,7 @@ class TestFacts:
 class TestCharacters:
     def test_returns_characters(self, client, universe_dir):
         """Should return characters stored in the world state DB."""
-        from domains.fantasy_author.phases.world_state_db import connect, init_db, upsert_character
+        from domains.fantasy_daemon.phases.world_state_db import connect, init_db, upsert_character
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -757,7 +757,7 @@ class TestCharacters:
 class TestPromises:
     def test_returns_scene_promises(self, client, universe_dir):
         """Should return promises from the world state DB."""
-        from domains.fantasy_author.phases.world_state_db import add_promise, connect, init_db
+        from domains.fantasy_daemon.phases.world_state_db import add_promise, connect, init_db
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -780,7 +780,7 @@ class TestPromises:
 
     def test_filter_active(self, client, universe_dir):
         """?status=active should only return active promises."""
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             add_promise,
             connect,
             init_db,

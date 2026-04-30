@@ -541,7 +541,7 @@ def test_no_fantasy_domain_import_required(runner_env, monkeypatch):
     fa_mods = [
         k for k in list(sys.modules)
         if k.startswith("fantasy_author")
-        or k.startswith("domains.fantasy_author")
+        or k.startswith("domains.fantasy_daemon")
     ]
     for mod in fa_mods:
         monkeypatch.setitem(sys.modules, mod, None)

@@ -192,7 +192,7 @@ class TestMcpRecursionLimitOverride:
         stub_branch = MagicMock()
         stub_branch.validate.return_value = []  # no errors
         monkeypatch.setattr(
-            "workflow.author_server.get_branch_definition",
+            "workflow.daemon_server.get_branch_definition",
             lambda *a, **k: dummy_src,
         )
         monkeypatch.setattr(
@@ -271,7 +271,7 @@ class TestGetRunRecursionLimit:
             }
         ]
         from unittest.mock import patch
-        with patch("workflow.author_server.get_branch_definition", side_effect=KeyError("b1")):
+        with patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")):
             snapshot = _compose_run_snapshot(dummy_record, events)
         assert snapshot["recursion_limit"] == 75
 
@@ -289,6 +289,6 @@ class TestGetRunRecursionLimit:
             "error": "",
         }
         from unittest.mock import patch
-        with patch("workflow.author_server.get_branch_definition", side_effect=KeyError("b1")):
+        with patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")):
             snapshot = _compose_run_snapshot(dummy_record, [])
         assert snapshot["recursion_limit"] is None

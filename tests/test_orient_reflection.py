@@ -6,7 +6,7 @@ re-query capping added by the orient reflection feature.
 
 from __future__ import annotations
 
-from domains.fantasy_author.phases.orient import (
+from domains.fantasy_daemon.phases.orient import (
     _MAX_RETRIEVAL_REFLECTION_PASSES,
     _MIN_ENTITY_FACT_COUNT,
     RetrievalGap,

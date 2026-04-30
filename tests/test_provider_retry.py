@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from domains.fantasy_author.phases import _provider_stub
+from domains.fantasy_daemon.phases import _provider_stub
 from workflow.exceptions import AllProvidersExhaustedError
 
 

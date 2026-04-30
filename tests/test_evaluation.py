@@ -626,7 +626,7 @@ class TestCommitUsesRealEvaluator:
         """commit.py should import from evaluation.structural."""
         import importlib
 
-        commit_mod = importlib.import_module("domains.fantasy_author.phases.commit")
+        commit_mod = importlib.import_module("domains.fantasy_daemon.phases.commit")
 
         # The module should reference the real StructuralEvaluator
         assert hasattr(commit_mod, "_structural_evaluator")
@@ -635,7 +635,7 @@ class TestCommitUsesRealEvaluator:
 
     def test_commit_returns_structural_checks_as_dicts(self):
         """commit_result should contain serialized CheckResult data."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _make_scene_state(prose=COHERENT_PROSE)
         state["_db_path"] = ":memory:"
@@ -651,7 +651,7 @@ class TestCommitUsesRealEvaluator:
 
     def test_commit_verdict_without_editorial(self):
         """Without editorial reader, verdict should be 'accept'."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _make_scene_state(prose=COHERENT_PROSE)
         state["_db_path"] = ":memory:"
@@ -664,7 +664,7 @@ class TestCommitUsesRealEvaluator:
 
     def test_commit_hard_failure_reverts(self):
         """Hard structural failure should produce 'revert' verdict."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _make_scene_state(
             prose=COHERENT_PROSE,
@@ -695,14 +695,14 @@ class TestBuildEditorialContext:
     """Tests for _build_editorial_context in commit.py."""
 
     def test_extracts_previous_scene(self):
-        from domains.fantasy_author.phases.commit import _build_editorial_context
+        from domains.fantasy_daemon.phases.commit import _build_editorial_context
 
         state = {"recent_prose": "The wolf howled at the moon."}
         ctx = _build_editorial_context(state)
         assert ctx["previous_scene"] == "The wolf howled at the moon."
 
     def test_extracts_canon_from_orient_result(self):
-        from domains.fantasy_author.phases.commit import _build_editorial_context
+        from domains.fantasy_daemon.phases.commit import _build_editorial_context
 
         state = {
             "orient_result": {
@@ -713,7 +713,7 @@ class TestBuildEditorialContext:
         assert "Corin is a young healer" in ctx["canon_facts"]
 
     def test_extracts_direction_notes_from_notes_store(self, tmp_path):
-        from domains.fantasy_author.phases.commit import _build_editorial_context
+        from domains.fantasy_daemon.phases.commit import _build_editorial_context
         from workflow.notes import add_note
 
         add_note(
@@ -727,7 +727,7 @@ class TestBuildEditorialContext:
         assert "antagonist" in ctx["direction_notes"]
 
     def test_empty_state_returns_empty_strings(self):
-        from domains.fantasy_author.phases.commit import _build_editorial_context
+        from domains.fantasy_daemon.phases.commit import _build_editorial_context
 
         ctx = _build_editorial_context({})
         assert ctx["previous_scene"] == ""
@@ -772,7 +772,7 @@ class TestEditorialReaderEnrichedContext:
 
 class TestConsistencyAuditNotes:
     def test_builds_notes_from_structural_and_process_failures(self):
-        from domains.fantasy_author.phases.commit import _build_consistency_audit_notes
+        from domains.fantasy_daemon.phases.commit import _build_consistency_audit_notes
         from workflow.evaluation.process import ProcessCheck, ProcessEvaluation
         from workflow.evaluation.structural import CheckResult, StructuralResult
 

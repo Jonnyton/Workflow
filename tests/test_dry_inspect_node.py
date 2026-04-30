@@ -194,7 +194,7 @@ class TestMcpDryInspectNode:
         branch_dict = self._make_branch_dict(prompt_template="Say {word}")
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         with patch(
-            "workflow.author_server.get_branch_definition",
+            "workflow.daemon_server.get_branch_definition",
             return_value=branch_dict,
         ):
             result = json.loads(_action_dry_inspect_node({
@@ -248,7 +248,7 @@ class TestMcpDryInspectNode:
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         with patch(
-            "workflow.author_server.get_branch_definition",
+            "workflow.daemon_server.get_branch_definition",
             side_effect=KeyError("b99"),
         ):
             result = json.loads(_action_dry_inspect_node({"branch_def_id": "b99"}))
