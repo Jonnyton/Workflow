@@ -65,9 +65,14 @@ WORKFLOW_MCP_CANARY_URL=https://tinyassets.io/mcp
 # Subscription-backed LLM auth
 # ---------------------------------------------------------------------
 
-# Cloud daemons must not use API-key billing lanes for LLM work. Compose
-# also sets this explicitly; keep the file value for hosts that launch
-# the image without compose.
+# Daemons default to subscription-backed LLM auth. API-key-backed providers
+# are ignored project-wide unless the host deliberately opts this daemon into
+# API-key providers.
+WORKFLOW_ALLOW_API_KEY_PROVIDERS=0
+
+# Legacy compatibility flag retained for older compose/operator docs. The
+# enforced default is now controlled by WORKFLOW_ALLOW_API_KEY_PROVIDERS:
+# leave that flag 0 for subscription-only operation.
 WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1
 
 # Optional base64-encoded ~/.codex/auth.json produced by a subscription
@@ -76,9 +81,9 @@ WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1
 # env var before starting the daemon.
 WORKFLOW_CODEX_AUTH_JSON_B64=
 
-# Deprecated legacy placeholder. Cloud-daemon startup strips this var
-# when WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1; do not fill it for
-# Workflow cloud daemons.
+# Deprecated legacy placeholder. Daemon startup strips this var unless
+# WORKFLOW_ALLOW_API_KEY_PROVIDERS=1; do not fill it for normal Workflow
+# daemons.
 OPENAI_API_KEY=
 
 

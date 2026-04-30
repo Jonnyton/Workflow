@@ -23,6 +23,7 @@ from workflow.providers.base import (
     BaseProvider,
     ModelConfig,
     ProviderResponse,
+    api_key_providers_enabled,
 )
 from workflow.providers.quota import (
     COOLDOWN_OTHER,
@@ -64,6 +65,9 @@ _JUDGE_PROVIDERS: list[str] = [
 
 
 _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama-local"})
+_API_KEY_PROVIDERS: frozenset[str] = frozenset(
+    {"gemini-free", "groq-free", "grok-free"}
+)
 
 # BUG-029 Part B: number of consecutive empty-prose responses from a local
 # provider (when chain-drained) before raising AllProvidersExhaustedError.
@@ -150,6 +154,13 @@ class ProviderRouter:
             return chain
         return [p for p in chain if p in allowlist]
 
+    @staticmethod
+    def _apply_api_key_provider_policy(chain: list[str]) -> list[str]:
+        """Drop API-key-backed providers unless the host opted into them."""
+        if api_key_providers_enabled():
+            return chain
+        return [p for p in chain if p not in _API_KEY_PROVIDERS]
+
     async def call(
         self,
         role: str,
@@ -214,6 +225,28 @@ class ProviderRouter:
                     f"not silently fall back to a disallowed provider."
                 )
             chain = filtered
+
+        auth_filtered = self._apply_api_key_provider_policy(chain)
+        if not auth_filtered:
+            if is_pinned_writer:
+                raise AllProvidersExhaustedError(
+                    f"Pinned writer provider {pin_writer!r} is API-key-backed "
+                    "and disabled by default. Set "
+                    "WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 only for an intentional "
+                    "API-key daemon, or pin a subscription-backed provider."
+                )
+            raise AllProvidersExhaustedError(
+                f"All providers for role={role!r} are API-key-backed and "
+                "disabled by default. Workflow daemons are subscription-only "
+                "unless WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 is set."
+            )
+        if auth_filtered != chain:
+            logger.info(
+                "Ignoring API-key providers by default for role=%s: removed=%s",
+                role,
+                [p for p in chain if p not in auth_filtered],
+            )
+            chain = auth_filtered
 
         for provider_name in chain:
             provider = self._providers.get(provider_name)
@@ -397,6 +430,15 @@ class ProviderRouter:
                 )
             attempt_order = filtered_order
 
+        auth_filtered_order = self._apply_api_key_provider_policy(attempt_order)
+        if attempt_order and not auth_filtered_order:
+            logger.warning(
+                "Provider auth policy removes all API-key policy providers "
+                "(%s) for role=%s; falling through to role chain.",
+                attempt_order, role,
+            )
+        attempt_order = auth_filtered_order
+
         # Try policy-derived providers
         for provider_name in attempt_order:
             provider = self._providers.get(provider_name)
@@ -556,6 +598,15 @@ class ProviderRouter:
                 "intersected with %s yields no judges.",
                 allowlist, _JUDGE_PROVIDERS,
             )
+        auth_ensemble = self._apply_api_key_provider_policy(ensemble)
+        if ensemble and not auth_ensemble:
+            logger.warning(
+                "Provider auth policy removes all API-key judge providers "
+                "(%s); no judges available without "
+                "WORKFLOW_ALLOW_API_KEY_PROVIDERS=1.",
+                ensemble,
+            )
+        ensemble = auth_ensemble
 
         # Find all available judge providers
         available: list[tuple[str, BaseProvider]] = []

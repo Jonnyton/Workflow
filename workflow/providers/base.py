@@ -7,6 +7,7 @@ consumers work with :class:`ProviderResponse` and :class:`ModelConfig`.
 from __future__ import annotations
 
 import abc
+import os
 from dataclasses import dataclass
 
 
@@ -44,6 +45,48 @@ DEGRADED_JUDGE_RESPONSE = ProviderResponse(
     latency_ms=0.0,
     degraded=True,
 )
+
+
+API_KEY_PROVIDER_ENV_VARS: tuple[str, ...] = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "XAI_API_KEY",
+)
+
+
+def _truthy_env(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def api_key_providers_enabled() -> bool:
+    """Return True only when a host explicitly opts into API-key providers."""
+    return _truthy_env(os.environ.get("WORKFLOW_ALLOW_API_KEY_PROVIDERS"))
+
+
+def require_api_key_provider_opt_in(provider_name: str) -> None:
+    """Fail API-key-backed providers unless the host deliberately enables them."""
+    if api_key_providers_enabled():
+        return
+    from workflow.exceptions import ProviderUnavailableError
+
+    raise ProviderUnavailableError(
+        f"{provider_name} is API-key-backed and disabled by default. "
+        "Workflow daemons are subscription-only unless the host deliberately "
+        "sets WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 for this daemon."
+    )
+
+
+def subprocess_env_without_api_keys() -> dict[str, str] | None:
+    """Return a subprocess env that ignores API-key auth unless opted in."""
+    if api_key_providers_enabled():
+        return None
+    env = os.environ.copy()
+    for name in API_KEY_PROVIDER_ENV_VARS:
+        env.pop(name, None)
+    return env
 
 
 # bwrap failure signature emitted to stderr on Linux hosts that lack

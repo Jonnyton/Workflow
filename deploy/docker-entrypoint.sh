@@ -4,8 +4,8 @@
 # 1. Detect silently-empty env_file and emit canonical ENV-UNREADABLE
 #    markers to stderr so p0-outage-triage can grep and repair without
 #    an SSH shell. Navigator 2026-04-22 section b layer-3.
-# 2. In cloud-daemon subscription-only mode, strip API-key provider
-#    environment variables before the daemon starts.
+# 2. By default, strip API-key provider environment variables before
+#    the daemon starts. API-key providers require an explicit host opt-in.
 # 3. Optionally install a subscription-backed Codex auth bundle from
 #    WORKFLOW_CODEX_AUTH_JSON_B64. Legacy `codex login --with-api-key`
 #    from OPENAI_API_KEY is intentionally not run.
@@ -63,13 +63,15 @@ _api_key_env=(
     XAI_API_KEY
 )
 
-if _truthy "${WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY:-}"; then
+if ! _truthy "${WORKFLOW_ALLOW_API_KEY_PROVIDERS:-}"; then
     for _name in "${_api_key_env[@]}"; do
         if [[ -n "${!_name:-}" ]]; then
-            echo "[entrypoint] ignoring ${_name}: cloud daemons are subscription-only" >&2
+            echo "[entrypoint] ignoring ${_name}: default daemon auth is subscription-only; set WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 only for an intentional API-key daemon" >&2
             unset "${_name}"
         fi
     done
+else
+    echo "[entrypoint] API-key providers explicitly enabled by WORKFLOW_ALLOW_API_KEY_PROVIDERS=1" >&2
 fi
 
 # Codex stores auth in ~/.codex/auth.json relative to the running user.

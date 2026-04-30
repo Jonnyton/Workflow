@@ -24,9 +24,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from workflow.api.helpers import _default_universe, _universe_dir
+from workflow.providers.base import API_KEY_PROVIDER_ENV_VARS, api_key_providers_enabled
 
 
 def _policy_hash(payload: dict[str, Any]) -> str:
@@ -70,24 +72,31 @@ def get_status(universe_id: str = "") -> str:
 
     served_llm_type = (cfg.served_llm_type or "").strip()
     import shutil as _shutil
+    api_key_enabled = api_key_providers_enabled()
+    api_key_vars_present = [
+        name for name in API_KEY_PROVIDER_ENV_VARS if os.environ.get(name)
+    ]
+    codex_auth_file = Path.home() / ".codex" / "auth.json"
     # Priority chain mirrors the provider-router's preference order:
-    # local/bound endpoints beat SDK-key-only providers. Ollama is
-    # always-local; anthropic is host-controlled relay; codex+claude
-    # are subprocess-bound CLIs the daemon can drive; xai/gemini/groq
-    # are SDK-key-keyed network providers (task #14 additions).
+    # local/subscription endpoints beat API-key-only providers. Ollama is
+    # always-local; codex+claude are subprocess-bound CLIs the daemon can drive;
+    # xai/gemini/groq are API-key-backed network providers and are ignored
+    # unless WORKFLOW_ALLOW_API_KEY_PROVIDERS is explicitly enabled.
     if os.environ.get("OLLAMA_HOST"):
         endpoint_hint = "ollama"
-    elif os.environ.get("ANTHROPIC_BASE_URL"):
+    elif api_key_enabled and os.environ.get("ANTHROPIC_BASE_URL"):
         endpoint_hint = "anthropic"
-    elif os.environ.get("OPENAI_API_KEY") and _shutil.which("codex"):
+    elif _shutil.which("codex") and codex_auth_file.is_file():
         endpoint_hint = "codex"
     elif _shutil.which("claude"):
         endpoint_hint = "claude"
-    elif os.environ.get("XAI_API_KEY"):
+    elif api_key_enabled and os.environ.get("OPENAI_API_KEY") and _shutil.which("codex"):
+        endpoint_hint = "codex"
+    elif api_key_enabled and os.environ.get("XAI_API_KEY"):
         endpoint_hint = "xai"
-    elif os.environ.get("GEMINI_API_KEY"):
+    elif api_key_enabled and os.environ.get("GEMINI_API_KEY"):
         endpoint_hint = "gemini"
-    elif os.environ.get("GROQ_API_KEY"):
+    elif api_key_enabled and os.environ.get("GROQ_API_KEY"):
         endpoint_hint = "groq"
     else:
         endpoint_hint = "unset"
@@ -182,9 +191,16 @@ def get_status(universe_id: str = "") -> str:
         )
     if endpoint_hint == "unset":
         caveats.append(
-            "No LLM provider detected (checked: OLLAMA_HOST, ANTHROPIC_BASE_URL, "
-            "OPENAI_API_KEY+codex CLI, claude CLI, XAI_API_KEY, GEMINI_API_KEY, "
-            "GROQ_API_KEY). Provider routing is at-call discretion."
+            "No default LLM provider detected (checked: OLLAMA_HOST, Codex CLI "
+            "with subscription auth, and Claude CLI). API-key providers are "
+            "ignored unless WORKFLOW_ALLOW_API_KEY_PROVIDERS=1."
+        )
+    if api_key_vars_present and not api_key_enabled:
+        caveats.append(
+            "API-key provider env vars are present but ignored by default: "
+            f"{', '.join(api_key_vars_present)}. Set "
+            "WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 only for an intentional "
+            "API-key daemon."
         )
     caveats.append(
         "Legacy surface does NOT enforce per-universe sensitivity_tier. "
@@ -203,10 +219,10 @@ def get_status(universe_id: str = "") -> str:
         )
     if endpoint_hint == "unset":
         actionable_next_steps.append(
-            "Bind an LLM provider: set OLLAMA_HOST (local Ollama), "
-            "ANTHROPIC_BASE_URL (Anthropic relay), OPENAI_API_KEY with "
-            "codex CLI on PATH, install the claude CLI, or set one of "
-            "XAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY."
+            "Bind a default LLM provider: set OLLAMA_HOST (local Ollama), "
+            "install Claude CLI subscription auth, or install Codex CLI with "
+            "subscription auth at ~/.codex/auth.json. API-key providers require "
+            "explicit WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 opt-in."
         )
     if last_completed_llm == "unknown" and activity_tail:
         actionable_next_steps.append(
@@ -219,6 +235,7 @@ def get_status(universe_id: str = "") -> str:
             "host_id": host_id,
             "served_llm_type": served_llm_type or "any",
             "llm_endpoint_bound": endpoint_hint,
+            "api_key_providers_enabled": api_key_enabled,
         },
         "tier_routing_policy": tier_routing_policy,
     }

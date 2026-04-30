@@ -12,7 +12,12 @@ import os
 import time
 
 from workflow.exceptions import ProviderError, ProviderUnavailableError
-from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
+from workflow.providers.base import (
+    BaseProvider,
+    ModelConfig,
+    ProviderResponse,
+    require_api_key_provider_opt_in,
+)
 
 
 class GeminiProvider(BaseProvider):
@@ -22,6 +27,8 @@ class GeminiProvider(BaseProvider):
     family = "google"
 
     def __init__(self) -> None:
+        require_api_key_provider_opt_in(self.name)
+
         try:
             from google import genai  # noqa: F401
         except ImportError:

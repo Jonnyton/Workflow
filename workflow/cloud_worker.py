@@ -28,7 +28,8 @@ Why supervise a subprocess instead of re-implementing the claim loop?
     SqliteSaver, dashboard events, knowledge graph, heartbeat. Replicating
     it in-process would be a substantial refactor.
   - The subprocess inherits ``/etc/workflow/env`` (via compose env_file)
-    so OPENAI_API_KEY + UNIVERSE_SERVER_* all flow through cleanly.
+    after project-wide provider auth policy is applied. API-key provider
+    env vars are stripped unless ``WORKFLOW_ALLOW_API_KEY_PROVIDERS=1``.
   - Supervision is simple: restart on exit, exponential backoff on
     repeated failures. The GHA p0-outage-triage watchdog-hotloop class
     already covers the pathological case if backoff hits its ceiling.
@@ -48,12 +49,13 @@ is this supervisor's subprocess.
 
 LLM routing
 -----------
-The subprocess inherits ``OPENAI_API_KEY`` from the env file. No new
-secrets are required. Optionally, host can set ``FANTASY_DAEMON_LLM_TYPES``
-or ``WORKFLOW_PIN_WRITER`` on the cloud side to pin a cheap model and
-let the host's tray handle the expensive runs when it's online — that
-configuration is orthogonal to this supervisor and applies naturally
-via ``/etc/workflow/env``.
+The subprocess defaults to subscription-backed auth. API-key provider env vars
+are stripped unless the host deliberately enables
+``WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`` for this daemon. Optionally, host can
+set ``FANTASY_DAEMON_LLM_TYPES`` or ``WORKFLOW_PIN_WRITER`` on the cloud side
+to pin an approved subscription-backed model and let the host's tray handle
+other runs when it's online — that configuration is orthogonal to this
+supervisor and applies naturally via ``/etc/workflow/env``.
 
 Stdlib only.
 """
@@ -137,10 +139,12 @@ def _build_subprocess_env() -> dict[str, str]:
     """Construct the env dict the fantasy_daemon subprocess inherits.
 
     Starts from the parent env, overlays the cloud-specific host-user
-    identity. Keeps OPENAI_API_KEY + WORKFLOW_* + dispatcher flags +
-    LLM routing vars in place (inherited from parent / env file).
+    identity, and applies the project-wide provider auth policy before
+    subprocess launch.
     """
-    env = dict(os.environ)
+    from workflow.providers.base import subprocess_env_without_api_keys
+
+    env = subprocess_env_without_api_keys() or dict(os.environ)
     env["UNIVERSE_SERVER_HOST_USER"] = _cloud_host_user()
     # Make sure unified execution is on — dispatcher pick is gated on
     # this flag. It defaults on in production but we force it here so

@@ -167,7 +167,7 @@ Known secret metadata table:
 | `DO_SSH_KEY` | DigitalOcean | Non-expiring ed25519 keypair. | [#do-ssh-key](#do-ssh-key) |
 | `DO_DROPLET_HOST` | DigitalOcean | Non-secret IP identifier. | [#do-droplet-host](#do-droplet-host) |
 | `DO_SSH_USER` | DigitalOcean | Non-secret username. | [#do-ssh-user](#do-ssh-user) |
-| `OPENAI_API_KEY` | OpenAI | Deprecated; ignored by cloud daemons under subscription-only policy. | [#openai-api-key](#openai-api-key) |
+| `OPENAI_API_KEY` | OpenAI | Deprecated; ignored by default daemons under subscription-only policy. | [#openai-api-key](#openai-api-key) |
 | `PUSHOVER_USER_KEY` | Pushover | Non-expiring account identifier. | [#pushover-user-key](#pushover-user-key) |
 | `PUSHOVER_APP_TOKEN` | Pushover | Non-expiring application token. | [#pushover-app-token](#pushover-app-token) |
 
@@ -266,13 +266,13 @@ expected entry in `authorized_keys`.
 #### openai-api-key
 
 **What:** Deprecated legacy Codex API-key credential. As of 2026-04-30,
-Workflow cloud daemons run LLM calls through host subscription auth only.
-`OPENAI_API_KEY` is stripped at container startup when
-`WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1` and is not a valid recovery path
+Workflow daemons run LLM calls through host subscription auth by default.
+`OPENAI_API_KEY` is stripped at container startup unless
+`WORKFLOW_ALLOW_API_KEY_PROVIDERS=1` and is not a valid default recovery path
 for `llm_endpoint_bound=unset`.
 
-**Do not rotate for cloud-daemon recovery.** Instead:
-1. Confirm `/etc/workflow/env` has `WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1`.
+**Do not rotate for default-daemon recovery.** Instead:
+1. Confirm `/etc/workflow/env` has `WORKFLOW_ALLOW_API_KEY_PROVIDERS=0`.
 2. Provide subscription auth, e.g. set `WORKFLOW_CODEX_AUTH_JSON_B64` to a
    base64-encoded Codex subscription `~/.codex/auth.json`, or use the approved
    Claude subscription lane for GitHub Actions (`CLAUDE_CODE_OAUTH_TOKEN`).
@@ -523,7 +523,7 @@ checks that `llm_endpoint_bound` in `get_status` is not `"unset"`.
   Codex auth file invalid, or Claude OAuth unavailable in the relevant lane)
 - `codex` CLI missing from the container image (image rebuild needed)
 - Container restarted without env file (`docker compose down` + manual restart)
-- API-key vars present but ignored because cloud daemons are subscription-only
+- API-key vars present but ignored because default daemons are subscription-only
 
 **Manual re-check:**
 ```bash

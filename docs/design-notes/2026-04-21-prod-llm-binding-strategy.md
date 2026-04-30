@@ -3,7 +3,7 @@ title: Prod LLM binding strategy — minimum viable two-provider stance
 date: 2026-04-21
 author: navigator
 status: superseded
-status_detail: Superseded 2026-04-30 by PLAN.md cloud-daemon subscription-only provider policy.
+status_detail: Superseded 2026-04-30 by PLAN.md subscription-first provider auth policy.
 related:
   - workflow/providers/router.py
   - domains/fantasy_daemon/phases/_provider_stub.py
@@ -14,7 +14,7 @@ related:
 
 > Superseded 2026-04-30: this note describes the earlier API-key binding
 > strategy. Cloud daemons now run LLM execution through host subscription
-> auth only; API-key provider env vars are scrubbed before cloud-daemon LLM
+> auth only; API-key provider env vars are scrubbed before default-daemon LLM
 > execution.
 
 ## Current state (diagnosis)
@@ -52,7 +52,7 @@ run. The chain terminates in `AllProvidersExhaustedError`, not in a degraded res
 
 Historical note: with Task #35 (codex CLI in image + `OPENAI_API_KEY`) landing,
 the daemon had exactly one provider, `codex`. That path is no longer approved
-for cloud daemons; use subscription-backed Claude/Codex auth instead.
+for default daemons; use subscription-backed Claude/Codex auth instead.
 
 ---
 

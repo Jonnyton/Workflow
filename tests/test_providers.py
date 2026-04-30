@@ -7,6 +7,7 @@ binaries or network access.
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -268,7 +269,7 @@ class TestPreferredProvider:
         assert ProviderRouter._apply_preference(chain, "claude-code") == chain
 
     @pytest.mark.asyncio
-    async def test_preferred_writer_tried_first(self, monkeypatch):
+    async def test_api_key_preferred_writer_ignored_without_opt_in(self, monkeypatch):
         from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
@@ -280,13 +281,47 @@ class TestPreferredProvider:
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "prompt", "system")
-        assert resp.provider == "gemini-free"
+        assert resp.provider == "claude-code"
+        assert providers["gemini-free"].call_count == 0
 
     @pytest.mark.asyncio
-    async def test_preferred_judge_tried_first(self, monkeypatch):
+    async def test_preferred_writer_tried_first_with_api_key_opt_in(self, monkeypatch):
         from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
+        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
+        monkeypatch.setattr(
+            runtime, "universe_config",
+            UniverseConfig(preferred_writer="gemini-free"),
+        )
+        providers = _make_providers()
+        router = ProviderRouter(providers=providers)
+
+        resp = await router.call("writer", "prompt", "system")
+        assert resp.provider == "gemini-free"
+
+    @pytest.mark.asyncio
+    async def test_api_key_preferred_judge_ignored_without_opt_in(self, monkeypatch):
+        from workflow import runtime_singletons as runtime
+        from workflow.config import UniverseConfig
+
+        monkeypatch.setattr(
+            runtime, "universe_config",
+            UniverseConfig(preferred_judge="groq-free"),
+        )
+        providers = _make_providers()
+        router = ProviderRouter(providers=providers)
+
+        resp = await router.call("judge", "prompt", "system")
+        assert resp.provider == "codex"
+        assert providers["groq-free"].call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_preferred_judge_tried_first_with_api_key_opt_in(self, monkeypatch):
+        from workflow import runtime_singletons as runtime
+        from workflow.config import UniverseConfig
+
+        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
         monkeypatch.setattr(
             runtime, "universe_config",
             UniverseConfig(preferred_judge="groq-free"),
@@ -315,7 +350,7 @@ class TestPreferredProvider:
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "prompt", "system")
-        # Falls back through the rest of the chain
+        # API-key provider is ignored by default; chain stays subscription-first.
         assert resp.provider == "claude-code"
 
 
@@ -326,12 +361,23 @@ class TestPreferredProvider:
 
 class TestJudgeEnsemble:
     @pytest.mark.asyncio
-    async def test_fans_out_to_all_available(self):
+    async def test_fans_out_to_subscription_default_providers(self):
         providers = _make_providers()
         router = ProviderRouter(providers=providers)
 
         results = await router.call_judge_ensemble("judge this", "system")
-        # All 5 judge providers available — should get 5 responses
+        # API-key-backed judges are ignored unless the host opts in.
+        assert len(results) == 2
+        families = {r.family for r in results}
+        assert families == {"openai", "local"}
+
+    @pytest.mark.asyncio
+    async def test_fans_out_to_all_available_with_api_key_opt_in(self, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
+        providers = _make_providers()
+        router = ProviderRouter(providers=providers)
+
+        results = await router.call_judge_ensemble("judge this", "system")
         assert len(results) == 5
         families = {r.family for r in results}
         assert families == {"openai", "google", "meta", "xai", "local"}
@@ -346,12 +392,13 @@ class TestJudgeEnsemble:
         router = ProviderRouter(providers=providers)
 
         results = await router.call_judge_ensemble("judge this", "system")
-        assert len(results) == 2
+        assert len(results) == 1
         families = {r.family for r in results}
-        assert families == {"openai", "google"}
+        assert families == {"openai"}
 
     @pytest.mark.asyncio
-    async def test_ensemble_with_failures(self):
+    async def test_ensemble_with_failures(self, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
         providers = {
             "codex": FakeProvider("codex", "openai", fail_with=ProviderError("x")),
             "gemini-free": FakeProvider("gemini-free", "google", "gemini-resp"),
@@ -668,6 +715,13 @@ class TestOllamaProvider:
 
 
 class TestGrokProvider:
+    def test_requires_api_key_provider_opt_in(self):
+        with patch.dict("os.environ", {"XAI_API_KEY": "test-key"}, clear=True):
+            from workflow.providers.grok_provider import GrokProvider
+
+            with pytest.raises(ProviderUnavailableError, match="disabled by default"):
+                GrokProvider()
+
     @pytest.mark.asyncio
     async def test_success(self):
         mock_choice = MagicMock()
@@ -678,9 +732,15 @@ class TestGrokProvider:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = mock_response
 
+        fake_openai = MagicMock()
+        fake_openai.OpenAI.return_value = mock_client
+
         with (
-            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
-            patch("openai.OpenAI", return_value=mock_client),
+            patch.dict(
+                "os.environ",
+                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
+            ),
+            patch.dict(sys.modules, {"openai": fake_openai}),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -699,9 +759,15 @@ class TestGrokProvider:
             "Error code: 429 - Rate limit exceeded"
         )
 
+        fake_openai = MagicMock()
+        fake_openai.OpenAI.return_value = mock_client
+
         with (
-            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
-            patch("openai.OpenAI", return_value=mock_client),
+            patch.dict(
+                "os.environ",
+                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
+            ),
+            patch.dict(sys.modules, {"openai": fake_openai}),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -716,9 +782,15 @@ class TestGrokProvider:
             "Internal server error"
         )
 
+        fake_openai = MagicMock()
+        fake_openai.OpenAI.return_value = mock_client
+
         with (
-            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
-            patch("openai.OpenAI", return_value=mock_client),
+            patch.dict(
+                "os.environ",
+                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
+            ),
+            patch.dict(sys.modules, {"openai": fake_openai}),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -728,8 +800,12 @@ class TestGrokProvider:
 
     def test_missing_api_key_raises_unavailable(self):
         with (
-            patch.dict("os.environ", {}, clear=True),
-            patch("openai.OpenAI"),
+            patch.dict(
+                "os.environ",
+                {"WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
+                clear=True,
+            ),
+            patch.dict(sys.modules, {"openai": MagicMock()}),
         ):
             from workflow.providers.grok_provider import GrokProvider
 

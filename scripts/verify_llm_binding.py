@@ -136,10 +136,10 @@ def check_llm_binding(
         raise VerifyError(
             3,
             f"llm_endpoint_bound is {llm_bound!r} — daemon has no LLM bound. "
-            "For cloud daemons, provide subscription-backed Claude/Codex CLI "
+            "For default daemons, provide subscription-backed Claude/Codex CLI "
             "auth (for example WORKFLOW_CODEX_AUTH_JSON_B64 for Codex) and "
             "restart the container. API-key billing lanes are ignored when "
-            "WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1.",
+            "WORKFLOW_ALLOW_API_KEY_PROVIDERS is not explicitly truthy.",
         )
 
     # Step 3: exercise provider chain with a minimal add_canon call.

@@ -83,8 +83,8 @@ GitHub API.
 - Live GitHub Actions run 1 of `Auto-fix bug` on commit `1251c8e` succeeded
   at 2026-04-30T03:05Z. It processed issues #88, #87, and #86 and marked each
   `needs-human` with a bot comment because `CLAUDE_CODE_OAUTH_TOKEN` was not
-  visible to GitHub Actions. API-key billing lanes are not approved cloud
-  daemon writer auth; cloud daemons run through host subscriptions only.
+  visible to GitHub Actions. API-key billing lanes are not approved default
+  daemon writer auth; default daemons run through host subscriptions only.
 - CI `actionlint` on commit `1251c8e` failed because push-to-main linted every
   workflow and surfaced pre-existing shellcheck findings in unrelated workflow
   files. The follow-up patch narrows push linting to changed workflow files;
@@ -135,7 +135,7 @@ GitHub API.
   `auto-fix-claude-subscription-missing`, and reported
   `CLAUDE_CODE_OAUTH_TOKEN=false`, `OPENAI_API_KEY=true` (diagnostic only).
   Follow-up deploy hardening strips API-key provider env vars from
-  containerized cloud daemons when `WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1`
+  containerized daemons unless `WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`
   and supports subscription Codex auth via `WORKFLOW_CODEX_AUTH_JSON_B64`.
 
 ## Existing Pieces
@@ -201,9 +201,9 @@ GitHub API.
 - Final acceptance for MCP/chatbot-visible behavior requires rendered user
   surface proof. Claude.ai is preferred; ChatGPT rendered UI is the fallback
   while Claude is rate-limited.
-- Cloud daemons must run LLM work through host subscription auth only.
-  API-key billing lanes are diagnostics or legacy local-only material, not
-  cloud writer/checker auth.
+- Default daemons must run LLM work through host subscription auth only.
+  API-key billing lanes are diagnostics or deliberate host opt-in material, not
+  default writer/checker auth.
 
 ## Implementation Slices
 

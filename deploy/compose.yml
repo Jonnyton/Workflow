@@ -41,6 +41,7 @@ services:
       - "127.0.0.1:8001:8001"
     environment:
       WORKFLOW_DATA_DIR: /data
+      WORKFLOW_ALLOW_API_KEY_PROVIDERS: "0"
       WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY: "1"
       # Pass through anything in the env file.
       WORKFLOW_MCP_CANARY_URL: ${WORKFLOW_MCP_CANARY_URL:-https://tinyassets.io/mcp}
@@ -138,6 +139,7 @@ services:
     command: ["python", "-m", "workflow.cloud_worker"]
     environment:
       WORKFLOW_DATA_DIR: /data
+      WORKFLOW_ALLOW_API_KEY_PROVIDERS: "0"
       WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY: "1"
       # Cloud-side identity — distinguishes activity-log entries from
       # the host's `host` identity so multi-tenant ops can tell who

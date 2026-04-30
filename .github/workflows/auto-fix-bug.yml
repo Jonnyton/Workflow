@@ -21,7 +21,7 @@ name: Auto-fix change
 #                                comment explaining which writer auth is missing;
 #                                exit 0.
 #
-# API-key billing lanes are intentionally not cloud daemon writer auth.
+# API-key billing lanes are intentionally not default daemon writer auth.
 #
 # Acceptance policy for machine-authored code changes:
 #   writer:claude requires checker:codex.
@@ -352,7 +352,7 @@ jobs:
             echo ""
             echo "- selected writer mode: \`${mode}\`"
             echo "- required checker family: \`${checker_family}\`"
-            echo "- API-key secrets are intentionally ignored for cloud daemon writers."
+            echo "- API-key secrets are intentionally ignored for default daemon writers."
             echo "- OPENAI_API_KEY configured: \`${HAS_OPENAI_API_KEY_CONFIGURED}\`"
             echo "- ANTHROPIC_API_KEY configured: \`${HAS_ANTHROPIC_API_KEY_CONFIGURED}\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -383,7 +383,7 @@ jobs:
                 'Approved subscription writer secrets:',
                 '- `CLAUDE_CODE_OAUTH_TOKEN` *(primary subscription-backed Claude writer)* - from https://claude.ai/settings',
                 '',
-                '`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are intentionally ignored for cloud daemon writers under the subscription-only policy.',
+                '`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are intentionally ignored for default daemon writers under the subscription-only policy.',
                 'A future subscription-backed Codex auth path can be added as a second approved lane once supported.',
                 '',
                 'Settings -> Secrets and variables -> Actions -> New repository secret.',
@@ -617,7 +617,7 @@ jobs:
                 !claudeSubscriptionVisible
                   ? 'The preferred subscription-backed Claude daemon lane is not callable because `CLAUDE_CODE_OAUTH_TOKEN` was not visible to GitHub Actions.'
                   : '',
-                'API-key billing lanes are intentionally not used for cloud daemon writers.',
+                'API-key billing lanes are intentionally not used for default daemon writers.',
                 'The issue is marked `needs-human` so it does not loop silently.',
               ].filter(Boolean).join('\n'),
             });

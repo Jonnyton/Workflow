@@ -23,6 +23,7 @@ from workflow.providers.base import (
     ModelConfig,
     ProviderResponse,
     check_bwrap_failure,
+    subprocess_env_without_api_keys,
 )
 
 
@@ -65,6 +66,7 @@ class CodexProvider(BaseProvider):
 
         base_cmd, use_shell = _resolve_codex_cmd()
         cmd = [*base_cmd, "exec", "--full-auto", "--skip-git-repo-check"]
+        proc_env = subprocess_env_without_api_keys()
 
         win_kw = _no_window_kwargs()
         if use_shell:
@@ -73,6 +75,7 @@ class CodexProvider(BaseProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=proc_env,
                 **win_kw,
             )
         else:
@@ -81,6 +84,7 @@ class CodexProvider(BaseProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=proc_env,
                 **win_kw,
             )
 

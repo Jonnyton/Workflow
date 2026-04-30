@@ -47,7 +47,7 @@ the host's Claude subscription. The workflow uses the official
 ### Path B - Future Codex subscription lane
 
 Codex remains an approved writer family only when it can run through a
-subscription-backed auth path. `OPENAI_API_KEY` is not an approved cloud daemon
+subscription-backed auth path. `OPENAI_API_KEY` is not an approved default daemon
 writer lane for this project. Add a Codex subscription lane here only after the
 CLI/action supports a non-API-key subscription credential suitable for GitHub
 Actions.
@@ -59,7 +59,7 @@ Actions, the workflow:
 - Adds `needs-human`, `auto-fix-auth-missing`, and
   `auto-fix-claude-subscription-missing` labels to the issue
 - Posts a comment explaining that API-key secrets are intentionally ignored for
-  cloud daemon writers
+  default daemon writers
 - Exits 0 so the pipeline stays green
 
 Change attempts begin automatically the moment an approved subscription writer
