@@ -26,13 +26,13 @@ wiki request artifact  (BUG page, feature/patch plan, docs/ops request)
 wiki-bug-sync          (every 15 min, GHA)
     -> creates GH Issue with `daemon-request` label
 Auto-fix change        (on issues.labeled = daemon-request/auto-change/auto-bug)
-    -> auth path A/B/C/D
+    -> subscription auth path
     -> opens PR  OR  adds `needs-human` + comment
 ```
 
 ## Auth paths
 
-### Path A - OAuth token (preferred)
+### Path A - Claude Code OAuth token (primary subscription lane)
 
 Add secret `CLAUDE_CODE_OAUTH_TOKEN`:
 1. claude.ai -> Settings -> Claude Code OAuth
@@ -40,41 +40,32 @@ Add secret `CLAUDE_CODE_OAUTH_TOKEN`:
 3. Name: `CLAUDE_CODE_OAUTH_TOKEN`, value: paste token
 
 OAuth tokens do not expire on a fixed schedule but need rotation if revoked.
-The workflow uses the official `anthropics/claude-code-action@v1`.
+This is the intended steady-state Claude daemon path because it runs through
+the host's Claude subscription. The workflow uses the official
+`anthropics/claude-code-action@v1`.
 
-### Path B - Codex CLI fallback
+### Path B - Future Codex subscription lane
 
-Add secret `OPENAI_API_KEY`:
-1. platform.openai.com -> API Keys -> Create key
-2. GitHub -> repo Settings -> Secrets and variables -> Actions -> New repository secret
-3. Name: `OPENAI_API_KEY`, value: `sk-...`
+Codex remains an approved writer family only when it can run through a
+subscription-backed auth path. `OPENAI_API_KEY` is not an approved cloud daemon
+writer lane for this project. Add a Codex subscription lane here only after the
+CLI/action supports a non-API-key subscription credential suitable for GitHub
+Actions.
 
-The workflow installs `@openai/codex`, runs `codex login --with-api-key`, then
-runs `codex exec` in the GitHub runner workspace. This is the preferred
-cross-family fallback when Claude OAuth is rate-limited or unavailable.
+### Path C - No subscription auth (graceful-skip)
 
-### Path C - Claude API key fallback
-
-Add secret `ANTHROPIC_API_KEY`:
-1. console.anthropic.com -> API Keys -> Create key
-2. GitHub -> repo Settings -> Secrets and variables -> Actions -> New repository secret
-3. Name: `ANTHROPIC_API_KEY`, value: `sk-ant-...`
-
-Path C is the same Claude-family fallback when neither Claude OAuth nor Codex
-is available.
-
-### Path D - No auth (graceful-skip)
-
-When no approved Claude/Codex writer secret is visible to GitHub Actions, the
-workflow:
-- Adds `needs-human` and `auto-fix-auth-missing` labels to the issue
-- Posts a comment explaining which non-secret auth presence check failed
+When no approved subscription-backed writer secret is visible to GitHub
+Actions, the workflow:
+- Adds `needs-human`, `auto-fix-auth-missing`, and
+  `auto-fix-claude-subscription-missing` labels to the issue
+- Posts a comment explaining that API-key secrets are intentionally ignored for
+  cloud daemon writers
 - Exits 0 so the pipeline stays green
 
-Change attempts begin automatically the moment one approved writer secret is
-added. The scheduled backfill retries `needs-human` requests that have not had
-a real writer attempt yet once writer auth is visible, and clears the
-auth-missing labels before attempting the fix.
+Change attempts begin automatically the moment an approved subscription writer
+secret is added. The scheduled backfill retries `needs-human` requests that
+have not had a real writer attempt yet once subscription writer auth is
+visible, and clears the auth-missing labels before attempting the fix.
 
 ## Disable toggle
 
@@ -145,9 +136,11 @@ gh issue edit <N> --add-label daemon-request
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `needs-human` added, comment says "no auth" | No approved writer secret visible to GitHub Actions | Add `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` |
+| `needs-human` added, comment says "no auth" | No approved subscription-backed writer secret visible to GitHub Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` |
 | `needs-human` + `auto-fix-auth-missing` persists after adding auth | Backfill has not run yet, or the issue already has `auto-fix-attempted` from a real writer failure | Wait for the 15-minute schedule or manually dispatch the workflow for that issue |
-| Claude path rate-limited | Claude action failed and `OPENAI_API_KEY` is present | Workflow falls through to Codex CLI |
+| `auto-fix-claude-subscription-missing` appears | The intended Claude subscription daemon lane is offline/not visible to Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` |
+| `auto-fix-provider-exhausted` appears | Selected subscription-backed provider returned quota/rate/capacity exhaustion | Restore subscription capacity or bring another subscription-backed approved writer lane online |
+| Claude path rate-limited | Claude action failed and no subscription-backed Codex lane is wired | Issue is marked `needs-human`; do not fall through to API-key billing |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
 | Workflow not triggering | Issue labeled before workflow existed | Re-label with `auto-change` |

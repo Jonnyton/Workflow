@@ -82,8 +82,9 @@ GitHub API.
   updates stale Claude action inputs to the supported v1 input surface.
 - Live GitHub Actions run 1 of `Auto-fix bug` on commit `1251c8e` succeeded
   at 2026-04-30T03:05Z. It processed issues #88, #87, and #86 and marked each
-  `needs-human` with a bot comment because neither `CLAUDE_CODE_OAUTH_TOKEN`
-  nor `ANTHROPIC_API_KEY` is configured in repo secrets. No PR was opened.
+  `needs-human` with a bot comment because `CLAUDE_CODE_OAUTH_TOKEN` was not
+  visible to GitHub Actions. API-key billing lanes are not approved cloud
+  daemon writer auth; cloud daemons run through host subscriptions only.
 - CI `actionlint` on commit `1251c8e` failed because push-to-main linted every
   workflow and surfaced pre-existing shellcheck findings in unrelated workflow
   files. The follow-up patch narrows push linting to changed workflow files;
@@ -278,9 +279,10 @@ Acceptance:
   `needs-human` artifact if no writer provider is configured.
 - PR body links the request artifact, wiki page, change packet, tests, and
   observation plan.
-- Writer path is one claimant on the daemon request bus: Claude action if
-  configured, Codex CLI path when available, manual fallback otherwise. Claude
-  failures fall through to Codex when `OPENAI_API_KEY` is available.
+- Writer path is one claimant on the daemon request bus: subscription-backed
+  Claude Code OAuth if configured, future subscription-backed Codex lane when
+  available, manual fallback otherwise. Claude failures do not fall through to
+  API-key billing lanes.
 - No-auth blocks self-heal: issues marked `needs-human` before writer auth was
   visible are rediscovered by scheduled backfill once approved Claude/Codex
   writer auth appears, unless a real writer attempt already marked the issue
@@ -302,7 +304,8 @@ Acceptance:
   `bounty_requirements`.
 - Request issues carry labels that make the daemon request contract visible:
   `daemon-request`, `payment:free-ok`, `writer-pool:claude-codex`,
-  `checker:cross-family`, and `gate-required`.
+  `checker:cross-family`, and `gate-required`; the allowed writer lane is still
+  subscription-backed Claude/Codex only.
 - Machine-authored PRs cannot pass policy with same-family writer/checker
   labels.
 - Runtime `gates claim` validation is explicitly queued behind #18 rather than
