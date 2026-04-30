@@ -358,16 +358,12 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
 def _action_run_branch(kwargs: dict[str, Any]) -> str:
     """Execute a branch once.
 
-    Durability guarantee (v1): runs are *terminal-on-restart*. If the
-    daemon exits while a run is in flight, the row is marked
-    ``interrupted`` on next startup (see
-    ``workflow.runs.recover_in_flight_runs``) and ``get_run`` returns
-    ``resumable=false`` with ``resumable_reason="v1 terminal-on-restart"``.
-    To continue, re-invoke ``run_branch`` with the same ``branch_def_id``
-    and ``inputs_json`` — a new ``run_id`` is returned. Mid-run resume
-    from a SqliteSaver checkpoint is a future extension and is not
-    available today; do not poll an ``interrupted`` run expecting it to
-    flip back to ``running``.
+    Durability guarantee: if the daemon exits while a run is in flight,
+    startup recovery marks the row ``interrupted``. ``get_run`` then
+    reports whether a SqliteSaver checkpoint exists. Runs with a
+    checkpoint can be continued via ``resume_run``; runs without one
+    must be re-invoked with the same ``branch_def_id`` and
+    ``inputs_json``.
     """
     from workflow.api.branches import _resolve_branch_id
     from workflow.api.engine_helpers import _current_actor
@@ -573,14 +569,17 @@ def _compose_run_snapshot(
         "summary": summary,
         "recursion_limit": recursion_limit,
     }
-    # INTERRUPTED runs are terminal in v1 (durability guarantee — see
-    # ``_action_run_branch`` docstring + ``runs.recover_in_flight_runs``).
-    # The client must rerun with the same ``inputs_json``; it cannot be
-    # polled to recovery. Surface this explicitly so chatbots don't
-    # busy-wait forever.
     if run_record["status"] == "interrupted":
-        snapshot["resumable"] = False
-        snapshot["resumable_reason"] = "v1 terminal-on-restart"
+        from workflow.runs import _has_checkpoint
+
+        thread_id = run_record.get("thread_id") or run_record["run_id"]
+        if _has_checkpoint(_base_path(), thread_id):
+            snapshot["resumable"] = True
+            snapshot["resumable_reason"] = "checkpoint available"
+            snapshot["resume_action"] = "resume_run"
+        else:
+            snapshot["resumable"] = False
+            snapshot["resumable_reason"] = "no checkpoint available"
     # BUG-029: enrich failed snapshots so chatbots have a user-actionable hint.
     # `actionable_by` tells the chatbot WHO can fix it — chatbot/host/user —
     # so it doesn't have to guess (Mara's failure mode 2026-04-24).
