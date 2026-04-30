@@ -15,3 +15,4 @@
 2026-04-29T20:09:41-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=342
 2026-04-29T20:24:55-07:00 RED   layer=1 url=https://tinyassets.io/mcp exit=2 rtt_ms=125 reason='HTTP 502 from https://tinyassets.io/mcp: Bad Gateway'
 2026-04-29T20:25:50-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=165
+2026-04-29T20:29:11-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=282
