@@ -12,13 +12,13 @@
       value: pulse.mcp.source,
       status: 'observable',
       body: `${compactNumber(pulse.knowledgeCount)} commons pages, ${compactNumber(pulse.mcp.goals.length)} goals, ${compactNumber(pulse.mcp.universes.length)} universes in the current read.`,
-      command: 'https://tinyassets.io/mcp',
+      command: 'Connector setup: /connect',
       href: '/connect'
     },
     {
       label: 'Repo head',
       value: shortHash(pulse.repo.repo.head),
-      status: pulse.repo.repo.current_branch,
+      status: 'GitHub source',
       body: `${compactNumber(pulse.repo.branches.length)} git branches visible when the repo snapshot was generated.`,
       command: pulse.repo.repo.remote_url,
       href: pulse.repo.repo.remote_url.replace(/\.git$/, ''),
@@ -35,12 +35,25 @@
       href: '/host'
     },
     {
-      label: 'Website preview',
-      value: 'localhost:5173',
-      status: 'hot reload',
-      body: 'Every page in this preview is static-buildable and uses the same shared live-lens source model.',
-      command: 'WebSite/preview.bat',
+      label: 'Public graph',
+      value: `${compactNumber(pulse.knowledgeCount + pulse.branchCount)}`,
+      status: 'live lens',
+      body: 'The graph page combines MCP commons, visible GitHub branches, workflow branches, route nodes, and project edges into one public proof surface.',
+      command: 'MCP + GitHub graph lens',
       href: '/graph'
+    }
+  ];
+
+  const devEvidence = [
+    {
+      label: 'Local preview',
+      value: 'localhost:5173',
+      body: 'Development preview uses WebSite/preview.bat and hot reload. This is a contributor detail, not a public availability signal.'
+    },
+    {
+      label: 'Snapshot caveat',
+      value: pulse.repo.repo.current_branch,
+      body: pulse.repo.repo.dirty_note ?? 'No dirty-worktree note was recorded in the baked repo snapshot.'
     }
   ];
 </script>
@@ -61,8 +74,8 @@
 <section class="ops">
   <div class="wrap">
     <div class="probe">
-      <StatusPill kind="live" pulse>MCP gateway · canonical</StatusPill>
-      <span class="meta">tinyassets.io/mcp · Cloudflare-fronted · browser refresh uses the same path through the dev proxy</span>
+      <StatusPill kind="live" pulse>MCP connector · canonical</StatusPill>
+      <span class="meta">tinyassets.io/mcp · Cloudflare-fronted · public connector path</span>
     </div>
 
     <div class="ops-grid">
@@ -84,6 +97,19 @@
       </div>
       <p>Status is useful only when it names the surface, the source, and the timestamp. The refresh controls above intentionally expose failure instead of smoothing it over.</p>
     </div>
+
+    <details class="dev-trace">
+      <summary>Developer trace</summary>
+      <div class="dev-grid">
+        {#each devEvidence as row}
+          <article>
+            <span class="article-label">{row.label}</span>
+            <strong>{row.value}</strong>
+            <p>{row.body}</p>
+          </article>
+        {/each}
+      </div>
+    </details>
   </div>
 </section>
 
@@ -105,8 +131,12 @@
   p { line-height: 1.6; margin: 12px 0 0; font-size: 13.5px; }
   small { display: inline-block; color: var(--fg-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; margin-top: 12px; text-transform: uppercase; }
   .watchlist { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); gap: 24px; margin-top: 12px; }
+  .dev-trace { border: 1px dashed var(--border-2); border-radius: 8px; color: var(--fg-3); margin-top: 12px; padding: 14px 16px; }
+  .dev-trace summary { cursor: pointer; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; width: fit-content; }
+  .dev-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+  .dev-grid article { background: var(--bg-inset); border: 1px solid var(--border-1); border-radius: 8px; padding: 14px; }
   h2 { color: var(--fg-1); font-family: var(--font-display); font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; line-height: 1; margin: 0; }
   .watchlist p { margin: 0; font-size: 15px; }
-  @media (max-width: 900px) { .ops-grid { grid-template-columns: repeat(2, 1fr); } .watchlist { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .ops-grid { grid-template-columns: repeat(2, 1fr); } .watchlist, .dev-grid { grid-template-columns: 1fr; } }
   @media (max-width: 620px) { .ops-grid { grid-template-columns: 1fr; } }
 </style>

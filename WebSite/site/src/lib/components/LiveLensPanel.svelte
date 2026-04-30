@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
   import {
     LENS_DEFINITIONS,
@@ -69,6 +70,10 @@
     }
   }
 
+  onMount(() => {
+    void refreshMcp();
+  });
+
   function metricsFor(activeLens: LensKey, project: ProjectPulse): Metric[] {
     const repoUrl = project.repo.repo.remote_url?.replace(/\.git$/, '') || 'https://github.com/Jonnyton/Workflow';
     const repoHead = project.repo.repo.head || project.repo.branches[0]?.commit || '';
@@ -100,7 +105,7 @@
       head: {
         label: 'Repo head',
         value: shortHash(repoHead),
-        note: project.repo.repo.current_branch,
+        note: 'GitHub repo snapshot',
         href: repoHead ? `${repoUrl}/commit/${repoHead}` : repoUrl,
         external: true
       }
@@ -156,7 +161,7 @@
     if (activeLens === 'alliance') {
       return [
         { kicker: 'Feature want', title: project.currentBug?.id ?? 'No bug selected', body: project.currentBug?.title ?? 'The commons has no current bug in this snapshot.', meta: 'enters the loop through wiki', href: '/wiki' },
-        { kicker: 'Public forum', title: 'GitHub Discussions', body: 'Long-form ideas and RFCs belong in the open, then route back into wiki, goals, or branches.', meta: project.repo.repo.remote_url, href: 'https://github.com/Jonnyton/Workflow/discussions', external: true },
+        { kicker: 'Public forum', title: 'GitHub Issues', body: 'Long-form ideas, bugs, and RFCs start in the open, then route back into wiki, goals, or branches.', meta: project.repo.repo.remote_url, href: 'https://github.com/Jonnyton/Workflow/issues', external: true },
         { kicker: 'Chatbot path', title: 'Connector-mediated filing', body: 'A real user can ask their chatbot to file the bug or feature request directly.', meta: 'tinyassets.io/mcp', href: '/connect' }
       ];
     }
@@ -164,7 +169,7 @@
     if (activeLens === 'status') {
       return [
         { kicker: 'MCP source', title: project.mcp.source, body: `Snapshot fetched ${relativeStamp(project.mcp.fetched_at)}. Refresh probes the live connector path.`, meta: 'tinyassets.io/mcp', href: '/connect' },
-        { kicker: 'GitHub source', title: project.repo.source, body: `Repo snapshot fetched ${relativeStamp(project.repo.fetched_at)}. Refresh pulls branch data from GitHub.`, meta: project.repo.repo.current_branch, href: project.repo.repo.remote_url?.replace(/\.git$/, '') || 'https://github.com/Jonnyton/Workflow', external: true },
+        { kicker: 'GitHub source', title: project.repo.source, body: `Repo snapshot fetched ${relativeStamp(project.repo.fetched_at)}. Refresh pulls branch data from GitHub.`, meta: `head ${shortHash(project.repo.repo.head)}`, href: project.repo.repo.remote_url?.replace(/\.git$/, '') || 'https://github.com/Jonnyton/Workflow', external: true },
         { kicker: 'Current universe', title: project.activeUniverse?.id ?? 'No universe', body: project.activeUniverse ? `${project.activeUniverse.phase}, ${compactNumber(project.activeUniverse.word_count)} words.` : 'No live universe in snapshot.', meta: project.activeUniverse?.last_activity_at ? relativeStamp(project.activeUniverse.last_activity_at) : 'snapshot', href: '/host' }
       ];
     }
@@ -272,6 +277,11 @@
     {/if}
 
     {#if activeLens === 'home'}
+      <div class="demo-prompt" aria-label="Concrete Workflow demo">
+        <span>Demo prompt</span>
+        <p>"Using Workflow, show open project work and file a patch request for the issue I describe."</p>
+        <strong>Result: the chatbot reads the MCP commons, routes the request into the loop, and the graph/status pages show the same live state changing.</strong>
+      </div>
       <div class="home-actions" aria-label="Primary Workflow actions">
         <a class="home-action" href="/connect">
           <span>1 · Use it</span>
@@ -509,6 +519,47 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin-top: 24px;
+  }
+
+  .demo-prompt {
+    border: 1px solid rgba(109, 211, 166, 0.28);
+    border-radius: 8px;
+    background: rgba(109, 211, 166, 0.045);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px 14px;
+    margin-top: 18px;
+    padding: 14px 16px;
+  }
+
+  .demo-prompt span {
+    color: var(--signal-live);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .demo-prompt p,
+  .demo-prompt strong {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .demo-prompt p {
+    color: var(--fg-1);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    grid-column: 2;
+    line-height: 1.45;
+  }
+
+  .demo-prompt strong {
+    color: var(--fg-2);
+    font-size: 13px;
+    font-weight: 500;
+    grid-column: 2;
+    line-height: 1.5;
   }
 
   .home-action {
@@ -869,9 +920,26 @@
     .home-actions,
     .metrics,
     .items,
-    .refresh-box,
     .truth-strip {
       grid-template-columns: 1fr;
+    }
+
+    .refresh-box {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      padding: 10px;
+    }
+
+    .refresh-box span {
+      font-size: 9px;
+    }
+
+    .demo-prompt {
+      grid-template-columns: 1fr;
+    }
+
+    .demo-prompt p,
+    .demo-prompt strong {
+      grid-column: 1;
     }
   }
 </style>

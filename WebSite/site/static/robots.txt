@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
+# MCP is the intended bot surface for live project reads; robots covers the human website.
 Allow: /catalog/
 Allow: /connect
 Allow: /contribute
@@ -8,6 +9,7 @@ Allow: /graph
 Allow: /host
 Allow: /legal
 Allow: /loop
+Allow: /status
 Allow: /wiki
 Allow: /alliance
 Disallow: /auth/

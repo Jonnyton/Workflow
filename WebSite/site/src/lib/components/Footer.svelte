@@ -1,6 +1,6 @@
 <!--
   Footer — bottom chrome.
-  Adds legal link, socials placeholder, supply ticker, alliance link.
+  Adds legal link, public build links, and supply boundary.
 -->
 <script lang="ts">
   import SigilMark from './SigilMark.svelte';
@@ -10,13 +10,6 @@
 
   const year = new Date().getFullYear();
 
-  const socials = [
-    { name: 'GitHub', href: 'https://github.com/Jonnyton/Workflow' },
-    { name: 'X', href: 'https://x.com/' },
-    { name: 'YouTube', href: 'https://youtube.com/' },
-    { name: 'LinkedIn', href: 'https://linkedin.com/' },
-    { name: 'Discord', href: 'https://discord.com/' }
-  ];
 </script>
 
 <footer class="footer">
@@ -36,7 +29,7 @@
         <li><a href="/connect">Connect</a></li>
         <li><a href="/loop">Join the loop</a></li>
         <li><a href="/host">Host a daemon</a></li>
-        <li><a href="/alliance">Tiny Alliance</a></li>
+        <li><a href="/catalog">Catalog</a></li>
       </ul>
     </div>
     <div class="col">
@@ -44,14 +37,14 @@
       <ul>
         <li><a href="/wiki">Live wiki</a></li>
         <li><a href="/graph">Graph</a></li>
-        <li><a href="/loop">Loop</a></li>
+        <li><a href="/status">Status</a></li>
         <li><a href="/economy">Economy</a></li>
       </ul>
     </div>
     <div class="col">
       <RitualLabel>Build</RitualLabel>
       <ul>
-        <li><a href="https://tinyassets.io/mcp" target="_blank" rel="noreferrer">MCP gateway ↗</a></li>
+        <li><a href="/connect">Connect MCP</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow" target="_blank" rel="noreferrer">GitHub ↗</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow/blob/main/PLAN.md" target="_blank" rel="noreferrer">PLAN.md ↗</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">CONTRIBUTING.md ↗</a></li>
@@ -73,12 +66,6 @@
     <span class="supply">Workflow rail: {token.workflow_test_currency.name}</span>
     <span class="supply__chains">BASE · PulseChain · BSC</span>
     <a class="supply__more" href="/economy">All chains →</a>
-  </div>
-
-  <div class="container footer__socials">
-    {#each socials as s}
-      <a href={s.href} target="_blank" rel="noreferrer">{s.name}</a>
-    {/each}
   </div>
 
   <div class="container footer__bottom">
@@ -114,10 +101,6 @@
   .supply__chains { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.14em; }
   .supply__more { margin-left: auto; color: var(--ember-600); text-decoration: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; }
   .supply__more:hover { text-decoration: underline; }
-
-  .footer__socials { display: flex; gap: 16px; flex-wrap: wrap; padding: var(--s-5) 0; border-bottom: 1px solid var(--border-1); font-family: var(--font-mono); font-size: 12px; }
-  .footer__socials a { color: var(--fg-2); text-decoration: none; }
-  .footer__socials a:hover { color: var(--ember-600); }
 
   .footer__bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: var(--s-4); font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }
   .contact a { color: var(--fg-2); text-decoration: none; }

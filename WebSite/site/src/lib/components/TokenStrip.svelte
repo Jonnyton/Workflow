@@ -8,16 +8,7 @@
   import token from '$lib/content/token-info.json';
   import TokenDisclaimer from './TokenDisclaimer.svelte';
 
-  let copied: string | null = $state(null);
-  async function copyAddr(addr: string) {
-    try {
-      await navigator.clipboard.writeText(addr);
-      copied = addr;
-      setTimeout(() => (copied = null), 1400);
-    } catch {
       /* noop — fallback could prompt user to copy manually */
-    }
-  }
 
   function short(addr: string) {
     return addr.length > 14 ? `${addr.slice(0, 8)}…${addr.slice(-6)}` : addr;
@@ -47,24 +38,23 @@
             <span class="chain__name">{d.label}</span>
             {#if d.primary}<span class="badge badge--primary">primary</span>{/if}
             {#if d.workflow_status}<span class="badge">{d.workflow_status}</span>{/if}
+            <span class="badge badge--boundary">reference only</span>
             {#if d.legacy}<span class="badge badge--legacy">legacy · 1:1 migration</span>{/if}
           </header>
           <div class="addr">
             <code class="address">{short(d.address_main)}</code>
-            <button class="copy" onclick={() => copyAddr(d.address_main)} aria-label="Copy address">
-              {copied === d.address_main ? 'Copied' : 'Copy'}
-            </button>
+            <span class="addr__state">no Workflow action</span>
           </div>
           {#if d.address_others}
             <div class="addr addr--secondary">
               <span class="addr__label">other:</span>
               <code class="address">{short(d.address_others)}</code>
-              <button class="copy copy--ghost" onclick={() => copyAddr(d.address_others)}>
-                {copied === d.address_others ? 'Copied' : 'Copy'}
-              </button>
+              <span class="addr__state">reference</span>
             </div>
           {/if}
           <div class="links">
+            <a class="link" href="/legal#token-disclosures">Disclosures</a>
+            <span class="meta">Testnet only here</span>
             <a class="link" href={d.explorer} target="_blank" rel="noreferrer">Explorer ↗</a>
             {#if d.bridge}
               <span class="meta">Bridge: {d.bridge}</span>
@@ -173,6 +163,7 @@
     border-radius: 999px;
   }
   .badge--primary { background: rgba(233,69,96,0.15); color: var(--ember-500); }
+  .badge--boundary { background: rgba(255,255,255,0.05); color: var(--fg-2); }
   .badge--legacy { background: rgba(255,255,255,0.06); color: var(--fg-3); }
   .addr {
     display: flex;
@@ -186,6 +177,17 @@
     color: var(--fg-3);
     text-transform: uppercase;
     letter-spacing: 0.1em;
+  }
+  .addr__state {
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    padding: 6px 8px;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
   .address {
     flex: 1;
@@ -220,6 +222,9 @@
     align-items: center;
     font-size: 11.5px;
     margin-top: 4px;
+  }
+  .links a[target="_blank"] {
+    display: none;
   }
   .link {
     color: var(--ember-600);
