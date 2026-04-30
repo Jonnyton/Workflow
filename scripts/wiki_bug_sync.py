@@ -410,7 +410,7 @@ def sync(
                 _token, repo, bug_id, title, severity, component, body_md,
                 dry_run=dry_run, timeout=timeout,
             )
-            print(f"[wiki-bug-sync] {bug_id} → {issue_url}")
+            print(f"[wiki-bug-sync] {bug_id} -> {issue_url}")
             max_synced = max(max_synced, bug_num)
 
         if not dry_run:

@@ -32,9 +32,16 @@ GitHub API.
 - Live MCP has Goal `f10caea2e437` ("Turn a Workflow bug into a patch packet")
   with user-made Branch `0731a3122bd4` (`bug_to_patch_packet_v1`) bound.
 - Live MCP has Goal `4ff5862cc26d` ("Route a patch request through
-  investigation, PR, release, and live observation") with no branches bound.
-- Live MCP has user-made Branch `fd5c66b1d87d` (`change_loop_v1`) runnable,
-  but unbound to the patch-loop Goal.
+  investigation, PR, release, and live observation") bound to user-made Branch
+  `fd5c66b1d87d` (`change_loop_v1`) after host approval on 2026-04-30.
+- Live run `020a76ae0530478e` of `change_loop_v1` failed at compile time:
+  `ValueError: 'investigation_gate' is already being used as a state key`.
+  This produced wiki `BUG-044`.
+- `scripts/wiki_bug_sync.py --dry-run --url https://tinyassets.io/mcp --repo
+  Jonnyton/Workflow` detected `BUG-044` as the next sync item and would create
+  issue `[BUG-044] ...` with labels `auto-bug` and `severity:major`.
+  The first local Windows run exposed a console encoding bug in the script's
+  Unicode arrow output; fixed in this slice by using ASCII `->`.
 - Live MCP queue is empty; no `bug_investigation` request is pending.
 - Local code confirms `_wiki_file_bug` still returns immediately after
   `_append_wiki_log`; it does not call `_maybe_enqueue_investigation`.
@@ -74,8 +81,9 @@ GitHub API.
 3. **Patch packet completion is not observed end-to-end.** The helper can
    attach a packet, but the loop has no proven run-completion hook that appends
    it to the bug page.
-4. **Patch-loop Goal is unbound.** `change_loop_v1` exists but is not attached
-   to Goal `4ff5862cc26d`.
+4. **Patch-loop branch is bound but unrunnable.** `change_loop_v1` is attached
+   to Goal `4ff5862cc26d`, but live run `020a76ae0530478e` failed with a
+   node-id/state-key collision; tracked as BUG-044.
 5. **PR automation is issue-driven, not patch-packet-driven.** The existing
    GitHub Action starts from `auto-bug` issues and depends on Claude auth; it
    does not yet consume patch packets or Codex/Codex CLI as a writer path.
@@ -158,7 +166,8 @@ Acceptance:
 
 Live operation, not code:
 
-- Bind `fd5c66b1d87d` (`change_loop_v1`) to Goal `4ff5862cc26d`.
+- Bind `fd5c66b1d87d` (`change_loop_v1`) to Goal `4ff5862cc26d`. Done on
+  2026-04-30 after host approval.
 - Publish/record versions if the versioning surface is required before
   canonical selection.
 - Set canonical only through the supported version primitive once live versions
@@ -169,6 +178,7 @@ Acceptance:
 - `goals action=get goal_id=4ff5862cc26d` shows `change_loop_v1` bound.
 - `extensions action=get_branch branch_def_id=fd5c66b1d87d` still shows the
   original community branch shape.
+- Follow-up run should pass compile after BUG-044 is resolved.
 
 ### Slice 5: PR producer bridge
 
@@ -227,4 +237,3 @@ secret/configuration-only failure unless the goal is explicitly ops wiring.
 5. Post-fix clean-use evidence: logs, live user history, issue/PR status,
    canary recurrence window, or explicit "no post-fix real-user use yet" watch
    item in STATUS.
-
