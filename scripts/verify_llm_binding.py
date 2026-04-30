@@ -107,6 +107,16 @@ def _parse_status(result: dict[str, Any]) -> dict[str, Any]:
     raise VerifyError(1, "get_status returned no text content")
 
 
+def _llm_endpoint_bound(status: dict[str, Any]) -> Any:
+    """Return the LLM binding from either historical or current status shape."""
+    if "llm_endpoint_bound" in status:
+        return status.get("llm_endpoint_bound")
+    active_host = status.get("active_host")
+    if isinstance(active_host, dict):
+        return active_host.get("llm_endpoint_bound", "unset")
+    return "unset"
+
+
 def check_llm_binding(
     url: str,
     timeout: float,
@@ -129,7 +139,7 @@ def check_llm_binding(
     status_result = _call_tool_with(url, sid, "get_status", {}, timeout, _post_fn)
     status = _parse_status(status_result)
 
-    llm_bound = status.get("llm_endpoint_bound", "unset")
+    llm_bound = _llm_endpoint_bound(status)
     print(f"[verify-llm] get_status llm_endpoint_bound={llm_bound!r}")
 
     if str(llm_bound).lower() in ("unset", "", "false", "none"):
@@ -214,8 +224,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         status = check_llm_binding(args.url, args.timeout)
+        llm_bound = _llm_endpoint_bound(status)
         print(
-            f"[verify-llm] PASS — llm_endpoint_bound={status.get('llm_endpoint_bound')!r}"
+            f"[verify-llm] PASS — llm_endpoint_bound={llm_bound!r}"
         )
         return 0
     except VerifyError as exc:

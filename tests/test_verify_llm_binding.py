@@ -30,6 +30,21 @@ _STATUS_BOUND = {
         ]
     },
 }
+_STATUS_BOUND_NESTED = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
+                    '"phase": "idle"}'
+                ),
+            }
+        ]
+    },
+}
 _STATUS_UNBOUND = {
     "jsonrpc": "2.0",
     "id": 10,
@@ -81,6 +96,17 @@ def test_llm_bound_returns_status():
     )
     result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
     assert result.get("llm_endpoint_bound") == "anthropic"
+
+
+def test_llm_bound_accepts_current_nested_status_shape():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),              # initialize
+        (_NOTIF_NONE, "sid1"),           # notifications/initialized
+        (_STATUS_BOUND_NESTED, "sid1"),  # get_status
+        (_ADD_CANON_OK, "sid1"),         # add_canon
+    )
+    result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
+    assert result["active_host"]["llm_endpoint_bound"] == "codex"
 
 
 def test_llm_bound_add_canon_non_fatal():
