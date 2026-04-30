@@ -1979,6 +1979,7 @@ def compile_branch(
     node_by_id: dict[str, NodeDefinition] = {
         n.node_id: n for n in branch.node_defs
     }
+    graph_node_def_by_id: dict[str, NodeDefinition] = {}
 
     node_ids_in_order = [gn.id for gn in branch.graph_nodes]
 
@@ -1992,6 +1993,7 @@ def compile_branch(
                 f"Graph node '{gn.id}' references unknown node_def_id "
                 f"'{def_id}'."
             )
+        graph_node_def_by_id[gn.id] = node_def
         # Effective llm_policy: node-level takes precedence over branch default.
         effective_policy = node_def.llm_policy or getattr(
             branch, "default_llm_policy", None,
@@ -2024,7 +2026,7 @@ def compile_branch(
 
     # Conditional edges.
     for cedge in branch.conditional_edges:
-        source_def = node_by_id.get(cedge.from_node)
+        source_def = graph_node_def_by_id.get(cedge.from_node)
         conditions = {
             label: (END if tgt == "END" else tgt)
             for label, tgt in cedge.conditions.items()

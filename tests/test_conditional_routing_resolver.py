@@ -179,39 +179,76 @@ class TestHappyCaseRouting:
 
 
 class TestGraphNodeIdDifferentFromDefId:
-    """Step 1 hypothesis was wrong: the bug is NOT graph_node.id vs
-    node_def.id mismatch. The bug is the router-to-LangGraph contract
-    inversion (see module docstring of graph_compiler._build_conditional_router).
+    """A graph placement id may differ from the referenced node_def id.
 
-    After the fix, routing works correctly in both id-match and
-    id-mismatch cases — kept as regression guard for the id-mismatch
-    path since source_def=None when ids differ (router falls through
-    to the ``if not output_key: return fallback`` branch, which now
-    returns a valid label key).
+    The router must still read the source node's declared output_key.
+    Otherwise it cannot see the gate's emitted label and falls back to
+    the first condition, which can silently choose the wrong path.
     """
 
-    def test_gate_with_distinct_ids_routes_to_fallback(self):
-        """When graph_node.id != node_def.id, source_def=None →
-        output_key="" → router returns the fallback label. With the
-        fix, fallback is a LABEL (valid path_map key) so the graph
-        advances instead of KeyError-ing. The routing still collapses
-        to a single branch (the fallback), but the graph runs.
+    def test_gate_with_distinct_ids_routes_by_emitted_label(self):
+        """When graph_node.id != node_def.id, the router should still
+        read the gate output and route by the emitted label.
         """
         branch = _build_two_path_branch(
             gate_graph_id="gate_placement",
             gate_def_id="gate_core",  # different from graph_node.id
         )
         compiled = compile_branch(
-            branch, provider_call=_scripted_provider("A"),
+            branch, provider_call=_scripted_provider("B"),
         )
         result = _run_compiled(compiled, initial_state={"scene_input": "test"})
 
-        # With source_def=None, output_key="" → fallback label ("A") →
-        # path_a. This is deterministic given the first-declared-label
-        # fallback policy. Before the fix: KeyError'd on graph.invoke.
-        assert result.get("path_a_out"), (
-            "Graph should advance even when source_def is unresolvable "
-            f"(id-mismatch case); final state: {dict(result)}"
+        assert result.get("path_b_out"), (
+            "Graph should route by the emitted label even when the "
+            f"graph id differs from the node_def id; final state: {dict(result)}"
+        )
+        assert not result.get("path_a_out"), (
+            f"path_a should not run when the gate emits B; final state: {dict(result)}"
+        )
+
+    def test_gate_with_distinct_ids_can_route_to_end(self):
+        """BUG-019 guard: END routing must use the emitted label, not
+        fallback to the first condition when ids differ.
+        """
+        branch = BranchDefinition(
+            branch_def_id="s1-distinct-id",
+            name="S1 end-literal with distinct graph id",
+            node_defs=[
+                _mk_gate_node("gate_core"),
+                _mk_leaf_node("leaf"),
+            ],
+            graph_nodes=[
+                GraphNodeRef(id="gate_placement", node_def_id="gate_core"),
+                GraphNodeRef(id="leaf", node_def_id="leaf"),
+            ],
+            edges=[
+                EdgeDefinition(from_node="leaf", to_node="END"),
+            ],
+            conditional_edges=[
+                ConditionalEdge(
+                    from_node="gate_placement",
+                    conditions={"GO": "leaf", "STOP": "END"},
+                ),
+            ],
+            entry_point="gate_placement",
+            state_schema=[
+                {"name": "scene_input", "type": "str"},
+                {"name": "gate_out", "type": "str"},
+                {"name": "leaf_out", "type": "str"},
+            ],
+        )
+        errors = branch.validate()
+        assert errors == [], f"validate: {errors}"
+
+        compiled = compile_branch(
+            branch, provider_call=_scripted_provider("STOP"),
+        )
+        result = _run_compiled(compiled, initial_state={"scene_input": "x"})
+
+        assert not result.get("leaf_out"), (
+            "STOP should terminate at END without falling back to GO; "
+            f"final state: {dict(result)}"
         )
 
 
