@@ -35,7 +35,6 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Revert-loop canary idle-tail false red — GHA `Uptime canary` failed on `activity_log_tail empty` while public MCP/tool/wiki green. | scripts/revert_loop_canary.py, tests/test_revert_loop_canary.py | - | claimed:codex-gpt5-desktop |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT (dev Step 7/10, fail-fast iteration; first failure landed). Target ~940 LOC residual (ROI §5.2 floor). Lock: workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, plugin mirror, ~53 test files, workflow/storage/__init__.py. | workflow/universe_server.py, workflow/api/evaluation.py, workflow/api/market.py, workflow/api/runs.py, workflow/api/status.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/ | - | claimed:dev |
 | **#24 Arc C** — env-var deprecation aliases (UNIVERSE_SERVER_BASE, WIKI_PATH) | workflow/storage/__init__.py | - | dev-ready |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |

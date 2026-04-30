@@ -4,7 +4,7 @@ docs/design-notes/2026-04-23-revert-loop-canary-spec.md).
 Covers the 6 test surfaces named in the spec Test Strategy §:
 0/2/3 REVERTs (OK), 3/10min (WARN), 5/20min (CRITICAL), 3/20min (below
 WARN strict rate but inside CRITICAL window — confirms math), empty
-tail (exit 5), network-path failures.
+tail (OK), network-path failures.
 
 Pure classify_loop tests use injected ``now`` and scripted tails; network
 path tests use stubbed ``post_fn``. No live daemon.
@@ -164,10 +164,11 @@ class TestClassifyLoopMathBoundaries:
 
 
 class TestClassifyLoopEmptyEvidence:
-    def test_empty_tail_returns_exit_5(self):
+    def test_empty_tail_is_green(self):
         code, msg = _classify([])
-        assert code == 5
+        assert code == 0
         assert "empty" in msg
+        assert "0 REVERTs" in msg
 
     def test_non_string_entries_skipped(self):
         tail = [None, 42, {"dict": "not a string"}]  # type: ignore[list-item]
@@ -253,12 +254,18 @@ def _make_init_response() -> dict:
     }
 
 
-def _make_tool_response(tail: list[str]) -> dict:
+def _make_tool_response(
+    tail: list[str],
+    *,
+    evidence_caveats: dict | None = None,
+) -> dict:
     import json as _json
     payload = {
         "active_host": {"host_id": "test"},
         "evidence": {"activity_log_tail": tail},
     }
+    if evidence_caveats is not None:
+        payload["evidence_caveats"] = evidence_caveats
     return {
         "jsonrpc": "2.0", "id": 2,
         "result": {
@@ -350,8 +357,31 @@ class TestFetchStatusActivityTail:
         with pytest.raises(rlc.RevertLoopError) as exc_info:
             rlc.fetch_status_activity_tail(
                 "http://fake/mcp", 10.0, post_fn=stub,
+        )
+        assert exc_info.value.code == 5
+
+    def test_activity_log_read_failed_caveat_raises_step5(self):
+        stub = _StubPost([
+            (_make_init_response(), "sid"),
+            (None, "sid"),
+            (
+                _make_tool_response(
+                    [],
+                    evidence_caveats={
+                        "activity_log_tail": [
+                            "activity.log read failed (I/O error). Tail not available.",
+                        ],
+                    },
+                ),
+                "sid",
+            ),
+        ])
+        with pytest.raises(rlc.RevertLoopError) as exc_info:
+            rlc.fetch_status_activity_tail(
+                "http://fake/mcp", 10.0, post_fn=stub,
             )
         assert exc_info.value.code == 5
+        assert "read failure" in exc_info.value.msg
 
 
 class TestRunCanaryEndToEnd:
@@ -372,6 +402,11 @@ class TestRunCanaryEndToEnd:
         tail = [f"{_stamp(2)} [commit] Commit: score 0.9 -- KEEP"]
         code, _ = self._run(tail)
         assert code == 0
+
+    def test_empty_tail_end_to_end_is_green(self):
+        code, msg = self._run([])
+        assert code == 0
+        assert "empty" in msg
 
     def test_warn_end_to_end(self):
         tail = [_revert_line(9), _revert_line(6), _revert_line(3)]
