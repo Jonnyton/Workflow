@@ -850,6 +850,99 @@ def _first_visible(page, selectors):
     return None
 
 
+def _locator_text(locator) -> str:
+    """Best-effort visible/input text for a Playwright locator."""
+    try:
+        evaluate = getattr(locator, "evaluate", None)
+        if callable(evaluate):
+            text = evaluate(
+                "(el) => { "
+                "if ('value' in el) return el.value || ''; "
+                "return el.innerText || el.textContent || ''; "
+                "}"
+            )
+            if text is not None:
+                return str(text)
+    except Exception:
+        pass
+    for method_name in ("input_value", "inner_text", "text_content"):
+        try:
+            method = getattr(locator, method_name, None)
+            if callable(method):
+                text = method()
+                if text is not None:
+                    return str(text)
+        except Exception:
+            continue
+    return ""
+
+
+def _locator_is_disabled(locator) -> bool:
+    """Return True when a send button/input is visibly disabled."""
+    try:
+        get_attribute = getattr(locator, "get_attribute", None)
+        if callable(get_attribute):
+            disabled = get_attribute("disabled")
+            aria_disabled = (get_attribute("aria-disabled") or "").lower()
+            if disabled is not None or aria_disabled == "true":
+                return True
+    except Exception:
+        pass
+    try:
+        evaluate = getattr(locator, "evaluate", None)
+        if callable(evaluate):
+            return bool(evaluate(
+                "(el) => Boolean("
+                "el.disabled || "
+                "el.getAttribute('disabled') !== null || "
+                "el.getAttribute('aria-disabled') === 'true' || "
+                "el.closest('[aria-disabled=\"true\"]')"
+                ")"
+            ))
+    except Exception:
+        pass
+    return False
+
+
+def _normalize_chat_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _composer_contains_message(page, message: str) -> tuple[bool, str]:
+    """Detect the failure mode where `ask` typed but did not submit."""
+    inp = _first_usable_input(page)
+    if inp is None:
+        return False, ""
+    composer_text = _locator_text(inp)
+    normalized_message = _normalize_chat_text(message)
+    normalized_composer = _normalize_chat_text(composer_text)
+    if not normalized_message:
+        return False, composer_text
+    return normalized_message in normalized_composer, composer_text
+
+
+def _visible_submit_block_note(page) -> str:
+    """Extract visible rate-limit/send-block hints for diagnostic notes."""
+    try:
+        visible = page.evaluate("() => document.body ? document.body.innerText : ''") or ""
+    except Exception:
+        return ""
+    needles = (
+        "out of extra usage",
+        "limit resets",
+        "buy more",
+        "message limit",
+        "usage limit",
+        "rate limit",
+    )
+    lines = [
+        line.strip()
+        for line in str(visible).splitlines()
+        if any(needle in line.lower() for needle in needles)
+    ]
+    return " | ".join(lines[:4])
+
+
 def _first_usable_input(page):
     """Like `_first_visible(INPUT_SELECTORS)` but skips locked inputs.
 
@@ -1558,9 +1651,56 @@ def cmd_ask(message: str) -> int:
         # Prefer the send button if visible; fall back to Enter.
         send = _first_visible(page, SEND_BUTTON_SELECTORS)
         if send is not None:
+            if _locator_is_disabled(send):
+                block_note = _visible_submit_block_note(page)
+                dump = _capture_failure_dump(
+                    page,
+                    "send_blocked",
+                    note=(
+                        "send button disabled before click; "
+                        f"message_preview={message[:80]!r}; "
+                        f"block_note={block_note or 'none'}"
+                    ),
+                )
+                print(
+                    "ERROR: message was not submitted; send button is "
+                    "disabled. Diagnostic dump: "
+                    f"output/claude_chat_failures/{dump}.{{html,png,txt}}",
+                    file=sys.stderr,
+                )
+                return 6
             send.click()
         else:
             page.keyboard.press("Enter")
+
+        time.sleep(1.0)
+        still_in_composer, composer_text = _composer_contains_message(
+            page, message,
+        )
+        assistant_after_send = _read_last_assistant_text(page)
+        assistant_changed = (
+            bool(assistant_after_send.strip())
+            and assistant_after_send.strip() != prev.strip()
+        )
+        if still_in_composer and not assistant_changed:
+            block_note = _visible_submit_block_note(page)
+            dump = _capture_failure_dump(
+                page,
+                "message_not_submitted",
+                note=(
+                    "prompt remained in composer after send attempt; "
+                    f"message_preview={message[:80]!r}; "
+                    f"composer_preview={composer_text[:120]!r}; "
+                    f"block_note={block_note or 'none'}"
+                ),
+            )
+            print(
+                "ERROR: message was not submitted; prompt remains in "
+                "composer after the send attempt. Diagnostic dump: "
+                f"output/claude_chat_failures/{dump}.{{html,png,txt}}",
+                file=sys.stderr,
+            )
+            return 6
 
         _append_trace("USER_SIM -> CLAUDE", message)
         response, timed_out = _wait_for_response_complete(page, prev)
