@@ -4,6 +4,8 @@ Guards:
 - startup_file_probe() returns [] when all required files exist.
 - startup_file_probe() returns the relative path when a required file is absent.
 - startup_file_probe() logs a WARNING when a file is missing.
+- require_startup_files() raises when a required file is absent.
+- universe_server.main() refuses to start when required files are absent.
 - get_status() includes missing_data_files field (empty list in a normal checkout).
 """
 from __future__ import annotations
@@ -66,6 +68,52 @@ class TestStartupFileProbe:
 
         assert len(_REQUIRED_DATA_FILES) >= 1
         assert "data/world_rules.lp" in _REQUIRED_DATA_FILES
+
+    def test_require_startup_files_raises_when_absent(self, tmp_path: Path):
+        from workflow.storage.rotation import (
+            RequiredDataFilesMissing,
+            require_startup_files,
+        )
+
+        try:
+            require_startup_files(package_root=tmp_path)
+        except RequiredDataFilesMissing as exc:
+            assert "data/world_rules.lp" in str(exc)
+            assert "Refusing to start" in str(exc)
+        else:
+            raise AssertionError("require_startup_files() should fail on missing files")
+
+    def test_require_startup_files_passes_when_all_present(self, tmp_path: Path):
+        from workflow.storage.rotation import _REQUIRED_DATA_FILES, require_startup_files
+
+        for rel in _REQUIRED_DATA_FILES:
+            full = tmp_path / rel
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text("% present\n")
+
+        require_startup_files(package_root=tmp_path)
+
+
+class TestUniverseServerStartupFileProbe:
+    def test_main_refuses_to_start_when_required_file_missing(self, monkeypatch):
+        import workflow.storage.rotation as rotation
+        import workflow.universe_server as universe_server
+
+        def missing_files(package_root=None):
+            return ["data/world_rules.lp"]
+
+        def fail_run(*args, **kwargs):
+            raise AssertionError("mcp.run() should not start with missing data files")
+
+        monkeypatch.setattr(rotation, "startup_file_probe", missing_files)
+        monkeypatch.setattr(universe_server.mcp, "run", fail_run)
+
+        try:
+            universe_server.main()
+        except rotation.RequiredDataFilesMissing as exc:
+            assert "data/world_rules.lp" in str(exc)
+        else:
+            raise AssertionError("universe_server.main() should fail loud")
 
 
 class TestGetStatusMissingDataFiles:

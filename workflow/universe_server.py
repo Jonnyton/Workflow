@@ -953,6 +953,10 @@ def main(
         transport: MCP transport protocol. "streamable-http" for remote
             connections (default), "sse" for legacy, "stdio" for local.
     """
+    from workflow.storage.rotation import require_startup_files
+
+    require_startup_files()
+
     logger.info(
         "Starting Workflow Server on %s:%d (transport=%s)",
         host, port, transport,

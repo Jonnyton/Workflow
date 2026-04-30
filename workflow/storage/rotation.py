@@ -404,6 +404,10 @@ _REQUIRED_DATA_FILES: list[str] = [
 ]
 
 
+class RequiredDataFilesMissing(RuntimeError):
+    """Raised when required static runtime artifacts are absent at startup."""
+
+
 def startup_file_probe(package_root: Path | None = None) -> list[str]:
     """Check that required static data files are present under package_root.
 
@@ -436,3 +440,22 @@ def startup_file_probe(package_root: Path | None = None) -> list[str]:
                 full,
             )
     return missing
+
+
+def require_startup_files(package_root: Path | None = None) -> None:
+    """Fail loudly if required static data files are absent.
+
+    ``startup_file_probe`` remains a non-raising observability helper for
+    status surfaces. Startup paths should call this assertion so a broken
+    image or checkout does not continue with missing rules.
+    """
+    missing = startup_file_probe(package_root=package_root)
+    if not missing:
+        return
+
+    missing_list = ", ".join(missing)
+    raise RequiredDataFilesMissing(
+        "Required Workflow data files are missing: "
+        f"{missing_list}. Refusing to start because missing static artifacts "
+        "can silently degrade runtime behavior."
+    )
