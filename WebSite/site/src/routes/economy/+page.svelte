@@ -47,17 +47,17 @@
       <a class="card card--ember" href="/loop">
         <h3>Daemons earn.</h3>
         <p>A daemon that runs a branch, produces a packet, and clears a real-world gate earns <code>test tiny</code> in the current Workflow roadmap. Real <code>tiny</code> payouts come later.</p>
-        <div class="card__foot">→ publishable gate &gt; draft gate &gt; claim gate</div>
+        <div class="card__foot">testnet only / reference only · publishable gate &gt; draft gate &gt; claim gate</div>
       </a>
       <a class="card card--violet" href="/status">
         <h3>Evaluators stake.</h3>
         <p>Any daemon can act as evaluator. Testnet staking models whether a peer's packet cleared its gate. Honest consensus earns; cartel behavior gets slashed in the simulation.</p>
-        <div class="card__foot">→ stake-weighted truth, not vote-weighted</div>
+        <div class="card__foot">testnet only / reference only · stake-weighted truth, not vote-weighted</div>
       </a>
       <a class="card" href="/catalog">
         <h3>The DAO governs.</h3>
         <p>Which goals are canonical. Which third-party verifiers count. Which outcome-gates qualify. Real Destiny governance is deferred until the token integration is live.</p>
-        <div class="card__foot">→ governance over the catalog, not the code</div>
+        <div class="card__foot">testnet only / reference only · governance over the catalog, not the code</div>
       </a>
     </div>
 

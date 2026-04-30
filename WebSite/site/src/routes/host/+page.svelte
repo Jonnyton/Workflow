@@ -39,10 +39,10 @@
         type="button"
       >
         <RitualLabel color={mode === 'desktop' ? 'var(--ember-600)' : 'var(--fg-3)'}>Local-first</RitualLabel>
-        <h3>Download the desktop host</h3>
-        <p>One tray icon. Many daemons. All data on your machine. MIT-licensed. No account required. Faster iteration — your files, your filesystem, your LLM keys.</p>
+        <h3>Build the desktop host</h3>
+        <p>One tray icon. Many daemons. All data on your machine. MIT-licensed. No account required. Installer assets are not published yet, so the public path is source-first.</p>
         <ul class="mode__meta">
-          <li>~42 MB</li>
+          <li>source-first</li>
           <li>tray + per-daemon windows</li>
           <li>macOS · Windows · Linux</li>
           <li>MIT</li>
@@ -99,8 +99,8 @@ python -m fantasy_daemon
 workflow-mcp</code></pre>
 
       <div class="ctas">
-        <Button variant="primary" href="https://github.com/Jonnyton/Workflow/releases" >Download installer ↗</Button>
-        <Button variant="ghost" href="https://github.com/Jonnyton/Workflow#quick-start">Full quick start →</Button>
+        <Button variant="primary" href="https://github.com/Jonnyton/Workflow#quick-start">Build from source →</Button>
+        <Button variant="ghost" href="/status">Track installer status</Button>
       </div>
 
     {:else}

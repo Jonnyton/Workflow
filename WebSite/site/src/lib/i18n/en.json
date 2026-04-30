@@ -254,12 +254,12 @@
     "community_title": "Community",
     "community": [
       {
-        "channel": "GitHub Discussions",
-        "purpose": "Design questions, RFC-style proposals, general discussion. Public + searchable. Start here."
+        "channel": "GitHub Issues",
+        "purpose": "Design questions, RFC-style proposals, bugs, and feature requests. Public + searchable. Start here until Discussions is enabled."
       },
       {
-        "channel": "GitHub Issues",
-        "purpose": "Concrete bugs, feature requests, track work. Actionable items only."
+        "channel": "MCP connector",
+        "purpose": "Use your chatbot to browse the catalog, file issues, and route work into the loop."
       },
       {
         "channel": "Discord (TBD)",

@@ -125,6 +125,433 @@ export async function fetchPageBody(page: string): Promise<{ content?: string } 
   return await callTool('wiki', { action: 'read', page: page.replace(/\.md$/, '') });
 }
 
+export type LoopStageId = 'intake' | 'investigation' | 'gate' | 'coding' | 'release' | 'observe';
+
+export type LoopPatchRun = {
+  run_id: string;
+  branch_def_id: string;
+  name: string;
+  status: string;
+  actor?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_node_id?: string;
+  current_stage: LoopStageId;
+};
+
+export type LoopPatchEvent = {
+  id: string;
+  run_id?: string;
+  stage: LoopStageId;
+  status: string;
+  title: string;
+  detail: string;
+  at?: string | null;
+  node_id?: string;
+  source: string;
+};
+
+export type PatchLoopFeed = {
+  source: string;
+  fetchedAt: string;
+  live: boolean;
+  overall?: string;
+  branchDefId?: string;
+  activeRunId?: string;
+  runs: LoopPatchRun[];
+  events: LoopPatchEvent[];
+  warnings: string[];
+};
+
+const CHANGE_LOOP_BRANCH_IDS = ['fd5c66b1d87d', 'change_loop_v1'];
+
+const STAGE_TERMS: Record<LoopStageId, string[]> = {
+  intake: ['intake', 'file_bug', 'file bug', 'request', 'report', 'classify', 'trigger', 'submitted', 'queued'],
+  investigation: ['investigation', 'investigate', 'repro', 'root cause', 'cause', 'analysis', 'patch_packet', 'packet'],
+  gate: ['gate', 'verdict', 'evidence', 'scope', 'decision', 'route', 'approved', 'rejected'],
+  coding: ['coding', 'code', 'dev', 'writer', 'auto-fix', 'implement', 'patch', 'branch', 'diff', 'pr'],
+  release: ['release', 'review', 'merge', 'ship', 'deploy', 'production', 'website', 'rollback', 'landed'],
+  observe: ['observe', 'observation', 'watch', 'canary', 'monitor', 'ratify', 'user_sim', 'clean use']
+};
+
+function stringify(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stringify(value).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function inferLoopStage(...values: unknown[]): LoopStageId {
+  const haystack = values.map(stringify).join(' ').toLowerCase();
+  for (const [stage, terms] of Object.entries(STAGE_TERMS) as Array<[LoopStageId, string[]]>) {
+    if (terms.some((term) => haystack.includes(term))) return stage;
+  }
+  return 'intake';
+}
+
+function normalizeRun(raw: any): LoopPatchRun {
+  const runId = firstString(raw?.run_id, raw?.id, raw?.runId);
+  const branchDefId = firstString(raw?.branch_def_id, raw?.branchDefId, raw?.branch_id, raw?.workflow, raw?.branch);
+  const name = firstString(raw?.run_name, raw?.name, raw?.title, runId);
+  const lastNode = firstString(raw?.last_node_id, raw?.lastNodeId, raw?.node_id, raw?.current_node);
+  const status = firstString(raw?.status, raw?.state, 'unknown').toLowerCase();
+
+  return {
+    run_id: runId,
+    branch_def_id: branchDefId,
+    name,
+    status,
+    actor: firstString(raw?.actor, raw?.author, raw?.claimed_by) || undefined,
+    started_at: raw?.started_at ?? raw?.startedAt ?? raw?.created_at ?? null,
+    finished_at: raw?.finished_at ?? raw?.finishedAt ?? raw?.completed_at ?? null,
+    last_node_id: lastNode,
+    current_stage: inferLoopStage(lastNode, name, status)
+  };
+}
+
+function normalizeEvent(raw: any, index: number, run?: LoopPatchRun): LoopPatchEvent {
+  const runId = firstString(raw?.run_id, raw?.runId, run?.run_id);
+  const nodeId = firstString(raw?.node_id, raw?.nodeId, raw?.node, raw?.step, raw?.stage);
+  const status = firstString(raw?.status, raw?.state, raw?.event_type, raw?.type, run?.status, 'event').toLowerCase();
+  const title = firstString(raw?.title, raw?.label, nodeId, raw?.event_type, raw?.type, 'Loop event');
+  const detail = firstString(
+    raw?.detail,
+    raw?.message,
+    raw?.text,
+    raw?.summary,
+    raw?.output_summary,
+    raw?.error,
+    raw?.patch_title,
+    run?.name,
+    'Loop state changed.'
+  );
+  const step = firstString(raw?.step_index, raw?.index, index);
+
+  return {
+    id: firstString(raw?.event_id, raw?.id, `${runId || 'loop'}:${step}:${nodeId || title}`),
+    run_id: runId || undefined,
+    stage: inferLoopStage(raw?.stage, nodeId, title, detail, status),
+    status,
+    title,
+    detail,
+    at: raw?.created_at ?? raw?.timestamp ?? raw?.at ?? raw?.started_at ?? run?.started_at ?? null,
+    node_id: nodeId || undefined,
+    source: firstString(raw?.source, 'MCP run event')
+  };
+}
+
+function runLooksLikePatchLoop(run: LoopPatchRun): boolean {
+  const text = `${run.branch_def_id} ${run.name} ${run.last_node_id ?? ''}`.toLowerCase();
+  return CHANGE_LOOP_BRANCH_IDS.some((id) => text.includes(id.toLowerCase())) ||
+    text.includes('change_loop') ||
+    text.includes('patch') ||
+    text.includes('bug_investigation');
+}
+
+function activeRun(runs: LoopPatchRun[]): LoopPatchRun | undefined {
+  return runs.find((run) => !['completed', 'failed', 'cancelled', 'canceled'].includes(run.status)) ?? runs[0];
+}
+
+function normalizeLoopToolFeed(raw: any): PatchLoopFeed | null {
+  const body = raw?.feed ?? raw?.result ?? raw;
+  if (!body || typeof body !== 'object') return null;
+
+  const runs = Array.isArray(body.runs) ? body.runs.map(normalizeRun) : [];
+  const directEvents = Array.isArray(body.events) ? body.events : [];
+  const patchEvents = Array.isArray(body.patches)
+    ? body.patches.flatMap((patch: any) => {
+        const events = Array.isArray(patch?.events) ? patch.events : [];
+        return events.map((event: any) => ({
+          ...event,
+          run_id: event?.run_id ?? patch?.run_id ?? patch?.id,
+          patch_title: event?.patch_title ?? patch?.title ?? patch?.name
+        }));
+      })
+    : [];
+  const selectedRun = activeRun(runs);
+  const events = [...directEvents, ...patchEvents].map((event, index) => normalizeEvent(event, index, selectedRun));
+
+  if (!runs.length && !events.length) return null;
+
+  return {
+    source: firstString(body.source, 'MCP loop action=feed'),
+    fetchedAt: firstString(body.fetched_at, body.fetchedAt, new Date().toISOString()),
+    live: true,
+    branchDefId: firstString(body.branch_def_id, selectedRun?.branch_def_id, CHANGE_LOOP_BRANCH_IDS[0]),
+    activeRunId: firstString(body.active_run_id, body.activeRunId, selectedRun?.run_id) || undefined,
+    runs,
+    events,
+    warnings: []
+  };
+}
+
+function warningText(prefix: string, error: unknown): string {
+  return `${prefix}: ${error instanceof Error ? error.message : stringify(error) || 'unavailable'}`;
+}
+
+type CommunityLoopWatchStage = {
+  name: string;
+  status: string;
+  summary: string;
+  evidence?: string | null;
+  url?: string | null;
+  details?: Record<string, any>;
+};
+
+type CommunityLoopWatchStatus = {
+  version?: number;
+  checked_at?: string;
+  repo?: string | null;
+  overall?: string;
+  stages?: CommunityLoopWatchStage[];
+};
+
+function jsonFromMarkdown(text: string): CommunityLoopWatchStatus | null {
+  const blocks = Array.from(text.matchAll(/```json\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim()).filter(Boolean);
+  for (const block of blocks.reverse()) {
+    try {
+      const parsed = JSON.parse(block);
+      if (parsed?.stages && Array.isArray(parsed.stages)) return parsed;
+    } catch {}
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.stages && Array.isArray(parsed.stages)) return parsed;
+  } catch {}
+  return null;
+}
+
+function communityStatusToFeed(status: CommunityLoopWatchStatus, source: string, warnings: string[] = []): PatchLoopFeed {
+  const checkedAt = status.checked_at ?? new Date().toISOString();
+  const stages = Array.isArray(status.stages) ? status.stages : [];
+  const events = stages.map((stage, index): LoopPatchEvent => ({
+    id: `community-loop:${stage.name}:${index}`,
+    stage: inferLoopStage(stage.name, stage.summary, stage.evidence, stage.details),
+    status: (stage.status || 'unknown').toLowerCase(),
+    title: stage.name || 'Loop watch stage',
+    detail: [stage.summary, stage.evidence].filter(Boolean).join(' · ') || 'Community loop watch stage updated.',
+    at: checkedAt,
+    node_id: stage.name,
+    source: stage.url ?? source
+  }));
+
+  return {
+    source,
+    fetchedAt: checkedAt,
+    live: true,
+    overall: status.overall ?? 'unknown',
+    branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+    runs: [],
+    events,
+    warnings
+  };
+}
+
+async function fetchJsonIfAvailable(url: string): Promise<CommunityLoopWatchStatus | null> {
+  const res = await fetchWithTimeout(url, { cache: 'no-store' });
+  if (!res.ok) return null;
+  const parsed = await res.json();
+  if (parsed?.stages && Array.isArray(parsed.stages)) return parsed;
+  return null;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 6500): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchCommunityLoopWatchFeed(warnings: string[]): Promise<PatchLoopFeed | null> {
+  try {
+    const localStatus = await fetchJsonIfAvailable('/community-loop-status.json');
+    if (localStatus) return communityStatusToFeed(localStatus, 'community-loop-status.json', warnings);
+  } catch (error) {
+    warnings.push(warningText('community-loop-status.json', error));
+  }
+
+  try {
+    const issuesRes = await fetchWithTimeout('https://api.github.com/repos/Jonnyton/Workflow/issues?state=open&labels=community-loop-red&per_page=1', {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!issuesRes.ok) throw new Error(`GitHub issues ${issuesRes.status}`);
+    const issues = await issuesRes.json();
+    const issue = Array.isArray(issues) ? issues[0] : null;
+    if (issue) {
+      const bodies: string[] = [];
+      if (typeof issue.body === 'string') bodies.push(issue.body);
+      if (issue.comments_url) {
+        try {
+          const commentsRes = await fetchWithTimeout(`${issue.comments_url}?per_page=10`, {
+            headers: { Accept: 'application/vnd.github+json' }
+          });
+          if (commentsRes.ok) {
+            const comments = await commentsRes.json();
+            if (Array.isArray(comments)) {
+              for (const comment of comments.slice(-10)) {
+                if (typeof comment.body === 'string') bodies.push(comment.body);
+              }
+            }
+          }
+        } catch (error) {
+          warnings.push(warningText('community-loop-red comments', error));
+        }
+      }
+      for (const body of bodies.reverse()) {
+        const parsed = jsonFromMarkdown(body);
+        if (parsed) return communityStatusToFeed(parsed, issue.html_url ?? 'GitHub community-loop-red issue', warnings);
+      }
+      warnings.push('community-loop-red issue exists but no status JSON was visible yet');
+    }
+  } catch (error) {
+    warnings.push(warningText('community-loop-red issue', error));
+  }
+
+  try {
+    const runsRes = await fetchWithTimeout('https://api.github.com/repos/Jonnyton/Workflow/actions/workflows/community-loop-watch.yml/runs?per_page=1', {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!runsRes.ok) throw new Error(`GitHub workflow runs ${runsRes.status}`);
+    const payload = await runsRes.json();
+    const run = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs[0] : null;
+    if (run) {
+      return communityStatusToFeed(
+        {
+          checked_at: run.updated_at ?? run.created_at,
+          overall: run.conclusion === 'success' ? 'green' : run.status === 'completed' ? 'red' : 'yellow',
+          stages: [
+            {
+              name: 'Community loop watch',
+              status: run.conclusion === 'success' ? 'green' : run.status === 'completed' ? 'red' : 'yellow',
+              summary: `latest workflow run is ${run.status}${run.conclusion ? `/${run.conclusion}` : ''}`,
+              evidence: run.html_url,
+              url: run.html_url
+            }
+          ]
+        },
+        'GitHub Actions community-loop-watch.yml',
+        warnings
+      );
+    }
+  } catch (error) {
+    warnings.push(warningText('community-loop-watch workflow', error));
+  }
+
+  return null;
+}
+
+export async function fetchPatchLoopFeed(limit = 12, includeMcpFallback = false): Promise<PatchLoopFeed> {
+  const warnings: string[] = [];
+
+  const communityWatch = await fetchCommunityLoopWatchFeed(warnings);
+  if (communityWatch) return communityWatch;
+
+  if (!includeMcpFallback) {
+    return {
+      source: 'waiting for community-loop-watch',
+      fetchedAt: new Date().toISOString(),
+      live: false,
+      branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+      runs: [],
+      events: [],
+      warnings
+    };
+  }
+
+  try {
+    const loopFeed = normalizeLoopToolFeed(await callTool('loop', { action: 'feed', limit }));
+    if (loopFeed) return loopFeed;
+    warnings.push('loop action=feed returned no loop events yet');
+  } catch (error) {
+    warnings.push(warningText('loop action=feed', error));
+  }
+
+  try {
+    const branchFeed = await callTool('extensions', {
+      action: 'list_runs',
+      branch_def_id: CHANGE_LOOP_BRANCH_IDS[0],
+      limit
+    });
+    let runs = Array.isArray(branchFeed?.runs) ? branchFeed.runs.map(normalizeRun) : [];
+
+    if (!runs.length) {
+      const allFeed = await callTool('extensions', { action: 'list_runs', limit: Math.max(limit, 24) });
+      runs = Array.isArray(allFeed?.runs) ? allFeed.runs.map(normalizeRun).filter(runLooksLikePatchLoop) : [];
+    }
+
+    const selectedRun = activeRun(runs);
+    let events: LoopPatchEvent[] = [];
+
+    if (selectedRun?.run_id) {
+      try {
+        const streamed = await callTool('extensions', {
+          action: 'stream_run',
+          run_id: selectedRun.run_id,
+          since_step: -1
+        });
+        events = Array.isArray(streamed?.events)
+          ? streamed.events.map((event: any, index: number) => normalizeEvent(event, index, selectedRun))
+          : [];
+      } catch (error) {
+        warnings.push(warningText('extensions stream_run', error));
+      }
+
+      if (!events.length) {
+        try {
+          const runSnapshot = await callTool('extensions', {
+            action: 'get_run',
+            run_id: selectedRun.run_id
+          });
+          const rawEvents = runSnapshot?.events ?? runSnapshot?.timeline ?? runSnapshot?.steps ?? [];
+          events = Array.isArray(rawEvents)
+            ? rawEvents.map((event: any, index: number) => normalizeEvent(event, index, selectedRun))
+            : [];
+        } catch (error) {
+          warnings.push(warningText('extensions get_run', error));
+        }
+      }
+    }
+
+    return {
+      source: 'MCP extensions list_runs/stream_run',
+      fetchedAt: new Date().toISOString(),
+      live: true,
+      branchDefId: selectedRun?.branch_def_id || CHANGE_LOOP_BRANCH_IDS[0],
+      activeRunId: selectedRun?.run_id,
+      runs,
+      events: events.slice(-36),
+      warnings
+    };
+  } catch (error) {
+    warnings.push(warningText('extensions list_runs', error));
+  }
+
+  return {
+    source: 'waiting for MCP loop feed',
+    fetchedAt: new Date().toISOString(),
+    live: false,
+    branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+    runs: [],
+    events: [],
+    warnings
+  };
+}
+
 /** Shape the live raw response into the same structure /wiki + /graph use from the snapshot. */
 export function liveToSnapshotShape(live: LiveResult, baked: Snapshot): Snapshot {
   // Reuse the baked snapshot's edges + tags (which were extracted from page

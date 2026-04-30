@@ -40,7 +40,7 @@
         <strong>Connect your MCP</strong>
         <p>Ask your chatbot to browse, file, or route work.</p>
       </a>
-      <a href="https://github.com/Jonnyton/Workflow/discussions" target="_blank" rel="noreferrer">
+      <a href="https://github.com/Jonnyton/Workflow/issues/new" target="_blank" rel="noreferrer">
         <span>Public path</span>
         <strong>Start on GitHub</strong>
         <p>Bring an idea, bug, RFC, or contribution thread.</p>
@@ -80,8 +80,8 @@
         </li>
         <li>
           <span class="channel__name">Discuss in the open</span>
-          <p class="channel__desc">GitHub Discussions is the long-form forum. Questions, RFCs, "I want to ship X" threads, "what about Y" threads.</p>
-          <a href="https://github.com/Jonnyton/Workflow/discussions" target="_blank" rel="noreferrer" class="channel__cta">github.com/Jonnyton/Workflow/discussions ↗</a>
+          <p class="channel__desc">GitHub Issues is the public forum today. Questions, RFCs, "I want to ship X" threads, and "what about Y" threads start there while Discussions stays unavailable.</p>
+          <a href="https://github.com/Jonnyton/Workflow/issues" target="_blank" rel="noreferrer" class="channel__cta">github.com/Jonnyton/Workflow/issues ↗</a>
         </li>
         <li>
           <span class="channel__name">File a thread</span>

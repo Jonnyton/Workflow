@@ -507,8 +507,11 @@
 
       <div class="source-note">
         <strong>{repoSnapshot.repo.owner}/{repoSnapshot.repo.name}</strong>
-        <span>{repoSnapshot.repo.current_branch} @ {repoSnapshot.repo.head}</span>
-        <small>{repoSnapshot.repo.dirty_note}</small>
+        <span>head {repoSnapshot.repo.head} · {repoSnapshot.branches.length} GitHub branches</span>
+        <details class="source-note__raw">
+          <summary>Raw dev snapshot</summary>
+          <small>{repoSnapshot.repo.current_branch} · {repoSnapshot.repo.dirty_note ?? 'No dirty-worktree note recorded.'}</small>
+        </details>
       </div>
 
       <div class="quick-list">
@@ -733,6 +736,7 @@
   .source-note strong { color: var(--fg-1); font-size: 13px; }
   .source-note span,
   .source-note small { color: var(--fg-3); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.45; }
+  .source-note__raw summary { color: var(--fg-3); cursor: pointer; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; width: fit-content; }
 
   .quick-list { display: grid; gap: 7px; max-height: 360px; overflow: auto; padding-right: 3px; }
   .quick-list h2 { margin: 4px 0; }
@@ -773,7 +777,8 @@
   .graph {
     display: block;
     width: 100%;
-    min-height: 620px;
+    aspect-ratio: 1220 / 780;
+    min-height: 0;
     background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 38%), var(--bg-inset);
   }
   .edge { stroke: rgba(255, 255, 255, 0.16); stroke-width: 1; transition: stroke var(--dur-base), opacity var(--dur-base), stroke-width var(--dur-base); }
@@ -865,7 +870,8 @@
     .detail-panel { order: 1; }
     .control-panel { position: static; }
     .legend { justify-content: flex-start; }
-    .graph { min-height: 520px; }
+    .graph-stage__top { padding: 12px; }
+    .legend { max-height: 68px; overflow: hidden; }
   }
   @media (max-width: 560px) {
     .atlas { padding-inline: 10px; }
