@@ -135,6 +135,28 @@ class TestPublishBranchVersion:
         assert "entry_point" in v.snapshot
         assert "state_schema" in v.snapshot
 
+    def test_db_row_graph_shape_preserves_topology(self, tmp_path):
+        """Publishing a live DB-row branch must not drop graph topology."""
+        d = _make_branch_dict()
+        flat_version = publish_branch_version(tmp_path, d)
+        db_row_shape = {
+            k: v
+            for k, v in d.items()
+            if k not in {"graph_nodes", "edges", "conditional_edges"}
+        }
+        db_row_shape["graph"] = {
+            "nodes": d["graph_nodes"],
+            "edges": d["edges"],
+            "conditional_edges": d["conditional_edges"],
+            "entry_point": d["entry_point"],
+        }
+
+        row_version = publish_branch_version(tmp_path, db_row_shape)
+
+        assert row_version.branch_version_id == flat_version.branch_version_id
+        assert row_version.snapshot["graph_nodes"] == d["graph_nodes"]
+        assert row_version.snapshot["edges"] == d["edges"]
+
     def test_snapshot_excludes_metadata_fields(self, tmp_path):
         d = _make_branch_dict()
         v = publish_branch_version(tmp_path, d)
