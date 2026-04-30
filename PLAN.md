@@ -158,6 +158,7 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Engine is infrastructure, not topology.** `workflow/` is a shared library plus optional profiles. Each domain owns its own graph. The engine is judged by whether a *second* domain can adopt it without engine changes — fantasy is the benchmark, not the trunk.
 - **Memory interface is query semantics, not tier names.** Three tiers (core/episodic/archival) is conceptual; the public interface feels like faceted search, not tier addressing.
 - **Trust-critical tools are self-auditing.** Tools that touch privacy, cost, routing, scope, or moderation expose structured evidence + structured caveats; the chatbot composes the user-facing narrative on top of the evidence. The chatbot cannot rubber-stamp because the caveats are part of the tool's contract. (See `docs/design-notes/2026-04-19-self-auditing-tools.md` for the pattern + 5 instantiations: memory-scope, provider routing, privacy decisions, autoresearch fulfillment, moderation.)
+- **Classic-game exactness before remakes.** A branch answering "play the old game I remember" must try lawful original media in a browser runtime before offering remakes or compatibility ports. Browser-only users receive a hosted/PWA play surface; proprietary firmware is accepted only as a user-owned browser file import and is never bundled. Fallback ports are labeled as fallbacks, not exact-game success. (See `docs/design-notes/2026-04-30-exact-classic-game-browser-runtime.md`.)
 
 ---
 

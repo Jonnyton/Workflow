@@ -6,10 +6,12 @@
   const FIRE_DELAY_MS = 850;
 
   const canvas = document.getElementById("game");
+  if (!canvas) {
+    return;
+  }
   const ctx = canvas.getContext("2d");
-  const installButton = document.getElementById("install-button");
-  const fullscreenButton = document.getElementById("fullscreen-button");
-  const stage = document.querySelector(".stage");
+  const fullscreenButton = document.getElementById("compat-fullscreen-button");
+  const stage = document.querySelector(".compat-stage");
   const turnLabel = document.getElementById("turn-label");
   const windLabel = document.getElementById("wind-label");
   const status = document.getElementById("status");
@@ -28,7 +30,6 @@
     split: { name: "Scatter Shot", radius: 24, damage: 28, dirt: false, count: 3 }
   };
 
-  let installPrompt = null;
   let lastFrame = 0;
   let botTimer = null;
 
@@ -708,7 +709,7 @@
       startRound();
     });
 
-    fullscreenButton.addEventListener("click", () => {
+    fullscreenButton?.addEventListener("click", () => {
       if (document.fullscreenElement) {
         document.exitFullscreen();
         return;
@@ -731,33 +732,6 @@
     });
   }
 
-  function bindInstall() {
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("./service-worker.js", { scope: "./" })
-          .catch(() => setStatus("Offline cache unavailable"));
-      });
-    }
-
-    window.addEventListener("beforeinstallprompt", (event) => {
-      event.preventDefault();
-      installPrompt = event;
-      installButton.disabled = false;
-    });
-
-    installButton.addEventListener("click", async () => {
-      if (!installPrompt) {
-        setStatus("Install unavailable in this browser");
-        return;
-      }
-      installButton.disabled = true;
-      installPrompt.prompt();
-      await installPrompt.userChoice;
-      installPrompt = null;
-    });
-  }
-
   function initStars() {
     state.stars = Array.from({ length: 30 }, () => ({
       x: randomRange(0, WIDTH),
@@ -768,7 +742,6 @@
   }
 
   bindUi();
-  bindInstall();
   initStars();
   startRound();
   window.requestAnimationFrame(frame);
