@@ -20,6 +20,13 @@ from unittest.mock import patch
 import pytest
 
 import workflow.universe_server as _us
+from workflow.api.wiki import (
+    _next_bug_id,
+    _render_bug_markdown,
+    _slugify_title,
+    _wiki_file_bug,
+)
+from workflow.universe_server import wiki
 
 _required = (
     "_wiki_file_bug",
@@ -34,13 +41,7 @@ if _missing:
         allow_module_level=True,
     )
 
-from workflow.api.wiki import (
-    _next_bug_id,
-    _render_bug_markdown,
-    _slugify_title,
-    _wiki_file_bug,
-)
-from workflow.universe_server import wiki
+
 @pytest.fixture
 def wiki_dir(tmp_path, monkeypatch):
     """Temporary wiki tree with a `bugs` category pre-created."""
@@ -399,8 +400,8 @@ class TestBug028SlugCaseRoundtrip:
             filename=filename,
             content=updated_content,
         ))
-        assert write_result.get("status") in ("updated", "drafted", "draft-update"), (
-            f"Expected an update, got: {write_result}"
+        assert write_result.get("status") == "updated", (
+            f"Expected an in-place update, got: {write_result}"
         )
         # Verify only one file exists for this bug (no duplicate).
         bugs_dir = wiki_dir / "pages" / "bugs"
@@ -549,7 +550,6 @@ class TestFileBugKindRouting:
 
     def test_cosign_feature_routes_to_feature_requests_dir(self, wiki_dir):
         """cosign_bug must derive dir from the bug_id prefix (FEAT- → feature-requests)."""
-        from workflow.universe_server import wiki
         f = json.loads(_wiki_file_bug(
             component="x", severity="minor", title="add feature Q", kind="feature",
         ))
@@ -569,7 +569,6 @@ class TestFileBugKindRouting:
         assert "me too — important" in body
 
     def test_cosign_design_routes_to_design_proposals_dir(self, wiki_dir):
-        from workflow.universe_server import wiki
         d = json.loads(_wiki_file_bug(
             component="x", severity="minor", title="design prop K", kind="design",
         ))
@@ -582,7 +581,6 @@ class TestFileBugKindRouting:
 
     def test_cosign_bug_unknown_prefix_falls_back_to_bugs_dir(self, wiki_dir):
         """Unrecognized prefix → bugs/ fallback (backward compat)."""
-        from workflow.universe_server import wiki  # File a regular bug to give cosign something to find
         b = json.loads(_wiki_file_bug(
             component="x", severity="minor", title="legit bug",
         ))
