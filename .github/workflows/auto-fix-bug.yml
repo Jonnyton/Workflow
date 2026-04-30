@@ -293,10 +293,6 @@ jobs:
           HAS_CODEX: ${{ secrets.OPENAI_API_KEY != '' }}
           HAS_CLAUDE_API: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: |
-          echo "has_claude_oauth=${HAS_CLAUDE_OAUTH}" >> "$GITHUB_OUTPUT"
-          echo "has_codex=${HAS_CODEX}" >> "$GITHUB_OUTPUT"
-          echo "has_claude_api=${HAS_CLAUDE_API}" >> "$GITHUB_OUTPUT"
-
           if [[ "${HAS_CLAUDE_OAUTH}" == "true" ]]; then
             mode="claude_oauth"
             writer_family="anthropic"
@@ -315,9 +311,14 @@ jobs:
             checker_family="none"
           fi
 
-          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          echo "writer_family=${writer_family}" >> "$GITHUB_OUTPUT"
-          echo "checker_family=${checker_family}" >> "$GITHUB_OUTPUT"
+          {
+            echo "has_claude_oauth=${HAS_CLAUDE_OAUTH}"
+            echo "has_codex=${HAS_CODEX}"
+            echo "has_claude_api=${HAS_CLAUDE_API}"
+            echo "mode=${mode}"
+            echo "writer_family=${writer_family}"
+            echo "checker_family=${checker_family}"
+          } >> "$GITHUB_OUTPUT"
 
           {
             echo "## Auto-fix writer auth"
