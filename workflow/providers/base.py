@@ -139,26 +139,15 @@ def probe_sandbox_available() -> dict[str, object]:
     Returns {bwrap_available: bool, reason: str | None}.  Cached at
     module level after first call so get_status probes once at startup.
     """
-    import shutil as _shutil
-    import subprocess as _subprocess
-    import sys as _sys
-
-    if _sys.platform == "win32":
-        return {"bwrap_available": False, "reason": "bwrap is Linux-only (win32 host)"}
-
-    if not _shutil.which("bwrap"):
-        return {"bwrap_available": False, "reason": "bwrap not found on PATH"}
-
     try:
-        result = _subprocess.run(
-            ["bwrap", "--version"],
-            capture_output=True, text=True, check=False, timeout=5,
-        )
-        if result.returncode == 0:
-            return {"bwrap_available": True, "reason": None}
+        from workflow.sandbox import detect_bwrap
+
+        status = detect_bwrap()
         return {
-            "bwrap_available": False,
-            "reason": f"bwrap --version exited {result.returncode}: {result.stderr[:200]}",
+            "bwrap_available": status.available,
+            "reason": status.reason,
+            "bwrap_path": status.bwrap_path,
+            "version": status.version,
         }
     except Exception as exc:  # noqa: BLE001
         return {"bwrap_available": False, "reason": f"probe error: {exc}"}

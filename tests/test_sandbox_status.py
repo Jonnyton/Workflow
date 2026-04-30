@@ -89,22 +89,41 @@ class TestProbeSandboxAvailable:
         assert result["bwrap_available"] is False
         assert "PATH" in str(result.get("reason", ""))
 
-    def test_bwrap_version_succeeds_returns_available(self, monkeypatch):
+    def test_bwrap_namespace_probe_succeeds_returns_available(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
-        mock_result = type("R", (), {"returncode": 0, "stderr": ""})()
+        mock_result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         with patch("shutil.which", return_value="/usr/bin/bwrap"):
-            with patch("subprocess.run", return_value=mock_result):
+            with patch("subprocess.run", return_value=mock_result) as run:
                 result = probe_sandbox_available()
         assert result["bwrap_available"] is True
         assert result.get("reason") is None
+        assert "--unshare-user" in run.call_args.args[0]
 
-    def test_bwrap_version_fails_returns_unavailable(self, monkeypatch):
+    def test_bwrap_namespace_probe_fails_returns_unavailable(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
         mock_result = type("R", (), {"returncode": 1, "stderr": "permission denied"})()
         with patch("shutil.which", return_value="/usr/bin/bwrap"):
             with patch("subprocess.run", return_value=mock_result):
                 result = probe_sandbox_available()
         assert result["bwrap_available"] is False
+
+    def test_version_success_namespace_failure_returns_unavailable(self, monkeypatch):
+        monkeypatch.setattr("sys.platform", "linux")
+
+        def fake_run(cmd, **kwargs):
+            if "--unshare-user" in cmd:
+                return type("R", (), {
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": "bwrap: No permissions to create a new namespace",
+                })()
+            return type("R", (), {"returncode": 0, "stdout": "bwrap 0.6.0", "stderr": ""})()
+
+        with patch("shutil.which", return_value="/usr/bin/bwrap"):
+            with patch("subprocess.run", side_effect=fake_run):
+                result = probe_sandbox_available()
+        assert result["bwrap_available"] is False
+        assert "new namespace" in str(result.get("reason", ""))
 
     def test_probe_exception_returns_unavailable(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")

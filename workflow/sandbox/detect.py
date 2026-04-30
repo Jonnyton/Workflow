@@ -72,7 +72,7 @@ def detect_bwrap() -> SandboxStatus:
     """Probe whether bwrap is present and executable on the current host.
 
     Returns a SandboxStatus with:
-      - available=True if bwrap is on PATH and ``bwrap --version`` exits 0.
+      - available=True if bwrap is on PATH and can create a tiny user namespace.
       - available=False with a human-readable reason otherwise.
 
     Result is NOT cached here — callers should cache at their appropriate scope.
@@ -96,7 +96,20 @@ def detect_bwrap() -> SandboxStatus:
 
     try:
         result = subprocess.run(
-            [bwrap_path, "--version"],
+            [
+                bwrap_path,
+                "--unshare-user",
+                "--uid",
+                "0",
+                "--gid",
+                "0",
+                "--ro-bind",
+                "/",
+                "/",
+                sys.executable,
+                "-c",
+                "pass",
+            ],
             capture_output=True,
             text=True,
             timeout=5,
@@ -109,10 +122,11 @@ def detect_bwrap() -> SandboxStatus:
         )
 
     if result.returncode != 0:
+        reason = result.stderr.strip() or result.stdout.strip()
         return SandboxStatus(
             available=False,
             bwrap_path=bwrap_path,
-            reason=result.stderr.strip() or "bwrap --version failed",
+            reason=reason or f"bwrap namespace probe exited {result.returncode}",
         )
 
     version = result.stdout.strip() or result.stderr.strip() or None
