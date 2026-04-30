@@ -140,7 +140,9 @@ PRs require review before merge. Host reviews the diff.
 3. For bugs, find root cause; for non-bugs, identify the smallest useful project change.
 4. Add or update tests, docs, or checks appropriate to the risk.
 5. Run `ruff` on touched Python files.
-6. If not confident, leave a clear comment and exit gracefully. Never guess.
+6. If canonical `workflow/*` runtime files change, run
+   `python packaging/claude-plugin/build_plugin.py` and include the mirror.
+7. If not confident, leave a clear comment and exit gracefully. Never guess.
 
 ## Manual trigger
 

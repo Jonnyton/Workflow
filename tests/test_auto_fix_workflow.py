@@ -324,6 +324,20 @@ def test_pr_body_references_fixes_keyword(wf):
     )
 
 
+def test_writer_prompts_require_plugin_mirror_for_workflow_runtime_edits(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    assert codex_step is not None, "Must have a Codex subscription step"
+    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    codex_prompt = str(codex_step.get("run", ""))
+    assert "python packaging/claude-plugin/build_plugin.py" in oauth_prompt
+    assert "python packaging/claude-plugin/build_plugin.py" in codex_prompt
+    assert "workflow/*" in oauth_prompt
+    assert "workflow/*" in codex_prompt
+
+
 def test_no_pr_step_marks_review_without_failing_workflow(wf):
     steps = wf["jobs"]["fix"]["steps"]
     no_pr_step = next(

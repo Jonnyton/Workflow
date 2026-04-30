@@ -552,13 +552,14 @@ jobs:
             4. Implement a minimal, targeted change; no refactoring beyond what's needed.
             5. Add or update tests/docs/checks appropriate to the risk.
             6. Run `python -m ruff check` on touched files and fix any violations.
-            7. If you make changes, open a pull request titled:
+            7. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and commit the plugin mirror changes.
+            8. If you make changes, open a pull request titled:
                ${{ steps.meta.outputs.pr_title }}
-            8. The PR body must start with:
+            9. The PR body must start with:
                Fixes #${{ steps.meta.outputs.issue_number }}
-            9. Include `Writer family: Claude` and `Required checker family: Codex`.
-            10. Include a short fix summary, tests run, and any remaining risks.
-            11. Do not redesign community-authored branches unless the issue explicitly asks for that.
+            10. Include `Writer family: Claude` and `Required checker family: Codex`.
+            11. Include a short fix summary, tests run, and any remaining risks.
+            12. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
             If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
@@ -602,8 +603,9 @@ jobs:
           4. Implement a minimal, targeted change; no refactoring beyond what's needed.
           5. Add or update tests/docs/checks appropriate to the risk.
           6. Run `python -m ruff check` on touched files and fix any violations.
-          7. Do not commit, push, or open a PR. Leave any changes in the working tree for this workflow to commit.
-          8. Do not redesign community-authored branches unless the issue explicitly asks for that.
+          7. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and leave the plugin mirror changes in the working tree.
+          8. Do not commit, push, or open a PR. Leave any changes in the working tree for this workflow to commit.
+          9. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
           If you cannot find a safe targeted change or are not confident, leave the
           working tree unchanged and explain why in your final message. Do not guess.
