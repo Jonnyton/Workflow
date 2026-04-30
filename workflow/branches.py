@@ -251,6 +251,9 @@ class NodeDefinition:
 
     # Quality
     evaluation_criteria: list[dict[str, str]] = field(default_factory=list)
+    # Builder-to-builder notes. This is durable metadata for human
+    # maintainers and is intentionally not part of runtime node execution.
+    maintainer_notes: str = ""
 
     # Sub-branch invocation (invoke_branch node kind).
     # When set this node spawns a child branch run rather than executing an

@@ -228,6 +228,8 @@ def node_to_yaml_payload(node: NodeDefinition) -> dict[str, Any]:
         payload["retry_policy"] = dict(node.retry_policy)
     if node.evaluation_criteria:
         payload["evaluation_criteria"] = list(node.evaluation_criteria)
+    if node.maintainer_notes:
+        payload["maintainer_notes"] = node.maintainer_notes
     payload["approved"] = node.approved
     payload["enabled"] = node.enabled
     if node.author and node.author != "anonymous":
@@ -268,6 +270,7 @@ def node_from_yaml_payload(payload: dict[str, Any]) -> NodeDefinition:
         evaluation_criteria=list(
             payload.get("evaluation_criteria", []) or []
         ),
+        maintainer_notes=payload.get("maintainer_notes", ""),
         author=payload.get("author", "anonymous"),
         registered_at=payload.get("registered_at", ""),
         enabled=bool(payload.get("enabled", True)),

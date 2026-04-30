@@ -463,6 +463,7 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "output_keys": kwargs.get("output_keys", ""),
         "source_code": kwargs.get("source_code", ""),
         "prompt_template": kwargs.get("prompt_template", ""),
+        "maintainer_notes": kwargs.get("maintainer_notes", ""),
         "author": kwargs.get("author") or _current_actor(),
     }
     if "node_ref" in kwargs:
@@ -1246,6 +1247,7 @@ def _lookup_node_body(
                 "output_keys": list(nd.get("output_keys") or []),
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
+                "maintainer_notes": nd.get("maintainer_notes", ""),
                 "author": nd.get("author", ""),
                 "approved": bool(nd.get("approved", False)),
             }, ""
@@ -1294,6 +1296,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             output_keys=out_keys,
             source_code=source_code,
             prompt_template=prompt_template,
+            maintainer_notes=raw.get("maintainer_notes", ""),
             author=raw.get("author") or _current_actor(),
             approved=bool(raw.get("approved", False)),
         )
@@ -1641,6 +1644,8 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.display_name = op["display_name"]
                 if "description" in op:
                     n.description = op["description"]
+                if "maintainer_notes" in op:
+                    n.maintainer_notes = op["maintainer_notes"] or ""
                 if "prompt_template" in op:
                     n.prompt_template = op["prompt_template"]
                 if "source_code" in op:
@@ -1908,8 +1913,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
         })
 
     # Accept updates as a JSON blob (changes_json) OR as individual
-    # kwargs (display_name, description, phase, prompt_template,
-    # source_code, input_keys, output_keys). Individual kwargs are
+    # kwargs (display_name, description, maintainer_notes, phase,
+    # prompt_template, source_code, input_keys, output_keys). Individual kwargs are
     # the phone-friendly shape; changes_json is for scripts batching.
     changes_raw = (kwargs.get("changes_json") or "").strip()
     updates: dict[str, Any] = {}
@@ -1931,7 +1936,7 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
         # Pull supported fields from the top-level kwargs.
         for field in (
             "display_name", "description", "phase",
-            "prompt_template", "source_code",
+            "maintainer_notes", "prompt_template", "source_code",
         ):
             if kwargs.get(field):
                 updates[field] = kwargs[field]
@@ -1945,8 +1950,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": (
                 "No fields to update. Pass one or more of "
-                "display_name / description / phase / prompt_template / "
-                "source_code / input_keys / output_keys, or a "
+                "display_name / description / maintainer_notes / phase / "
+                "prompt_template / source_code / input_keys / output_keys, or a "
                 "changes_json object."
             ),
         })
@@ -1987,6 +1992,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             target_node.display_name = updates["display_name"]
         if "description" in updates:
             target_node.description = updates["description"]
+        if "maintainer_notes" in updates:
+            target_node.maintainer_notes = updates["maintainer_notes"] or ""
         if "phase" in updates:
             # NodeDefinition.__post_init__ guards valid phases, so we
             # validate here too.
@@ -2194,6 +2201,7 @@ def _ext_branch_search_nodes(kwargs: dict[str, Any]) -> str:
 _PATCH_NODES_FIELDS: dict[str, Any] = {
     "display_name": str,
     "description": str,
+    "maintainer_notes": str,
     "phase": str,
     "prompt_template": str,
     "source_code": str,

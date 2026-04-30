@@ -223,6 +223,7 @@ def test_node_round_trip_is_identity_for_prompt_template():
         dependencies=["requests"],
         timeout_seconds=240.0,
         evaluation_criteria=[{"name": "coverage", "weight": "1.0"}],
+        maintainer_notes="Builder note: revisit source weighting.",
         author="dev-2",
         approved=True,
         enabled=True,
@@ -247,9 +248,24 @@ def test_node_payload_omits_defaults_for_small_files():
     assert "dependencies" not in payload
     assert "tools_allowed" not in payload
     assert "retry_policy" not in payload  # default policy elided
+    assert "maintainer_notes" not in payload
     # Intent fields stay.
     assert payload["id"] == "n1"
     assert payload["prompt_template"] == "hi"
+
+
+def test_node_payload_round_trips_maintainer_notes():
+    original = NodeDefinition(
+        node_id="n1",
+        display_name="N1",
+        prompt_template="hi",
+        maintainer_notes="Builder-only note. Do not feed this to runtime.",
+    )
+    payload = node_to_yaml_payload(original)
+    assert payload["maintainer_notes"] == original.maintainer_notes
+
+    reconstituted = node_from_yaml_payload(payload)
+    assert reconstituted.maintainer_notes == original.maintainer_notes
 
 
 def test_node_payload_always_includes_timeout_seconds():
