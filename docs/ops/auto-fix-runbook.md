@@ -63,6 +63,14 @@ fails on hosted runners before even `pwd` can run.
 
 `OPENAI_API_KEY` is not an approved default daemon writer lane for this project.
 
+When Codex inspects a request and leaves the working tree unchanged, the loop
+classifies the final message. If the request is already addressed, the workflow
+comments, labels the issue `auto-fix-reviewed` + `auto-fix-already-fixed`, and
+closes it as completed. If the writer cannot find a safe patch, the workflow
+comments, labels `needs-human` + `auto-fix-reviewed` + `auto-fix-blocked`, and
+exits green so the hosted loop reports a real queue state instead of a broken
+workflow.
+
 ### Path C - No subscription auth (graceful-skip)
 
 When no approved subscription-backed writer secret is visible to GitHub
@@ -93,7 +101,8 @@ Variable-based toggle preserves secrets; no data loss from toggling.
 
 ## Branch and PR naming
 
-- Branch: `auto-change/issue-<N>` where N = GH issue number
+- Claude branch: `auto-change/issue-<N>` where N = GH issue number
+- Codex branch: `auto-change/issue-<N>-codex-<run_id>` to avoid collisions
 - PR title: `[auto-change] <request-id>: <short title>`
 - PR body: `Fixes #N` plus change summary
 - PR labels: `writer:claude` requires `checker:codex`; `writer:codex`
@@ -135,7 +144,10 @@ use workflow_dispatch via the Actions UI:
 select "Auto-fix change" -> Run workflow. Explicit re-labels and
 `workflow_dispatch` runs retry issues that already carry `auto-fix-attempted`;
 scheduled backfill does not, so normal unattended polling cannot churn the same
-writer failure forever.
+writer failure forever. The one exception is an old `needs-human` issue that
+has never been marked `auto-fix-reviewed`: once subscription writer auth is
+visible, scheduled backfill may retry it once and then either open a PR, close
+it as already fixed, or mark it reviewed/blocked.
 
 To retry a specific issue from the CLI:
 
@@ -153,6 +165,8 @@ gh issue edit <N> --add-label daemon-request
 | `auto-fix-claude-subscription-missing` appears | The intended Claude subscription daemon lane is offline/not visible to Actions | Add or repair `CLAUDE_CODE_OAUTH_TOKEN` |
 | `auto-fix-provider-exhausted` appears | Selected subscription-backed provider returned quota/rate/capacity exhaustion | Restore subscription capacity or bring another subscription-backed approved writer lane online |
 | Claude path rate-limited | Claude action failed and no subscription-backed Codex lane is wired | Issue is marked `needs-human`; do not fall through to API-key billing |
+| Workflow green but issue has `auto-fix-blocked` | Writer auth worked, but the subscription writer found no safe autonomous patch | Human or another daemon should refine the request, land the prerequisite, or manually redispatch |
+| Issue closed with `auto-fix-already-fixed` | Writer verified the request is already addressed and no repo change was needed | No action unless the closure rationale is wrong; reopen or redispatch manually |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
 | Workflow not triggering | Issue labeled before workflow existed | Re-label with `auto-change` |

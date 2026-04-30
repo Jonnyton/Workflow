@@ -90,6 +90,14 @@ def test_job_filters_on_auto_bug_label(wf):
     )
 
 
+def test_discover_retries_unreviewed_attempted_needs_human_with_auth(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    assert "auto-fix-reviewed" in script
+    assert "needsHuman && hasWriterAuth && !autoFixDisabled && !reviewed" in script
+    assert "retryAttempted" in script
+
+
 # ---------------------------------------------------------------------------
 # Disable toggle
 # ---------------------------------------------------------------------------
@@ -232,6 +240,38 @@ def test_codex_subscription_step_uses_codex_cli(wf):
     assert "OPENAI_API_KEY" in run_script and "unset OPENAI_API_KEY" in run_script
 
 
+def test_codex_no_change_is_classified_from_final_message(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert codex_step is not None
+    run_script = codex_step.get("run", "")
+    assert "no_change_reason=${reason}" in run_script
+    assert "last_message<<" in run_script
+    assert "already_fixed" in run_script
+    assert "stale bug report" in run_script
+
+
+def test_already_fixed_no_change_closes_issue(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    close_step = next(
+        (
+            s
+            for s in steps
+            if s.get("name")
+            == "Close already-fixed issue when no repo change is needed"
+        ),
+        None,
+    )
+    assert close_step is not None, "Must close stale/already-fixed requests"
+    condition = str(close_step.get("if", ""))
+    script = str(close_step.get("with", {}).get("script", ""))
+    assert "no_change_reason == 'already_fixed'" in condition
+    assert "state: 'closed'" in script
+    assert "state_reason: 'completed'" in script
+    assert "auto-fix-reviewed" in script
+    assert "auto-fix-already-fixed" in script
+
+
 def test_codex_pr_gets_cross_family_checker(wf):
     steps = wf["jobs"]["fix"]["steps"]
     codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
@@ -271,3 +311,21 @@ def test_pr_body_references_fixes_keyword(wf):
     assert "Fixes #${{ steps.meta.outputs.issue_number }}" in prompt, (
         "Claude prompt must require PR body to reference the issue with Fixes #N"
     )
+
+
+def test_no_pr_step_marks_review_without_failing_workflow(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    no_pr_step = next(
+        (s for s in steps if s.get("name") == "Mark needs-human if no PR opened"),
+        None,
+    )
+    assert no_pr_step is not None, "Must mark no-PR outcomes"
+    condition = str(no_pr_step.get("if", ""))
+    script = str(no_pr_step.get("with", {}).get("script", ""))
+    assert "no_change_reason != 'already_fixed'" in condition
+    assert "core.setFailed" not in script
+    assert "core.warning" in script
+    assert "auto-fix-reviewed" in script
+    assert "auto-fix-blocked" in script
+    assert "CODEX_BRANCH" in str(no_pr_step.get("env", {}))
+    assert "mode === 'codex_subscription' && codexBranch" in script
