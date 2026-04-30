@@ -144,6 +144,18 @@ GitHub API.
   `HAS_CODEX_AUTH_BUNDLE=false`, so live `llm_endpoint_bound` remains `unset`;
   the remaining blocker is absent subscription auth secret visibility, not an
   API-key fallback.
+- Stale dependency self-heal shipped to `main` on 2026-04-30 at commit
+  `0fd1928`. Live proof: `Community loop watch` run `25152546022` dispatched
+  `wiki-bug-sync.yml`; `Wiki bug sync` workflow_dispatch run `25152563374`
+  completed success. `uptime-canary.yml` also recovered via schedule run
+  `25152541799`.
+- Codex subscription writer lane shipped to `main` on 2026-04-30 at commit
+  `1927ba5`. Live proof: `actionlint` run `25152866136`, `Build and publish
+  image` run `25152866173`, `Deploy prod` run `25152882439`, and `Auto-fix
+  change` run `25152866160` passed. That auto-fix run reported
+  `HAS_CLAUDE_OAUTH=false`, `HAS_CODEX_AUTH_BUNDLE=false`, and
+  `OPENAI_API_KEY=true` (diagnostic only), then labeled issue #56 with both
+  subscription-missing labels. The loop is now red only at writer queue auth.
 
 ## Existing Pieces
 
