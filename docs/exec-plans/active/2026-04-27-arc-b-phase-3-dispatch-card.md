@@ -52,7 +52,7 @@ If any pre-condition regresses before Phase 3 dispatch, fix that caller before d
 
 ## 2. Files (write-set)
 
-Seven file deletions + two non-deletion edits:
+Shim/test/script deletions + two non-deletion edits:
 
 ### 2.a Canonical tree (workflow/ + domains/)
 
@@ -61,11 +61,15 @@ Seven file deletions + two non-deletion edits:
 | `workflow/_rename_compat.py` | 189 | `git rm` |
 | `workflow/author_server.py` | 39 | `git rm` |
 | `fantasy_daemon/author_server.py` | ~40 | `git rm` — imports `_rename_compat`, so deleting the shared gate without this file leaves a broken shim |
+| `fantasy_author/__init__.py` | ~50 | `git rm` — top-level import shim, also imports `_rename_compat` |
+| `fantasy_author/__main__.py` | ~8 | `git rm` — old CLI shim; no legacy CLI surface after Phase 5 |
 | `domains/fantasy_author/__init__.py` | ~50 | `git rm` |
 | `domains/fantasy_author/phases/__init__.py` | ~88 | `git rm` |
 | `domains/fantasy_author/` (now empty after above) | — | `git rm -r` (or rely on git auto-prune of empty dirs) |
 | `tests/test_rename_compat.py` | (file) | `git rm` (purpose-built migration test; alias infrastructure dies, the test dies with it) |
 | `tests/test_import_compatibility.py` | (file, IF it tests the alias paths) | `git rm` per Arc B prep §3.2 — confirm content before deletion |
+| `scripts/build_shims.py` | (file) | `git rm` — rename-era shim generator; would recreate dead paths |
+| `scripts/migrate_imports.py` | (file) | `git rm` — one-shot migration helper, obsolete after caller migration |
 
 ### 2.b Plugin mirror
 
@@ -108,7 +112,9 @@ git checkout main && git pull
 git rm workflow/_rename_compat.py
 git rm workflow/author_server.py
 git rm fantasy_daemon/author_server.py
+git rm -r fantasy_author/
 git rm -r domains/fantasy_author/
+git rm scripts/build_shims.py scripts/migrate_imports.py
 
 # Step 4 — delete migration tests
 git rm tests/test_rename_compat.py
@@ -238,7 +244,7 @@ Phase 3's Files cell overlaps:
 ## 7. STATUS.md Work row (lead pastes on Phase 2 SHIP)
 
 ```
-| **#25 Arc B phase 3** — delete 5 alias-infra files + 2 plugin mirror entries + edit discovery.py + edit/delete 2 migration tests + smoke `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q`. ~45-90 min. Card: `docs/exec-plans/active/2026-04-27-arc-b-phase-3-dispatch-card.md`. | workflow/_rename_compat.py, workflow/author_server.py, fantasy_daemon/author_server.py, workflow/discovery.py, domains/fantasy_author/, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/_rename_compat.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/author_server.py, tests/test_rename_compat.py, tests/test_discovery.py, tests/test_import_compatibility.py | #23 | dev-ready |
+| **#25 Arc B phase 3** — delete rename-compat shims + obsolete tests/scripts + edit discovery.py + smoke `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q`. ~45-90 min. Card: `docs/exec-plans/active/2026-04-27-arc-b-phase-3-dispatch-card.md`. | workflow/_rename_compat.py, workflow/author_server.py, fantasy_daemon/author_server.py, fantasy_author/, workflow/discovery.py, domains/fantasy_author/, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/_rename_compat.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/author_server.py, tests/test_rename_compat.py, tests/test_discovery.py, tests/test_import_compatibility.py, scripts/build_shims.py, scripts/migrate_imports.py | #23 | dev-ready |
 ```
 
 **Files cell rationale:** lists every concrete path Phase 3 will write to (delete or edit). No collisions with any in-flight row at dispatch time (verified for current STATUS state; re-verify with `claim_check.py` at Phase 2 SHIP).
@@ -277,7 +283,7 @@ Both must be green for SHIP.
 
 Maps to Arc B prep doc §7 acceptance:
 
-1. ✓ `git ls-files workflow/_rename_compat.py workflow/author_server.py fantasy_daemon/author_server.py domains/fantasy_author/` returns nothing.
+1. ✓ `git ls-files workflow/_rename_compat.py workflow/author_server.py fantasy_daemon/author_server.py fantasy_author/ domains/fantasy_author/ scripts/build_shims.py scripts/migrate_imports.py` returns nothing.
 2. ✓ `grep -rE "from workflow.author_server|import workflow.author_server|from domains.fantasy_author|import domains.fantasy_author" workflow/ tests/ domains/ --include='*.py'` returns 0 lines (excluding pre-commit invariant fixtures).
 3. ✓ `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q` is fully green.
 4. ✓ `pytest -q` (default env) is fully green.

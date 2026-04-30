@@ -397,7 +397,7 @@ def _dispatch_with_ledger(
 # Daemon telemetry — liveness, staleness, human-readable phase
 # ---------------------------------------------------------------------------
 # The daemon writes `current_phase` and `last_updated` into status.json via
-# `domains.fantasy_author.phases._activity.update_phase`. status.json itself
+# `domains.fantasy_daemon.phases._activity.update_phase`. status.json itself
 # is not a heartbeat — it only moves when a phase transitions. For liveness
 # we also consult `activity.log`, which is appended to on every node entry,
 # and PROGRAM.md + work_targets.json to disambiguate "no premise" vs
