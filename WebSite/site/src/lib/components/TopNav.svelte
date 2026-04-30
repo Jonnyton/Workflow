@@ -8,9 +8,8 @@
     { href: '/connect', label: 'Connect' },
     { href: '/wiki', label: 'Wiki' },
     { href: '/graph', label: 'Graph' },
-    { href: '/patterns', label: 'Patterns' },
+    { href: '/loop', label: 'Loop' },
     { href: '/host', label: 'Host' },
-    { href: '/contribute', label: 'Contribute' },
     { href: '/alliance', label: 'Alliance' }
   ];
 

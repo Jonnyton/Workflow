@@ -1,7 +1,6 @@
 <!--
-  TokenDisclaimer — reusable safe-harbor block for any token-related surface.
-  Frames ta as digital tool / digital commodity per SEC 2026 Project Crypto.
-  Pulls language from $lib/content/legal-info.json (single source of truth).
+  TokenDisclaimer - reusable safe-harbor block for currency-related surfaces.
+  Keeps live Destiny (tiny) references separate from Workflow's test tiny rail.
 -->
 <script lang="ts">
   import RitualLabel from './Primitives/RitualLabel.svelte';
@@ -13,32 +12,35 @@
 {#if compact}
   <p class="compact">
     <strong>Not an investment.</strong>
-    <code>ta</code> is a utility token intended to function as a digital tool / digital commodity for daemon-market participation. It does not represent equity, profit-sharing, or yield. Smart contracts are unaudited. <a href="/legal#token-disclosures">Full disclosures →</a>
+    Workflow currently uses <code>{legal.token.workflow_test_currency}</code> only. Real <code>{legal.token.display_name}</code> integration is a later roadmap phase; it does not represent equity, profit-sharing, or yield. <a href="/legal#token-disclosures">Full disclosures</a>
   </p>
 {:else}
   <aside class="block">
-    <RitualLabel color="var(--signal-idle)">· Important · token disclosures ·</RitualLabel>
-    <h3>What <code>ta</code> is — and is not.</h3>
+    <RitualLabel color="var(--signal-idle)">Important - token disclosures</RitualLabel>
+    <h3>What <code>{legal.token.display_name}</code> is, and what Workflow touches now.</h3>
     <ul>
       <li>
-        <strong>What it is:</strong> {legal.token.intended_classification}. Necessary to participate in the Workflow paid-market — daemons stake to claim work, evaluators stake on attestations, settlements mint or slash based on deterministic protocol rules.
+        <strong>Current Workflow rail:</strong> {legal.token.current_workflow_status}
+      </li>
+      <li>
+        <strong>Real currency reference:</strong> {legal.token.display_name} is the live-token naming convention. Workflow keeps that name so testnet messaging matches the eventual real integration.
+      </li>
+      <li>
+        <strong>Rewards model:</strong> {legal.token.rewards_model}
       </li>
       <li>
         <strong>What it is not:</strong> a security, an investment contract, equity, a profit-sharing instrument, or a yield-bearing product. There is no offer to sell securities, no promise of appreciation, no managed-asset backing.
       </li>
       <li>
-        <strong>Rewards model:</strong> {legal.token.rewards_model}. No passive yield (CLARITY-compatible).
+        <strong>Risk factors:</strong> smart-contract risk, regulatory risk, liquidity risk, and network-failure risk. Holdings are not insured by the FDIC, SIPC, or any government program.
       </li>
       <li>
-        <strong>Risk factors:</strong> smart-contract risk (contracts unaudited), regulatory risk, liquidity risk, network-failure risk. Holdings are not insured by the FDIC, SIPC, or any government program.
-      </li>
-      <li>
-        <strong>Forward-looking:</strong> roadmap items (Phase 6 outcome ranking, Phase 7 settlement contracts, Phase 8 DAO governance) are intentions, not commitments.
+        <strong>Forward-looking:</strong> roadmap items (Phase 6 outcome ranking, Phase 7 test tiny settlement, Phase 8 real Destiny integration) are intentions, not commitments.
       </li>
     </ul>
     <p class="meta">
       {legal.review_status}. Targeted regulatory framework: {legal.token.regulatory_framework_targeted.join(' + ')}.
-      <a href="/legal#token-disclosures">Read full legal page →</a>
+      <a href="/legal#token-disclosures">Read full legal page</a>
     </p>
   </aside>
 {/if}
@@ -80,7 +82,7 @@
     font-family: var(--font-display);
     font-size: 22px;
     font-weight: 500;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
     margin: 12px 0 14px;
     color: var(--fg-1);
   }

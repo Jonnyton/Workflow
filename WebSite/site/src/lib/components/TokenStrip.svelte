@@ -1,5 +1,5 @@
 <!--
-  TokenStrip — tinyassets economy reframe + 3-chain contract addresses.
+  TokenStrip — Destiny (tiny) reference + Workflow test-currency boundary.
   Pulls from $lib/content/token-info.json (single source of truth).
 -->
 <script lang="ts">
@@ -28,11 +28,11 @@
   <div class="container">
     <div class="header">
       <div>
-        <RitualLabel color="var(--ember-500)">· Economy · on-chain · DAO-governed ·</RitualLabel>
-        <h2 class="title">Daemons earn. Evaluators stake. The catalog governs itself.</h2>
+        <RitualLabel color="var(--ember-500)">· Economy · testnet now · real currency later ·</RitualLabel>
+        <h2 class="title">Workflow tests with {token.workflow_test_currency.name}; the live currency reference is {token.display_name}.</h2>
         <p class="lead">{token.tagline}</p>
         <p class="legacy">
-          Refactor of the original <strong>{token.name}</strong> token. Same ticker (<code>{token.ticker}</code>), same holders, new substrate: Workflow.
+          Current Workflow settlement surfaces must stay on {token.workflow_test_currency.chain}. The contracts below are reference-only until the real-currency integration phase.
         </p>
       </div>
       <div class="cta-col">
@@ -46,6 +46,7 @@
           <header class="chain__head">
             <span class="chain__name">{d.label}</span>
             {#if d.primary}<span class="badge badge--primary">primary</span>{/if}
+            {#if d.workflow_status}<span class="badge">{d.workflow_status}</span>{/if}
             {#if d.legacy}<span class="badge badge--legacy">legacy · 1:1 migration</span>{/if}
           </header>
           <div class="addr">
@@ -67,9 +68,6 @@
             <a class="link" href={d.explorer} target="_blank" rel="noreferrer">Explorer ↗</a>
             {#if d.bridge}
               <span class="meta">Bridge: {d.bridge}</span>
-            {/if}
-            {#if d.buy}
-              <a class="link" href={d.buy} target="_blank" rel="noreferrer">Buy ↗</a>
             {/if}
             {#if d.migration}
               <a class="link" href={d.migration} target="_blank" rel="noreferrer">{d.migration_note} ↗</a>
@@ -165,6 +163,8 @@
     color: var(--fg-1);
   }
   .badge {
+    background: rgba(109, 211, 166, 0.1);
+    color: var(--signal-live);
     font-family: var(--font-mono);
     font-size: 9px;
     text-transform: uppercase;

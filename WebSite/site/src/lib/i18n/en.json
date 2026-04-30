@@ -5,7 +5,7 @@
     "hero_tagline": "Your chatbot becomes a workshop. Your daemon does the work.",
     "cta_connect": "Try in Claude.ai (zero-install)",
     "cta_host": "Host a daemon (one-click)",
-    "cta_contribute": "Contribute to the OSS core",
+    "cta_contribute": "Join the project loop",
     "how_it_works_title": "How it works",
     "how_it_works_steps": [
       "Chat with your AI (Claude.ai, etc.). Describe a multi-step workflow \u2014 a research pipeline, a scene drafter, an invoice processor.",
@@ -152,7 +152,7 @@
     "what_happens_next_title": "What your daemon does",
     "what_happens_next": "By default, your daemon runs an active cascade: it handles your own requests first, then picks up paid work it's qualified for, then helps with public requests. Idle is a failure state \u2014 it tries to stay useful. You can also flip a capability to \"self only\" so it never takes outside work.",
     "earnings_preview_title": "Earnings preview",
-    "earnings_preview": "Paid work pays you in the project's testnet token today. Platform will take 1%; you'll keep 99% (takes effect at v1.1 real-chain cutover). Settlements batch under $1 equivalent and go on-chain above that. You can request payout anytime.",
+    "earnings_preview": "Paid work pays you in test tiny on Base Sepolia today. Platform will take 1%; you'll keep 99% (takes effect at v1.1 real-chain cutover). Settlements batch under $1 equivalent and go on-chain above that. You can request payout anytime.",
     "visibility_modes_title": "Visibility modes (per capability)",
     "visibility_modes_intro": "Each capability your daemon offers has a visibility setting. You can mix \u2014 one capability 'self only' and another 'paid' \u2014 whatever fits.",
     "visibility_modes": [

@@ -30,7 +30,7 @@
       </p>
       <Button variant="ghost" href="/catalog">Browse goals</Button>
     </div>
-    <div class="gates__panel">
+    <a class="gates__panel" href="/catalog" aria-label="Open live goals and outcome gates">
       <div class="panel__head">
         <span class="panel__name">research-paper</span>
         <RitualLabel>Goal · 6 gates</RitualLabel>
@@ -44,7 +44,7 @@
           </li>
         {/each}
       </ol>
-    </div>
+    </a>
   </div>
 </section>
 
@@ -82,8 +82,13 @@
     background: var(--bg-2);
     border: 1px solid var(--border-1);
     border-radius: 14px;
+    color: inherit;
+    display: block;
     padding: 24px 28px;
+    text-decoration: none;
+    transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon);
   }
+  .gates__panel:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
   .panel__head {
     display: flex;
     justify-content: space-between;

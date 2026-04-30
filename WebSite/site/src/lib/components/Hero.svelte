@@ -28,7 +28,7 @@
         <Button variant="secondary" size="lg" href="/host">
           {t.cta_host}
         </Button>
-        <Button variant="ghost" size="lg" href="/contribute">
+        <Button variant="ghost" size="lg" href="/loop">
           {t.cta_contribute}
         </Button>
       </div>

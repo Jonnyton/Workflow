@@ -6,6 +6,7 @@
   import SigilMark from './SigilMark.svelte';
   import RitualLabel from './Primitives/RitualLabel.svelte';
   import legal from '$lib/content/legal-info.json';
+  import token from '$lib/content/token-info.json';
 
   const year = new Date().getFullYear();
 
@@ -33,8 +34,8 @@
       <RitualLabel>Use</RitualLabel>
       <ul>
         <li><a href="/connect">Connect</a></li>
+        <li><a href="/loop">Join the loop</a></li>
         <li><a href="/host">Host a daemon</a></li>
-        <li><a href="/contribute">Contribute</a></li>
         <li><a href="/alliance">Tiny Alliance</a></li>
       </ul>
     </div>
@@ -43,7 +44,7 @@
       <ul>
         <li><a href="/wiki">Live wiki</a></li>
         <li><a href="/graph">Graph</a></li>
-        <li><a href="/patterns">Patterns</a></li>
+        <li><a href="/loop">Loop</a></li>
         <li><a href="/economy">Economy</a></li>
       </ul>
     </div>
@@ -68,8 +69,8 @@
   </div>
 
   <div class="container footer__supply">
-    <RitualLabel color="var(--ember-500)">Tiny Assets · ta · multi-chain</RitualLabel>
-    <span class="supply">Total supply 12,344,744,965</span>
+    <RitualLabel color="var(--ember-500)">{token.display_name} · reference-only</RitualLabel>
+    <span class="supply">Workflow rail: {token.workflow_test_currency.name}</span>
     <span class="supply__chains">BASE · PulseChain · BSC</span>
     <a class="supply__more" href="/economy">All chains →</a>
   </div>

@@ -24,12 +24,16 @@
     "dmca_agent": "dmca@tinyassets.io"
   },
   "token": {
-    "name": "Tiny Assets (ta)",
+    "name": "Destiny",
+    "display_name": "Destiny (tiny)",
+    "symbol": "tiny",
+    "workflow_test_currency": "test tiny on Base Sepolia",
+    "current_workflow_status": "Workflow touches only the Base Sepolia test currency until real Destiny (tiny) integration is explicitly opened.",
     "intended_classification": "Digital tool / digital commodity (per SEC 2026 Project Crypto)",
     "is_security": false,
     "offers_yield": false,
     "offers_appreciation": false,
-    "rewards_model": "Activity-based \u2014 daemons earn ta for completed work that clears outcome gates. No passive yield.",
+    "rewards_model": "Activity-based \u2014 daemons earn test tiny for completed work that clears outcome gates. Real Destiny (tiny) payouts are deferred until the real-currency integration phase. No passive yield.",
     "regulatory_framework_targeted": [
       "SEC Project Crypto interpretive release (April 2026)",
       "Digital Asset Market Clarity Act (H.R. 3633)"
@@ -57,11 +61,11 @@
   "dao": {
     "current_status": "Informal \u2014 votes are advisory only, non-binding pending legal-entity formation.",
     "target_structure": "Wyoming DAO LLC (Wyo. Stat. \u00a7 17-31-101 et seq.) before Phase 8 launch.",
-    "voter_liability": "Limited to ta staked in vote per smart-contract rules; no personal liability claim recognized.",
+    "voter_liability": "Limited to tiny staked in vote per smart-contract rules once real-token governance is live; no personal liability claim recognized.",
     "vote_scope": [
       "Which goals are canonical in the public catalog",
       "Which third-party verifiers count for outcome-gate clearance",
-      "Which outcome-gate ladders qualify for ta minting",
+      "Which outcome-gate ladders qualify for tiny minting",
       "Treasury allocations within DAO-controlled multisig"
     ]
   },
@@ -74,7 +78,7 @@
   ],
   "minimum_age": 18,
   "tax_reporting": {
-    "us_threshold": "Daemon hosts who earn \u2265USD 600/year in ta will receive year-end CSV for self-reporting; we do not file 1099-MISC at v0.",
+    "us_threshold": "Real-token payouts are disabled at v0. Once real Destiny (tiny) payouts are live, daemon hosts who earn \u2265USD 600/year equivalent will receive a year-end CSV for self-reporting; we do not file 1099-MISC at v0.",
     "international": "Users responsible for own tax treatment in their jurisdiction."
   }
 }
