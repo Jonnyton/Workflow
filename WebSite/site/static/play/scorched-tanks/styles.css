@@ -1,0 +1,276 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #111619;
+  color: #f3f0e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: #111619;
+}
+
+a {
+  color: #ffce72;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #111619;
+}
+
+.topbar,
+.provenance {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  background: #182026;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #e04f35;
+  color: #111619;
+  font-weight: 800;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.28rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 0.16rem 0 0;
+  color: #bac8cb;
+  font-size: 0.83rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.button {
+  min-height: 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #26353b;
+  color: #f3f0e8;
+  padding: 0 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.button.primary {
+  border-color: rgba(255, 206, 114, 0.66);
+  background: #d45a32;
+  color: #111619;
+  font-weight: 800;
+}
+
+.button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.button:not(:disabled):hover,
+.button:not(:disabled):focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #ffce72;
+  outline-offset: 2px;
+}
+
+.button:not(:disabled):hover {
+  background: #35515a;
+}
+
+.button.primary:not(:disabled):hover {
+  background: #ef7144;
+}
+
+.stage {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: #07090a;
+}
+
+#game {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  background: #162c3b;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 1.25fr)
+    minmax(10rem, 1fr)
+    minmax(10rem, 1fr)
+    minmax(10rem, 0.9fr)
+    auto
+    auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  background: #182026;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.readout {
+  min-width: 0;
+  display: grid;
+  gap: 0.16rem;
+  color: #bac8cb;
+  font-size: 0.8rem;
+}
+
+#turn-label {
+  color: #f3f0e8;
+  font-weight: 800;
+}
+
+#status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(4.2rem, 1fr) 2.3rem;
+  align-items: center;
+  gap: 0.5rem;
+  color: #bac8cb;
+  font-size: 0.8rem;
+}
+
+label strong {
+  color: #f3f0e8;
+  text-align: right;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #ffce72;
+}
+
+select {
+  min-height: 2.2rem;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #26353b;
+  color: #f3f0e8;
+  padding: 0 0.55rem;
+  font: inherit;
+}
+
+.provenance {
+  min-height: 2.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 0;
+  color: #bac8cb;
+  font-size: 0.78rem;
+}
+
+.provenance span {
+  text-align: center;
+}
+
+@media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
+  .shell {
+    min-height: 100dvh;
+  }
+
+  .stage {
+    grid-template-rows: minmax(20rem, 1fr) auto;
+  }
+
+  .hud {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .readout {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar,
+  .provenance {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .button {
+    flex: 1 1 7rem;
+  }
+
+  .stage {
+    grid-template-rows: minmax(18rem, 1fr) auto;
+  }
+
+  .hud {
+    grid-template-columns: 1fr;
+  }
+
+  label {
+    grid-template-columns: 4.6rem minmax(5.5rem, 1fr) 2.2rem;
+  }
+
+  .provenance {
+    font-size: 0.74rem;
+  }
+}
