@@ -252,6 +252,40 @@ def test_build_node_status_map_surfaces_running_during_flight():
     assert by_node["c"] == NODE_STATUS_PENDING
 
 
+def test_generic_provider_failure_overrides_running_node_status(tmp_path):
+    """BUG-041: a provider crash after the starting event must not leave
+    the node displayed as running in the folded run snapshot."""
+    from workflow.runs import (
+        NODE_STATUS_FAILED,
+        RUN_STATUS_FAILED,
+        execute_branch_async,
+        get_run,
+        wait_for,
+    )
+
+    base = tmp_path / "output"
+    base.mkdir()
+
+    def _crashing_provider(prompt, system, *, role):
+        raise RuntimeError("all providers exhausted for role=writer")
+
+    outcome = execute_branch_async(
+        base, branch=_make_recipe_branch(), inputs={"raw": "x"},
+        actor="tester", provider_call=_crashing_provider,
+    )
+    wait_for(outcome.run_id, timeout=5.0)
+
+    record = get_run(base, outcome.run_id)
+    assert record is not None
+    assert record["status"] == RUN_STATUS_FAILED
+
+    events = list_events(base, outcome.run_id, since_step=-1)
+    statuses = build_node_status_map(events, ["capture", "tag"])
+    by_node = {s["node_id"]: s["status"] for s in statuses}
+    assert by_node["capture"] == NODE_STATUS_FAILED
+    assert by_node["tag"] == NODE_STATUS_PENDING
+
+
 def test_slow_provider_starting_event_fires_before_completion(us_env):
     """With a slow provider, the starting event is visible to polling
     clients BEFORE the ran event lands — the whole point of #60."""

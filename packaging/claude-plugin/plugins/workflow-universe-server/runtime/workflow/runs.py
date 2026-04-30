@@ -1182,6 +1182,7 @@ def _invoke_graph(
     thread_id = run_id
     execution_cursor = {"step": 0}
     provider_tracker: dict[str, str | None] = {"last": None}
+    running_node_ids: set[str] = set()
 
     # Phase 2 design_used emit (Task #75) — pre-build a graph_node_id ->
     # NodeDefinition lookup so each "ran" event can credit the artifact
@@ -1213,6 +1214,7 @@ def _invoke_graph(
         execution_cursor["step"] += 1
 
         if phase == "starting":
+            running_node_ids.add(node_id)
             record_event(base_path, RunStepEvent(
                 run_id=run_id,
                 step_index=step + _PENDING_OFFSET,
@@ -1228,6 +1230,7 @@ def _invoke_graph(
         served = detail.get("provider_served")
         if served:
             provider_tracker["last"] = str(served)
+        running_node_ids.discard(node_id)
         record_event(base_path, RunStepEvent(
             run_id=run_id,
             step_index=step + _PENDING_OFFSET,
@@ -1470,6 +1473,21 @@ def _invoke_graph(
                 output={}, error=msg,
             )
         logger.exception("Run %s failed at invoke", run_id)
+        for failed_node_id in sorted(running_node_ids):
+            step = execution_cursor["step"]
+            execution_cursor["step"] += 1
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=failed_node_id,
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
+                detail={
+                    "reason": "invoke_error",
+                    "message": f"{type(exc).__name__}: {exc}",
+                },
+            ))
         update_run_status(
             base_path, run_id,
             status=RUN_STATUS_FAILED,
@@ -2121,6 +2139,7 @@ def _invoke_graph_resume(
     """Compile branch + invoke with None inputs to resume from checkpoint."""
     execution_cursor = {"step": 1000}  # offset so resume events don't collide
     provider_tracker: dict[str, str | None] = {"last": None}
+    running_node_ids: set[str] = set()
 
     def _on_node(node_id: str, **detail: Any) -> None:
         phase = detail.pop("phase", "ran")
@@ -2130,8 +2149,10 @@ def _invoke_graph_resume(
             served = detail.get("provider_served")
             if served:
                 provider_tracker["last"] = served
+            running_node_ids.discard(node_id)
 
         if phase == "starting":
+            running_node_ids.add(node_id)
             record_event(base_path, RunStepEvent(
                 run_id=run_id,
                 step_index=step + _PENDING_OFFSET,
@@ -2209,6 +2230,21 @@ def _invoke_graph_resume(
                 run_id=run_id, status=RUN_STATUS_CANCELLED,
                 output={}, error=msg,
             )
+        for failed_node_id in sorted(running_node_ids):
+            step = execution_cursor["step"]
+            execution_cursor["step"] += 1
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=failed_node_id,
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
+                detail={
+                    "reason": "invoke_error",
+                    "message": f"{type(exc).__name__}: {exc}",
+                },
+            ))
         msg = f"Resume execution failed: {exc}"
         update_run_status(
             base_path, run_id,
