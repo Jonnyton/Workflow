@@ -376,6 +376,62 @@ class TestSymptom2TerminalNoopAndLoopBack:
             f"noop should terminate; final: {dict(result)}"
         )
 
+    def test_distinct_graph_id_routes_to_terminal_noop_not_loop_fallback(self):
+        """BUG-022: graph-node id differs from node-def id, with the loop
+        condition declared first and the terminal noop second.
+
+        The router must read the gate node_def's output_key through the
+        graph node ref. Otherwise it has no output_key and falls back to
+        the first condition ("LOOP"), so the "DONE" → noop terminal path
+        never fires.
+        """
+        invocation_count = {"n": 0}
+
+        def scripted(prompt: str, system: str = "", *, role: str = "writer") -> str:
+            if "decide" not in prompt:
+                return "leaf ran"
+            invocation_count["n"] += 1
+            return "DONE"
+
+        branch = BranchDefinition(
+            branch_def_id="s2-distinct-ids",
+            name="S2 loopback distinct ids",
+            node_defs=[
+                _mk_gate_node("gate_def"),
+                _mk_leaf_node("noop"),
+            ],
+            graph_nodes=[
+                GraphNodeRef(id="gate", node_def_id="gate_def"),
+                GraphNodeRef(id="noop", node_def_id="noop"),
+            ],
+            edges=[
+                EdgeDefinition(from_node="noop", to_node="END"),
+            ],
+            conditional_edges=[
+                ConditionalEdge(
+                    from_node="gate",
+                    conditions={"LOOP": "gate", "DONE": "noop"},
+                ),
+            ],
+            entry_point="gate",
+            state_schema=[
+                {"name": "scene_input", "type": "str"},
+                {"name": "gate_out", "type": "str"},
+                {"name": "noop_out", "type": "str"},
+            ],
+        )
+        errors = branch.validate()
+        assert errors == [], f"validate: {errors}"
+
+        compiled = compile_branch(branch, provider_call=scripted)
+        result = _run_compiled(compiled, initial_state={"scene_input": "x"})
+
+        assert invocation_count["n"] == 1
+        assert result.get("noop_out"), (
+            "DONE should route to terminal noop instead of falling back to LOOP; "
+            f"final: {dict(result)}"
+        )
+
 
 class TestSymptom3ThreeGateIterations:
     """S3: a branch that needs 3 distinct gate iterations to terminate.
