@@ -402,6 +402,81 @@ def test_run_branch_rejects_invalid_branch(runner_env):
     assert "validation_errors" in result
 
 
+def test_build_branch_rejects_state_field_that_reuses_node_id(runner_env):
+    us, _ = runner_env
+    spec = {
+        "name": "Node state collision",
+        "entry_point": "investigation_gate",
+        "node_defs": [{
+            "node_id": "investigation_gate",
+            "display_name": "Investigation gate",
+            "prompt_template": "Decide.",
+            "output_keys": ["decision"],
+        }],
+        "edges": [
+            {"from": "START", "to": "investigation_gate"},
+            {"from": "investigation_gate", "to": "END"},
+        ],
+        "state_schema": [
+            {"name": "investigation_gate", "type": "str"},
+            {"name": "decision", "type": "str"},
+        ],
+    }
+
+    result = _call(us, "build_branch", spec_json=json.dumps(spec))
+
+    assert result["status"] == "rejected"
+    assert any(
+        "State field 'investigation_gate' collides" in err
+        for err in result["errors"]
+    )
+    assert any(
+        "state_schema names do not reuse node ids" in s["proposed_fix"]
+        for s in result["suggestions"]
+    )
+
+
+def test_run_branch_rejects_state_field_that_reuses_node_id(runner_env):
+    us, _ = runner_env
+    bid = _call(us, "create_branch", name="Node state collision")["branch_def_id"]
+    _call(
+        us, "add_node",
+        branch_def_id=bid,
+        node_id="investigation_gate",
+        display_name="Investigation gate",
+        prompt_template="Decide.",
+        output_keys="decision",
+    )
+    _call(
+        us, "connect_nodes",
+        branch_def_id=bid,
+        from_node="START",
+        to_node="investigation_gate",
+    )
+    _call(
+        us, "connect_nodes",
+        branch_def_id=bid,
+        from_node="investigation_gate",
+        to_node="END",
+    )
+    _call(us, "set_entry_point", branch_def_id=bid, node_id="investigation_gate")
+    _call(
+        us, "add_state_field",
+        branch_def_id=bid,
+        field_name="investigation_gate",
+        field_type="str",
+    )
+
+    result = _call(us, "run_branch", branch_def_id=bid, inputs_json="{}")
+
+    assert result["error"] == "Branch is not valid. Fix these before running:"
+    assert any(
+        "State field 'investigation_gate' collides" in err
+        for err in result["validation_errors"]
+    )
+    assert "run_id" not in result
+
+
 def test_run_branch_rejects_malformed_inputs_json(runner_env):
     us, _ = runner_env
     bid = _build_recipe_branch(us)

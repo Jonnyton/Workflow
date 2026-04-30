@@ -980,13 +980,19 @@ class BranchDefinition:
                     f"{', '.join(sorted(cycle_nodes))}."
                 )
 
-        # Check state schema field names are unique (basic check on raw dicts)
+        # Check state schema field names are unique and do not reuse node IDs.
         field_names: set[str] = set()
+        node_ids = seen_graph | seen_defs
         for f in self.state_schema:
             name = f.get("name", "")
             if name:
                 if name in field_names:
                     errors.append(f"Duplicate state field name: '{name}'.")
+                if name in node_ids:
+                    errors.append(
+                        f"State field '{name}' collides with node ID "
+                        f"'{name}'. Rename either the state field or the node."
+                    )
                 field_names.add(name)
 
         # Build-time placeholder validation: every ``{ident}`` in a

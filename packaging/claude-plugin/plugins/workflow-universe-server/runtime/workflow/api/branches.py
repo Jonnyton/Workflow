@@ -1088,6 +1088,14 @@ def _errors_to_suggestions(
                 "issue": err,
                 "proposed_fix": "Rename the duplicate id to a unique value.",
             })
+        elif "collides with node id" in low:
+            suggestions.append({
+                "issue": err,
+                "proposed_fix": (
+                    "Rename the state field or the node so state_schema names "
+                    "do not reuse node ids."
+                ),
+            })
         else:
             suggestions.append({
                 "issue": err,
