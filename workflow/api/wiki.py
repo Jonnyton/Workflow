@@ -1373,6 +1373,12 @@ def _wiki_file_bug(
     })
 
 
+def _wiki_file_feature_request(**kwargs: Any) -> str:
+    """File a feature request using the same pipeline as ``file_bug``."""
+    kwargs["kind"] = "feature"
+    return _wiki_file_bug(**kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch entry — plain function. The MCP tool wrapper lives in
 # workflow/universe_server.py and delegates here (Pattern A2).
@@ -1402,6 +1408,8 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
+    kind: str = "",
+    tags: str = "",
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
@@ -1459,6 +1467,7 @@ def wiki(
         "supersede": _wiki_supersede,
         "sync_projects": _wiki_sync_projects,
         "file_bug": _wiki_file_bug,
+        "file_feature_request": _wiki_file_feature_request,
         "cosign_bug": _wiki_cosign_bug,
     }
 
@@ -1491,6 +1500,8 @@ def wiki(
         "observed": observed,
         "expected": expected,
         "workaround": workaround,
+        "kind": kind,
+        "tags": tags,
         "force_new": force_new,
         "bug_id": bug_id,
         "reporter_context": reporter_context,

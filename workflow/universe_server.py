@@ -847,6 +847,8 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
+    kind: str = "",
+    tags: str = "",
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
@@ -863,7 +865,7 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint;
             writes: write, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug, cosign_bug.
+            sync_projects, file_bug, file_feature_request, cosign_bug.
     """
     return _wiki_impl(
         action=action,
@@ -888,6 +890,8 @@ def wiki(
         observed=observed,
         expected=expected,
         workaround=workaround,
+        kind=kind,
+        tags=tags,
         force_new=force_new,
         bug_id=bug_id,
         reporter_context=reporter_context,

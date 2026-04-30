@@ -315,6 +315,23 @@ def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
     assert res["bug_id"].startswith("BUG-")
 
 
+def test_wiki_file_feature_request_routes_to_feature_requests(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_feature_request",
+            component="wiki",
+            severity="minor",
+            title="Add a feature request filing verb",
+            observed="Users must call file_bug with kind=feature.",
+            expected="Users can call file_feature_request directly.",
+        )
+    )
+    assert res["status"] == "filed"
+    assert res["kind"] == "feature"
+    assert res["bug_id"] == "FEAT-001"
+    assert res["path"].startswith("pages/feature-requests/")
+
+
 def test_wiki_file_bug_dedup_returns_similar_found(wiki_env):
     base = dict(
         action="file_bug",

@@ -123,7 +123,7 @@ def _wiki_dispatch_keys() -> set[str]:
         "read", "search", "list", "lint",
         "write", "consolidate", "promote", "ingest", "supersede",
         "sync_projects",
-        "file_bug", "cosign_bug",
+        "file_bug", "file_feature_request", "cosign_bug",
     }
 
 
