@@ -300,9 +300,9 @@ Acceptance:
   PR, CI, deploy, canaries, rendered chatbot proof, and post-change clean-use
   evidence.
 - A GitHub-hosted scheduled watch runs without the local machine and opens or
-  updates a `community-loop-red` issue when the loop is red after consecutive
-  runs. It reports known blocked states, including missing writer auth, instead
-  of treating successful no-op automation as a healthy loop.
+  updates a `community-loop-red` issue when the loop is red. It reports known
+  blocked states, including missing writer auth, instead of treating
+  successful no-op automation as a healthy loop.
 - If observation fails, the item re-enters the loop instead of being marked
   done.
 

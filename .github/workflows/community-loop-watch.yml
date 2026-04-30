@@ -66,7 +66,8 @@ jobs:
           PY
           )
 
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          sed -n '1,240p' community-loop-status.json
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "status=$code"
             echo "overall=$overall"
@@ -82,18 +83,25 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Community loop watch" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **overall**: ${{ steps.watch.outputs.overall }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **exit**: ${{ steps.watch.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '<details><summary>status JSON</summary>' >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          cat community-loop-status.json >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '</details>' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Community loop watch"
+            echo ""
+            echo "- **overall**: ${{ steps.watch.outputs.overall }}"
+            echo "- **exit**: ${{ steps.watch.outputs.status }}"
+            echo ""
+            echo '<details><summary>status JSON</summary>'
+            echo ""
+            echo '```json'
+            cat community-loop-status.json
+            echo '```'
+            echo ""
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when loop is red
+        if: steps.watch.outputs.overall == 'red'
+        run: |
+          exit "${{ steps.watch.outputs.status }}"
 
   alarm-sink:
     needs: watch
@@ -213,7 +221,9 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Community loop alarm sink" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **overall**: ${{ needs.watch.outputs.overall }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **label**: ${{ env.ALARM_ISSUE_LABEL }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Community loop alarm sink"
+            echo ""
+            echo "- **overall**: ${{ needs.watch.outputs.overall }}"
+            echo "- **label**: ${{ env.ALARM_ISSUE_LABEL }}"
+          } >> "$GITHUB_STEP_SUMMARY"
