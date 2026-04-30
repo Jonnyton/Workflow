@@ -3,44 +3,187 @@ name: Auto-fix bug
 # Second half of the auto-detect-and-fix loop.
 #
 # Flow:
-#   wiki file_bug → wiki-bug-sync creates `auto-bug`-labeled GH Issue
-#   → this workflow fires → Claude attempts a fix → PR or `needs-human`.
+#   wiki file_bug -> wiki-bug-sync creates an `auto-bug` GH Issue
+#   -> this workflow discovers pending issues
+#   -> Claude attempts a fix, or the issue is marked `needs-human`.
+#
+# Why this has a backfill path:
+#   wiki-bug-sync intentionally uses GITHUB_TOKEN. GitHub suppresses most
+#   follow-on workflow runs caused by GITHUB_TOKEN events, so an issue label
+#   created by wiki-bug-sync cannot be the only trigger for auto-fix.
 #
 # Auth priority:
-#   1. CLAUDE_CODE_OAUTH_TOKEN (preferred — uses OAuth, no API key needed)
-#   2. ANTHROPIC_API_KEY       (fallback — direct API access)
-#   3. Neither set             → graceful-skip: add `needs-human` label +
+#   1. CLAUDE_CODE_OAUTH_TOKEN (preferred; uses OAuth, no API key needed)
+#   2. ANTHROPIC_API_KEY       (fallback; direct API access)
+#   3. Neither set             -> graceful-skip: add `needs-human` label +
 #                                comment explaining what auth to add; exit 0.
 #
-# Disable toggle: set repo variable AUTO_FIX_DISABLED=true (Settings →
-# Variables → Actions → New repository variable). Flip to false to re-enable.
-# Variable-based toggle preserves the secrets — no data loss.
+# Disable toggle: set repo variable AUTO_FIX_DISABLED=true (Settings ->
+# Variables -> Actions -> New repository variable). Flip to false to re-enable.
+# Variable-based toggle preserves the secrets; no data loss.
 #
 # Branch naming: auto-bug/issue-<N>
-# PR title:      [auto-fix] BUG-NNN: <short title>
-# PR body:       Fixes #<N> + Claude summary
+# PR title/body are requested in the prompt because claude-code-action@v1 no
+# longer accepts the v0 `pr_title` / `pr_body` inputs.
 
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Optional single issue number to process. Empty backfills pending auto-bug issues.
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["Wiki bug sync"]
+    types: [completed]
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/auto-fix-bug.yml"
 
 permissions:
   contents: write        # create branch + push commits
   issues: write          # add labels + comments
   pull-requests: write   # open PRs
 
-concurrency:
-  # One fix attempt per issue at a time.
-  group: auto-fix-${{ github.event.issue.number }}
-  cancel-in-progress: false
-
 jobs:
-  fix:
-    # Only run when the `auto-bug` label was just added.
-    if: github.event.label.name == 'auto-bug'
+  discover:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
 
     steps:
+      - name: Discover pending auto-bug issues
+        id: discover
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const maxIssues = 3;
+
+            function hasLabel(issue, name) {
+              return (issue.labels || []).some((label) => label.name === name);
+            }
+
+            function issueRow(issue) {
+              return {
+                issue_number: issue.number,
+                title: issue.title,
+                body: issue.body || '',
+              };
+            }
+
+            async function issueFromNumber(issueNumber) {
+              const { data: issue } = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: Number(issueNumber),
+              });
+              return issue.pull_request ? null : issue;
+            }
+
+            const rows = [];
+
+            if (context.eventName === 'issues') {
+              const issue = context.payload.issue;
+              const label = context.payload.label;
+              if (
+                label?.name === 'auto-bug' &&
+                !issue.pull_request &&
+                !hasLabel(issue, 'needs-human') &&
+                !hasLabel(issue, 'auto-fix-attempted')
+              ) {
+                rows.push(issueRow(issue));
+              }
+            } else if (context.eventName === 'workflow_dispatch' && core.getInput('issue_number')) {
+              const issue = await issueFromNumber(core.getInput('issue_number'));
+              if (issue) {
+                rows.push(issueRow(issue));
+              }
+            } else {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner,
+                repo,
+                state: 'open',
+                labels: 'auto-bug',
+                per_page: 100,
+              });
+              for (const issue of issues) {
+                if (
+                  issue.pull_request ||
+                  hasLabel(issue, 'needs-human') ||
+                  hasLabel(issue, 'auto-fix-attempted')
+                ) {
+                  continue;
+                }
+                rows.push(issueRow(issue));
+                if (rows.length >= maxIssues) {
+                  break;
+                }
+              }
+            }
+
+            core.info(`Discovered ${rows.length} pending auto-bug issue(s).`);
+            core.setOutput('matrix', JSON.stringify(rows));
+
+  fix:
+    needs: discover
+    if: needs.discover.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        issue: ${{ fromJson(needs.discover.outputs.matrix) }}
+
+    concurrency:
+      # One fix attempt per issue at a time.
+      group: auto-fix-${{ matrix.issue.issue_number }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Ensure automation labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              {
+                name: 'needs-human',
+                color: 'ededed',
+                description: 'Automation could not complete; human follow-up required.',
+              },
+              {
+                name: 'auto-fix-attempted',
+                color: 'fbca04',
+                description: 'Automated fix workflow already attempted this issue.',
+              },
+            ];
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+              }
+            }
+
       - name: Check disable flag
         id: check-disabled
         run: |
@@ -56,20 +199,21 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const issueNumber = Number('${{ matrix.issue.issue_number }}');
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               labels: ['needs-human'],
             });
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               body: [
-                '**Auto-fix skipped** — `AUTO_FIX_DISABLED` repo variable is `true`.',
+                '**Auto-fix skipped** - `AUTO_FIX_DISABLED` repo variable is `true`.',
                 '',
-                'To re-enable: Settings → Variables → Actions → set `AUTO_FIX_DISABLED=false`.',
+                'To re-enable: Settings -> Variables -> Actions -> set `AUTO_FIX_DISABLED=false`.',
               ].join('\n'),
             });
 
@@ -92,26 +236,27 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const issueNumber = Number('${{ matrix.issue.issue_number }}');
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               labels: ['needs-human'],
             });
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               body: [
-                '**Auto-fix skipped** — no Claude auth configured.',
+                '**Auto-fix skipped** - no Claude auth configured.',
                 '',
                 'To enable auto-fix, add one of these repo secrets:',
-                '- `CLAUDE_CODE_OAUTH_TOKEN` *(preferred)* — from https://claude.ai/settings',
-                '- `ANTHROPIC_API_KEY` *(fallback)* — from https://console.anthropic.com',
+                '- `CLAUDE_CODE_OAUTH_TOKEN` *(preferred)* - from https://claude.ai/settings',
+                '- `ANTHROPIC_API_KEY` *(fallback)* - from https://console.anthropic.com',
                 '',
-                'Settings → Secrets and variables → Actions → New repository secret.',
+                'Settings -> Secrets and variables -> Actions -> New repository secret.',
                 '',
-                'Once a secret is added, re-run this workflow or add/remove the `auto-bug` label.',
+                'Once a secret is added, re-run this workflow or remove `needs-human` and re-dispatch.',
               ].join('\n'),
             });
 
@@ -131,23 +276,36 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const issue = context.payload.issue;
+            const issue = ${{ toJson(matrix.issue) }};
             const title = issue.title;
-            const body  = issue.body || '';
+            const body = issue.body || '';
 
-            // Pull BUG-NNN from title like "[BUG-003] some title"
+            // Pull BUG-NNN from title like "[BUG-003] some title".
             const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
-            const bugId = bugMatch ? bugMatch[1].toUpperCase() : `BUG-${String(issue.number).padStart(3,'0')}`;
+            const bugId = bugMatch ? bugMatch[1].toUpperCase() : `BUG-${String(issue.issue_number).padStart(3, '0')}`;
 
-            // Short title = everything after the [BUG-NNN] prefix, trimmed
+            // Short title = everything after the [BUG-NNN] prefix, trimmed.
             const shortTitle = title.replace(/^\[?BUG-\d+\]?\s*/i, '').trim() || title;
 
-            core.setOutput('issue_number', String(issue.number));
+            core.setOutput('issue_number', String(issue.issue_number));
             core.setOutput('bug_id', bugId);
             core.setOutput('short_title', shortTitle);
-            core.setOutput('branch', `auto-bug/issue-${issue.number}`);
             core.setOutput('pr_title', `[auto-fix] ${bugId}: ${shortTitle}`);
             core.setOutput('issue_body', body);
+
+      - name: Mark auto-fix attempted
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode != 'none'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number('${{ matrix.issue.issue_number }}'),
+              labels: ['auto-fix-attempted'],
+            });
 
       - name: Run Claude Code action (OAuth)
         if: >
@@ -156,17 +314,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.meta.outputs.branch }}
-          pr_title: ${{ steps.meta.outputs.pr_title }}
-          pr_body: |
-            Fixes #${{ steps.meta.outputs.issue_number }}
-
-            Auto-generated fix attempt for ${{ steps.meta.outputs.bug_id }}.
-
-            ---
-            *Generated by the auto-fix workflow. Review carefully before merging.*
-          assignees: ''
+          base_branch: main
+          branch_prefix: auto-bug/
+          branch_name_template: issue-${{ steps.meta.outputs.issue_number }}
           prompt: |
             You are fixing a bug in the Workflow repository.
 
@@ -180,10 +330,14 @@ jobs:
             1. Read AGENTS.md and STATUS.md for project context.
             2. Reproduce or reason about the bug from the description.
             3. Find the root cause in the codebase.
-            4. Implement a minimal, targeted fix — no refactoring beyond what's needed.
+            4. Implement a minimal, targeted fix; no refactoring beyond what's needed.
             5. Add or update tests that prove the fix.
             6. Run `python -m ruff check` on touched files and fix any violations.
-            7. Do NOT commit — the action handles branch + PR creation.
+            7. If you make changes, open a pull request titled:
+               ${{ steps.meta.outputs.pr_title }}
+            8. The PR body must start with:
+               Fixes #${{ steps.meta.outputs.issue_number }}
+            9. Include a short fix summary, tests run, and any remaining risks.
 
             If you cannot find the root cause or are not confident in the fix, leave a
             comment in the code and exit gracefully. Do not guess.
@@ -195,17 +349,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.meta.outputs.branch }}
-          pr_title: ${{ steps.meta.outputs.pr_title }}
-          pr_body: |
-            Fixes #${{ steps.meta.outputs.issue_number }}
-
-            Auto-generated fix attempt for ${{ steps.meta.outputs.bug_id }}.
-
-            ---
-            *Generated by the auto-fix workflow. Review carefully before merging.*
-          assignees: ''
+          base_branch: main
+          branch_prefix: auto-bug/
+          branch_name_template: issue-${{ steps.meta.outputs.issue_number }}
           prompt: |
             You are fixing a bug in the Workflow repository.
 
@@ -219,10 +365,40 @@ jobs:
             1. Read AGENTS.md and STATUS.md for project context.
             2. Reproduce or reason about the bug from the description.
             3. Find the root cause in the codebase.
-            4. Implement a minimal, targeted fix — no refactoring beyond what's needed.
+            4. Implement a minimal, targeted fix; no refactoring beyond what's needed.
             5. Add or update tests that prove the fix.
             6. Run `python -m ruff check` on touched files and fix any violations.
-            7. Do NOT commit — the action handles branch + PR creation.
+            7. If you make changes, open a pull request titled:
+               ${{ steps.meta.outputs.pr_title }}
+            8. The PR body must start with:
+               Fixes #${{ steps.meta.outputs.issue_number }}
+            9. Include a short fix summary, tests run, and any remaining risks.
 
             If you cannot find the root cause or are not confident in the fix, leave a
             comment in the code and exit gracefully. Do not guess.
+
+      - name: Mark needs-human if Claude action fails
+        if: >
+          failure() &&
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode != 'none'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = Number('${{ matrix.issue.issue_number }}');
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['needs-human'],
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '**Auto-fix failed** - Claude auth was present, but the automated fix job did not complete cleanly.',
+                '',
+                'The issue is marked `needs-human` so it does not loop silently.',
+              ].join('\n'),
+            });

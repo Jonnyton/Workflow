@@ -7,10 +7,11 @@ Status: active scoping, claimed by `codex-gpt5-desktop` on 2026-04-30.
 Make the community-driven change loop real and observable:
 
 ```text
-wiki bug / patch request
-  -> community-authored investigation branch
-  -> patch packet
-  -> coding/fix branch or PR
+community change request
+  (bug, patch, feature, docs/ops, branch refinement, project-design change)
+  -> community-authored triage / investigation / planning branch
+  -> change packet (patch packet, feature spec, migration plan, etc.)
+  -> implementation branch or PR
   -> CI + review gates
   -> merge + deploy
   -> live user-surface observation
@@ -20,6 +21,8 @@ wiki bug / patch request
 This is wiring and proof work, not a branch redesign. Branches remain
 community-authored and remixable. Platform code should only provide the
 smallest primitives that let those branches run, hand off, and be observed.
+BUG-044 is the first live item because it is available and concrete; it is not
+the boundary of the loop.
 
 ## Current Evidence
 
@@ -29,6 +32,9 @@ GitHub API.
 - PLAN.md already makes this the intended shape: minimal primitives,
   community-build over platform-build, commons-first architecture, GitHub as
   public shared state, Goals above Branches, and user/provider parity.
+- Host reframe on 2026-04-30: the loop is for all project evolution, not just
+  bugs. Bugs, patch requests, feature requests, docs/ops changes, branch
+  refinements, and project-design changes use the same community-driven path.
 - Live MCP has Goal `f10caea2e437` ("Turn a Workflow bug into a patch packet")
   with user-made Branch `0731a3122bd4` (`bug_to_patch_packet_v1`) bound.
 - Live MCP has Goal `4ff5862cc26d` ("Route a patch request through
@@ -55,9 +61,15 @@ GitHub API.
 - `python -m pytest tests/test_bug_investigation_wiring.py
   tests/test_bug_investigation_dispatcher.py
   tests/test_bug_investigation_flow.py -q` passes: 55 passed, 1 skipped.
-- Public GitHub API shows `wiki-bug-sync` exists and the latest visible run
-  succeeded; `auto-fix-bug` has zero runs; no open public `auto-bug` issues or
-  open PRs exist from this loop.
+- Public GitHub API shows `wiki-bug-sync` exists. Run 159 synced BUG-038
+  through BUG-043 into `auto-bug` issues, but did not trigger
+  `auto-fix-bug`; GitHub intentionally suppresses most follow-on workflows
+  caused by `GITHUB_TOKEN` events. BUG-044 was not yet synced by schedule at
+  2026-04-30T02:53Z.
+- `.github/workflows/auto-fix-bug.yml` is being patched to backfill pending
+  `auto-bug` issues on `workflow_run`, schedule, manual dispatch, and workflow
+  file pushes instead of relying only on `issues:labeled`. The same patch
+  updates stale Claude action inputs to the supported v1 input surface.
 - Local `gh` is not authenticated, so live GitHub checks used the public REST
   API. Authenticated issue/PR mutation still needs GitHub app or a configured
   token.
@@ -79,22 +91,24 @@ GitHub API.
 
 ## Gaps To Close
 
-1. **Forward trigger is not wired.** Filing a wiki bug does not enqueue
-   `bug_investigation`.
-2. **Backfill and safety-net are not wired.** Old/unprocessed bugs stay idle if
-   the forward trigger was missing or misconfigured.
+1. **Forward trigger is not wired for the wiki bug lane.** Filing a wiki bug
+   does not enqueue `bug_investigation`.
+2. **Backfill and safety-net are not wired.** Old/unprocessed requests stay
+   idle if the forward trigger was missing or misconfigured.
 3. **Patch packet completion is not observed end-to-end.** The helper can
    attach a packet, but the loop has no proven run-completion hook that appends
    it to the bug page.
 4. **Patch-loop branch is bound but unrunnable.** `change_loop_v1` is attached
    to Goal `4ff5862cc26d`, but live run `020a76ae0530478e` failed with a
    node-id/state-key collision; tracked as BUG-044.
-5. **PR automation is issue-driven, not patch-packet-driven.** The existing
-   GitHub Action starts from `auto-bug` issues and depends on Claude auth; it
-   does not yet consume patch packets or Codex/Codex CLI as a writer path.
+5. **PR automation is issue-driven, not change-packet-driven.** The existing
+   GitHub Action starts from labeled GitHub issues and depends on Claude auth;
+   it does not yet consume change packets or Codex/Codex CLI as a writer path.
+   Current patch fixes the GitHub event/backfill lane only; it does not yet
+   make the writer provider-neutral.
 6. **Observation closure is manual.** No single status object says "BUG-NNN
-   was filed, investigated, PR opened, merged, deployed, live-tested, and
-   clean-use observed."
+   or request N was filed, investigated/planned, PR opened, merged, deployed,
+   live-tested, and clean-use observed."
 7. **Docs are contradictory.** `docs/ops/post-redeploy-validation-runbook.md`
    claims `file_bug` emits a dispatcher request; current code and active exec
    plan show it does not.
@@ -106,17 +120,19 @@ GitHub API.
   and observation results.
 - Do not add new platform tools for convenience if existing primitives compose
   the behavior.
-- A bug filing must never fail because the investigation pipeline is
-  misconfigured. Investigation is best-effort around the durable bug record.
-- Public bug lifecycle state must be reconstructable from durable artifacts:
-  wiki page, GitHub issue/PR, git log, run record, and observation evidence.
+- A request filing must never fail because a downstream branch or automation
+  path is misconfigured. Follow-on work is best-effort around the durable
+  request record.
+- Public request lifecycle state must be reconstructable from durable
+  artifacts: wiki page, GitHub issue/PR, git log, run record, and observation
+  evidence.
 - Final acceptance for MCP/chatbot-visible behavior requires rendered user
   surface proof. Claude.ai is preferred; ChatGPT rendered UI is the fallback
   while Claude is rate-limited.
 
 ## Implementation Slices
 
-### Slice 1: Make `file_bug` enqueue investigation
+### Slice 1: Make the wiki bug lane enqueue investigation
 
 Files likely touched:
 
@@ -197,9 +213,26 @@ Acceptance:
 
 - A patch packet or auto-bug issue creates a branch and PR, or a structured
   `needs-human` artifact if no writer provider is configured.
-- PR body links BUG-NNN, wiki page, patch packet, tests, and observation plan.
+- PR body links the request artifact, wiki page, change packet, tests, and
+  observation plan.
 - Writer path is provider-pluggable: Claude action if configured, Codex CLI
   path when available, manual fallback otherwise.
+
+### Slice 5b: Generalize request classes beyond bugs
+
+Files likely touched:
+
+- wiki request intake and sync scripts
+- GitHub labels/workflows
+- community Goal/Branch docs and examples
+
+Acceptance:
+
+- Feature requests, patch requests, docs/ops changes, and project-design
+  proposals can enter the same loop without being mislabeled as bugs.
+- GitHub labels distinguish request kind while sharing the same downstream
+  change-loop primitives.
+- Existing BUG pages remain valid first-class request artifacts.
 
 ### Slice 6: Observation and closure
 
@@ -211,15 +244,17 @@ Files likely touched:
 
 Acceptance:
 
-- One command/report reconstructs BUG-NNN state across wiki, queue/run, issue,
-  PR, CI, deploy, canaries, rendered chatbot proof, and post-fix clean-use
+- One command/report reconstructs request state across wiki, queue/run, issue,
+  PR, CI, deploy, canaries, rendered chatbot proof, and post-change clean-use
   evidence.
 - If observation fails, the item re-enters the loop instead of being marked
   done.
 
-## First Bug To Clear
+## First Live Request To Clear
 
-Use a real existing wiki bug once Slice 1 is in place. Good candidates:
+Use a real existing request once the first lane is in place. BUG-044 is now the
+current live request because it came from the first `change_loop_v1` run and
+has a concrete public transition path. Other good bug-lane candidates:
 
 - BUG-038: provider exhaustion blocked a live branch-run proof.
 - BUG-041: failed branch run snapshot can leave failed node displayed as

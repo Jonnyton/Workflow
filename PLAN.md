@@ -343,6 +343,15 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 
 **Vision:** The world simultaneously pursues shared broad Goals — "research papers", "fantasy writing", "investigative journalism", "scientific meta-analysis", "screenplay production", and more. Each Goal is a first-class shared pursuit; the internet contributes Branches toward it in parallel. The result is not one correct workflow per Goal but a legion of diverse evolving public workflows, all chasing the same ultimate outcome, all improving each other.
 
+**Workflow itself evolves the same way.** Bugs, patch requests, feature
+requests, docs/ops improvements, moderation proposals, branch refinements, and
+project-design changes all enter one community change loop. A BUG page is one
+request artifact inside that loop, not the loop's scope. The platform supplies
+durable public request artifacts, Goal/Branch binding, claim/assignment
+surfaces, GitHub issue/PR bridges, CI/deploy gates, and observation evidence;
+the community supplies and evolves the triage, planning, implementation, and
+review branches that move requests through it.
+
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 
 **Diverse-by-default.** 100 different research-paper workflows from 100 users is a feature, not duplication. Consolidation into "the best" workflow is an anti-pattern; the value is the ecology.
