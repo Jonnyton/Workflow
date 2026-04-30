@@ -70,6 +70,14 @@ GitHub API.
   `auto-bug` issues on `workflow_run`, schedule, manual dispatch, and workflow
   file pushes instead of relying only on `issues:labeled`. The same patch
   updates stale Claude action inputs to the supported v1 input surface.
+- Live GitHub Actions run 1 of `Auto-fix bug` on commit `1251c8e` succeeded
+  at 2026-04-30T03:05Z. It processed issues #88, #87, and #86 and marked each
+  `needs-human` with a bot comment because neither `CLAUDE_CODE_OAUTH_TOKEN`
+  nor `ANTHROPIC_API_KEY` is configured in repo secrets. No PR was opened.
+- CI `actionlint` on commit `1251c8e` failed because push-to-main linted every
+  workflow and surfaced pre-existing shellcheck findings in unrelated workflow
+  files. The follow-up patch narrows push linting to changed workflow files;
+  manual dispatch remains the all-workflows audit.
 - Local `gh` is not authenticated, so live GitHub checks used the public REST
   API. Authenticated issue/PR mutation still needs GitHub app or a configured
   token.
