@@ -1,36 +1,95 @@
 ---
-title: Wiki bug sync runbook
+title: Wiki change sync runbook
 date: 2026-04-21
 status: active
 ---
 
-# Wiki bug sync runbook
+# Wiki change sync runbook
 
 `scripts/wiki_bug_sync.py` + `.github/workflows/wiki-bug-sync.yml`
 
-Polls the wiki every 15 min for new BUG-NNN entries and opens a GitHub Issue
-for each. The "detect" half of the auto-detect-and-fix loop.
+Polls the wiki every 15 min for new BUG-NNN entries and promoted non-bug
+community request artifacts, then opens GitHub Issues. This is the detect half
+of the community change loop.
 
 ## How it works
 
-1. GHA runs `wiki_bug_sync.py` every 15 min (cron `*/15 * * * *`).
+1. GHA runs `wiki_bug_sync.py` every 15 min and on workflow/script pushes.
 2. Script calls `wiki action=list` on `https://tinyassets.io/mcp`.
-3. Filters promoted entries with `type=bug` and `bug_number > cursor`.
-4. For each new bug, calls `wiki action=read` to pull frontmatter (title,
-   severity, component), then POSTs a GH Issue via `GITHUB_TOKEN`.
-5. Issue title: `[BUG-NNN] <title>`. Labels: `auto-bug` + `severity:<level>`.
-6. Commits updated cursor to `.agents/.wiki_bug_sync_cursor` with `[skip ci]`.
+3. BUG lane: filters promoted BUG entries with `bug_number > cursor`.
+4. Community lane: filters promoted non-bug request artifacts not in
+   `.agents/.wiki_change_sync_seen.json`.
+5. For each new item, calls `wiki action=read` to pull frontmatter, then POSTs
+   a GH Issue via `GITHUB_TOKEN`.
+6. BUG issue title: `[BUG-NNN] <title>`. Labels: `auto-bug`, `auto-change`,
+   `request:bug`, and `severity:<level>`.
+7. Non-bug issue title: `[WIKI-<KIND>] <title>`. Labels: `auto-change` and
+   `request:<kind>`.
+8. Commits updated sync state back with `[skip ci]`.
 
-## Cursor file
+## State files
 
-Path: `.agents/.wiki_bug_sync_cursor`  
-Contents: a single integer — the last BUG number successfully synced.
+BUG cursor:
 
-The file is committed to the repo. GHA reads HEAD's cursor, runs sync, then
-commits the incremented cursor back. This makes the pipeline idempotent:
-re-running on the same commit produces no duplicate issues.
+```text
+.agents/.wiki_bug_sync_cursor
+```
 
-**Reset cursor** (re-sync all bugs):
+Contents: a single integer, the last BUG number successfully synced.
+
+Non-bug seen file:
+
+```text
+.agents/.wiki_change_sync_seen.json
+```
+
+Contents: JSON with a sorted `seen_paths` list. The initial committed file
+seeds current promoted non-bug pages so the first generalized run does not
+backfill the whole wiki into GitHub.
+
+Both files are committed to the repo. GHA reads HEAD state, runs sync, then
+commits increments back. This makes reruns idempotent.
+
+## Request kinds
+
+| Wiki artifact shape | GH label |
+|---|---|
+| BUG page | `request:bug` |
+| `pages/plans/feature-*` | `request:feature` |
+| `pages/plans/patch-*` | `request:patch` |
+| `pages/workflows/*` | `request:branch-refinement` |
+| builder notes under `pages/notes/*` | `request:branch-refinement` |
+| strategic/roadmap/design/architecture plans | `request:project-design` |
+| other promoted plans/concepts | `request:docs-ops` |
+
+## Manual trigger
+
+Via GitHub Actions UI: Actions -> "Wiki bug sync" -> Run workflow.
+
+Or via CLI:
+
+```bash
+GITHUB_TOKEN=$(gh auth token) python scripts/wiki_bug_sync.py \
+    --url https://tinyassets.io/mcp \
+    --repo Jonnyton/Workflow \
+    --include-community-requests
+```
+
+## Dry run
+
+```bash
+python scripts/wiki_bug_sync.py \
+    --dry-run \
+    --url https://tinyassets.io/mcp \
+    --repo Jonnyton/Workflow \
+    --include-community-requests
+```
+
+Prints what would be created. It does not touch GitHub or update state files.
+
+## Reset and skip
+
+Reset BUG cursor:
 
 ```bash
 echo 0 > .agents/.wiki_bug_sync_cursor
@@ -39,74 +98,45 @@ git commit -m "chore: reset wiki-bug-sync cursor"
 git push
 ```
 
-**Skip a range** (mark bugs 1–5 as already seen without creating issues):
+Skip BUG range:
 
 ```bash
-echo 5 > .agents/.wiki_bug_sync_cursor
+echo 45 > .agents/.wiki_bug_sync_cursor
 git add .agents/.wiki_bug_sync_cursor
-git commit -m "chore: advance wiki-bug-sync cursor to BUG-005"
+git commit -m "chore: advance wiki-bug-sync cursor to BUG-045"
 git push
 ```
 
-## Manual trigger
-
-Via GitHub Actions UI: Actions → "Wiki bug sync" → Run workflow.
-
-Or via CLI:
-
-```bash
-GITHUB_TOKEN=$(gh auth token) python scripts/wiki_bug_sync.py \
-    --url https://tinyassets.io/mcp \
-    --repo Jonnyton/Workflow
-```
-
-## Dry run (preview without creating issues)
-
-```bash
-python scripts/wiki_bug_sync.py --dry-run
-```
-
-Prints what would be created; does not touch GH or update the cursor.
-
-## Opt-out convention
-
-To prevent a specific BUG-NNN entry from becoming a GH Issue, advance the
-cursor past it manually (see "Skip a range" above). There is no per-bug
-suppression flag — if you want finer control, close the issue immediately
-after it's created.
+Skip a non-bug page by adding its wiki path to
+`.agents/.wiki_change_sync_seen.json` and committing that file.
 
 ## Labels
 
-| Wiki severity | GH label |
-|---|---|
-| `critical` | `severity:critical` |
-| `major` | `severity:major` |
-| `minor` | `severity:minor` |
-| `cosmetic` | `severity:cosmetic` |
-| `low` | `severity:low` |
-| `medium` | `severity:medium` |
-| `high` | `severity:high` |
-| `blocker` | `severity:blocker` |
-| (always) | `auto-bug` |
+Labels are created automatically if missing.
 
-Labels are created automatically if they don't exist. Color: `d93f0b`
-(orange-red) for severity labels, `0075ca` (blue) for `auto-bug`.
+| Label family | Color |
+|---|---|
+| `auto-bug` | `0075ca` |
+| `auto-change` | `0e8a16` |
+| `request:*` | `5319e7` |
+| `severity:*` | `d93f0b` |
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Workflow runs but no issues created | Cursor already past all bugs | Check cursor value; reset if needed |
+| Workflow runs but no issues created | Cursor/seen state already covers all items | Check state files; reset deliberately if needed |
 | `GITHUB_TOKEN is not set` error | Token not passed | Use `--dry-run` locally; GHA provides token automatically |
 | `MCP network error` | Daemon/canary unreachable | Check uptime-canary workflow for P0 status |
-| Duplicate issues | Cursor not committed back | Check GHA job logs for "Cursor unchanged" message; re-run |
-| Labels not applied | Label create race | Re-run; `_gh_ensure_label` is idempotent on 422 |
+| Duplicate BUG issues | Cursor not committed back | Check GHA job logs for sync-state commit errors |
+| Duplicate non-bug issues | Seen file not committed back | Check GHA job logs for sync-state commit errors |
+| Labels not applied | Label create race | Re-run; label creation is idempotent on 422 |
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | All new bugs synced (or none found) |
+| 0 | All new requests synced, or none found |
 | 1 | MCP protocol / response-shape error |
 | 2 | MCP network error |
 | 3 | GitHub API error |

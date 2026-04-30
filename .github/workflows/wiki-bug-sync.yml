@@ -1,16 +1,24 @@
 name: Wiki bug sync
 
-# Polls the wiki every 15 min for new BUG-NNN entries and opens a GH Issue
-# for each. Cursor lives in .agents/.wiki_bug_sync_cursor (committed to repo).
+# Polls the wiki every 15 min for new BUG-NNN entries and promoted community
+# change request artifacts, then opens a GH Issue for each. BUG cursor lives
+# in .agents/.wiki_bug_sync_cursor; non-bug request paths live in
+# .agents/.wiki_change_sync_seen.json. Both are committed to repo.
 # Uses GITHUB_TOKEN — no additional secrets needed.
 #
-# Idempotency: the cursor prevents duplicate issues across runs. Each run
-# reads HEAD's cursor, syncs, and commits the updated cursor back.
+# Idempotency: cursor/seen files prevent duplicate issues across runs. Each
+# run reads HEAD state, syncs, and commits updated state back.
 
 on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/wiki_bug_sync.py"
+      - ".github/workflows/wiki-bug-sync.yml"
+      - ".agents/.wiki_change_sync_seen.json"
 
 permissions:
   contents: write   # to commit updated cursor
@@ -41,16 +49,17 @@ jobs:
         run: |
           python scripts/wiki_bug_sync.py \
             --url https://tinyassets.io/mcp \
-            --repo "$GITHUB_REPOSITORY"
+            --repo "$GITHUB_REPOSITORY" \
+            --include-community-requests
 
-      - name: Commit updated cursor
+      - name: Commit updated sync state
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet .agents/.wiki_bug_sync_cursor; then
-            echo "Cursor unchanged — nothing to commit."
+          if git diff --quiet .agents/.wiki_bug_sync_cursor .agents/.wiki_change_sync_seen.json; then
+            echo "Sync state unchanged — nothing to commit."
           else
-            git add .agents/.wiki_bug_sync_cursor
-            git commit -m "chore: wiki-bug-sync cursor update [skip ci]"
+            git add .agents/.wiki_bug_sync_cursor .agents/.wiki_change_sync_seen.json
+            git commit -m "chore: wiki change sync state update [skip ci]"
             git push
           fi

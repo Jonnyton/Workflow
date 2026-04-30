@@ -84,6 +84,22 @@ GitHub API.
   `issues:labeled` event triggered `Auto-fix bug` run 3, which marked #89
   `needs-human` with the same no-Claude-auth comment. `.agents/.wiki_bug_sync_cursor`
   is advanced to 44 in the follow-up commit to prevent a later duplicate issue.
+- Slice 5b started on 2026-04-30 without touching #18-owned runtime/test
+  files. `scripts/wiki_bug_sync.py` now has an opt-in
+  `--include-community-requests` lane: BUG pages keep the numeric
+  `.wiki_bug_sync_cursor`, while promoted non-bug wiki artifacts use
+  `.agents/.wiki_change_sync_seen.json`. Future promoted feature, patch,
+  docs/ops, branch-refinement, and project-design pages get GitHub Issues
+  labeled `auto-change` plus `request:<kind>`. BUG pages also carry
+  `auto-change` for the shared downstream queue while retaining `auto-bug`.
+- Local proof for Slice 5b: `python -m py_compile scripts/wiki_bug_sync.py`,
+  `python -m ruff check scripts/wiki_bug_sync.py`, `python
+  scripts/wiki_bug_sync.py --dry-run --url https://tinyassets.io/mcp --repo
+  Jonnyton/Workflow --include-community-requests`, and local `actionlint`
+  against `.github/workflows/wiki-bug-sync.yml` +
+  `.github/workflows/auto-fix-bug.yml` pass. The dry-run reports no new
+  current requests with `bug_cursor=44` and `change_seen=12`; new promoted
+  non-bug request pages are the live trigger.
 - Local `gh` is not authenticated, so live GitHub checks used the public REST
   API. Authenticated issue/PR mutation still needs GitHub app or a configured
   token.
@@ -247,6 +263,12 @@ Acceptance:
 - GitHub labels distinguish request kind while sharing the same downstream
   change-loop primitives.
 - Existing BUG pages remain valid first-class request artifacts.
+
+Implementation note:
+
+- This slice uses promoted wiki artifacts as the non-bug entrypoint until a
+  dedicated chatbot `file_change_request` / `file_feature_request` verb can be
+  added after #18 clears the runtime/test write lock.
 
 ### Slice 6: Observation and closure
 

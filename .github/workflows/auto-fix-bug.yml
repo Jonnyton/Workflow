@@ -1,11 +1,13 @@
-name: Auto-fix bug
+name: Auto-fix change
 
-# Second half of the auto-detect-and-fix loop.
+# Second half of the community change loop.
 #
 # Flow:
-#   wiki file_bug -> wiki-bug-sync creates an `auto-bug` GH Issue
+#   wiki request artifact -> wiki-bug-sync creates an `auto-change` GH Issue
+#   (`auto-bug` remains a compatibility label for BUG pages)
 #   -> this workflow discovers pending issues
-#   -> Claude attempts a fix, or the issue is marked `needs-human`.
+#   -> an automated writer attempts a change, or the issue is marked
+#      `needs-human`.
 #
 # Why this has a backfill path:
 #   wiki-bug-sync intentionally uses GITHUB_TOKEN. GitHub suppresses most
@@ -16,13 +18,14 @@ name: Auto-fix bug
 #   1. CLAUDE_CODE_OAUTH_TOKEN (preferred; uses OAuth, no API key needed)
 #   2. ANTHROPIC_API_KEY       (fallback; direct API access)
 #   3. Neither set             -> graceful-skip: add `needs-human` label +
-#                                comment explaining what auth to add; exit 0.
+#                                comment explaining what writer auth to add;
+#                                exit 0.
 #
 # Disable toggle: set repo variable AUTO_FIX_DISABLED=true (Settings ->
 # Variables -> Actions -> New repository variable). Flip to false to re-enable.
 # Variable-based toggle preserves the secrets; no data loss.
 #
-# Branch naming: auto-bug/issue-<N>
+# Branch naming: auto-change/issue-<N>
 # PR title/body are requested in the prompt because claude-code-action@v1 no
 # longer accepts the v0 `pr_title` / `pr_body` inputs.
 
@@ -32,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: Optional single issue number to process. Empty backfills pending auto-bug issues.
+        description: Optional single issue number to process. Empty backfills pending auto-change issues.
         required: false
         type: string
   workflow_run:
@@ -58,7 +61,7 @@ jobs:
       matrix: ${{ steps.discover.outputs.matrix }}
 
     steps:
-      - name: Discover pending auto-bug issues
+      - name: Discover pending auto-change issues
         id: discover
         uses: actions/github-script@v7
         with:
@@ -66,6 +69,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const maxIssues = 3;
+            const autoLabels = ['auto-change', 'auto-bug'];
 
             function hasLabel(issue, name) {
               return (issue.labels || []).some((label) => label.name === name);
@@ -76,6 +80,7 @@ jobs:
                 issue_number: issue.number,
                 title: issue.title,
                 body: issue.body || '',
+                labels: (issue.labels || []).map((label) => label.name || label),
               };
             }
 
@@ -89,47 +94,60 @@ jobs:
             }
 
             const rows = [];
+            const seenIssueNumbers = new Set();
+
+            function pushIfPending(issue) {
+              if (
+                !issue ||
+                issue.pull_request ||
+                hasLabel(issue, 'needs-human') ||
+                hasLabel(issue, 'auto-fix-attempted') ||
+                seenIssueNumbers.has(issue.number)
+              ) {
+                return;
+              }
+              rows.push(issueRow(issue));
+              seenIssueNumbers.add(issue.number);
+            }
 
             if (context.eventName === 'issues') {
               const issue = context.payload.issue;
               const label = context.payload.label;
               if (
-                label?.name === 'auto-bug' &&
+                autoLabels.includes(label?.name) &&
                 !issue.pull_request &&
                 !hasLabel(issue, 'needs-human') &&
                 !hasLabel(issue, 'auto-fix-attempted')
               ) {
-                rows.push(issueRow(issue));
+                pushIfPending(issue);
               }
             } else if (context.eventName === 'workflow_dispatch' && core.getInput('issue_number')) {
               const issue = await issueFromNumber(core.getInput('issue_number'));
               if (issue) {
-                rows.push(issueRow(issue));
+                pushIfPending(issue);
               }
             } else {
-              const { data: issues } = await github.rest.issues.listForRepo({
-                owner,
-                repo,
-                state: 'open',
-                labels: 'auto-bug',
-                per_page: 100,
-              });
-              for (const issue of issues) {
-                if (
-                  issue.pull_request ||
-                  hasLabel(issue, 'needs-human') ||
-                  hasLabel(issue, 'auto-fix-attempted')
-                ) {
-                  continue;
+              for (const labelName of autoLabels) {
+                const { data: issues } = await github.rest.issues.listForRepo({
+                  owner,
+                  repo,
+                  state: 'open',
+                  labels: labelName,
+                  per_page: 100,
+                });
+                for (const issue of issues) {
+                  pushIfPending(issue);
+                  if (rows.length >= maxIssues) {
+                    break;
+                  }
                 }
-                rows.push(issueRow(issue));
                 if (rows.length >= maxIssues) {
                   break;
                 }
               }
             }
 
-            core.info(`Discovered ${rows.length} pending auto-bug issue(s).`);
+            core.info(`Discovered ${rows.length} pending auto-change issue(s).`);
             core.setOutput('matrix', JSON.stringify(rows));
 
   fix:
@@ -248,9 +266,9 @@ jobs:
               repo: context.repo.repo,
               issue_number: issueNumber,
               body: [
-                '**Auto-fix skipped** - no Claude auth configured.',
+                '**Auto-fix skipped** - no automated writer auth configured.',
                 '',
-                'To enable auto-fix, add one of these repo secrets:',
+                'To enable the current automated writer path, add one of these repo secrets:',
                 '- `CLAUDE_CODE_OAUTH_TOKEN` *(preferred)* - from https://claude.ai/settings',
                 '- `ANTHROPIC_API_KEY` *(fallback)* - from https://console.anthropic.com',
                 '',
@@ -268,7 +286,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract bug metadata
+      - name: Extract request metadata
         if: >
           steps.check-disabled.outputs.disabled == 'false' &&
           steps.auth.outputs.mode != 'none'
@@ -280,17 +298,31 @@ jobs:
             const title = issue.title;
             const body = issue.body || '';
 
-            // Pull BUG-NNN from title like "[BUG-003] some title".
-            const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
-            const bugId = bugMatch ? bugMatch[1].toUpperCase() : `BUG-${String(issue.issue_number).padStart(3, '0')}`;
+            function labelName(label) {
+              return typeof label === 'string' ? label : label.name;
+            }
 
-            // Short title = everything after the [BUG-NNN] prefix, trimmed.
-            const shortTitle = title.replace(/^\[?BUG-\d+\]?\s*/i, '').trim() || title;
+            const labels = (issue.labels || []).map(labelName);
+            const requestKindLabel = labels.find((name) => name?.startsWith('request:'));
+            const requestKind = requestKindLabel ? requestKindLabel.replace('request:', '') : 'change';
+
+            // Pull request id from titles like "[BUG-003] ..." or "[WIKI-FEATURE] ...".
+            const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
+            const wikiMatch = title.match(/\[?(WIKI-[A-Z-]+)\]?/i);
+            const requestId = bugMatch
+              ? bugMatch[1].toUpperCase()
+              : wikiMatch
+                ? wikiMatch[1].toUpperCase()
+                : `ISSUE-${String(issue.issue_number).padStart(3, '0')}`;
+
+            // Short title = everything after the bracketed request prefix, trimmed.
+            const shortTitle = title.replace(/^\[?(BUG-\d+|WIKI-[A-Z-]+)\]?\s*/i, '').trim() || title;
 
             core.setOutput('issue_number', String(issue.issue_number));
-            core.setOutput('bug_id', bugId);
+            core.setOutput('request_id', requestId);
+            core.setOutput('request_kind', requestKind);
             core.setOutput('short_title', shortTitle);
-            core.setOutput('pr_title', `[auto-fix] ${bugId}: ${shortTitle}`);
+            core.setOutput('pr_title', `[auto-change] ${requestId}: ${shortTitle}`);
             core.setOutput('issue_body', body);
 
       - name: Mark auto-fix attempted
@@ -315,12 +347,13 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           base_branch: main
-          branch_prefix: auto-bug/
+          branch_prefix: auto-change/
           branch_name_template: issue-${{ steps.meta.outputs.issue_number }}
           prompt: |
-            You are fixing a bug in the Workflow repository.
+            You are handling a community change request in the Workflow repository.
 
-            Bug ID: ${{ steps.meta.outputs.bug_id }}
+            Request ID: ${{ steps.meta.outputs.request_id }}
+            Request kind: ${{ steps.meta.outputs.request_kind }}
             Issue #${{ steps.meta.outputs.issue_number }}: ${{ steps.meta.outputs.short_title }}
 
             Issue body:
@@ -328,18 +361,19 @@ jobs:
 
             Instructions:
             1. Read AGENTS.md and STATUS.md for project context.
-            2. Reproduce or reason about the bug from the description.
-            3. Find the root cause in the codebase.
-            4. Implement a minimal, targeted fix; no refactoring beyond what's needed.
-            5. Add or update tests that prove the fix.
+            2. Classify the request as bug, patch, feature, docs/ops, branch refinement, or project design.
+            3. For bugs, reproduce or reason about the root cause. For non-bug requests, identify the smallest useful project change.
+            4. Implement a minimal, targeted change; no refactoring beyond what's needed.
+            5. Add or update tests/docs/checks appropriate to the risk.
             6. Run `python -m ruff check` on touched files and fix any violations.
             7. If you make changes, open a pull request titled:
                ${{ steps.meta.outputs.pr_title }}
             8. The PR body must start with:
                Fixes #${{ steps.meta.outputs.issue_number }}
             9. Include a short fix summary, tests run, and any remaining risks.
+            10. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
-            If you cannot find the root cause or are not confident in the fix, leave a
+            If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
 
       - name: Run Claude Code action (API key)
@@ -350,12 +384,13 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           base_branch: main
-          branch_prefix: auto-bug/
+          branch_prefix: auto-change/
           branch_name_template: issue-${{ steps.meta.outputs.issue_number }}
           prompt: |
-            You are fixing a bug in the Workflow repository.
+            You are handling a community change request in the Workflow repository.
 
-            Bug ID: ${{ steps.meta.outputs.bug_id }}
+            Request ID: ${{ steps.meta.outputs.request_id }}
+            Request kind: ${{ steps.meta.outputs.request_kind }}
             Issue #${{ steps.meta.outputs.issue_number }}: ${{ steps.meta.outputs.short_title }}
 
             Issue body:
@@ -363,18 +398,19 @@ jobs:
 
             Instructions:
             1. Read AGENTS.md and STATUS.md for project context.
-            2. Reproduce or reason about the bug from the description.
-            3. Find the root cause in the codebase.
-            4. Implement a minimal, targeted fix; no refactoring beyond what's needed.
-            5. Add or update tests that prove the fix.
+            2. Classify the request as bug, patch, feature, docs/ops, branch refinement, or project design.
+            3. For bugs, reproduce or reason about the root cause. For non-bug requests, identify the smallest useful project change.
+            4. Implement a minimal, targeted change; no refactoring beyond what's needed.
+            5. Add or update tests/docs/checks appropriate to the risk.
             6. Run `python -m ruff check` on touched files and fix any violations.
             7. If you make changes, open a pull request titled:
                ${{ steps.meta.outputs.pr_title }}
             8. The PR body must start with:
                Fixes #${{ steps.meta.outputs.issue_number }}
             9. Include a short fix summary, tests run, and any remaining risks.
+            10. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
-            If you cannot find the root cause or are not confident in the fix, leave a
+            If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
 
       - name: Mark needs-human if Claude action fails
@@ -397,7 +433,7 @@ jobs:
               repo: context.repo.repo,
               issue_number: issueNumber,
               body: [
-                '**Auto-fix failed** - Claude auth was present, but the automated fix job did not complete cleanly.',
+                '**Auto-fix failed** - writer auth was present, but the automated change job did not complete cleanly.',
                 '',
                 'The issue is marked `needs-human` so it does not loop silently.',
               ].join('\n'),
