@@ -989,6 +989,15 @@ class BranchDefinition:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
 
+        # LangGraph StateGraph reserves one namespace for state keys and node
+        # ids. Catch collisions here so validate_branch/run_branch can return
+        # a builder-actionable error before live graph compilation starts.
+        for node_id in sorted(seen_graph & field_names):
+            errors.append(
+                f"Node id '{node_id}' conflicts with state field '{node_id}'. "
+                "Rename either the node id or the state field before running."
+            )
+
         # Build-time placeholder validation: every ``{ident}`` in a
         # node's prompt_template must resolve via the node's
         # input_keys OR the branch-level state_schema. Runtime

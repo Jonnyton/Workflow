@@ -179,6 +179,44 @@ def test_compiler_synthesized_typeddict_reducer_append():
     assert result["log"] == ["start", "from-a", "from-b"]
 
 
+def test_branch_validate_rejects_node_id_state_key_collision():
+    """BUG-044: LangGraph rejects node ids that reuse state field names."""
+    b = BranchDefinition(name="change_loop_v1", entry_point="investigation_gate")
+    b.node_defs = [
+        NodeDefinition(
+            node_id="investigation_gate",
+            display_name="Investigation gate",
+            prompt_template="Gate: {request}",
+            output_keys=["investigation_gate"],
+        ),
+    ]
+    b.graph_nodes = [
+        GraphNodeRef(
+            id="investigation_gate",
+            node_def_id="investigation_gate",
+        ),
+    ]
+    b.edges = [
+        EdgeDefinition(from_node="START", to_node="investigation_gate"),
+        EdgeDefinition(from_node="investigation_gate", to_node="END"),
+    ]
+    b.state_schema = [
+        {"name": "request", "type": "str"},
+        {"name": "investigation_gate", "type": "str"},
+    ]
+
+    errors = b.validate()
+
+    assert any(
+        "investigation_gate" in error
+        and "node id"
+        in error.lower()
+        and "state field"
+        in error.lower()
+        for error in errors
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompt-template substitution (bug #44)
 # ─────────────────────────────────────────────────────────────────────────────
