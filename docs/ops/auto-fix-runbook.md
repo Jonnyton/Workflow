@@ -71,6 +71,12 @@ comments, labels `needs-human` + `auto-fix-reviewed` + `auto-fix-blocked`, and
 exits green so the hosted loop reports a real queue state instead of a broken
 workflow.
 
+If Codex pushes a branch but GitHub repository policy blocks Actions from
+opening the PR, the workflow comments with the branch URL, labels the issue
+`needs-human` + `auto-fix-reviewed` + `auto-fix-pr-blocked`, and exits green.
+This preserves the branch for another daemon or human to open while preventing
+the scheduler from re-spending subscription runs on the same request.
+
 ### Path C - No subscription auth (graceful-skip)
 
 When no approved subscription-backed writer secret is visible to GitHub
@@ -167,6 +173,7 @@ gh issue edit <N> --add-label daemon-request
 | Claude path rate-limited | Claude action failed and no subscription-backed Codex lane is wired | Issue is marked `needs-human`; do not fall through to API-key billing |
 | Workflow green but issue has `auto-fix-blocked` | Writer auth worked, but the subscription writer found no safe autonomous patch | Human or another daemon should refine the request, land the prerequisite, or manually redispatch |
 | Issue closed with `auto-fix-already-fixed` | Writer verified the request is already addressed and no repo change was needed | No action unless the closure rationale is wrong; reopen or redispatch manually |
+| Issue has `auto-fix-pr-blocked` | Writer pushed a branch, but repository Actions policy blocked `GITHUB_TOKEN` from creating the PR | Open the branch PR through a user/app token, or enable repo Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
 | Workflow not triggering | Issue labeled before workflow existed | Re-label with `auto-change` |

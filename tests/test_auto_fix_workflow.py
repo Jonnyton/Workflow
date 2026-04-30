@@ -282,6 +282,17 @@ def test_codex_pr_gets_cross_family_checker(wf):
     assert "Required checker family: Claude" in script
 
 
+def test_codex_pr_creation_policy_block_is_classified(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+    script = str(codex_pr_step.get("with", {}).get("script", ""))
+    assert "github_actions_pr_creation_disabled" in script
+    assert "not permitted to create or approve pull requests" in script
+    assert "core.setOutput('blocked', 'true')" in script
+    assert "core.warning" in script
+
+
 def test_branch_naming_convention(wf):
     steps = wf["jobs"]["fix"]["steps"]
     oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
@@ -327,5 +338,16 @@ def test_no_pr_step_marks_review_without_failing_workflow(wf):
     assert "core.warning" in script
     assert "auto-fix-reviewed" in script
     assert "auto-fix-blocked" in script
+    assert "auto-fix-pr-blocked" in script
     assert "CODEX_BRANCH" in str(no_pr_step.get("env", {}))
+    assert "CODEX_PR_BLOCKED" in str(no_pr_step.get("env", {}))
     assert "mode === 'codex_subscription' && codexBranch" in script
+
+
+def test_pr_blocked_label_is_defined(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    labels_step = next((s for s in steps if s.get("name") == "Ensure automation labels"), None)
+    assert labels_step is not None, "Must define automation labels"
+    script = str(labels_step.get("with", {}).get("script", ""))
+    assert "auto-fix-pr-blocked" in script
+    assert "GitHub blocked Actions from opening the PR" in script

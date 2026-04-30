@@ -252,7 +252,7 @@ jobs:
               {
                 name: 'auto-fix-reviewed',
                 color: 'c2e0c6',
-                description: 'Automated writer reached a final no-PR outcome; retry manually if needed.',
+                description: 'Automated writer reached a final reviewed outcome; retry manually if needed.',
               },
               {
                 name: 'auto-fix-already-fixed',
@@ -263,6 +263,11 @@ jobs:
                 name: 'auto-fix-blocked',
                 color: 'd93f0b',
                 description: 'Automated writer inspected the request but found no safe autonomous patch.',
+              },
+              {
+                name: 'auto-fix-pr-blocked',
+                color: 'd93f0b',
+                description: 'Automated writer pushed a branch, but GitHub blocked Actions from opening the PR.',
               },
               {
                 name: 'writer:claude',
@@ -663,21 +668,42 @@ jobs:
               head: `${context.repo.owner}:${branch}`,
               per_page: 5,
             });
-            const pr = existing[0] || (await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: process.env.PR_TITLE,
-              head: branch,
-              base: 'main',
-              body: [
-                `Fixes #${issueNumber}`,
-                '',
-                'Writer family: Codex',
-                'Required checker family: Claude',
-                '',
-                'Automated community-loop change produced by the subscription-backed Codex lane.',
-              ].join('\n'),
-            })).data;
+            let pr = existing[0] || null;
+            if (!pr) {
+              try {
+                pr = (await github.rest.pulls.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: process.env.PR_TITLE,
+                  head: branch,
+                  base: 'main',
+                  body: [
+                    `Fixes #${issueNumber}`,
+                    '',
+                    'Writer family: Codex',
+                    'Required checker family: Claude',
+                    '',
+                    'Automated community-loop change produced by the subscription-backed Codex lane.',
+                  ].join('\n'),
+                })).data;
+              } catch (error) {
+                const message = String(error?.message || error);
+                if (
+                  error?.status === 403 &&
+                  message.includes('not permitted to create or approve pull requests')
+                ) {
+                  core.setOutput('blocked', 'true');
+                  core.setOutput('block_reason', 'github_actions_pr_creation_disabled');
+                  core.warning(
+                    'Codex pushed a branch, but GitHub repository policy blocked Actions from opening the PR.'
+                  );
+                  return;
+                }
+                throw error;
+              }
+            }
+            core.setOutput('blocked', 'false');
+            core.setOutput('block_reason', '');
             core.setOutput('number', String(pr.number));
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
@@ -821,6 +847,8 @@ jobs:
           CODEX_BRANCH: ${{ steps.codex-subscription.outputs.branch }}
           CODEX_NO_CHANGE_REASON: ${{ steps.codex-subscription.outputs.no_change_reason }}
           CODEX_LAST_MESSAGE: ${{ steps.codex-subscription.outputs.last_message }}
+          CODEX_PR_BLOCKED: ${{ steps.codex-pr-create.outputs.blocked }}
+          CODEX_PR_BLOCK_REASON: ${{ steps.codex-pr-create.outputs.block_reason }}
         with:
           script: |
             const issueNumber = Number('${{ matrix.issue.issue_number }}');
@@ -844,10 +872,17 @@ jobs:
             const claudeSubscriptionVisible = '${{ steps.auth.outputs.has_claude_oauth }}' === 'true';
             const codexSubscriptionVisible = '${{ steps.auth.outputs.has_codex }}' === 'true';
             const codexNoChangeReason = process.env.CODEX_NO_CHANGE_REASON || '';
+            const codexPrBlocked = process.env.CODEX_PR_BLOCKED === 'true';
+            const codexPrBlockReason = process.env.CODEX_PR_BLOCK_REASON || '';
             const labels = ['needs-human'];
-            if (codexNoChangeReason) {
+            if (codexNoChangeReason || codexPrBlocked) {
               labels.push('auto-fix-reviewed');
+            }
+            if (codexNoChangeReason) {
               labels.push('auto-fix-blocked');
+            }
+            if (codexPrBlocked) {
+              labels.push('auto-fix-pr-blocked');
             }
             if (!claudeSubscriptionVisible && !codexSubscriptionVisible) {
               labels.push('auto-fix-claude-subscription-missing');
@@ -876,6 +911,12 @@ jobs:
                 `Claude OAuth outcome: \`${{ steps.claude-oauth.outcome }}\``,
                 `Codex subscription outcome: \`${{ steps.codex-subscription.outcome }}\``,
                 codexNoChangeReason ? `Codex no-change reason: \`${codexNoChangeReason}\`` : '',
+                codexPrBlocked
+                  ? `PR creation blocked: \`${codexPrBlockReason || 'unknown'}\``
+                  : '',
+                codexPrBlocked && branch
+                  ? `Auto-fix branch: https://github.com/${context.repo.owner}/${context.repo.repo}/tree/${branch}`
+                  : '',
                 process.env.CODEX_LAST_MESSAGE
                   ? [
                       '',
