@@ -69,12 +69,17 @@ jobs:
       - name: Discover pending daemon requests
         id: discover
         uses: actions/github-script@v7
+        env:
+          HAS_WRITER_AUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.OPENAI_API_KEY != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          AUTO_FIX_DISABLED: ${{ vars.AUTO_FIX_DISABLED }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const maxIssues = 3;
             const autoLabels = ['daemon-request', 'auto-change', 'auto-bug'];
+            const hasWriterAuth = process.env.HAS_WRITER_AUTH === 'true';
+            const autoFixDisabled = process.env.AUTO_FIX_DISABLED === 'true';
 
             function hasLabel(issue, name) {
               return (issue.labels || []).some((label) => label.name === name);
@@ -102,14 +107,21 @@ jobs:
             const seenIssueNumbers = new Set();
 
             function pushIfPending(issue) {
-              if (
-                !issue ||
-                issue.pull_request ||
-                hasLabel(issue, 'needs-human') ||
-                hasLabel(issue, 'auto-fix-attempted') ||
-                seenIssueNumbers.has(issue.number)
-              ) {
+              if (!issue || issue.pull_request || seenIssueNumbers.has(issue.number)) {
                 return;
+              }
+              const needsHuman = hasLabel(issue, 'needs-human');
+              const attempted = hasLabel(issue, 'auto-fix-attempted');
+              if (attempted) {
+                return;
+              }
+              if (needsHuman && (autoFixDisabled || !hasWriterAuth)) {
+                return;
+              }
+              if (needsHuman) {
+                core.info(
+                  `Retrying needs-human issue #${issue.number} because writer auth is now visible.`
+                );
               }
               rows.push(issueRow(issue));
               seenIssueNumbers.add(issue.number);
@@ -121,7 +133,6 @@ jobs:
               if (
                 autoLabels.includes(label?.name) &&
                 !issue.pull_request &&
-                !hasLabel(issue, 'needs-human') &&
                 !hasLabel(issue, 'auto-fix-attempted')
               ) {
                 pushIfPending(issue);
@@ -207,6 +218,11 @@ jobs:
                 description: 'Automation could not complete; human follow-up required.',
               },
               {
+                name: 'auto-fix-auth-missing',
+                color: 'cfd3d7',
+                description: 'Automated writer auth was missing when the request was last checked.',
+              },
+              {
                 name: 'auto-fix-attempted',
                 color: 'fbca04',
                 description: 'Automated fix workflow already attempted this issue.',
@@ -272,7 +288,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              labels: ['needs-human'],
+              labels: ['needs-human', 'auto-fix-auth-missing'],
             });
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -363,9 +379,32 @@ jobs:
                 '',
                 'Settings -> Secrets and variables -> Actions -> New repository secret.',
                 '',
-                'Once a secret is added, re-run this workflow or remove `needs-human` and re-dispatch.',
+                'Once a secret is added, the scheduled backfill can retry this issue automatically.',
               ].join('\n'),
             });
+
+      - name: Clear auth-missing block when auth is visible
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode != 'none'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = Number('${{ matrix.issue.issue_number }}');
+            for (const label of ['needs-human', 'auto-fix-auth-missing']) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: label,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+              }
+            }
 
       - name: Checkout
         if: >

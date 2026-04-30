@@ -67,12 +67,14 @@ is available.
 
 When no approved Claude/Codex writer secret is visible to GitHub Actions, the
 workflow:
-- Adds `needs-human` label to the issue
+- Adds `needs-human` and `auto-fix-auth-missing` labels to the issue
 - Posts a comment explaining which non-secret auth presence check failed
 - Exits 0 so the pipeline stays green
 
 Change attempts begin automatically the moment one approved writer secret is
-added.
+added. The scheduled backfill retries `needs-human` requests that have not had
+a real writer attempt yet once writer auth is visible, and clears the
+auth-missing labels before attempting the fix.
 
 ## Disable toggle
 
@@ -141,6 +143,7 @@ gh issue edit <N> --add-label daemon-request
 | Symptom | Cause | Fix |
 |---|---|---|
 | `needs-human` added, comment says "no auth" | No approved writer secret visible to GitHub Actions | Add `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` |
+| `needs-human` + `auto-fix-auth-missing` persists after adding auth | Backfill has not run yet, or the issue already has `auto-fix-attempted` from a real writer failure | Wait for the 15-minute schedule or manually dispatch the workflow for that issue |
 | Claude path rate-limited | Claude action failed and `OPENAI_API_KEY` is present | Workflow falls through to Codex CLI |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
