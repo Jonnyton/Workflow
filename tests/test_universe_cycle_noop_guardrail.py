@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from domains.fantasy_author.phases.universe_cycle import (
+from domains.fantasy_daemon.phases.universe_cycle import (
     _MAX_CYCLE_NOOP_STREAK,
     universe_cycle,
 )

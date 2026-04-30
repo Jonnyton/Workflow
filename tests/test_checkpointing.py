@@ -19,7 +19,7 @@ import tempfile
 
 import pytest
 
-from domains.fantasy_author.graphs.scene import build_scene_graph
+from domains.fantasy_daemon.graphs.scene import build_scene_graph
 from workflow.checkpointing import (
     CheckpointRetentionPolicy,
     compile_all_graphs,

@@ -537,7 +537,7 @@ class TestAgenticSearchPolicy:
             lambda *a, **kw: _FakeKG(),
         )
         monkeypatch.setattr(
-            "domains.fantasy_author.phases._paths.resolve_kg_path",
+            "domains.fantasy_daemon.phases._paths.resolve_kg_path",
             lambda state: "/tmp/fake.db",
         )
         # Clear the runtime singletons so run_phase_retrieval falls

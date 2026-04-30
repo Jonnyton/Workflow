@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from domains.fantasy_author.phases._paths import resolve_db_path, resolve_kg_path
+from domains.fantasy_daemon.phases._paths import resolve_db_path, resolve_kg_path
 
 
 class TestDBPathDefaults:
@@ -172,25 +172,25 @@ class TestWorldStateDbRequiresPath:
     """init_db and connect must reject empty db_path."""
 
     def test_init_db_rejects_empty(self) -> None:
-        from domains.fantasy_author.phases.world_state_db import init_db
+        from domains.fantasy_daemon.phases.world_state_db import init_db
 
         with pytest.raises(ValueError, match="explicit db_path"):
             init_db()
 
     def test_connect_rejects_empty(self) -> None:
-        from domains.fantasy_author.phases.world_state_db import connect
+        from domains.fantasy_daemon.phases.world_state_db import connect
 
         with pytest.raises(ValueError, match="explicit db_path"):
             with connect():
                 pass
 
     def test_init_db_with_memory(self) -> None:
-        from domains.fantasy_author.phases.world_state_db import init_db
+        from domains.fantasy_daemon.phases.world_state_db import init_db
 
         init_db(":memory:")
 
     def test_connect_with_memory(self) -> None:
-        from domains.fantasy_author.phases.world_state_db import connect
+        from domains.fantasy_daemon.phases.world_state_db import connect
 
         with connect(":memory:") as conn:
             assert conn is not None

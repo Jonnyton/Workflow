@@ -20,19 +20,19 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import domains.fantasy_author.phases._provider_stub as _provider_stub  # noqa: E402
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
+
+import domains.fantasy_daemon.phases._provider_stub as _provider_stub  # noqa: E402
 
 # Force mock provider responses
 _provider_stub._FORCE_MOCK = True
 
-from domains.fantasy_author.graphs.scene import build_scene_graph  # noqa: E402
-from domains.fantasy_author.phases.commit import commit  # noqa: E402
-from domains.fantasy_author.phases.draft import draft  # noqa: E402
-from domains.fantasy_author.phases.orient import orient  # noqa: E402
-from domains.fantasy_author.phases.plan import plan  # noqa: E402
-
+from domains.fantasy_daemon.graphs.scene import build_scene_graph  # noqa: E402
+from domains.fantasy_daemon.phases.commit import commit  # noqa: E402
+from domains.fantasy_daemon.phases.draft import draft  # noqa: E402
+from domains.fantasy_daemon.phases.orient import orient  # noqa: E402
+from domains.fantasy_daemon.phases.plan import plan  # noqa: E402
 from workflow.desktop.dashboard import DashboardHandler  # noqa: E402
 from workflow.evaluation.structural import StructuralEvaluator, StructuralResult  # noqa: E402
 
@@ -144,7 +144,7 @@ class TestOrientRetrievalIntegration:
         """RetrievalRouter wiring should match the current search policy."""
         from unittest.mock import MagicMock, patch
 
-        import domains.fantasy_author.phases._provider_stub as provider_stub
+        import domains.fantasy_daemon.phases._provider_stub as provider_stub
 
         # Patch the router class at its import source
         mock_router_cls = MagicMock()
@@ -163,7 +163,7 @@ class TestOrientRetrievalIntegration:
         with patch(
             "workflow.retrieval.router.RetrievalRouter", mock_router_cls,
         ):
-            from domains.fantasy_author.phases.orient import _run_retrieval
+            from domains.fantasy_daemon.phases.orient import _run_retrieval
             _run_retrieval(base_state, "test-scene")
 
         if mock_router_cls.called:
@@ -199,8 +199,7 @@ class TestOrientRetrievalIntegration:
         """orient retrieval must not close the daemon-owned KG singleton."""
         from unittest.mock import patch
 
-        from domains.fantasy_author.phases.orient import _run_retrieval
-
+        from domains.fantasy_daemon.phases.orient import _run_retrieval
         from workflow import runtime_singletons as runtime
         from workflow.knowledge.models import (
             FactWithContext,
@@ -262,10 +261,10 @@ class TestEpistemicFiltering:
 
     def test_pov_extracted_from_character_db(self, base_state, tmp_db):
         """When characters exist in the DB, orient picks the most recent."""
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect as ws_connect,
         )
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             init_db,
             upsert_character,
         )
@@ -471,7 +470,7 @@ class TestCommitEvaluationIntegration:
         """Commit module should import from evaluation.structural."""
         import importlib
 
-        commit_mod = importlib.import_module("domains.fantasy_author.phases.commit")
+        commit_mod = importlib.import_module("domains.fantasy_daemon.phases.commit")
         assert hasattr(commit_mod, "_structural_evaluator")
         assert isinstance(commit_mod._structural_evaluator, StructuralEvaluator)
 
@@ -1360,7 +1359,7 @@ class TestStateFlowUniversePath:
     """_universe_path flows from universe state through book/chapter to scene."""
 
     def test_universe_path_flows_to_book_via_internal_key(self):
-        from domains.fantasy_author.graphs.universe import run_book
+        from domains.fantasy_daemon.graphs.universe import run_book
 
         state = {
             "universe_id": "test",
@@ -1375,7 +1374,7 @@ class TestStateFlowUniversePath:
         assert "total_chapters" in result
 
     def test_universe_path_falls_back_to_public_key(self):
-        from domains.fantasy_author.graphs.universe import run_book
+        from domains.fantasy_daemon.graphs.universe import run_book
 
         state = {
             "universe_id": "test",
@@ -1389,7 +1388,7 @@ class TestStateFlowUniversePath:
         assert "total_chapters" in result
 
     def test_make_chapter_input_includes_universe_path(self):
-        from domains.fantasy_author.graphs.book import _make_chapter_input
+        from domains.fantasy_daemon.graphs.book import _make_chapter_input
 
         state = {
             "universe_id": "test",
@@ -1408,7 +1407,7 @@ class TestStateFlowUniversePath:
         Without these, LangGraph silently strips them at the universe
         graph boundary and no downstream node gets the DB path.
         """
-        from domains.fantasy_author.state.universe_state import UniverseState
+        from domains.fantasy_daemon.state.universe_state import UniverseState
 
         annotations = UniverseState.__annotations__
         assert "_db_path" in annotations, "_db_path missing from UniverseState"
@@ -1416,7 +1415,7 @@ class TestStateFlowUniversePath:
         assert "_kg_path" in annotations, "_kg_path missing from UniverseState"
 
     def test_make_scene_input_includes_universe_path(self):
-        from domains.fantasy_author.graphs.chapter import _make_scene_input
+        from domains.fantasy_daemon.graphs.chapter import _make_scene_input
 
         state = {
             "universe_id": "test",
@@ -1442,7 +1441,7 @@ class TestEditorialVerdictIntegration:
 
     def test_clean_structural_pass_accepts(self):
         """Good structural result with no editorial should accept."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.85,
@@ -1453,7 +1452,7 @@ class TestEditorialVerdictIntegration:
 
     def test_hard_failure_reverts(self):
         """Hard structural failure should always revert."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.2,
@@ -1464,7 +1463,7 @@ class TestEditorialVerdictIntegration:
 
     def test_low_structural_score_records_debt(self):
         """Low score without hard failure should accept with debt."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
 
         structural = StructuralResult(
             checks=[], aggregate_score=0.4,
@@ -1482,7 +1481,7 @@ class TestConsolidateNode:
     def test_consolidate_reads_prose_and_summarizes(self):
         """When chapter prose exists on disk, consolidate should call
         the provider and produce a real summary (mocked here)."""
-        from domains.fantasy_author.phases.consolidate import consolidate
+        from domains.fantasy_daemon.phases.consolidate import consolidate
 
         universe = tempfile.mkdtemp()
         book_dir = Path(universe) / "output" / "book-1"
@@ -1507,7 +1506,7 @@ class TestConsolidateNode:
 
     def test_consolidate_falls_back_when_no_prose(self):
         """Without prose on disk, consolidate should use fallback summary."""
-        from domains.fantasy_author.phases.consolidate import consolidate
+        from domains.fantasy_daemon.phases.consolidate import consolidate
 
         universe = tempfile.mkdtemp()
 
@@ -1526,7 +1525,7 @@ class TestConsolidateNode:
 
     def test_consolidate_falls_back_without_universe_path(self):
         """Without _universe_path, consolidate should use fallback."""
-        from domains.fantasy_author.phases.consolidate import consolidate
+        from domains.fantasy_daemon.phases.consolidate import consolidate
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -1734,13 +1733,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_from_facts(self, tmp_path):
         """_upsert_characters_from_facts should insert characters from facts."""
-        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
-        from domains.fantasy_author.phases.fact_extraction import (
+        from domains.fantasy_daemon.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_daemon.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1774,13 +1773,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_skips_stopwords(self, tmp_path):
         """Stopwords like 'The', 'She' should not be upserted as characters."""
-        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
-        from domains.fantasy_author.phases.fact_extraction import (
+        from domains.fantasy_daemon.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_daemon.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1807,8 +1806,8 @@ class TestCharacterUpsert:
 
     def test_commit_upserts_characters(self, tmp_path):
         """Full commit should result in characters in the DB."""
-        from domains.fantasy_author.phases.commit import commit
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.commit import commit
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1849,13 +1848,13 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_short_names(self, tmp_path):
         """Short names like Ryn (3 chars) should be upserted."""
-        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
-        from domains.fantasy_author.phases.fact_extraction import (
+        from domains.fantasy_daemon.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_daemon.phases.fact_extraction import (
             FactWithContext,
             LanguageType,
             SourceType,
         )
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -1881,8 +1880,8 @@ class TestCharacterUpsert:
 
     def test_upsert_characters_prose_fallback(self, tmp_path):
         """When facts are empty, characters should be extracted from prose."""
-        from domains.fantasy_author.phases.commit import _upsert_characters_from_facts
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.commit import _upsert_characters_from_facts
+        from domains.fantasy_daemon.phases.world_state_db import (
             connect,
             get_all_characters,
             init_db,
@@ -2041,8 +2040,7 @@ class TestEditorialReader:
 
     def test_editorial_skips_on_hard_failure(self):
         """Editorial reader should be skipped on structural hard failure."""
-        from domains.fantasy_author.phases.commit import _run_editorial
-
+        from domains.fantasy_daemon.phases.commit import _run_editorial
         from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
@@ -2062,7 +2060,7 @@ class TestEditorialReader:
 
     def test_commit_includes_editorial_notes(self):
         """Commit result should include editorial_notes field."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -2087,7 +2085,7 @@ class TestEditorialReader:
 
     def test_commit_editorial_notes_in_state(self):
         """Commit should return editorial_notes in the state dict."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state: dict[str, Any] = {
             "universe_id": "test",
@@ -2115,8 +2113,7 @@ class TestEditorialVerdict:
 
     def test_accept_without_editorial(self):
         """No editorial -> accept."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
-
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.structural import StructuralResult
 
         structural = StructuralResult(
@@ -2128,8 +2125,7 @@ class TestEditorialVerdict:
 
     def test_revert_on_hard_failure(self):
         """Structural hard failure -> revert."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
-
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import EditorialNotes
         from workflow.evaluation.structural import StructuralResult
 
@@ -2143,8 +2139,7 @@ class TestEditorialVerdict:
 
     def test_second_draft_on_clearly_wrong(self):
         """Clearly wrong concern -> second_draft (first attempt)."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
-
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
@@ -2167,8 +2162,7 @@ class TestEditorialVerdict:
 
     def test_accept_on_second_draft_even_with_clearly_wrong(self):
         """Clearly wrong on second draft -> accept (never block)."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
-
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
@@ -2189,8 +2183,7 @@ class TestEditorialVerdict:
 
     def test_accept_with_non_wrong_concerns(self):
         """Concerns that aren't clearly_wrong -> accept."""
-        from domains.fantasy_author.phases.commit import _compute_editorial_verdict
-
+        from domains.fantasy_daemon.phases.commit import _compute_editorial_verdict
         from workflow.evaluation.editorial import (
             EditorialConcern,
             EditorialNotes,
@@ -2240,7 +2233,7 @@ class TestTunnelManagement:
             patch("shutil.which", return_value="/usr/bin/cloudflared"),
             patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
             patch("atexit.register"),
-            patch("fantasy_author.__main__.threading.Thread", return_value=mock_thread),
+            patch("fantasy_daemon.__main__.threading.Thread", return_value=mock_thread),
         ):
             result = _start_tunnel(8321)
 
@@ -2270,7 +2263,7 @@ class TestTunnelManagement:
             patch("shutil.which", return_value="/usr/bin/cloudflared"),
             patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
             patch("atexit.register"),
-            patch("fantasy_author.__main__.threading.Thread", return_value=mock_thread),
+            patch("fantasy_daemon.__main__.threading.Thread", return_value=mock_thread),
         ):
             result = _start_tunnel(8321, "fantasy-author")
 
@@ -2293,7 +2286,7 @@ class TestTunnelManagement:
             patch("shutil.which", return_value="/usr/bin/cloudflared"),
             patch("subprocess.Popen", return_value=mock_proc),
             patch("atexit.register") as mock_atexit,
-            patch("fantasy_author.__main__.threading.Thread", return_value=mock_thread),
+            patch("fantasy_daemon.__main__.threading.Thread", return_value=mock_thread),
         ):
             _start_tunnel(8321)
 
@@ -2313,8 +2306,8 @@ class TestTunnelManagement:
             patch("shutil.which", return_value="C:/bin/cloudflared.exe"),
             patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
             patch("atexit.register"),
-            patch("fantasy_author.__main__.sys") as mock_sys,
-            patch("fantasy_author.__main__.threading.Thread", return_value=mock_thread),
+            patch("fantasy_daemon.__main__.sys") as mock_sys,
+            patch("fantasy_daemon.__main__.threading.Thread", return_value=mock_thread),
         ):
             mock_sys.platform = "win32"
             _start_tunnel(8321)
@@ -2342,7 +2335,7 @@ class TestTunnelManagement:
         mock_proc = MagicMock()
         mock_proc.stderr = fake_stderr
 
-        with patch("fantasy_author.__main__.logger") as mock_logger:
+        with patch("fantasy_daemon.__main__.logger") as mock_logger:
             _drain_tunnel_stderr(mock_proc)
 
         # Verify the URL was logged

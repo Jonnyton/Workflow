@@ -192,7 +192,7 @@ def test_dirty_check_happens_before_sqlite_write(
         )
 
     monkeypatch.setattr(
-        "workflow.author_server.save_branch_definition", _track,
+        "workflow.daemon_server.save_branch_definition", _track,
     )
     with pytest.raises(DirtyFileError):
         backend.save_branch(_make_branch())
@@ -415,7 +415,7 @@ def test_save_branch_and_commit_dirty_lists_all_and_skips_write(
         raise AssertionError("save_branch_definition should not run on refused save")
 
     monkeypatch.setattr(
-        "workflow.author_server.save_branch_definition", _track,
+        "workflow.daemon_server.save_branch_definition", _track,
     )
 
     with pytest.raises(DirtyFileError) as exc:

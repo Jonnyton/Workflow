@@ -6,16 +6,16 @@ import json
 from unittest.mock import patch
 
 import pytest
-from domains.fantasy_author.graphs.universe import run_book
-from domains.fantasy_author.phases.authorial_priority_review import authorial_priority_review
-from domains.fantasy_author.phases.dispatch_execution import dispatch_execution
-from domains.fantasy_author.phases.foundation_priority_review import foundation_priority_review
-from domains.fantasy_author.phases.target_actions import (
+from fastapi.testclient import TestClient
+
+from domains.fantasy_daemon.graphs.universe import run_book
+from domains.fantasy_daemon.phases.authorial_priority_review import authorial_priority_review
+from domains.fantasy_daemon.phases.dispatch_execution import dispatch_execution
+from domains.fantasy_daemon.phases.foundation_priority_review import foundation_priority_review
+from domains.fantasy_daemon.phases.target_actions import (
     create_provisional_target_from_execution,
     mark_target_for_discard_from_execution,
 )
-from fastapi.testclient import TestClient
-
 from fantasy_daemon.api import app, configure
 from workflow.work_targets import (
     LIFECYCLE_DISCARDED,
@@ -278,7 +278,7 @@ def test_run_book_uses_chapter_target_execution_scope(universe_dir):
         def compile(self):
             return _CompiledGraph()
 
-    with patch("domains.fantasy_author.graphs.book.build_book_graph", return_value=_Graph()):
+    with patch("domains.fantasy_daemon.graphs.book.build_book_graph", return_value=_Graph()):
         result = run_book({
             "universe_id": "test",
             "_universe_path": str(universe_dir),
@@ -326,7 +326,7 @@ def test_run_book_resumes_open_book_target_from_existing_output(universe_dir):
         def compile(self):
             return _CompiledGraph()
 
-    with patch("domains.fantasy_author.graphs.book.build_book_graph", return_value=_Graph()):
+    with patch("domains.fantasy_daemon.graphs.book.build_book_graph", return_value=_Graph()):
         run_book({
             "universe_id": "test",
             "_universe_path": str(universe_dir),
@@ -378,7 +378,7 @@ def test_run_book_uses_scene_target_exact_coordinates(universe_dir):
         def compile(self):
             return _CompiledGraph()
 
-    with patch("domains.fantasy_author.graphs.book.build_book_graph", return_value=_Graph()):
+    with patch("domains.fantasy_daemon.graphs.book.build_book_graph", return_value=_Graph()):
         run_book({
             "universe_id": "test",
             "_universe_path": str(universe_dir),

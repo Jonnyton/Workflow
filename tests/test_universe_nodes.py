@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from domains.fantasy_author.phases.diagnose import diagnose
-from domains.fantasy_author.phases.reflect import (
+from domains.fantasy_daemon.phases.diagnose import diagnose
+from domains.fantasy_daemon.phases.reflect import (
     _MAX_REWRITES_PER_CYCLE,
     _collect_reviewable_canon,
     _evaluate_canon,
@@ -29,9 +29,9 @@ from domains.fantasy_author.phases.reflect import (
     _stamp_reviewed,
     reflect,
 )
-from domains.fantasy_author.phases.select_task import select_task
-from domains.fantasy_author.phases.universe_cycle import universe_cycle
-from domains.fantasy_author.phases.worldbuild import (
+from domains.fantasy_daemon.phases.select_task import select_task
+from domains.fantasy_daemon.phases.universe_cycle import universe_cycle
+from domains.fantasy_daemon.phases.worldbuild import (
     _MAX_DOCS_PER_CYCLE,
     WORLDBUILD_TOPICS,
     _identify_gaps,
@@ -41,7 +41,6 @@ from domains.fantasy_author.phases.worldbuild import (
     _scan_existing_canon,
     worldbuild,
 )
-
 from workflow.notes import add_note, update_note_status
 
 # -----------------------------------------------------------------------
@@ -93,7 +92,7 @@ class TestWorldbuild:
 
     def test_counts_canon_facts_from_db(self, tmp_story_db):
         """High-confidence facts in the DB should be counted."""
-        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_daemon.phases.world_state_db import connect, init_db, store_fact
 
         init_db(tmp_story_db)
         with connect(tmp_story_db) as conn:
@@ -228,7 +227,7 @@ class TestWorldbuild:
         # cycle counts as productive. Patching the function directly is the
         # cleanest way since it has many branches.
         with patch(
-            "domains.fantasy_author.phases.worldbuild._generate_canon_documents",
+            "domains.fantasy_daemon.phases.worldbuild._generate_canon_documents",
             return_value=["canon/new_topic.md"],
         ):
             result = worldbuild(state)
@@ -247,7 +246,7 @@ class TestWorldbuildAutoPremise:
 
     def test_generates_premise_from_canon(self, tmp_path):
         """When PROGRAM.md is missing and canon has files, generate premise."""
-        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
+        from domains.fantasy_daemon.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -263,7 +262,7 @@ class TestWorldbuildAutoPremise:
         }
 
         with patch(
-            "domains.fantasy_author.phases._provider_stub.call_provider",
+            "domains.fantasy_daemon.phases._provider_stub.call_provider",
             return_value="A story of Ryn navigating the shattered glass realm.",
         ):
             result = _maybe_generate_premise(state)
@@ -274,7 +273,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_program_md_exists(self, tmp_path):
         """Should not generate if PROGRAM.md already exists."""
-        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
+        from domains.fantasy_daemon.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -293,7 +292,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_premise_kernel_set(self, tmp_path):
         """Should not generate if premise_kernel is already in state."""
-        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
+        from domains.fantasy_daemon.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -311,7 +310,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_version_positive(self, tmp_path):
         """Should only fire on first worldbuild pass (version == 0)."""
-        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
+        from domains.fantasy_daemon.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -329,7 +328,7 @@ class TestWorldbuildAutoPremise:
 
     def test_skips_when_no_canon_files(self, tmp_path):
         """Should not generate if canon/ is empty."""
-        from domains.fantasy_author.phases.worldbuild import _maybe_generate_premise
+        from domains.fantasy_daemon.phases.worldbuild import _maybe_generate_premise
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -361,7 +360,7 @@ class TestWorldbuildAutoPremise:
         }
 
         with patch(
-            "domains.fantasy_author.phases._provider_stub.call_provider",
+            "domains.fantasy_daemon.phases._provider_stub.call_provider",
             return_value="A tale of the glass realm.",
         ):
             result = worldbuild(state)
@@ -525,7 +524,7 @@ class TestWorldbuildCanonGeneration:
             "_universe_path": str(universe_dir),
         }
         with patch(
-            "domains.fantasy_author.phases.worldbuild._call_for_worldbuild",
+            "domains.fantasy_daemon.phases.worldbuild._call_for_worldbuild",
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
@@ -1195,7 +1194,7 @@ class TestReflectCanonReview:
 
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "domains.fantasy_author.phases.reflect._evaluate_canon",
+            "domains.fantasy_daemon.phases.reflect._evaluate_canon",
             return_value=issues,
         ):
             result = reflect(state)
@@ -1225,7 +1224,7 @@ class TestReflectCanonReview:
 
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "domains.fantasy_author.phases.reflect._evaluate_canon",
+            "domains.fantasy_daemon.phases.reflect._evaluate_canon",
             return_value=issues,
         ):
             result = reflect(state)
@@ -1242,7 +1241,7 @@ class TestReflectCanonReview:
         )
         state = {"_universe_path": str(universe_dir)}
         with patch(
-            "domains.fantasy_author.phases.reflect._evaluate_canon",
+            "domains.fantasy_daemon.phases.reflect._evaluate_canon",
             side_effect=RuntimeError("LLM down"),
         ):
             result = reflect(state)
@@ -1268,11 +1267,11 @@ class TestReflectCanonReview:
         state = {"_universe_path": str(universe_dir)}
         with (
             patch(
-                "domains.fantasy_author.phases.reflect._evaluate_canon",
+                "domains.fantasy_daemon.phases.reflect._evaluate_canon",
                 return_value=issues,
             ),
             patch(
-                "domains.fantasy_author.phases.reflect._rewrite_canon_file",
+                "domains.fantasy_daemon.phases.reflect._rewrite_canon_file",
                 side_effect=RuntimeError("rewrite failed"),
             ),
         ):
@@ -1454,7 +1453,7 @@ class TestCommitWorldbuildSignals:
 
     def test_commit_returns_worldbuild_signals_key(self, tmp_story_db):
         """Commit output should always contain worldbuild_signals."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1470,7 +1469,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_empty_without_universe_path(self, tmp_story_db):
         """No signals generated when no universe_path is set."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1485,7 +1484,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_empty_without_canon(self, tmp_path, tmp_story_db):
         """No signals when there is no canon directory."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         universe_dir = self._make_universe(tmp_path)
         state = {
@@ -1502,7 +1501,7 @@ class TestCommitWorldbuildSignals:
 
     def test_signals_count_in_quality_trace(self, tmp_story_db):
         """quality_trace should include signal count."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = {
             "draft_output": {
@@ -1519,7 +1518,7 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_valid(self):
         """Valid JSON should be parsed into signals."""
-        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _parse_worldbuild_signals
 
         raw = json.dumps([
             {"type": "new_element", "topic": "character", "detail": "Serakh found"},
@@ -1532,19 +1531,19 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_empty(self):
         """Empty array should return empty list."""
-        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _parse_worldbuild_signals
 
         assert _parse_worldbuild_signals("[]") == []
 
     def test_parse_worldbuild_signals_invalid_json(self):
         """Invalid JSON should return empty list, not crash."""
-        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _parse_worldbuild_signals
 
         assert _parse_worldbuild_signals("not json") == []
 
     def test_parse_worldbuild_signals_bad_types_filtered(self):
         """Signals with invalid type should be filtered out."""
-        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _parse_worldbuild_signals
 
         raw = json.dumps([
             {"type": "new_element", "topic": "char", "detail": "ok"},
@@ -1558,7 +1557,7 @@ class TestCommitWorldbuildSignals:
 
     def test_parse_worldbuild_signals_strips_code_fences(self):
         """Should handle markdown code fences around JSON."""
-        from domains.fantasy_author.phases.commit import _parse_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _parse_worldbuild_signals
 
         raw = '```json\n[{"type": "new_element", "topic": "a", "detail": "b"}]\n```'
         signals = _parse_worldbuild_signals(raw)
@@ -1566,7 +1565,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_worldbuild_signals(self, tmp_path):
         """Signals should be persisted to disk."""
-        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _persist_worldbuild_signals
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -1582,7 +1581,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_appends_to_existing(self, tmp_path):
         """New signals should be appended to existing ones."""
-        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _persist_worldbuild_signals
 
         universe_dir = tmp_path / "universe"
         universe_dir.mkdir()
@@ -1600,7 +1599,7 @@ class TestCommitWorldbuildSignals:
 
     def test_persist_graceful_without_universe_path(self):
         """Persist should not crash without universe_path."""
-        from domains.fantasy_author.phases.commit import _persist_worldbuild_signals
+        from domains.fantasy_daemon.phases.commit import _persist_worldbuild_signals
 
         _persist_worldbuild_signals({}, [{"type": "new_element", "topic": "a", "detail": "b"}])
 
@@ -1993,7 +1992,7 @@ class TestWorldbuildSignalDriven:
             "_universe_path": str(universe_dir),
         }
         with patch(
-            "domains.fantasy_author.phases.worldbuild._handle_contradiction",
+            "domains.fantasy_daemon.phases.worldbuild._handle_contradiction",
             side_effect=RuntimeError("LLM down"),
         ):
             result = worldbuild(state)
@@ -2155,7 +2154,7 @@ class TestReflectSignalDriven:
         try:
             state = {"_universe_path": str(universe_dir), "provider": "ollama-local"}
             with patch(
-                "domains.fantasy_author.phases.reflect._evaluate_canon",
+                "domains.fantasy_daemon.phases.reflect._evaluate_canon",
                 return_value=issues,
             ):
                 result = reflect(state)

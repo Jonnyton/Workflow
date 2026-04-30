@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from domains.fantasy_author.phases.orient import orient
-from domains.fantasy_author.phases.writer_tools import select_and_run_writer_tools
+from domains.fantasy_daemon.phases.orient import orient
+from domains.fantasy_daemon.phases.writer_tools import select_and_run_writer_tools
 from workflow.notes import add_note, list_notes
 
 

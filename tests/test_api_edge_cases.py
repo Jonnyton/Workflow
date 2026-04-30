@@ -406,7 +406,7 @@ class TestFactsEdgeCases:
 
     def test_facts_chapter_with_no_results(self, client, universe_dir):
         """Querying chapter that has no facts should return empty."""
-        from domains.fantasy_author.phases.world_state_db import connect, init_db, store_fact
+        from domains.fantasy_daemon.phases.world_state_db import connect, init_db, store_fact
 
         db_path = str(universe_dir / "story.db")
         init_db(db_path)
@@ -436,7 +436,7 @@ class TestPromisesEdgeCases:
 
     def test_resolved_filter(self, client, universe_dir):
         """?status=resolved should only return resolved promises."""
-        from domains.fantasy_author.phases.world_state_db import (
+        from domains.fantasy_daemon.phases.world_state_db import (
             add_promise,
             connect,
             init_db,

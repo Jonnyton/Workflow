@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from domains.fantasy_author.phases.commit import _record_scene_verdict
-from domains.fantasy_author.phases.world_state_db import init_db
+from domains.fantasy_daemon.phases.commit import _record_scene_verdict
+from domains.fantasy_daemon.phases.world_state_db import init_db
 
 
 @pytest.fixture

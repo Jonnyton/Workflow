@@ -5,7 +5,7 @@ Per docs/specs/taskproducer_phase_c.md §2 + §7.
 Contract:
 - `workflow.work_targets` exports ONLY `EXECUTION_KIND_NOTES` among
   the execution-kind constants. BOOK/CHAPTER/SCENE and
-  `infer_execution_scope` live at `domains.fantasy_author.work_kinds`.
+  `infer_execution_scope` live at `domains.fantasy_daemon.work_kinds`.
 - `FANTASY_EXECUTION_KINDS` reflects the full fantasy set.
 - `infer_fantasy_execution_scope` produces the same scope dict the
   previous generic `infer_execution_scope` did for the same fantasy
@@ -31,7 +31,7 @@ def test_workflow_work_targets_only_exports_notes():
 
 
 def test_fantasy_work_kinds_exposes_four_values():
-    from domains.fantasy_author.work_kinds import (
+    from domains.fantasy_daemon.work_kinds import (
         EXECUTION_KIND_BOOK,
         EXECUTION_KIND_CHAPTER,
         EXECUTION_KIND_NOTES,
@@ -50,7 +50,7 @@ def test_fantasy_work_kinds_exposes_four_values():
 
 def test_infer_fantasy_execution_scope_handles_notes(tmp_path):
     """ROLE_NOTES target → execution_kind=notes + just target_id."""
-    from domains.fantasy_author.work_kinds import (
+    from domains.fantasy_daemon.work_kinds import (
         infer_fantasy_execution_scope,
     )
     from workflow.work_targets import ROLE_NOTES, WorkTarget
@@ -69,7 +69,7 @@ def test_infer_fantasy_execution_scope_handles_notes(tmp_path):
 
 def test_infer_fantasy_execution_scope_infers_book_from_default():
     """Publishable target with no kind/scene/chapter hint → BOOK default."""
-    from domains.fantasy_author.work_kinds import (
+    from domains.fantasy_daemon.work_kinds import (
         infer_fantasy_execution_scope,
     )
     from workflow.work_targets import (
@@ -92,7 +92,7 @@ def test_infer_fantasy_execution_scope_infers_book_from_default():
 
 def test_infer_fantasy_execution_scope_infers_scene_from_tags():
     """tags=['scene'] + metadata drives SCENE classification."""
-    from domains.fantasy_author.work_kinds import (
+    from domains.fantasy_daemon.work_kinds import (
         infer_fantasy_execution_scope,
     )
     from workflow.work_targets import (
@@ -121,7 +121,7 @@ def test_infer_fantasy_execution_scope_infers_scene_from_tags():
 
 
 def test_infer_fantasy_execution_scope_none_target():
-    from domains.fantasy_author.work_kinds import (
+    from domains.fantasy_daemon.work_kinds import (
         infer_fantasy_execution_scope,
     )
 

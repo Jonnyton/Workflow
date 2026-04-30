@@ -1,14 +1,14 @@
 ---
-title: Arc B prep — Author→Daemon rename infrastructure deletion (~366 LOC + caller migration)
+title: Arc B prep — Author→Daemon rename infrastructure deletion (~406 LOC + caller migration)
 date: 2026-04-26
 author: navigator
 status: pre-flight scoping (no edits yet)
 companion:
-  - docs/audits/2026-04-27-project-wide-shim-audit.md (Arc B definition + 4-file inventory)
+  - docs/audits/2026-04-27-project-wide-shim-audit.md (Arc B definition + original 4-file inventory; Phase 2 takeover found the fifth gated shim)
   - docs/exec-plans/completed/2026-04-15-author-to-daemon-rename.md (rename arc Phases 1-5)
   - feedback_no_shims_ever (host directive 2026-04-27)
   - docs/exec-plans/completed/2026-04-26-decomp-step-11-prep.md (prep-doc shape model)
-target_task: STATUS Work table #23 — Arc B (rename infra deletion). 4 files / ~366 LOC of compat infrastructure to delete + verify. Closes Phase 5 of the Author→Daemon rename arc.
+target_task: STATUS Work table #23 — Arc B (rename infra deletion). 5 files / ~406 LOC of compat infrastructure to delete + verify. Closes Phase 5 of the Author→Daemon rename arc.
 gates_on: Task #18 (Step 11+ retarget sweep + Arc A/E shim deletion) MUST land first. Test files touched by Arc B caller migration overlap with #18's test-import surface; sequencing #18 before #23 avoids merge-conflict thrash.
 ---
 
@@ -18,7 +18,7 @@ Read-only scope for deleting the Author→Daemon rename compat infrastructure: `
 
 The audit framed Arc B as "4 files, 366 LOC, 2-3h." Verification surfaced **208 import sites across 47 files** still using `domains.fantasy_author.*` paths — far more caller migration than the audit estimate. Most live in `tests/` (192 sites / ~38 files); 13 live in `workflow/` (~8 files); 3 live in `domains/` (the alias modules themselves).
 
-**Recommended split:** Phase 1 (workflow/ + domains/ tree migration, ~16 sites) is suitable for dev-2 NOW (non-overlapping with #18). Phase 2 (tests/ tree migration, ~192 sites) lands AFTER #18 ships, since #18 already touches the test-import surface. Phase 3 (4-file deletion + smoke verify) closes Arc B once Phases 1+2 land.
+**Recommended split:** Phase 1 (workflow/ + domains/ tree migration, ~16 sites) is suitable for dev-2 NOW (non-overlapping with #18). Phase 2 (tests/ tree migration, ~192 sites) lands AFTER #18 ships, since #18 already touches the test-import surface. Phase 3 (5-file deletion + smoke verify) closes Arc B once Phases 1+2 land.
 
 ---
 
@@ -48,7 +48,7 @@ grep -rE "from domains.fantasy_author|import domains.fantasy_author" workflow/ t
 **Reality:** Arc B is **not 2-3h.** Realistic scope is ~6-10h split across 3 phases:
 - Phase 1 (workflow/ + domains/ migration): ~1-2h, 16 sites, 10 files. **Dispatchable now to dev-2 (non-#18 overlap).**
 - Phase 2 (tests/ migration): ~3-5h, 192 sites, 37 files. **Blocked on #18 ship** (test-import surface conflict).
-- Phase 3 (4-file deletion + `WORKFLOW_AUTHOR_RENAME_COMPAT=0` smoke + plugin mirror): ~1-2h. **Blocked on Phases 1+2 green.**
+- Phase 3 (5-file deletion + `WORKFLOW_AUTHOR_RENAME_COMPAT=0` smoke + plugin mirror): ~1-2h. **Blocked on Phases 1+2 green.**
 
 Total revised: ~6-10h. Still LOW risk per arc (mechanical sed + smoke), but materially larger than the audit estimate.
 
@@ -56,7 +56,7 @@ Total revised: ~6-10h. Still LOW risk per arc (mechanical sed + smoke), but mate
 
 ## 2. Symbol enumeration — files to delete (Arc B end-state)
 
-The four files that die when Arc B ships:
+The five compat files that die when Arc B ships:
 
 ### 2.1 `workflow/_rename_compat.py` (~189 LOC)
 
@@ -134,13 +134,14 @@ After Phases 1+2 land (zero callers in workflow/ + domains/ + tests/):
 |---|---|---|
 | `workflow/_rename_compat.py` | 189 | LOW (only consumer is `discovery.py:40`; that line + L111-125 fold into the same commit) |
 | `workflow/author_server.py` | 39 | LOW (no callers) |
+| `fantasy_daemon/author_server.py` | ~40 | LOW (imports `_rename_compat`; must die with the shared gate after callers migrate) |
 | `domains/fantasy_author/__init__.py` | 50 | LOW (no callers post-Phase-1+2) |
 | `domains/fantasy_author/phases/__init__.py` | 88 | LOW (no callers post-Phase-2) |
 | `domains/fantasy_author/` directory | (empty after above) | `git rm -r` once directory is empty |
 | **Plus update:** `workflow/discovery.py:40, 111-125` (delete the rename_compat gate) | ~15 | LOW |
 | **Plus delete:** `tests/test_import_compatibility.py` (purpose-built migration test) | (file) | LOW |
 | **Plus update:** `AGENTS.md` config table — delete the deprecation row if present | ~2 | LOW |
-| **Total** | **~366** | **LOW** |
+| **Total** | **~406** | **LOW** |
 
 ---
 
@@ -180,7 +181,7 @@ Phase 1 (workflow/ + domains/ tree, 16 sites, 10 files) does NOT touch tests/. *
 - Mitigation: per-file `pytest tests/<file>.py -q` before moving on.
 - One coupling risk: `tests/conftest.py` migration affects ALL tests. Migrate conftest LAST + run full suite immediately after.
 
-### Phase 3 (4-file deletion + smoke) — LOW risk
+### Phase 3 (5-file deletion + smoke) — LOW risk
 
 - The smoke test is `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q`. If green, all callers have migrated; safe to delete.
 - If not green, the failing test names the holdout caller; iterate.
@@ -204,7 +205,7 @@ Phase 1 (workflow/ + domains/ tree, 16 sites, 10 files) does NOT touch tests/. *
 | `workflow.author_server` legacy import path | live | dead |
 | `domains.fantasy_author` legacy import path | live | dead |
 | `WORKFLOW_AUTHOR_RENAME_COMPAT` env var | live | dead |
-| Total shim LOC | ~366 | 0 |
+| Total shim LOC | ~406 | 0 |
 | `feedback_no_shims_ever` compliance | partial | full (code layer) |
 | New-contributor confusion ("what's an author?") | yes | no |
 | Plugin mirror carries dead alias code every rebuild | yes | no |
@@ -222,7 +223,7 @@ Phase 1 (workflow/ + domains/ tree, 16 sites, 10 files) does NOT touch tests/. *
 
 Arc B is "done" when:
 
-1. `git ls-files workflow/_rename_compat.py workflow/author_server.py domains/fantasy_author/` returns nothing.
+1. `git ls-files workflow/_rename_compat.py workflow/author_server.py fantasy_daemon/author_server.py domains/fantasy_author/` returns nothing.
 2. `grep -rE "from workflow.author_server|import workflow.author_server|from domains.fantasy_author|import domains.fantasy_author" workflow/ tests/ domains/ --include='*.py'` returns 0 lines (excluding the pre-commit invariant test fixtures, which are string literals not imports).
 3. `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q` is fully green.
 4. `pytest -q` (default env) is fully green.
@@ -237,7 +238,7 @@ Arc B is "done" when:
 
 1. **Approve Phase 1 dispatch to dev-2 NOW?** 16 sites / 10 files / ~1-2h mechanical migration. No #18 overlap. Closes 16/208 of Arc B's caller-migration burden ahead of schedule.
 2. **Approve Phase 2 dispatch to dev (or dev-2) post-#18?** 192 sites / 37 files / ~3-5h. Largest single chunk; sequenced after #18 lands.
-3. **Approve Phase 3 (the actual 4-file deletion) as a separate dev task post-Phase-2?** ~1-2h with smoke verify. Final closing commit on the rename arc.
+3. **Approve Phase 3 (the actual 5-file deletion) as a separate dev task post-Phase-2?** ~1-2h with smoke verify. Final closing commit on the rename arc.
 4. **`workflow/registry.py:13` class-name check** — verify `FantasyAuthorDomain` vs `FantasyDaemonDomain` before Phase 1 dispatch. (Navigator: I'll verify before lead dispatches.)
 5. **`tests/test_import_compatibility.py` deletion confirmed?** Recommend yes — file's purpose dies with the alias modules.
 

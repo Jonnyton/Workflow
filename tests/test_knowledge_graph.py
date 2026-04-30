@@ -641,7 +641,7 @@ class TestEntityExtraction:
 
     def test_fact_extraction_prompt_includes_access_tier(self):
         """FACT_EXTRACTION_SYSTEM should describe access_tier classification."""
-        from domains.fantasy_author.phases.fact_extraction import FACT_EXTRACTION_SYSTEM
+        from domains.fantasy_daemon.phases.fact_extraction import FACT_EXTRACTION_SYSTEM
         assert "access_tier" in FACT_EXTRACTION_SYSTEM
         assert "common knowledge" in FACT_EXTRACTION_SYSTEM
 
@@ -739,7 +739,7 @@ class TestRAPTOR:
 
         try:
             with patch(
-                "domains.fantasy_author.phases._provider_stub.call_provider",
+                "domains.fantasy_daemon.phases._provider_stub.call_provider",
                 return_value="Summary of the cluster.",
             ):
                 tree = rebuild_raptor_from_canon(
@@ -788,7 +788,7 @@ class TestRAPTOR:
                 no_tray=True,
             )
             with patch(
-                "domains.fantasy_author.phases._provider_stub.call_provider",
+                "domains.fantasy_daemon.phases._provider_stub.call_provider",
                 return_value="Summary of cluster.",
             ):
                 controller._build_raptor_tree()

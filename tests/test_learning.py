@@ -264,7 +264,7 @@ class TestLearnNode:
     def _get_learn_module(self):
         """Get the learn module (not the function re-exported by __init__)."""
         import importlib
-        return importlib.import_module("domains.fantasy_author.phases.learn")
+        return importlib.import_module("domains.fantasy_daemon.phases.learn")
 
     def test_learn_returns_expected_keys(self):
         learn_mod = self._get_learn_module()
@@ -371,7 +371,7 @@ class TestEditorialToObservations:
     """Test that editorial notes are converted to learning observations."""
 
     def test_protect_items_become_strength_observations(self):
-        from domains.fantasy_author.phases.learn import _editorial_to_observations
+        from domains.fantasy_daemon.phases.learn import _editorial_to_observations
 
         state = {
             "editorial_notes": {
@@ -388,7 +388,7 @@ class TestEditorialToObservations:
         assert "vivid imagery" in obs[0]["observation"]
 
     def test_concerns_become_growth_observations(self):
-        from domains.fantasy_author.phases.learn import _editorial_to_observations
+        from domains.fantasy_daemon.phases.learn import _editorial_to_observations
 
         state = {
             "editorial_notes": {
@@ -405,13 +405,13 @@ class TestEditorialToObservations:
         assert obs[1]["dimension"] == "craft"
 
     def test_empty_editorial_returns_empty(self):
-        from domains.fantasy_author.phases.learn import _editorial_to_observations
+        from domains.fantasy_daemon.phases.learn import _editorial_to_observations
 
         obs = _editorial_to_observations({}, chapter_number=1)
         assert obs == []
 
     def test_none_editorial_returns_empty(self):
-        from domains.fantasy_author.phases.learn import _editorial_to_observations
+        from domains.fantasy_daemon.phases.learn import _editorial_to_observations
 
         state = {"editorial_notes": None}
         obs = _editorial_to_observations(state, chapter_number=1)
@@ -423,7 +423,7 @@ class TestCraftCardsFromEditorial:
 
     def _get_learn_module(self):
         import importlib
-        return importlib.import_module("domains.fantasy_author.phases.learn")
+        return importlib.import_module("domains.fantasy_daemon.phases.learn")
 
     def test_protect_generates_strength_card(self):
         """Editorial protect items → strength craft cards via learn pipeline."""

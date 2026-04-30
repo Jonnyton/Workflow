@@ -221,7 +221,7 @@ class TestExtBranchValidateSandboxWarnings:
     def _call_validate(self, branch_dict: dict, bwrap_status: dict) -> dict:
         from workflow.api.branches import _ext_branch_validate
 
-        with patch("workflow.author_server.get_branch_definition", return_value=branch_dict):
+        with patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict):
             with patch("workflow.providers.base.get_sandbox_status", return_value=bwrap_status):
                 return json.loads(_ext_branch_validate({"branch_def_id": "b1"}))
 
@@ -257,7 +257,7 @@ class TestExtBranchValidateSandboxWarnings:
     def test_missing_branch_returns_error(self):
         from workflow.api.branches import _ext_branch_validate
 
-        with patch("workflow.author_server.get_branch_definition", side_effect=KeyError("b1")):
+        with patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")):
             result = json.loads(_ext_branch_validate({"branch_def_id": "b1"}))
         assert "error" in result
 
@@ -276,7 +276,7 @@ class TestExtBranchListSandboxFilter:
     def _call_list(self, rows: list[dict], rs_filter: str = "") -> dict:
         from workflow.api.branches import _ext_branch_list
 
-        with patch("workflow.author_server.list_branch_definitions", return_value=rows):
+        with patch("workflow.daemon_server.list_branch_definitions", return_value=rows):
             kwargs: dict = {}
             if rs_filter:
                 kwargs["requires_sandbox"] = rs_filter

@@ -1,7 +1,7 @@
 """Task #18 — MCP submit_request must reach the daemon.
 
 Explorer flagged that `submit_request` wrote `requests.json` but nothing
-under `domains/fantasy_author/` read it — every request was silently
+under `domains/fantasy_daemon/` read it — every request was silently
 discarded. This suite pins the wiring: submit_request → pending entry
 → materialize into a WorkTarget during authorial_priority_review →
 daemon sees it.
@@ -19,10 +19,10 @@ from __future__ import annotations
 import json
 
 import pytest
-from domains.fantasy_author.phases.authorial_priority_review import (
+
+from domains.fantasy_daemon.phases.authorial_priority_review import (
     authorial_priority_review,
 )
-
 from workflow.work_targets import (
     ROLE_NOTES,
     load_work_targets,

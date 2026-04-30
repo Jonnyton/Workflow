@@ -274,7 +274,7 @@ def test_constraint_synthesis_never_blocks():
 
 def test_plan_node_uses_htn_dome_when_goal_present():
     """Plan node runs HTN/DOME when a book-level goal is in orient_result."""
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -312,7 +312,7 @@ def test_plan_node_uses_htn_dome_when_goal_present():
 
 def test_plan_node_skips_htn_dome_without_goal():
     """Plan node works normally when no book-level goal is available."""
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -343,7 +343,7 @@ def test_plan_node_skips_htn_dome_without_goal():
 
 def test_plan_node_goal_from_workflow_instructions():
     """Plan node finds a goal in workflow_instructions if not in orient_result."""
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -371,7 +371,7 @@ def test_plan_node_goal_from_workflow_instructions():
 
 def test_plan_node_goal_from_book_arc():
     """Plan node finds a goal in book_arc state."""
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.plan import plan
 
     state = {
         "orient_result": {
@@ -397,7 +397,7 @@ def test_plan_node_goal_from_book_arc():
 
 def test_plan_node_structural_alignment_scoring():
     """Structural alignment bonus is applied when DOME beats exist."""
-    from domains.fantasy_author.phases.plan import _score_alternative, _structural_alignment_score
+    from domains.fantasy_daemon.phases.plan import _score_alternative, _structural_alignment_score
 
     # Plan beats that match DOME tension pattern
     plan_beats = [
@@ -441,7 +441,7 @@ def test_plan_node_structural_alignment_scoring():
 
 def test_plan_node_constraint_validation_in_output():
     """Plan output includes constraint validation results when available."""
-    from domains.fantasy_author.phases.plan import plan
+    from domains.fantasy_daemon.phases.plan import plan
 
     state = {
         "orient_result": {

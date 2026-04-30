@@ -122,11 +122,11 @@ def _commit_patches():
     """Return context managers that patch commit.py's provider and editorial reader."""
     return (
         patch(
-            "domains.fantasy_author.phases.commit.call_provider",
+            "domains.fantasy_daemon.phases.commit.call_provider",
             return_value=EXTRACTION_JSON,
         ),
         patch(
-            "domains.fantasy_author.phases.commit._run_editorial",
+            "domains.fantasy_daemon.phases.commit._run_editorial",
             return_value=None,
         ),
     )
@@ -138,7 +138,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_with_entities(self, temp_kg, tmp_story_db):
         """Full integration: commit() with real prose -> KG has >0 entities."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -162,7 +162,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_edges(self, temp_kg, tmp_story_db):
         """Commit should also index relationships as edges."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -178,7 +178,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_commit_populates_kg_facts(self, temp_kg, tmp_story_db):
         """Commit should index extracted facts into the KG."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -194,18 +194,18 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_regex_fallback_populates_kg(self, temp_kg, tmp_story_db):
         """When LLM extraction returns bad JSON, regex fallback still populates KG."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
         # Return non-JSON to trigger regex fallback
         with (
             patch(
-                "domains.fantasy_author.phases.commit.call_provider",
+                "domains.fantasy_daemon.phases.commit.call_provider",
                 return_value="This is not valid JSON at all",
             ),
             patch(
-                "domains.fantasy_author.phases.commit._run_editorial",
+                "domains.fantasy_daemon.phases.commit._run_editorial",
                 return_value=None,
             ),
         ):
@@ -223,8 +223,7 @@ class TestCommitKGIntegration:
 
     def test_kg_none_skips_extraction(self, tmp_story_db):
         """When runtime.knowledge_graph is None, entity indexing is skipped."""
-        from domains.fantasy_author.phases.commit import commit
-
+        from domains.fantasy_daemon.phases.commit import commit
         from workflow import runtime_singletons as runtime
 
         assert runtime.knowledge_graph is None
@@ -241,7 +240,7 @@ class TestCommitKGIntegration:
     @pytest.mark.usefixtures("_set_runtime_kg")
     def test_query_entities_after_commit(self, temp_kg, tmp_story_db):
         """Verify query_entities with type filter works after commit."""
-        from domains.fantasy_author.phases.commit import commit
+        from domains.fantasy_daemon.phases.commit import commit
 
         state = _build_commit_state(tmp_story_db)
 
@@ -258,7 +257,7 @@ class TestCommitKGIntegration:
 
 def _build_commit_state(db_path: str) -> dict:
     """Build a minimal state dict that commit() can process."""
-    from domains.fantasy_author.phases.world_state_db import init_db
+    from domains.fantasy_daemon.phases.world_state_db import init_db
 
     init_db(db_path)
 
