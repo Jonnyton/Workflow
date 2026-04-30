@@ -50,7 +50,7 @@ def _default_config() -> ModelConfig:
 
 # Fallback chains per role (spec Section 8.3).
 FALLBACK_CHAINS: dict[str, list[str]] = {
-    "writer": ["claude-code", "codex", "gemini-free", "groq-free", "grok-free", "ollama-local"],
+    "writer": ["codex", "claude-code", "gemini-free", "groq-free", "grok-free", "ollama-local"],
     "judge": ["codex", "gemini-free", "groq-free", "grok-free", "ollama-local"],
     "extract": ["codex", "gemini-free", "groq-free", "ollama-local"],
     "embed": ["ollama-local"],

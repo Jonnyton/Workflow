@@ -84,11 +84,11 @@ def test_allowlist_none_preserves_full_chain(isolated_universe_config):
 
     resp = _run(router.call("writer", "p", "s"))
 
-    # First in chain (claude-code) wins; no other provider attempted.
-    assert resp.provider == "claude-code"
-    assert providers["claude-code"].call_count == 1
+    # First in chain (codex) wins; no other provider attempted.
+    assert resp.provider == "codex"
+    assert providers["codex"].call_count == 1
     for n, p in providers.items():
-        if n != "claude-code":
+        if n != "codex":
             assert p.call_count == 0
 
 

@@ -136,24 +136,24 @@ class TestProviderRouterCall:
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "write prose", "you are a writer")
-        assert resp.provider == "claude-code"
-        assert resp.text == "claude-resp"
-        assert providers["claude-code"].call_count == 1
-        assert providers["codex"].call_count == 0
+        assert resp.provider == "codex"
+        assert resp.text == "codex-resp"
+        assert providers["codex"].call_count == 1
+        assert providers["claude-code"].call_count == 0
 
     @pytest.mark.asyncio
     async def test_writer_falls_back_on_error(self):
         providers = _make_providers(
-            **{"claude-code": FakeProvider(
-                "claude-code", "anthropic",
+            **{"codex": FakeProvider(
+                "codex", "openai",
                 fail_with=ProviderUnavailableError("down"),
             )}
         )
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "write prose", "system")
-        assert resp.provider == "codex"
-        assert resp.text == "codex-resp"
+        assert resp.provider == "claude-code"
+        assert resp.text == "claude-resp"
 
     @pytest.mark.asyncio
     async def test_writer_falls_to_ollama(self):
@@ -215,8 +215,8 @@ class TestProviderRouterCall:
     @pytest.mark.asyncio
     async def test_cooldown_applied_on_unavailable(self):
         providers = _make_providers(
-            **{"claude-code": FakeProvider(
-                "claude-code", "anthropic",
+            **{"codex": FakeProvider(
+                "codex", "openai",
                 fail_with=ProviderUnavailableError("rate limited"),
             )}
         )
@@ -224,16 +224,16 @@ class TestProviderRouterCall:
         router = ProviderRouter(providers=providers, quota=quota)
 
         resp = await router.call("writer", "prompt", "system")
-        # Should have fallen back to codex.
-        assert resp.provider == "codex"
-        # Claude should now be in cooldown.
-        assert quota.available("claude-code") is False
+        # Should have fallen back to claude-code.
+        assert resp.provider == "claude-code"
+        # Codex should now be in cooldown.
+        assert quota.available("codex") is False
 
     @pytest.mark.asyncio
     async def test_timeout_cooldown_applied(self):
         providers = _make_providers(
-            **{"claude-code": FakeProvider(
-                "claude-code", "anthropic",
+            **{"codex": FakeProvider(
+                "codex", "openai",
                 fail_with=ProviderTimeoutError("hung"),
             )}
         )
@@ -241,8 +241,8 @@ class TestProviderRouterCall:
         router = ProviderRouter(providers=providers, quota=quota)
 
         resp = await router.call("writer", "prompt", "system")
-        assert resp.provider == "codex"
-        assert quota.available("claude-code") is False
+        assert resp.provider == "claude-code"
+        assert quota.available("codex") is False
 
 
 # =====================================================================
@@ -281,7 +281,7 @@ class TestPreferredProvider:
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "prompt", "system")
-        assert resp.provider == "claude-code"
+        assert resp.provider == "codex"
         assert providers["gemini-free"].call_count == 0
 
     @pytest.mark.asyncio
@@ -351,7 +351,7 @@ class TestPreferredProvider:
 
         resp = await router.call("writer", "prompt", "system")
         # API-key provider is ignored by default; chain stays subscription-first.
-        assert resp.provider == "claude-code"
+        assert resp.provider == "codex"
 
 
 # =====================================================================
@@ -819,8 +819,8 @@ class TestGrokProvider:
 
 
 class TestFallbackChainDefinitions:
-    def test_writer_chain_starts_with_claude(self):
-        assert FALLBACK_CHAINS["writer"][0] == "claude-code"
+    def test_writer_chain_starts_with_codex(self):
+        assert FALLBACK_CHAINS["writer"][0] == "codex"
         assert FALLBACK_CHAINS["writer"][-1] == "ollama-local"
 
     def test_judge_chain_starts_with_codex(self):
