@@ -584,7 +584,7 @@ def test_unknown_action_catalog_lists_run_actions(runner_env):
 
 def test_run_branch_returns_markdown_text_channel(runner_env):
     """Phase 3.5 — run_branch returns status=queued immediately with a
-    text channel that points callers at the polling surface."""
+    text channel that points callers at the low-budget waiting surface."""
     us, _ = runner_env
     bid = _build_recipe_branch(us)
     result = _call(us, "run_branch", branch_def_id=bid,
@@ -595,8 +595,9 @@ def test_run_branch_returns_markdown_text_channel(runner_env):
     # the text channel (#58). run_id is still present in the dict.
     assert result["run_id"] not in result["text"]
     assert "run_id" in result  # structured content still carries it
-    # Text should direct the caller to the polling surface.
-    assert "stream_run" in result["text"] or "get_run" in result["text"]
+    # Text should direct the caller to the long-poll surface so chatbots
+    # don't burn the per-turn tool budget with repeated stream_run calls.
+    assert "wait_for_run" in result["text"]
 
 
 def test_get_run_text_channel_matches_summary(runner_env):

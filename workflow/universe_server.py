@@ -537,7 +537,8 @@ def extensions(
     Node reuse uses `node_ref_json`. A bare node_id colliding with a
     standalone registration is rejected; pass node_ref_json or intent="copy".
 
-    `run_branch` is async (returns run_id; poll get_run or stream_run).
+    `run_branch` is async (returns run_id; use wait_for_run to long-poll
+    progress without burning chatbot tool budget).
     `get_run` emits a ```mermaid``` diagram for Claude.ai auto-render.
 
     Args: see action group docs in `extension_guide` prompt for full details.
