@@ -148,10 +148,11 @@ class TestConcurrencyTracker:
 
 
 class TestCompileBranchConcurrency:
-    def test_no_budget_compiles_without_tracker(self):
+    def test_no_budget_compiles_with_unbounded_tracker(self):
         branch = _two_node_branch()
         compiled = compile_branch(branch, provider_call=_static_provider())
-        assert compiled.concurrency_tracker is None
+        assert compiled.concurrency_tracker is not None
+        assert compiled.concurrency_tracker.budget is None
 
     def test_branch_budget_creates_tracker(self):
         branch = _two_node_branch()
@@ -198,6 +199,25 @@ class TestCompileBranchConcurrency:
         compiled.graph.compile().invoke({"x": "t"})
         # Sequential nodes acquire/release one at a time → peak = 1.
         assert compiled.concurrency_tracker.stats()["peak"] == 1
+
+    def test_unbounded_run_surfaces_concurrency_stats(self, tmp_path):
+        """Budget-less runs still report peak concurrency for observability."""
+        from workflow.runs import execute_branch, get_run
+
+        branch = _two_node_branch()
+        outcome = execute_branch(
+            tmp_path,
+            branch=branch,
+            inputs={"x": "t"},
+            provider_call=_static_provider("done"),
+        )
+
+        record = get_run(tmp_path, outcome.run_id)
+        assert record["concurrency"] == {
+            "active_now": 0,
+            "peak": 1,
+            "budget": None,
+        }
 
     def test_budget_field_on_branch_preserved_after_fork(self):
         branch = _two_node_branch()

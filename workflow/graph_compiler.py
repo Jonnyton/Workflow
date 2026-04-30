@@ -89,7 +89,8 @@ class EmptyResponseError(CompilerError):
 class ConcurrencyTracker:
     """Track concurrent node executions for observability + budget enforcement.
 
-    Created per-run by ``compile_branch`` when ``concurrency_budget`` is set.
+    Created per-run by ``compile_branch``. When ``budget`` is ``None``, it only
+    records active/peak concurrency; otherwise it also enforces the cap.
     Shared across all node callables in a single branch invocation via closure.
     Thread-safe: lock guards active_count + peak.
     """
@@ -1741,8 +1742,8 @@ def _build_node(
 
     ``llm_policy`` is the effective policy for this node — the node's
     own policy or the branch default; resolved by ``compile_branch``.
-    ``concurrency_tracker`` limits concurrent LLM/sandbox calls via a
-    semaphore acquired before the provider call and released after.
+    ``concurrency_tracker`` records peak node concurrency for every run and
+    limits concurrent LLM/sandbox calls when the branch has a budget.
     """
     from workflow.domain_registry import resolve_domain_callable
 
@@ -1967,14 +1968,13 @@ def compile_branch(
     graph: StateGraph = StateGraph(state_type)
 
     # Build concurrency tracker: override > branch-level > None (unbounded).
+    # Unbounded runs still get a tracker so get_run can surface peak fan-out.
     effective_budget = (
         concurrency_budget_override
         if concurrency_budget_override is not None
         else getattr(branch, "concurrency_budget", None)
     )
-    concurrency_tracker: ConcurrencyTracker | None = (
-        ConcurrencyTracker(effective_budget) if effective_budget is not None else None
-    )
+    concurrency_tracker = ConcurrencyTracker(effective_budget)
 
     node_by_id: dict[str, NodeDefinition] = {
         n.node_id: n for n in branch.node_defs
