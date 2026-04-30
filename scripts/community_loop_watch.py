@@ -42,6 +42,13 @@ AUTH_MISSING_LABEL = "auto-fix-auth-missing"
 CLAUDE_SUBSCRIPTION_MISSING_LABEL = "auto-fix-claude-subscription-missing"
 CODEX_SUBSCRIPTION_MISSING_LABEL = "auto-fix-codex-subscription-missing"
 PROVIDER_EXHAUSTED_LABEL = "auto-fix-provider-exhausted"
+REVIEWED_LABEL = "auto-fix-reviewed"
+ALREADY_FIXED_LABEL = "auto-fix-already-fixed"
+BLOCKED_REVIEWED_LABEL = "auto-fix-blocked"
+PR_BLOCKED_LABEL = "auto-fix-pr-blocked"
+TERMINAL_REVIEW_LABELS = frozenset(
+    {REVIEWED_LABEL, ALREADY_FIXED_LABEL, BLOCKED_REVIEWED_LABEL, PR_BLOCKED_LABEL}
+)
 
 STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}
 
@@ -285,13 +292,14 @@ def queue_stage(
     missing_codex_subscription: list[dict[str, Any]] = []
     auth_missing: list[dict[str, Any]] = []
     provider_exhausted: list[dict[str, Any]] = []
+    reviewed_terminal: list[dict[str, Any]] = []
     attempted: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     old_pending: list[dict[str, Any]] = []
 
     for issue in issues:
         labels = _labels(issue)
-        if BLOCKED_LABEL in labels:
+        if BLOCKED_LABEL in labels and labels.isdisjoint(TERMINAL_REVIEW_LABELS):
             needs_human.append(issue)
             if CLAUDE_SUBSCRIPTION_MISSING_LABEL in labels:
                 missing_subscription.append(issue)
@@ -301,6 +309,8 @@ def queue_stage(
                 auth_missing.append(issue)
             elif PROVIDER_EXHAUSTED_LABEL in labels:
                 provider_exhausted.append(issue)
+        elif not labels.isdisjoint(TERMINAL_REVIEW_LABELS):
+            reviewed_terminal.append(issue)
         elif ATTEMPTED_LABEL in labels:
             attempted.append(issue)
         else:
@@ -322,6 +332,7 @@ def queue_stage(
         "provider_exhausted": [issue.get("number") for issue in provider_exhausted],
         "pending": [issue.get("number") for issue in pending],
         "old_pending": [issue.get("number") for issue in old_pending],
+        "reviewed_terminal": [issue.get("number") for issue in reviewed_terminal],
         "attempted": [issue.get("number") for issue in attempted],
         "request_labels": list(REQUEST_LABELS),
     }
