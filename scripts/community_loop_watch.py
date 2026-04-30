@@ -1,0 +1,552 @@
+"""Community loop watch - cloud-visible health for the change loop.
+
+This is not the MCP uptime canary. It answers the higher-level question:
+is the community-driven change loop actually moving requests from intake to
+writer/release/observation, or is it blocked behind a successful-looking
+workflow?
+
+The script is read-only. It queries public GitHub state (optionally with
+GITHUB_TOKEN for higher rate limits) and exits non-zero only when the loop is
+red. Yellow states are surfaced in output but do not fail the workflow.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+DEFAULT_REPO = "Jonnyton/Workflow"
+DEFAULT_API = "https://api.github.com"
+DEFAULT_TIMEOUT = 20.0
+
+WORKFLOWS = {
+    "intake": "wiki-bug-sync.yml",
+    "writer": "auto-fix-bug.yml",
+    "observation": "uptime-canary.yml",
+    "deploy_prod": "deploy-prod.yml",
+    "deploy_site": "deploy-site.yml",
+}
+
+REQUEST_LABELS = ("auto-change", "auto-bug")
+BLOCKED_LABEL = "needs-human"
+ATTEMPTED_LABEL = "auto-fix-attempted"
+P0_OUTAGE_LABEL = "p0-outage"
+
+STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}
+
+
+class WatchError(Exception):
+    """Raised when the watch cannot read its evidence source."""
+
+    def __init__(self, msg: str, *, code: int = 3) -> None:
+        super().__init__(msg)
+        self.msg = msg
+        self.code = code
+
+
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(tz=dt.timezone.utc)
+
+
+def _parse_time(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    text = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    try:
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _age_min(value: str | None, now: dt.datetime) -> float | None:
+    parsed = _parse_time(value)
+    if parsed is None:
+        return None
+    return max(0.0, (now - parsed).total_seconds() / 60.0)
+
+
+def _gh_get(
+    path: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+    params: dict[str, str | int] | None = None,
+) -> Any:
+    query = f"?{urllib.parse.urlencode(params)}" if params else ""
+    url = f"{api.rstrip('/')}{path}{query}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "workflow-community-loop-watch/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:400]
+        raise WatchError(f"GitHub HTTP {exc.code} for {path}: {body}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise WatchError(f"GitHub request failed for {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise WatchError(f"GitHub response was not JSON for {path}: {exc}") from exc
+
+
+def _labels(issue: dict[str, Any]) -> set[str]:
+    result = set()
+    for label in issue.get("labels", []):
+        if isinstance(label, str):
+            result.add(label)
+        elif isinstance(label, dict) and label.get("name"):
+            result.add(str(label["name"]))
+    return result
+
+
+def _is_pr(issue: dict[str, Any]) -> bool:
+    return "pull_request" in issue
+
+
+def _stage(
+    name: str,
+    status: str,
+    summary: str,
+    *,
+    evidence: str | None = None,
+    url: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "summary": summary,
+        "evidence": evidence,
+        "url": url,
+        "details": details or {},
+    }
+
+
+def _latest_workflow_run(
+    repo: str,
+    workflow_id: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+) -> dict[str, Any] | None:
+    data = _gh_get(
+        f"/repos/{repo}/actions/workflows/{workflow_id}/runs",
+        api=api,
+        token=token,
+        timeout=timeout,
+        params={"per_page": 1},
+    )
+    runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
+    return runs[0] if runs else None
+
+
+def workflow_stage(
+    label: str,
+    repo: str,
+    workflow_id: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+    now: dt.datetime,
+    max_age_min: int | None,
+    stale_status: str = "red",
+) -> dict[str, Any]:
+    run = _latest_workflow_run(
+        repo, workflow_id, api=api, token=token, timeout=timeout
+    )
+    if not run:
+        return _stage(label, "red", f"{workflow_id} has no visible runs")
+
+    conclusion = run.get("conclusion")
+    status = run.get("status")
+    age = _age_min(run.get("created_at"), now)
+    age_text = "unknown age" if age is None else f"{age:.1f} min ago"
+    evidence = f"{workflow_id} latest {status}/{conclusion} ({age_text})"
+
+    details = {
+        "workflow_id": workflow_id,
+        "run_id": run.get("id"),
+        "event": run.get("event"),
+        "status": status,
+        "conclusion": conclusion,
+        "created_at": run.get("created_at"),
+        "updated_at": run.get("updated_at"),
+    }
+
+    if status != "completed":
+        return _stage(
+            label,
+            "yellow",
+            f"{workflow_id} is still {status}",
+            evidence=evidence,
+            url=run.get("html_url"),
+            details=details,
+        )
+    if conclusion != "success":
+        return _stage(
+            label,
+            "red",
+            f"{workflow_id} latest run concluded {conclusion}",
+            evidence=evidence,
+            url=run.get("html_url"),
+            details=details,
+        )
+    if max_age_min is not None and (age is None or age > max_age_min):
+        return _stage(
+            label,
+            stale_status,
+            f"{workflow_id} has not run successfully within {max_age_min} min",
+            evidence=evidence,
+            url=run.get("html_url"),
+            details={**details, "max_age_min": max_age_min},
+        )
+    return _stage(
+        label,
+        "green",
+        f"{workflow_id} latest run is successful",
+        evidence=evidence,
+        url=run.get("html_url"),
+        details=details,
+    )
+
+
+def list_open_issues_by_label(
+    repo: str,
+    label: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+) -> list[dict[str, Any]]:
+    data = _gh_get(
+        f"/repos/{repo}/issues",
+        api=api,
+        token=token,
+        timeout=timeout,
+        params={"state": "open", "labels": label, "per_page": 100},
+    )
+    if not isinstance(data, list):
+        raise WatchError(f"GitHub issues response for {label!r} was not a list")
+    return [issue for issue in data if not _is_pr(issue)]
+
+
+def list_loop_issues(
+    repo: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+) -> list[dict[str, Any]]:
+    by_number: dict[int, dict[str, Any]] = {}
+    for label in REQUEST_LABELS:
+        for issue in list_open_issues_by_label(
+            repo, label, api=api, token=token, timeout=timeout
+        ):
+            number = issue.get("number")
+            if isinstance(number, int):
+                by_number[number] = issue
+    return [by_number[number] for number in sorted(by_number, reverse=True)]
+
+
+def queue_stage(
+    repo: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+    now: dt.datetime,
+    max_pending_age_min: int,
+) -> dict[str, Any]:
+    issues = list_loop_issues(repo, api=api, token=token, timeout=timeout)
+    needs_human: list[dict[str, Any]] = []
+    attempted: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    old_pending: list[dict[str, Any]] = []
+
+    for issue in issues:
+        labels = _labels(issue)
+        if BLOCKED_LABEL in labels:
+            needs_human.append(issue)
+        elif ATTEMPTED_LABEL in labels:
+            attempted.append(issue)
+        else:
+            pending.append(issue)
+            age = _age_min(issue.get("created_at"), now)
+            if age is None or age > max_pending_age_min:
+                old_pending.append(issue)
+
+    details = {
+        "open_loop_issues": len(issues),
+        "needs_human": [issue.get("number") for issue in needs_human],
+        "pending": [issue.get("number") for issue in pending],
+        "old_pending": [issue.get("number") for issue in old_pending],
+        "attempted": [issue.get("number") for issue in attempted],
+        "request_labels": list(REQUEST_LABELS),
+    }
+
+    if needs_human:
+        first = needs_human[0]
+        pending_clause = (
+            f" and {len(old_pending)} pending request(s) are older than "
+            f"{max_pending_age_min} min"
+            if old_pending
+            else ""
+        )
+        return _stage(
+            "Writer queue",
+            "red",
+            (
+                f"{len(needs_human)} open loop request(s) are marked "
+                f"{BLOCKED_LABEL}{pending_clause}; automated writer is blocked"
+            ),
+            evidence=f"first blocked issue #{first.get('number')}: {first.get('title')}",
+            url=first.get("html_url"),
+            details=details,
+        )
+    if old_pending:
+        first = old_pending[0]
+        return _stage(
+            "Writer queue",
+            "red",
+            (
+                f"{len(old_pending)} pending loop request(s) are older than "
+                f"{max_pending_age_min} min"
+            ),
+            evidence=f"oldest visible pending issue #{first.get('number')}: {first.get('title')}",
+            url=first.get("html_url"),
+            details=details,
+        )
+    if pending:
+        first = pending[0]
+        return _stage(
+            "Writer queue",
+            "yellow",
+            f"{len(pending)} fresh loop request(s) are waiting for the next writer pass",
+            evidence=f"newest pending issue #{first.get('number')}: {first.get('title')}",
+            url=first.get("html_url"),
+            details=details,
+        )
+    return _stage(
+        "Writer queue",
+        "green",
+        "no open auto-change/auto-bug requests are waiting on the writer",
+        details=details,
+    )
+
+
+def incident_stage(
+    repo: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    issues = list_open_issues_by_label(
+        repo, P0_OUTAGE_LABEL, api=api, token=token, timeout=timeout
+    )
+    if issues:
+        issue = issues[0]
+        return _stage(
+            "Observation incidents",
+            "red",
+            f"{len(issues)} open {P0_OUTAGE_LABEL} issue(s)",
+            evidence=f"#{issue.get('number')}: {issue.get('title')}",
+            url=issue.get("html_url"),
+            details={"open_p0_outages": [i.get("number") for i in issues]},
+        )
+    return _stage(
+        "Observation incidents",
+        "green",
+        f"no open {P0_OUTAGE_LABEL} issues",
+        details={"open_p0_outages": []},
+    )
+
+
+def classify(stages: list[dict[str, Any]]) -> str:
+    return max((stage["status"] for stage in stages), key=lambda s: STATUS_RANK[s])
+
+
+def build_status(args: argparse.Namespace, now: dt.datetime | None = None) -> dict[str, Any]:
+    current_now = now or _utc_now()
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+    repo = args.repo
+    api = args.api
+    timeout = args.timeout
+
+    stages = [
+        workflow_stage(
+            "Intake sync",
+            repo,
+            WORKFLOWS["intake"],
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_age_min=args.max_sync_age_min,
+        ),
+        workflow_stage(
+            "Writer workflow",
+            repo,
+            WORKFLOWS["writer"],
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_age_min=args.max_writer_age_min,
+        ),
+        queue_stage(
+            repo,
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_pending_age_min=args.max_pending_age_min,
+        ),
+        workflow_stage(
+            "Observation canary",
+            repo,
+            WORKFLOWS["observation"],
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_age_min=args.max_observation_age_min,
+        ),
+        incident_stage(repo, api=api, token=token, timeout=timeout),
+        workflow_stage(
+            "Production deploy",
+            repo,
+            WORKFLOWS["deploy_prod"],
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_age_min=None,
+        ),
+        workflow_stage(
+            "Website deploy",
+            repo,
+            WORKFLOWS["deploy_site"],
+            api=api,
+            token=token,
+            timeout=timeout,
+            now=current_now,
+            max_age_min=None,
+        ),
+    ]
+    overall = classify(stages)
+    return {
+        "version": 1,
+        "checked_at": current_now.isoformat().replace("+00:00", "Z"),
+        "repo": repo,
+        "overall": overall,
+        "exit_code": 2 if overall == "red" else 0,
+        "stages": stages,
+    }
+
+
+def error_status(exc: WatchError, now: dt.datetime | None = None) -> dict[str, Any]:
+    current_now = now or _utc_now()
+    return {
+        "version": 1,
+        "checked_at": current_now.isoformat().replace("+00:00", "Z"),
+        "repo": None,
+        "overall": "red",
+        "exit_code": exc.code,
+        "stages": [
+            _stage(
+                "GitHub evidence read",
+                "red",
+                "community loop watch could not read GitHub evidence",
+                evidence=exc.msg,
+            )
+        ],
+    }
+
+
+def format_human(status: dict[str, Any]) -> str:
+    lines = [
+        f"Community loop status: {status['overall'].upper()}",
+        f"Checked: {status['checked_at']}",
+        f"Repo: {status.get('repo') or '(unknown)'}",
+        "",
+    ]
+    for stage in status["stages"]:
+        lines.append(f"- {stage['status'].upper()} {stage['name']}: {stage['summary']}")
+        if stage.get("evidence"):
+            lines.append(f"  evidence: {stage['evidence']}")
+        if stage.get("url"):
+            lines.append(f"  url: {stage['url']}")
+    return "\n".join(lines)
+
+
+def make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Report cloud-visible health of the community change loop.",
+    )
+    parser.add_argument("--repo", default=DEFAULT_REPO)
+    parser.add_argument("--api", default=DEFAULT_API)
+    parser.add_argument("--token", default=None, help="GitHub token; defaults to GITHUB_TOKEN")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    parser.add_argument(
+        "--max-sync-age-min",
+        type=int,
+        default=90,
+        help="Red if wiki-bug-sync latest success is older than this.",
+    )
+    parser.add_argument(
+        "--max-writer-age-min",
+        type=int,
+        default=90,
+        help="Red if auto-fix latest success is older than this.",
+    )
+    parser.add_argument(
+        "--max-observation-age-min",
+        type=int,
+        default=90,
+        help="Red if uptime-canary latest success is older than this.",
+    )
+    parser.add_argument(
+        "--max-pending-age-min",
+        type=int,
+        default=45,
+        help="Red if an unattempted loop issue is older than this.",
+    )
+    parser.add_argument("--json", action="store_true", help="Print JSON instead of text.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = make_parser().parse_args(argv)
+    try:
+        status = build_status(args)
+    except WatchError as exc:
+        status = error_status(exc)
+
+    if args.json:
+        print(json.dumps(status, indent=2, sort_keys=True))
+    else:
+        print(format_human(status))
+    return int(status["exit_code"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

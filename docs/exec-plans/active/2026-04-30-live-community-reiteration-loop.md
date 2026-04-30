@@ -18,6 +18,12 @@ community change request
   -> wiki/GitHub status update or re-entry into the loop
 ```
 
+Acceptance is uptime-shaped once the loop is built: users must be able to
+check the public website from a phone while this local computer is off and see
+whether the loop is running, blocked, or recovering from real community
+interactions. Website rendering is a separate preview-approved UI slice; this
+plan owns the cloud-visible loop status contract and alarm path.
+
 This is wiring and proof work, not a branch redesign. Branches remain
 community-authored and remixable. Platform code should only provide the
 smallest primitives that let those branches run, hand off, and be observed.
@@ -103,6 +109,13 @@ GitHub API.
 - Local `gh` is not authenticated, so live GitHub checks used the public REST
   API. Authenticated issue/PR mutation still needs GitHub app or a configured
   token.
+- Slice 6 loop watch started on 2026-04-30 without website UI edits. Local
+  `scripts/community_loop_watch.py` reads public GitHub state and currently
+  reports RED: intake and deploy workflows are green, but 9 open loop issues
+  are `needs-human`, 32 pending loop issues are older than 45 minutes,
+  `uptime-canary.yml` latest run is failed/stale, and open P0 issue #79 is
+  still live. This is the first cloud-visible status contract for the website
+  to render after preview approval.
 
 ## Existing Pieces
 
@@ -142,6 +155,9 @@ GitHub API.
 7. **Docs are contradictory.** `docs/ops/post-redeploy-validation-runbook.md`
    claims `file_bug` emits a dispatcher request; current code and active exec
    plan show it does not.
+8. **Loop uptime is not independently watched.** The existing uptime ladder
+   proves MCP/tool/wiki surfaces, but no cloud-scheduled probe says whether
+   intake, queue, writer, release, and observation are operating as one loop.
 
 ## Domain Invariants
 
@@ -283,6 +299,10 @@ Acceptance:
 - One command/report reconstructs request state across wiki, queue/run, issue,
   PR, CI, deploy, canaries, rendered chatbot proof, and post-change clean-use
   evidence.
+- A GitHub-hosted scheduled watch runs without the local machine and opens or
+  updates a `community-loop-red` issue when the loop is red after consecutive
+  runs. It reports known blocked states, including missing writer auth, instead
+  of treating successful no-op automation as a healthy loop.
 - If observation fails, the item re-enters the loop instead of being marked
   done.
 

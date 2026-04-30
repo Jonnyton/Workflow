@@ -1,0 +1,219 @@
+name: Community loop watch
+
+# Cloud-side status/alarm for the community-driven change loop.
+#
+# This is the uptime-shaped acceptance layer above raw MCP canaries:
+# intake sync, auto-fix writer, open loop queue, deploy lanes, and observation
+# incidents must line up as one working system. Runs on GitHub infrastructure,
+# so the signal survives the local development machine being off.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Wiki bug sync", "Auto-fix change", "Uptime canary", "deploy-site", "Deploy prod"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - "scripts/community_loop_watch.py"
+      - ".github/workflows/community-loop-watch.yml"
+      - "docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: community-loop-watch
+  cancel-in-progress: false
+
+env:
+  ALARM_ISSUE_LABEL: community-loop-red
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      overall: ${{ steps.watch.outputs.overall }}
+      status: ${{ steps.watch.outputs.status }}
+      msg: ${{ steps.watch.outputs.msg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run community loop watch
+        id: watch
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python scripts/community_loop_watch.py --json > community-loop-status.json 2>&1
+          code=$?
+          set -e
+
+          cat community-loop-status.json
+          overall=$(python - <<'PY'
+          import json
+          with open("community-loop-status.json", encoding="utf-8") as f:
+              print(json.load(f).get("overall", "red"))
+          PY
+          )
+
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          {
+            echo "status=$code"
+            echo "overall=$overall"
+            echo "msg<<${_delim}"
+            cat community-loop-status.json
+            echo "${_delim}"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$overall" = "red" ]; then
+            exit "$code"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Community loop watch" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **overall**: ${{ steps.watch.outputs.overall }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **exit**: ${{ steps.watch.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '<details><summary>status JSON</summary>' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat community-loop-status.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '</details>' >> "$GITHUB_STEP_SUMMARY"
+
+  alarm-sink:
+    needs: watch
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Manage community-loop-red issue
+        uses: actions/github-script@v7
+        env:
+          OVERALL: ${{ needs.watch.outputs.overall }}
+          PROBE_STATUS: ${{ needs.watch.outputs.status }}
+          PROBE_MSG: ${{ needs.watch.outputs.msg }}
+          LABEL: ${{ env.ALARM_ISSUE_LABEL }}
+        with:
+          script: |
+            const overall = process.env.OVERALL || 'red';
+            const label = process.env.LABEL;
+            const probeStatus = process.env.PROBE_STATUS || '(unknown)';
+            const probeMsg = process.env.PROBE_MSG || '';
+            const now = new Date().toISOString();
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'd73a4a',
+                  description: 'Auto-opened when the community change loop is not operating end-to-end.',
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            const openIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 5,
+            });
+            const openIssue = openIssues.data[0] || null;
+
+            function formatBody(kind) {
+              return [
+                `**${kind}** @ ${now}`,
+                ``,
+                `- watch exit: \`${probeStatus}\``,
+                `- workflow run: ${runUrl}`,
+                ``,
+                `<details><summary>community loop status JSON</summary>`,
+                ``,
+                '```json',
+                probeMsg.trim() || '(empty)',
+                '```',
+                ``,
+                `</details>`,
+              ].join('\n');
+            }
+
+            if (overall === 'red') {
+              if (openIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: openIssue.number,
+                  body: formatBody('RED'),
+                });
+                console.log(`appended RED to #${openIssue.number}`);
+                return;
+              }
+
+              const result = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Community loop red - ${now}`,
+                labels: [label],
+                body: [
+                  'Auto-opened by the community loop watch.',
+                  'The loop is not operating end-to-end from cloud-visible public evidence.',
+                  '',
+                  formatBody('RED'),
+                ].join('\n'),
+              });
+              console.log(`opened issue #${result.data.number}`);
+              return;
+            }
+
+            if (openIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                body: formatBody(`${overall.toUpperCase()} - RECOVERED`),
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              console.log(`closed #${openIssue.number} as recovered`);
+            } else {
+              console.log(`steady ${overall} - no community-loop-red issue open`);
+            }
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Community loop alarm sink" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **overall**: ${{ needs.watch.outputs.overall }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **label**: ${{ env.ALARM_ISSUE_LABEL }}" >> "$GITHUB_STEP_SUMMARY"
