@@ -62,13 +62,23 @@ WORKFLOW_MCP_CANARY_URL=https://tinyassets.io/mcp
 
 
 # ---------------------------------------------------------------------
-# OpenAI / Codex provider
+# Subscription-backed LLM auth
 # ---------------------------------------------------------------------
 
-# API key for the codex CLI (used by workflow/providers/codex_provider.py).
-# The codex CLI reads OPENAI_API_KEY from the environment at runtime.
-# Leave blank to disable the Codex provider — the daemon will fall back
-# to Claude or other configured providers.
+# Cloud daemons must not use API-key billing lanes for LLM work. Compose
+# also sets this explicitly; keep the file value for hosts that launch
+# the image without compose.
+WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1
+
+# Optional base64-encoded ~/.codex/auth.json produced by a subscription
+# login. This is subscription auth material, not an OpenAI API key. The
+# entrypoint writes it to the runtime user's Codex config and unsets the
+# env var before starting the daemon.
+WORKFLOW_CODEX_AUTH_JSON_B64=
+
+# Deprecated legacy placeholder. Cloud-daemon startup strips this var
+# when WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1; do not fill it for
+# Workflow cloud daemons.
 OPENAI_API_KEY=
 
 

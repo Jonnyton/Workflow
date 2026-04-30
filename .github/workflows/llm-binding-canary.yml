@@ -5,8 +5,8 @@ name: LLM binding canary
 # after 2 consecutive reds; closes it on recovery.
 #
 # Why: verify_llm_binding.py was previously run only from the host
-# machine. When host is offline, silent binding loss (token rotation,
-# codex CLI drift, docker restart) goes undetected for hours.
+# machine. When host is offline, silent binding loss (subscription auth
+# expiry, codex CLI drift, docker restart) goes undetected for hours.
 # This workflow runs on GitHub's infra every 6h — zero host dependency.
 #
 # Consecutive-state: open llm-binding-red issue IS the state.
@@ -186,8 +186,8 @@ jobs:
                     `Auto-opened by the LLM binding canary after ${threshold} consecutive reds.`,
                     `Daemon at \`${process.env.PROBE_URL}\` reports no LLM provider bound.`,
                     ``,
-                    `Likely causes: OPENAI_API_KEY rotated, codex CLI missing from image, ` +
-                    `OLLAMA_HOST unset after container restart.`,
+                    `Likely causes: subscription auth missing/expired, codex CLI missing ` +
+                    `from image, or container restarted without the env file.`,
                     ``,
                     `See: \`scripts/verify_llm_binding.py\` + \`docs/ops/host-independence-runbook.md\``,
                     ``,

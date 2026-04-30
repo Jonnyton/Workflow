@@ -147,8 +147,8 @@ USER workflow
 EXPOSE 8001
 
 # tini as PID 1 handles signal forwarding + zombie reaping.
-# docker-entrypoint.sh runs codex login on first start if auth is missing,
-# then execs the CMD.
+# docker-entrypoint.sh enforces cloud-daemon subscription-only auth,
+# optionally installs a subscription Codex auth bundle, then execs the CMD.
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker-entrypoint.sh"]
 
 # Default command — the FastMCP streamable-http server on 0.0.0.0:8001.

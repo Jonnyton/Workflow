@@ -129,6 +129,14 @@ GitHub API.
   `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp
   --verbose` was green locally. The loop is now visible as down rather than
   falsely green.
+- Subscription-only writer policy shipped to `main` on 2026-04-30 at commit
+  `a68fef6`. Live proof: `Auto-fix change` run `25149820884` exited success
+  without using API-key billing lanes, labeled issue #64
+  `auto-fix-claude-subscription-missing`, and reported
+  `CLAUDE_CODE_OAUTH_TOKEN=false`, `OPENAI_API_KEY=true` (diagnostic only).
+  Follow-up deploy hardening strips API-key provider env vars from
+  containerized cloud daemons when `WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1`
+  and supports subscription Codex auth via `WORKFLOW_CODEX_AUTH_JSON_B64`.
 
 ## Existing Pieces
 
@@ -193,6 +201,9 @@ GitHub API.
 - Final acceptance for MCP/chatbot-visible behavior requires rendered user
   surface proof. Claude.ai is preferred; ChatGPT rendered UI is the fallback
   while Claude is rate-limited.
+- Cloud daemons must run LLM work through host subscription auth only.
+  API-key billing lanes are diagnostics or legacy local-only material, not
+  cloud writer/checker auth.
 
 ## Implementation Slices
 

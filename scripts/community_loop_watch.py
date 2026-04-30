@@ -38,6 +38,9 @@ REQUEST_LABELS = ("daemon-request", "auto-change", "auto-bug")
 BLOCKED_LABEL = "needs-human"
 ATTEMPTED_LABEL = "auto-fix-attempted"
 P0_OUTAGE_LABEL = "p0-outage"
+AUTH_MISSING_LABEL = "auto-fix-auth-missing"
+CLAUDE_SUBSCRIPTION_MISSING_LABEL = "auto-fix-claude-subscription-missing"
+PROVIDER_EXHAUSTED_LABEL = "auto-fix-provider-exhausted"
 
 STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}
 
@@ -277,6 +280,9 @@ def queue_stage(
 ) -> dict[str, Any]:
     issues = list_loop_issues(repo, api=api, token=token, timeout=timeout)
     needs_human: list[dict[str, Any]] = []
+    missing_subscription: list[dict[str, Any]] = []
+    auth_missing: list[dict[str, Any]] = []
+    provider_exhausted: list[dict[str, Any]] = []
     attempted: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     old_pending: list[dict[str, Any]] = []
@@ -285,6 +291,12 @@ def queue_stage(
         labels = _labels(issue)
         if BLOCKED_LABEL in labels:
             needs_human.append(issue)
+            if CLAUDE_SUBSCRIPTION_MISSING_LABEL in labels:
+                missing_subscription.append(issue)
+            elif AUTH_MISSING_LABEL in labels:
+                auth_missing.append(issue)
+            elif PROVIDER_EXHAUSTED_LABEL in labels:
+                provider_exhausted.append(issue)
         elif ATTEMPTED_LABEL in labels:
             attempted.append(issue)
         else:
@@ -296,6 +308,11 @@ def queue_stage(
     details = {
         "open_loop_issues": len(issues),
         "needs_human": [issue.get("number") for issue in needs_human],
+        "missing_claude_subscription": [
+            issue.get("number") for issue in missing_subscription
+        ],
+        "auth_missing": [issue.get("number") for issue in auth_missing],
+        "provider_exhausted": [issue.get("number") for issue in provider_exhausted],
         "pending": [issue.get("number") for issue in pending],
         "old_pending": [issue.get("number") for issue in old_pending],
         "attempted": [issue.get("number") for issue in attempted],
@@ -304,6 +321,15 @@ def queue_stage(
 
     if needs_human:
         first = needs_human[0]
+        root_cause = "automated writer is blocked"
+        if missing_subscription:
+            root_cause = (
+                "Claude subscription OAuth is not visible to GitHub Actions"
+            )
+        elif auth_missing:
+            root_cause = "approved subscription-backed writer auth is missing"
+        elif provider_exhausted:
+            root_cause = "approved writer provider returned quota/capacity exhaustion"
         pending_clause = (
             f" and {len(old_pending)} pending request(s) are older than "
             f"{max_pending_age_min} min"
@@ -315,7 +341,7 @@ def queue_stage(
             "red",
             (
                 f"{len(needs_human)} open loop request(s) are marked "
-                f"{BLOCKED_LABEL}{pending_clause}; automated writer is blocked"
+                f"{BLOCKED_LABEL}{pending_clause}; {root_cause}"
             ),
             evidence=f"first blocked issue #{first.get('number')}: {first.get('title')}",
             url=first.get("html_url"),

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# docker-entrypoint.sh — container startup shim.
+# docker-entrypoint.sh - container startup shim.
 #
-# 1. Detect silently-empty env_file — emit canonical ENV-UNREADABLE
-#    marker to stderr → journald so p0-outage-triage can grep + repair
-#    without an SSH shell. Navigator 2026-04-22 §b layer-3.
-# 2. If OPENAI_API_KEY is set and codex auth is missing, run
-#    `codex login --with-api-key` so the codex provider works
-#    without manual pre-login steps on every fresh container.
-# 3. exec the passed CMD (preserves tini PID-1 signal forwarding).
+# 1. Detect silently-empty env_file and emit canonical ENV-UNREADABLE
+#    markers to stderr so p0-outage-triage can grep and repair without
+#    an SSH shell. Navigator 2026-04-22 section b layer-3.
+# 2. In cloud-daemon subscription-only mode, strip API-key provider
+#    environment variables before the daemon starts.
+# 3. Optionally install a subscription-backed Codex auth bundle from
+#    WORKFLOW_CODEX_AUTH_JSON_B64. Legacy `codex login --with-api-key`
+#    from OPENAI_API_KEY is intentionally not run.
+# 4. exec the passed CMD (preserves tini PID-1 signal forwarding).
 #
 # Placed before CMD so operators can override CMD freely.
 
@@ -20,7 +22,7 @@ set -euo pipefail
 # (/etc/workflow/env not readable by user=workflow on the host). This
 # entrypoint-level check catches an adjacent subclass: compose read the
 # env_file, but the file was empty or stripped, so the container boots
-# with no real env — silently broken.
+# with no real env, silently broken.
 #
 # Heuristic: at least one of the required secrets must be non-empty. An
 # all-empty env indicates compose silently passed an empty file. The
@@ -45,14 +47,44 @@ if [[ "${_any_set}" -eq 0 ]]; then
     exit 1
 fi
 
+_truthy() {
+    case "${1:-}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_api_key_env=(
+    OPENAI_API_KEY
+    ANTHROPIC_API_KEY
+    ANTHROPIC_BASE_URL
+    GEMINI_API_KEY
+    GROQ_API_KEY
+    XAI_API_KEY
+)
+
+if _truthy "${WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY:-}"; then
+    for _name in "${_api_key_env[@]}"; do
+        if [[ -n "${!_name:-}" ]]; then
+            echo "[entrypoint] ignoring ${_name}: cloud daemons are subscription-only" >&2
+            unset "${_name}"
+        fi
+    done
+fi
+
 # Codex stores auth in ~/.codex/auth.json relative to the running user.
 CODEX_AUTH_FILE="${HOME:-/app}/.codex/auth.json"
 
-if [[ -n "${OPENAI_API_KEY:-}" && ! -f "${CODEX_AUTH_FILE}" ]]; then
-    echo "[entrypoint] codex auth missing — running codex login..."
-    printf '%s' "${OPENAI_API_KEY}" | codex login --with-api-key 2>&1 || {
-        echo "[entrypoint] WARN: codex login exited non-zero (continuing anyway)"
-    }
+if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" ]]; then
+    if [[ -f "${CODEX_AUTH_FILE}" ]]; then
+        echo "[entrypoint] codex subscription auth already exists"
+    else
+        echo "[entrypoint] installing codex subscription auth bundle"
+        mkdir -p "$(dirname "${CODEX_AUTH_FILE}")"
+        printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | base64 -d > "${CODEX_AUTH_FILE}"
+        chmod 600 "${CODEX_AUTH_FILE}"
+    fi
+    unset WORKFLOW_CODEX_AUTH_JSON_B64
 fi
 
 exec "$@"
