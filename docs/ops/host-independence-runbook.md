@@ -276,13 +276,17 @@ for `llm_endpoint_bound=unset`.
 2. Provide subscription auth, e.g. set `WORKFLOW_CODEX_AUTH_JSON_B64` to a
    base64-encoded Codex subscription `~/.codex/auth.json`, or use the approved
    Claude subscription lane for GitHub Actions (`CLAUDE_CODE_OAUTH_TOKEN`).
-3. SSH to droplet, edit `/etc/workflow/env`, then restore permissions:
-   `sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env`
+3. Preferred: set `WORKFLOW_CODEX_AUTH_JSON_B64` as a GitHub Actions secret,
+   then trigger `.github/workflows/deploy-prod.yml`. Deploy syncs the bundle
+   into `/etc/workflow/env` through `deploy/install-workflow-env.sh`, keeps it
+   out of logs, and forces `WORKFLOW_ALLOW_API_KEY_PROVIDERS=0`.
+4. Manual fallback: SSH to droplet, edit `/etc/workflow/env`, then restore
+   permissions: `sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env`
    (ENV-UNREADABLE invariant per Task #3).
-4. `sudo systemctl restart workflow-daemon`.
-5. Trigger `.github/workflows/llm-binding-canary.yml` manually or wait for
+5. `sudo systemctl restart workflow-daemon` if you used the manual fallback.
+6. Trigger `.github/workflows/llm-binding-canary.yml` manually or wait for
    the next tick. Confirm `llm_endpoint_bound` is not `unset`.
-6. Leave `OPENAI_API_KEY=` blank in `/etc/workflow/env`. Revoke any old
+7. Leave `OPENAI_API_KEY=` blank in `/etc/workflow/env`. Revoke any old
    project-specific OpenAI API key once no non-cloud process depends on it.
 
 #### pushover-user-key

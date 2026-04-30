@@ -17,6 +17,11 @@ name: Deploy prod
 #   DO_DROPLET_HOST  — Droplet public IP (e.g. 161.35.237.133)
 #   DO_SSH_USER      — SSH user on the Droplet (e.g. root or deploy)
 #   DO_SSH_KEY       — Private key PEM for the above user
+#
+# Optional subscription auth secret:
+#   WORKFLOW_CODEX_AUTH_JSON_B64 - base64-encoded ~/.codex/auth.json.
+#   When present, deploy syncs it into /etc/workflow/env without printing it
+#   and forces WORKFLOW_ALLOW_API_KEY_PROVIDERS=0 for the public daemon.
 
 on:
   workflow_run:
@@ -54,6 +59,8 @@ jobs:
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      HAS_CODEX_AUTH_BUNDLE: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +144,8 @@ jobs:
 
       - name: Deploy new image
         id: deploy
+        env:
+          WORKFLOW_CODEX_AUTH_JSON_B64: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 }}
         run: |
           NEW_IMAGE="${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}"
           echo "Deploying: ${NEW_IMAGE}"
@@ -154,6 +163,23 @@ jobs:
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "printf '%s' '${NEW_IMAGE}' | sudo bash /tmp/install-workflow-env.sh set WORKFLOW_IMAGE"
+          if [ "${HAS_CODEX_AUTH_BUNDLE}" = "true" ]; then
+            echo "Deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64 found; syncing subscription auth bundle."
+            printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "sudo bash /tmp/install-workflow-env.sh set WORKFLOW_CODEX_AUTH_JSON_B64"
+            printf '%s' '0' | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "sudo bash /tmp/install-workflow-env.sh set WORKFLOW_ALLOW_API_KEY_PROVIDERS"
+          else
+            echo "::warning::WORKFLOW_CODEX_AUTH_JSON_B64 is not visible to deploy; leaving any existing droplet subscription auth untouched."
+          fi
+          {
+            echo "## Deploy subscription auth"
+            echo ""
+            echo "- WORKFLOW_CODEX_AUTH_JSON_B64 visible to deploy: \`${HAS_CODEX_AUTH_BUNDLE}\`"
+            echo "- API-key providers forced off when the Codex subscription bundle is synced."
+          } >> "$GITHUB_STEP_SUMMARY"
           # Pull + restart via the systemd unit (which runs docker
           # compose down + up with the new env).
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
@@ -200,6 +226,20 @@ jobs:
           # Since CF Access Option-1 cutover, the direct URL (mcp.tinyassets.io)
           # correctly returns 403. Only the canonical URL is a valid health signal.
           python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
+
+      - name: Verify subscription LLM binding after synced Codex auth
+        if: env.HAS_CODEX_AUTH_BUNDLE == 'true'
+        run: |
+          python scripts/verify_llm_binding.py --url "${CANARY_URL}" --timeout 20
+
+      - name: Report subscription LLM binding when no deploy auth bundle is configured
+        if: env.HAS_CODEX_AUTH_BUNDLE != 'true'
+        run: |
+          if python scripts/verify_llm_binding.py --url "${CANARY_URL}" --timeout 20; then
+            echo "Subscription LLM binding is already live."
+          else
+            echo "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64 and live LLM binding is not proven. Add the subscription bundle secret or repair droplet auth."
+          fi
 
       - name: Verify CF Access gates direct URL (expects 403/401)
         id: access-gate

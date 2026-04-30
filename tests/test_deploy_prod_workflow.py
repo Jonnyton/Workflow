@@ -9,6 +9,7 @@ Covers:
   (f) Post-deploy canary step probes ONLY canonical URL (not direct)
   (g) Rollback step present and conditioned on failure
   (h) CF Access gate step blocks deploy on 200 (Access broken); advisory on tunnel-down
+  (i) Optional Codex subscription auth bundle is synced without API-key fallback
 """
 
 from __future__ import annotations
@@ -108,6 +109,10 @@ def test_do_ssh_user_secret_referenced():
 
 def test_do_ssh_key_secret_referenced():
     assert "DO_SSH_KEY" in _text()
+
+
+def test_codex_subscription_bundle_secret_referenced():
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in _text()
 
 
 def test_no_legacy_hetzner_secrets():
@@ -213,3 +218,34 @@ def test_rollback_conditioned_on_failure():
             assert "failure" in cond, "rollback step must be conditioned on failure()"
             return
     pytest.fail("'Rollback on failure' step not found")
+
+
+# ---------------------------------------------------------------------------
+# (i) Codex subscription auth sync
+# ---------------------------------------------------------------------------
+
+
+def test_deploy_syncs_codex_subscription_bundle_with_helper():
+    wf = _load()
+    deploy_step = next(
+        (s for s in _steps(wf) if s.get("id") == "deploy"),
+        None,
+    )
+    assert deploy_step is not None, "deploy job must have a deploy step"
+    run_script = deploy_step.get("run", "") or ""
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in run_script
+    assert "install-workflow-env.sh set WORKFLOW_CODEX_AUTH_JSON_B64" in run_script
+    assert "install-workflow-env.sh set WORKFLOW_ALLOW_API_KEY_PROVIDERS" in run_script
+    assert "OPENAI_API_KEY" not in run_script, (
+        "deploy must not recover the public daemon by syncing API-key writer auth"
+    )
+
+
+def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
+    wf = _load()
+    for step in _steps(wf):
+        if "Verify subscription LLM binding" in (step.get("name") or ""):
+            assert "HAS_CODEX_AUTH_BUNDLE" in str(step.get("if", ""))
+            assert "verify_llm_binding.py" in (step.get("run", "") or "")
+            return
+    pytest.fail("deploy must verify LLM binding when it syncs Codex subscription auth")

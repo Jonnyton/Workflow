@@ -78,13 +78,17 @@ fi
 CODEX_AUTH_FILE="${HOME:-/app}/.codex/auth.json"
 
 if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" ]]; then
-    if [[ -f "${CODEX_AUTH_FILE}" ]]; then
-        echo "[entrypoint] codex subscription auth already exists"
+    echo "[entrypoint] installing codex subscription auth bundle"
+    CODEX_AUTH_DIR="$(dirname "${CODEX_AUTH_FILE}")"
+    mkdir -p "${CODEX_AUTH_DIR}"
+    CODEX_AUTH_TMP="$(mktemp "${CODEX_AUTH_DIR}/auth.json.XXXXXX")"
+    if printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | base64 -d > "${CODEX_AUTH_TMP}"; then
+        chmod 600 "${CODEX_AUTH_TMP}"
+        mv "${CODEX_AUTH_TMP}" "${CODEX_AUTH_FILE}"
     else
-        echo "[entrypoint] installing codex subscription auth bundle"
-        mkdir -p "$(dirname "${CODEX_AUTH_FILE}")"
-        printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | base64 -d > "${CODEX_AUTH_FILE}"
-        chmod 600 "${CODEX_AUTH_FILE}"
+        rm -f "${CODEX_AUTH_TMP}"
+        echo "[entrypoint] failed to decode WORKFLOW_CODEX_AUTH_JSON_B64" >&2
+        exit 1
     fi
     unset WORKFLOW_CODEX_AUTH_JSON_B64
 fi

@@ -3,7 +3,8 @@
 Verifies:
 - codex CLI install layer is present in the Dockerfile
 - nodejs runtime is included in the final stage
-- OPENAI_API_KEY is referenced in workflow-env.template
+- WORKFLOW_CODEX_AUTH_JSON_B64 is referenced in workflow-env.template
+- OPENAI_API_KEY remains a blank deprecated placeholder
 - compose.yml env_file passes /etc/workflow/env to the daemon service
 - The codex module copy layer is present
 
@@ -84,15 +85,23 @@ def test_dockerfile_codex_version_smoke():
 
 
 # ---------------------------------------------------------------------------
-# workflow-env.template — OPENAI_API_KEY
+# workflow-env.template — subscription auth + deprecated API-key placeholder
 # ---------------------------------------------------------------------------
 
 
+def test_env_template_has_codex_subscription_auth_bundle():
+    """workflow-env.template must include a Codex subscription auth placeholder."""
+    text = ENV_TEMPLATE.read_text(encoding="utf-8")
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in text, (
+        "workflow-env.template must expose the Codex subscription auth bundle path"
+    )
+
+
 def test_env_template_has_openai_api_key():
-    """workflow-env.template must include an OPENAI_API_KEY placeholder."""
+    """workflow-env.template keeps OPENAI_API_KEY as a deprecated placeholder."""
     text = ENV_TEMPLATE.read_text(encoding="utf-8")
     assert "OPENAI_API_KEY" in text, (
-        "workflow-env.template must have OPENAI_API_KEY so operators know to fill it in"
+        "workflow-env.template must mention OPENAI_API_KEY so operators know it is deprecated"
     )
 
 
@@ -118,7 +127,7 @@ def test_compose_daemon_uses_env_file():
     text = COMPOSE.read_text(encoding="utf-8")
     assert "/etc/workflow/env" in text, (
         "compose.yml daemon service must reference /etc/workflow/env as env_file "
-        "so OPENAI_API_KEY (and other secrets) are passed to the container"
+        "so subscription auth material and other secrets are passed to the container"
     )
 
 
@@ -163,7 +172,7 @@ def test_codex_provider_flag_is_on_exec_command():
 
 
 # ---------------------------------------------------------------------------
-# docker-entrypoint.sh — codex login baked in (BUG-004 fix B)
+# docker-entrypoint.sh — subscription auth baked in (BUG-004 fix B)
 # ---------------------------------------------------------------------------
 
 
@@ -171,31 +180,42 @@ def test_entrypoint_script_exists():
     assert ENTRYPOINT.exists(), f"Missing: {ENTRYPOINT}"
 
 
-def test_entrypoint_runs_codex_login():
+def test_entrypoint_installs_codex_auth_bundle():
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert "codex login" in text, (
-        "docker-entrypoint.sh must run 'codex login' to authenticate codex CLI"
+    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in text
+    assert "base64 -d" in text
+    assert "auth.json" in text, (
+        "docker-entrypoint.sh must install the subscription-backed Codex auth bundle"
     )
 
 
-def test_entrypoint_uses_with_api_key_flag():
+def test_entrypoint_does_not_login_with_api_key():
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert "--with-api-key" in text, (
-        "codex login must use --with-api-key flag to authenticate via OPENAI_API_KEY env var"
+    executable_text = "\n".join(
+        line for line in text.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "codex login" not in executable_text
+    assert "--with-api-key" not in executable_text, (
+        "default Workflow daemons must not authenticate Codex with OPENAI_API_KEY"
     )
 
 
-def test_entrypoint_guards_on_openai_key_present():
+def test_entrypoint_strips_api_key_providers_by_default():
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert "OPENAI_API_KEY" in text, (
-        "entrypoint must guard codex login on OPENAI_API_KEY being set"
+    assert "WORKFLOW_ALLOW_API_KEY_PROVIDERS" in text
+    assert "OPENAI_API_KEY" in text
+    assert 'unset "${_name}"' in text, (
+        "entrypoint must strip API-key provider env vars unless explicitly enabled"
     )
 
 
-def test_entrypoint_guards_on_auth_missing():
+def test_entrypoint_replaces_auth_bundle_atomically():
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert "auth.json" in text or ".codex" in text, (
-        "entrypoint must skip codex login when auth already exists (idempotent)"
+    assert "mktemp" in text
+    assert "mv " in text
+    assert "failed to decode WORKFLOW_CODEX_AUTH_JSON_B64" in text, (
+        "entrypoint must atomically replace Codex auth when a bundle is provided"
     )
 
 

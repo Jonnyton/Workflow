@@ -1,6 +1,6 @@
 """Tests for .github/workflows/auto-fix-bug.yml structure.
 
-Static YAML-parse tests — no GHA runner needed. Validates the key
+Static YAML-parse tests - no GHA runner needed. Validates the key
 invariants: auth paths, disable toggle, graceful-skip, branch naming,
 permissions, concurrency group, trigger condition.
 """
@@ -61,9 +61,9 @@ def test_has_pull_requests_write(wf):
 
 
 def test_concurrency_scoped_to_issue(wf):
-    conc = wf.get("concurrency", {})
+    conc = wf["jobs"]["fix"].get("concurrency", {})
     group = conc.get("group", "")
-    assert "issue.number" in group, (
+    assert "matrix.issue.issue_number" in group, (
         "Concurrency group must be scoped per-issue to prevent parallel fix attempts"
     )
 
@@ -74,10 +74,10 @@ def test_concurrency_scoped_to_issue(wf):
 
 
 def test_job_filters_on_auto_bug_label(wf):
-    job = wf["jobs"]["fix"]
-    condition = str(job.get("if", ""))
-    assert "auto-bug" in condition, (
-        "Job must be conditional on the 'auto-bug' label being applied"
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    assert "auto-bug" in script, (
+        "Discover step must include the legacy 'auto-bug' label for compatibility"
     )
 
 
@@ -187,25 +187,27 @@ def test_oauth_step_uses_claude_code_action(wf):
     )
 
 
-def test_api_key_step_uses_claude_code_action(wf):
+def test_no_api_key_step_uses_claude_code_action(wf):
     steps = wf["jobs"]["fix"]["steps"]
     api_step = next(
         (s for s in steps if "api_key" in str(s.get("if", "")) and "uses" in s),
         None,
     )
-    assert api_step is not None, "Must have an API-key-authenticated Claude action step"
-    assert "claude-code-action" in api_step.get("uses", ""), (
-        "API key step must use anthropics/claude-code-action"
+    assert api_step is None, (
+        "Default daemon writers must not use API-key-authenticated Claude action steps"
     )
 
 
 def test_branch_naming_convention(wf):
     steps = wf["jobs"]["fix"]["steps"]
-    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
-    assert meta_step is not None, "Must have a meta extraction step"
-    script = str(meta_step.get("with", {}).get("script", ""))
-    assert "auto-bug/issue-" in script, (
-        "Branch must follow auto-bug/issue-<N> naming convention"
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    with_block = oauth_step.get("with", {})
+    assert with_block.get("branch_prefix") == "auto-change/"
+    assert "issue-${{ steps.meta.outputs.issue_number }}" == with_block.get(
+        "branch_name_template"
+    ), (
+        "Branch must follow auto-change/issue-<N> naming convention"
     )
 
 
@@ -214,13 +216,14 @@ def test_pr_title_includes_auto_fix_prefix(wf):
     meta_step = next((s for s in steps if s.get("id") == "meta"), None)
     assert meta_step is not None
     script = str(meta_step.get("with", {}).get("script", ""))
-    assert "[auto-fix]" in script, "PR title must start with [auto-fix]"
+    assert "[auto-change]" in script, "PR title must start with [auto-change]"
 
 
 def test_pr_body_references_fixes_keyword(wf):
     steps = wf["jobs"]["fix"]["steps"]
-    for step in steps:
-        pr_body = str(step.get("with", {}).get("pr_body", ""))
-        if "Fixes #" in pr_body:
-            return
-    pytest.fail("At least one Claude action step must have 'Fixes #N' in pr_body")
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    assert "Fixes #${{ steps.meta.outputs.issue_number }}" in prompt, (
+        "Claude prompt must require PR body to reference the issue with Fixes #N"
+    )
