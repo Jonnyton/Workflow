@@ -1181,6 +1181,8 @@ def _resolve_node_spec(
                 "on this spec if you intentionally want the existing "
                 "body, or rename this node to avoid collision."
             )
+    raw = dict(raw)
+    raw.pop("approved", None)
     return raw, ""
 
 
@@ -1218,6 +1220,7 @@ def _lookup_node_body(
             "source_code": hit.get("source_code", ""),
             "prompt_template": hit.get("prompt_template", ""),
             "author": hit.get("author", ""),
+            "approved": bool(hit.get("approved", False)),
         }, ""
 
     # Otherwise treat `source` as a branch_def_id.
@@ -1244,6 +1247,7 @@ def _lookup_node_body(
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
                 "author": nd.get("author", ""),
+                "approved": bool(nd.get("approved", False)),
             }, ""
     return {}, (
         f"node '{node_id}' not found on branch '{source}'. "
@@ -1291,6 +1295,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             source_code=source_code,
             prompt_template=prompt_template,
             author=raw.get("author") or _current_actor(),
+            approved=bool(raw.get("approved", False)),
         )
     except ValueError as exc:
         return str(exc)
