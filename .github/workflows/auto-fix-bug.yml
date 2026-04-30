@@ -621,10 +621,10 @@ jobs:
                 reason="already_fixed"
               fi
             fi
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "no_change_reason=${reason}" >> "$GITHUB_OUTPUT"
             _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
             {
+              echo "changed=false"
+              echo "no_change_reason=${reason}"
               echo "last_message<<${_delim}"
               if [ -s "$message_file" ]; then
                 head -c 4000 "$message_file"
@@ -648,18 +648,22 @@ jobs:
           push_log="$RUNNER_TEMP/codex-git-push.log"
           if ! git push --set-upstream origin "$branch" 2>&1 | tee "$push_log"; then
             if grep -q "refusing to allow a GitHub App to create or update workflow" "$push_log"; then
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "no_change_reason=" >> "$GITHUB_OUTPUT"
-              echo "push_blocked=true" >> "$GITHUB_OUTPUT"
-              echo "push_block_reason=github_actions_workflow_permission_missing" >> "$GITHUB_OUTPUT"
+              {
+                echo "changed=false"
+                echo "no_change_reason="
+                echo "push_blocked=true"
+                echo "push_block_reason=github_actions_workflow_permission_missing"
+              } >> "$GITHUB_OUTPUT"
               exit 0
             fi
             exit 1
           fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "no_change_reason=" >> "$GITHUB_OUTPUT"
-          echo "push_blocked=false" >> "$GITHUB_OUTPUT"
-          echo "push_block_reason=" >> "$GITHUB_OUTPUT"
+          {
+            echo "changed=true"
+            echo "no_change_reason="
+            echo "push_blocked=false"
+            echo "push_block_reason="
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create Codex PR
         id: codex-pr-create
