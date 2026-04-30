@@ -232,6 +232,27 @@ def data_dir() -> Path:
     return (Path.home() / ".workflow").resolve()
 
 
+def active_universe_id(base: Path | None = None) -> str:
+    """Return the dynamic active universe marker when it points at a real universe.
+
+    ``UNIVERSE_SERVER_DEFAULT_UNIVERSE`` is a boot/default setting. The
+    runtime ``switch_universe`` MCP action writes ``.active_universe`` under
+    the data root, so read that marker before falling back to static defaults.
+    Invalid marker contents are ignored instead of becoming path traversal.
+    """
+    root = base or data_dir()
+    marker = root / ".active_universe"
+    try:
+        uid = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if not uid or "/" in uid or "\\" in uid or uid.startswith("."):
+        return ""
+    if not (root / uid).is_dir():
+        return ""
+    return uid
+
+
 def wiki_path() -> Path:
     """Return the on-disk root for the knowledge wiki.
 

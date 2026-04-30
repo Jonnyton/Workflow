@@ -422,25 +422,37 @@ def call_provider(
             return fallback_response
         return "[Mock response -- _FORCE_MOCK is True]"
 
+    provider_error: Exception | None = None
+
     # Use the real router's synchronous entry point with retry
     if _real_router is not None:
         try:
             return _call_router_with_retry(role, prompt, system)
         except Exception as e:
+            provider_error = e
             logger.error(
                 "All providers exhausted for role=%s after retries: %s", role, e,
             )
 
     # Fallback: only use mock content if an explicit fallback was provided.
     # In production (no _FORCE_MOCK), callers should pass fallback_response=None
-    # so that provider exhaustion surfaces as an empty string, not fake prose.
+    # so provider exhaustion surfaces as the real provider error instead of
+    # masquerading as an empty LLM response downstream.
     if fallback_response is not None:
         logger.warning(
             "Using fallback response for role=%s (%d chars)",
             role, len(fallback_response),
         )
         return fallback_response
-    return ""
+    if provider_error is not None:
+        raise provider_error
+
+    from workflow.exceptions import AllProvidersExhaustedError
+
+    raise AllProvidersExhaustedError(
+        f"No provider router available for role={role!r} and no fallback_response "
+        "was provided."
+    )
 
 
 def call_for_plan(

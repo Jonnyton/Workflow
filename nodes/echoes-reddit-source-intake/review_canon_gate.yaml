@@ -1,0 +1,16 @@
+id: review_canon_gate
+display_name: Canon gate
+description: Review contribution packets and separate draft material from canon-ready material.
+phase: reflect
+input_keys:
+- contribution_packet
+output_keys:
+- promotion_decision
+prompt_template: |
+  Review these Echoes contribution packets: {contribution_packet}
+
+  Return a gate decision table. Use statuses needs-review, draft-canon, accepted-canon, rejected, or archived. Require human approval before accepted-canon. Call out contradictions, missing attribution, hard-science issues, and what a daemon or contributor should do next.
+timeout_seconds: 300.0
+approved: false
+enabled: true
+author: Jonathan Farnsworth

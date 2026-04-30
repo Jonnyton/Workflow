@@ -80,6 +80,21 @@ class TestDefaultUniverse:
         monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
         assert _default_universe() == "my-default"
 
+    def test_active_marker_overrides_env_default(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
+        (tmp_path / "my-default").mkdir()
+        (tmp_path / "active-now").mkdir()
+        (tmp_path / ".active_universe").write_text("active-now", encoding="utf-8")
+        assert _default_universe() == "active-now"
+
+    def test_invalid_active_marker_ignored(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
+        (tmp_path / "my-default").mkdir()
+        (tmp_path / ".active_universe").write_text("../outside", encoding="utf-8")
+        assert _default_universe() == "my-default"
+
     def test_first_subdir_if_no_env(self, tmp_path, monkeypatch):
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)

@@ -57,6 +57,8 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin (was filed as Plus/private app 2026-04-25, blocks publish). | OpenAI workspace admin | - | host-action |
 | Memory-scope Stage 2c flag | - | 30d clean | monitoring |
 | Remove provider+DO keys from persistent uptime surfaces | `deploy/*` | host Qs answered | host->e2e |
+| **Site shipped 2026-04-29 17:40Z** (commit 1e72ecd; cutover via `.github/workflows/site-dns-cutover.yml`). Post-launch backlog (nav forward-look): /host installer link → 404 GH releases (disable or "git clone"); footer socials drop/swap; /status static green pulse (false during outage); /alliance alert→mailto; legal refs missing `Workflow-catalog` repo; /account auth, baked-snapshot CI freshness, /contribute hard-coded counts. Forever-Rule add: PROBE-001 should also check `/` 200 (apex now shares with `/mcp`). | WebSite/site/src/{lib,routes}/, docs/ops/acceptance-probe-catalog.md, scripts/uptime_canary.py | - | dev-ready |
+| Site cert flip — `gh api -X PUT repos/Jonnyton/Workflow/pages -F https_enforced=true` once GH Pages cert lands (5-15min from 17:40Z 2026-04-29). Edge HTTPS via CF proxy already serves. | - | - | monitoring |
 
 ## Next
 

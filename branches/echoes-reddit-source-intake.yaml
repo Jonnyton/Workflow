@@ -1,0 +1,89 @@
+id: f8053c7ae22a
+name: Echoes Reddit source intake
+description: Process an r/EchoesoftheCosmos RSS/JSON snapshot fetched by a chatbot or browser into provenance-preserving contribution packets and gated canon-review actions. Node ids are intentionally distinct from state keys so the branch is runnable in LangGraph.
+author: Jonathan Farnsworth
+domain_id: workflow
+goal_id: dd187997039b
+canonical_branch_version_id: f8053c7ae22a@aa8ee9e6
+tags:
+- echoes
+- reddit
+- public-source
+- mcp
+- canon-gate
+- community
+version: 1
+entry_point: make_source_manifest
+state_schema:
+- name: universe_id
+  type: str
+  description: Workflow universe receiving the imported source.
+- name: source_url
+  type: str
+  description: Public web source URL.
+- name: fetched_at
+  type: str
+  description: Fetch timestamp supplied by the caller.
+- name: source_snapshot
+  type: str
+  description: Text snapshot fetched by caller/chatbot.
+- name: source_manifest
+  type: str
+  description: Provenance manifest emitted by the intake node.
+- name: contribution_packet
+  type: str
+  description: Reviewable proposal packet.
+- name: promotion_decision
+  type: str
+  description: Gate decision for canon promotion.
+- name: mcp_next_actions
+  type: str
+  description: Concrete MCP/GitHub follow-up steps.
+nodes:
+- id: make_source_manifest
+  path: nodes/echoes-reddit-source-intake/make_source_manifest.yaml
+- id: build_contribution_packet
+  path: nodes/echoes-reddit-source-intake/build_contribution_packet.yaml
+- id: review_canon_gate
+  path: nodes/echoes-reddit-source-intake/review_canon_gate.yaml
+- id: write_mcp_next_actions
+  path: nodes/echoes-reddit-source-intake/write_mcp_next_actions.yaml
+graph_nodes:
+- id: make_source_manifest
+  node_def_id: make_source_manifest
+  position: 0
+- id: build_contribution_packet
+  node_def_id: build_contribution_packet
+  position: 1
+- id: review_canon_gate
+  node_def_id: review_canon_gate
+  position: 2
+- id: write_mcp_next_actions
+  node_def_id: write_mcp_next_actions
+  position: 3
+edges:
+- from: START
+  to: make_source_manifest
+- from: make_source_manifest
+  to: build_contribution_packet
+- from: build_contribution_packet
+  to: review_canon_gate
+- from: review_canon_gate
+  to: write_mcp_next_actions
+- from: write_mcp_next_actions
+  to: END
+conditional_edges: []
+published: true
+visibility: public
+live_evidence:
+  universe_id: echoes-of-the-cosmos
+  source_urls:
+  - https://www.reddit.com/r/EchoesoftheCosmos/
+  - https://www.reddit.com/r/EchoesoftheCosmos/.rss
+  - https://www.reddit.com/r/EchoesoftheCosmos/.json?limit=25
+  source_snapshot_imported_at: '2026-04-29'
+  latest_smoke_run_id: 431979d46a754e12
+  latest_smoke_run_status: failed_empty_llm_response
+  limitation: Branch/source wiring is live; generated packets require a configured Workflow LLM host.
+created_at: '2026-04-29T23:39:43+00:00'
+updated_at: '2026-04-29T23:42:49+00:00'

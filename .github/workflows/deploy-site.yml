@@ -1,0 +1,78 @@
+# Deploy WebSite/site (SvelteKit static) to GitHub Pages.
+# Triggers: push to main (touching site files), workflow_dispatch, daily cron.
+# Custom domain: tinyassets.io (via static/CNAME). Cloudflare fronts.
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'WebSite/site/**'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+    inputs:
+      refresh_snapshot:
+        description: 'Refresh MCP snapshot before build (requires MCP_BEARER secret)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+  schedule:
+    # Every 6h. Re-deploys with whatever mcp-snapshot.json is currently committed.
+    # Auto MCP refresh requires MCP_BEARER repo secret + refresh_snapshot toggle (see snapshot job below).
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: WebSite/site
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: WebSite/site/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Optional snapshot refresh — only runs when manually dispatched with the toggle.
+      # Requires MCP_BEARER secret if the MCP endpoint is auth-gated.
+      - name: Refresh MCP snapshot
+        if: github.event.inputs.refresh_snapshot == 'true'
+        env:
+          MCP_BEARER: ${{ secrets.MCP_BEARER }}
+        run: npm run snapshot
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: WebSite/site/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

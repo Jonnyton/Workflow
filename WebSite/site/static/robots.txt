@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /catalog/
+Allow: /connect
+Allow: /contribute
+Allow: /economy
+Allow: /graph
+Allow: /host
+Allow: /legal
+Allow: /patterns
+Allow: /wiki
+Allow: /alliance
+Disallow: /auth/
+Disallow: /editor/
+Disallow: /admin/
+Disallow: /earnings
+Disallow: /account
+
+Sitemap: https://tinyassets.io/sitemap.xml

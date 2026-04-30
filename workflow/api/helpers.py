@@ -63,10 +63,16 @@ def _universe_dir(universe_id: str) -> Path:
 
 def _default_universe() -> str:
     """Return the default universe ID, or first available."""
+    base = _base_path()
+    from workflow.storage import active_universe_id
+    active = active_universe_id(base)
+    if active:
+        return active
+
     default = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
     if default:
         return default
-    base = _base_path()
+
     if base.is_dir():
         for child in sorted(base.iterdir()):
             if child.is_dir() and not child.name.startswith("."):

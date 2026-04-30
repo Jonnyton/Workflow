@@ -1,0 +1,17 @@
+id: ingest_public_canon
+display_name: Ingest public Echoes canon
+phase: custom
+prompt_template: |
+  Build a clean public canon index for Echoes of the Cosmos from these source paths:
+
+  {canon_source_paths}
+
+  Treat all listed files as public source truth unless a file explicitly marks content private.
+  Do not import old generated test-universe output or private conversation memories.
+  Emit a concise canon index with source provenance and open questions.
+output_keys:
+- canon_index
+timeout_seconds: 300.0
+approved: true
+enabled: true
+author: Jonathan Farnsworth

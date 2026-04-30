@@ -212,6 +212,12 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
         )
+    if "all providers exhausted" in msg or "providers exhausted" in msg:
+        return _failure_payload(
+            exc, "provider_exhausted",
+            "Provider chain exhausted; check provider credentials/config or"
+            " rerun after cooldown.",
+        )
     if "auth expir" in msg or "token expir" in msg or "credential" in msg:
         return _failure_payload(
             exc, "permission_denied:auth_expired",
@@ -234,6 +240,12 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             exc, "state_mutation_conflict",
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
+        )
+    if "compile failed" in msg or "already being used as a state key" in msg:
+        return _failure_payload(
+            exc, "compile_error",
+            "Inspect the branch definition, node ids, state_schema, and graph"
+            " edges; patch the branch and rerun.",
         )
     if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
         return _failure_payload(
@@ -270,6 +282,12 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "quota_exhausted",
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
+        )
+    if "all providers exhausted" in msg or "providers exhausted" in msg:
+        return (
+            "provider_exhausted",
+            "Provider chain exhausted; check provider credentials/config or"
+            " rerun after cooldown.",
         )
     if "overload" in msg or "503" in msg or "service unavailable" in msg or "server error" in msg:
         return (
@@ -316,6 +334,12 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "state_mutation_conflict",
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
+        )
+    if "compile failed" in msg or "already being used as a state key" in msg:
+        return (
+            "compile_error",
+            "Inspect the branch definition, node ids, state_schema, and graph"
+            " edges; patch the branch and rerun.",
         )
     if "provider" in msg or "api key" in msg or "api_key" in msg:
         return (

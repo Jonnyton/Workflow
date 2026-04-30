@@ -101,8 +101,12 @@ def _resolve_universe_path() -> Path:
     if explicit:
         return Path(explicit)
 
-    from workflow.storage import data_dir
+    from workflow.storage import active_universe_id, data_dir
     base = data_dir()
+
+    active_uid = active_universe_id(base)
+    if active_uid:
+        return base / active_uid
 
     default_uid = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "").strip()
     if default_uid:

@@ -319,6 +319,29 @@ def test_resolve_universe_default_subdir(tmp_path, monkeypatch):
     assert resolved == tmp_path / "my-default"
 
 
+def test_resolve_universe_active_marker_overrides_default(tmp_path, monkeypatch):
+    (tmp_path / "my-default").mkdir()
+    (tmp_path / "active-now").mkdir()
+    (tmp_path / ".active_universe").write_text("active-now", encoding="utf-8")
+    monkeypatch.delenv("WORKFLOW_UNIVERSE", raising=False)
+    monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "my-default")
+    with patch("workflow.storage.data_dir", return_value=tmp_path):
+        resolved = cw._resolve_universe_path()
+    assert resolved == tmp_path / "active-now"
+
+
+def test_resolve_universe_explicit_override_beats_active_marker(tmp_path, monkeypatch):
+    explicit = tmp_path / "explicit"
+    explicit.mkdir()
+    (tmp_path / "active-now").mkdir()
+    (tmp_path / ".active_universe").write_text("active-now", encoding="utf-8")
+    monkeypatch.setenv("WORKFLOW_UNIVERSE", str(explicit))
+    monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "active-now")
+    with patch("workflow.storage.data_dir", return_value=tmp_path):
+        resolved = cw._resolve_universe_path()
+    assert resolved == explicit
+
+
 def test_resolve_universe_auto_picks_first_with_program_md(tmp_path, monkeypatch):
     # Create two candidates; one has PROGRAM.md, one doesn't. The auto-
     # pick should land on the one with PROGRAM.md.
