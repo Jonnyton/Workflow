@@ -1,16 +1,15 @@
 /* =========================================================
    Workflow — Design Tokens
-   "Summon the daemon." — a global goals engine.
-   Vibe: nerdy / slightly mythic / self-aware. Serious utility,
-   ritual aesthetic. Deep indigo night, coral ember, violet sigil.
+   A live project protocol loom and execution loop.
+   Vibe: nerdy / self-aware. Serious utility, visible protocol,
+   deep indigo night, coral ember, live green, and violet graph edges.
    ========================================================= */
 
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap");
 
 :root {
   /* ---------- CORE PALETTE ---------- */
-  /* Sourced directly from assets/logo-mark.svg gradient stops.
-     The mark is the one real brand asset we have — these hexes ARE the brand. */
+  /* Brand palette for the protocol-loom mark and live protocol surfaces. */
   --ink-900: #0e0e1a;          /* deepest ritual night, behind-the-ring */
   --ink-800: #1a1a2e;          /* default page background */
   --ink-700: #16213e;          /* elevated surface, card base */
@@ -20,7 +19,7 @@
 
   --violet-900: #2b1a4a;
   --violet-700: #3f2470;
-  --violet-600: #533483;       /* brand violet (sigil ring) */
+  --violet-600: #533483;       /* graph branch violet */
   --violet-500: #6b44a8;
   --violet-400: #8a63ce;       /* violet glow on dark */
   --violet-200: #d9cbee;       /* violet on light */
@@ -68,8 +67,8 @@
   --accent-press: var(--ember-700);
   --accent-quiet: rgba(233, 69, 96, 0.12);
 
-  --sigil: var(--violet-600);
-  --sigil-glow: rgba(138, 99, 206, 0.45);
+  --graph-violet: var(--violet-600);
+  --graph-violet-glow: rgba(138, 99, 206, 0.45);
 
   /* ---------- TYPE ---------- */
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -132,7 +131,7 @@
   --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 6px 22px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 50px rgba(0, 0, 0, 0.6);
-  --glow-sigil: 0 0 0 1px rgba(138, 99, 206, 0.3), 0 0 30px rgba(83, 52, 131, 0.35);
+  --glow-graph: 0 0 0 1px rgba(138, 99, 206, 0.3), 0 0 30px rgba(83, 52, 131, 0.35);
   --glow-ember: 0 0 0 1px rgba(233, 69, 96, 0.4), 0 0 24px rgba(233, 69, 96, 0.25);
 
   /* ---------- MOTION ----------

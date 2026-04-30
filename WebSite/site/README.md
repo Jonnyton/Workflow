@@ -51,7 +51,7 @@ npm run build
 
 ```
 src/
-├── app.html                       HTML shell (sigil favicon, theme color)
+├── app.html                       HTML shell (Workflow mark favicon, theme color)
 ├── app.css                        Imports tokens; tiny app-only utilities
 ├── app.d.ts                       TypeScript ambient types
 ├── routes/
@@ -71,7 +71,7 @@ src/
 │   │   │   ├── Button.svelte           primary/secondary/ghost/link
 │   │   │   ├── RitualLabel.svelte      small-caps mono kicker
 │   │   │   └── StatusPill.svelte       live/idle/paid/self/error pill
-│   │   ├── SigilMark.svelte             brand sigil (img → /logo-mark.svg)
+│   │   ├── WorkflowMark.svelte          live loop + project graph brand mark
 │   │   ├── TopNav.svelte                sticky-translucent nav
 │   │   ├── Footer.svelte                footer chrome + contact
 │   │   ├── ChatDemo.svelte              faux Claude.ai transcript (hero showcase)
@@ -86,9 +86,8 @@ src/
 │   └── styles/
 │       └── tokens.css                   canonical design tokens (Ink/Violet/Ember/Bone palette)
 └── static/
-    ├── logo-mark.svg                    brand sigil
-    ├── logo-mark.png                    raster fallback (12KB)
-    ├── wordmark-horizontal.svg          sigil + "Workflow" wordmark
+    ├── workflow-mark.svg                favicon / static brand mark
+    ├── workflow-mark.png                raster fallback for the static brand mark
     ├── CNAME                            tinyassets.io custom domain
     └── .nojekyll                        disable GitHub Jekyll processing
 ```
@@ -97,6 +96,7 @@ src/
 
 Brand palette, typography, motion, voice, vocab kit all live in:
 - `src/lib/styles/tokens.css` (CSS variables — these ARE the brand)
+- `../../assets/brand/` (reusable SVG/PNG logo exports)
 - `WebSite/design-source/README.md` (design-system bible — voice, palette derivation, icon rules)
 - `WebSite/design-source/colors_and_type.css` (canonical source — kept identical to tokens.css)
 - `WebSite/design-source/workflow-landing-standalone.html` (single-file bundled React preview of the full design)

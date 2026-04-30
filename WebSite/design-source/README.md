@@ -30,7 +30,7 @@ All source material came from the user-attached Workflow codebase (`local_ls`/`l
 - `Workflow/prototype/full-platform-v0/` — Postgres/FastAPI gateway reference. Structural only; not visual.
 - `Workflow/prototype/workflow-catalog-v0/` — CC0 catalog repo structure (nodes, branches, goals).
 - `Workflow/docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` — brand voice guide (the canonical list of verbs: *summon, bind, roam, return, dismiss, entrust*).
-- `Workflow/assets/icon.svg` + `icon.png` — the **one real visual asset**: a summoning-sigil mark (pentagram + concentric rings + 4 cardinal nodes + central eye). This is the entire brand mark. Copied to `assets/logo-mark.{svg,png}`. The gradient stops in this file (`#1a1a2e → #16213e` for the field, `#e94560 → #533483` for the glow) are the literal source of the brand palette.
+- `Workflow/assets/icon.png` — the canonical project icon: the selected A2 rotated protocol-loom mark cropped from the approved chat image. Copied to `assets/logo-mark.png` for design-system previews.
 
 **Nothing else was available.** No photography, no illustration library, no secondary marks, no icon font. The `Workflow/output/*.png` files are QA screenshots from a ChatGPT builder test, not brand assets — intentionally ignored.
 
@@ -45,8 +45,9 @@ All source material came from the user-attached Workflow codebase (`local_ls`/`l
 ├── colors_and_type.css          ← all design tokens (CSS vars) + semantic element styles
 ├── source_copy/en.json          ← verbatim product copy; use for tone-accurate mocks
 ├── assets/
-│   ├── logo-mark.svg            ← the summoning-sigil mark (USE THIS)
-│   └── logo-mark.png            ← raster fallback
+│   ├── logo-mark.png            ← the approved cropped protocol-loom mark (USE THIS)
+│   ├── logo-mark.svg            ← compatibility wrapper for the PNG
+│   └── wordmark-horizontal.svg   ← mark + Workflow wordmark
 ├── preview/                     ← Design System tab cards (one HTML per token cluster)
 └── ui_kits/
     └── workflow-web/            ← marketing + app UI kit (SvelteKit prototype, recreated as JSX)
@@ -121,16 +122,18 @@ Nerdy, slightly mythic, self-aware. It's confident about real utility *and* wink
 
 ## Visual foundations
 
-The entire visual identity extrapolates from one asset (`assets/logo-mark.svg`) and three colors (ink, ember, violet). Everything that follows is derived.
+The visual identity centers on the selected A2 rotated protocol-loom mark (`assets/logo-mark.png`) and four colors: ink, ivory, ember, and live green. Everything that follows is derived from that mark.
 
 ### Palette
 
 - **Ink** (`#0e0e1a → #1a1a2e → #16213e`) — the default canvas. The product is a night-mode product. Dark surfaces are not a toggle; they're the base state.
-- **Violet** (`#533483`) — the sigil. Used for rings, outlines, secondary glows, muted labels. Never a primary CTA.
-- **Ember** (`#e94560`) — the only real accent. Primary buttons, summon-CTAs, active daemon indicators, selection highlights, link color. Used *sparingly* — one ember mark per view, max two.
+- **Ivory** (`#f2eee6`) — the primary mark stroke and main text on dark surfaces.
+- **Live green** (`#6dd3a6`) — the lower route / live-state accent in the mark and the semantic live indicator.
+- **Violet** (`#533483`) — secondary graph/branch color. Never a primary CTA.
+- **Ember** (`#e94560`) — the crossing work route and primary accent. Used *sparingly* — one ember mark per view, max two.
 - **Bone** (`#f7f5ef`) — the warm-paper light-mode surface for docs, legal, catalog reading views. Not a "card" color — a full secondary theme.
 
-No blues or teals outside the ink range. No greens outside `--signal-live` (one specific UI affordance). No gradients as fills — only as strokes (the sigil's edge) or faint protection washes over imagery.
+No blues or teals outside the ink range. No greens outside `--signal-live`. No gradients as fills unless a specific production asset calls for it.
 
 ### Typography
 
@@ -151,14 +154,14 @@ No blues or teals outside the ink range. No greens outside `--signal-live` (one 
 Drop-shadow is muted — dark surfaces swallow it. Elevation reads via:
 
 - **Inner 1px highlight** on top edge (`0 1px 0 rgba(255,255,255,0.05) inset`) — the "held in a ring" feel.
-- **Sigil glow** — a 30px violet halo (`--glow-sigil`) on focused/active elements (input focus, hovered daemon tile, summoning CTA). Violet, not ember, because violet is the ring energy.
+- **Graph glow** — a 30px violet halo (`--glow-graph`) on focused/active elements (input focus, hovered daemon tile, summoning CTA).
 - **Ember glow** — only on primary CTAs (`--glow-ember`). Tight, not diffused.
 
 ### Backgrounds
 
 - Full-bleed ink surfaces (`--bg-1`) are the default. No patterned backgrounds, no noise textures, no grain (tempting — resisted). The logo mark is the only ornamental graphic; it may be placed large and low-opacity (0.04–0.08) as a watermark behind hero type, bottom-right or centered.
 - Protection gradients only as hero-bottom fades from `--bg-1` to transparent, to seat a CTA bar over imagery. We don't use imagery much so this is rare.
-- **No full-bleed stock photography.** Workflow's brand is text + sigil.
+- **No full-bleed stock photography.** Workflow's brand is text + live protocol mark.
 
 ### Animation & interaction
 
@@ -172,7 +175,7 @@ Daemons don't bounce. Motion is deliberate, ease-out, never springy.
 
 ### Hover & press
 
-- **Hover**: a 1–2% lightness shift on surfaces; on links/labels, a shift up the ember scale (`--ember-600 → --ember-500`); on buttons, a faint sigil glow if primary.
+- **Hover**: a 1–2% lightness shift on surfaces; on links/labels, a shift up the ember scale (`--ember-600 → --ember-500`); on buttons, a faint graph glow if primary.
 - **Press**: 1px downward translate + darker variant (`--ember-600 → --ember-700`). No scale transforms (no `scale(0.98)` — too web-app).
 - **Focus**: 2px ember outline at `--ring-offset: 2px`. Never a default browser outline; never removed without replacement.
 
@@ -184,7 +187,7 @@ A pill capsule is used only for daemon-status indicators (`live / idle / paid`).
 
 Sparing. Used only for:
 - Modal scrims: `rgba(14,14,26,0.72)` + 8px backdrop blur.
-- The sigil watermark behind hero type.
+- The protocol-loom watermark behind hero type.
 - Toast notifications pulled into the top-right (12px blur on a `rgba(31,36,71,0.72)` tint).
 
 No frosted-glass sidebar. No glassmorphism panels.
@@ -199,7 +202,7 @@ Where imagery *must* appear (team photos, screenshot mocks, OG cards), it is:
 ### Card anatomy
 
 - Surface: `--bg-2` (one step up from page), 1px `--border-1` hairline, `--radius-card` (12px).
-- No drop-shadow by default. On hover, the sigil glow appears (`--glow-sigil`) instead of a heavier shadow.
+- No drop-shadow by default. On hover, the graph glow appears (`--glow-graph`) instead of a heavier shadow.
 - Padding: `--s-5` (20px) default, `--s-6` (24px) for feature cards.
 - The card's title is sans-serif semibold. Metadata beneath uses `.ritual-label` (mono, small-caps).
 
@@ -207,7 +210,7 @@ Where imagery *must* appear (team photos, screenshot mocks, OG cards), it is:
 
 - Max content column: 1240px; hero content: 960px; prose: 640px (`62ch`).
 - Fixed elements: top nav is sticky-translucent (backdrop-blur) on scroll, not a solid bar. The footer is not fixed.
-- The sigil mark is always bottom-right of any marketing hero as a faint watermark (optional, use when hero feels empty).
+- The protocol-loom mark is bottom-right of any marketing hero as a faint watermark when the hero feels empty.
 
 ---
 
@@ -217,7 +220,7 @@ Where imagery *must* appear (team photos, screenshot mocks, OG cards), it is:
 
 ### What the product uses today
 
-- The single **logo mark** (`assets/logo-mark.svg`) — a pentagram inside concentric rings with four cardinal nodes and a central eye. Read as: a summoning sigil. This is the hero graphic and the favicon and nothing else.
+- The single **logo mark** (`assets/logo-mark.png`) — the selected A2 rotated protocol-loom mark cropped from the approved chat image: ivory woven routes crossed by ember work and a live-green state route. This is the hero graphic and the favicon.
 - **Unicode glyphs** for directional and separator use: → (proceed / next), · (bullet separator), — (em dash). These are deliberate and should not be replaced with icons.
 - **No emoji anywhere.** See Content Fundamentals.
 
@@ -248,7 +251,7 @@ Lucide is chosen because:
 
 ### Favicon
 
-`assets/logo-mark.svg` is already square and compact. Use it as the favicon at 32px without modification — the ring geometry survives the scale-down because the strokes are proportional.
+`assets/logo-mark.png` is already square and compact. Use it as the favicon at 32px without modification.
 
 ---
 

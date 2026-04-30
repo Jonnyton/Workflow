@@ -3,7 +3,7 @@
   Adds legal link, public build links, and supply boundary.
 -->
 <script lang="ts">
-  import SigilMark from './SigilMark.svelte';
+  import WorkflowMark from './WorkflowMark.svelte';
   import RitualLabel from './Primitives/RitualLabel.svelte';
   import legal from '$lib/content/legal-info.json';
   import token from '$lib/content/token-info.json';
@@ -15,7 +15,7 @@
 <footer class="footer">
   <div class="container footer__row">
     <div class="brand">
-      <SigilMark size={22} />
+      <WorkflowMark size={22} />
       <span class="brand__name">Workflow</span>
       <span class="brand__sub">at <a href="/">tinyassets.io</a></span>
     </div>

@@ -16,7 +16,7 @@
   <meta name="description" content={t.hero_subtitle} />
   <meta property="og:title" content="Workflow - {t.hero_title}" />
   <meta property="og:description" content={t.hero_subtitle} />
-  <meta property="og:image" content="/og-image.svg" />
+  <meta property="og:image" content="/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />

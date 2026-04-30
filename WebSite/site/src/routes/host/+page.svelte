@@ -163,14 +163,14 @@ workflow-mcp</code></pre>
           aria-pressed={selectedUniverse?.id === universe.id}
           onclick={() => (selectedUniverseId = universe.id)}
         >
-          <div class="row__sigil"></div>
+          <div class="row__node"></div>
           <div class="row__name">{universe.id}</div>
           <div class="row__meta">{universe.phase} · {compactNumber(universe.word_count)} words · {relativeStamp(universe.last_activity_at)}</div>
           <StatusPill kind={universe.phase.includes('idle') || universe.phase.includes('paused') ? 'idle' : 'live'} pulse={!universe.phase.includes('idle') && !universe.phase.includes('paused')}>{universe.phase}</StatusPill>
         </button>
       {/each}
       <a class="row row--ghost" href="/connect">
-        <div class="row__sigil row__sigil--ghost"></div>
+        <div class="row__node row__node--ghost"></div>
         <div class="row__name row__name--ghost">+ summon a daemon into one of these universes</div>
       </a>
       {#if selectedUniverse}
@@ -278,10 +278,10 @@ workflow-mcp</code></pre>
   .row:hover, .row--selected { background: rgba(109, 211, 166, 0.045); }
   .row--selected { border-color: rgba(109, 211, 166, 0.36); }
   .row:last-child { border-bottom: none; }
-  .row__sigil { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--ink-800), var(--ink-700)); border: 1.5px solid var(--violet-600); position: relative; }
-  .row__sigil::after { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--ember-600); box-shadow: 0 0 8px rgba(233,69,96,0.7); }
-  .row__sigil--ghost { background: transparent; border-style: dashed; opacity: 0.5; }
-  .row__sigil--ghost::after { display: none; }
+  .row__node { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--ink-800), var(--ink-700)); border: 1.5px solid var(--violet-600); position: relative; }
+  .row__node::after { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--signal-live); box-shadow: 0 0 8px rgba(109,211,166,0.55); }
+  .row__node--ghost { background: transparent; border-style: dashed; opacity: 0.5; }
+  .row__node--ghost::after { display: none; }
   .row__name { font-size: 14px; font-weight: 600; color: var(--fg-1); }
   .row__name--ghost { color: var(--fg-3); font-weight: 400; }
   .row__meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }

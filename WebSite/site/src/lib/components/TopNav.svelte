@@ -1,7 +1,7 @@
 <!-- TopNav — sticky-translucent. Active route gets ember underline. Mobile hamburger drawer. -->
 <script lang="ts">
   import { page } from '$app/state';
-  import SigilMark from './SigilMark.svelte';
+  import WorkflowMark from './WorkflowMark.svelte';
 
   const items = [
     { href: '/connect', label: 'Connect' },
@@ -25,7 +25,7 @@
 <header class="top">
   <div class="container top__row">
     <a class="brand" href="/" aria-label="Workflow home" onclick={close}>
-      <SigilMark size={28} />
+      <WorkflowMark size={28} />
       <span class="brand__name">Workflow</span>
     </a>
     <nav class="nav" aria-label="Primary">
