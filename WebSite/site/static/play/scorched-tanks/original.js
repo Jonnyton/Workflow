@@ -1,7 +1,7 @@
 (function () {
   const VAMIGA_ORIGIN = "https://vamigaweb.github.io";
   const VAMIGA_URL = `${VAMIGA_ORIGIN}/`;
-  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart.adf";
+  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart.adf?v=0fd8b963ab38";
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(

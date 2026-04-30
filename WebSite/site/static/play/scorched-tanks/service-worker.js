@@ -1,12 +1,12 @@
-const CACHE_NAME = "scorched-tanks-original-amiga-v3";
+const CACHE_NAME = "scorched-tanks-original-amiga-v4";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./original.js",
-  "./app.js",
-  "./assets/scorched-tanks-v1.90-autostart.adf",
-  "./manifest.webmanifest",
+  "./styles.css?v=0fd8b963",
+  "./original.js?v=0fd8b963",
+  "./app.js?v=0fd8b963",
+  "./assets/scorched-tanks-v1.90-autostart.adf?v=0fd8b963ab38",
+  "./manifest.webmanifest?v=0fd8b963",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
 ];
@@ -38,15 +38,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const destination = event.request.destination;
+
   if (
     event.request.mode === "navigate" ||
-    event.request.destination === "document"
+    ["document", "script", "style", "worker", "manifest"].includes(destination)
   ) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./", copy));
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, copy));
           return response;
         })
         .catch(() =>
