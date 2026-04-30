@@ -121,9 +121,6 @@ class TestDiscoverDomainsUnion:
         monkeypatch.setattr(
             discovery_mod, "_discover_filesystem_domains", lambda: [],
         )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: False,
-        )
         result = discovery_mod.discover_domains()
         assert result == ["third_party"]
 
@@ -133,9 +130,6 @@ class TestDiscoverDomainsUnion:
         monkeypatch.setattr(
             discovery_mod, "_discover_filesystem_domains",
             lambda: ["dev_domain_a", "dev_domain_b"],
-        )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: False,
         )
         result = discovery_mod.discover_domains()
         assert result == ["dev_domain_a", "dev_domain_b"]
@@ -149,9 +143,6 @@ class TestDiscoverDomainsUnion:
             discovery_mod, "_discover_filesystem_domains",
             lambda: ["fantasy_daemon", "research_probe"],
         )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: False,
-        )
         result = discovery_mod.discover_domains()
         # Name appears once, order deterministic.
         assert result.count("fantasy_daemon") == 1
@@ -163,45 +154,8 @@ class TestDiscoverDomainsUnion:
             discovery_mod, "_discover_filesystem_domains",
             lambda: ["mike", "bravo"],
         )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: False,
-        )
         result = discovery_mod.discover_domains()
         assert result == sorted(result)
-
-    def test_rename_compat_adds_fantasy_author(
-        self, patch_entry_points, monkeypatch,
-    ):
-        """With compat flag on, seeing fantasy_daemon also surfaces
-        fantasy_author (legacy registry contract preserved during the
-        Author→Daemon rename).
-        """
-        patch_entry_points({})
-        monkeypatch.setattr(
-            discovery_mod, "_discover_filesystem_domains",
-            lambda: ["fantasy_daemon"],
-        )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: True,
-        )
-        result = discovery_mod.discover_domains()
-        assert "fantasy_author" in result
-        assert "fantasy_daemon" in result
-
-    def test_rename_compat_off_drops_fantasy_author(
-        self, patch_entry_points, monkeypatch,
-    ):
-        """Compat off → only canonical names."""
-        patch_entry_points({})
-        monkeypatch.setattr(
-            discovery_mod, "_discover_filesystem_domains",
-            lambda: ["fantasy_daemon"],
-        )
-        monkeypatch.setattr(
-            discovery_mod, "rename_compat_enabled", lambda: False,
-        )
-        result = discovery_mod.discover_domains()
-        assert result == ["fantasy_daemon"]
 
 
 # ---------------------------------------------------------------------------
@@ -238,9 +192,6 @@ def test_auto_register_uses_entry_point_target(patch_entry_points, monkeypatch):
         discovery_mod, "_discover_filesystem_domains", lambda: [],
     )
     monkeypatch.setattr(
-        discovery_mod, "rename_compat_enabled", lambda: False,
-    )
-    monkeypatch.setattr(
         discovery_mod.importlib, "import_module", _fake_import,
     )
 
@@ -260,9 +211,6 @@ def test_auto_register_skips_bad_entry_point_target(
     monkeypatch.setattr(
         discovery_mod, "_discover_filesystem_domains", lambda: [],
     )
-    monkeypatch.setattr(
-        discovery_mod, "rename_compat_enabled", lambda: False,
-    )
 
     registry = _FakeRegistry()
     # Must not raise.
@@ -270,18 +218,13 @@ def test_auto_register_skips_bad_entry_point_target(
     assert registry.registered == []
 
 
-def test_auto_register_filesystem_fallback_still_works(
-    patch_entry_points, monkeypatch,
-):
+def test_auto_register_filesystem_fallback_still_works(patch_entry_points):
     """When entry-point table is empty, the filesystem path still
     imports + registers ``research_probe`` the old way.
     """
     patch_entry_points({})
     # Don't mock the filesystem discovery — let it run against the
     # real ``domains/`` tree so we verify the real import chain.
-    monkeypatch.setattr(
-        discovery_mod, "rename_compat_enabled", lambda: False,
-    )
 
     registry = _FakeRegistry()
     discovery_mod.auto_register(registry)
