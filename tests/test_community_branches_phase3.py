@@ -142,6 +142,46 @@ def test_compiler_accepts_approved_source_code():
     assert result["out"] == 6
 
 
+def test_prompt_template_multi_output_keys_write_every_declared_key():
+    """BUG-015: multi-output prompt nodes must not keep only output_keys[0]."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from workflow.graph_compiler import compile_branch
+
+    b = BranchDefinition(name="multi-output", entry_point="writer")
+    b.node_defs = [
+        NodeDefinition(
+            node_id="writer",
+            display_name="Writer",
+            prompt_template="Write the values.",
+            output_keys=["summary", "title"],
+        )
+    ]
+    b.graph_nodes = [GraphNodeRef(id="writer", node_def_id="writer")]
+    b.edges = [
+        EdgeDefinition(from_node="START", to_node="writer"),
+        EdgeDefinition(from_node="writer", to_node="END"),
+    ]
+    b.state_schema = [
+        {"name": "summary", "type": "str"},
+        {"name": "title", "type": "str"},
+    ]
+
+    prompts: list[str] = []
+
+    def provider(prompt, system="", *, role="writer", fallback_response=None):
+        prompts.append(prompt)
+        return '{"summary": "full summary", "title": "short title"}'
+
+    compiled = compile_branch(b, provider_call=provider)
+    app = compiled.graph.compile(checkpointer=InMemorySaver())
+    result = app.invoke({}, config={"configurable": {"thread_id": "bug-015"}})
+
+    assert result["summary"] == "full summary"
+    assert result["title"] == "short title"
+    assert "RESPONSE FORMAT" in prompts[0]
+
+
 def test_compiler_synthesized_typeddict_reducer_append():
     """state_schema with reducer=append should accumulate across nodes."""
     from langgraph.checkpoint.memory import InMemorySaver
