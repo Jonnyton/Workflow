@@ -34,6 +34,11 @@ GitHub API.
 - Live MCP has Goal `4ff5862cc26d` ("Route a patch request through
   investigation, PR, release, and live observation") bound to user-made Branch
   `fd5c66b1d87d` (`change_loop_v1`) after host approval on 2026-04-30.
+- Rendered ChatGPT UI proof on 2026-04-30 confirmed read-only through the
+  Workflow connector: Goal `4ff5862cc26d` exists, includes branch
+  `fd5c66b1d87d`, branch name is `change_loop_v1`, wiki `BUG-044` exists, and
+  no changes were made. Screenshot artifact:
+  `output/chatgpt-loop-proof-main.png`.
 - Live run `020a76ae0530478e` of `change_loop_v1` failed at compile time:
   `ValueError: 'investigation_gate' is already being used as a state key`.
   This produced wiki `BUG-044`.

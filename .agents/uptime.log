@@ -11,3 +11,4 @@
 2026-04-26T14:30:35-07:00 GREEN layer=wiki url=https://tinyassets.io/mcp surface=wiki_write rtt_ms=800
 2026-04-27T21:53:22-07:00 RED   layer=2 url=https://claude.ai/new exit=13 rtt_ms=133 reason="module 'lead_browser' has no attribute 'navigate'"
 2026-04-27T22:34:59-07:00 RED   layer=2 url=https://claude.ai/new exit=10 rtt_ms=49588 reason='tool_not_invoked'
+2026-04-29T19:44:02-07:00 GREEN layer=1 url=https://tinyassets.io/mcp rtt_ms=311
