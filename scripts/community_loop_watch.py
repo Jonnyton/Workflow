@@ -46,8 +46,15 @@ REVIEWED_LABEL = "auto-fix-reviewed"
 ALREADY_FIXED_LABEL = "auto-fix-already-fixed"
 BLOCKED_REVIEWED_LABEL = "auto-fix-blocked"
 PR_BLOCKED_LABEL = "auto-fix-pr-blocked"
+BRANCH_PUSH_BLOCKED_LABEL = "auto-fix-branch-push-blocked"
 TERMINAL_REVIEW_LABELS = frozenset(
-    {REVIEWED_LABEL, ALREADY_FIXED_LABEL, BLOCKED_REVIEWED_LABEL, PR_BLOCKED_LABEL}
+    {
+        REVIEWED_LABEL,
+        ALREADY_FIXED_LABEL,
+        BLOCKED_REVIEWED_LABEL,
+        PR_BLOCKED_LABEL,
+        BRANCH_PUSH_BLOCKED_LABEL,
+    }
 )
 
 STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}

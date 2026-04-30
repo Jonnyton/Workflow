@@ -49,10 +49,6 @@ on:
     types: [completed]
   schedule:
     - cron: "7,22,37,52 * * * *"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/auto-fix-bug.yml"
 
 permissions:
   contents: write        # create branch + push commits
@@ -268,6 +264,11 @@ jobs:
                 name: 'auto-fix-pr-blocked',
                 color: 'd93f0b',
                 description: 'Automated writer pushed a branch, but GitHub blocked Actions from opening the PR.',
+              },
+              {
+                name: 'auto-fix-branch-push-blocked',
+                color: 'd93f0b',
+                description: 'Automated writer produced a patch, but GitHub blocked Actions from pushing the branch.',
               },
               {
                 name: 'writer:claude',
@@ -644,9 +645,21 @@ jobs:
             -m "Fixes #${{ steps.meta.outputs.issue_number }}" \
             -m "Writer family: Codex" \
             -m "Required checker family: Claude"
-          git push --set-upstream origin "$branch"
+          push_log="$RUNNER_TEMP/codex-git-push.log"
+          if ! git push --set-upstream origin "$branch" 2>&1 | tee "$push_log"; then
+            if grep -q "refusing to allow a GitHub App to create or update workflow" "$push_log"; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "no_change_reason=" >> "$GITHUB_OUTPUT"
+              echo "push_blocked=true" >> "$GITHUB_OUTPUT"
+              echo "push_block_reason=github_actions_workflow_permission_missing" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit 1
+          fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "no_change_reason=" >> "$GITHUB_OUTPUT"
+          echo "push_blocked=false" >> "$GITHUB_OUTPUT"
+          echo "push_block_reason=" >> "$GITHUB_OUTPUT"
 
       - name: Create Codex PR
         id: codex-pr-create
@@ -851,6 +864,8 @@ jobs:
           CODEX_LAST_MESSAGE: ${{ steps.codex-subscription.outputs.last_message }}
           CODEX_PR_BLOCKED: ${{ steps.codex-pr-create.outputs.blocked }}
           CODEX_PR_BLOCK_REASON: ${{ steps.codex-pr-create.outputs.block_reason }}
+          CODEX_PUSH_BLOCKED: ${{ steps.codex-subscription.outputs.push_blocked }}
+          CODEX_PUSH_BLOCK_REASON: ${{ steps.codex-subscription.outputs.push_block_reason }}
         with:
           script: |
             const issueNumber = Number('${{ matrix.issue.issue_number }}');
@@ -876,8 +891,10 @@ jobs:
             const codexNoChangeReason = process.env.CODEX_NO_CHANGE_REASON || '';
             const codexPrBlocked = process.env.CODEX_PR_BLOCKED === 'true';
             const codexPrBlockReason = process.env.CODEX_PR_BLOCK_REASON || '';
+            const codexPushBlocked = process.env.CODEX_PUSH_BLOCKED === 'true';
+            const codexPushBlockReason = process.env.CODEX_PUSH_BLOCK_REASON || '';
             const labels = ['needs-human'];
-            if (codexNoChangeReason || codexPrBlocked) {
+            if (codexNoChangeReason || codexPrBlocked || codexPushBlocked) {
               labels.push('auto-fix-reviewed');
             }
             if (codexNoChangeReason) {
@@ -885,6 +902,9 @@ jobs:
             }
             if (codexPrBlocked) {
               labels.push('auto-fix-pr-blocked');
+            }
+            if (codexPushBlocked) {
+              labels.push('auto-fix-branch-push-blocked');
             }
             if (!claudeSubscriptionVisible && !codexSubscriptionVisible) {
               labels.push('auto-fix-claude-subscription-missing');
@@ -915,6 +935,9 @@ jobs:
                 codexNoChangeReason ? `Codex no-change reason: \`${codexNoChangeReason}\`` : '',
                 codexPrBlocked
                   ? `PR creation blocked: \`${codexPrBlockReason || 'unknown'}\``
+                  : '',
+                codexPushBlocked
+                  ? `Branch push blocked: \`${codexPushBlockReason || 'unknown'}\``
                   : '',
                 codexPrBlocked && branch
                   ? `Auto-fix branch: https://github.com/${context.repo.owner}/${context.repo.repo}/tree/${branch}`

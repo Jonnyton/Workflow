@@ -44,6 +44,14 @@ def test_deploy_completion_retries_auth_blocked_queue(wf):
     )
 
 
+def test_auto_fix_does_not_self_trigger_on_workflow_push(wf):
+    triggers = wf.get(True, wf.get("on", {}))
+    assert "push" not in triggers, (
+        "Self-triggering from workflow edits can make GITHUB_TOKEN branch pushes "
+        "fail with workflow-permission errors."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
@@ -240,6 +248,16 @@ def test_codex_subscription_step_uses_codex_cli(wf):
     assert "OPENAI_API_KEY" in run_script and "unset OPENAI_API_KEY" in run_script
 
 
+def test_codex_branch_push_permission_failure_is_classified(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert codex_step is not None, "Must have a Codex subscription writer step"
+    run_script = codex_step.get("run", "")
+    assert "refusing to allow a GitHub App to create or update workflow" in run_script
+    assert "push_blocked=true" in run_script
+    assert "github_actions_workflow_permission_missing" in run_script
+
+
 def test_codex_no_change_is_classified_from_final_message(wf):
     steps = wf["jobs"]["fix"]["steps"]
     codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
@@ -353,8 +371,10 @@ def test_no_pr_step_marks_review_without_failing_workflow(wf):
     assert "auto-fix-reviewed" in script
     assert "auto-fix-blocked" in script
     assert "auto-fix-pr-blocked" in script
+    assert "auto-fix-branch-push-blocked" in script
     assert "CODEX_BRANCH" in str(no_pr_step.get("env", {}))
     assert "CODEX_PR_BLOCKED" in str(no_pr_step.get("env", {}))
+    assert "CODEX_PUSH_BLOCKED" in str(no_pr_step.get("env", {}))
     assert "mode === 'codex_subscription' && codexBranch" in script
 
 
@@ -365,3 +385,5 @@ def test_pr_blocked_label_is_defined(wf):
     script = str(labels_step.get("with", {}).get("script", ""))
     assert "auto-fix-pr-blocked" in script
     assert "GitHub blocked Actions from opening the PR" in script
+    assert "auto-fix-branch-push-blocked" in script
+    assert "GitHub blocked Actions from pushing the branch" in script

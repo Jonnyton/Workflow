@@ -77,6 +77,12 @@ opening the PR, the workflow comments with the branch URL, labels the issue
 This preserves the branch for another daemon or human to open while preventing
 the scheduler from re-spending subscription runs on the same request.
 
+If Codex produces a patch but GitHub blocks Actions from pushing the branch
+because the ref would update workflow files without the required GitHub App
+permission, the workflow labels `auto-fix-branch-push-blocked` and exits green.
+This is a terminal handoff state; retry only after changing the GitHub token
+path or after a non-workflow-triggered run can push a clean branch.
+
 ### Path C - No subscription auth (graceful-skip)
 
 When no approved subscription-backed writer secret is visible to GitHub
@@ -92,6 +98,11 @@ secret is added and `Deploy prod` completes. That deploy-completion wakeup plus
 the scheduled backfill retries `needs-human` requests that have not had a real
 writer attempt yet once subscription writer auth is visible, and clears the
 auth-missing labels before attempting the fix.
+
+The auto-fix workflow intentionally does not self-trigger on pushes to
+`.github/workflows/auto-fix-bug.yml`. GitHub's default Actions token can reject
+branch pushes from those runs when the pushed branch carries workflow-file
+history but the token has no `workflow` permission.
 
 ## Disable toggle
 
@@ -176,6 +187,7 @@ gh issue edit <N> --add-label daemon-request
 | Workflow green but issue has `auto-fix-blocked` | Writer auth worked, but the subscription writer found no safe autonomous patch | Human or another daemon should refine the request, land the prerequisite, or manually redispatch |
 | Issue closed with `auto-fix-already-fixed` | Writer verified the request is already addressed and no repo change was needed | No action unless the closure rationale is wrong; reopen or redispatch manually |
 | Issue has `auto-fix-pr-blocked` | Writer pushed a branch, but repository Actions policy blocked `GITHUB_TOKEN` from creating the PR | Open the branch PR through a user/app token, or enable repo Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests |
+| Issue has `auto-fix-branch-push-blocked` | Writer produced a patch, but GitHub blocked the Actions token from pushing the branch because of workflow-file permission rules | Redispatch after wiring a token/app with workflow permission, or re-run once the workflow-editing push is no longer the triggering context |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
 | Workflow not triggering | Issue labeled before workflow existed | Re-label with `auto-change` |
