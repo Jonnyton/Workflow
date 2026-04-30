@@ -6,12 +6,12 @@
   - SHA256 `E95E9EBFAC31A6BAB8C182E4DE0E53167C04424AB7B0733A071A2294CC17F953`
   - SHA1 `8797D9CE33DCAA5E39D78676258542C30F774A00`
   - MD5 `CA16CDF1F81DAFDE22157866F0CAF6C1`
-- Browser launch asset: `assets/scorched-tanks-v1.90-autostart-85802762.adf` (`assets/scorched-tanks-v1.90-autostart.adf` is retained as a corrected compatibility alias).
-- Launch patch: `S/Startup-Sequence` changes from `LoadWB\nendcli\n` to `df0:Scorched_TanksV1.90\nendcli\n`; game executable and data assets are unchanged.
+- Browser launch asset: `assets/scorched-tanks-v1.90-autostart-a642eb46.adf` (`assets/scorched-tanks-v1.90-autostart.adf` is retained as a corrected compatibility alias).
+- Launch patch: `S/Startup-Sequence` changes from `LoadWB\nendcli\n` to `cd :\nScorched_TanksV1.90\nendcli\n`; game executable and data assets are unchanged.
 - Launch asset hashes:
-  - SHA256 `858027627FD0222646E3BAE23409B2E98D5D249DD04312517572AA56CB5DFE0C`
-  - SHA1 `A531A83E6BE8E83ABE8EDA64E580EFA692C73E42`
-  - MD5 `591A35B55DD469F404BC276F4E7416BE`
+  - SHA256 `A642EB4693FB8E0D8FF0CA9A0B830BFC6D9F0816A2DB3C77C44102B5B1B86976`
+  - SHA1 `1C379C482E0BCBCB14D9F8F61043545440AE4397`
+  - MD5 `FF0D3582E97F4A316874BC47BB8B94C3`
 - Reference package: Scorched Tanks v1.85 on Aminet at `https://aminet.net/package/game/shoot/Scorch185`.
 - Browser runtime: vAmigaWeb at `https://github.com/vAmigaWeb/vAmigaWeb` and `https://vamigaweb.github.io/`.
 
