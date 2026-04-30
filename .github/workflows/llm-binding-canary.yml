@@ -56,7 +56,7 @@ jobs:
             --url "${PROBE_URL}" --timeout 20 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "status=$code"
             echo "msg<<${_delim}"
@@ -224,8 +224,10 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### LLM binding canary result" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **endpoint** → \`${{ env.PROBE_URL }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **verify exit** → \`${{ needs.probe.outputs.status }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **overall** → **${{ needs.probe.outputs.overall }}**" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### LLM binding canary result"
+            echo ""
+            echo "- **endpoint** → \`${{ env.PROBE_URL }}\`"
+            echo "- **verify exit** → \`${{ needs.probe.outputs.status }}\`"
+            echo "- **overall** → **${{ needs.probe.outputs.overall }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
