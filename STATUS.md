@@ -17,7 +17,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
 - **[P1 filed:2026-04-30]** Castles II live branch run `28479d8ddfb44488` failed `provider_exhausted` at `candidate_discovery`; blocks branch-run proof (see BUG-038).
 - [filed:2026-04-30 verified:2026-04-30] Scorched Tanks canonical `db3401df02d3@a084a818` run `f076724d2d1340e3` blocks on missing local-desktop MCP install/shortcut capability.
-- [filed:2026-04-30] Live Claude.ai `ui-test` blocked: prompt reached composer but no assistant turn/tool call; usage limit until 2026-05-01 19:00 PT.
+- [filed:2026-04-30 verified:2026-04-30] Live Claude.ai `ui-test` blocked: Send button + Enter tried; prompt remains unsent/no assistant/tool call; usage limit until 2026-05-01 19:00 PT.
 
 ## Approved Specs
 
