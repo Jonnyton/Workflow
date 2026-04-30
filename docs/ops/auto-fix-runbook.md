@@ -56,6 +56,11 @@ The workflow installs the bundle into `~/.codex/auth.json`, runs
 `@openai/codex`, commits any working-tree changes to a branch, and opens a PR
 with `Writer family: Codex` / `Required checker family: Claude`.
 
+GitHub-hosted runners are already isolated, so the workflow runs Codex with
+Codex's internal sandbox bypass flag. The workflow unsets the base64 auth
+bundle and API-key env vars before invoking Codex; otherwise nested bubblewrap
+fails on hosted runners before even `pwd` can run.
+
 `OPENAI_API_KEY` is not an approved default daemon writer lane for this project.
 
 ### Path C - No subscription auth (graceful-skip)

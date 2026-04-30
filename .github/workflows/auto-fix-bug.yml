@@ -561,7 +561,7 @@ jobs:
           npm install -g @openai/codex
           git checkout -B "$branch"
 
-          codex exec --full-auto --skip-git-repo-check --cd "$GITHUB_WORKSPACE" --output-last-message "$RUNNER_TEMP/codex-last-message.md" - <<'PROMPT'
+          codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --cd "$GITHUB_WORKSPACE" --output-last-message "$RUNNER_TEMP/codex-last-message.md" - <<'PROMPT'
           You are handling a community change request in the Workflow repository.
 
           Request ID: ${{ steps.meta.outputs.request_id }}

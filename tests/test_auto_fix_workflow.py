@@ -226,7 +226,8 @@ def test_codex_subscription_step_uses_codex_cli(wf):
     assert codex_step is not None, "Must have a Codex subscription writer step"
     run_script = codex_step.get("run", "")
     assert "npm install -g @openai/codex" in run_script
-    assert "codex exec --full-auto" in run_script
+    assert "codex exec --dangerously-bypass-approvals-and-sandbox" in run_script
+    assert "--full-auto" not in run_script
     assert "WORKFLOW_CODEX_AUTH_JSON_B64" in str(codex_step.get("env", {}))
     assert "OPENAI_API_KEY" in run_script and "unset OPENAI_API_KEY" in run_script
 
