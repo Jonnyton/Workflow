@@ -142,6 +142,35 @@ jobs:
               'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH' \
               < deploy/install-workflow-env.sh
 
+      - name: Sync runtime deploy files
+        run: |
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/compose.yml \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-compose.yml"
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/vector.yaml \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector.yaml"
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/vector-betterstack.yaml \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector-betterstack.yaml"
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/vector-entrypoint.sh \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector-entrypoint.sh"
+          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
+              deploy/workflow-daemon.service \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-daemon.service"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "set -e; \
+               sudo mkdir -p /opt/workflow/deploy; \
+               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-compose.yml /opt/workflow/compose.yml; \
+               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-compose.yml /opt/workflow/deploy/compose.yml; \
+               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-vector.yaml /opt/workflow/deploy/vector.yaml; \
+               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-vector-betterstack.yaml /opt/workflow/deploy/vector-betterstack.yaml; \
+               sudo install -m 0755 -o workflow -g workflow /tmp/workflow-vector-entrypoint.sh /opt/workflow/deploy/vector-entrypoint.sh; \
+               sudo install -m 0644 -o root -g root /tmp/workflow-daemon.service /etc/systemd/system/workflow-daemon.service; \
+               sudo systemctl daemon-reload"
+
       - name: Deploy new image
         id: deploy
         env:
@@ -219,6 +248,20 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify cloud worker is running
+        run: |
+          running=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo docker inspect -f '{{.State.Running}}' workflow-worker 2>/dev/null || true")
+          if [ "${running}" != "true" ]; then
+            echo "::error::workflow-worker is not running after deploy; node execution is not 24/7."
+            ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "sudo docker compose -f /opt/workflow/compose.yml ps; sudo docker logs --tail 120 workflow-worker 2>&1 || true"
+            exit 1
+          fi
+          echo "workflow-worker running"
 
       - name: Post-deploy canary — canonical URL only
         id: canary

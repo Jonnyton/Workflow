@@ -241,6 +241,37 @@ def test_deploy_syncs_codex_subscription_bundle_with_helper():
     )
 
 
+def test_deploy_syncs_runtime_compose_and_systemd_files():
+    wf = _load()
+    sync_step = next(
+        (s for s in _steps(wf) if s.get("name") == "Sync runtime deploy files"),
+        None,
+    )
+    assert sync_step is not None, "deploy must sync runtime compose files"
+    run_script = sync_step.get("run", "") or ""
+    assert "deploy/compose.yml" in run_script
+    assert "/opt/workflow/compose.yml" in run_script
+    assert "/opt/workflow/deploy/compose.yml" in run_script
+    assert "deploy/workflow-daemon.service" in run_script
+    assert "/etc/systemd/system/workflow-daemon.service" in run_script
+    assert "systemctl daemon-reload" in run_script
+    assert "vector-entrypoint.sh" in run_script
+
+
+def test_deploy_verifies_cloud_worker_running():
+    wf = _load()
+    worker_step = next(
+        (s for s in _steps(wf) if s.get("name") == "Verify cloud worker is running"),
+        None,
+    )
+    assert worker_step is not None, "deploy must verify workflow-worker is running"
+    run_script = worker_step.get("run", "") or ""
+    assert "workflow-worker" in run_script
+    assert "docker inspect" in run_script
+    assert "State.Running" in run_script
+    assert "exit 1" in run_script
+
+
 def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
     wf = _load()
     for step in _steps(wf):
