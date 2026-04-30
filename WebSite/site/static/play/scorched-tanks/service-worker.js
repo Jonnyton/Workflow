@@ -1,4 +1,4 @@
-const CACHE_NAME = "scorched-tanks-browser-port-v1";
+const CACHE_NAME = "scorched-tanks-browser-port-v2";
 const ASSETS = [
   "./",
   "./index.html",
