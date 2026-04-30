@@ -32,10 +32,27 @@ def test_render_preserves_json_example_with_literal_braces():
     assert out == 'Output as {"doc": "X", "page": 3}'
 
 
+def test_render_collapses_double_brace_literal_escapes():
+    template = 'Output as {{"doc": "X", "page": 3}}'
+    out = _render_template(template, {})
+    assert out == 'Output as {"doc": "X", "page": 3}'
+
+
 def test_render_handles_mix_of_placeholder_and_literal_braces():
     template = 'topic: {topic}, example: {"doc": "X"}'
     out = _render_template(template, {"topic": "whales"})
     assert out == 'topic: whales, example: {"doc": "X"}'
+
+
+def test_render_handles_double_brace_literal_escape_around_placeholder():
+    template = 'Return JSON: {{"topic": "{topic}"}}'
+    out = _render_template(template, {"topic": "whales"})
+    assert out == 'Return JSON: {"topic": "whales"}'
+
+
+def test_render_preserves_double_braces_inside_state_values():
+    out = _render_template("payload: {value}", {"value": "{{kept}}"})
+    assert out == "payload: {{kept}}"
 
 
 def test_render_preserves_multiple_json_literal_blocks():
@@ -204,6 +221,33 @@ def test_jinja_style_double_braces_still_substitute():
         config={"configurable": {"thread_id": "t3"}},
     )
     assert captured["prompt"] == "Hello world!"
+
+
+def test_compile_and_run_template_with_double_brace_json_escape():
+    """Python-style doubled braces around JSON literals render as single
+    literal braces while inner placeholders still substitute."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from workflow.graph_compiler import compile_branch
+
+    captured: dict[str, str] = {}
+
+    def _provider(prompt: str, system: str, *, role: str) -> str:
+        captured["prompt"] = prompt
+        return "ok"
+
+    branch = _make_branch(
+        'Return as JSON: {{"doc": "X", "topic": "{topic}"}}',
+        ["topic"],
+    )
+    compiled = compile_branch(branch, provider_call=_provider)
+    runnable = compiled.graph.compile(checkpointer=InMemorySaver())
+    out = runnable.invoke(
+        {"topic": "whales"},
+        config={"configurable": {"thread_id": "t-double-json"}},
+    )
+    assert captured["prompt"] == 'Return as JSON: {"doc": "X", "topic": "whales"}'
+    assert out["result"] == "ok"
 
 
 # ─── Build-time placeholder validation (BUG-014 Part B) ─────────────────────

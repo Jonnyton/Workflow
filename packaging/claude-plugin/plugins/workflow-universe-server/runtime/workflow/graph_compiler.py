@@ -351,7 +351,8 @@ def _render_template(template: str, state: dict[str, Any]) -> str:
         return str(state[key])
 
     normalized = _normalize_placeholders(template)
-    substituted = _PLACEHOLDER_RE.sub(_sub, normalized)
+    literal_unescaped = normalized.replace("{{", "{").replace("}}", "}")
+    substituted = _PLACEHOLDER_RE.sub(_sub, literal_unescaped)
     return _unescape_literal_braces(substituted)
 
 
