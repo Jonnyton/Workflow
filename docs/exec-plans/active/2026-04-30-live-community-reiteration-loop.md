@@ -130,13 +130,20 @@ GitHub API.
   --verbose` was green locally. The loop is now visible as down rather than
   falsely green.
 - Subscription-only writer policy shipped to `main` on 2026-04-30 at commit
-  `a68fef6`. Live proof: `Auto-fix change` run `25149820884` exited success
+  `b8d30ac`. Live proof: `Auto-fix change` run `25149820884` exited success
   without using API-key billing lanes, labeled issue #64
   `auto-fix-claude-subscription-missing`, and reported
   `CLAUDE_CODE_OAUTH_TOKEN=false`, `OPENAI_API_KEY=true` (diagnostic only).
   Follow-up deploy hardening strips API-key provider env vars from
   containerized daemons unless `WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`
   and supports subscription Codex auth via `WORKFLOW_CODEX_AUTH_JSON_B64`.
+- Deploy subscription binding shipped to `main` on 2026-04-30 at commit
+  `d2d9b93`. Live proof: `actionlint` run `25152232422`, `Build and publish
+  image` run `25152232417`, `Docker build smoke` run `25152232467`, and
+  `Deploy prod` run `25152260961` passed. Deploy logs proved
+  `HAS_CODEX_AUTH_BUNDLE=false`, so live `llm_endpoint_bound` remains `unset`;
+  the remaining blocker is absent subscription auth secret visibility, not an
+  API-key fallback.
 
 ## Existing Pieces
 

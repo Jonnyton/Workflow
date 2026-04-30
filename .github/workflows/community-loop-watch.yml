@@ -24,6 +24,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write
 
 concurrency:
   group: community-loop-watch
@@ -124,6 +125,45 @@ jobs:
             const probeMsg = process.env.PROBE_MSG || '';
             const now = new Date().toISOString();
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const staleDispatchable = new Set([
+              'wiki-bug-sync.yml',
+              'uptime-canary.yml',
+            ]);
+
+            async function dispatchStaleDependencies() {
+              let status;
+              try {
+                status = JSON.parse(probeMsg);
+              } catch (error) {
+                core.warning(`Could not parse community loop status JSON for self-heal dispatch: ${error.message}`);
+                return;
+              }
+
+              const stages = Array.isArray(status.stages) ? status.stages : [];
+              for (const stage of stages) {
+                const workflowId = stage?.details?.workflow_id;
+                const summary = String(stage?.summary || '');
+                if (
+                  stage?.status === 'red' &&
+                  staleDispatchable.has(workflowId) &&
+                  summary.includes('has not run successfully')
+                ) {
+                  try {
+                    await github.rest.actions.createWorkflowDispatch({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      workflow_id: workflowId,
+                      ref: 'main',
+                    });
+                    console.log(`dispatched stale dependency workflow ${workflowId}`);
+                  } catch (error) {
+                    core.warning(`Could not dispatch stale dependency workflow ${workflowId}: ${error.message}`);
+                  }
+                }
+              }
+            }
+
+            await dispatchStaleDependencies();
 
             try {
               await github.rest.issues.getLabel({
