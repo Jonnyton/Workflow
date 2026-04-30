@@ -2596,8 +2596,8 @@ def search_goals(
     Per spec §Search: tokenized LIKE for v1, FTS5 if we hit scale.
     Multi-word queries are split into individual tokens; each token is
     matched case-insensitively against name + description + tags_json.
-    Rows that match at least one token are returned, ranked by how many
-    tokens matched (descending), then by recency.
+    Rows must match every token somewhere in the combined field haystack;
+    this catches obvious matches split across name, description, and tags.
 
     Single-token queries behave identically to the original LIKE search.
     Hidden Goals (visibility='deleted') are excluded.
@@ -2623,7 +2623,7 @@ def search_goals(
                 " ".join(g.get("tags") or []).lower(),
             ])
             hit_count = sum(1 for t in tokens if t in haystack)
-            if hit_count > 0:
+            if hit_count == len(tokens):
                 scored.append((hit_count, g))
 
         scored.sort(key=lambda x: -x[0])

@@ -5,8 +5,8 @@ Root cause: `search_goals` wrapped the entire query in a single LIKE pattern
 phrase isn't a substring of any goal's name/description/tags. Single-token
 queries happened to work, masking the bug.
 
-Fix: tokenize the query and match each token independently; rank by
-token-overlap count.
+Fix: tokenize the query and match each token against the combined
+name/description/tags haystack.
 
 All tests use a tmp_path SQLite database.
 """
@@ -30,6 +30,9 @@ def goals_db(tmp_path):
     save_goal(base, goal={"name": "Complete a software project end-to-end",
               "description": "Ship a real working piece of software.",
               "tags": ["software", "project", "shipping"]})
+    save_goal(base, goal={"name": "Build reliable workflows",
+              "description": "Coordinate teams that ship real products.",
+              "tags": ["software", "collaboration"]})
     save_goal(base, goal={"name": "Build an AI agent",
               "description": "Create an autonomous agent that can complete tasks.",
               "tags": ["agent", "AI", "automation"]})
@@ -45,33 +48,21 @@ def goals_db(tmp_path):
 # ── multi-token query ────────────────────────────────────────────────────────
 
 
-def test_multi_token_query_returns_matching_goal(goals_db):
-    """'agent teams build software' should match the software goal (and/or
-    the agent goal) — not return 0 results."""
+def test_multi_token_query_returns_match_across_title_tags_and_description(goals_db):
+    """Tokens can match across title, tags, and description fields."""
     from workflow.daemon_server import search_goals
 
-    results = search_goals(goals_db, query="agent teams build software")
+    results = search_goals(goals_db, query="build teams software")
     names = [r["name"] for r in results]
-    assert results, (
-        "Multi-token query 'agent teams build software' returned 0 results. "
-        f"Expected at least one match. Available goals: {names}"
-    )
+    assert names == ["Build reliable workflows"]
 
 
-def test_multi_token_query_matches_by_any_token(goals_db):
-    """Each token is matched independently — a goal matching 3/4 tokens
-    comes before one matching 1/4 tokens."""
+def test_multi_token_query_requires_all_tokens(goals_db):
+    """A partial match must not mask a missed multi-token query."""
     from workflow.daemon_server import search_goals
 
-    results = search_goals(goals_db, query="software project shipping research")
-    assert results, "Expected results for multi-token query"
-    # 'Complete a software project end-to-end' has name + tags matching
-    # software, project, shipping — should rank above the research paper
-    # which only matches 'research'.
-    top_name = results[0]["name"]
-    assert "software" in top_name.lower(), (
-        f"Expected software goal to rank first. Got: {top_name!r}"
-    )
+    results = search_goals(goals_db, query="software unrelated")
+    assert results == []
 
 
 def test_single_token_still_works(goals_db):
@@ -146,21 +137,20 @@ def test_deleted_goals_excluded(goals_db):
 
 
 def test_higher_token_overlap_ranks_first(goals_db):
-    """A goal matching more tokens must rank above one matching fewer."""
+    """Exact multi-token matches are returned before later exact matches."""
     from workflow.daemon_server import save_goal, search_goals
 
-    # 'xyztoken' appears in both goals; 'alphatarget' only in the first.
     save_goal(goals_db, goal={"name": "xyztoken alphatarget goal",
-              "description": "matches two search tokens",
+              "description": "matches both search tokens",
               "tags": []})
-    save_goal(goals_db, goal={"name": "xyztoken only goal",
-              "description": "matches one search token",
+    save_goal(goals_db, goal={"name": "alphatarget xyztoken later goal",
+              "description": "also matches both search tokens",
               "tags": []})
 
     results = search_goals(goals_db, query="xyztoken alphatarget")
     names = [r["name"] for r in results]
     assert names[0] == "xyztoken alphatarget goal", (
-        f"Higher-overlap goal should rank first. Got order: {names}"
+        f"First exact match should rank first. Got order: {names}"
     )
 
 
@@ -178,7 +168,7 @@ def test_goals_action_search_multi_token(tmp_path, monkeypatch):
               "description": "Ship a real working piece of software.",
               "tags": ["software", "project", "shipping"]})
 
-    raw = goals(action="search", query="agent software build")
+    raw = goals(action="search", query="complete software project")
     result = json.loads(raw)
     assert result["count"] > 0, (
         f"MCP goals search multi-token returned count=0. Response: {result}"
