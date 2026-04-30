@@ -184,6 +184,7 @@
       window.addEventListener("load", () => {
         navigator.serviceWorker
           .register("./service-worker.js", { scope: "./" })
+          .then(() => setRuntimeStatus("Browser install ready"))
           .catch(() => setRuntimeStatus("Offline cache unavailable"));
       });
     }
@@ -196,7 +197,7 @@
 
     installButton.addEventListener("click", async () => {
       if (!installPrompt) {
-        setRuntimeStatus("Install unavailable in this browser");
+        setRuntimeStatus("Install from this browser's app menu");
         return;
       }
       installButton.disabled = true;

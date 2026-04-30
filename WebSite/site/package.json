@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "check:scorched-tanks-pwa": "node scripts/check-scorched-tanks-pwa.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
