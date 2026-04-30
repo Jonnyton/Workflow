@@ -591,6 +591,9 @@ class TestActionableByOnGetRunSnapshot:
         assert snapshot["failure_class"] == "empty_llm_response"
         assert snapshot["actionable_by"] == "host"
         assert snapshot["suggested_action"]
+        assert "Error: Empty LLM response:" in snapshot["text"]
+        assert "Suggested action:" in snapshot["text"]
+        assert "Actionable by: host" in snapshot["text"]
 
     def test_completed_omits_actionable_by(self):
         snapshot = self._make_snapshot("completed", "")

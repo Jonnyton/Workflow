@@ -590,6 +590,14 @@ def _compose_run_snapshot(
             snapshot["failure_class"] = error_annotation[0]
             snapshot["suggested_action"] = error_annotation[1]
             snapshot["actionable_by"] = _actionable_by(error_annotation[0])
+            failure_text = "\n".join([
+                "",
+                f"Error: {run_record.get('error', '')}",
+                f"Suggested action: {error_annotation[1]}",
+                f"Actionable by: {snapshot['actionable_by']}",
+            ])
+            snapshot["text"] += failure_text
+            snapshot["summary"] += failure_text
     return snapshot
 
 
