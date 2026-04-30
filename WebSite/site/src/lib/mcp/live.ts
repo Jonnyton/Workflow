@@ -423,7 +423,19 @@ async function fetchCommunityLoopWatchFeed(warnings: string[]): Promise<PatchLoo
   }
 
   try {
-    const runsRes = await fetchWithTimeout('https://api.github.com/repos/Jonnyton/Workflow/actions/workflows/community-loop-watch.yml/runs?per_page=1', {
+    const workflowsRes = await fetchWithTimeout('https://api.github.com/repos/Jonnyton/Workflow/actions/workflows?per_page=100', {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!workflowsRes.ok) throw new Error(`GitHub workflows ${workflowsRes.status}`);
+    const workflowsPayload = await workflowsRes.json();
+    const workflows = Array.isArray(workflowsPayload?.workflows) ? workflowsPayload.workflows : [];
+    const workflow = workflows.find((candidate: any) => String(candidate?.path ?? '').endsWith('/community-loop-watch.yml'));
+    if (!workflow?.id) {
+      warnings.push('community-loop-watch workflow is not published on GitHub yet');
+      return null;
+    }
+
+    const runsRes = await fetchWithTimeout(`https://api.github.com/repos/Jonnyton/Workflow/actions/workflows/${workflow.id}/runs?per_page=1`, {
       headers: { Accept: 'application/vnd.github+json' }
     });
     if (!runsRes.ok) throw new Error(`GitHub workflow runs ${runsRes.status}`);
