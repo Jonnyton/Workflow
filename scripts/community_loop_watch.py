@@ -34,7 +34,7 @@ WORKFLOWS = {
     "deploy_site": "deploy-site.yml",
 }
 
-REQUEST_LABELS = ("auto-change", "auto-bug")
+REQUEST_LABELS = ("daemon-request", "auto-change", "auto-bug")
 BLOCKED_LABEL = "needs-human"
 ATTEMPTED_LABEL = "auto-fix-attempted"
 P0_OUTAGE_LABEL = "p0-outage"
@@ -347,7 +347,7 @@ def queue_stage(
     return _stage(
         "Writer queue",
         "green",
-        "no open auto-change/auto-bug requests are waiting on the writer",
+        "no open daemon-request/auto-change/auto-bug requests are waiting on the writer",
         details=details,
     )
 

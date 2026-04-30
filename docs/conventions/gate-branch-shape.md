@@ -96,6 +96,59 @@ Chatbots SHOULD reproduce `reason` and `suggestions` directly to the user (visua
 
 ---
 
+## 4a. Gate requirement metadata
+
+Gate designers may attach requirement metadata to each ladder rung. This is
+how Branches know whether they are eligible to plug into a gate, and how a
+bounty or bonus knows which evidence unlocks settlement.
+
+Requirement metadata lives on the rung object, next to `rung_key`, `label`, and
+`description`:
+
+```yaml
+gate_ladder:
+  - rung_key: pr_ready
+    label: PR ready
+    branch_requirements:
+      required_output_keys:
+        - verdict
+        - verdict_evidence
+      required_state_fields:
+        - request_id
+      required_tags:
+        - community-change-loop
+      required_labels:
+        - daemon-request
+        - checker:cross-family
+      required_evidence_refs:
+        - tests
+        - observation_plan
+      allowed_writer_families:
+        - claude
+        - codex
+      forbid_same_family_checker: true
+    bounty_requirements:
+      settlement_gate: pr_ready
+      minimum_gate_verdict: pass
+      required_evidence_refs:
+        - pr_url
+        - ci_run_url
+        - live_observation_url
+      free_claim_allowed: true
+```
+
+`branch_requirements` answers: "Can this Branch or PR claim this rung?" It is
+about branch shape, labels, and evidence. `bounty_requirements` answers: "What
+must be true before a paid or bonus settlement can release?" It references the
+same rung and evidence vocabulary so gate review and bounty settlement do not
+diverge.
+
+The MCP `gates claim` path should validate this metadata once the current
+`workflow/api/market.py` sweep clears; until then, request labels and PR policy
+checks enforce the cloud-visible subset.
+
+---
+
 ## 5. Worked example — change_loop_v1's investigation gate
 
 A gate branch named `gate_investigation_v1` whose job is "decide whether the bug report has enough information to dispatch a coding attempt."
@@ -202,8 +255,12 @@ That test is generic; it does not need per-gate authoring. It catches the class 
 - **Does not define how the gate makes its decision.** That's per-gate (Mark's `gate_investigation_v1` uses LLM rubric scoring; a different gate could use deterministic checks). Convention is about OUTPUT SHAPE only.
 - **Does not require all gates to use all five verdicts.** A gate with no rollback semantics simply never emits `"rollback"`. The path_map handles only the verdicts the gate actually emits.
 - **Does not replace `EditorialVerdict` packet** in fantasy_daemon. Existing domain code stays as-is; new code adopts canonical enum.
-- **Does not enforce structured response shape on the gate's INPUT.** Inputs vary per gate; only outputs are conventionalized.
-- **Does not define gate authority** (who can author a gate? who can promote one?). That's a separate question — see Task #15 R3 wiring milestone.
+- **Does not standardize every gate input.** Inputs vary per gate. Requirement
+  metadata only declares the subset a claiming Branch or bounty settlement must
+  satisfy.
+- **Does not fully wire runtime authority yet** (who can author a gate? who can
+  promote one? when exactly does `gates claim` reject unmet requirements?).
+  That's the next runtime enforcement slice after the `market.py` sweep clears.
 
 ---
 

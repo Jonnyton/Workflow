@@ -216,6 +216,8 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Host pool registry.** Every daemon host declares capabilities (node types, LLM models, price), visibility (`self` / `network` / `paid`), and heartbeat state to the control plane. Daemons are execution-tier, not control-plane. The control plane dispatches paid work to hosts and settles via the ledger; daemons poll outbound. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §5`.)
 
+**Daemon requests are provider-agnostic public work orders.** A wiki page, GitHub issue, goal-pool post, or paid-market bid is one request envelope, not a GitHub Actions implementation detail. The envelope advertises request kind, Goal/Branch binding when known, gate requirements, bounty/settlement terms when present, and whether free daemon claims are allowed. The reference GitHub auto-fix workflow is only one free claimant on that bus; other callable daemons may compete for or volunteer on the same request if they satisfy the declared requirements.
+
 ---
 
 ## State And Artifacts
@@ -248,6 +250,8 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** One unified work-target registry. Foundation review hard-blocks on unsynthesized uploads only; authorial review may choose any justified move once hard blockers are clear. Targets carry role (notes | publishable), publish stage, lifecycle, tags, and artifact refs. notes → publishable must pass through provisional first. `marked_for_discard` is not the same as `discarded` — true discard is a later review decision, recoverable.
 
+**Principle (gate requirements travel with the gate).** A Goal owner or gate designer may declare per-rung Branch requirements (`branch_requirements`) and settlement rules (`bounty_requirements`) inside the gate ladder. A Branch may claim a rung only when its definition and evidence satisfy that rung's requirements. Paid bounty release and free-daemon acceptance both reference the same gate metadata, so the project does not grow separate "review rules", "branch plug-in rules", and "bounty rules" for the same outcome.
+
 ---
 
 ## Retrieval And Memory
@@ -279,6 +283,8 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 **Goal:** Keep the system running and preserve role separation without hiding failure.
 
 **Principle:** Pick the best provider per role, then use fallback chains and parallel diversity where they improve resilience. Error loudly when the remaining provider can't produce acceptable work. Fake success is worse than failure.
+
+**Principle (cloud daemon code-change writer/checker policy):** The daemon request bus is provider-agnostic, but the automated code-change lane is not. Machine writers for project patches, fixes, and features are Claude-family or Codex-family only, using the latest available subscription-backed Claude or Codex path. A checker, verifier, or acceptance judge for a machine-authored code change must be from the opposite model family: Claude-written work needs Codex-family checking, and Codex-written work needs Claude-family checking. Other providers may support diagnostics, observation, non-code work, or future non-acceptance tasks, but they do not author or accept project code changes unless this policy is deliberately changed.
 
 **Principle (fallback chain correctness is a first-class invariant):** Every provider named in a fallback chain must be either registered AND reachable at startup, or explicitly excluded at startup with a logged reason. Phantom chain entries are a bug. A chain that reads `[claude-code, codex, gemini-free, ...]` but whose first entry's CLI binary is absent from the container silently degrades the whole chain — operators reading config see one chain; the runtime iterates a different one. Register-and-probe at startup; emit structured evidence of the effective chain via `get_status`; refuse to advertise unreachable providers as available. (Corroborated by BUG-025 + 2026-04-21 prod-LLM-binding incident; Gemini/Groq unregistered in prod fallback plus claude-code phantom registration together produced the 2026-04-23 revert-loop P0.)
 
@@ -351,7 +357,9 @@ request artifact inside that loop, not the loop's scope. The platform supplies
 durable public request artifacts, Goal/Branch binding, claim/assignment
 surfaces, GitHub issue/PR bridges, CI/deploy gates, and observation evidence;
 the community supplies and evolves the triage, planning, implementation, and
-review branches that move requests through it.
+review branches that move requests through it. The request artifact is also
+where gate eligibility, branch requirements, and optional bounty terms become
+visible to external daemon claimants.
 
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 

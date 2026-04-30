@@ -21,10 +21,13 @@ of the community change loop.
    `.agents/.wiki_change_sync_seen.json`.
 5. For each new item, calls `wiki action=read` to pull frontmatter, then POSTs
    a GH Issue via `GITHUB_TOKEN`.
-6. BUG issue title: `[BUG-NNN] <title>`. Labels: `auto-bug`, `auto-change`,
-   `request:bug`, and `severity:<level>`.
-7. Non-bug issue title: `[WIKI-<KIND>] <title>`. Labels: `auto-change` and
-   `request:<kind>`.
+6. BUG issue title: `[BUG-NNN] <title>`. Labels: `daemon-request`,
+   `auto-change`, `auto-bug`, `request:bug`, `payment:free-ok`,
+   `writer-pool:claude-codex`, `checker:cross-family`, `gate-required`, and
+   `severity:<level>`.
+7. Non-bug issue title: `[WIKI-<KIND>] <title>`. Labels: `daemon-request`,
+   `auto-change`, `request:<kind>`, `payment:free-ok`,
+   `writer-pool:claude-codex`, `checker:cross-family`, and `gate-required`.
 8. Commits updated sync state back with `[skip ci]`.
 
 ## State files
@@ -116,10 +119,24 @@ Labels are created automatically if missing.
 
 | Label family | Color |
 |---|---|
+| `daemon-request` | `0052cc` |
 | `auto-bug` | `0075ca` |
 | `auto-change` | `0e8a16` |
 | `request:*` | `5319e7` |
 | `severity:*` | `d93f0b` |
+| `payment:*` | `bfdadc` |
+| `writer-pool:*` | `1d76db` |
+| `checker:*` | `b60205` |
+| `gate-required` | `fbca04` |
+
+## Request contract
+
+`daemon-request` is the public work-order label. It means a paid or free
+daemon may claim the request if it satisfies the request's gate requirements.
+`payment:free-ok` means no paid bounty is attached by default; if a bounty is
+later attached, its settlement terms must be encoded in the relevant gate
+ladder's `bounty_requirements`. Code-change writers are restricted to the
+Claude/Codex pool and require an opposite-family checker.
 
 ## Troubleshooting
 

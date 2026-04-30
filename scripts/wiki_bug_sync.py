@@ -67,6 +67,19 @@ _SEVERITY_LABELS: dict[str, str] = {
 }
 _AUTO_LABEL = "auto-bug"
 _AUTO_CHANGE_LABEL = "auto-change"
+_DAEMON_REQUEST_LABEL = "daemon-request"
+_PAYMENT_FREE_OK_LABEL = "payment:free-ok"
+_WRITER_POOL_LABEL = "writer-pool:claude-codex"
+_CHECKER_POLICY_LABEL = "checker:cross-family"
+_GATE_REQUIRED_LABEL = "gate-required"
+_DAEMON_REQUEST_LABELS = [
+    _DAEMON_REQUEST_LABEL,
+    _AUTO_CHANGE_LABEL,
+    _PAYMENT_FREE_OK_LABEL,
+    _WRITER_POOL_LABEL,
+    _CHECKER_POLICY_LABEL,
+    _GATE_REQUIRED_LABEL,
+]
 
 _BUG_ID_RE = re.compile(r"BUG-(\d+)", re.IGNORECASE)
 
@@ -398,6 +411,16 @@ def _label_color(label: str) -> str:
         return "0075ca"
     if label == _AUTO_CHANGE_LABEL:
         return "0e8a16"
+    if label == _DAEMON_REQUEST_LABEL:
+        return "0052cc"
+    if label.startswith("payment:"):
+        return "bfdadc"
+    if label.startswith("writer-pool:"):
+        return "1d76db"
+    if label.startswith("checker:"):
+        return "b60205"
+    if label == _GATE_REQUIRED_LABEL:
+        return "fbca04"
     if label.startswith("severity:"):
         return "d93f0b"
     if label.startswith("request:"):
@@ -418,7 +441,7 @@ def create_gh_issue(
     timeout: float = 20.0,
 ) -> str:
     """Create a GitHub Issue; returns the issue URL or '[dry-run]'."""
-    labels = [_AUTO_LABEL, _AUTO_CHANGE_LABEL, _REQUEST_KIND_LABELS["bug"]]
+    labels = [_AUTO_LABEL, *_DAEMON_REQUEST_LABELS, _REQUEST_KIND_LABELS["bug"]]
     sev_label = _SEVERITY_LABELS.get(severity.lower())
     if sev_label:
         labels.append(sev_label)
@@ -427,6 +450,11 @@ def create_gh_issue(
     issue_body = (
         f"**Component:** {component}\n"
         f"**Severity:** {severity}\n\n"
+        "**Daemon request contract:** claimable by paid or free daemons that meet "
+        "the declared gate requirements. Code-change writers are Claude/Codex "
+        "only and require an opposite-family checker.\n"
+        "**Bounty terms:** no paid bounty is attached by default; if one is "
+        "added, settlement follows the gate ladder's `bounty_requirements`.\n\n"
         f"{body_md}\n\n"
         f"_Auto-filed by wiki-bug-sync from wiki entry `{bug_id}`._"
     )
@@ -482,12 +510,17 @@ def create_gh_change_issue(
 ) -> str:
     """Create a non-bug community change Issue."""
     kind_label = _REQUEST_KIND_LABELS.get(request_kind, "request:change")
-    labels = [_AUTO_CHANGE_LABEL, kind_label]
+    labels = [*_DAEMON_REQUEST_LABELS, kind_label]
     prefix = _CHANGE_KIND_PREFIX.get(request_kind, "WIKI-CHANGE")
     title_str = f"[{prefix}] {title}"
     issue_body = (
         f"**Request kind:** {request_kind}\n"
         f"**Wiki path:** `{path}`\n\n"
+        "**Daemon request contract:** claimable by paid or free daemons that meet "
+        "the declared gate requirements. Code-change writers are Claude/Codex "
+        "only and require an opposite-family checker.\n"
+        "**Bounty terms:** no paid bounty is attached by default; if one is "
+        "added, settlement follows the gate ladder's `bounty_requirements`.\n\n"
         f"{body_md}\n\n"
         f"_Auto-filed by wiki-change-sync from wiki page `{path}`._"
     )

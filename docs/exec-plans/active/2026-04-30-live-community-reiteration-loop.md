@@ -41,6 +41,10 @@ GitHub API.
 - Host reframe on 2026-04-30: the loop is for all project evolution, not just
   bugs. Bugs, patch requests, feature requests, docs/ops changes, branch
   refinements, and project-design changes use the same community-driven path.
+- Host reframe on 2026-04-30: public loop requests are daemon requests, not
+  one workflow's private queue. Paid or free daemons may claim them if they
+  meet the declared gate and bounty requirements. Code-change writers are
+  restricted to Claude/Codex, with an opposite-family checker.
 - Live MCP has Goal `f10caea2e437` ("Turn a Workflow bug into a patch packet")
   with user-made Branch `0731a3122bd4` (`bug_to_patch_packet_v1`) bound.
 - Live MCP has Goal `4ff5862cc26d` ("Route a patch request through
@@ -152,18 +156,23 @@ GitHub API.
 4. **Patch-loop branch is bound but unrunnable.** `change_loop_v1` is attached
    to Goal `4ff5862cc26d`, but live run `020a76ae0530478e` failed with a
    node-id/state-key collision; tracked as BUG-044.
-5. **PR automation is issue-driven, not change-packet-driven.** The existing
-   GitHub Action starts from labeled GitHub issues and depends on Claude auth;
-   it does not yet consume change packets or Codex/Codex CLI as a writer path.
-   Current patch fixes the GitHub event/backfill lane only; it does not yet
-   make the writer provider-neutral.
-6. **Observation closure is manual.** No single status object says "BUG-NNN
+5. **PR automation is one claimant, not the request bus.** The existing GitHub
+   Action starts from labeled GitHub issues. It must consume `daemon-request`
+   issues as a reference free daemon, fall through between Claude and Codex
+   writer paths, and label PRs with writer/checker policy. Other paid/free
+   daemons should be able to claim the same public request if they satisfy the
+   gate and bounty contract.
+6. **Gate requirements are not enforced at claim time yet.** Gate ladders can
+   carry `branch_requirements` and `bounty_requirements`, but runtime
+   enforcement in `gates claim` waits for the #18-owned `market.py` sweep to
+   clear.
+7. **Observation closure is manual.** No single status object says "BUG-NNN
    or request N was filed, investigated/planned, PR opened, merged, deployed,
    live-tested, and clean-use observed."
-7. **Docs are contradictory.** `docs/ops/post-redeploy-validation-runbook.md`
+8. **Docs are contradictory.** `docs/ops/post-redeploy-validation-runbook.md`
    claims `file_bug` emits a dispatcher request; current code and active exec
    plan show it does not.
-8. **Loop uptime is not independently watched.** The existing uptime ladder
+9. **Loop uptime is not independently watched.** The existing uptime ladder
    proves MCP/tool/wiki surfaces, but no cloud-scheduled probe says whether
    intake, queue, writer, release, and observation are operating as one loop.
 
@@ -265,12 +274,36 @@ Files likely touched:
 
 Acceptance:
 
-- A patch packet or auto-bug issue creates a branch and PR, or a structured
+- A patch packet or daemon-request issue creates a branch and PR, or a structured
   `needs-human` artifact if no writer provider is configured.
 - PR body links the request artifact, wiki page, change packet, tests, and
   observation plan.
-- Writer path is provider-pluggable: Claude action if configured, Codex CLI
-  path when available, manual fallback otherwise.
+- Writer path is one claimant on the daemon request bus: Claude action if
+  configured, Codex CLI path when available, manual fallback otherwise. Claude
+  failures fall through to Codex when `OPENAI_API_KEY` is available.
+- PRs record `writer:*` and `checker:*` labels; `writer:claude` requires
+  `checker:codex`, and `writer:codex` requires `checker:claude`.
+
+### Slice 5c: Gate, Branch, and bounty requirement contract
+
+Files likely touched:
+
+- `docs/conventions/gate-branch-shape.md`
+- `.github/workflows/daemon-request-policy.yml`
+- runbooks and request-labeling scripts
+
+Acceptance:
+
+- Gate ladder rungs can declare `branch_requirements` and
+  `bounty_requirements`.
+- Request issues carry labels that make the daemon request contract visible:
+  `daemon-request`, `payment:free-ok`, `writer-pool:claude-codex`,
+  `checker:cross-family`, and `gate-required`.
+- Machine-authored PRs cannot pass policy with same-family writer/checker
+  labels.
+- Runtime `gates claim` validation is explicitly queued behind #18 rather than
+  silently pretending the locked `market.py`/plugin-mirror files are already
+  wired.
 
 ### Slice 5b: Generalize request classes beyond bugs
 

@@ -8,10 +8,15 @@ status: active
 
 `.github/workflows/auto-fix-bug.yml`
 
-The second half of the community change loop. When `wiki-bug-sync` creates an
-`auto-change`-labeled GH Issue, this workflow attempts an automated writer
-change and either opens a PR or falls back to `needs-human`. BUG pages still
-also receive `auto-bug` for compatibility.
+Reference free-claimant for the community daemon-request loop. When
+`wiki-bug-sync` creates a `daemon-request` GitHub Issue, this workflow attempts
+an automated writer change and either opens a PR or falls back to
+`needs-human`. BUG pages still also receive `auto-bug` for compatibility.
+
+This workflow is not the whole loop. It is one callable daemon path on the
+public request bus. Other paid or volunteer daemons can claim the same class of
+request if they satisfy the declared gate, bounty, writer, and checker
+requirements.
 
 ## Full loop
 
@@ -19,9 +24,9 @@ also receive `auto-bug` for compatibility.
 wiki request artifact  (BUG page, feature/patch plan, docs/ops request)
     ->
 wiki-bug-sync          (every 15 min, GHA)
-    -> creates GH Issue with `auto-change` label
-Auto-fix change        (on issues.labeled = auto-change or auto-bug)
-    -> auth path A/B/C
+    -> creates GH Issue with `daemon-request` label
+Auto-fix change        (on issues.labeled = daemon-request/auto-change/auto-bug)
+    -> auth path A/B/C/D
     -> opens PR  OR  adds `needs-human` + comment
 ```
 
@@ -37,24 +42,37 @@ Add secret `CLAUDE_CODE_OAUTH_TOKEN`:
 OAuth tokens do not expire on a fixed schedule but need rotation if revoked.
 The workflow uses the official `anthropics/claude-code-action@v1`.
 
-### Path B - API key (fallback)
+### Path B - Codex CLI fallback
+
+Add secret `OPENAI_API_KEY`:
+1. platform.openai.com -> API Keys -> Create key
+2. GitHub -> repo Settings -> Secrets and variables -> Actions -> New repository secret
+3. Name: `OPENAI_API_KEY`, value: `sk-...`
+
+The workflow installs `@openai/codex`, runs `codex login --with-api-key`, then
+runs `codex exec` in the GitHub runner workspace. This is the preferred
+cross-family fallback when Claude OAuth is rate-limited or unavailable.
+
+### Path C - Claude API key fallback
 
 Add secret `ANTHROPIC_API_KEY`:
 1. console.anthropic.com -> API Keys -> Create key
 2. GitHub -> repo Settings -> Secrets and variables -> Actions -> New repository secret
 3. Name: `ANTHROPIC_API_KEY`, value: `sk-ant-...`
 
-Path B is the fallback when `CLAUDE_CODE_OAUTH_TOKEN` is absent or empty.
+Path C is the same Claude-family fallback when neither Claude OAuth nor Codex
+is available.
 
-### Path C - No auth (graceful-skip)
+### Path D - No auth (graceful-skip)
 
-When neither secret is set, the workflow:
+When no approved Claude/Codex writer secret is visible to GitHub Actions, the
+workflow:
 - Adds `needs-human` label to the issue
-- Posts a comment explaining how to add writer auth
+- Posts a comment explaining which non-secret auth presence check failed
 - Exits 0 so the pipeline stays green
 
-This is the current state until host seeds one of the secrets. The loop stays
-valid; change attempts begin automatically the moment auth is added.
+Change attempts begin automatically the moment one approved writer secret is
+added.
 
 ## Disable toggle
 
@@ -73,6 +91,25 @@ Variable-based toggle preserves secrets; no data loss from toggling.
 - Branch: `auto-change/issue-<N>` where N = GH issue number
 - PR title: `[auto-change] <request-id>: <short title>`
 - PR body: `Fixes #N` plus change summary
+- PR labels: `writer:claude` requires `checker:codex`; `writer:codex`
+  requires `checker:claude`. The `Daemon request policy` PR check enforces
+  that same-family machine review is not accepted.
+
+## Gate and bounty requirements
+
+Issues filed by the sync lane include the public daemon-request contract:
+
+- `daemon-request` marks the issue as a public work order.
+- `payment:free-ok` means a volunteer daemon may claim it without a paid
+  bounty.
+- `writer-pool:claude-codex` and `checker:cross-family` describe the machine
+  code-change policy.
+- `gate-required` means Branch and bounty eligibility come from the relevant
+  gate ladder's `branch_requirements` and `bounty_requirements`.
+
+If a paid bounty is attached later, settlement must reference a gate rung and
+its evidence requirements. The PR producer should not invent a separate payout
+rule in the PR body.
 
 PRs require review before merge. Host reviews the diff.
 
@@ -87,22 +124,24 @@ PRs require review before merge. Host reviews the diff.
 
 ## Manual trigger
 
-Re-label the issue: remove `auto-change` then re-add it. Legacy BUG-only
-issues can still use `auto-bug`. Or use workflow_dispatch via the Actions UI:
+Re-label the issue: remove `daemon-request` then re-add it. `auto-change` and
+legacy BUG-only `auto-bug` issues are still discovered for compatibility. Or
+use workflow_dispatch via the Actions UI:
 select "Auto-fix change" -> Run workflow.
 
 To retry a specific issue from the CLI:
 
 ```bash
-gh issue edit <N> --remove-label auto-change
-gh issue edit <N> --add-label auto-change
+gh issue edit <N> --remove-label daemon-request
+gh issue edit <N> --add-label daemon-request
 ```
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `needs-human` added, comment says "no auth" | Neither writer secret set | Add `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` |
+| `needs-human` added, comment says "no auth" | No approved writer secret visible to GitHub Actions | Add `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` |
+| Claude path rate-limited | Claude action failed and `OPENAI_API_KEY` is present | Workflow falls through to Codex CLI |
 | `needs-human` added, comment says "disabled" | `AUTO_FIX_DISABLED=true` | Set variable to `false` |
 | PR opened but tests fail | Writer produced an imperfect change | Review, push additional commits to the branch |
 | Workflow not triggering | Issue labeled before workflow existed | Re-label with `auto-change` |
