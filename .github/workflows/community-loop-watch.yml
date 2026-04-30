@@ -101,7 +101,7 @@ jobs:
       - name: Fail when loop is red
         if: steps.watch.outputs.overall == 'red'
         run: |
-          exit "${{ steps.watch.outputs.status }}"
+          exit 2
 
   alarm-sink:
     needs: watch
