@@ -8,6 +8,18 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pyproject.toml'
+      - 'PLAN.md'
+      - 'workflow/**'
+      - 'domains/**'
+      - 'fantasy_daemon/**'
+      - 'data/world_rules.lp'
+      - 'scripts/mcp_public_canary.py'
+      - 'deploy/**'
+      - '.github/workflows/build-image.yml'
   workflow_dispatch:
 
 permissions:
