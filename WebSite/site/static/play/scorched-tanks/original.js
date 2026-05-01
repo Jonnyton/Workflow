@@ -2,6 +2,8 @@
   const VAMIGA_ORIGIN = "https://vamigaweb.github.io";
   const VAMIGA_URL = `${VAMIGA_ORIGIN}/`;
   const ADF_URL = "./assets/scorched-tanks-v1.90-autostart-a642eb46.adf";
+  const HOSTED_KICKSTART_URL = "./licensed/kickstart-a500-1.3.rom";
+  const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -23,6 +25,7 @@
   let pendingLaunch = null;
   let currentLaunch = null;
   let kickstartRom = null;
+  let adfBytes = null;
 
   function setRuntimeStatus(text) {
     runtimeStatus.textContent = text;
@@ -34,6 +37,12 @@
 
   function setRomStatus(text) {
     romStatus.textContent = text;
+  }
+
+  function reportAsync(task) {
+    task.catch((error) => {
+      setRuntimeStatus(error.message || "Runtime launch failed");
+    });
   }
 
   function browserTouchMode() {
@@ -48,6 +57,10 @@
     return new URL(ADF_URL, window.location.href).href;
   }
 
+  function absoluteHostedKickstartUrl() {
+    return new URL(HOSTED_KICKSTART_URL, window.location.href).href;
+  }
+
   function baseConfig(extra) {
     return {
       navbar: false,
@@ -58,9 +71,31 @@
       port2: true,
       touch: browserTouchMode(),
       warpto: 1200,
-      url: absoluteAdfUrl(),
       ...extra,
     };
+  }
+
+  async function fetchBytes(url, missingIsNull = false) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      if (missingIsNull && response.status === 404) {
+        return null;
+      }
+      throw new Error(`Unable to load ${url}`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async function loadAdfBytes() {
+    if (!adfBytes) {
+      setMediaStatus("Loading original ADF");
+      adfBytes = await fetchBytes(absoluteAdfUrl());
+    }
+    return adfBytes;
+  }
+
+  async function loadHostedKickstartBytes() {
+    return fetchBytes(absoluteHostedKickstartUrl(), true);
   }
 
   function clearPoller() {
@@ -77,32 +112,54 @@
     }, 700);
   }
 
-  async function injectKickstart() {
+  function insertInjectedDiskIntoDf0() {
+    frame?.contentWindow?.postMessage(
+      {
+        cmd: "script",
+        script:
+          "if (typeof insert_file === 'function' && typeof wasm_has_disk === 'function' && !wasm_has_disk('df0')) { insert_file(0); show_drive_select(false); }",
+      },
+      VAMIGA_ORIGIN,
+    );
+  }
+
+  async function injectLaunch() {
     if (!pendingLaunch || !frame?.contentWindow) {
       return;
     }
 
     const launch = pendingLaunch;
     pendingLaunch = null;
-    setRuntimeStatus("Loading user ROM");
+    setRuntimeStatus("Injecting original media");
 
     try {
       const payload = {
         cmd: "load",
-        kickstart_rom: launch.kickstartRom.bytes,
+        file_name: ADF_FILE_NAME,
+        file: launch.adfBytes,
       };
 
+      if (launch.kickstartRom) {
+        payload.kickstart_rom = launch.kickstartRom.bytes;
+      }
+
       frame.contentWindow.postMessage(payload, VAMIGA_ORIGIN);
+      window.setTimeout(insertInjectedDiskIntoDf0, 250);
+      window.setTimeout(insertInjectedDiskIntoDf0, 1000);
       setMediaStatus("Original v1.90 autostart ADF assigned to df0");
-      setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
+      if (launch.kickstartRom) {
+        setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
+      } else {
+        setRuntimeStatus("Running AROS compatibility trial");
+      }
     } catch (error) {
       pendingLaunch = launch;
-      setRuntimeStatus(error.message || "ROM injection failed");
+      setRuntimeStatus(error.message || "Media injection failed");
     }
   }
 
   function mountEmulator(config, launch) {
-    pendingLaunch = launch.kickstartRom ? launch : null;
+    pendingLaunch = launch;
     currentLaunch = launch;
     clearPoller();
     document.body.classList.remove("is-playing");
@@ -120,18 +177,56 @@
     emulatorFrameHost.appendChild(frame);
   }
 
-  function startWithAros() {
-    setRomStatus("AROS trial; use ROM if stuck");
-    setMediaStatus("Original v1.90 autostart ADF assigned to df0");
+  async function startWithHostedKickstart() {
+    setRuntimeStatus("Checking hosted Kickstart");
+    const [loadedAdfBytes, hostedKickstartBytes] = await Promise.all([
+      loadAdfBytes(),
+      loadHostedKickstartBytes(),
+    ]);
+
+    if (!hostedKickstartBytes) {
+      return false;
+    }
+
+    setRomStatus("Licensed A500 Kickstart supplied by host");
+    mountEmulator(
+      baseConfig({
+        AROS: false,
+        wait_for_kickstart_injection: true,
+      }),
+      {
+        adfBytes: loadedAdfBytes,
+        kickstartRom: {
+          name: "hosted Kickstart 1.3",
+          bytes: hostedKickstartBytes,
+        },
+      },
+    );
+    return true;
+  }
+
+  async function startWithAros() {
+    setRomStatus("AROS trial; exact play may need Kickstart 1.3");
     mountEmulator(
       baseConfig({
         AROS: true,
       }),
-      { kickstartRom: null },
+      { adfBytes: await loadAdfBytes(), kickstartRom: null },
     );
   }
 
-  function startWithKickstart() {
+  async function startPreferredRuntime() {
+    try {
+      const hosted = await startWithHostedKickstart();
+      if (!hosted) {
+        await startWithAros();
+      }
+    } catch (error) {
+      setRuntimeStatus(error.message || "Runtime launch failed");
+    }
+  }
+
+  async function startWithKickstart() {
     if (!kickstartRom) {
       setRomStatus("Choose a Kickstart ROM first");
       return;
@@ -142,13 +237,13 @@
         AROS: false,
         wait_for_kickstart_injection: true,
       }),
-      { kickstartRom },
+      { adfBytes: await loadAdfBytes(), kickstartRom },
     );
   }
 
-  function resetEmulator() {
+  async function resetEmulator() {
     if (!frame) {
-      startWithAros();
+      await startPreferredRuntime();
       return;
     }
     const relaunch = pendingLaunch || currentLaunch || { kickstartRom };
@@ -158,7 +253,10 @@
           ? { AROS: false, wait_for_kickstart_injection: true }
           : { AROS: true },
       ),
-      relaunch,
+      {
+        adfBytes: relaunch.adfBytes || (await loadAdfBytes()),
+        kickstartRom: relaunch.kickstartRom || null,
+      },
     );
   }
 
@@ -220,7 +318,7 @@
           event.data.value ? "Running AROS trial" : "Runtime ready",
         );
       }
-      injectKickstart();
+      injectLaunch();
     }
   });
 
@@ -236,12 +334,14 @@
     emulatorPanel.requestFullscreen?.();
   });
 
-  arosButton.addEventListener("click", startWithAros);
-  kickstartButton.addEventListener("click", startWithKickstart);
-  resetButton.addEventListener("click", resetEmulator);
+  arosButton.addEventListener("click", () => reportAsync(startWithAros()));
+  kickstartButton.addEventListener("click", () =>
+    reportAsync(startWithKickstart()),
+  );
+  resetButton.addEventListener("click", () => reportAsync(resetEmulator()));
   kickstartInput.addEventListener("change", onKickstartSelected);
 
   bindInstall();
   setMediaStatus("Original v1.90 autostart ADF ready");
-  startWithAros();
+  reportAsync(startPreferredRuntime());
 })();

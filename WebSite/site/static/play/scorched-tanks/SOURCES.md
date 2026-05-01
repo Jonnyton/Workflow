@@ -14,7 +14,10 @@
   - MD5 `FF0D3582E97F4A316874BC47BB8B94C3`
 - Reference package: Scorched Tanks v1.85 on Aminet at `https://aminet.net/package/game/shoot/Scorch185`.
 - Browser runtime: vAmigaWeb at `https://github.com/vAmigaWeb/vAmigaWeb` and `https://vamigaweb.github.io/`.
+- Optional hosted firmware path: `licensed/kickstart-a500-1.3.rom`, intentionally absent from the repository. A deployment may provision this only under a rights-cleared Kickstart license.
 
-This page launches the autostart ADF in vAmigaWeb from a browser-only Workflow result. It tries the open AROS ROM path first. If that runtime is not compatible with the game on a given browser/device, the page accepts a user-owned Kickstart ROM through a local file picker and injects it into the iframe without uploading the ROM.
+This page launches the autostart ADF in vAmigaWeb from a browser-only Workflow result. The parent page fetches the same-site ADF and injects the bytes into the iframe so static hosts do not need cross-origin ADF headers. It first checks for a rights-cleared hosted A500 Kickstart 1.3 ROM, then falls back to the open AROS ROM path, then accepts a user-owned Kickstart ROM through a local file picker without uploading the ROM.
+
+Compatibility finding, verified 2026-04-30: Scorched Tanks v1.90, Aminet v1.85, and public-domain v0.95 all boot under AROS in vAmigaWeb/PUAE but black-screen when the AMOS executable takes over. This is tracked as an exact-game state of `NEEDS_RIGHTS_CLEARED_FIRMWARE` unless a deployment supplies the hosted Kickstart path above.
 
 No proprietary Kickstart ROM is bundled. The browser-native artillery port is kept only as a labeled fallback and must not be reported by Workflow as the exact original game.
