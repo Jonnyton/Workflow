@@ -18,7 +18,8 @@ A Workflow customer is anyone using a chatbot, local model shell, IDE agent,
 enterprise agent builder, self-hosted chat UI, channel gateway, or custom app
 that can connect to a Workflow MCP server.
 
-The rollout must make three paths explicit:
+The rollout must make three paths explicit and carry them all the way to
+native discovery where the host supports it:
 
 1. Logged-in chatbot users: Claude, ChatGPT, Mistral Le Chat, Perplexity, Grok,
    Copilot Studio, and similar hosted chat products.
@@ -70,6 +71,10 @@ The rollout must make three paths explicit:
    logging into Claude/ChatGPT/Gemini/etc.
 7. Every claimed host gets an acceptance proof. Otherwise the copy must say
    "compatible by spec, not verified yet."
+8. A host-directory rollout is not complete at "docs live" or "custom URL
+   works." Completion means the host listing is accepted, a normal user can
+   add/use Workflow without Developer Mode or custom URL friction, and at
+   least one real or user-sim first-use trace exists.
 
 ## Ecosystem Default Strategy
 
@@ -154,7 +159,10 @@ automatically, maintain these machine-readable artifacts:
 - MCP `server.json` for the official registry.
 - Host-specific manifests for ChatGPT Apps and any Claude/Mistral directory
   submission requirements.
-- A stable public endpoint: `https://tinyassets.io/mcp`.
+- Stable public endpoints:
+  - `https://tinyassets.io/mcp` for the full custom-connector surface.
+  - `https://tinyassets.io/mcp-directory` for reviewed host directories and
+    registry metadata.
 - `/.well-known` metadata where supported by host requirements.
 - `llms.txt` and concise AI-readable docs for "when to use Workflow."
 - Host-specific config snippets for `.mcp.json`, `.vscode/mcp.json`, Cursor,
@@ -179,11 +187,14 @@ The rollout should create a compounding loop:
 ### Gate 0: Public MCP Green
 
 Do not ship discoverability copy, directory listings, or app submissions while
-`https://tinyassets.io/mcp` is red.
+the relevant public MCP endpoint is red.
 
 Acceptance:
 
 - `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp`
+  exits 0.
+- After the directory endpoint lands:
+  `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory`
   exits 0.
 - Latest `.github/workflows/uptime-canary.yml` run is green.
 - If a 502 appears, update `STATUS.md` immediately and pause rollout work until
@@ -232,6 +243,8 @@ browser chat surfaces.
 Claude:
 
 - Finish connector metadata and directory-readiness package.
+- Submit the directory endpoint `https://tinyassets.io/mcp-directory`, not the
+  legacy catch-all `/mcp` surface.
 - Keep custom connector path working for Free/Pro/Max/Team/Enterprise.
 - Verify with live Claude.ai `ui-test` and post-fix clean-use evidence.
 
@@ -240,15 +253,19 @@ ChatGPT:
 - Treat Apps SDK/custom MCP as the ChatGPT distribution path.
 - Resolve the workspace-admin registration issue before claiming public
   ChatGPT parity.
+- Submit `chatgpt-app-submission.json` through the OpenAI app submission flow.
 - Build a minimal ChatGPT App/widget plan around browse, inspect, approve, and
   run controls.
 - Keep backend state authoritative and widget state ephemeral.
 
 Acceptance:
 
-- Claude setup works from published copy, not insider instructions.
+- Claude setup works from the Connectors Directory listing, not insider
+  instructions or a custom URL.
 - ChatGPT setup states exactly which plans/roles support read/fetch vs
   write/modify MCP actions.
+- ChatGPT App Directory use works for a normal eligible logged-in user without
+  Developer Mode.
 - ChatGPT guest mode is explicitly marked unsupported for MCP controls.
 
 ### Phase 3: No-Chatbot-Login Path
@@ -325,11 +342,19 @@ Progress snapshot, 2026-05-01:
 - Card 5 ready-draft locally: `docs/ops/mcp-host-proof-registry.md` records
   per-host claim status and local verification evidence.
 - Machine-readable discovery ready-draft locally: `packaging/registry/server.json`
-  validates against the official schema and points at `https://tinyassets.io/mcp`;
+  validates against the official schema and points at
+  `https://tinyassets.io/mcp-directory`;
   `WebSite/site/static/llms.txt` tells chatbots when to recommend Workflow and
   when to caveat host support.
-- Not live until Gate 0 is green, the website branch is merged/deployed, and
-  the MCP Registry draft is published by an authorized GitHub/registry account.
+- Directory endpoint branch slice: `workflow/directory_server.py` exposes 11
+  narrow tools with explicit read/open/destructive annotations and no catch-all
+  `action` inputs; the Worker routes `/mcp-directory` to the same tunnel.
+- Submission packets branch-ready: `docs/ops/mcp-directory-submission-packet.md`
+  and `chatgpt-app-submission.json`.
+- Not complete until Gate 0 is green for both endpoints, the branch is
+  merged/deployed, the MCP Registry draft is published by an authorized
+  GitHub/registry account, Claude/OpenAI submissions are accepted, and
+  first-use evidence is recorded.
 
 ### Card 1: Publish Host Chooser Copy
 
@@ -359,6 +384,9 @@ Acceptance:
 
 - Directory-facing name, description, scopes, examples, and safety copy are
   ready.
+- Claude submission uses `https://tinyassets.io/mcp-directory`.
+- The accepted listing appears in Claude's Connectors Directory.
+- A normal Claude user can add Workflow from the directory without a custom URL.
 - Live Claude.ai proof is refreshed after the copy lands.
 
 Dependency: Gate 0 green.
@@ -373,10 +401,14 @@ Files:
 
 Acceptance:
 
-- Defines the first ChatGPT App tools, widget panels, and state split.
+- `chatgpt-app-submission.json` covers the first directory-safe tools and test
+  cases.
+- Defines the first ChatGPT widget panels, CSP, screenshots, and state split
+  before pressing Submit if OpenAI's dashboard requires embedded app resources.
 - Explicitly records that ChatGPT guest mode cannot use Workflow MCP controls
   until OpenAI supports Apps for logged-out users.
-- Blocks public parity on workspace-admin registration and live ChatGPT proof.
+- Blocks public parity on OpenAI submission acceptance, workspace-admin
+  registration where required, and live ChatGPT proof.
 
 Dependency: host/admin action for ChatGPT workspace setup.
 
@@ -441,9 +473,18 @@ Fresh source snapshot, checked 2026-05-01:
 - OpenAI says developers can submit apps for review/publication in ChatGPT and
   users can discover apps in the app directory:
   https://openai.com/index/developers-can-now-submit-apps-to-chatgpt
+- OpenAI's app submission docs require dashboard review, org verification,
+  app management permissions, a public MCP server, CSP, screenshots/test
+  prompts, and publish-after-approval before App Directory listing:
+  https://developers.openai.com/apps-sdk/deploy/submission
 - Anthropic says its Connectors Directory showcases MCP servers that work
   across Claude surfaces and has a server review form:
   https://support.anthropic.com/en/articles/11596036-anthropic-mcp-directory-faq
+- Anthropic's current connector docs reject catch-all read/write tools and
+  require titles/annotations, public docs, and MCP Inspector/custom-connector
+  testing before submission:
+  https://claude.com/docs/connectors/building/review-criteria
+  https://claude.com/docs/connectors/building/submission
 - The official MCP Registry is the preview centralized metadata repository and
   REST API for publicly accessible MCP servers:
   https://modelcontextprotocol.io/registry/about

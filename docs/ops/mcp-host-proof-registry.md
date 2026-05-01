@@ -2,7 +2,8 @@
 
 Date: 2026-05-01
 Owner: lead + codex-gpt5-desktop
-Canonical MCP URL: `https://tinyassets.io/mcp`
+Canonical full MCP URL: `https://tinyassets.io/mcp`
+Directory/review MCP URL: `https://tinyassets.io/mcp-directory`
 
 This registry is the source for public claims about where Workflow works. If a
 host is not listed as verified here, public copy should say "compatible by
@@ -11,6 +12,7 @@ spec" or "planned", not "works".
 ## Verification Rules
 
 - Public endpoint proof starts with `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp`.
+- Directory endpoint proof also requires `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory`.
 - Hosted chatbot proof must use the real chatbot UI with the Workflow connector
   enabled, then log the trace in `output/claude_chat_trace.md` or the matching
   host trace file.
@@ -26,13 +28,24 @@ spec" or "planned", not "works".
 | Gate | Status | Evidence | Notes |
 |---|---|---|---|
 | Public MCP endpoint | watch/flapping | Latest 2026-05-01 diagnostic: 5/5 local canaries green and GitHub Actions uptime run `25231089323` green after intermittent HTTP 502s | Keep monitoring before public app/directory launch claims |
-| Official MCP Registry metadata | ready-draft | `packaging/registry/server.json` validates against schema and points at `https://tinyassets.io/mcp` | Needs `mcp-publisher login github` + publish by repo owner/admin |
+| Directory-safe MCP endpoint | branch-ready | `workflow/directory_server.py` exposes 11 narrow tools; local tests pin annotations and no catch-all `action` inputs | Live only after server + Worker deploy |
+| Official MCP Registry metadata | branch-ready | `packaging/registry/server.json` points at `https://tinyassets.io/mcp-directory` | Local PATH lacks `mcp-publisher`; needs CLI install, `mcp-publisher login github`, and publish by repo owner/admin |
 | AI-readable web docs | ready-draft | `WebSite/site/static/llms.txt` | Ships with site deploy |
 | `/connect` customer chooser | ready-draft | `npm run check`, `npm run build`, Playwright desktop/mobile smoke on 2026-05-01 | Ships with site deploy |
 
 ## 2026-05-01 Local Verification
 
 - `python packaging/registry/generate_server_json.py --check --validate` passed.
+- `python -m pytest tests/test_directory_server.py tests/test_universe_server_directory_app.py tests/smoke/test_mcp_tools_list_non_empty.py tests/test_universe_server_metadata.py` passed.
+- `node --test worker.test.js` passed in `deploy/cloudflare-worker`.
+- `python packaging/claude-plugin/build_plugin.py` passed with import probe, including the new directory server module in the plugin runtime mirror.
+- Local Streamable HTTP runtime smoke passed: `scripts/mcp_public_canary.py`
+  initialized both `http://127.0.0.1:8017/mcp` and
+  `http://127.0.0.1:8017/mcp-directory`; `scripts/mcp_probe.py` listed the
+  11 directory tools from `/mcp-directory`.
+- `mcp-publisher --help` failed because the CLI is not installed in the
+  current Windows PATH; registry publish remains blocked on CLI install and
+  GitHub device authentication.
 - Public MCP diagnostics after one local HTTP 502: 5 consecutive
   `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose`
   probes passed; GitHub Actions uptime run `25231089323` passed; direct
@@ -51,13 +64,13 @@ spec" or "planned", not "works".
 
 | Host surface | Customer path | Status | Proof / blocker |
 |---|---|---|---|
-| Claude.ai custom connector | Logged-in Claude user | verified-historical; refresh needed | Real Claude.ai proof exists in site capture; refresh after copy/metadata lands |
-| Claude Connectors Directory | Logged-in Claude users/admins | submission-needed | Prepare metadata, privacy/safety copy, icon/favicon, examples, support path |
+| Claude.ai custom connector | Logged-in Claude user | verified-historical; refresh needed | Full surface is `https://tinyassets.io/mcp`; real Claude.ai proof exists in site capture; refresh after endpoint changes land |
+| Claude Connectors Directory | Logged-in Claude users/admins | packet-ready; submission-needed | Use `https://tinyassets.io/mcp-directory` and `docs/ops/mcp-directory-submission-packet.md` |
 | ChatGPT custom MCP / developer mode | Logged-in eligible ChatGPT user/workspace | blocked | BUG-034/admin approval path blocks clean custom connector approval |
-| ChatGPT App Directory | Logged-in ChatGPT users/admins | submission-needed | Needs Apps SDK manifest/widget/test cases and OpenAI app submission |
+| ChatGPT App Directory | Logged-in ChatGPT users/admins | packet-ready; submission-needed | `chatgpt-app-submission.json` covers the 11 directory tools; actual submission requires OpenAI workspace/admin flow |
 | ChatGPT guest | No logged-in chatbot account | unsupported by ChatGPT path | Route to local/self-hosted/no-chatbot-login options |
 | Mistral Le Chat MCP connector | Logged-in Mistral user/admin | planned | Need connector config proof and directory/submission research |
-| Open WebUI | No hosted chatbot login if self-hosted | planned | Verify Streamable HTTP MCP config against `https://tinyassets.io/mcp` |
+| Open WebUI | No hosted chatbot login if self-hosted | planned | Verify Streamable HTTP MCP config against `https://tinyassets.io/mcp` or directory-safe `https://tinyassets.io/mcp-directory` |
 | LibreChat | No hosted chatbot login if self-hosted | planned | Verify MCP config or bridge path |
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
@@ -80,9 +93,9 @@ Use host-specific wording, but each host should prove at least one of these:
 ## Open Follow-Ups
 
 - Publish `packaging/registry/server.json` to the official MCP Registry after
-  the public endpoint stays green long enough for launch confidence.
-- Prepare Claude directory submission kit.
-- Prepare ChatGPT Apps SDK submission kit and resolve BUG-034 approval path.
+  the public directory endpoint is deployed and green.
+- Submit the Claude directory packet through Anthropic's review flow.
+- Submit `chatgpt-app-submission.json` through OpenAI's app submission flow and resolve BUG-034 approval path for custom connectors.
 - Verify one no-chatbot-login host first, preferably Open WebUI because it
   supports Streamable HTTP MCP directly.
 - Add host-specific proof traces as they land.

@@ -16,7 +16,7 @@ DESCRIPTION = (
 )
 REPOSITORY_URL = "https://github.com/Jonnyton/Workflow"
 WEBSITE_URL = "https://tinyassets.io/connect"
-REMOTE_URL = "https://tinyassets.io/mcp"
+REMOTE_URL = "https://tinyassets.io/mcp-directory"
 ICON_URL = "https://raw.githubusercontent.com/Jonnyton/Workflow/main/assets/icon.png"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
