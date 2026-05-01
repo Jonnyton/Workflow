@@ -266,6 +266,42 @@ def _get_endpoint_hint(
     return payload["active_host"]["llm_endpoint_bound"]
 
 
+def test_provider_routing_excludes_missing_claude_from_effective_chain(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """BUG-025: container status must not advertise absent claude-code as effective."""
+    import shutil as _shutil
+
+    auth_dir = tmp_path / ".codex"
+    auth_dir.mkdir()
+    (auth_dir / "auth.json").write_text("{}", encoding="utf-8")
+
+    for key in (
+        "OLLAMA_HOST", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY",
+        "XAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY",
+        "WORKFLOW_ALLOW_API_KEY_PROVIDERS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    def _which(cmd, *args, **kwargs):
+        return {"codex": "/usr/local/bin/codex"}.get(cmd)
+
+    monkeypatch.setattr("shutil.which", _which)
+    monkeypatch.setattr(_shutil, "which", _which)
+    monkeypatch.setattr("workflow.api.status.Path.home", lambda: tmp_path)
+
+    payload = json.loads(get_status())
+    routing = payload["provider_routing"]
+
+    assert routing["configured_chains"]["writer"][0] == "claude-code"
+    assert routing["effective_chains"]["writer"][0] == "codex"
+    assert "claude-code" not in routing["effective_chains"]["writer"]
+    assert routing["excluded_providers"]["claude-code"] == {
+        "reason": "claude_cli_missing"
+    }
+
+
 def test_llm_endpoint_bound_ollama(monkeypatch) -> None:
     hint = _get_endpoint_hint(
         monkeypatch,

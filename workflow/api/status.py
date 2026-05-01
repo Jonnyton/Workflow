@@ -42,6 +42,77 @@ def _policy_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _provider_chain_evidence(
+    *,
+    api_key_enabled: bool,
+    codex_auth_file: Path,
+) -> dict[str, Any]:
+    """Return configured and startup-reachable provider chains.
+
+    BUG-025 made the distinction load-bearing: the static fallback chain can
+    name providers that this host cannot actually start, such as claude-code
+    inside the container image. Status must expose the effective chain rather
+    than forcing operators to infer it from router logs.
+    """
+    import shutil as _shutil
+
+    from workflow.providers.router import FALLBACK_CHAINS
+
+    xai_present = bool(os.environ.get("XAI_API_KEY"))
+    gemini_present = bool(os.environ.get("GEMINI_API_KEY"))
+    groq_present = bool(os.environ.get("GROQ_API_KEY"))
+
+    availability: dict[str, dict[str, Any]] = {
+        "claude-code": {
+            "available": _shutil.which("claude") is not None,
+            "reason": "claude_cli_missing",
+        },
+        "codex": {
+            "available": _shutil.which("codex") is not None
+            and (
+                codex_auth_file.is_file()
+                or (api_key_enabled and bool(os.environ.get("OPENAI_API_KEY")))
+            ),
+            "reason": "codex_cli_or_auth_missing",
+        },
+        "gemini-free": {
+            "available": api_key_enabled and gemini_present,
+            "reason": "api_key_provider_disabled_or_key_missing",
+        },
+        "groq-free": {
+            "available": api_key_enabled and groq_present,
+            "reason": "api_key_provider_disabled_or_key_missing",
+        },
+        "grok-free": {
+            "available": api_key_enabled and xai_present,
+            "reason": "api_key_provider_disabled_or_key_missing",
+        },
+        "ollama-local": {
+            "available": bool(os.environ.get("OLLAMA_HOST")),
+            "reason": "ollama_host_missing",
+        },
+    }
+
+    effective_chains: dict[str, list[str]] = {}
+    excluded: dict[str, dict[str, str]] = {}
+    for role, chain in FALLBACK_CHAINS.items():
+        effective_chains[role] = [
+            provider
+            for provider in chain
+            if availability.get(provider, {}).get("available") is True
+        ]
+        for provider in chain:
+            probe = availability.get(provider)
+            if probe is not None and not probe["available"]:
+                excluded[provider] = {"reason": str(probe["reason"])}
+
+    return {
+        "configured_chains": FALLBACK_CHAINS,
+        "effective_chains": effective_chains,
+        "excluded_providers": excluded,
+    }
+
+
 def get_status(universe_id: str = "") -> str:
     """Factual snapshot of the daemon's identity + routing config.
 
@@ -77,6 +148,10 @@ def get_status(universe_id: str = "") -> str:
         name for name in API_KEY_PROVIDER_ENV_VARS if os.environ.get(name)
     ]
     codex_auth_file = Path.home() / ".codex" / "auth.json"
+    provider_routing = _provider_chain_evidence(
+        api_key_enabled=api_key_enabled,
+        codex_auth_file=codex_auth_file,
+    )
     # Priority chain mirrors the provider-router's preference order:
     # local/subscription endpoints beat API-key-only providers. Ollama is
     # always-local; codex+claude are subprocess-bound CLIs the daemon can drive;
@@ -371,6 +446,7 @@ def get_status(universe_id: str = "") -> str:
         "session_boundary": session_boundary,
         "storage_utilization": storage_utilization,
         "per_provider_cooldown_remaining": per_provider_cooldown_remaining,
+        "provider_routing": provider_routing,
         "sandbox_status": sandbox_status,
         "missing_data_files": missing_data_files,
         "universe_id": uid,
