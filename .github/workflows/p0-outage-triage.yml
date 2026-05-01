@@ -126,9 +126,12 @@ jobs:
       #   unknown              — generic compose restart (legacy behavior)
       - name: Classify outage
         id: classify
+        env:
+          DIAG: ${{ steps.prediag.outputs.diag }}
         run: |
-          result=$(printf '%s' "${{ steps.prediag.outputs.diag }}" \
-              | python scripts/triage_classify.py)
+          diag_file="$(mktemp)"
+          printf '%s' "$DIAG" > "$diag_file"
+          result=$(python scripts/triage_classify.py --input-file "$diag_file")
           echo "classifier output: ${result}"
           klass=$(printf '%s' "${result}" | python -c "import json,sys; print(json.load(sys.stdin)['class'])")
           auto=$(printf '%s' "${result}" | python -c "import json,sys; print(str(json.load(sys.stdin)['auto_repairable']).lower())")

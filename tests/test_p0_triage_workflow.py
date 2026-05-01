@@ -149,6 +149,20 @@ def test_reprobe_step_present():
     assert reprobe_steps, "must have a re-probe step after restart"
 
 
+def test_classifier_step_does_not_inline_multiline_diag_in_bash():
+    steps = _steps(_load())
+    step = next(s for s in steps if s.get("id") == "classify")
+    run = step.get("run", "")
+    env = step.get("env", {})
+
+    assert "steps.prediag.outputs.diag" not in run, (
+        "raw diagnostics must not be interpolated into bash; multiline log "
+        "content can contain shell syntax and break auto-triage"
+    )
+    assert env.get("DIAG") == "${{ steps.prediag.outputs.diag }}"
+    assert "--input-file" in run
+
+
 # ---------------------------------------------------------------------------
 # (g) Green path closes issue
 # ---------------------------------------------------------------------------
