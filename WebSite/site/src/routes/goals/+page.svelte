@@ -36,7 +36,7 @@
     external: boolean;
     score: number;
   };
-  type FocusKind = 'goal' | 'commons' | 'branch';
+  type FocusKind = 'goals' | 'goal' | 'commons' | 'branch';
 
   const STOP_WORDS = new Set([
     'and',
@@ -73,7 +73,7 @@
   let selectedGoalId = $state(initialMcpSnapshot.goals[0]?.id ?? '');
   let selectedEvidenceKey = $state('');
   let selectedBranchKey = $state('');
-  let focusKind = $state<FocusKind>('goal');
+  let focusKind = $state<FocusKind>('goals');
   let activeTag = $state('all');
   let query = $state('');
   let mcpLoading = $state(false);
@@ -127,6 +127,8 @@
       if (!next.goals.some((goal) => goal.id === selectedGoalId)) {
         selectedGoalId = next.goals[0]?.id ?? '';
         selectedEvidenceKey = '';
+        selectedBranchKey = '';
+        focusKind = 'goals';
       }
     } catch (error) {
       mcpError = error instanceof Error ? error.message : String(error);
@@ -162,6 +164,18 @@
   function selectBranch(key: string) {
     selectedBranchKey = key;
     focusKind = 'branch';
+  }
+
+  function returnToEvidence() {
+    selectedEvidenceKey = '';
+    selectedBranchKey = '';
+    focusKind = 'goal';
+  }
+
+  function returnToGoals() {
+    selectedEvidenceKey = '';
+    selectedBranchKey = '';
+    focusKind = 'goals';
   }
 
   function toggleTag(tag: string) {
@@ -425,42 +439,46 @@
       </div>
     </section>
 
-    <div class="goal-board">
-      {#each filteredGoals as goal, index (goal.id)}
-        <button
-          type="button"
-          class="goal-card"
-          class:active={selectedGoal?.id === goal.id}
-          aria-pressed={selectedGoal?.id === goal.id}
-          onclick={() => selectGoal(goal.id)}
-        >
-          <span class="goal-card__rank">G{index + 1}</span>
-          <span class="goal-card__title">{goal.name}</span>
-          <span class="goal-card__summary">{goal.summary}</span>
-          <span class="goal-card__tags">
-            {#if goal.tags.length}
-              {#each goal.tags.slice(0, 4) as tag}
-                <span>{tag}</span>
-              {/each}
-            {:else}
-              <span>untagged</span>
-            {/if}
-          </span>
-          <span class="goal-card__foot">
-            <span>{goal.visibility}</span>
-            <span>{goal.id}</span>
-          </span>
-        </button>
-      {:else}
-        <div class="empty">
-          <strong>No matching live goals.</strong>
-          <p>Clear the search or tag filter to return to the current MCP goal set.</p>
-        </div>
-      {/each}
-    </div>
-
-    {#if selectedGoal}
+    {#if focusKind === 'goals'}
+      <div class="goal-board" aria-label="Live goals">
+        {#each filteredGoals as goal, index (goal.id)}
+          <button
+            type="button"
+            class="goal-card"
+            class:active={selectedGoal?.id === goal.id}
+            aria-pressed={selectedGoal?.id === goal.id}
+            onclick={() => selectGoal(goal.id)}
+          >
+            <span class="goal-card__rank">G{index + 1}</span>
+            <span class="goal-card__title">{goal.name}</span>
+            <span class="goal-card__summary">{goal.summary}</span>
+            <span class="goal-card__tags">
+              {#if goal.tags.length}
+                {#each goal.tags.slice(0, 4) as tag}
+                  <span>{tag}</span>
+                {/each}
+              {:else}
+                <span>untagged</span>
+              {/if}
+            </span>
+            <span class="goal-card__foot">
+              <span>{goal.visibility}</span>
+              <span>{goal.id}</span>
+            </span>
+          </button>
+        {:else}
+          <div class="empty">
+            <strong>No matching live goals.</strong>
+            <p>Clear the search or tag filter to return to the current MCP goal set.</p>
+          </div>
+        {/each}
+      </div>
+    {:else if selectedGoal}
       <section class="goal-detail" aria-labelledby="selected-goal-title">
+        <div class="goal-detail__nav">
+          <button type="button" class="back-button" onclick={returnToGoals}>Back to all goals</button>
+        </div>
+
         <div class="detail-head">
           <div>
             <RitualLabel color="var(--ember-500)">· Selected goal · {selectedGoal.id} ·</RitualLabel>
@@ -493,86 +511,61 @@
           </article>
         </div>
 
-        <div class="evidence-grid">
-          <section class="evidence-card" aria-labelledby="commons-title">
-            <div class="evidence-card__head">
-              <h3 id="commons-title">Related commons</h3>
-              <small>{wikiEvidence.length ? 'live match reasons' : 'empty state is explicit'}</small>
-            </div>
-            <div class="evidence-list">
-              {#each wikiEvidence as item (item.key)}
-                <button
-                  type="button"
-                  class="evidence-item"
-                  class:active={focusKind === 'commons' && selectedEvidence?.key === item.key}
-                  aria-pressed={focusKind === 'commons' && selectedEvidence?.key === item.key}
-                  onclick={() => selectEvidence(item.key)}
-                >
-                  <span>{item.kind}</span>
-                  <strong>{item.title}</strong>
-                  <small>{item.relation}</small>
-                </button>
-              {:else}
-                <p class="empty-copy">No related wiki records were found from current tags, titles, or explicit goal edges.</p>
-              {/each}
-            </div>
-          </section>
-
-          <section class="evidence-card" aria-labelledby="branches-title">
-            <div class="evidence-card__head">
-              <h3 id="branches-title">Branch signals</h3>
-              <small>{branchEvidence.length ? 'workflow + GitHub matches' : 'no branch match yet'}</small>
-            </div>
-            <div class="evidence-list">
-              {#each branchEvidence as branch (branch.key)}
-                <button
-                  type="button"
-                  class="evidence-item"
-                  class:active={focusKind === 'branch' && selectedBranch?.key === branch.key}
-                  aria-pressed={focusKind === 'branch' && selectedBranch?.key === branch.key}
-                  onclick={() => selectBranch(branch.key)}
-                >
-                  <span>{branch.kind}</span>
-                  <strong>{branch.name}</strong>
-                  <small>{branch.summary} · {branch.meta}</small>
-                </button>
-              {:else}
-                <p class="empty-copy">No repo or workflow branch currently matches this goal. That is a real gap, not a hidden leaderboard.</p>
-              {/each}
-            </div>
-          </section>
-        </div>
-
-        <section class="click-detail click-detail--{focusKind}" aria-label="Clicked item detail">
-          {#if focusKind === 'goal'}
-            <div>
-              <RitualLabel>· Goal detail · {selectedGoal.id} ·</RitualLabel>
-              <h3>{selectedGoal.name}</h3>
-              <p>{selectedGoal.summary}</p>
-              <div class="detail-grid" aria-label="Selected goal fields">
-                <article>
-                  <span>Goal ID</span>
-                  <strong>{selectedGoal.id}</strong>
-                </article>
-                <article>
-                  <span>Visibility</span>
-                  <strong>{selectedGoal.visibility}</strong>
-                </article>
-                <article>
-                  <span>Author</span>
-                  <strong>{selectedGoal.author || 'anonymous'}</strong>
-                </article>
-                <article>
-                  <span>Tags</span>
-                  <strong>{tagLine(selectedGoal.tags)}</strong>
-                </article>
+        {#if focusKind === 'goal'}
+          <div class="evidence-grid">
+            <section class="evidence-card" aria-labelledby="commons-title">
+              <div class="evidence-card__head">
+                <h3 id="commons-title">Related commons</h3>
+                <small>{wikiEvidence.length ? 'live match reasons' : 'empty state is explicit'}</small>
               </div>
+              <div class="evidence-list">
+                {#each wikiEvidence as item (item.key)}
+                  <button
+                    type="button"
+                    class="evidence-item"
+                    aria-pressed={false}
+                    onclick={() => selectEvidence(item.key)}
+                  >
+                    <span>{item.kind}</span>
+                    <strong>{item.title}</strong>
+                    <small>{item.relation}</small>
+                  </button>
+                {:else}
+                  <p class="empty-copy">No related wiki records were found from current tags, titles, or explicit goal edges.</p>
+                {/each}
+              </div>
+            </section>
+
+            <section class="evidence-card" aria-labelledby="branches-title">
+              <div class="evidence-card__head">
+                <h3 id="branches-title">Branch signals</h3>
+                <small>{branchEvidence.length ? 'workflow + GitHub matches' : 'no branch match yet'}</small>
+              </div>
+              <div class="evidence-list">
+                {#each branchEvidence as branch (branch.key)}
+                  <button
+                    type="button"
+                    class="evidence-item"
+                    aria-pressed={false}
+                    onclick={() => selectBranch(branch.key)}
+                  >
+                    <span>{branch.kind}</span>
+                    <strong>{branch.name}</strong>
+                    <small>{branch.summary} · {branch.meta}</small>
+                  </button>
+                {:else}
+                  <p class="empty-copy">No repo or workflow branch currently matches this goal. That is a real gap, not a hidden leaderboard.</p>
+                {/each}
+              </div>
+            </section>
+          </div>
+        {:else}
+          <section class="click-detail click-detail--{focusKind}" aria-live="polite" aria-label="Clicked item detail">
+            <div class="click-detail__nav">
+              <button type="button" class="back-button" onclick={returnToEvidence}>Back to related items</button>
             </div>
-            <div class="detail-side">
-              <a href="/connect">Use through MCP</a>
-              <a href="/graph">Open in graph</a>
-            </div>
-          {:else if focusKind === 'commons' && selectedEvidence}
+
+            {#if focusKind === 'commons' && selectedEvidence}
             <div>
               <RitualLabel>· Evidence detail · {selectedEvidence.kind} ·</RitualLabel>
               <h3>{selectedEvidence.title}</h3>
@@ -645,7 +638,8 @@
               <a href="/wiki">Open live wiki</a>
             </div>
           {/if}
-        </section>
+          </section>
+        {/if}
       </section>
     {/if}
   </div>
@@ -709,7 +703,8 @@
   .detail-actions button,
   .detail-actions a,
   .tag-cloud button,
-  .click-detail a {
+  .click-detail a,
+  .back-button {
     align-items: center;
     border-radius: 6px;
     display: inline-flex;
@@ -721,7 +716,8 @@
   .refresh-box button,
   .detail-actions button,
   .detail-actions a,
-  .click-detail a {
+  .click-detail a,
+  .back-button {
     background: rgba(109, 211, 166, 0.1);
     border: 1px solid rgba(109, 211, 166, 0.28);
     color: var(--fg-1);
@@ -736,7 +732,8 @@
   .refresh-box button:hover,
   .detail-actions button:hover,
   .detail-actions a:hover,
-  .click-detail a:hover {
+  .click-detail a:hover,
+  .back-button:hover {
     background: rgba(109, 211, 166, 0.16);
     border-color: rgba(109, 211, 166, 0.5);
   }
@@ -971,9 +968,12 @@
   }
 
   .goal-detail {
-    border-top: 1px solid var(--border-1);
-    margin-top: 30px;
-    padding-top: 28px;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .goal-detail__nav {
+    margin-bottom: 14px;
   }
 
   .detail-head {
@@ -1098,8 +1098,16 @@
     display: grid;
     gap: 14px;
     grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
-    margin-top: 12px;
+    margin-top: 14px;
     padding: 16px;
+  }
+
+  .click-detail__nav {
+    grid-column: 1 / -1;
+  }
+
+  .back-button {
+    width: fit-content;
   }
 
   .click-detail p {
