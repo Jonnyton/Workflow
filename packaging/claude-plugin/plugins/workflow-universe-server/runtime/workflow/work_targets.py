@@ -47,6 +47,7 @@ HARD_PRIORITY_RESOLVED = "resolved"
 
 DISCARD_REVIEW_DELAY = 20
 DISCARD_RETENTION_DAYS = 30
+SYNTHESIS_RETRY_LIMIT = 3
 
 EXECUTION_KIND_NOTES = "notes"
 # Phase C.2: BOOK/CHAPTER/SCENE moved to
@@ -277,7 +278,7 @@ def list_selectable_targets(
     for target in targets:
         if role is not None and target.role != role:
             continue
-        if target.lifecycle in {LIFECYCLE_DISCARDED, LIFECYCLE_SUPERSEDED}:
+        if target.lifecycle != LIFECYCLE_ACTIVE:
             continue
         filtered.append(target)
     return filtered
@@ -661,6 +662,9 @@ def sync_source_synthesis_priorities(
     raw_signals = _read_json(signals_file, [])
     if not isinstance(raw_signals, list):
         raw_signals = []
+    raw_signals = _rehydrate_missing_synthesis_signals(
+        universe_dir, raw_signals,
+    )
 
     synth_signals = [
         signal for signal in raw_signals
@@ -727,8 +731,128 @@ def sync_source_synthesis_priorities(
             priority.status = HARD_PRIORITY_RESOLVED
             priority.updated_at = _now()
 
+    _settle_stale_synthesis_targets(universe_path, current_sources)
     save_hard_priorities(universe_path, priorities)
     return priorities, synth_signals
+
+
+def _rehydrate_missing_synthesis_signals(
+    universe_dir: Path,
+    raw_signals: list[Any],
+) -> list[Any]:
+    """Recreate missing synthesize_source signals from the source manifest.
+
+    The API source listing already repairs this gap for read callers. The
+    daemon needs the same repair at foundation-review time so a consumed or
+    truncated signal file cannot leave active synthesis targets permanently
+    unexecutable.
+    """
+    manifest_path = universe_dir / "canon" / ".manifest.json"
+    if not manifest_path.exists():
+        return raw_signals
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return raw_signals
+    if not isinstance(manifest, dict):
+        return raw_signals
+
+    queued_sources = {
+        str(signal.get("source_file", ""))
+        for signal in raw_signals
+        if isinstance(signal, dict)
+        and signal.get("type") == "synthesize_source"
+        and signal.get("source_file")
+    }
+    appended = False
+    for name, entry in manifest.items():
+        if not isinstance(entry, dict):
+            continue
+        source_file = str(entry.get("filename") or name)
+        if not source_file or source_file in queued_sources:
+            continue
+        if not _manifest_entry_needs_synthesis(universe_dir, source_file, entry):
+            continue
+        raw_signals.append(_synthesis_signal_from_manifest(source_file, entry))
+        queued_sources.add(source_file)
+        appended = True
+
+    if appended:
+        _write_json(universe_dir / "worldbuild_signals.json", raw_signals)
+    return raw_signals
+
+
+def _manifest_entry_needs_synthesis(
+    universe_dir: Path,
+    source_file: str,
+    entry: dict[str, Any],
+) -> bool:
+    source_path = str(entry.get("source_path") or f"sources/{source_file}")
+    routed_to_sources = (
+        str(entry.get("routed_to", "")) == "sources"
+        or source_path.replace("\\", "/").startswith("sources/")
+    )
+    if not routed_to_sources:
+        return False
+    if entry.get("synthesized_docs"):
+        return False
+    if entry.get("synthesis_failed"):
+        return False
+    try:
+        attempts = int(entry.get("synthesis_attempts", 0) or 0)
+    except (TypeError, ValueError):
+        attempts = 0
+    if attempts >= SYNTHESIS_RETRY_LIMIT:
+        return False
+    return (universe_dir / "canon" / source_path).is_file()
+
+
+def _synthesis_signal_from_manifest(
+    source_file: str,
+    entry: dict[str, Any],
+) -> dict[str, Any]:
+    file_type = str(entry.get("file_type", "unknown"))
+    try:
+        byte_count = int(entry.get("byte_count", 0) or 0)
+    except (TypeError, ValueError):
+        byte_count = 0
+    return {
+        "type": "synthesize_source",
+        "topic": Path(source_file).stem.replace("-", "_").replace(" ", "_"),
+        "detail": (
+            f"New source file: {source_file} "
+            f"({byte_count} bytes, {file_type})"
+        ),
+        "source_file": source_file,
+        "file_type": file_type,
+        "mime_type": str(entry.get("mime_type", "")),
+    }
+
+
+def _settle_stale_synthesis_targets(
+    universe_path: str | Path,
+    current_sources: set[str],
+) -> None:
+    """Remove active synthesis targets whose source no longer needs a signal."""
+    targets = load_work_targets(universe_path)
+    changed = False
+    for target in targets:
+        if target.lifecycle != LIFECYCLE_ACTIVE:
+            continue
+        source_file = str(target.metadata.get("source_file", ""))
+        signal_type = str(target.metadata.get("signal_type", ""))
+        if signal_type != "synthesize_source" or not source_file:
+            continue
+        if source_file in current_sources:
+            continue
+        target.lifecycle = LIFECYCLE_COMPLETE
+        target.metadata["completed_reason"] = (
+            "synthesis_signal_absent_or_source_resolved"
+        )
+        target.updated_at = _now()
+        changed = True
+    if changed:
+        save_work_targets(universe_path, targets)
 
 
 def collect_soft_conflicts(universe_path: str | Path) -> list[dict[str, Any]]:
@@ -775,15 +899,13 @@ def choose_authorial_targets(
     by leaving ``candidate_override=None``.
     """
     if candidate_override is None:
-        targets = ensure_seed_targets(universe_path, premise=premise)
+        ensure_seed_targets(universe_path, premise=premise)
         candidates = list_selectable_targets(universe_path)
     else:
         # Producer path has already run seed + list_selectable_targets;
-        # just score the merged set. ``targets`` fallback for the
-        # "no candidates" edge case is the seed list to keep current
-        # behavior — best-effort read from disk.
+        # just score the merged set. Empty means the daemon should idle,
+        # not resurrect completed or paused targets.
         candidates = list(candidate_override)
-        targets = list(candidate_override)
 
     def score(target: WorkTarget) -> tuple[int, int, float]:
         role_score = 2 if target.role == ROLE_PUBLISHABLE else 1
@@ -796,7 +918,7 @@ def choose_authorial_targets(
         return (active_score + role_score, stage_score, -target.updated_at)
 
     ranked = sorted(candidates, key=score, reverse=True)
-    return ranked or targets
+    return ranked
 
 
 def write_review_artifact(

@@ -44,6 +44,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: E402
 # WORKFLOW_UNIFIED_EXECUTION=1 can compile its Branch.
 import fantasy_daemon.branch_registrations  # noqa: E402, F401
 import fantasy_daemon.runtime as runtime  # noqa: E402
+from fantasy_daemon.branch_registrations import clear_restartable_soft_stop  # noqa: E402
 from fantasy_daemon.desktop.dashboard import DashboardHandler  # noqa: E402
 from fantasy_daemon.desktop.notifications import NotificationManager  # noqa: E402
 from fantasy_daemon.desktop.tray import TrayApp  # noqa: E402
@@ -944,6 +945,8 @@ class DaemonController:
                     # Preserve series_completed list
                     if ev.get("series_completed"):
                         initial_state["series_completed"] = ev["series_completed"]
+                    if isinstance(ev.get("health"), dict):
+                        initial_state["health"] = dict(ev["health"])
                     logger.info(
                         "Resumed from checkpoint: words=%d, chapters=%d",
                         initial_state["total_words"],
@@ -952,6 +955,7 @@ class DaemonController:
             except Exception:
                 logger.debug("No existing checkpoint to resume from",
                              exc_info=True)
+            initial_state = clear_restartable_soft_stop(initial_state)
 
             if self._dashboard:
                 self._dashboard.handle_event({
@@ -1592,6 +1596,19 @@ class DaemonController:
                 self._combined_log(
                     f"Worldbuild: No changes, version {version}"
                 )
+
+        elif node_name == "universe_cycle_wrapper":
+            health = output.get("health", {})
+            if not isinstance(health, dict):
+                health = {}
+            reason = str(health.get("idle_reason") or "continue")
+            stopped = bool(health.get("stopped", False))
+            self._combined_log(
+                "Universe cycle wrapper: completed "
+                f"(stopped={stopped}, reason={reason}, "
+                f"words={output.get('total_words', 0)}, "
+                f"chapters={output.get('total_chapters', 0)})"
+            )
 
         elif node_name == "reflect":
             trace = _first_trace(output)

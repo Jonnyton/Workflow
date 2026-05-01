@@ -25,7 +25,9 @@ registration happens before any ``compile_branch`` call.
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from workflow.domain_registry import register_domain_callable
@@ -45,6 +47,12 @@ _BOUNDARY_FIELDS = (
     "active_series",
     "series_completed",
 )
+
+_RESTARTABLE_IDLE_REASONS = {
+    "no_user_task",
+    "universe_cycle_noop_streak",
+    "worldbuild_stuck",
+}
 
 
 def universe_cycle_wrapper(state: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +88,7 @@ def universe_cycle_wrapper(state: dict[str, Any]) -> dict[str, Any]:
     for passthrough in ("_universe_path", "_db_path", "_kg_path"):
         if passthrough in state:
             initial[passthrough] = state[passthrough]
+    initial = clear_restartable_soft_stop(initial)
 
     # recursion_limit is generous because the inner graph cycles
     # through review→dispatch→execute→cycle many times before idle.
@@ -106,6 +115,88 @@ def universe_cycle_wrapper(state: dict[str, Any]) -> dict[str, Any]:
         for field in _BOUNDARY_FIELDS
         if field in final
     }
+
+
+def clear_restartable_soft_stop(state: dict[str, Any]) -> dict[str, Any]:
+    """Clear checkpointed self-stop state when durable work is available.
+
+    The supervisor restarts the daemon process after a clean graph exit. If
+    the checkpoint still carries ``health.stopped=true`` from a prior no-op
+    guardrail, every restart exits immediately even after new durable work
+    appears. A soft self-stop is restartable; explicit ``.pause`` remains
+    controlled by the public daemon controls.
+    """
+    health = dict(state.get("health") or {})
+    if not health.get("stopped"):
+        return state
+    reason = str(health.get("idle_reason", ""))
+    if reason and reason not in _RESTARTABLE_IDLE_REASONS:
+        return state
+
+    universe_path = _state_universe_path(state)
+    if not universe_path or not _restartable_work_exists(universe_path):
+        return state
+
+    repaired = dict(state)
+    health["stopped"] = False
+    health["idle_reason"] = ""
+    health["worldbuild_noop_streak"] = 0
+    health["cycle_noop_streak"] = 0
+    repaired["health"] = health
+    logger.info(
+        "universe_cycle_wrapper: cleared checkpointed soft-stop "
+        "(reason=%s, universe=%s)",
+        reason or "unspecified",
+        universe_path,
+    )
+    return repaired
+
+
+def _state_universe_path(state: dict[str, Any]) -> Path | None:
+    raw = (
+        state.get("_universe_path")
+        or state.get("universe_path")
+        or ""
+    )
+    return Path(str(raw)) if raw else None
+
+
+def _restartable_work_exists(universe_path: Path) -> bool:
+    if (universe_path / ".pause").exists():
+        return False
+
+    try:
+        from workflow.work_targets import (
+            LIFECYCLE_ACTIVE,
+            REQUESTS_FILENAME,
+            load_work_targets,
+            sync_source_synthesis_priorities,
+        )
+
+        _priorities, synth_signals = sync_source_synthesis_priorities(
+            universe_path,
+        )
+        if synth_signals:
+            return True
+        if any(
+            target.lifecycle == LIFECYCLE_ACTIVE
+            for target in load_work_targets(universe_path)
+        ):
+            return True
+        requests_path = universe_path / REQUESTS_FILENAME
+        if requests_path.exists():
+            requests = json.loads(requests_path.read_text(encoding="utf-8"))
+            if isinstance(requests, list) and any(
+                isinstance(req, dict) and req.get("status") == "pending"
+                for req in requests
+            ):
+                return True
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "restartable-work check failed for %s", universe_path,
+            exc_info=True,
+        )
+    return False
 
 
 register_domain_callable(
