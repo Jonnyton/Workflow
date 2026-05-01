@@ -26,6 +26,9 @@ on:
     # GHA's best-effort schedule policy.
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy prod"]
+    types: [completed]
 
 # Permissions: canary reads repo; alarm sink writes issues.
 permissions:
@@ -47,6 +50,7 @@ env:
 
 jobs:
   probe:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -74,7 +78,7 @@ jobs:
           # Escape newlines for $GITHUB_OUTPUT multiline capture.
           # Use a random delimiter so probe output containing bare CANARY_EOF
           # cannot close the heredoc early and corrupt $GITHUB_OUTPUT.
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "handshake_status=$code"
             echo "handshake_msg<<${_delim}"
@@ -103,7 +107,7 @@ jobs:
               --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "tool_status=$code"
             echo "tool_msg<<${_delim}"
@@ -136,7 +140,7 @@ jobs:
               --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "activity_status=$code"
             echo "activity_msg<<${_delim}"
@@ -169,7 +173,7 @@ jobs:
               --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "revert_status=$code"
             echo "revert_msg<<${_delim}"
@@ -206,7 +210,7 @@ jobs:
               --url "${PROBE_URL}" --timeout 20 --verbose 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "wiki_status=$code"
             echo "wiki_msg<<${_delim}"
@@ -262,7 +266,7 @@ jobs:
           if [ -z "${wiki}" ]; then
             wiki="(skipped — upstream red)"
           fi
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           msg_handshake="${{ steps.probe.outputs.handshake_msg }}"
           msg_tool="${{ steps.tool_probe.outputs.tool_msg }}"
           msg_activity="${{ steps.activity_probe.outputs.activity_msg }}"
@@ -287,12 +291,12 @@ jobs:
             echo "${msg_wiki}"
             echo "${_delim}"
             if [ "${handshake}" = "0" ] && [ "${tool}" = "0" ] \
-               && ([ "${activity}" = "0" ] \
-                   || [ "${activity}" = "(skipped — upstream red)" ]) \
-               && ([ "${revert}" = "0" ] \
-                   || [ "${revert}" = "(skipped — upstream red)" ]) \
-               && ([ "${wiki}" = "0" ] \
-                   || [ "${wiki}" = "(skipped — upstream red)" ]); then
+               && { [ "${activity}" = "0" ] \
+                   || [ "${activity}" = "(skipped — upstream red)" ]; } \
+               && { [ "${revert}" = "0" ] \
+                   || [ "${revert}" = "(skipped — upstream red)" ]; } \
+               && { [ "${wiki}" = "0" ] \
+                   || [ "${wiki}" = "(skipped — upstream red)" ]; }; then
               echo "overall=green"
             else
               echo "overall=red"
@@ -363,7 +367,7 @@ jobs:
             15) semantic="RED_auth_expired" ;;
             *)  semantic="RED_unexpected_exit_${code}" ;;
           esac
-          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           {
             echo "l2_status=$code"
             echo "l2_semantic<<${_delim}"
@@ -389,10 +393,12 @@ jobs:
       - name: Layer-2 Summary
         if: always()
         run: |
-          echo "### Layer-2 connector probe" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **exit** → \`${{ steps.l2probe.outputs.l2_status }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **semantic** → ${{ steps.l2probe.outputs.l2_semantic }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Layer-2 connector probe"
+            echo ""
+            echo "- **exit** → \`${{ steps.l2probe.outputs.l2_status }}\`"
+            echo "- **semantic** → ${{ steps.l2probe.outputs.l2_semantic }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   alarm-sink:
     # Runs on every tick so it can close issues after recovery too.
@@ -623,13 +629,17 @@ jobs:
           PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
         run: |
           set +e
+          extra_args=()
+          if [ "${{ steps.gate.outputs.is_first_alarm }}" = "true" ]; then
+            extra_args+=(--first-alarm)
+          fi
           output=$(python scripts/pushover_page.py \
               --issue-number "${{ steps.gate.outputs.issue_number }}" \
               --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
               --probe-url "${PROBE_URL}" \
               --probe-exit "${{ needs.probe.outputs.status }}" \
               --kind "PUBLIC_MCP_OUTAGE" \
-              $([ "${{ steps.gate.outputs.is_first_alarm }}" = "true" ] && echo "--first-alarm") \
+              "${extra_args[@]}" \
               --comments-json /tmp/pushover/comments.json)
           code=$?
           set -e
@@ -659,10 +669,12 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### Uptime canary result" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **${{ env.PROBE_URL }}** → exit \`${{ needs.probe.outputs.status }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **overall** → **${{ needs.probe.outputs.overall }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **page_eligible** → \`${{ steps.gate.outputs.page_eligible }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **is_first_alarm** → \`${{ steps.gate.outputs.is_first_alarm }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **paged_this_tick** → \`${{ steps.page.outputs.marker != '' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Uptime canary result"
+            echo ""
+            echo "- **${{ env.PROBE_URL }}** → exit \`${{ needs.probe.outputs.status }}\`"
+            echo "- **overall** → **${{ needs.probe.outputs.overall }}**"
+            echo "- **page_eligible** → \`${{ steps.gate.outputs.page_eligible }}\`"
+            echo "- **is_first_alarm** → \`${{ steps.gate.outputs.is_first_alarm }}\`"
+            echo "- **paged_this_tick** → \`${{ steps.page.outputs.marker != '' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

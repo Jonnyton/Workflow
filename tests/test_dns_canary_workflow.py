@@ -232,6 +232,22 @@ def test_uptime_canary_workflow_id_is_literal():
            'workflow_id: "uptime-canary.yml"' in text
 
 
+def test_uptime_canary_runs_after_successful_deploy():
+    wf = _load(_UPTIME_WF)
+    triggers = _triggers(wf)
+    workflow_run = triggers.get("workflow_run", {})
+    assert "Deploy prod" in workflow_run.get("workflows", []), (
+        "uptime-canary must run after production deploys so the loop gets "
+        "fresh observation evidence without waiting for cron/manual dispatch"
+    )
+    assert "completed" in workflow_run.get("types", [])
+    assert (
+        _jobs(wf)["probe"].get("if")
+        == "github.event_name != 'workflow_run' || "
+           "github.event.workflow_run.conclusion == 'success'"
+    )
+
+
 def test_llm_binding_canary_workflow_id_is_literal():
     text = _text(_LLM_WF)
     assert "context.workflow" not in text, (

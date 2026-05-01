@@ -161,6 +161,42 @@ jobs:
                   }
                 }
               }
+
+              const writerStage = stages.find((stage) => stage?.name === 'Writer workflow');
+              const queueStage = stages.find((stage) => stage?.name === 'Writer queue');
+              const queueDetails = queueStage?.details || {};
+              const count = (name) => Array.isArray(queueDetails[name])
+                ? queueDetails[name].length
+                : 0;
+              const hasBacklog = (
+                count('needs_human') > 0 ||
+                count('old_pending') > 0 ||
+                count('pending') > 0
+              );
+              const blockedByUnavailableAuth = (
+                count('auth_missing') > 0 ||
+                count('missing_codex_subscription') > 0 ||
+                count('provider_exhausted') > 0
+              );
+              const writerAlreadyRunning = writerStage?.status === 'yellow';
+              if (
+                queueStage?.status === 'red' &&
+                hasBacklog &&
+                !blockedByUnavailableAuth &&
+                !writerAlreadyRunning
+              ) {
+                try {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: 'auto-fix-bug.yml',
+                    ref: 'main',
+                  });
+                  console.log('dispatched auto-fix-bug.yml for red writer queue');
+                } catch (error) {
+                  core.warning(`Could not dispatch auto-fix-bug.yml for red writer queue: ${error.message}`);
+                }
+              }
             }
 
             await dispatchStaleDependencies();
