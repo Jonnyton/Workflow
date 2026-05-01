@@ -21,7 +21,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://tinyassets.io/mcp"
+      "url": "https://tinyassets.io/mcp-directory"
     }
   ]
 }

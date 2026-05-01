@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import asyncio
+
+from workflow.directory_server import directory_mcp
+
+EXPECTED_TOOLS = {
+    "get_workflow_status": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "list_workflow_universes": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "inspect_workflow_universe": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "list_workflow_goals": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "search_workflow_goals": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "get_workflow_goal": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "search_workflow_wiki": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "read_workflow_wiki_page": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "list_workflow_runs": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "propose_workflow_goal": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "submit_workflow_request": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+}
+
+
+def _list_tools():
+    return asyncio.run(directory_mcp.list_tools(run_middleware=False))
+
+
+def test_directory_surface_exposes_review_scoped_tool_set() -> None:
+    tools = {tool.name: tool for tool in _list_tools()}
+
+    assert set(tools) == set(EXPECTED_TOOLS)
+    assert "universe" not in tools
+    assert "extensions" not in tools
+    assert "goals" not in tools
+    assert "wiki" not in tools
+
+
+def test_directory_tools_have_explicit_submission_annotations() -> None:
+    tools = {tool.name: tool for tool in _list_tools()}
+
+    for tool_name, expected in EXPECTED_TOOLS.items():
+        annotations = tools[tool_name].annotations
+        assert annotations is not None, f"{tool_name} missing annotations"
+        for hint_name, expected_value in expected.items():
+            assert getattr(annotations, hint_name) is expected_value, (
+                f"{tool_name}.{hint_name} must be {expected_value}"
+            )
+
+
+def test_directory_tools_do_not_use_catch_all_action_inputs() -> None:
+    for tool in _list_tools():
+        properties = tool.parameters.get("properties", {})
+        assert "action" not in properties, (
+            f"{tool.name} must expose a narrow tool, not an action router"
+        )
+
+
+def test_directory_tool_inputs_avoid_sensitive_credentials() -> None:
+    sensitive_terms = {
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "mfa",
+        "ssn",
+        "credit_card",
+    }
+
+    for tool in _list_tools():
+        properties = tool.parameters.get("properties", {})
+        names = {name.lower() for name in properties}
+        assert names.isdisjoint(sensitive_terms), (
+            f"{tool.name} requests a sensitive credential-like field"
+        )

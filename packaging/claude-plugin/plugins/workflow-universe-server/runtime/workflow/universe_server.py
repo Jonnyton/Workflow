@@ -28,9 +28,12 @@ delegate to plain callables in those submodules (Pattern A2).
 from __future__ import annotations
 
 import logging
+from contextlib import AsyncExitStack, asynccontextmanager
 
+import uvicorn
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from starlette.applications import Starlette
 
 from workflow.api.branches import _branch_design_guide_prompt
 from workflow.api.engine_helpers import _warn_if_no_upload_whitelist
@@ -41,6 +44,7 @@ from workflow.api.prompts import _CONTROL_STATION_PROMPT
 from workflow.api.status import get_status as _get_status_impl
 from workflow.api.universe import _universe_impl
 from workflow.api.wiki import wiki as _wiki_impl
+from workflow.directory_server import directory_mcp
 
 logger = logging.getLogger("universe_server")
 
@@ -995,6 +999,39 @@ def get_status(universe_id: str = "") -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def create_streamable_http_app() -> Starlette:
+    """Create the production HTTP app with both MCP surfaces.
+
+    `/mcp` preserves the legacy custom-connector surface. `/mcp-directory`
+    exposes the narrow directory-review surface used for app-store style host
+    submissions. Both route to the same backend state.
+    """
+    legacy_app = mcp.http_app(path="/mcp", transport="streamable-http")
+    directory_app = directory_mcp.http_app(
+        path="/mcp-directory",
+        transport="streamable-http",
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette):  # type: ignore[no-untyped-def]
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(
+                legacy_app.router.lifespan_context(legacy_app),
+            )
+            await stack.enter_async_context(
+                directory_app.router.lifespan_context(directory_app),
+            )
+            yield
+
+    app = Starlette(
+        routes=[*legacy_app.routes, *directory_app.routes],
+        lifespan=lifespan,
+    )
+    app.state.path = "/mcp,/mcp-directory"
+    app.state.transport_type = "streamable-http"
+    return app
+
+
 def main(
     host: str = "0.0.0.0",
     port: int = 8001,
@@ -1014,7 +1051,8 @@ def main(
     )
 
     if transport == "streamable-http":
-        mcp.run(transport="streamable-http", host=host, port=port)
+        app = create_streamable_http_app()
+        uvicorn.run(app, host=host, port=port)
     elif transport == "sse":
         mcp.run(transport="sse", host=host, port=port)
     elif transport == "stdio":

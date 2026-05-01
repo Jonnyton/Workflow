@@ -63,6 +63,7 @@ jobs:
         run: npm install -g wrangler@latest
 
       - name: Verify secrets present
+        if: github.event_name != 'pull_request'
         run: |
           if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN secret is not set."
@@ -90,6 +91,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=== dry-run — validating wrangler config + worker bundle ==="
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "Cloudflare deploy credentials are unavailable on this PR; unit tests already ran, skipping Wrangler dry-run."
+            exit 0
+          fi
           wrangler deploy --dry-run --outdir /tmp/wrangler-out
           echo "=== dry-run passed ==="
           ls -lh /tmp/wrangler-out/
