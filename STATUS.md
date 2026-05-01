@@ -59,7 +59,7 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin (was filed as Plus/private app 2026-04-25, blocks publish). | OpenAI workspace admin | - | host-action |
 | Memory-scope Stage 2c flag | - | 30d clean | monitoring |
 | Remove provider+DO keys from persistent uptime surfaces | `deploy/*` | host Qs answered | host->e2e |
-| Site cert flip — `gh api -X PUT repos/Jonnyton/Workflow/pages -F https_enforced=true` once GH Pages cert lands (5-15min from 17:40Z 2026-04-29). Edge HTTPS via CF proxy already serves. | - | - | monitoring |
+| Site cert flip — `gh api -X PUT repos/Jonnyton/Workflow/pages -F https_enforced=true` once GH Pages cert lands (5-15min from 17:40Z 2026-04-29). Edge HTTPS via CF proxy already serves. | - | - | claimed:codex-gpt5-desktop |
 
 ## Next
 
