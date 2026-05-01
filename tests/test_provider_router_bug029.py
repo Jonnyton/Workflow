@@ -193,3 +193,19 @@ class TestChainDrainBackoff:
         assert resp.text == ""
         resp = _run(router.call("writer", "p", "s"))
         assert resp.text == ""
+
+    def test_empty_non_local_provider_falls_through_to_next_provider(self):
+        """BUG-036: empty prose from a primary provider is not a successful run."""
+        empty_primary = _FakeProvider("claude-code", text="")
+        fallback = _FakeProvider("codex", text="fallback content")
+        router = ProviderRouter(
+            providers={"claude-code": empty_primary, "codex": fallback},
+            chain_drain_empty_threshold=2,
+        )
+
+        resp = _run(router.call("writer", "p", "s"))
+
+        assert resp.text == "fallback content"
+        assert resp.provider == "codex"
+        assert empty_primary.call_count == 1
+        assert fallback.call_count == 1

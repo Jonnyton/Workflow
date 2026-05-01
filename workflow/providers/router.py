@@ -260,7 +260,6 @@ class ProviderRouter:
             logger.info("Trying provider %s for role=%s", provider_name, role)
             try:
                 resp = await provider.complete(prompt, system, cfg)
-                self._quota.record_success(provider_name)
             except ProviderUnavailableError:
                 self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
                 logger.warning(
@@ -291,6 +290,15 @@ class ProviderRouter:
             # responses from local providers when chain-drained.
             is_local = provider_name in _LOCAL_PROVIDERS
             response_empty = not (resp.text or "").strip()
+            if response_empty and not is_local:
+                self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                logger.warning(
+                    "Provider %s returned empty prose, cooldown %ds",
+                    provider_name, COOLDOWN_OTHER,
+                )
+                continue
+
+            self._quota.record_success(provider_name)
             if is_local and response_empty:
                 count = self._consecutive_empty.get(provider_name, 0) + 1
                 self._consecutive_empty[provider_name] = count
@@ -456,6 +464,13 @@ class ProviderRouter:
             )
             try:
                 resp = await provider.complete(prompt, system, cfg)
+                if not (resp.text or "").strip():
+                    self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                    logger.warning(
+                        "Policy provider %s returned empty prose, cooldown %ds",
+                        provider_name, COOLDOWN_OTHER,
+                    )
+                    continue
                 self._quota.record_success(provider_name)
                 return resp.text, provider_name
             except ProviderUnavailableError:
