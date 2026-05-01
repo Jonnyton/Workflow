@@ -119,15 +119,43 @@
     loadingSource = source;
     latestError = '';
     try {
-      feed = await fetchPatchLoopFeed(12, source);
+      const nextFeed = await fetchPatchLoopFeed(12, source);
+      if (source === 'mcp' && !nextFeed.live) {
+        await showGitHubFallback(nextFeed);
+        return;
+      }
+      feed = nextFeed;
       if (!feed.live && feed.warnings.length) {
         latestError = feed.warnings[feed.warnings.length - 1];
       }
     } catch (error) {
-      latestError = error instanceof Error ? error.message : 'Loop feed unavailable';
+      if (source === 'mcp') {
+        await showGitHubFallback(null, error);
+        return;
+      }
+      latestError = errorMessage(error);
     } finally {
       loadingSource = null;
     }
+  }
+
+  async function showGitHubFallback(mcpFeed: PatchLoopFeed | null, mcpError?: unknown) {
+    const mcpMessage = mcpFeed?.warnings[mcpFeed.warnings.length - 1] ?? errorMessage(mcpError, 'MCP loop feed unavailable');
+    try {
+      const fallback = await fetchPatchLoopFeed(12, 'github');
+      activeSource = 'github';
+      feed = fallback;
+      latestError = fallback.live
+        ? `${mcpMessage}; showing GitHub monitor instead.`
+        : (fallback.warnings[fallback.warnings.length - 1] ?? `${mcpMessage}; GitHub monitor has no visible events.`);
+    } catch (fallbackError) {
+      feed = mcpFeed;
+      latestError = `${mcpMessage}; GitHub monitor unavailable: ${errorMessage(fallbackError)}`;
+    }
+  }
+
+  function errorMessage(error: unknown, fallback = 'Loop feed unavailable'): string {
+    return error instanceof Error ? error.message : fallback;
   }
 
   onMount(() => {
