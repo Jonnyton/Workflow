@@ -1,20 +1,31 @@
 ---
 name: ui-test
-description: Simulate a Claude.ai phone user driving the Workflow daemon via the custom MCP connector. Use when testing the live end-user surface. You type into the real Claude.ai chat UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
+description: Simulate a Claude.ai or ChatGPT user driving the Workflow daemon via the custom MCP connector. Use when testing the live end-user surface. You type into the real chatbot UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
 ---
 
 # ui-test
 
-You simulate a real person chatting with Claude.ai on their phone or laptop, using the Workflow MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile; this is the canonical URL installed by users). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
+You simulate a real person chatting with Claude.ai or ChatGPT on their phone or laptop, using the Workflow MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile; this is the canonical URL installed by users). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
 
 The human host is watching the browser tab. Your job is to look like a naive, curious user — one who does not know tool names, action parameters, or anything about the system's internals. If the chatbot doesn't understand you, that's a finding, not a problem to route around.
 
 ## Driver routes
 
 - **Claude Code route:** use the host-visible Chrome profile through `scripts/claude_chat.py`. This remains the default route for Claude team user-sim.
-- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use it only to drive the same live Claude.ai session/profile that has the real Workflow MCP connector installed. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
+- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use the in-app browser only if the host confirms it is logged into ChatGPT, Developer mode is enabled, and the Workflow connector is added/visible in that same session. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
 
-The verification target is the rendered Claude.ai conversation using the installed connector. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
+The verification target is the rendered chatbot conversation using the installed connector. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
+
+## ChatGPT live preflight
+
+When using the Codex / ChatGPT desktop route, check these before the first prompt and log the result:
+
+- The visible tab is `https://chatgpt.com/` or an existing `chatgpt.com/c/...` conversation.
+- The host has logged in to ChatGPT in this browser session.
+- Developer mode is enabled for the conversation.
+- The composer shows the `Workflow` connector/tool as available.
+
+If any item is missing, stop the mission and ask the host to fix that exact item. Do not test through a different account, a fresh profile, or a direct MCP call.
 
 After `ui-test` passes, also look for post-fix clean-use evidence from actual users when the affected feature is public or high-risk. Check available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Record the timestamp, environment, and evidence source. If no real-user use is visible yet, say so plainly and leave a short watch item in `STATUS.md` rather than implying the feature has been proven clean for users.
 

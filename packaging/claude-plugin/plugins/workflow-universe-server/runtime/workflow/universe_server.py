@@ -332,6 +332,7 @@ def universe(
             subscription ops: subscribe_goal, unsubscribe_goal,
             list_subscriptions;
             goal-pool / bid: post_to_goal_pool, submit_node_bid;
+            community change-loop review: community_change_context;
             daemon: daemon_overview, daemon_list, daemon_get,
             daemon_create, daemon_summon, daemon_banish;
             config: set_tier_config.
@@ -348,6 +349,9 @@ def universe(
         query_type: query_world type - facts | characters | promises |
             timeline.
         filter_text: Text filter for query_world results.
+            For community_change_context: empty/"queue" for open PR/issue/run
+            overview, "pr:NUMBER" for changed files/comments/reviews, or
+            "issue:NUMBER" for the request thread.
         request_type: submit_request type.
         branch_id: Target branch for submit_request.
         filename: Filename for add_canon / add_canon_from_path /
