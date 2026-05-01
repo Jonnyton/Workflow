@@ -13,23 +13,21 @@ half-formed experiments.
 
 ## Inbox
 
-- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: triaged, priority: post-uptime, size: medium) **`extensions action=my_recent_runs` + `goals action=my_recent` — user-scoped recency primitives.** Priya Session 2 (2026-04-20) signal #1: chatbot needs one tool call to answer "show me what I built recently" instead of fishing through `list_branches` + `query_runs` with author filter. Workspace-memory continuity gap — distinct from chatbot_assumes_workflow first-chat principle (this is N-th chat continuity).
-  Files (when scoped): `workflow/api/runs.py` (new `_action_my_recent_runs`); `workflow/api/market.py` (new `_action_my_recent_goals`); `tests/test_my_recent_primitives.py` (NEW).
-  Depends: Decomp Step 8 lands.
-  Verification: live MCP via `mcp_probe.py --tool extensions --args '{"action":"my_recent_runs","limit":5}'`.
-  Triaged 2026-04-27; refreshed 2026-04-28: PIPELINE row "Recency primitives" — host-approved as `extensions`/`goals` action verbs, blocked for code by #18's `workflow/api/runs.py` lock.
-  Promoted 2026-04-27: pre-implementation contracts landed at `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md` (signatures + envelopes frozen for immediate post-#18 implementation).
-  Promoted 2026-04-27 (execution-ready): fixture pack + implementation cards landed at `docs/specs/2026-04-27-recency-continue-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
+- [2026-04-27] (source: navigator-userim-review, owner: none, status: retired-community-composition, priority: post-uptime, size: medium) **`extensions action=my_recent_runs` + `goals action=my_recent` — user-scoped recency primitives.** Priya Session 2 (2026-04-20) signal #1: chatbot needs one tool call to answer "show me what I built recently" instead of fishing through `list_branches` + `query_runs` with author filter. Workspace-memory continuity gap — distinct from chatbot_assumes_workflow first-chat principle (this is N-th chat continuity).
+  Resolution 2026-05-01: retired as platform primitives after freshness check. Use existing query-run plus optional goal/branch lookup composition; do not dispatch `_action_my_recent_*` code work.
+  Triaged 2026-04-27; refreshed 2026-05-01: PIPELINE row "Recency primitives" records supersession by composition.
+  Promoted 2026-04-27: pre-implementation contract now serves as supersession record in `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`.
+  Historical fixture pack + implementation cards remain at `docs/specs/2026-04-27-recency-continue-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`; do not treat the recency portions as pending engine work.
   Links: navigator's 2026-04-27 chain-break review (chat record); persona memory `priya_ramaswamy/`; `ideas/PIPELINE.md` "Recency primitives" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`; `docs/specs/2026-04-27-recency-continue-fixture-pack.md`; `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
 
-- [2026-04-27] (source: navigator-userim-review, owner: unassigned, status: triaged, priority: post-uptime, size: medium) **`extensions action=continue_branch from_run_id=...` — explicit "extend prior run" primitive.** Priya signal #6 + Devin Session 2 echoed. "Extend the sweep" / "continue branch" has no clean Workflow verb — chatbot has to semantically infer "clone this branch, add nodes, re-run with extended inputs." Same root concern as INBOX 2026-04-24 entry but with concrete API shape proposal.
-  Files (when scoped): `workflow/api/runs.py` (new `_action_continue_branch_run` — DISTINCT from branches.py's authoring `_action_continue_branch`); `tests/test_continue_branch_run.py` (NEW).
-  Depends: Step 8 + my_recent_runs primitive (above) for dispatch-table conventions.
-  Verification: persona-replay on Priya Session 2 transcript — chatbot routes to continue_branch instead of re-scaffolding.
-  Triaged 2026-04-27; refreshed 2026-04-28: MERGED with 2026-04-24 "Extend run / continue branch" entry into PIPELINE row "Continue-branch run primitive". Host-approved as an `extensions` action verb; code remains blocked by #18.
-  Promoted 2026-04-27: semantics + v1 envelope landed in `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md` (sibling-branch mode, carry-over contract, deterministic errors).
+- [2026-04-27] (source: navigator-userim-review, owner: dev post-#18, status: dev-ready-after-18, priority: post-uptime, size: medium) **`run_branch resume_from=<run_id>` — explicit "extend prior run" parameter.** Priya signal #6 + Devin Session 2 echoed. "Extend the sweep" / "continue branch" has no clean Workflow path — chatbot has to semantically infer "clone this branch, add nodes, re-run with extended inputs." Same root concern as INBOX 2026-04-24 entry but with concrete API shape proposal.
+  Files (when scoped): `workflow/api/runs.py` (add `resume_from=<run_id>` to existing `run_branch`); tests.
+  Depends: #18 lock clears.
+  Verification: persona replay plus live MCP `run_branch` call with `resume_from` proves chatbot routes to the existing run surface instead of re-scaffolding.
+  Triaged 2026-04-27; refreshed 2026-05-01: MERGED with 2026-04-24 "Extend run / continue branch" entry into PIPELINE row "Continue-run resume primitive". No standalone `continue_branch` action; active dev-ready row is in `STATUS.md`.
+  Promoted 2026-04-27: semantics + v1 envelope landed in `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md` (sibling-branch mode, carry-over contract, deterministic errors), then retargeted to `run_branch resume_from=<run_id>`.
   Promoted 2026-04-27 (execution-ready): fixture pack + implementation cards landed at `docs/specs/2026-04-27-recency-continue-fixture-pack.md` and `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
-  Links: 2026-04-24 INBOX entry (merged into same PIPELINE row); navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Continue-branch run primitive" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`; `docs/specs/2026-04-27-recency-continue-fixture-pack.md`; `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
+  Links: 2026-04-24 INBOX entry (merged into same PIPELINE row); navigator's 2026-04-27 chain-break review; `ideas/PIPELINE.md` "Continue-run resume primitive" row; `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`; `docs/specs/2026-04-27-recency-continue-fixture-pack.md`; `docs/exec-plans/active/2026-04-27-post-18-recency-continue-implementation-cards.md`.
 
 - [2026-04-27] (source: navigator-userim-review, owner: navigator, status: reframed-community-build, priority: domain-skill, size: medium) **Methods-prose evaluator class — publication-grade methods correctness.** Priya signal #2: when chatbot generates publication-grade methods paragraph (library versions + CV description + algorithm config), nothing checks correctness. Cross-layer chain-break (pitch-vs-product gap): platform pitches "Evaluator-driven workflows" but methods-section prose has no evaluator.
   Triaged 2026-04-27; refreshed 2026-04-28: host declined a new platform primitive. Next slice is a docs-only reframe of `docs/design-notes/2026-04-27-methods-prose-evaluator.md` to preserve the intent as chatbot + wiki composition guidance. No `EvaluatorKind` extension.
@@ -126,12 +124,13 @@ half-formed experiments.
   the original run (params, results, species set)?
   Dependencies: in-flight run recovery part 2 (#6) should land first (resume semantics
   inform extension semantics).
-  Triaged 2026-04-27: MERGED with 2026-04-27 "continue_branch from_run_id" entry into PIPELINE
-  row "Continue-branch run primitive". Same root primitive gap; this entry's scoping questions
-  carry forward as the design-note's open questions.
+  Triaged 2026-04-27; refreshed 2026-05-01: MERGED with 2026-04-27
+  `run_branch resume_from=<run_id>` entry into PIPELINE row "Continue-run resume
+  primitive". Same root primitive gap; this entry's scoping questions carry
+  forward as the design-note's open questions.
   Links:
   - `docs/audits/user-chat-intelligence/2026-04-24-competitor-trials-sweep.md` Signal 2
-  - `ideas/PIPELINE.md` "Continue-branch run primitive" row
+  - `ideas/PIPELINE.md` "Continue-run resume primitive" row
 
 - [2026-04-24] (source: user-sim/Priya-W&B-trial, owner: navigator, status: triaged,
   priority: domain-skill, size: small)
