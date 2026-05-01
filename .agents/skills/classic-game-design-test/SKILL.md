@@ -62,9 +62,12 @@ For every game/runtime/media source, record:
 - Whether the emulator/runtime license allows this use.
 - Any known limitations, such as trial firmware or missing save support.
 
-If the only available route requires copyrighted firmware or game media the
-project cannot provide, mark the task `NOT_PLAYABLE_YET` instead of pretending
-a remake satisfies it.
+If the first working route appears to require copyrighted firmware or game
+media the project cannot provide, actively test any rights-cleared firmware,
+BIOS replacement, source port, or compatibility shim path before marking the
+task `NOT_PLAYABLE_YET`. Proprietary firmware is a blocker only after the free
+compatibility route has been tried with diagnostics. Do not pretend a remake
+satisfies it.
 
 ## Build Workflow
 
@@ -77,10 +80,15 @@ a remake satisfies it.
    compatibility layer, or library for the core platform logic. Do not
    hand-roll CPU, disk, audio, physics, parsing, or AI engines when a proven
    runtime exists.
-4. **Design for browser/chatbot users.** The happy path must not require the
+4. **Try the free compatibility path first.** When a game needs platform
+   firmware, treat an open replacement such as AROS as an engineering target,
+   not a passive fallback. Build a diagnostic loop around it: boot media, log
+   startup failures, vary runtime configuration, patch launch scripts, and only
+   escalate to licensed firmware after the free path fails with evidence.
+5. **Design for browser/chatbot users.** The happy path must not require the
    user to install a desktop app, restart, manually boot an emulator, hunt for
    firmware, or copy files unless that limitation is explicitly accepted.
-5. **Integrate media deterministically.** Loading a disk/archive is not enough.
+6. **Integrate media deterministically.** Loading a disk/archive is not enough.
    The launcher must wait for the runtime to be ready, inject media once, avoid
    reload loops, and expose status that distinguishes "loaded" from "playing."
    If the runtime stages media in a file slot, use its explicit boot/mount with
@@ -88,16 +96,16 @@ a remake satisfies it.
    For emulator APIs that acknowledge disk/ROM insertion asynchronously, wire a
    mount acknowledgement or bounded retry. Never schedule blind repeated resets;
    a reset loop is a blocker even when the disk eventually appears mounted.
-6. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
+7. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
    mappings needed by the target game. Include a real browser click/tap path
    for any action the user naturally expects to perform with the mouse.
-7. **Unlock and prove audio.** Browser audio usually needs a user gesture.
+8. **Unlock and prove audio.** Browser audio usually needs a user gesture.
    Provide an explicit launch/play gesture, then verify the audio context is
    running and unmuted. Do not claim sound works from code inspection alone.
-8. **Instrument launch state.** Emit concise runtime status for media loaded,
+9. **Instrument launch state.** Emit concise runtime status for media loaded,
    emulator ready, game started, input accepted, audio running, and fatal
    blockers. Avoid mock success states that look playable.
-9. **Keep fallbacks honest.** If a remake or quick browser clone exists, label
+10. **Keep fallbacks honest.** If a remake or quick browser clone exists, label
    it as a fallback/remix and keep it separate from the real-game acceptance
    result.
 

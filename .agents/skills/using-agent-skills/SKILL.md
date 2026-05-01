@@ -51,6 +51,7 @@ Task arrives
     |-- GoDaddy domain / DNS / site ops? ------------> godaddy-ops
     |-- Writing docs or rationale? ------------------> documentation-and-adrs
     |-- Deploying or launching? ---------------------> shipping-and-launch
+    |-- Recurring agent behavior failure? -----------> auto-iterate
     `-- Agent-team behavior needs tuning? -----------> team-iterate
 ```
 
@@ -65,6 +66,7 @@ Task arrives
    - `domain-model` stress-tests concepts and boundaries.
    - `ubiquitous-language` hardens terminology.
    - `improve-codebase-architecture` audits seams and modularity.
+   - `auto-iterate` ratchets recurring agent-behavior failures.
 5. Multiple skills can be chained. Example:
    `zoom-out -> improve-codebase-architecture -> planning-and-task-breakdown -> incremental-implementation -> test-driven-development`.
 
@@ -168,4 +170,5 @@ Not every task needs every step. Bug triage might be:
 | Ops | cloudflare-ops | Operate Cloudflare DNS, routes, and website surfaces |
 | Ops | godaddy-ops | Operate GoDaddy domain and site surfaces |
 | Meta | skill-authoring | Create or update project-local skills correctly |
+| Meta | auto-iterate | Ratchet recurring agent-behavior failures into stronger prevention |
 | Meta | team-iterate | Improve agent-team definitions and launch prompts |
