@@ -78,7 +78,7 @@ spec" or "planned", not "works".
 | ChatGPT guest | No logged-in chatbot account | unsupported by ChatGPT path | Route to local/self-hosted/no-chatbot-login options |
 | Mistral Le Chat MCP connector | Logged-in Mistral user/admin | planned | Need connector config proof and directory/submission research |
 | Open WebUI | No hosted chatbot login if self-hosted | verified: local Docker 0.9.2 | 2026-05-01 proof: `docs/ops/open-webui-runtime-proof-2026-05-01.md`; Streamable HTTP MCP to `https://tinyassets.io/mcp-directory`, auth `None`, chat invoked `workflow_get_workflow_status` |
-| LibreChat | No hosted chatbot login if self-hosted | planned | Verify MCP config or bridge path |
+| LibreChat | No hosted chatbot login if self-hosted | verified: local Docker v0.8.5 | 2026-05-01 proof: `docs/ops/librechat-runtime-proof-2026-05-01.md`; Streamable HTTP MCP to `https://tinyassets.io/mcp-directory`, auth `None`, chat invoked `get_workflow_status_mcp_workflow` |
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
 | VS Code / GitHub Copilot | Developer/IDE user | planned | Verify `.vscode/mcp.json` or user MCP config with Copilot Chat |
@@ -105,7 +105,8 @@ Detailed execution queue: `docs/ops/mcp-directory-rollout-action-queue.md`.
   the public directory endpoint is deployed and green.
 - Submit the Claude directory packet through Anthropic's review flow.
 - Submit `chatgpt-app-submission.json` through OpenAI's app submission flow and resolve BUG-034 approval path for custom connectors.
-- Verify the next no-chatbot-login host after Open WebUI: LibreChat, LM
-  Studio/Jan, or OpenClaw/channel gateway. Open WebUI proof trace:
-  `docs/ops/open-webui-runtime-proof-2026-05-01.md`.
+- Verify the next no-chatbot-login host after Open WebUI + LibreChat: LM
+  Studio/Jan, OpenClaw/channel gateway, or custom hosts. Proof traces:
+  `docs/ops/open-webui-runtime-proof-2026-05-01.md` and
+  `docs/ops/librechat-runtime-proof-2026-05-01.md`.
 - Add host-specific proof traces as they land.
