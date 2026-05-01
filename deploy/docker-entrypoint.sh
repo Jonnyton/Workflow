@@ -54,6 +54,36 @@ _truthy() {
     esac
 }
 
+_bash_readable_path() {
+    local _path="$1"
+
+    if [[ "${_path}" =~ ^([A-Za-z]):[\\/](.*)$ ]]; then
+        if command -v cygpath >/dev/null 2>&1; then
+            cygpath -u "${_path}"
+            return
+        fi
+
+        local _drive="${BASH_REMATCH[1],,}"
+        local _rest="${BASH_REMATCH[2]//\\//}"
+        printf '/%s/%s\n' "${_drive}" "${_rest}"
+        return
+    fi
+
+    printf '%s\n' "${_path//\\//}"
+}
+
+_required_data_files=(
+    data/world_rules.lp
+)
+_package_root="$(_bash_readable_path "${WORKFLOW_PACKAGE_ROOT:-/app}")"
+for _rel in "${_required_data_files[@]}"; do
+    _expected="${_package_root}/${_rel}"
+    if [[ ! -f "${_expected}" ]]; then
+        echo "DATA-FILE-MISSING: ${_rel} (expected at ${_expected})" >&2
+        exit 1
+    fi
+done
+
 _api_key_env=(
     OPENAI_API_KEY
     ANTHROPIC_API_KEY

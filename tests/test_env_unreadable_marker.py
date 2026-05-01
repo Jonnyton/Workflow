@@ -57,6 +57,9 @@ def _run_entrypoint_via_stdin(
     preamble_lines = [
         # Clear sentinels first so ambient-shell values don't leak through.
         "unset CLOUDFLARE_TUNNEL_TOKEN SUPABASE_DB_URL WORKFLOW_IMAGE",
+        # The entrypoint's required-data probe defaults to /app in the
+        # container. Tests run against the checkout instead.
+        f"export WORKFLOW_PACKAGE_ROOT={str(_REPO)!r}",
     ]
     for key, value in (extra_env or {}).items():
         preamble_lines.append(f"export {key}={value!r}")
@@ -109,6 +112,67 @@ def test_entrypoint_passes_through_when_one_sentinel_set():
         "marker should NOT fire when a sentinel is set"
     )
     assert "would-exec" in result.stdout
+
+
+@pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
+def test_entrypoint_fails_loudly_when_required_data_file_missing(tmp_path: Path):
+    """Missing required startup data -> DATA-FILE-MISSING + exit 1."""
+    result = _run_entrypoint_via_stdin(
+        exec_replacement='echo "[harness] would-exec: $@"',
+        extra_env={
+            "WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123",
+            "WORKFLOW_PACKAGE_ROOT": str(tmp_path),
+        },
+    )
+    assert result.returncode == 1, (
+        f"expected data-file probe exit 1; got {result.returncode}. "
+        f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    )
+    assert "DATA-FILE-MISSING: data/world_rules.lp" in result.stderr
+    assert "would-exec" not in result.stdout
+
+
+@pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
+def test_entrypoint_data_file_probe_accepts_windows_package_root(tmp_path: Path):
+    """WORKFLOW_PACKAGE_ROOT may be a Windows path under Git Bash."""
+    package_root = tmp_path / "package"
+    data_file = package_root / "data" / "world_rules.lp"
+    data_file.parent.mkdir(parents=True)
+    data_file.write_text("% present\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_cygpath = fake_bin / "cygpath"
+    fake_cygpath.write_text(
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' {str(package_root)!r}\n",
+        encoding="utf-8",
+    )
+    fake_cygpath.chmod(0o755)
+
+    result = _run_entrypoint_via_stdin(
+        exec_replacement='echo "[harness] would-exec: $@"',
+        extra_env={
+            "WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123",
+            "WORKFLOW_PACKAGE_ROOT": r"C:\Users\Jonathan\wf-review-108",
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+        },
+    )
+    assert result.returncode == 0, (
+        f"expected Windows-root happy-path exit 0; got {result.returncode}. "
+        f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    )
+    assert "DATA-FILE-MISSING" not in result.stderr
+    assert "would-exec" in result.stdout
+
+
+def test_entrypoint_data_file_probe_does_not_require_python_alias():
+    """The shell startup probe must not invoke a host-only python alias."""
+    executable_text = "\n".join(
+        line for line in _ENTRYPOINT.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "python" not in executable_text.lower()
 
 
 @pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
