@@ -16,7 +16,7 @@ Two URLs, two roles. Named here once so every subsequent row + the docs-sweep fo
 |---|---|---|
 | `https://tinyassets.io/mcp` | **User-facing canonical. Single public entry point.** The URL that ships in Claude.ai connector configs, README, onboarding docs, and any tier-1 / tier-2 UX copy. Also the URL probed by all canaries. | Served via a Cloudflare Worker at the apex that routes `/mcp*` → tunnel origin → daemon. Worker is an independent Cloudflare edge layer. |
 | `https://mcp.tinyassets.io/mcp` | **Access-gated internal tunnel origin. Not user-facing.** | cloudflared tunnel hostname. Protected by Cloudflare Access (service-token, host directive 2026-04-20): direct requests without CF service-token headers return 401/403. Only the Worker injects those headers. Do not document or share in user-facing contexts; do not add to canary configs. |
-| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event). Any doc containing `api.tinyassets.io` is stale and should be corrected during Row G. |
+| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event). User-facing setup/runbook references are stale; audit-history notes may retain `api.tinyassets.io` when clearly labeled historical. |
 
 **Interaction rule.** If a future tunnel reconfig (Cloudflare dash work) touches `tinyassets.io/mcp`, Hard Rule 10 fires — run `scripts/uptime_canary.py --once` post-change and confirm green before marking the change complete.
 
@@ -217,10 +217,10 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 ### Row G (follow-up, do NOT execute now): Canonical-URL docs sweep
 
-**Files:** grep + update. Expected surfaces include `docs/specs/*`, `docs/audits/*`, `SUCCESSION.md`, `.claude/skills/ui-test/*`, `docs/ops/*`, any `.md` referencing `api.tinyassets.io/mcp` or referencing `mcp.tinyassets.io/mcp` as user-facing (vs debug-only).
+**Files:** grep + update. Expected surfaces include `docs/specs/*`, `docs/audits/*`, `SUCCESSION.md`, `.claude/skills/ui-test/*`, `docs/ops/*`, any setup/runbook `.md` referencing `api.tinyassets.io/mcp` or referencing `mcp.tinyassets.io/mcp` as user-facing (vs debug-only). Preserve audit-history mentions that explicitly identify `api.` as historical / never-live.
 
 **Scope:**
-- Replace every user-facing reference to `mcp.tinyassets.io/mcp` OR `api.tinyassets.io/mcp` with `tinyassets.io/mcp` (canonical per §0). EXCEPTIONS stay as `mcp.tinyassets.io/mcp`: canary probe config, debugging runbooks, architecture docs explicitly describing the tunnel layer.
+- Replace every user-facing reference to `mcp.tinyassets.io/mcp` OR `api.tinyassets.io/mcp` with `tinyassets.io/mcp` (canonical per §0). EXCEPTIONS: `mcp.tinyassets.io/mcp` stays in canary/debug/tunnel docs; `api.tinyassets.io` may remain only in audit-history notes that label it historical / never-live.
 - Add a one-line reminder near each canonical reference about the three-URL shape from §0 if the surface is contributor-facing (specs + skills); user-facing surfaces (README, onboarding) get the canonical only.
 - **No flip-flops after this sweep.** The URL architecture is locked: apex canonical via Worker, subdomain debug-only via tunnel. Future changes require explicit exec-plan amendment.
 
