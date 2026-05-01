@@ -26,9 +26,40 @@
   const protocolFacts = [
     { label: 'read commons', href: '/wiki' },
     { label: 'browse goals', href: '/goals' },
-    { label: 'inspect universes', href: '/host' },
+    { label: 'watch the loop', href: '/loop' },
+    { label: 'inspect graph', href: '/graph' },
     { label: 'proof registry', href: 'https://github.com/Jonnyton/Workflow/blob/main/docs/ops/mcp-host-proof-registry.md', external: true },
     { label: 'AI docs', href: '/llms.txt' }
+  ];
+  const unlockCards = [
+    {
+      label: 'Commons',
+      title: 'Ask it to read the public wiki.',
+      body: 'Goals, bugs, plans, notes, and drafts come back through the same MCP surface the site uses.',
+      href: '/wiki',
+      action: 'Open wiki'
+    },
+    {
+      label: 'Goals',
+      title: 'Ask what the project is trying to finish.',
+      body: 'The goals lens is the living catalog of work, not a hand-maintained marketing list.',
+      href: '/goals',
+      action: 'Browse goals'
+    },
+    {
+      label: 'Loop',
+      title: 'Ask it to route work into the loop.',
+      body: 'Patch requests, investigation, gates, PRs, release, and watch are the operating path.',
+      href: '/loop',
+      action: 'Watch loop'
+    },
+    {
+      label: 'Graph',
+      title: 'Ask how the project hangs together.',
+      body: 'The graph shows live relationships across bugs, branches, goals, tags, and repo state.',
+      href: '/graph',
+      action: 'Open graph'
+    }
   ];
   const customerPaths = [
     {
@@ -45,7 +76,7 @@
       account: 'Use this if ChatGPT is your main chat surface or your workspace will approve apps/connectors centrally.',
       setup: 'Watch for the Apps or admin-approved connector path. Until proof lands, do not treat the raw MCP endpoint as a normal browser page.',
       proof: 'ChatGPT public claims wait for Apps SDK, BUG-034, and workspace approval proof.',
-      anchor: '#chatgpt-status'
+      anchor: '#proof-state'
     },
     {
       title: 'Open WebUI / LibreChat / OpenClaw',
@@ -53,7 +84,7 @@
       account: 'Use this if you run your own chat UI, local model shell, or channel gateway and do not want a Claude or ChatGPT login.',
       setup: `Add ${url} as a Streamable HTTP / remote MCP server. Use a bridge only when that host requires one.`,
       proof: 'Open WebUI is the first no-login verification target. LibreChat, OpenClaw, and peers stay compatible-by-spec until smoke traces land.',
-      anchor: '#host-coverage-title'
+      anchor: '#proof-state'
     },
     {
       title: 'VS Code / Cursor / Codex',
@@ -61,7 +92,7 @@
       account: 'Use this if you want Workflow available inside your coding agent or IDE while you work in a repo.',
       setup: `Point the host MCP config or registry entry at ${url}, then enable Workflow for the workspace.`,
       proof: 'Registry metadata validates. Each IDE host still needs a tool-list plus safe read smoke before verified copy.',
-      anchor: '#host-coverage-title'
+      anchor: '#technical-proof'
     },
     {
       title: 'Team / enterprise workspace',
@@ -69,7 +100,7 @@
       account: 'Use this if an admin controls connectors, apps, or agent tools for ChatGPT Business/Enterprise/Edu, Claude Team/Enterprise, Mistral, or Copilot Studio.',
       setup: 'Send the admin packet: scopes, safety copy, test plan, support path, and proof registry.',
       proof: 'Submission kits are in progress; public claims wait for host approval.',
-      anchor: '#host-coverage-title'
+      anchor: '#proof-state'
     },
     {
       title: 'Custom MCP host',
@@ -77,43 +108,30 @@
       account: 'Use this if you are building your own chatbot, agent host, app, or integration surface.',
       setup: `Implement Streamable HTTP MCP client support, call ${url}, and run the public canary/smoke prompts against your host.`,
       proof: 'Compatible by spec until your host is added to the proof registry.',
-      anchor: '#host-coverage-title'
+      anchor: '#technical-proof'
     }
   ];
-  const launchHosts = ['Claude.ai', 'Claude Desktop', 'Claude mobile', 'ChatGPT Apps', 'ChatGPT developer mode', 'Mistral Le Chat'];
-  const builderHosts = ['Codex', 'Gemini CLI', 'VS Code / Copilot', 'Cursor', 'Cline / Roo', 'Continue', 'Windsurf', 'Replit Agent', 'Copilot Studio'];
-  const communityHosts = ['LibreChat', 'Open WebUI', 'LM Studio', 'Jan', 'OpenClaw', 'Goose', 'Zed', '5ire', 'custom MCP hosts'];
-  const hostRows = [
+  const proofRows = [
     {
-      tier: 'P0 launch gates',
-      hosts: 'Claude + ChatGPT',
-      path: 'Directory listing via /mcp-directory once accepted; custom remote MCP fallback at /mcp',
-      proof: 'Claude historical proof exists; ChatGPT app/custom MCP blocked by BUG-034/admin path'
+      label: 'Custom remote MCP',
+      status: 'Live',
+      body: `${url} is the user-facing endpoint for hosts that accept a custom remote MCP URL.`
     },
     {
-      tier: 'P1 registry + builders',
-      hosts: 'Official MCP Registry, Codex, Gemini CLI, VS Code, Cursor, Cline/Roo, Continue, Windsurf',
-      path: 'Local or remote MCP config',
-      proof: 'Registry server.json validates; each host still needs a smoke trace'
+      label: 'Claude.ai',
+      status: 'Best current hosted path',
+      body: 'Claude custom connector setup is the clearest hosted-chat path today. Directory listing remains separate.'
     },
     {
-      tier: 'P1 self-hosted chat',
-      hosts: 'Open WebUI, LibreChat, LM Studio, Jan, OpenClaw',
-      path: 'Streamable HTTP, or bridge where the host requires it',
-      proof: 'No-login promise starts with Open WebUI verification'
+      label: 'Open WebUI and self-hosted chat',
+      status: 'Verification target',
+      body: 'No-login use starts with Open WebUI proof, then expands to LibreChat, LM Studio, Jan, OpenClaw, and compatible hosts.'
     },
     {
-      tier: 'P2 ecosystem and partners',
-      hosts: 'Mistral directory, Copilot Studio, Goose, Zed, 5ire, custom hosts',
-      path: 'MCP-to-spec with documented caveats',
-      proof: 'Do not claim until that host is tested'
+      label: 'Directories and app stores',
+      status: 'Pending proof',
+      body: 'Claude directory, ChatGPT Apps, MCP Registry, and workspace-admin listings are only claimed after acceptance proof lands.'
     }
-  ];
-  const gateRows = [
-    { label: 'mcp full custom connector', value: 'Live', note: `${url} is the canonical full custom connector for hosts that accept a URL today.` },
-    { label: 'mcp-directory review endpoint', value: 'Live, pending host acceptance', note: `${directoryUrl} is the narrowed directory/review endpoint for registry and host submission flows.` },
-    { label: 'Claude directory', value: 'Submission pending', note: 'Workflow is not yet accepted in the Claude Connectors Directory. Use custom URL until proof lands.' },
-    { label: 'ChatGPT App Directory', value: 'Submission pending', note: 'Workflow is not yet accepted in the ChatGPT App Directory; BUG-034/admin approval still gates public claims.' }
   ];
 
   let copied = $state(false);
@@ -254,100 +272,66 @@
       </div>
     </section>
 
-    <section class="gate-state" aria-labelledby="gate-title">
-      <div>
-        <RitualLabel color="var(--ember-500)">· Launch truth ·</RitualLabel>
-        <h2 id="gate-title">Listings wait for proof.</h2>
-      </div>
-      <div class="gate-list">
-        {#each gateRows as gate (gate.label)}
-          <div class="gate-row">
-            <strong>{gate.label}</strong>
-            <span>{gate.value}</span>
-            <p>{gate.note}</p>
-          </div>
-        {/each}
-      </div>
-    </section>
-
-    <div class="protocol">
-      <div>
-        <RitualLabel color="var(--signal-live)">· What the connector unlocks ·</RitualLabel>
-        <h3>Same protocol surface, two public entry points.</h3>
-        <p>The full connector URL is for users and custom hosts. The directory endpoint is for reviewed listings. Both describe the same Workflow system without claiming a directory listing before proof exists.</p>
-        <div class="protocol__facts">
-          {#each protocolFacts as fact}
-            <a href={fact.href} target={fact.external ? '_blank' : undefined} rel={fact.external ? 'noreferrer' : undefined}>{fact.label}</a>
-          {/each}
-        </div>
-      </div>
-      <pre><code>{requestEnvelope}</code></pre>
-    </div>
-
-    <section class="host-coverage" aria-labelledby="host-coverage-title">
-      <div class="host-coverage__intro">
-        <RitualLabel color="var(--signal-live)">· Customer surface ·</RitualLabel>
-        <h2 id="host-coverage-title">Claude and ChatGPT are gates, not the boundary.</h2>
+    <section class="after-connect" aria-labelledby="after-connect-title">
+      <div class="section-head">
+        <RitualLabel color="var(--signal-live)">· After it connects ·</RitualLabel>
+        <h2 id="after-connect-title">Ask for real project state.</h2>
         <p>
-          A Workflow user is anyone whose chatbot, IDE agent, local model shell, enterprise agent builder, or custom app can connect to an MCP server. Claude and ChatGPT get first-class launch proof because they are the highest-reach chat surfaces; the rest of the host matrix stays visible instead of being treated as an afterthought.
+          Workflow is useful because the connector can read the living project, not because the page explains a protocol. These are the first things a connected chatbot should be able to show you.
         </p>
       </div>
 
-      <div class="host-clouds" aria-label="MCP host families">
-        <div>
-          <span>Launch gates</span>
-          <p>{launchHosts.join(' / ')}</p>
-        </div>
-        <div>
-          <span>Builder hosts</span>
-          <p>{builderHosts.join(' / ')}</p>
-        </div>
-        <div>
-          <span>Community hosts</span>
-          <p>{communityHosts.join(' / ')}</p>
-        </div>
+      <div class="unlock-grid">
+        {#each unlockCards as item (item.title)}
+          <a class="unlock-card" href={item.href}>
+            <span class="unlock-card__label">{item.label}</span>
+            <strong>{item.title}</strong>
+            <span>{item.body}</span>
+            <small>{item.action}</small>
+          </a>
+        {/each}
+      </div>
+    </section>
+
+    <section class="proof-state" id="proof-state" aria-labelledby="proof-title">
+      <div class="section-head section-head--tight">
+        <RitualLabel color="var(--ember-500)">· Proof, not promises ·</RitualLabel>
+        <h2 id="proof-title">Ready where it has evidence.</h2>
+        <p>
+          The page separates what works today from directory and host claims that still need acceptance traces.
+        </p>
       </div>
 
-      <div class="host-table" aria-label="Workflow MCP host support matrix">
-        <div class="host-table__head">
-          <span>Priority</span>
-          <span>Hosts</span>
-          <span>MCP path</span>
-          <span>Proof</span>
-        </div>
-        {#each hostRows as row (row.tier)}
-          <div class="host-table__row">
-            <strong>{row.tier}</strong>
-            <span>{row.hosts}</span>
-            <span>{row.path}</span>
-            <span>{row.proof}</span>
+      <div class="proof-list">
+        {#each proofRows as row (row.label)}
+          <div class="proof-row">
+            <strong>{row.label}</strong>
+            <span>{row.status}</span>
+            <p>{row.body}</p>
           </div>
         {/each}
       </div>
     </section>
 
-    <div class="step-by-step">
-      <RitualLabel>How to connect (Claude.ai)</RitualLabel>
-      <ol class="ol">
-        {#each t.step_by_step as s, i (i)}
-          <li>{s}</li>
-        {/each}
-      </ol>
-    </div>
-
-    <div class="host-notes" id="chatgpt-status">
-      <RitualLabel>ChatGPT status</RitualLabel>
-      <p>
-        ChatGPT guest users cannot connect apps or MCP. Logged-in eligible users and workspaces use Apps, developer mode, or admin-approved custom connectors depending on plan, region, and workspace policy. Workflow is preparing an Apps SDK path, but public ChatGPT claims stay gated until BUG-034 and workspace approval are resolved.
-      </p>
-    </div>
-
-    <div class="host-notes" id="claude-setup">
-      <RitualLabel>Claude status</RitualLabel>
-      <p>
-        Claude is the best current hosted-chat path for a custom remote MCP connector. Anthropic documents custom remote MCP support across Free, Pro, Max, Team, and Enterprise, with Free users limited to one custom connector. Directory listing work is still separate from custom-URL setup.
-      </p>
-    </div>
+    <details class="technical-proof" id="technical-proof">
+      <summary>
+        <span>Technical proof for builders and reviewers</span>
+        <small>Endpoint shape, public references, and directory caveat</small>
+      </summary>
+      <div class="technical-proof__body">
+        <div>
+          <p>
+            The full connector URL is for users and custom hosts. The directory endpoint is for reviewed listings. Both describe the same Workflow system without claiming a directory listing before proof exists.
+          </p>
+          <div class="protocol__facts">
+            {#each protocolFacts as fact}
+              <a href={fact.href} target={fact.external ? '_blank' : undefined} rel={fact.external ? 'noreferrer' : undefined}>{fact.label}</a>
+            {/each}
+          </div>
+        </div>
+        <pre><code>{requestEnvelope}</code></pre>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -514,7 +498,7 @@
     padding-top: 44px;
   }
   .chooser h2,
-  .gate-state h2 {
+  .section-head h2 {
     color: var(--fg-1);
     font-family: var(--font-display);
     font-size: clamp(30px, 5vw, 48px);
@@ -595,43 +579,105 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  .gate-state {
-    align-items: start;
+  .after-connect,
+  .proof-state {
     border-top: 1px solid var(--border-1);
-    display: grid;
-    gap: 18px;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    margin: 0 0 48px;
-    padding-top: 38px;
+    margin: 0 0 46px;
+    padding-top: 42px;
   }
-  .gate-list {
+  .section-head {
+    margin-bottom: 20px;
+    max-width: 680px;
+  }
+  .section-head--tight {
+    margin-bottom: 16px;
+  }
+  .section-head p {
+    color: var(--fg-2);
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+  }
+  .unlock-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .unlock-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    color: inherit;
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 18px;
+    text-decoration: none;
+    transition:
+      background var(--dur-base) var(--ease-summon),
+      border-color var(--dur-base) var(--ease-summon),
+      transform var(--dur-base) var(--ease-summon);
+  }
+  .unlock-card:hover {
+    background: rgba(109, 211, 166, 0.045);
+    border-color: rgba(109, 211, 166, 0.42);
+    transform: translateY(-1px);
+  }
+  .unlock-card__label,
+  .unlock-card small {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .unlock-card__label {
+    color: var(--ember-500);
+  }
+  .unlock-card strong {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
+  .unlock-card span:not(.unlock-card__label) {
+    color: var(--fg-2);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .unlock-card small {
+    color: var(--signal-live);
+    margin-top: 2px;
+  }
+  .proof-list {
     border: 1px solid var(--border-1);
     border-radius: 8px;
     overflow: hidden;
   }
-  .gate-row {
+  .proof-row {
     background: var(--bg-2);
     display: grid;
-    gap: 4px;
-    grid-template-columns: 0.8fr 0.5fr 1.4fr;
-    padding: 13px 14px;
+    gap: 8px;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.58fr) minmax(0, 1.52fr);
+    padding: 14px;
   }
-  .gate-row + .gate-row {
+  .proof-row + .proof-row {
     border-top: 1px solid var(--border-1);
   }
-  .gate-row strong,
-  .gate-row span {
+  .proof-row strong,
+  .proof-row span {
     font-family: var(--font-mono);
     font-size: 11px;
   }
-  .gate-row strong {
+  .proof-row strong {
     color: var(--fg-1);
   }
-  .gate-row span {
+  .proof-row span {
     color: var(--ember-500);
     text-transform: uppercase;
   }
-  .gate-row p {
+  .proof-row p {
     color: var(--fg-2);
     font-size: 12.5px;
     line-height: 1.45;
@@ -639,56 +685,61 @@
   }
   @media (max-width: 760px) {
     .path-grid,
-    .gate-state,
-    .gate-row {
+    .unlock-grid,
+    .proof-row {
       grid-template-columns: 1fr;
     }
   }
-  .step-by-step ol {
-    margin-top: 16px;
-    padding-left: 22px;
-    color: var(--fg-2);
-    font-size: 14px;
-    line-height: 1.7;
-  }
-  .step-by-step ol li { margin-bottom: 6px; }
-  .host-notes {
-    border-top: 1px solid var(--border-1);
-    margin-top: 28px;
-    padding-top: 28px;
-  }
-  .host-notes p {
-    color: var(--fg-2);
-    font-size: 14px;
-    line-height: 1.65;
-    margin: 12px 0 0;
-  }
-  .protocol {
+  .technical-proof {
     background: var(--bg-2);
     border: 1px solid var(--border-1);
     border-radius: 8px;
-    display: grid;
-    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
-    gap: 16px;
     margin-bottom: 48px;
-    padding: 22px;
+    overflow: hidden;
   }
-  .protocol h3 {
+  .technical-proof summary {
+    align-items: center;
+    cursor: pointer;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: 1fr;
+    list-style: none;
+    padding: 18px 20px;
+  }
+  .technical-proof summary::-webkit-details-marker {
+    display: none;
+  }
+  .technical-proof summary span {
     color: var(--fg-1);
     font-family: var(--font-display);
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 500;
     letter-spacing: 0;
     line-height: 1.05;
-    margin: 12px 0 10px;
   }
-  .protocol p {
+  .technical-proof summary small {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .technical-proof[open] summary {
+    border-bottom: 1px solid var(--border-1);
+  }
+  .technical-proof__body {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+    padding: 20px;
+  }
+  .technical-proof p {
     color: var(--fg-2);
     font-size: 13.5px;
     line-height: 1.6;
     margin: 0 0 14px;
   }
-  .protocol pre {
+  .technical-proof pre {
     background: var(--bg-inset);
     border: 1px solid var(--border-1);
     border-radius: 8px;
@@ -696,7 +747,7 @@
     overflow-x: auto;
     padding: 14px;
   }
-  .protocol code {
+  .technical-proof code {
     color: var(--fg-1);
     display: block;
     font-family: var(--font-mono);
@@ -722,92 +773,7 @@
   }
   .protocol__facts a:hover { border-color: rgba(109, 211, 166, 0.42); color: var(--signal-live); }
   @media (max-width: 760px) {
-    .protocol { grid-template-columns: 1fr; }
-  }
-  .host-coverage {
-    border-top: 1px solid var(--border-1);
-    margin: 6px 0 48px;
-    padding-top: 44px;
-  }
-  .host-coverage__intro h2 {
-    color: var(--fg-1);
-    font-family: var(--font-display);
-    font-size: clamp(30px, 5vw, 48px);
-    font-weight: 500;
-    letter-spacing: 0;
-    line-height: 1;
-    margin: 14px 0 14px;
-  }
-  .host-coverage__intro p {
-    color: var(--fg-2);
-    font-size: 15px;
-    line-height: 1.6;
-    margin: 0 0 22px;
-  }
-  .host-clouds {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-bottom: 16px;
-  }
-  .host-clouds div {
-    background: var(--bg-2);
-    border: 1px solid var(--border-1);
-    border-radius: 8px;
-    padding: 16px;
-  }
-  .host-clouds span {
-    color: var(--fg-3);
-    display: block;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    margin-bottom: 8px;
-    text-transform: uppercase;
-  }
-  .host-clouds p {
-    color: var(--fg-1);
-    font-size: 13px;
-    line-height: 1.55;
-    margin: 0;
-  }
-  .host-table {
-    border: 1px solid var(--border-1);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .host-table__head,
-  .host-table__row {
-    display: grid;
-    grid-template-columns: 0.82fr 1.28fr 1.1fr 1.22fr;
-  }
-  .host-table__head {
-    background: var(--bg-inset);
-    color: var(--fg-3);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .host-table__row {
-    background: var(--bg-2);
-    color: var(--fg-2);
-    font-size: 12.5px;
-    line-height: 1.45;
-  }
-  .host-table__row + .host-table__row {
-    border-top: 1px solid var(--border-1);
-  }
-  .host-table__head span,
-  .host-table__row span,
-  .host-table__row strong {
-    padding: 13px 14px;
-  }
-  .host-table__row strong {
-    color: var(--signal-live);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
+    .technical-proof__body { grid-template-columns: 1fr; }
   }
   @media (max-width: 760px) {
     .primary-flow {
@@ -815,18 +781,6 @@
     }
     .flow-card {
       min-height: 0;
-    }
-    .host-clouds { grid-template-columns: 1fr; }
-    .host-table__head { display: none; }
-    .host-table__row {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: 1fr;
-      padding: 14px;
-    }
-    .host-table__row span,
-    .host-table__row strong {
-      padding: 0;
     }
   }
 </style>
