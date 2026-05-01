@@ -275,6 +275,23 @@ def test_search_matches_description(p5_env):
     assert result["count"] == 1
 
 
+def test_search_matches_multi_token_query_across_goal_fields(p5_env):
+    us, _ = p5_env
+    _call(us, "goals", "propose",
+          name="Recipe operations",
+          description="Coordinate cookbook contributors",
+          tags="family,archive")
+    _call(us, "goals", "propose",
+          name="Recipe index",
+          description="Catalog recipe titles",
+          tags="solo")
+
+    result = _call(us, "goals", "search", query="recipe family cookbook")
+
+    assert result["count"] == 2
+    assert result["goals"][0]["name"] == "Recipe operations"
+
+
 def test_search_requires_query(p5_env):
     us, _ = p5_env
     result = _call(us, "goals", "search")
