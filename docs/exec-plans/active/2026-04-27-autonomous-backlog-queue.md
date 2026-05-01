@@ -65,10 +65,10 @@ reuse:
     trust observability, and agent-team scoping after `claimed:user` clears.
 
 12. **Reference integrity pass for completed-note moves**
-    Status: next
-    Scope: update only queue/user-sim/index links when note artifacts are moved
-    from `docs/notes/` to `docs/notes/completed/`; do not commit someone
-    else's staged renames.
+    Status: no-op verified 2026-05-01
+    Scope: `docs/notes/completed/` does not exist yet; current references still
+    point at live `docs/notes/` artifacts. Re-open only after a completed-note
+    move actually lands.
 
 13. **Continue autonomous burn-down (discover and land next slices)**
     Status: next
