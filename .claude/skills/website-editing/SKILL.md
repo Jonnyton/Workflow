@@ -63,6 +63,7 @@ Required when capturing a real conversation for the site:
 - **No adjacent duplicate destinations.** If two nearby clickable surfaces go to the same route/source, keep the clearer or richer one and remove, demote, or retarget the weaker one. A duplicate link is only acceptable when it is separated by context or serves a different workflow moment.
 - **Merge overlapping page jobs.** If two site pages are trying to do the same user job, pick the stronger live-data surface as canonical, remove the weaker page from primary navigation and graph affordances, and keep the old route only as a compatibility redirect/alias when existing links may exist.
 - **Graph navigation theme**: when a page presents itself as a live project lens, use the shared mini graph navigation pattern where it helps orientation: render a live MCP/repo-backed graph preview that links to `/graph` and highlights the current lens, rather than a static CTA tile.
+- **Stage rails stay compact.** A 1-N workflow rail is navigation/status, not the detail pane. Do not let stage tiles stretch to match a tall neighboring event stream or carry full error/output text. Keep tiles compact, clamp long labels, and route verbose failure/output details to the current-run card or event stream.
 - **No phone numbers.** Per user directive: async-first project. Phone refs were removed in 2026-04. If a future need surfaces, talk to the user before adding one back.
 
 ## Build + ship
@@ -80,8 +81,9 @@ Before declaring a website edit "done":
 1. **Local build**: `cd WebSite/site && npm run build` — must end with `✔ done` and produce `build/<route>.html` for every route.
 2. **Playwright sweep**: hit every route via a local http server, assert `errs: 0`, `warns: 0`, key elements present (H1, expected text, expected counts).
 3. **For live-data controls**: click the real refresh button and assert the page renders meaningful data, not just a successful HTTP response or a changed source label. A pass requires the user-visible content to contain current, human-readable records or an explicit empty-state reason. Reject raw placeholders such as `{}`, `[]`, `undefined`, numeric epoch timestamps, stuck disabled buttons, or a green source label with no populated rows. For `/loop`, click `Refresh MCP` and verify the current run/event stream shows a readable run name, status, timestamp, event detail, and any failure reason/action from MCP.
-4. **For chat-capture pages**: assert defaults match the source's collapsed state (chips closed, long thoughts truncated). Then click and re-assert each disclosure layer.
-5. **For HMR-sensitive changes** (vite config, `+layout.ts`, prerender entries): rebuild from scratch (`rm -rf build` first) — stale `.svelte-kit/` artifacts can mask real failures.
+4. **For workflow rails**: measure rendered stage tiles in Playwright on desktop and mobile. Empty or lightly populated stages must not become tall vertical strips just because a neighboring event stream is tall, and long failure text must not force a tile to hundreds of pixels high. Verify stage text is visible without internal scrolling; verbose details belong in the current-run card or event stream.
+5. **For chat-capture pages**: assert defaults match the source's collapsed state (chips closed, long thoughts truncated). Then click and re-assert each disclosure layer.
+6. **For HMR-sensitive changes** (vite config, `+layout.ts`, prerender entries): rebuild from scratch (`rm -rf build` first) — stale `.svelte-kit/` artifacts can mask real failures.
 
 ## Auto-iterate on recurring website failures
 
@@ -100,6 +102,7 @@ Concrete examples that have already ratcheted:
 - **Cross-provider drift** → AGENTS.md rule → `scripts/check_cross_provider_drift.py` → `.claude/hooks/cross_provider_drift_guard.py` PostToolUse. Ladder: `AGENTS.md` § *Where new conventions live*.
 - **Build outputs no HTML** → noticed when `build/` had only static assets; root cause was missing `prerender = true` in `+layout.ts`. The "verification before shipping" rule above (assert `build/<route>.html` exists) prevents recurrence.
 - **Live-data false positive** → `/loop` refresh verification passed on button/source/no console errors while the actual event stream rendered `{}` details and raw epoch timestamps. The live-data control rule above prevents declaring success until the populated records are readable.
+- **Stretched workflow rail** → `/loop` 1-6 stage buttons stretched to the full event-stream height, creating tall vertical strips where sparse text sat far from the visible top. The workflow-rail verification above requires bounding-box checks on desktop and mobile.
 
 ## Files involved
 

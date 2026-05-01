@@ -19,6 +19,10 @@ let nextId = 1;
 
 type RpcResp = { jsonrpc: '2.0'; id: number; result?: any; error?: { code: number; message: string } };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function rpc(method: string, params: any = {}): Promise<any> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -27,31 +31,51 @@ async function rpc(method: string, params: any = {}): Promise<any> {
   if (sessionId) headers['Mcp-Session-Id'] = sessionId;
 
   const body = { jsonrpc: '2.0', id: nextId++, method, params };
-  const res = await fetch(MCP_PATH, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    credentials: 'omit'
-  });
+  let lastError: unknown = null;
 
-  // Capture session id on first call
-  const sid = res.headers.get('Mcp-Session-Id');
-  if (sid && !sessionId) sessionId = sid;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch(MCP_PATH, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        credentials: 'omit'
+      });
 
-  if (!res.ok) throw new Error(`MCP HTTP ${res.status}: ${res.statusText}`);
+      // Capture session id on first call
+      const sid = res.headers.get('Mcp-Session-Id');
+      if (sid && !sessionId) sessionId = sid;
 
-  // Some gateways return text/event-stream; parse first data line.
-  const ct = res.headers.get('Content-Type') ?? '';
-  let text = await res.text();
-  if (ct.includes('text/event-stream')) {
-    const dataLine = text.split('\n').find((l) => l.startsWith('data:'));
-    if (!dataLine) throw new Error('SSE response missing data line');
-    text = dataLine.replace(/^data:\s*/, '');
+      if (!res.ok) {
+        if ([502, 503, 504].includes(res.status) && attempt < 2) {
+          await sleep(350 * (attempt + 1));
+          continue;
+        }
+        throw new Error(`MCP HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      // Some gateways return text/event-stream; parse first data line.
+      const ct = res.headers.get('Content-Type') ?? '';
+      let text = await res.text();
+      if (ct.includes('text/event-stream')) {
+        const dataLine = text.split('\n').find((l) => l.startsWith('data:'));
+        if (!dataLine) throw new Error('SSE response missing data line');
+        text = dataLine.replace(/^data:\s*/, '');
+      }
+
+      const json = JSON.parse(text) as RpcResp;
+      if (json.error) throw new Error(`MCP error ${json.error.code}: ${json.error.message}`);
+      return json.result;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await sleep(350 * (attempt + 1));
+        continue;
+      }
+    }
   }
 
-  const json = JSON.parse(text) as RpcResp;
-  if (json.error) throw new Error(`MCP error ${json.error.code}: ${json.error.message}`);
-  return json.result;
+  throw lastError instanceof Error ? lastError : new Error('MCP request failed');
 }
 
 async function ensureInit(): Promise<void> {
@@ -174,7 +198,7 @@ const KNOWN_LOOP_NODES: Record<string, LoopStageId> = {
   intake_router: 'intake',
   investigation_gate: 'investigation',
   coding_dispatch: 'coding',
-  review_release_gate: 'release',
+  review_release_gate: 'gate',
   release_safety_gate: 'release',
   live_observation_gate: 'observe',
   evolution_notes: 'observe'

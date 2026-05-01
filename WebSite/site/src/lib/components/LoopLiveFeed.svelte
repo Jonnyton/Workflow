@@ -97,7 +97,15 @@
     const count = eventsFor(stage).length;
     if (count) return `${count} event${count === 1 ? '' : 's'}`;
     if (activeRun?.current_stage === stage) return 'active run';
-    return 'waiting';
+    if (feed?.live) return 'no event in this run';
+    return 'waiting for feed';
+  }
+
+  function stageDetailLabel(stage: LoopStageId): string {
+    const latest = latestFor(stage);
+    if (!latest) return statusLabel(stage);
+    if (latest.status.includes('fail') || latest.detail.length > 96) return `${latest.status} - see recent events`;
+    return latest.detail;
   }
 </script>
 
@@ -165,11 +173,12 @@
           class={`live-stage live-stage--${stageStatus(stage.id)}`}
           class:selected={selectedStageId === stage.id}
           aria-pressed={selectedStageId === stage.id}
+          title={latest?.detail ?? statusLabel(stage.id)}
           onclick={() => onSelectStage(stage.id)}
         >
           <span>{index + 1}. {stage.label}</span>
           <strong>{latest?.title ?? 'Waiting for live event'}</strong>
-          <small>{latest?.detail ?? statusLabel(stage.id)}</small>
+          <small>{stageDetailLabel(stage.id)}</small>
         </button>
       {/each}
     </div>
@@ -302,6 +311,7 @@
     display: grid;
     grid-template-columns: minmax(210px, 0.45fr) minmax(0, 1fr) minmax(250px, 0.55fr);
     gap: 12px;
+    align-items: start;
     min-width: 0;
   }
 
@@ -354,6 +364,8 @@
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
+    align-content: start;
+    align-items: start;
     min-width: 0;
   }
 
@@ -362,7 +374,8 @@
     display: grid;
     grid-template-rows: auto auto 1fr;
     gap: 6px;
-    min-height: 154px;
+    min-height: 132px;
+    height: 132px;
     min-width: 0;
     padding: 12px;
     border: 1px solid var(--border-1);
@@ -370,6 +383,7 @@
     background: var(--bg-inset);
     color: var(--fg-2);
     cursor: pointer;
+    overflow: hidden;
     text-align: left;
     transition: transform var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
   }
@@ -414,16 +428,26 @@
   }
 
   .live-stage strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     color: var(--fg-1);
     font-size: 13.5px;
     line-height: 1.2;
+    overflow: hidden;
     overflow-wrap: anywhere;
   }
 
   .live-stage small {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     color: var(--fg-3);
     font-size: 12px;
     line-height: 1.35;
+    overflow: hidden;
     overflow-wrap: anywhere;
   }
 
@@ -547,7 +571,8 @@
       grid-template-columns: 1fr;
     }
     .live-stage {
-      min-height: 118px;
+      min-height: 108px;
+      height: auto;
     }
     .event-stream li {
       grid-template-columns: 1fr;
