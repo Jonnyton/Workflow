@@ -140,6 +140,11 @@ def create_daemon(
         "daemon_soul_mode": mode,
         "domain_claims": clean_claims,
     })
+    if mode == "soul":
+        merged_metadata["daemon_wiki"] = {
+            "host_local": True,
+            "schema_version": 1,
+        }
 
     author = daemon_server.register_author(
         base_path,
@@ -148,7 +153,12 @@ def create_daemon(
         created_by=created_by,
         metadata=merged_metadata,
     )
-    return _daemon_from_author(author, include_soul=False)
+    daemon = _daemon_from_author(author, include_soul=False)
+    if mode == "soul":
+        from workflow.daemon_wiki import scaffold_daemon_wiki
+
+        scaffold_daemon_wiki(base_path, daemon=daemon, soul_text=soul_text)
+    return daemon
 
 
 def list_daemons(base_path: str | Path) -> list[dict[str, Any]]:
