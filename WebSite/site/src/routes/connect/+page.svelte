@@ -80,10 +80,10 @@
     },
     {
       title: 'Open WebUI / LibreChat / OpenClaw',
-      status: 'Self-hosted path',
+      status: 'Verified self-hosted path',
       account: 'Use this if you run your own chat UI, local model shell, or channel gateway and do not want a Claude or ChatGPT login.',
-      setup: `Add ${url} as a Streamable HTTP / remote MCP server. Use a bridge only when that host requires one.`,
-      proof: 'Open WebUI is the first no-login verification target. LibreChat, OpenClaw, and peers stay compatible-by-spec until smoke traces land.',
+      setup: `For Open WebUI or LibreChat, add ${directoryUrl} as a Streamable HTTP / remote MCP server. Use ${url} only when a host needs the full custom connector surface.`,
+      proof: 'Open WebUI local Docker 0.9.2 and LibreChat local Docker v0.8.5 are verified. LM Studio, Jan, OpenClaw/channel gateways, and IDE hosts stay planned until proof traces land.',
       anchor: '#proof-state'
     },
     {
@@ -123,9 +123,9 @@
       body: 'Claude custom connector setup is the clearest hosted-chat path today. Directory listing remains separate.'
     },
     {
-      label: 'Open WebUI and self-hosted chat',
-      status: 'Verification target',
-      body: 'No-login use starts with Open WebUI proof, then expands to LibreChat, LM Studio, Jan, OpenClaw, and compatible hosts.'
+      label: 'Open WebUI and LibreChat',
+      status: 'Verified self-hosted path',
+      body: `No-login local Docker proof exists for Open WebUI and LibreChat via ${directoryUrl}. LM Studio, Jan, OpenClaw, and IDE hosts stay planned until registry proof lands.`
     },
     {
       label: 'Directories and app stores',

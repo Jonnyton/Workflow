@@ -42,9 +42,11 @@ surface a chatbot uses when the user's work needs to survive the current chat.
   self-hosted path instead.
 - ChatGPT app/custom MCP support depends on logged-in plan, workspace settings,
   developer mode, region, and admin approval.
-- Local/self-hosted users should use Open WebUI, LibreChat, LM Studio, Jan,
-  OpenClaw/channel gateways, or a custom MCP host only when that host's MCP path
-  is verified in the proof registry.
+- Open WebUI and LibreChat are verified local Docker/self-hosted paths when
+  configured against https://tinyassets.io/mcp-directory.
+- LM Studio, Jan, OpenClaw/channel gateways, IDE hosts, and custom MCP hosts
+  remain planned or compatible-by-spec until the proof registry verifies that
+  host's MCP path.
 - If a host has not been verified, say "compatible by spec, not verified yet."
 
 ## First Prompts
