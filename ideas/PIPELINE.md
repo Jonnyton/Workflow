@@ -54,16 +54,13 @@ any row to `STATUS.md`, run
 
 | Priority | Claim-ready slice | Files boundary | Depends / blocker | Suggested owner | Exit check |
 |---|---|---|---|---|---|
-| 1 | Methods-prose evaluator community-build reframe. Reframe the design note as "declined platform primitive; accepted chatbot + wiki composition path." | `docs/design-notes/2026-04-27-methods-prose-evaluator.md`, `ideas/PIPELINE.md` | None; do not edit `workflow/*`. | navigator/docs | Header and TL;DR clearly say no `EvaluatorKind` extension; pipeline row state remains `reframed-community-build`. |
-| 2 | Cross-algorithm methodological-parity wiki template. Draft the concept-page shape and one RF-vs-MaxEnt pseudo-absence example. | `wiki` draft page or `docs/notes/2026-04-28-methodological-parity-template.md`, `ideas/PIPELINE.md` | None; no MCP verb unless the example proves composition cannot work. | navigator/wiki | One reusable template exists; no platform primitive is proposed without structural blocker evidence. |
-| 3 | CONTRIBUTORS.md authoring surface design. Choose file-only convention vs daemon/MCP surface. | `docs/design-notes/2026-04-28-contributors-authoring-surface.md`, `CONTRIBUTORS.md` (read), `AGENTS.md` (read) | None; keep Hard Rule #10 as current minimum path. | navigator/docs | Design note names the chosen surface, rejected alternative, and first user-sim persona (Ilse). |
-| 6 | Trust-graduation observability metric. Convert "% users skipping dry-inspect on session N" into one watch metric. | `docs/design-notes/2026-04-28-trust-graduation-observability.md`, `ideas/PIPELINE.md` | Observability surface not open; do not instrument yet. | navigator/observability | Metric has numerator, denominator, event source, retention window, and dashboard/watch destination. |
-| 7 | `hyperparameter_importance` evaluator node scoping. Park as scientific-computing domain catalog work. | Future science-domain catalog, `ideas/PIPELINE.md` | Domain catalog does not exist; no engine work. | future science-domain owner | A catalog row exists before any code task; engine remains untouched. |
-| 8 | Agent-teams-on-Workflow scoping exercise. Treat as user project validation of platform primitives, not a platform build item. | `docs/notes/2026-04-20-agent-teams-on-workflow-research.md`, future scoping note | Blocked on uptime-track close + daemon-economy first draft. | navigator-followup | Scoping note maps required user-project primitives to existing roadmap without inventing a new platform track. |
+| 4 | `hyperparameter_importance` evaluator node scoping. Park as scientific-computing domain catalog work. | Future science-domain catalog, `ideas/PIPELINE.md` | Domain catalog does not exist; no engine work. | future science-domain owner | A catalog row exists before any code task; engine remains untouched. |
+| 5 | Agent-teams-on-Workflow scoping exercise. Treat as user project validation of platform primitives, not a platform build item. | `docs/notes/2026-04-20-agent-teams-on-workflow-research.md`, future scoping note | Blocked on uptime-track close + daemon-economy first draft. | navigator-followup | Scoping note maps required user-project primitives to existing roadmap without inventing a new platform track. |
 
 ## Archive
 
 - [2026-05-01] F2 recency/continue backlog rows retired. Recency actions are superseded by existing query-run composition; continuation is the dev-ready `run_branch resume_from=<run_id>` row in `STATUS.md`.
+- [2026-05-01] Burn-down rows 1, 2, 3, and 6 retired after freshness check: methods-prose reframe, cross-algorithm parity template, CONTRIBUTORS file-first decision, and trust metric/query pack already exist under their 2026-04-27 artifact names.
 - [YYYY-MM-DD] Workflow seed-style retrofit initialized.
 # 2026-04-09
 
