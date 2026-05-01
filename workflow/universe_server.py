@@ -7,8 +7,9 @@ discover tools, and become the user's control interface — no
 installation, just a URL.
 
 Design principles:
-    - Two coarse-grained tools (universe + extensions) so users only
-      click "allow" twice, not sixteen times
+    - A small coarse-grained tool set, with narrow read-only aliases only
+      when live chatbot evidence shows hidden action verbs are not
+      discoverable enough for user-critical workflows
     - Universe-aware: tools accept universe context, not a hardcoded env var
     - MCP prompts deliver behavioral instructions so any connecting AI
       knows how to act as a control station
@@ -19,7 +20,7 @@ Transport: Streamable HTTP (current MCP standard for remote servers)
 
 Module shape (post Step 11+ retarget sweep): this file is a thin
 routing shell. Tool body implementations live in workflow.api.*
-submodules. The 7 @mcp.tool / @mcp.prompt registrations below preserve
+submodules. The @mcp.tool / @mcp.prompt registrations below preserve
 FastMCP introspection (chatbot-facing signature + docstring) and
 delegate to plain callables in those submodules (Pattern A2).
 """
@@ -385,6 +386,50 @@ def universe(
         tier=tier,
         enabled=enabled,
         tag=tag,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TOOL 1B - Community change context (read-only review evidence alias)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Community Change Context",
+    tags={
+        "community", "change-loop", "review", "pull-request",
+        "github", "plan", "workflow",
+    },
+    annotations=ToolAnnotations(
+        title="Community Change Context",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
+def community_change_context(
+    filter_text: str = "",
+    limit: int = 10,
+) -> str:
+    """Review PR metadata, changed files, reviews, and project plan context.
+
+    Use this when the user asks to review, approve, reject, send back,
+    or triage live community-loop work: auto-change PRs, PR metadata,
+    patch requests, feature requests, bug requests, issue threads,
+    changed files, review comments, or whether a change fits the project
+    plan.
+
+    Args:
+        filter_text: empty/"queue" for open PRs/change requests/runs;
+            "pr:NUMBER" for PR metadata, changed files, comments, and
+            reviews; or "issue:NUMBER" for the request thread.
+        limit: Max PRs/issues/files/comments to return, capped server-side.
+    """
+    return _universe_impl(
+        action="community_change_context",
+        filter_text=filter_text,
+        limit=limit,
     )
 
 
@@ -859,8 +904,8 @@ def wiki(
     """Read, write, and manage the cross-project knowledge wiki.
 
     Persistent prose knowledge shared across sessions. New content lands
-    in drafts/ and is promoted to pages/ after quality checks. NOT for
-    workflow structure, node definitions, state, or run outputs.
+    in drafts/ and is promoted to pages/ after quality checks. It is
+    not for workflow structure, node definitions, state, or run outputs.
     Intent: use `extensions` for "build / design / create a workflow";
     use wiki for "save this how-to / ref / note" or "what is X". Start
     with `action="list"` or `action="read" page="index"`.

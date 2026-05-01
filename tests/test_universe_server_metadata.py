@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 
 from workflow.universe_server import mcp
+
+
 def _list_tools():
     return asyncio.run(mcp.list_tools(run_middleware=False))
 
@@ -32,6 +34,16 @@ class TestUniverseServerMetadata:
         assert extensions.annotations.idempotentHint is False
         assert extensions.annotations.openWorldHint is False
         assert "extension_guide" in extensions.description
+
+        change_context = tools["community_change_context"]
+        assert change_context.title == "Community Change Context"
+        assert {"community", "change-loop", "review", "github"} <= change_context.tags
+        assert change_context.annotations.readOnlyHint is True
+        assert change_context.annotations.destructiveHint is False
+        assert change_context.annotations.idempotentHint is True
+        assert change_context.annotations.openWorldHint is True
+        assert "PR metadata" in change_context.description
+        assert "project plan" in change_context.description
 
     def test_prompt_metadata_is_present(self):
         prompts = {prompt.name: prompt for prompt in _list_prompts()}

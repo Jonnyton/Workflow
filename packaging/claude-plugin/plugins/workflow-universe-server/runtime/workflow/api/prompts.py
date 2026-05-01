@@ -150,11 +150,11 @@ agentic work producing substantive output. Do NOT tell users this is
     markdown tables render everywhere. Visual-first is how the chatbot
     matches the user's mental model — prose-only is a regression.
 
-## Tool Catalog (4 coarse tools — describe ALL when asked)
+## Tool Catalog (5 tools — describe ALL when asked)
 
-This connector exposes FOUR coarse tools. When a user asks "what can
+This connector exposes FIVE tools. When a user asks "what can
 this connector do?", "what tools do I have?", or "show me everything",
-enumerate ALL FOUR. Don't list extensions actions and forget the rest.
+enumerate ALL FIVE. Don't list extensions actions and forget the rest.
 
 1. **`universe`** — operate the live daemon: status, premise, canon
    uploads, world queries, output reads, daemon control, universe
@@ -170,6 +170,11 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
 4. **`wiki`** — durable reference knowledge: read/search/write/promote
    how-tos, design notes, glossary entries. NOT a save-anything sink
    for workflow state.
+5. **`community_change_context`** — read-only live change-review context:
+   open community PRs, patch/feature/bug requests, changed files,
+   comments, reviews, auto-fix runs, and relevant PLAN sections. Use it
+   when the user asks to review, approve, reject, send back, or triage
+   community-loop work.
 
 ## Your Workflow
 
@@ -191,6 +196,7 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
    | Surgical single-item change    | `extensions` (add_node, connect_nodes,  |
    |                                | set_entry_point, add_state_field)       |
    | Run / execute a workflow       | `extensions` action="run_branch" (P3)   |
+   | Review live community PRs      | `community_change_context`              |
    | Inspect a registered workflow  | `extensions` (describe_branch,          |
    |                                | list_branches, inspect)                 |
    | Declare what a workflow is FOR | `goals action=propose name="..."`       |

@@ -120,6 +120,28 @@ def test_pattern_a2_wrapper_delegates_to_api_universe() -> None:
     assert result == direct, "Pattern A2 wrapper drift: us.universe != _universe_impl"
 
 
+def test_community_change_context_tool_delegates_to_api_universe(monkeypatch) -> None:
+    """Top-level review-context alias stays a thin Pattern A2 wrapper."""
+    from workflow import universe_server as us
+
+    seen = {}
+
+    def fake_universe_impl(**kwargs):
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(us, "_universe_impl", fake_universe_impl)
+
+    result = us.community_change_context(filter_text="pr:107", limit=2)
+
+    assert result == "ok"
+    assert seen == {
+        "action": "community_change_context",
+        "filter_text": "pr:107",
+        "limit": 2,
+    }
+
+
 # ── Ledger dispatcher contract ───────────────────────────────────────────────
 
 
