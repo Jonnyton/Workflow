@@ -59,7 +59,7 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin (was filed as Plus/private app 2026-04-25, blocks publish). | OpenAI workspace admin | - | host-action |
 | Memory-scope Stage 2c flag | - | 30d clean | monitoring |
 | Remove provider+DO keys from persistent uptime surfaces | `deploy/*` | host Qs answered | host->e2e |
-| Site cert flip — GitHub Pages HTTPS enforcement still blocked: `gh api -X PUT ... https_enforced=true` returned "certificate does not exist yet" on 2026-05-01; edge HTTPS via CF proxy serves. | - | - | monitoring |
+| Site cert flip — GitHub Pages HTTPS enforcement still blocked: 2026-05-01 recheck returned "certificate does not exist yet"; CF edge green via MCP canaries + in-app `/loop`→`/connect`/`/host` smoke. | - | - | monitoring |
 
 ## Next
 
