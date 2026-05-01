@@ -247,6 +247,63 @@ function firstDetailString(...values: unknown[]): string {
   return '';
 }
 
+function compactDetailText(value: string, maxLength = 260): string {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function parseJsonObject(value: string): Record<string, any> | null {
+  const text = value.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function humanizeKey(value: string): string {
+  return value.replace(/[_-]+/g, ' ');
+}
+
+function summarizeJsonDetail(detail: string): string | null {
+  const parsed = parseJsonObject(detail);
+  if (!parsed) return null;
+
+  const responseText = firstDetailString(parsed.response, parsed.result, parsed.output, parsed.message);
+  const responseObject = responseText ? parseJsonObject(responseText) : null;
+  const keys = responseObject
+    ? Object.keys(responseObject).filter((key) => !isSparseText(stringify(responseObject[key])))
+    : [];
+
+  const parts: string[] = [];
+  const role = firstString(parsed.role, parsed.provider, parsed.provider_served);
+  if (role && role !== 'unknown') parts.push(`served by ${role}`);
+  if (keys.length) parts.push(`returned ${keys.slice(0, 3).map(humanizeKey).join(', ')}`);
+
+  const requestId = responseText.match(/request[_ -]?id[:= ]+([A-Za-z0-9_.:-]+)/i)?.[1]
+    ?? firstString(parsed.request_id, parsed.id);
+  if (requestId) parts.push(`request ${requestId}`);
+
+  const promptPreview = firstDetailString(parsed.prompt_preview, parsed.prompt);
+  if (!parts.length && promptPreview) parts.push(`prompt: ${compactDetailText(promptPreview, 180)}`);
+  if (!parts.length && responseText) parts.push(compactDetailText(responseText));
+  if (!parts.length) {
+    const visibleKeys = Object.keys(parsed).filter((key) => !isSparseText(stringify(parsed[key])));
+    if (visibleKeys.length) parts.push(`structured event with ${visibleKeys.slice(0, 4).map(humanizeKey).join(', ')}`);
+  }
+
+  return parts.length ? compactDetailText(parts.join(' - '), 320) : null;
+}
+
+function readableEventDetail(detail: string): string {
+  const summarized = summarizeJsonDetail(detail);
+  if (summarized) return summarized;
+  return compactDetailText(detail, 420);
+}
+
 function normalizeTimestamp(value: unknown): string | null {
   const text = firstString(value);
   if (!text) return null;
@@ -363,7 +420,7 @@ function normalizeEvent(raw: any, index: number, run?: LoopPatchRun): LoopPatchE
     stage: inferLoopStage(raw?.stage, nodeId, title, detail, status, run?.error),
     status,
     title,
-    detail: detail || fallbackDetail,
+    detail: readableEventDetail(detail || fallbackDetail),
     at: normalizeTimestamp(raw?.created_at ?? raw?.timestamp ?? raw?.at ?? raw?.started_at ?? run?.started_at),
     node_id: nodeId || undefined,
     source: firstString(raw?.source, 'MCP run event')
