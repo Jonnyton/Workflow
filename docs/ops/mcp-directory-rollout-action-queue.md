@@ -137,18 +137,19 @@ These can be picked up by any non-website dev with a narrow worktree.
 
 ### No-Chatbot-Login Pack
 
-First target: Open WebUI.
+First target: Open WebUI. Local Docker proof landed on 2026-05-01; next targets
+are LibreChat, LM Studio/Jan, OpenClaw/channel gateway, and custom hosts.
 
 Setup pack: `docs/ops/open-webui-no-login-pack.md`.
 
 Deliverables:
 
-- Host version and transport notes.
-- Minimal config for `https://tinyassets.io/mcp-directory`.
-- Tool-list proof and one visible read-only user result.
-- Proof registry row.
+- Host version and transport notes. Open WebUI 0.9.2 recorded.
+- Minimal config for `https://tinyassets.io/mcp-directory`. Open WebUI recorded.
+- Tool-list proof and one visible read-only user result. Open WebUI recorded.
+- Proof registry row. Open WebUI recorded.
 
-Then repeat for LibreChat, LM Studio/Jan, OpenClaw/channel gateway, and any
+Repeat for LibreChat, LM Studio/Jan, OpenClaw/channel gateway, and any
 custom host that claims MCP support. If a host needs a bridge, document the
 bridge truthfully instead of saying it works natively.
 

@@ -1,7 +1,7 @@
 # Open WebUI No-Chatbot-Login Pack
 
 Date: 2026-05-01
-Status: setup-ready; runtime proof pending
+Status: verified local Docker proof on 2026-05-01
 Owner: lead + available provider
 
 This pack is the first no-hosted-chatbot-login path for Workflow. It is for
@@ -18,8 +18,10 @@ or access an Open WebUI instance.
   the directory endpoint is the safer first proof surface because it exposes
   only 11 narrow tools.
 
-Do not claim "Open WebUI works with Workflow" publicly until the runtime proof
-section below is completed and copied into `docs/ops/mcp-host-proof-registry.md`.
+Public claim scope: Open WebUI 0.9.2 local Docker proof is verified against
+Workflow's directory endpoint. Do not generalize that claim to every Open WebUI
+version, hosted deployment, auth mode, model, or write/proposal flow without a
+host-specific proof update.
 
 ## Recommended Open WebUI Settings
 
@@ -86,16 +88,16 @@ Record all values before claiming support:
 
 | Field | Value |
 |---|---|
-| Open WebUI version | TBD |
-| Deployment shape | local Docker / hosted / other |
+| Open WebUI version | `0.9.2` |
+| Deployment shape | local Docker, `ghcr.io/open-webui/open-webui:main` |
 | Workflow endpoint | `https://tinyassets.io/mcp-directory` |
 | Auth mode | None |
 | Function filter | empty for first proof |
-| Model used | TBD |
-| Prompt | TBD |
-| Visible tool result | TBD |
-| Screenshot/trace path | TBD |
-| Date/time | TBD |
+| Model used | `qwen3.5-nothink:latest` |
+| Prompt | `Use the Workflow tool to call get_workflow_status...` |
+| Visible tool result | Open WebUI source `workflow_get_workflow_status`; answer said `reachable=true` from `universe_exists=true` |
+| Screenshot/trace path | `docs/ops/open-webui-runtime-proof-2026-05-01.md` |
+| Date/time | 2026-05-01 UTC |
 
 Acceptance criteria:
 
@@ -103,8 +105,12 @@ Acceptance criteria:
 - A chat can invoke at least one read-only Workflow tool.
 - The visible response matches the tool result enough for a user to trust it.
 - Any console/server error is recorded.
-- `docs/ops/mcp-host-proof-registry.md` is updated from `setup-ready` to
-  `verified` with the proof date and trace path.
+- `docs/ops/mcp-host-proof-registry.md` is updated to `verified` with the
+  proof date and trace path.
+
+Proof trace:
+
+- `docs/ops/open-webui-runtime-proof-2026-05-01.md`
 
 ## Supporting Protocol Checks
 
