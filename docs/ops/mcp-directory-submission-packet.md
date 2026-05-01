@@ -1,7 +1,7 @@
 # MCP Directory Submission Packet
 
 Date: 2026-05-01
-Status: branch-ready packet, not yet externally submitted
+Status: live endpoint packet, not yet externally submitted
 Owner: lead + codex-gpt5-desktop
 
 This packet is for app-directory and registry reviewers. It separates the full
@@ -13,6 +13,9 @@ custom connector endpoint from the narrower review/listing endpoint:
 - Support: `ops@tinyassets.io`
 - Security: `security@tinyassets.io`
 - Legal/privacy: `https://tinyassets.io/legal`
+
+Execution queue for remaining host/admin, website, and verification work:
+`docs/ops/mcp-directory-rollout-action-queue.md`.
 
 ## Completion Definition
 

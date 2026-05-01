@@ -53,6 +53,8 @@ native discovery where the host supports it:
 - `scripts/mcp_public_canary.py`, `scripts/mcp_tool_canary.py`,
   `scripts/uptime_canary.py`, and `.github/workflows/uptime-canary.yml` cover
   public endpoint proof.
+- `docs/ops/mcp-directory-rollout-action-queue.md` is the current execution
+  queue after `/mcp-directory` shipped live.
 
 ## Design Decisions
 
