@@ -400,6 +400,7 @@ def _dispatch_with_ledger(
 # `domains.fantasy_daemon.phases._activity.update_phase`. status.json itself
 # is not a heartbeat — it only moves when a phase transitions. For liveness
 # we also consult `activity.log`, which is appended to on every node entry,
+# `.runtime_status.json`, which is refreshed while the graph process is alive,
 # and PROGRAM.md + work_targets.json to disambiguate "no premise" vs
 # "starved for work" vs "actually running".
 
@@ -414,23 +415,35 @@ _STALE_IDLE_SECONDS = 24 * 60 * 60
 def _last_activity_at(udir: Path, status: dict[str, Any] | None) -> str | None:
     """Return the most recent heartbeat ISO timestamp we can find.
 
-    Prefers activity.log mtime (updated on every node entry), falls back to
-    status.json's `last_updated`, then status.json file mtime. Returns None
-    only if nothing on disk indicates the daemon ever ran.
+    Uses the newest of activity.log mtime (node progress),
+    .runtime_status.json mtime (running-process heartbeat), status.json's
+    `last_updated`, and status.json file mtime. Returns None only if nothing
+    on disk indicates the daemon ever ran.
     """
-    log_path = udir / "activity.log"
-    if log_path.exists():
+    heartbeat_candidates: list[datetime] = []
+
+    for path in (udir / "activity.log", udir / ".runtime_status.json"):
+        if not path.exists():
+            continue
         try:
-            return datetime.fromtimestamp(
-                log_path.stat().st_mtime, tz=timezone.utc,
-            ).isoformat()
+            heartbeat_candidates.append(
+                datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc),
+            )
         except OSError:
             pass
+    if heartbeat_candidates:
+        return max(heartbeat_candidates).isoformat()
 
     if status and isinstance(status, dict):
         last_updated = status.get("last_updated")
         if isinstance(last_updated, str) and last_updated:
-            return last_updated
+            try:
+                parsed = datetime.fromisoformat(last_updated)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc).isoformat()
+            except ValueError:
+                pass
 
     status_path = udir / "status.json"
     if status_path.exists():
