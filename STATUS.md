@@ -17,7 +17,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
 - **[P1 filed:2026-04-30]** Castles II live branch run `28479d8ddfb44488` failed `provider_exhausted` at `candidate_discovery`; blocks branch-run proof (see BUG-038).
 - [filed:2026-04-30 verified:2026-04-30] Claude.ai rendered `ui-test` blocked until 2026-05-01 19:00 PT; rendered ChatGPT UI fallback green: `get_status` succeeded, universe `echoes-of-the-cosmos`.
-- [filed:2026-04-30 verified:2026-05-01] Scorched exact not done: AROS stops at shell; fallback local tank-hit+audio proof exists; needs licensed Kickstart/live exact proof.
+- [filed:2026-04-30 verified:2026-05-01] Scorched exact blocked: AROS stops at shell; live compat tank-hit+audio green; no real-user use seen; needs rights-cleared Kickstart.
 
 ## Approved Specs
 
@@ -35,7 +35,7 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Scorched Tanks playable-proof fix — acceptance = live browser plays real game, mouse/fire works, sound works, hit a tank captured. | WebSite/site/static/play/scorched-tanks/, STATUS.md | - | claimed:codex-gpt5-desktop |
+| Scorched exact-original proof — live compatibility-port proof exists; exact acceptance still needs original Amiga path with input, sound, and tank hit. | WebSite/site/static/play/scorched-tanks/, .agents/skills/classic-game-design-test/, .claude/skills/classic-game-design-test/, STATUS.md | rights-cleared Kickstart-compatible firmware or alternate legal runtime | host-action |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT (dev Step 7/10, fail-fast iteration; first failure landed). Target ~940 LOC residual (ROI §5.2 floor). Lock: workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, plugin mirror, ~53 test files, workflow/storage/__init__.py. | workflow/universe_server.py, workflow/api/evaluation.py, workflow/api/market.py, workflow/api/runs.py, workflow/api/status.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/ | - | claimed:dev |
 | **#24 Arc C** — env-var deprecation aliases (UNIVERSE_SERVER_BASE, WIKI_PATH) | workflow/storage/__init__.py | - | dev-ready |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
