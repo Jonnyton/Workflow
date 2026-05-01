@@ -157,8 +157,17 @@ def _get_shared_router() -> Any:
     if _SHARED_ROUTER is not None:
         return _SHARED_ROUTER
     try:
-        from workflow.providers.router import ProviderRouter
-        _SHARED_ROUTER = ProviderRouter()
+        from domains.fantasy_daemon.phases import _provider_stub
+
+        if _provider_stub._real_router is not None:
+            _SHARED_ROUTER = _provider_stub._real_router
+            return _SHARED_ROUTER
+    except Exception:
+        pass
+    try:
+        from workflow.providers.router import build_default_router
+
+        _SHARED_ROUTER = build_default_router()
     except Exception:
         pass
     return _SHARED_ROUTER

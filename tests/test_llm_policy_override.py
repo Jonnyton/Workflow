@@ -198,6 +198,86 @@ def test_branch_default_policy_applies_when_node_unset():
     assert ran[0]["provider_served"] == "gemini-free"
 
 
+def test_policy_path_reuses_registered_provider_stub_router(monkeypatch):
+    """BUG-038: policy nodes must not create an empty provider router.
+
+    ``run_branch`` supplies the registered provider stub as ``provider_call``.
+    Branch/node llm_policy used to bypass that path and build a bare
+    ProviderRouter with no registered providers, failing
+    provider_exhausted before later nodes could run.
+    """
+    import workflow.graph_compiler as graph_compiler
+    from domains.fantasy_daemon.phases import _provider_stub
+
+    policy = {"preferred": {"provider": "codex"}}
+    node = _make_node(llm_policy=policy)
+    branch = _make_branch(node)
+    calls: list[dict[str, Any]] = []
+
+    mock_router = MagicMock()
+
+    def _policy_call(role, prompt, system, policy, config=None, difficulty=""):
+        calls.append({"role": role, "policy": policy})
+        return "registered-router-response", "codex"
+
+    mock_router.call_with_policy_sync.side_effect = _policy_call
+    monkeypatch.setattr(graph_compiler, "_SHARED_ROUTER", None)
+    monkeypatch.setattr(_provider_stub, "_real_router", mock_router)
+
+    compiled = compile_branch(
+        branch,
+        provider_call=lambda p, s, *, role="writer": "[plain-provider]",
+    )
+    app = compiled.graph.compile()
+
+    result = app.invoke(
+        {"topic": "installer plan"},
+        config={"configurable": {"thread_id": "t-bug038"}},
+    )
+
+    assert result["out"] == "registered-router-response"
+    assert calls == [{"role": "writer", "policy": policy}]
+
+
+def test_policy_path_builds_registered_router_when_provider_stub_absent(monkeypatch):
+    """Packaged runtimes without domains still get a registered policy router."""
+    import workflow.graph_compiler as graph_compiler
+    import workflow.providers.router as provider_router
+    from domains.fantasy_daemon.phases import _provider_stub
+
+    policy = {"preferred": {"provider": "codex"}}
+    node = _make_node(llm_policy=policy)
+    branch = _make_branch(node)
+
+    mock_router = MagicMock()
+    mock_router.call_with_policy_sync.return_value = (
+        "default-router-response",
+        "codex",
+    )
+
+    monkeypatch.setattr(graph_compiler, "_SHARED_ROUTER", None)
+    monkeypatch.setattr(_provider_stub, "_real_router", None)
+    monkeypatch.setattr(
+        provider_router,
+        "build_default_router",
+        lambda: mock_router,
+    )
+
+    compiled = compile_branch(
+        branch,
+        provider_call=lambda p, s, *, role="writer": "[plain-provider]",
+    )
+    app = compiled.graph.compile()
+
+    result = app.invoke(
+        {"topic": "installer plan"},
+        config={"configurable": {"thread_id": "t-bug038-fallback"}},
+    )
+
+    assert result["out"] == "default-router-response"
+    mock_router.call_with_policy_sync.assert_called_once()
+
+
 def test_node_policy_overrides_branch_default():
     """Node-level llm_policy takes precedence over branch default."""
     node_policy = {"preferred": {"provider": "codex"}}

@@ -34,6 +34,59 @@ from workflow.providers.quota import (
 
 logger = logging.getLogger(__name__)
 
+
+def build_default_router() -> "ProviderRouter":
+    """Build a ProviderRouter with every locally available provider registered."""
+    router = ProviderRouter()
+
+    try:
+        from workflow.providers.claude_provider import ClaudeProvider
+
+        if ClaudeProvider.is_available():
+            router.register(ClaudeProvider())
+    except Exception:
+        logger.debug("ClaudeProvider not available")
+
+    try:
+        from workflow.providers.codex_provider import CodexProvider
+
+        if CodexProvider.is_available():
+            router.register(CodexProvider())
+    except Exception:
+        logger.debug("CodexProvider not available")
+
+    try:
+        from workflow.providers.ollama_provider import OllamaProvider
+
+        router.register(OllamaProvider())
+    except Exception:
+        logger.debug("OllamaProvider not available")
+
+    try:
+        from workflow.providers.gemini_provider import GeminiProvider
+
+        router.register(GeminiProvider())
+    except Exception:
+        logger.debug("GeminiProvider not available")
+
+    try:
+        from workflow.providers.groq_provider import GroqProvider
+
+        router.register(GroqProvider())
+    except Exception:
+        logger.debug("GroqProvider not available")
+
+    try:
+        from workflow.providers.grok_provider import GrokProvider
+
+        router.register(GrokProvider())
+    except Exception:
+        logger.debug("GrokProvider not available")
+
+    logger.info("Registered providers: %s", router.available_providers)
+    return router
+
+
 def _default_config() -> ModelConfig:
     """Build default ModelConfig from universe config if available."""
     try:
