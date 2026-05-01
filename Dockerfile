@@ -65,6 +65,7 @@ WORKDIR /build
 
 # Copy project metadata + source so editable install works.
 COPY pyproject.toml ./
+COPY PLAN.md ./
 COPY workflow/ ./workflow/
 COPY domains/ ./domains/
 # fantasy_daemon is the node-execution runtime invoked by
@@ -115,6 +116,7 @@ COPY --from=builder /build/workflow /app/workflow
 COPY --from=builder /build/domains /app/domains
 COPY --from=builder /build/fantasy_daemon /app/fantasy_daemon
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
+COPY --from=builder /build/PLAN.md /app/PLAN.md
 
 # Static data files required at runtime.
 # world_rules.lp is the ASP constraint program; asp_engine.py resolves it

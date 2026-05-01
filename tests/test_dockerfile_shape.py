@@ -18,6 +18,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = REPO_ROOT / "Dockerfile"
+DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 COMPOSE = REPO_ROOT / "deploy" / "compose.yml"
 ENV_TEMPLATE = REPO_ROOT / "deploy" / "workflow-env.template"
 ENTRYPOINT = REPO_ROOT / "deploy" / "docker-entrypoint.sh"
@@ -81,6 +82,29 @@ def test_dockerfile_codex_version_smoke():
     text = DOCKERFILE.read_text(encoding="utf-8")
     assert "codex --version" in text, (
         "Dockerfile must run 'codex --version' after install to catch broken installs"
+    )
+
+
+def test_dockerfile_ships_plan_md_for_live_review_context():
+    """PLAN.md must be present at /app/PLAN.md in the runtime image."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "COPY PLAN.md ./" in text, (
+        "Builder stage must copy PLAN.md so review-context tools can include "
+        "architecture sections in the deployed MCP response"
+    )
+    assert "COPY --from=builder /build/PLAN.md /app/PLAN.md" in text, (
+        "Final image must place PLAN.md at /app/PLAN.md, matching "
+        "workflow.api.universe._repo_root() in the container"
+    )
+
+
+def test_dockerignore_allows_plan_md_into_context():
+    """The broad *.md ignore must explicitly unignore PLAN.md."""
+    text = DOCKERIGNORE.read_text(encoding="utf-8")
+    assert "*.md" in text
+    assert "!PLAN.md" in text, (
+        ".dockerignore must unignore PLAN.md; otherwise Docker COPY PLAN.md "
+        "works locally but fails in CI build context"
     )
 
 
