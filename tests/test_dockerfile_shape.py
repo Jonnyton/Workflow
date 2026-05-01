@@ -226,6 +226,16 @@ def test_entrypoint_execs_cmd():
     )
 
 
+def test_entrypoint_checks_required_data_files_before_exec():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "startup data-file probe" in text
+    assert "DATA-FILE-MISSING" in text
+    assert 'exec "$@"' in text
+    assert text.index("DATA-FILE-MISSING") < text.index('exec "$@"'), (
+        "entrypoint must fail loud on missing required data before daemon exec"
+    )
+
+
 def test_dockerfile_copies_entrypoint():
     text = DOCKERFILE.read_text(encoding="utf-8")
     assert "docker-entrypoint.sh" in text, (

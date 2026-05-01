@@ -9,7 +9,8 @@
 # 3. Optionally install a subscription-backed Codex auth bundle from
 #    WORKFLOW_CODEX_AUTH_JSON_B64. Legacy `codex login --with-api-key`
 #    from OPENAI_API_KEY is intentionally not run.
-# 4. exec the passed CMD (preserves tini PID-1 signal forwarding).
+# 4. Fail loud if required static data files are missing from the image.
+# 5. exec the passed CMD (preserves tini PID-1 signal forwarding).
 #
 # Placed before CMD so operators can override CMD freely.
 
@@ -91,6 +92,40 @@ if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" ]]; then
         exit 1
     fi
     unset WORKFLOW_CODEX_AUTH_JSON_B64
+fi
+
+# ---------------------------------------------------------------------
+# Required static data-file canary
+# ---------------------------------------------------------------------
+# The daemon can otherwise boot and degrade later when a runtime path first
+# needs an artifact such as data/world_rules.lp. Run the shared required-file
+# list before serving traffic so a bad image fails with a greppable marker.
+WORKFLOW_REQUIRED_DATA_ROOT="${WORKFLOW_REQUIRED_DATA_ROOT:-/app}"
+if ! _missing_data_files="$(
+    WORKFLOW_REQUIRED_DATA_ROOT="${WORKFLOW_REQUIRED_DATA_ROOT}" python - <<'PY'
+import os
+from pathlib import Path
+
+from workflow.storage.rotation import _REQUIRED_DATA_FILES
+
+root = Path(os.environ["WORKFLOW_REQUIRED_DATA_ROOT"])
+missing = []
+for rel in _REQUIRED_DATA_FILES:
+    path = root / rel
+    if not path.is_file() or path.stat().st_size == 0:
+        missing.append(rel)
+
+print(",".join(missing))
+PY
+)"; then
+    echo "DATA-FILE-MISSING: startup data-file probe crashed" >&2
+    exit 1
+fi
+
+if [[ -n "${_missing_data_files}" ]]; then
+    echo "DATA-FILE-MISSING: required startup data file(s) missing or empty: ${_missing_data_files}" >&2
+    echo "DATA-FILE-MISSING: expected under ${WORKFLOW_REQUIRED_DATA_ROOT}" >&2
+    exit 1
 fi
 
 exec "$@"

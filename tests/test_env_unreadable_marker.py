@@ -28,6 +28,7 @@ _DEPLOY_YAML = _REPO / ".github" / "workflows" / "deploy-prod.yml"
 _TRIAGE_YAML = _REPO / ".github" / "workflows" / "p0-outage-triage.yml"
 
 CANONICAL_MARKER = "ENV-UNREADABLE"
+DATA_FILE_MARKER = "DATA-FILE-MISSING"
 
 
 def _have_bash() -> bool:
@@ -57,6 +58,7 @@ def _run_entrypoint_via_stdin(
     preamble_lines = [
         # Clear sentinels first so ambient-shell values don't leak through.
         "unset CLOUDFLARE_TUNNEL_TOKEN SUPABASE_DB_URL WORKFLOW_IMAGE",
+        f"export WORKFLOW_REQUIRED_DATA_ROOT={str(_REPO)!r}",
     ]
     for key, value in (extra_env or {}).items():
         preamble_lines.append(f"export {key}={value!r}")
@@ -120,6 +122,25 @@ def test_entrypoint_marker_goes_to_stderr_not_stdout():
     # Marker on stderr only.
     assert CANONICAL_MARKER in result.stderr
     assert CANONICAL_MARKER not in result.stdout
+
+
+@pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
+def test_entrypoint_fails_loud_when_required_data_file_missing(tmp_path):
+    """Missing required image artifacts fail before the daemon starts."""
+    result = _run_entrypoint_via_stdin(
+        exec_replacement='echo "[harness] would-exec: $@"',
+        extra_env={
+            "WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123",
+            "WORKFLOW_REQUIRED_DATA_ROOT": str(tmp_path),
+        },
+    )
+    assert result.returncode == 1, (
+        f"expected missing data file to fail; got {result.returncode}. "
+        f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    )
+    assert DATA_FILE_MARKER in result.stderr
+    assert "data/world_rules.lp" in result.stderr
+    assert "would-exec" not in result.stdout
 
 
 # ---- marker alignment across surfaces -------------------------------------
