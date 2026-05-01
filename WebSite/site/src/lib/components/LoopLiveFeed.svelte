@@ -33,12 +33,17 @@
 
   const activeRun = $derived.by((): LoopPatchRun | null => {
     if (!feed?.runs.length) return null;
-    return feed.runs.find((run) => run.run_id === feed?.activeRunId) ?? feed.runs[0];
+    const selected = feed.runs.find((run) => run.run_id === feed?.activeRunId);
+    if (selected) return selected;
+    return feed.runs.find((run) => !isTerminalRunStatus(run.status)) ?? null;
   });
 
   const headline = $derived.by(() => {
     if (activeRun) return activeRun.name || activeRun.run_id;
-    if (feed?.events.length) return `Community loop watch: ${(feed.overall ?? 'unknown').toUpperCase()}`;
+    if (feed?.events.length) {
+      const sourceName = feed.source.toLowerCase().includes('github') ? 'GitHub loop monitor' : 'MCP loop signals';
+      return `${sourceName}: ${(feed.overall ?? 'active').toUpperCase()}`;
+    }
     return 'Waiting for change_loop_v1';
   });
 
@@ -87,7 +92,7 @@
     const latest = latestFor(stage);
     if (!latest) return activeRun?.current_stage === stage ? 'running' : 'waiting';
     const status = latest.status.toLowerCase();
-    if (status.includes('fail') || status.includes('error') || status.includes('revert')) return 'failed';
+    if (status.includes('fail') || status.includes('error') || status.includes('revert') || status.includes('block')) return 'failed';
     if (status.includes('complete') || status.includes('success') || status.includes('done') || status.includes('accept')) return 'done';
     if (status.includes('pending') || status.includes('queued') || status.includes('waiting')) return 'waiting';
     return 'running';
@@ -106,6 +111,10 @@
     if (!latest) return statusLabel(stage);
     if (latest.status.includes('fail') || latest.detail.length > 96) return `${latest.status} - see recent events`;
     return latest.detail;
+  }
+
+  function isTerminalRunStatus(status: string): boolean {
+    return ['completed', 'failed', 'cancelled', 'canceled'].includes(status.toLowerCase());
   }
 </script>
 
@@ -143,7 +152,7 @@
 
   <div class="live-loop__body">
     <div class="run-card">
-      <span>Current patch run</span>
+      <span>{activeRun ? 'Current patch run' : 'Live loop monitor'}</span>
       {#if activeRun}
         <strong>{headline}</strong>
         <p><code>{activeRun.run_id}</code> · {subhead}</p>

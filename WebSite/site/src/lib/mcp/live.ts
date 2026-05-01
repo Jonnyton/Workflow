@@ -213,6 +213,8 @@ const STAGE_TERMS: Record<LoopStageId, string[]> = {
   observe: ['observe', 'observation', 'watch', 'canary', 'monitor', 'ratify', 'user_sim', 'clean use']
 };
 
+const HISTORICAL_TERMINAL_RUN_MS = 2 * 60 * 60 * 1000;
+
 function stringify(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -259,6 +261,31 @@ function normalizeTimestamp(value: unknown): string | null {
   const parsed = Date.parse(text);
   if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
   return text;
+}
+
+function timestampMs(value: unknown): number | null {
+  const normalized = normalizeTimestamp(value);
+  if (!normalized) return null;
+  const parsed = Date.parse(normalized);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function runTimestampMs(run: LoopPatchRun): number | null {
+  return timestampMs(run.finished_at) ?? timestampMs(run.started_at);
+}
+
+function isTerminalRunStatus(status: string): boolean {
+  return ['completed', 'failed', 'cancelled', 'canceled'].includes(status.toLowerCase());
+}
+
+function isHistoricalTerminalRun(run: LoopPatchRun, nowMs = Date.now()): boolean {
+  const at = runTimestampMs(run);
+  return isTerminalRunStatus(run.status) && at !== null && nowMs - at > HISTORICAL_TERMINAL_RUN_MS;
+}
+
+function isRecentRun(run: LoopPatchRun, nowMs = Date.now()): boolean {
+  const at = runTimestampMs(run);
+  return at !== null && nowMs - at <= 36 * 60 * 60 * 1000;
 }
 
 function humanizeNodeId(value: unknown): string {
@@ -343,6 +370,31 @@ function normalizeEvent(raw: any, index: number, run?: LoopPatchRun): LoopPatchE
   };
 }
 
+function runToEvent(run: LoopPatchRun, index: number): LoopPatchEvent {
+  const at = run.finished_at ?? run.started_at ?? null;
+  const status = run.status || 'unknown';
+  const stage = status.includes('complete')
+    ? 'observe'
+    : status.includes('fail') || status.includes('error')
+      ? 'gate'
+      : inferLoopStage(run.last_node_id, run.name, status, run.error);
+  return {
+    id: `mcp-run:${run.run_id || index}`,
+    run_id: run.run_id,
+    stage,
+    status,
+    title: run.name || `Branch run ${run.run_id}`,
+    detail: [
+      run.branch_def_id ? `branch ${run.branch_def_id}` : '',
+      run.run_id ? `run ${run.run_id}` : '',
+      run.error
+    ].filter(Boolean).join(' - ') || 'MCP branch run changed state.',
+    at,
+    node_id: run.last_node_id,
+    source: 'MCP extensions list_runs'
+  };
+}
+
 function runLooksLikePatchLoop(run: LoopPatchRun): boolean {
   const text = `${run.branch_def_id} ${run.name} ${run.last_node_id ?? ''}`.toLowerCase();
   return CHANGE_LOOP_BRANCH_IDS.some((id) => text.includes(id.toLowerCase())) ||
@@ -352,7 +404,11 @@ function runLooksLikePatchLoop(run: LoopPatchRun): boolean {
 }
 
 function activeRun(runs: LoopPatchRun[]): LoopPatchRun | undefined {
-  return runs.find((run) => !['completed', 'failed', 'cancelled', 'canceled'].includes(run.status)) ?? runs[0];
+  return runs.find((run) => !isTerminalRunStatus(run.status));
+}
+
+function latestRun(runs: LoopPatchRun[]): LoopPatchRun | undefined {
+  return [...runs].sort((a, b) => (runTimestampMs(b) ?? 0) - (runTimestampMs(a) ?? 0))[0];
 }
 
 function mergeRunSnapshot(run: LoopPatchRun | undefined, snapshot: any): void {
@@ -420,6 +476,27 @@ type CommunityLoopWatchStatus = {
   stages?: CommunityLoopWatchStage[];
 };
 
+type GitHubIssue = {
+  number?: number;
+  title?: string;
+  html_url?: string;
+  updated_at?: string;
+  created_at?: string;
+  body?: string;
+  labels?: Array<string | { name?: string }>;
+  pull_request?: unknown;
+};
+
+type GitHubWorkflowRun = {
+  id?: number;
+  html_url?: string;
+  status?: string;
+  conclusion?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  event?: string;
+};
+
 function jsonFromMarkdown(text: string): CommunityLoopWatchStatus | null {
   const blocks = Array.from(text.matchAll(/```json\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim()).filter(Boolean);
   for (const block of blocks.reverse()) {
@@ -467,6 +544,226 @@ async function fetchJsonIfAvailable(url: string): Promise<CommunityLoopWatchStat
   const parsed = await res.json();
   if (parsed?.stages && Array.isArray(parsed.stages)) return parsed;
   return null;
+}
+
+function issueLabels(issue: GitHubIssue): Set<string> {
+  const labels = new Set<string>();
+  for (const label of issue.labels ?? []) {
+    if (typeof label === 'string') labels.add(label);
+    else if (label?.name) labels.add(label.name);
+  }
+  return labels;
+}
+
+function workflowRunStatus(run: GitHubWorkflowRun | null): string {
+  if (!run) return 'red';
+  if (run.status !== 'completed') return 'yellow';
+  return run.conclusion === 'success' ? 'green' : 'red';
+}
+
+function workflowRunSummary(workflowId: string, run: GitHubWorkflowRun | null): string {
+  if (!run) return `${workflowId} has no visible runs`;
+  return `${workflowId} latest run is ${run.status}${run.conclusion ? `/${run.conclusion}` : ''}`;
+}
+
+async function fetchLatestWorkflowRun(workflowId: string, warnings: string[]): Promise<GitHubWorkflowRun | null> {
+  try {
+    const res = await fetchWithTimeout(`https://api.github.com/repos/Jonnyton/Workflow/actions/workflows/${workflowId}/runs?per_page=1`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) throw new Error(`GitHub workflow ${workflowId} ${res.status}`);
+    const payload = await res.json();
+    return Array.isArray(payload?.workflow_runs) ? payload.workflow_runs[0] ?? null : null;
+  } catch (error) {
+    warnings.push(warningText(`GitHub workflow ${workflowId}`, error));
+    return null;
+  }
+}
+
+async function fetchIssuesForLabel(label: string, warnings: string[]): Promise<GitHubIssue[]> {
+  try {
+    const res = await fetchWithTimeout(`https://api.github.com/repos/Jonnyton/Workflow/issues?state=open&labels=${encodeURIComponent(label)}&per_page=12`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) throw new Error(`GitHub issues ${label} ${res.status}`);
+    const payload = await res.json();
+    return Array.isArray(payload) ? payload.filter((issue) => !issue.pull_request) : [];
+  } catch (error) {
+    warnings.push(warningText(`GitHub issues ${label}`, error));
+    return [];
+  }
+}
+
+async function fetchLoopIssues(warnings: string[]): Promise<GitHubIssue[]> {
+  const groups = await Promise.all([
+    fetchIssuesForLabel('daemon-request', warnings),
+    fetchIssuesForLabel('auto-change', warnings),
+    fetchIssuesForLabel('auto-bug', warnings)
+  ]);
+  const byNumber = new Map<number, GitHubIssue>();
+  for (const issue of groups.flat()) {
+    if (typeof issue.number === 'number') byNumber.set(issue.number, issue);
+  }
+  return [...byNumber.values()].sort((a, b) => Date.parse(b.updated_at ?? '') - Date.parse(a.updated_at ?? ''));
+}
+
+function workflowEvent(stage: LoopStageId, title: string, workflowId: string, run: GitHubWorkflowRun | null): LoopPatchEvent {
+  const status = workflowRunStatus(run);
+  return {
+    id: `github-workflow:${workflowId}`,
+    stage,
+    status,
+    title,
+    detail: [
+      workflowRunSummary(workflowId, run),
+      run?.html_url
+    ].filter(Boolean).join(' - '),
+    at: normalizeTimestamp(run?.updated_at ?? run?.created_at),
+    node_id: workflowId,
+    source: run?.html_url ?? `GitHub Actions ${workflowId}`
+  };
+}
+
+function issueEvents(issue: GitHubIssue): LoopPatchEvent[] {
+  const labels = issueLabels(issue);
+  const title = issue.title ?? `Issue #${issue.number ?? '?'}`;
+  const url = issue.html_url ?? 'GitHub issue';
+  const detail = `${title} - ${url}`;
+  const at = normalizeTimestamp(issue.updated_at ?? issue.created_at);
+  const status = labels.has('needs-human') ? 'blocked' : labels.has('auto-fix-attempted') ? 'attempted' : 'queued';
+  const events: LoopPatchEvent[] = [];
+
+  if (labels.has('auto-bug')) {
+    events.push({
+      id: `github-issue:${issue.number}:intake`,
+      stage: 'intake',
+      status,
+      title: `BUG request #${issue.number}`,
+      detail,
+      at,
+      node_id: 'auto-bug',
+      source: url
+    });
+  }
+
+  if (labels.has('daemon-request') || labels.has('auto-change')) {
+    events.push({
+      id: `github-issue:${issue.number}:investigation`,
+      stage: 'investigation',
+      status: labels.has('needs-human') ? 'blocked' : 'packet',
+      title: `Patch request #${issue.number}`,
+      detail,
+      at,
+      node_id: 'daemon-request',
+      source: url
+    });
+  }
+
+  if (labels.has('gate-required')) {
+    events.push({
+      id: `github-issue:${issue.number}:gate`,
+      stage: 'gate',
+      status: labels.has('needs-human') ? 'blocked' : 'queued',
+      title: `Evidence gate #${issue.number}`,
+      detail,
+      at,
+      node_id: 'gate-required',
+      source: url
+    });
+  }
+
+  const writer = [...labels].find((label) => label.startsWith('writer:'));
+  if (writer) {
+    events.push({
+      id: `github-issue:${issue.number}:coding`,
+      stage: 'coding',
+      status: 'active',
+      title: `Writer lane ${writer.replace('writer:', '')}`,
+      detail,
+      at,
+      node_id: writer,
+      source: url
+    });
+  }
+
+  if ((issue.body ?? '').toLowerCase().includes('pr creation was blocked')) {
+    events.push({
+      id: `github-issue:${issue.number}:release`,
+      stage: 'release',
+      status: 'handoff',
+      title: `Review handoff #${issue.number}`,
+      detail: `GitHub Actions PR creation was blocked; branch entered review through the GitHub connector. ${url}`,
+      at,
+      node_id: 'review-handoff',
+      source: url
+    });
+  }
+
+  return events;
+}
+
+function queueSummaryEvent(stage: LoopStageId, title: string, issues: GitHubIssue[], labels: string[]): LoopPatchEvent | null {
+  const matches = issues.filter((issue) => {
+    const issueLabelSet = issueLabels(issue);
+    return labels.some((label) => issueLabelSet.has(label));
+  });
+  if (!matches.length) return null;
+  const latest = matches[0];
+  const issueList = matches.slice(0, 3).map((issue) => `#${issue.number}`).join(', ');
+  return {
+    id: `github-queue:${stage}:${labels.join('+')}`,
+    stage,
+    status: 'active',
+    title,
+    detail: `${matches.length} visible ${title.toLowerCase()} item${matches.length === 1 ? '' : 's'} (${issueList}) from public GitHub issues.`,
+    at: normalizeTimestamp(latest.updated_at ?? latest.created_at),
+    node_id: labels.join('+'),
+    source: latest.html_url ?? 'GitHub issues'
+  };
+}
+
+async function fetchGitHubLoopMonitorFeed(warnings: string[]): Promise<PatchLoopFeed | null> {
+  const [issues, intakeRun, writerRun, deploySiteRun, deployProdRun, observationRun, watchRun] = await Promise.all([
+    fetchLoopIssues(warnings),
+    fetchLatestWorkflowRun('wiki-bug-sync.yml', warnings),
+    fetchLatestWorkflowRun('auto-fix-bug.yml', warnings),
+    fetchLatestWorkflowRun('deploy-site.yml', warnings),
+    fetchLatestWorkflowRun('deploy-prod.yml', warnings),
+    fetchLatestWorkflowRun('uptime-canary.yml', warnings),
+    fetchLatestWorkflowRun('community-loop-watch.yml', warnings)
+  ]);
+
+  const events = [
+    queueSummaryEvent('investigation', 'Patch request queue', issues, ['daemon-request', 'auto-change']),
+    queueSummaryEvent('gate', 'Evidence gate queue', issues, ['gate-required', 'needs-human']),
+    ...issues.flatMap(issueEvents).slice(0, 18),
+    workflowEvent('intake', 'Wiki bug sync', 'wiki-bug-sync.yml', intakeRun),
+    workflowEvent('coding', 'Auto-fix writer', 'auto-fix-bug.yml', writerRun),
+    workflowEvent('release', 'Site deploy', 'deploy-site.yml', deploySiteRun),
+    workflowEvent('release', 'Production deploy', 'deploy-prod.yml', deployProdRun),
+    workflowEvent('observe', 'Uptime canary', 'uptime-canary.yml', observationRun),
+    workflowEvent('observe', 'Community loop watch', 'community-loop-watch.yml', watchRun)
+  ].filter((event): event is LoopPatchEvent => Boolean(event && (event.at || event.detail)));
+
+  if (!events.length) return null;
+
+  const statuses = events.map((event) => event.status);
+  const overall = statuses.some((status) => ['red', 'failed'].includes(status))
+    ? 'red'
+    : statuses.some((status) => ['yellow', 'queued', 'blocked', 'handoff', 'attempted', 'active'].includes(status))
+      ? 'active'
+      : 'green';
+
+  return {
+    source: 'GitHub public loop monitor',
+    fetchedAt: new Date().toISOString(),
+    live: true,
+    overall,
+    branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+    runs: [],
+    events,
+    warnings
+  };
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 6500): Promise<Response> {
@@ -524,49 +821,7 @@ async function fetchCommunityLoopWatchFeed(warnings: string[]): Promise<PatchLoo
     warnings.push(warningText('community-loop-red issue', error));
   }
 
-  try {
-    const workflowsRes = await fetchWithTimeout('https://api.github.com/repos/Jonnyton/Workflow/actions/workflows?per_page=100', {
-      headers: { Accept: 'application/vnd.github+json' }
-    });
-    if (!workflowsRes.ok) throw new Error(`GitHub workflows ${workflowsRes.status}`);
-    const workflowsPayload = await workflowsRes.json();
-    const workflows = Array.isArray(workflowsPayload?.workflows) ? workflowsPayload.workflows : [];
-    const workflow = workflows.find((candidate: any) => String(candidate?.path ?? '').endsWith('/community-loop-watch.yml'));
-    if (!workflow?.id) {
-      warnings.push('community-loop-watch workflow is not published on GitHub yet');
-      return null;
-    }
-
-    const runsRes = await fetchWithTimeout(`https://api.github.com/repos/Jonnyton/Workflow/actions/workflows/${workflow.id}/runs?per_page=1`, {
-      headers: { Accept: 'application/vnd.github+json' }
-    });
-    if (!runsRes.ok) throw new Error(`GitHub workflow runs ${runsRes.status}`);
-    const payload = await runsRes.json();
-    const run = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs[0] : null;
-    if (run) {
-      return communityStatusToFeed(
-        {
-          checked_at: run.updated_at ?? run.created_at,
-          overall: run.conclusion === 'success' ? 'green' : run.status === 'completed' ? 'red' : 'yellow',
-          stages: [
-            {
-              name: 'Community loop watch',
-              status: run.conclusion === 'success' ? 'green' : run.status === 'completed' ? 'red' : 'yellow',
-              summary: `latest workflow run is ${run.status}${run.conclusion ? `/${run.conclusion}` : ''}`,
-              evidence: run.html_url,
-              url: run.html_url
-            }
-          ]
-        },
-        'GitHub Actions community-loop-watch.yml',
-        warnings
-      );
-    }
-  } catch (error) {
-    warnings.push(warningText('community-loop-watch workflow', error));
-  }
-
-  return null;
+  return fetchGitHubLoopMonitorFeed(warnings);
 }
 
 async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise<PatchLoopFeed> {
@@ -591,10 +846,47 @@ async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise
       runs = Array.isArray(allFeed?.runs) ? allFeed.runs.map(normalizeRun).filter(runLooksLikePatchLoop) : [];
     }
 
-    const selectedRun = activeRun(runs);
+    const selectedRun = activeRun(runs) ?? latestRun(runs);
+    const selectedRunIsHistorical = selectedRun ? isHistoricalTerminalRun(selectedRun) : false;
     let events: LoopPatchEvent[] = [];
 
-    if (selectedRun?.run_id) {
+    if (selectedRunIsHistorical) {
+      warnings.push(
+        `MCP extensions expose no active patch-loop run; last visible run ${selectedRun?.run_id} was ${selectedRun?.status} at ${selectedRun?.finished_at ?? selectedRun?.started_at ?? 'unknown time'}.`
+      );
+      try {
+        const allFeed = await callTool('extensions', { action: 'list_runs', limit: Math.max(limit, 24) });
+        const recentRuns: LoopPatchRun[] = (Array.isArray(allFeed?.runs) ? allFeed.runs.map(normalizeRun) : [])
+          .filter((run: LoopPatchRun) => run.run_id !== selectedRun?.run_id)
+          .filter(isRecentRun)
+          .slice(0, limit);
+        if (recentRuns.length) {
+          const recentEvents = recentRuns.map(runToEvent);
+          const statuses = recentRuns.map((run: LoopPatchRun) => run.status);
+          return {
+            source: 'MCP extensions recent branch runs',
+            fetchedAt: new Date().toISOString(),
+            live: true,
+            overall: statuses.some((status: string) => status.includes('fail') || status.includes('error'))
+              ? 'active'
+              : statuses.some((status: string) => !isTerminalRunStatus(status))
+                ? 'running'
+                : 'green',
+            branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+            runs: recentRuns,
+            events: recentEvents,
+            warnings
+          };
+        }
+      } catch (error) {
+        warnings.push(warningText('extensions recent list_runs', error));
+      }
+
+      const communityWatch = await fetchCommunityLoopWatchFeed(warnings);
+      if (communityWatch) return communityWatch;
+    }
+
+    if (selectedRun?.run_id && !selectedRunIsHistorical) {
       let runSnapshot: any = null;
       try {
         const streamed = await callTool('extensions', {
@@ -657,9 +949,9 @@ async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise
     return {
       source: 'MCP extensions list_runs/stream_run',
       fetchedAt: new Date().toISOString(),
-      live: true,
+      live: Boolean(activeRun(runs)) || Boolean(events.length),
       branchDefId: selectedRun?.branch_def_id || CHANGE_LOOP_BRANCH_IDS[0],
-      activeRunId: selectedRun?.run_id,
+      activeRunId: activeRun(runs)?.run_id ?? (selectedRunIsHistorical ? undefined : selectedRun?.run_id),
       runs,
       events: events.slice(-36),
       warnings
