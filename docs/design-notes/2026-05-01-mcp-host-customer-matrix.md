@@ -46,7 +46,7 @@ surface and "client" only for protocol behavior.
 | Cursor | Local IDE user | Cursor MCP config | Cursor settings/add path | planned | Cursor lists and calls Workflow |
 | Cline/Roo/Continue/Windsurf | Local IDE agent user | MCP config or marketplace | Host-specific settings | planned | Tool list plus safe read call |
 | Replit Agent | Cloud developer agent | Replit MCP integration | Replit MCP path | planned | Replit Agent invokes Workflow |
-| Open WebUI | Self-hosted/no-hosted-chat-login user | Native Streamable HTTP to `/mcp-directory` or `/mcp` | Admin Settings -> External Tools | first no-login target | Open WebUI chat invokes read-only tool |
+| Open WebUI | Self-hosted/no-hosted-chat-login user | Native Streamable HTTP to `/mcp-directory` or `/mcp` | Admin Settings -> External Tools | setup-ready; runtime proof pending | Open WebUI chat invokes read-only tool |
 | LibreChat | Self-hosted/no-hosted-chat-login user | `streamable-http` MCP server config | `librechat.yaml` or UI-created server | planned | Chat/agent invokes read-only tool |
 | LM Studio | Local model user | Local or remote MCP in `mcp.json` | LM Studio Program tab or add button | planned | Local model invokes read-only tool |
 | Jan | Local model user | MCP support/path to verify | App settings or bridge | watch | Do not claim until direct proof |

@@ -77,7 +77,7 @@ spec" or "planned", not "works".
 | ChatGPT App Directory | Logged-in ChatGPT users/admins | packet-ready; submission-needed | `chatgpt-app-submission.json` covers the 11 directory tools; actual submission requires OpenAI workspace/admin flow |
 | ChatGPT guest | No logged-in chatbot account | unsupported by ChatGPT path | Route to local/self-hosted/no-chatbot-login options |
 | Mistral Le Chat MCP connector | Logged-in Mistral user/admin | planned | Need connector config proof and directory/submission research |
-| Open WebUI | No hosted chatbot login if self-hosted | planned | Verify Streamable HTTP MCP config against `https://tinyassets.io/mcp` or directory-safe `https://tinyassets.io/mcp-directory` |
+| Open WebUI | No hosted chatbot login if self-hosted | setup-ready; runtime proof pending | Use `docs/ops/open-webui-no-login-pack.md`; verify Streamable HTTP MCP config against `https://tinyassets.io/mcp-directory` before claiming support |
 | LibreChat | No hosted chatbot login if self-hosted | planned | Verify MCP config or bridge path |
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
@@ -106,5 +106,6 @@ Detailed execution queue: `docs/ops/mcp-directory-rollout-action-queue.md`.
 - Submit the Claude directory packet through Anthropic's review flow.
 - Submit `chatgpt-app-submission.json` through OpenAI's app submission flow and resolve BUG-034 approval path for custom connectors.
 - Verify one no-chatbot-login host first, preferably Open WebUI because it
-  supports Streamable HTTP MCP directly.
+  supports Streamable HTTP MCP directly. Setup pack:
+  `docs/ops/open-webui-no-login-pack.md`.
 - Add host-specific proof traces as they land.
