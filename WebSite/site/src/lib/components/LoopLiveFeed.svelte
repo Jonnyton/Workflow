@@ -6,7 +6,8 @@
     type LoopPatchEvent,
     type LoopPatchRun,
     type LoopStageId,
-    type PatchLoopFeed
+    type PatchLoopFeed,
+    type PatchLoopFeedSource
   } from '$lib/mcp/live';
   import { relativeStamp } from '$lib/live/project';
 
@@ -26,7 +27,8 @@
   } = $props();
 
   let feed = $state<PatchLoopFeed | null>(null);
-  let loading = $state(false);
+  let activeSource = $state<PatchLoopFeedSource>('mcp');
+  let loadingSource = $state<PatchLoopFeedSource | null>(null);
   let latestError = $state('');
 
   const activeRun = $derived.by((): LoopPatchRun | null => {
@@ -50,24 +52,25 @@
     return [...(feed?.events ?? [])].slice(-8).reverse();
   });
 
-  async function refresh() {
-    loading = true;
+  async function refresh(source: PatchLoopFeedSource = activeSource) {
+    activeSource = source;
+    loadingSource = source;
     latestError = '';
     try {
-      feed = await fetchPatchLoopFeed();
+      feed = await fetchPatchLoopFeed(12, source);
       if (!feed.live && feed.warnings.length) {
         latestError = feed.warnings[feed.warnings.length - 1];
       }
     } catch (error) {
       latestError = error instanceof Error ? error.message : 'Loop feed unavailable';
     } finally {
-      loading = false;
+      loadingSource = null;
     }
   }
 
   onMount(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 30000);
+    void refresh('mcp');
+    const timer = window.setInterval(() => void refresh(activeSource), 30000);
     return () => window.clearInterval(timer);
   });
 
@@ -105,10 +108,27 @@
       <p>When the operational loop emits run state, this rail lights up from MCP and the community-loop GitHub monitor: intake, queued requests, writer blockage, release workflows, and observation incidents.</p>
     </div>
     <div class="live-loop__actions">
-      <button class="refresh" type="button" disabled={loading} onclick={refresh}>
-        {loading ? 'Refreshing GitHub' : 'Refresh GitHub'}
+      <button
+        class="refresh"
+        type="button"
+        disabled={loadingSource !== null}
+        aria-pressed={activeSource === 'mcp'}
+        aria-busy={loadingSource === 'mcp'}
+        onclick={() => refresh('mcp')}
+      >
+        Refresh MCP
       </button>
-      <span>{feed?.source ?? 'GitHub loop monitor'}</span>
+      <button
+        class="refresh"
+        type="button"
+        disabled={loadingSource !== null}
+        aria-pressed={activeSource === 'github'}
+        aria-busy={loadingSource === 'github'}
+        onclick={() => refresh('github')}
+      >
+        Refresh GitHub
+      </button>
+      <span>{loadingSource ? `Refreshing ${loadingSource === 'mcp' ? 'MCP' : 'GitHub'} feed` : feed?.source ?? 'MCP loop feed'}</span>
     </div>
   </div>
 
@@ -221,8 +241,14 @@
 
   .live-loop__actions {
     display: grid;
+    grid-template-columns: repeat(2, max-content);
     gap: 8px;
     justify-items: end;
+  }
+
+  .live-loop__actions span {
+    grid-column: 1 / -1;
+    text-align: right;
   }
 
   .live-loop__actions span,
@@ -253,6 +279,11 @@
   .refresh:hover:not(:disabled) {
     border-color: rgba(109, 211, 166, 0.62);
     background: rgba(109, 211, 166, 0.12);
+  }
+
+  .refresh[aria-pressed="true"] {
+    border-color: rgba(109, 211, 166, 0.72);
+    background: rgba(109, 211, 166, 0.14);
   }
 
   .refresh:disabled {
@@ -480,6 +511,9 @@
     .live-loop__actions {
       justify-items: start;
     }
+    .live-loop__actions span {
+      text-align: left;
+    }
     .live-rail {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -488,6 +522,12 @@
   @media (max-width: 520px) {
     .live-loop {
       padding: 16px;
+    }
+    .live-loop__actions {
+      grid-template-columns: 1fr 1fr;
+    }
+    .refresh {
+      width: 100%;
     }
     .live-rail {
       grid-template-columns: 1fr;

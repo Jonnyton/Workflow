@@ -163,6 +163,8 @@ export type PatchLoopFeed = {
   warnings: string[];
 };
 
+export type PatchLoopFeedSource = 'mcp' | 'github';
+
 const CHANGE_LOOP_BRANCH_IDS = ['fd5c66b1d87d', 'change_loop_v1'];
 
 const STAGE_TERMS: Record<LoopStageId, string[]> = {
@@ -467,24 +469,7 @@ async function fetchCommunityLoopWatchFeed(warnings: string[]): Promise<PatchLoo
   return null;
 }
 
-export async function fetchPatchLoopFeed(limit = 12, includeMcpFallback = false): Promise<PatchLoopFeed> {
-  const warnings: string[] = [];
-
-  const communityWatch = await fetchCommunityLoopWatchFeed(warnings);
-  if (communityWatch) return communityWatch;
-
-  if (!includeMcpFallback) {
-    return {
-      source: 'waiting for community-loop-watch',
-      fetchedAt: new Date().toISOString(),
-      live: false,
-      branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
-      runs: [],
-      events: [],
-      warnings
-    };
-  }
-
+async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise<PatchLoopFeed> {
   try {
     const loopFeed = normalizeLoopToolFeed(await callTool('loop', { action: 'feed', limit }));
     if (loopFeed) return loopFeed;
@@ -562,6 +547,26 @@ export async function fetchPatchLoopFeed(limit = 12, includeMcpFallback = false)
     events: [],
     warnings
   };
+}
+
+export async function fetchPatchLoopFeed(limit = 12, source: PatchLoopFeedSource = 'mcp'): Promise<PatchLoopFeed> {
+  const warnings: string[] = [];
+
+  if (source === 'github') {
+    const communityWatch = await fetchCommunityLoopWatchFeed(warnings);
+    if (communityWatch) return communityWatch;
+    return {
+      source: 'waiting for community-loop-watch',
+      fetchedAt: new Date().toISOString(),
+      live: false,
+      branchDefId: CHANGE_LOOP_BRANCH_IDS[0],
+      runs: [],
+      events: [],
+      warnings
+    };
+  }
+
+  return fetchMcpPatchLoopFeed(limit, warnings);
 }
 
 /** Shape the live raw response into the same structure /wiki + /graph use from the snapshot. */
