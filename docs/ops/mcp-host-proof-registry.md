@@ -27,11 +27,11 @@ spec" or "planned", not "works".
 
 | Gate | Status | Evidence | Notes |
 |---|---|---|---|
-| Public MCP endpoint | watch/flapping | Latest 2026-05-01 diagnostic: 5/5 local canaries green and GitHub Actions uptime run `25231089323` green after intermittent HTTP 502s | Keep monitoring before public app/directory launch claims |
-| Directory-safe MCP endpoint | branch-ready | `workflow/directory_server.py` exposes 11 narrow tools; local tests pin annotations and no catch-all `action` inputs | Live only after server + Worker deploy |
-| Official MCP Registry metadata | branch-ready | `packaging/registry/server.json` points at `https://tinyassets.io/mcp-directory` | Local PATH lacks `mcp-publisher`; needs CLI install, `mcp-publisher login github`, and publish by repo owner/admin |
-| AI-readable web docs | ready-draft | `WebSite/site/static/llms.txt` | Ships with site deploy |
-| `/connect` customer chooser | ready-draft | `npm run check`, `npm run build`, Playwright desktop/mobile smoke on 2026-05-01 | Ships with site deploy |
+| Public MCP endpoint | live-green | 2026-05-01: prod deploy `25233226847` green; Worker deploy `25233386849` green; `mcp_public_canary.py --url https://tinyassets.io/mcp` OK | Legacy custom connector surface remains available |
+| Directory-safe MCP endpoint | live-green | 2026-05-01: `mcp_public_canary.py --url https://tinyassets.io/mcp-directory` OK; `mcp_probe.py --url https://tinyassets.io/mcp-directory tools` returned 11 narrow tools | Use this endpoint for host-directory review |
+| Official MCP Registry metadata | artifact-ready; publish-blocked | `packaging/registry/server.json` points at `https://tinyassets.io/mcp-directory` | Local PATH lacks `mcp-publisher`; needs CLI install, `mcp-publisher login github`, and publish by repo owner/admin |
+| AI-readable web docs | live | `WebSite/site/static/llms.txt` live from PR #122 | Needs periodic source freshness check |
+| `/connect` customer chooser | live | PR #122 deployed; Playwright desktop/mobile smoke on 2026-05-01 | Copy is truthful but directory acceptance is still pending |
 
 ## 2026-05-01 Local Verification
 
@@ -50,6 +50,13 @@ spec" or "planned", not "works".
   `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose`
   probes passed; GitHub Actions uptime run `25231089323` passed; direct
   `https://mcp.tinyassets.io/mcp` stayed Access-gated at HTTP 403 as expected.
+- Production rollout proof after PR #123/#124/#125:
+  - Deploy prod run `25233226847` passed for merge `d6a44eb`.
+  - Manual Worker deploy run `25233386849` passed for main `e8e0fd0`.
+  - `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` returned OK.
+  - `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` returned OK.
+  - `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory tools` returned exactly the 11 directory tools.
+  - `python scripts/mcp_probe.py --url https://tinyassets.io/mcp tools` still returned the 7 legacy custom-connector tools.
 - `npm run check` in `WebSite/site` passed with 0 errors and 0 warnings.
 - `npm run build` in `WebSite/site` passed and emitted `build/connect.html`
   plus `build/llms.txt`.
@@ -64,7 +71,7 @@ spec" or "planned", not "works".
 
 | Host surface | Customer path | Status | Proof / blocker |
 |---|---|---|---|
-| Claude.ai custom connector | Logged-in Claude user | verified-historical; refresh needed | Full surface is `https://tinyassets.io/mcp`; real Claude.ai proof exists in site capture; refresh after endpoint changes land |
+| Claude.ai custom connector | Logged-in Claude user | protocol-live; UI refresh needed | Full surface is `https://tinyassets.io/mcp`; protocol proof green 2026-05-01; live Claude.ai proof still needs refresh |
 | Claude Connectors Directory | Logged-in Claude users/admins | packet-ready; submission-needed | Use `https://tinyassets.io/mcp-directory` and `docs/ops/mcp-directory-submission-packet.md` |
 | ChatGPT custom MCP / developer mode | Logged-in eligible ChatGPT user/workspace | blocked | BUG-034/admin approval path blocks clean custom connector approval |
 | ChatGPT App Directory | Logged-in ChatGPT users/admins | packet-ready; submission-needed | `chatgpt-app-submission.json` covers the 11 directory tools; actual submission requires OpenAI workspace/admin flow |
