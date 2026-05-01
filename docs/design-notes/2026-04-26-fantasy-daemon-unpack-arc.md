@@ -239,7 +239,7 @@ The largest risk in the arc.
 ### Cannot block
 
 - Methods-prose evaluator design (separate domain).
-- Recency + continue_branch primitives (host-approved 2026-04-26 — different surface).
+- Recency composition + `run_branch resume_from` (F2 accepted 2026-04-28 — different surface).
 
 ### Suggested sequencing
 

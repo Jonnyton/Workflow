@@ -327,7 +327,7 @@ For READ-MOSTLY private data (e.g. canon docs that change rarely), the user's ch
 ### §6.2 — Cannot block
 
 - Methods-prose evaluator (REFRAMED community-build per host directive 2026-04-26) — orthogonal.
-- Recency + continue_branch primitives (host-approved 2026-04-26) — orthogonal.
+- Recency composition + `run_branch resume_from` (F2 accepted 2026-04-28) — orthogonal.
 - Cloud daemon redeploy — orthogonal.
 
 ### §6.3 — Suggested sequencing

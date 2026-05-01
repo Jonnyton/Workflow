@@ -178,7 +178,7 @@ The `host` primitive becomes the only structurally-tier-restricted one — runni
 |---|---|---|---|---|
 | `universe` | 27 _action_* handlers | inspect, list, create, submit_request, queue_list, queue_cancel, daemon_overview, set_tier_config, subscribe_goal, unsubscribe_goal, list_subscriptions, post_to_goal_pool, submit_node_bid, give_direction, query_world, read_premise, set_premise, add_canon, add_canon_from_path, list_canon, read_canon, control_daemon, get_activity, read_output, ... | **Mostly survives** as `workspace`. ~12 actions stay; ~10 fold into other primitives (queue/dispatch/subs into `run`; goal_pool into `commons`; daemon control into `host`). |
 | `extensions` | many `_ext_branch_*` handlers | build_branch, patch_branch, list_branches, describe_branch, register_node, list_nodes, ... | **Survives** as `workflow`. |
-| `goals` | dispatch to `_action_*` in market.py | propose, get, search, bind, set_canonical, my_recent (host-approved 2026-04-26) | **Folds into `commons`** as `commons.goals.*`. The convergent-commons surface for shared workflow intent. |
+| `goals` | dispatch to `_action_*` in market.py | propose, get, search, bind, set_canonical, my_recent (retired 2026-05-01; compose from run/goal lookups) | **Folds into `commons`** as `commons.goals.*`. The convergent-commons surface for shared workflow intent. |
 | `gates` | dispatch in market.py | claim, list, ... | **Folds into `evaluate`** as `evaluate.gate.*`. Gates ARE evaluator claims. |
 | `wiki` | wiki.py | search, read, write, list, file_bug, ... | **Folds into `commons`** as `commons.wiki.*`. Wiki IS the cross-user knowledge layer. |
 | `get_status` | dispatch in status.py | (returns daemon + universe + queue state) | **Folds into `workspace`** (universe inspect returns same data) OR into `run` (per-run status). Currently a third surface for the same data; consolidate. |
@@ -197,10 +197,10 @@ workflow  ─── build, patch, fork, version,
               (+ branch_design_guide migrates to prompt)
 
 run       ─── submit, status, events, fetch_outputs,
-              cancel, list, recent (host-approved),
-              continue (host-approved),
+              cancel, list, resume_from (accepted as run_branch param),
               query_world (read run state),
               + folds: queue/dispatch/subscriptions
+              + recency composes from run list/query + goal lookup
 
 evaluate  ─── score, gate.claim, gate.list,
               run_diff, judge_*,
@@ -305,9 +305,9 @@ From `output/user_sim_session.md`, persona memories, and audit chat traces:
 From persona memory `priya_ramaswamy/sessions.md` line 177:
 > "Extension-as-first-class-primitive. Workflow should have a notion of 'continue the prior sweep' that's distinct from 'scaffold a new pipeline.' ... Priya's ask in T+0:00 ('can we extend') is a natural-language signal — chatbot should recognize extension semantics and route through a different scaffold path."
 
-This is THE concrete user-evidence for `extensions action=continue_branch from_run_id=...` (host-approved 2026-04-26). Per the proposal: **continue_branch is NOT a new primitive — it's an action of the `run` primitive (`run.continue from_run_id=X`). Same primitive, named action.** Saves a primitive while serving the irreducible verb.
+This was the concrete user-evidence for an explicit continuation path. Superseded 2026-05-01: do not add standalone `continue_branch`; accepted target is optional `resume_from=<run_id>` on existing `run_branch` after #18. The primitive lesson still stands: serve the intent on the run surface, not as a new top-level tool.
 
-Per `feedback_irreducibility_test_before_spec`, the question was: "can chatbot compose `continue_branch` from existing primitives in <5 steps?" The proposal answers yes — it's `run.fetch(prior_run)` + `workflow.fork(prior_branch)` + `run.submit(extended_inputs)`. But the user ALSO wants the named intent ("continue the prior sweep") — so adding it as a `run` action verb (not a new top-level tool) preserves the irreducibility while serving the intent. **One verb on an existing primitive < one new primitive.**
+Per `feedback_irreducibility_test_before_spec`, the question was: "can chatbot compose continuation from existing primitives in <5 steps?" The accepted answer is narrower now: chatbot can compose recency from existing reads, while continuation gets one `run_branch` parameter because the source-run carryover contract is error-prone enough to deserve a stable affordance.
 
 ---
 
@@ -392,6 +392,8 @@ Proposed primitive flow:
 ### §8.5 — Ilse (T3, OSS contributor, fork-and-PR)
 
 > "I want to add a `continue_branch` action to the run primitive as a PR."
+
+Historical wording note: the current target is `run_branch resume_from=<run_id>`, not a standalone `continue_branch` action.
 
 Proposed primitive flow:
 1. `develop.clone` (out of MCP — github clone) (1 step)

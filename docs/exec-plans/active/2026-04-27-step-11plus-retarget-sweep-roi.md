@@ -138,8 +138,8 @@ Add 1-2 hours for:
 | Alternative | What it buys |
 |---|---|
 | Methods-prose evaluator v1 (if host approves §3 of `2026-04-27-methods-prose-evaluator.md`) | Closes a real chain-break for academic users; ships a reusable Evaluator subtype |
-| `extensions action=my_recent_runs` + `goals action=my_recent` (Priya signal C — INBOX) | Closes workspace-memory continuity gap; chatbot leverage win |
-| `extensions action=continue_branch from_run_id=...` (Priya signal E + Devin Session 2 — INBOX) | Closes "extend prior run" primitive gap; chatbot leverage win |
+| Recency composition example for run query + goal/branch lookup (Priya signal C — INBOX) | Preserves continuity intent without new engine verbs; retired as platform primitive 2026-05-01 |
+| `run_branch resume_from=<run_id>` (Priya signal E + Devin Session 2 — INBOX) | Accepted post-#18 single-param add on existing `run_branch`; no standalone `continue_branch` |
 | Cloud daemon redeploy verification (Mark MARK-F1/F2 + BUG-028 + BUG-034 + ~10 surfaces) | Lands shipped fixes in production |
 | 3 architecture-audit reviews (#5, #6, #9-#11 from STATUS) | Unblocks multi-week design decisions |
 | Half-day Layer-3 design session (host-scheduled per STATUS) | Multi-week strategic direction |
