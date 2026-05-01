@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -244,22 +245,53 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Fail unless get_status reports sandbox_status.bwrap_available=true.",
     )
+    ap.add_argument(
+        "--retries",
+        type=int,
+        default=1,
+        help="Total verification attempts before failing (default 1).",
+    )
+    ap.add_argument(
+        "--retry-delay",
+        type=float,
+        default=5.0,
+        help="Seconds to sleep between retry attempts (default 5).",
+    )
     args = ap.parse_args(argv)
 
-    try:
-        status = check_llm_binding(
-            args.url,
-            args.timeout,
-            require_sandbox=args.require_sandbox,
-        )
-        llm_bound = _llm_endpoint_bound(status)
-        print(
-            f"[verify-llm] PASS — llm_endpoint_bound={llm_bound!r}"
-        )
-        return 0
-    except VerifyError as exc:
-        print(f"[verify-llm] FAIL (exit {exc.code}): {exc.msg}", file=sys.stderr)
-        return exc.code
+    attempts = max(1, args.retries)
+    retry_delay = max(0.0, args.retry_delay)
+    last_error: VerifyError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            status = check_llm_binding(
+                args.url,
+                args.timeout,
+                require_sandbox=args.require_sandbox,
+            )
+            llm_bound = _llm_endpoint_bound(status)
+            print(f"[verify-llm] PASS — llm_endpoint_bound={llm_bound!r}")
+            if attempt > 1:
+                print(f"[verify-llm] recovered after {attempt} attempt(s)")
+            return 0
+        except VerifyError as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            print(
+                f"[verify-llm] WARN attempt {attempt}/{attempts} failed "
+                f"(exit {exc.code}): {exc.msg}; retrying in {retry_delay:g}s",
+                file=sys.stderr,
+            )
+            if retry_delay:
+                time.sleep(retry_delay)
+
+    assert last_error is not None
+    print(
+        f"[verify-llm] FAIL (exit {last_error.code}): {last_error.msg}",
+        file=sys.stderr,
+    )
+    return last_error.code
 
 
 if __name__ == "__main__":

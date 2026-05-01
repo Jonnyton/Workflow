@@ -325,13 +325,15 @@ jobs:
         if: env.HAS_CODEX_AUTH_BUNDLE == 'true'
         run: |
           python scripts/verify_llm_binding.py \
-              --url "${CANARY_URL}" --timeout 20 --require-sandbox
+              --url "${CANARY_URL}" --timeout 20 --require-sandbox \
+              --retries 12 --retry-delay 10
 
       - name: Report subscription LLM binding when no deploy auth bundle is configured
         if: env.HAS_CODEX_AUTH_BUNDLE != 'true'
         run: |
           python scripts/verify_llm_binding.py \
-              --url "${CANARY_URL}" --timeout 20 --require-sandbox
+              --url "${CANARY_URL}" --timeout 20 --require-sandbox \
+              --retries 12 --retry-delay 10
           echo "Subscription LLM binding and sandbox runtime are already live."
 
       - name: Verify CF Access gates direct URL (expects 403/401)

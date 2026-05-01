@@ -306,6 +306,8 @@ def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
             run_script = step.get("run", "") or ""
             assert "verify_llm_binding.py" in run_script
             assert "--require-sandbox" in run_script
+            assert "--retries 12" in run_script
+            assert "--retry-delay 10" in run_script
             return
     pytest.fail("deploy must verify LLM binding when it syncs Codex subscription auth")
 
@@ -324,4 +326,6 @@ def test_deploy_requires_llm_binding_even_without_visible_deploy_secret():
     run_script = step.get("run", "") or ""
     assert "verify_llm_binding.py" in run_script
     assert "--require-sandbox" in run_script
+    assert "--retries 12" in run_script
+    assert "--retry-delay 10" in run_script
     assert "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64" not in run_script

@@ -321,6 +321,27 @@ def test_main_returns_2_on_network_error():
     assert code == 2
 
 
+def test_main_retries_transient_sandbox_failure():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
+        (_INIT_OK, "sid2"),
+        (_NOTIF_NONE, "sid2"),
+        (_STATUS_BOUND_SANDBOX_OK, "sid2"),
+        (_ADD_CANON_OK, "sid2"),
+    )
+    with patch("verify_llm_binding._post", side_effect=post_fn):
+        code = main([
+            "--url", "http://fake/mcp",
+            "--timeout", "5",
+            "--require-sandbox",
+            "--retries", "2",
+            "--retry-delay", "0",
+        ])
+    assert code == 0
+
+
 def test_main_returns_5_when_required_sandbox_missing():
     post_fn = _make_post_fn(
         (_INIT_OK, "sid1"),
