@@ -7,17 +7,14 @@ Step 2 + 3 of the BUG-019/021/022 triad plan:
 - Step 3: exercise the 3 symptom shapes (S1 literal "END", S2 terminal
   noop + loop_back, S3 three gate iterations).
 
-Hypothesis (from step-1 prep read): when a branch has
+Related resolver edge case: when a branch has
 ``graph_node.id != graph_node.node_def_id`` on the gate, the resolver
-at ``graph_compiler.py:_build_conditional_router`` loads source_def =
-``node_by_id.get(gn.id)`` which returns None because ``node_by_id`` is
-keyed by node_def.id. With source_def=None, output_key stays "" and
-the router ALWAYS returns the fallback (first declared condition's
-target) regardless of state.
+must load the source node definition through the graph placement's
+``node_def_id``. Otherwise ``output_key`` stays empty and the router
+always returns the fallback label regardless of state.
 
-These tests pass the hypothesis state (graph_node.id == node_def.id)
-today. They will CONTINUE to pass after the fix lands and will NEWLY
-cover the graph_node.id != node_def.id case (currently broken).
+These tests cover both the graph_node.id == node_def.id path and the
+graph_node.id != node_def.id placement path.
 """
 from __future__ import annotations
 
@@ -179,24 +176,9 @@ class TestHappyCaseRouting:
 
 
 class TestGraphNodeIdDifferentFromDefId:
-    """Step 1 hypothesis was wrong: the bug is NOT graph_node.id vs
-    node_def.id mismatch. The bug is the router-to-LangGraph contract
-    inversion (see module docstring of graph_compiler._build_conditional_router).
+    """Routing works when graph placement IDs differ from node definition IDs."""
 
-    After the fix, routing works correctly in both id-match and
-    id-mismatch cases — kept as regression guard for the id-mismatch
-    path since source_def=None when ids differ (router falls through
-    to the ``if not output_key: return fallback`` branch, which now
-    returns a valid label key).
-    """
-
-    def test_gate_with_distinct_ids_routes_to_fallback(self):
-        """When graph_node.id != node_def.id, source_def=None →
-        output_key="" → router returns the fallback label. With the
-        fix, fallback is a LABEL (valid path_map key) so the graph
-        advances instead of KeyError-ing. The routing still collapses
-        to a single branch (the fallback), but the graph runs.
-        """
+    def test_gate_with_distinct_ids_routes_to_path_a_on_A(self):
         branch = _build_two_path_branch(
             gate_graph_id="gate_placement",
             gate_def_id="gate_core",  # different from graph_node.id
@@ -206,12 +188,32 @@ class TestGraphNodeIdDifferentFromDefId:
         )
         result = _run_compiled(compiled, initial_state={"scene_input": "test"})
 
-        # With source_def=None, output_key="" → fallback label ("A") →
-        # path_a. This is deterministic given the first-declared-label
-        # fallback policy. Before the fix: KeyError'd on graph.invoke.
         assert result.get("path_a_out"), (
-            "Graph should advance even when source_def is unresolvable "
-            f"(id-mismatch case); final state: {dict(result)}"
+            "Graph should route through the gate node's output_key even "
+            f"when graph_node.id differs from node_def_id; final state: {dict(result)}"
+        )
+        assert not result.get("path_b_out"), (
+            f"path_b should NOT have been visited when gate emits 'A'; "
+            f"final state: {dict(result)}"
+        )
+
+    def test_gate_with_distinct_ids_routes_to_path_b_on_B(self):
+        branch = _build_two_path_branch(
+            gate_graph_id="gate_placement",
+            gate_def_id="gate_core",  # different from graph_node.id
+        )
+        compiled = compile_branch(
+            branch, provider_call=_scripted_provider("B"),
+        )
+        result = _run_compiled(compiled, initial_state={"scene_input": "test"})
+
+        assert result.get("path_b_out"), (
+            "Graph should route through the gate node's output_key even "
+            f"when graph_node.id differs from node_def_id; final state: {dict(result)}"
+        )
+        assert not result.get("path_a_out"), (
+            f"path_a should NOT have been visited when gate emits 'B'; "
+            f"final state: {dict(result)}"
         )
 
 
