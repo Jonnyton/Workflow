@@ -89,6 +89,136 @@ def _now() -> float:
     return time.time()
 
 
+def _orphaned_run_grace_seconds() -> float | None:
+    """Return the read-time orphan recovery grace window.
+
+    Background runs are owned by an in-process ``Future``. After a server
+    restart, durable rows can still say ``queued``/``running`` even though no
+    worker in the new process can complete them. Read paths use this window to
+    avoid showing stale "running" forever while giving active workers time to
+    report progress.
+    """
+    raw = os.environ.get("WORKFLOW_ORPHANED_RUN_GRACE_SECONDS", "3600")
+    lowered = raw.strip().lower()
+    if lowered in {"0", "off", "false", "no", "disabled"}:
+        return None
+    try:
+        seconds = float(lowered)
+    except ValueError:
+        seconds = 3600.0
+    if seconds <= 0:
+        return None
+    return max(60.0, seconds)
+
+
+def _has_live_future(run_id: str) -> bool:
+    try:
+        future = get_future(run_id)
+    except NameError:
+        return False
+    return future is not None and not future.done()
+
+
+def _latest_run_progress_at(conn: sqlite3.Connection, run_id: str) -> float | None:
+    row = conn.execute(
+        """
+        SELECT MAX(COALESCE(finished_at, started_at)) AS progress_at
+        FROM run_events
+        WHERE run_id = ?
+        """,
+        (run_id,),
+    ).fetchone()
+    if row is None or row["progress_at"] is None:
+        return None
+    try:
+        return float(row["progress_at"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_orphaned_run_if_needed(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    status: str,
+    started_at: float | int | str | None,
+    now: float | None = None,
+) -> bool:
+    if status not in (RUN_STATUS_QUEUED, RUN_STATUS_RUNNING):
+        return False
+    if _has_live_future(run_id):
+        return False
+    grace = _orphaned_run_grace_seconds()
+    if grace is None:
+        return False
+    try:
+        started = float(started_at) if started_at is not None else 0.0
+    except (TypeError, ValueError):
+        started = 0.0
+    progress_at = _latest_run_progress_at(conn, run_id) or started
+    if progress_at <= 0:
+        return False
+    checked_at = now or _now()
+    stale_for = checked_at - progress_at
+    if stale_for < grace:
+        return False
+
+    message = (
+        "Run marked interrupted because no active background worker owns it "
+        f"and no progress has been recorded for {int(stale_for)}s "
+        f"(threshold {int(grace)}s). Rerun with the same inputs to continue."
+    )
+    cursor = conn.execute(
+        """
+        UPDATE runs
+        SET status = ?, error = ?, finished_at = ?
+        WHERE run_id = ? AND status IN (?, ?)
+        """,
+        (
+            RUN_STATUS_INTERRUPTED,
+            message,
+            checked_at,
+            run_id,
+            RUN_STATUS_QUEUED,
+            RUN_STATUS_RUNNING,
+        ),
+    )
+    return cursor.rowcount > 0
+
+
+def _recover_orphaned_runs_on_read(base_path: str | Path) -> int:
+    """Mark stale in-flight rows as interrupted when no worker owns them.
+
+    This complements startup recovery. Startup recovery handles rows that
+    exist before a new run action initializes the executor. Read-time recovery
+    handles the public-chatbot case where users keep polling after a restart
+    but no new write action happens to trigger startup recovery.
+    """
+    initialize_runs_db(base_path)
+    count = 0
+    now = _now()
+    with _connect(base_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id, status, started_at FROM runs
+            WHERE status IN (?, ?)
+            """,
+            (RUN_STATUS_QUEUED, RUN_STATUS_RUNNING),
+        ).fetchall()
+        for row in rows:
+            if _mark_orphaned_run_if_needed(
+                conn,
+                run_id=row["run_id"],
+                status=row["status"],
+                started_at=row["started_at"],
+                now=now,
+            ):
+                count += 1
+    if count:
+        logger.info("Recovered %d orphaned in-flight runs on read", count)
+    return count
+
+
 def initialize_runs_db(base_path: str | Path) -> Path:
     """Ensure runs, events, and Phase 4 judgment tables exist. Idempotent."""
     schema = """
@@ -457,6 +587,17 @@ def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:
         ).fetchone()
         if row is None:
             return None
+        if _mark_orphaned_run_if_needed(
+            conn,
+            run_id=row["run_id"],
+            status=row["status"],
+            started_at=row["started_at"],
+        ):
+            row = conn.execute(
+                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return None
         result = _row_to_run(row)
         # Surface concurrency stats from the last concurrency_stats system event.
         stats_row = conn.execute(
@@ -485,6 +626,7 @@ def list_runs(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     initialize_runs_db(base_path)
+    _recover_orphaned_runs_on_read(base_path)
     clauses: list[str] = []
     params: list[Any] = []
     if branch_def_id:
@@ -553,7 +695,7 @@ def list_events(
 # whether new events have landed. Callers don't need to wait the full
 # max_wait_s once the run has resolved.
 _TERMINAL_STATUSES = frozenset({
-    "completed", "failed", "cancelled",
+    "completed", "failed", "cancelled", "interrupted",
 })
 
 
