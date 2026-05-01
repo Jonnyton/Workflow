@@ -23,7 +23,8 @@
     | 'concept'
     | 'note'
     | 'plan'
-    | 'draft';
+    | 'draft'
+    | 'hub';
   type Lens = 'all' | 'loop' | 'repo' | 'fantasy' | 'coding' | 'website' | 'mcp';
   type SourceType = 'mcp' | 'repo' | 'website' | 'loop';
 
@@ -63,7 +64,7 @@
     r: number;
   };
 
-  type AtlasEdge = Edge & { source?: SourceType };
+  type AtlasEdge = Edge & { source?: SourceType; derived?: boolean };
 
   const W = 1220;
   const H = 780;
@@ -81,8 +82,11 @@
     concept: { color: 'var(--violet-200)', label: 'Concept', r: 8 },
     note: { color: 'var(--violet-400)', label: 'Note', r: 8 },
     plan: { color: 'var(--ember-300)', label: 'Plan', r: 9 },
-    draft: { color: 'var(--signal-idle)', label: 'Draft', r: 7 }
+    draft: { color: 'var(--signal-idle)', label: 'Draft', r: 7 },
+    hub: { color: '#f6c177', label: 'Relationship hub', r: 9 }
   };
+
+  const GENERIC_TAGS = new Set(['bug', 'bugs', 'draft', 'wiki', 'public', 'universe', 'workflow']);
 
   const LENSES: Array<{ id: Lens; label: string }> = [
     { id: 'all', label: 'All' },
@@ -132,7 +136,8 @@
       concept: { x: 1040, y: 430 },
       note: { x: 1040, y: 250 },
       plan: { x: 1030, y: 620 },
-      draft: { x: 700, y: 640 }
+      draft: { x: 700, y: 640 },
+      hub: { x: 590, y: 410 }
     };
     return anchors[type];
   }
@@ -236,6 +241,86 @@
     for (const draft of s.wiki?.drafts ?? []) addNode(nodes, { id: `draft:${draft.slug}`, type: 'draft', title: draft.title, summary: draft.slug, tags: s.tags?.[`draft:${draft.slug}`] ?? [], sources: ['mcp'], paths: [draft.slug] });
   }
 
+  function addHub(nodes: Map<string, AtlasNode>, id: string, title: string, summary: string, sources: SourceType[], lensValues?: Lens[]) {
+    addNode(nodes, {
+      id,
+      type: 'hub',
+      title,
+      summary,
+      sources,
+      lens: lensValues
+    });
+  }
+
+  function addCollectionEdges(
+    nodes: Map<string, AtlasNode>,
+    edges: Map<string, AtlasEdge>,
+    hubId: string,
+    targets: AtlasNode[],
+    source: SourceType,
+    kind = 'collection'
+  ) {
+    for (const target of targets) {
+      addEdge(edges, { from: hubId, to: target.id, kind, source, derived: true }, nodes);
+    }
+  }
+
+  function addRelationshipLayers(nodes: Map<string, AtlasNode>, edges: Map<string, AtlasEdge>, repoId: string) {
+    const byType = (type: NodeType) => [...nodes.values()].filter((node) => node.type === type);
+    const bugs = byType('bug');
+    const goals = byType('goal');
+    const universes = byType('universe');
+    const drafts = byType('draft');
+    const wikiPages = [...byType('bug'), ...byType('concept'), ...byType('note'), ...byType('plan'), ...byType('draft')];
+    const gitBranches = byType('git');
+    const areas = byType('area');
+
+    addHub(nodes, 'hub:mcp-commons', 'MCP commons', 'Live MCP collection: goals, universes, wiki pages, tags, and extracted references.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:wiki-pages', 'Wiki pages', 'Promoted and draft wiki pages returned by the public MCP feed.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:public-bugs', 'Public bug tracker', 'Every public BUG page belongs to the same MCP-backed bug tracker before stronger edges route it into the loop or a subsystem.', ['mcp'], ['all', 'mcp', 'loop', 'coding']);
+    addHub(nodes, 'hub:public-goals', 'Public goals', 'Goal records from the MCP commons.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:universes', 'Live universes', 'Universe rows currently visible through MCP.', ['mcp'], ['all', 'mcp', 'fantasy']);
+    addHub(nodes, 'hub:wiki-drafts', 'Wiki drafts', 'Draft wiki pages are not loose debris; they are draft-state commons material.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:github-branches', 'GitHub branches', 'Branch refs returned by GitHub or the local repo snapshot.', ['repo'], ['all', 'repo', 'coding']);
+
+    addEdge(edges, { from: 'hub:mcp-commons', to: 'hub:wiki-pages', kind: 'collection', source: 'mcp', derived: true }, nodes);
+    addEdge(edges, { from: 'hub:mcp-commons', to: 'hub:public-goals', kind: 'collection', source: 'mcp', derived: true }, nodes);
+    addEdge(edges, { from: 'hub:mcp-commons', to: 'hub:universes', kind: 'collection', source: 'mcp', derived: true }, nodes);
+    addEdge(edges, { from: 'hub:wiki-pages', to: 'hub:public-bugs', kind: 'collection', source: 'mcp', derived: true }, nodes);
+    addEdge(edges, { from: 'hub:wiki-pages', to: 'hub:wiki-drafts', kind: 'collection', source: 'mcp', derived: true }, nodes);
+    addEdge(edges, { from: repoId, to: 'hub:github-branches', kind: 'collection', source: 'repo', derived: true }, nodes);
+
+    addCollectionEdges(nodes, edges, 'hub:public-bugs', bugs, 'mcp', 'tracked-in');
+    addCollectionEdges(nodes, edges, 'hub:public-goals', goals, 'mcp');
+    addCollectionEdges(nodes, edges, 'hub:universes', universes, 'mcp');
+    addCollectionEdges(nodes, edges, 'hub:wiki-drafts', drafts, 'mcp');
+    addCollectionEdges(nodes, edges, 'hub:wiki-pages', wikiPages.filter((node) => node.type !== 'bug' && node.type !== 'draft'), 'mcp');
+    addCollectionEdges(nodes, edges, 'hub:github-branches', gitBranches, 'repo');
+    addCollectionEdges(nodes, edges, repoId, areas, 'repo', 'contains');
+
+    const tagged = new Map<string, AtlasNode[]>();
+    for (const node of nodes.values()) {
+      if (node.type === 'hub') continue;
+      for (const tag of node.tags) {
+        const normalized = tag.trim().toLowerCase();
+        if (!normalized || GENERIC_TAGS.has(normalized)) continue;
+        const bucket = tagged.get(normalized) ?? [];
+        bucket.push(node);
+        tagged.set(normalized, bucket);
+      }
+    }
+    for (const [tag, targets] of tagged) {
+      if (targets.length < 2) continue;
+      const id = `hub:tag:${tag.replace(/[^a-z0-9]+/g, '-')}`;
+      const sources = uniq(targets.flatMap((target) => target.sources));
+      const source = sources.includes('mcp') ? 'mcp' : (sources[0] ?? 'repo');
+      const sourceLenses = sources.filter((source) => source === 'mcp' || source === 'repo' || source === 'website' || source === 'loop') as Lens[];
+      addHub(nodes, id, `#${tag}`, `Shared MCP/repo tag across ${targets.length} graph nodes.`, sources, ['all', ...sourceLenses]);
+      addEdge(edges, { from: 'hub:mcp-commons', to: id, kind: 'tag', source, derived: true }, nodes);
+      addCollectionEdges(nodes, edges, id, targets, source, 'tag');
+    }
+  }
+
   function buildAtlas(s: Snapshot, r: RepoSnapshot): { allNodes: AtlasNode[]; allEdges: AtlasEdge[] } {
     const nodes = new Map<string, AtlasNode>();
     const edgeMap = new Map<string, AtlasEdge>();
@@ -294,6 +379,7 @@
       const source: SourceType = edge.from.includes('patch-loop') || edge.to.includes('patch-loop') || edge.from.includes('change_loop') || edge.to.includes('change_loop') ? 'loop' : 'repo';
       addEdge(edgeMap, { ...edge, source }, nodes);
     }
+    addRelationshipLayers(nodes, edgeMap, r.repo.id);
 
     return { allNodes: [...nodes.values()], allEdges: [...edgeMap.values()] };
   }
@@ -396,6 +482,7 @@
     }
     return atlas.allNodes.filter((node) => !connected.has(node.id)).length;
   });
+  const hubCount = $derived(atlas.allNodes.filter((node) => node.type === 'hub').length);
   const searchResults = $derived.by(() => filteredBaseNodes.slice(0, 18));
 
   function pin(id: string, ev?: MouseEvent) {
@@ -473,7 +560,7 @@
     </div>
     <h1>Everything, wired up.</h1>
     <p class="lead">
-      The graph now merges the live MCP commons with the real repo surface: GitHub branches, project areas, website pages, workflow branches, goals, universes, bugs, notes, plans, and the patch loop. Search, lens, click, and traverse neighbors like an Obsidian map of the whole project.
+      The graph now merges the live MCP commons with the real repo surface: GitHub branches, project areas, website pages, workflow branches, goals, universes, bugs, notes, plans, and the patch loop. Collection and tag layers keep real project objects connected without hiding which edges are explicit evidence.
     </p>
   </div>
 </section>
@@ -484,7 +571,8 @@
       <div class="metric-grid">
         <div><strong>{atlas.allNodes.length}</strong><span>unique nodes</span></div>
         <div><strong>{atlas.allEdges.length}</strong><span>edges</span></div>
-        <div><strong>{orphanCount}</strong><span>orphans</span></div>
+        <div><strong>{hubCount}</strong><span>relation hubs</span></div>
+        <div><strong>{orphanCount}</strong><span>isolated</span></div>
       </div>
 
       <label class="search">
@@ -529,7 +617,7 @@
       <div class="graph-stage__top">
         <div>
           <h2>{LENSES.find((item) => item.id === lens)?.label ?? 'All'} lens</h2>
-          <p>{nodes.length} visible nodes from {atlas.allNodes.length} unique project nodes. Edges are deduped after MCP and repo layers merge.</p>
+          <p>{nodes.length} visible nodes from {atlas.allNodes.length} unique project nodes. Strong edges are explicit references; faint dashed edges are true collection/tag relationships from MCP and GitHub.</p>
         </div>
         <div class="legend">
           {#each Object.entries(TYPE_META) as [type, meta]}
@@ -552,6 +640,7 @@
                 class="edge"
                 class:hot={visibleNode && neighborIds.has(edge.from) && neighborIds.has(edge.to)}
                 class:loop={edge.source === 'loop'}
+                class:derived={edge.derived}
               />
             {/if}
           {/each}
@@ -579,7 +668,7 @@
             >
               <circle class="node__halo" r={node.r + 6} />
               <circle class="node__core" r={node.r} style:fill={TYPE_META[node.type].color} />
-              {#if node.type === 'repo' || node.type === 'area' || node.type === 'route' || node.type === 'branch' || node.type === 'goal' || pinned === node.id || active === node.id}
+              {#if node.type === 'repo' || node.type === 'hub' || node.type === 'area' || node.type === 'route' || node.type === 'branch' || node.type === 'goal' || pinned === node.id || active === node.id}
                 <text x={node.r + 7} y="4">{node.title}</text>
               {/if}
             </g>
@@ -620,7 +709,7 @@
               </button>
             {/each}
           {:else}
-            <p>No visible neighbors. This is an honest orphan in the current graph.</p>
+            <p>No visible relationships. This is a true orphan in the current graph, not just a node waiting for collection or tag context.</p>
           {/if}
         </div>
         {#if pinned}<button class="unpin" onclick={(event) => { event.stopPropagation(); pinned = null; }}>Unpin</button>{/if}
@@ -662,14 +751,15 @@
   }
   .metric-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     overflow: hidden;
     border: 1px solid var(--border-1);
     border-radius: 8px;
     background: var(--bg-inset);
   }
   .metric-grid div { display: grid; gap: 3px; padding: 10px 8px; border-left: 1px solid var(--border-1); }
-  .metric-grid div:first-child { border-left: 0; }
+  .metric-grid div:nth-child(odd) { border-left: 0; }
+  .metric-grid div:nth-child(n + 3) { border-top: 1px solid var(--border-1); }
   .metric-grid strong { color: var(--fg-1); font-family: var(--font-display); font-size: 24px; line-height: 1; font-weight: 500; }
   .metric-grid span { color: var(--fg-3); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; }
 
@@ -782,8 +872,9 @@
     background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 38%), var(--bg-inset);
   }
   .edge { stroke: rgba(255, 255, 255, 0.16); stroke-width: 1; transition: stroke var(--dur-base), opacity var(--dur-base), stroke-width var(--dur-base); }
+  .edge.derived { stroke: rgba(246, 193, 119, 0.24); stroke-dasharray: 4 7; opacity: 0.62; }
   .edge.loop { stroke: rgba(233, 93, 123, 0.38); stroke-width: 1.2; }
-  .edge.hot { stroke: var(--ember-600); stroke-width: 2; opacity: 0.9; }
+  .edge.hot { stroke: var(--ember-600); stroke-width: 2; opacity: 0.9; stroke-dasharray: none; }
   .node { cursor: pointer; outline: none; }
   .node__halo { fill: transparent; stroke: currentColor; stroke-width: 0; opacity: 0; transition: opacity var(--dur-fast), stroke-width var(--dur-fast); }
   .node__core { transition: opacity var(--dur-base), filter var(--dur-fast); }
