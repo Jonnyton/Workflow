@@ -169,6 +169,17 @@ class TestDescribeBranchApproval:
         assert "n2" not in str(result["unapproved_source_code_nodes"])
 
 
+def test_branch_design_guide_gates_ready_to_run_on_runnable():
+    """BUG-031: prompt guidance must not promise readiness when runnable=false."""
+    from workflow.api.branches import _BRANCH_DESIGN_GUIDE
+
+    text = " ".join(_BRANCH_DESIGN_GUIDE.split())
+    assert "read the returned `runnable` field" in text
+    assert "If `runnable=true`, tell the user their branch is ready to run" in text
+    assert "If `runnable=false`, do NOT say it is ready" in text
+    assert "unapproved_source_code_nodes" in text
+
+
 # ---------------------------------------------------------------------------
 # get_branch tests
 # ---------------------------------------------------------------------------

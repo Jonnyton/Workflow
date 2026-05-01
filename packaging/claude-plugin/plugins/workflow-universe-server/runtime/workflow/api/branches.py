@@ -2799,9 +2799,12 @@ per-turn tool-call budget is not at risk:
 
 ## Hard rule
 
-After `describe_branch`, tell the user their branch is ready to run. Use
+After `describe_branch`, read the returned `runnable` field. If
+`runnable=true`, tell the user their branch is ready to run. Use
 `run_branch` with a JSON `inputs_json` that fills the state_schema fields.
-The runner returns a `run_id`, final status, and per-node trace.
+The runner returns a `run_id`, final status, and per-node trace. If
+`runnable=false`, do NOT say it is ready; surface the blocker from
+`errors`, `unapproved_source_code_nodes`, or `sandbox_warnings` and stop.
 
 ## Power users
 
