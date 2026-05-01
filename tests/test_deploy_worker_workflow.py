@@ -143,6 +143,14 @@ def _get_step_condition(steps: list[dict], step_name_fragment: str) -> str | Non
     return None
 
 
+def _get_step(steps: list[dict], step_name_fragment: str) -> dict | None:
+    for step in steps:
+        name = step.get("name", "") or ""
+        if step_name_fragment.lower() in name.lower():
+            return step
+    return None
+
+
 def test_dry_run_step_fires_on_pull_request():
     wf = _load_workflow()
     steps = wf["jobs"]["deploy-worker"]["steps"]
@@ -168,6 +176,20 @@ def test_dry_run_does_not_fire_on_push():
     # The condition fires on pull_request and workflow_dispatch+dry_run=true.
     # It must NOT contain a bare "push" that would run on every push.
     assert "event_name == 'push'" not in cond
+
+
+def test_pull_requests_do_not_require_cloudflare_secrets():
+    """PR validation must not fail before Worker unit tests when deploy secrets are absent."""
+    wf = _load_workflow()
+    steps = wf["jobs"]["deploy-worker"]["steps"]
+
+    verify = _get_step(steps, "Verify secrets present")
+    assert verify is not None, "workflow must keep a live-deploy secret check"
+    assert verify.get("if") == "github.event_name != 'pull_request'"
+
+    dry_run = _get_step(steps, "dry-run")
+    assert dry_run is not None
+    assert "skipping Wrangler dry-run" in dry_run.get("run", "")
 
 
 # ---------------------------------------------------------------------------
