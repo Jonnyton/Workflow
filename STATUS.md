@@ -33,6 +33,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28). Single param add. | workflow/api/runs.py, tests/ | #18 | dev-ready |
 | Claude.ai injection mitigation — §5/§5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | #18 | dev-ready |
 | Community change loop — controls live + chatbot proof green; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | #18 lock overlaps tests/docstrings | monitoring |
+| Daemon memory governor slice — enforce bounded wiki status, compact signals, and runtime memory packet without touching locked tests/. | workflow/daemon_memory.py, workflow/daemon_wiki.py, fantasy_daemon/__main__.py, STATUS.md | tests/ locked by #18; add committed tests after lock clears | claimed:codex-gpt5-desktop |
 | Enable Actions PR creation for auto-fix — repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs — remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | #18 | nav-then-dev |
 | Windows full-suite backup.sh path fix — clean HEAD: `bash.exe` receives raw `C:\...` path and cannot find script. | tests/test_backup_script.py | #18 | dev-ready |
