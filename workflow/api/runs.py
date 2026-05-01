@@ -358,16 +358,14 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
 def _action_run_branch(kwargs: dict[str, Any]) -> str:
     """Execute a branch once.
 
-    Durability guarantee (v1): runs are *terminal-on-restart*. If the
-    daemon exits while a run is in flight, the row is marked
-    ``interrupted`` on next startup (see
-    ``workflow.runs.recover_in_flight_runs``) and ``get_run`` returns
-    ``resumable=false`` with ``resumable_reason="v1 terminal-on-restart"``.
-    To continue, re-invoke ``run_branch`` with the same ``branch_def_id``
-    and ``inputs_json`` — a new ``run_id`` is returned. Mid-run resume
-    from a SqliteSaver checkpoint is a future extension and is not
-    available today; do not poll an ``interrupted`` run expecting it to
-    flip back to ``running``.
+    Durability guarantee: run rows survive daemon restarts. If the daemon
+    exits while a run is in flight, startup recovery marks the row
+    ``interrupted`` (see ``workflow.runs.recover_in_flight_runs``).
+    ``get_run`` reports whether a SqliteSaver checkpoint is available:
+    use ``resume_run`` when ``resumable=true``; otherwise re-invoke
+    ``run_branch`` with the same ``branch_def_id`` and ``inputs_json`` to
+    start a replacement run. Do not poll an ``interrupted`` run expecting
+    it to flip back to ``running`` on its own.
     """
     from workflow.api.branches import _resolve_branch_id
     from workflow.api.engine_helpers import _current_actor
@@ -573,14 +571,21 @@ def _compose_run_snapshot(
         "summary": summary,
         "recursion_limit": recursion_limit,
     }
-    # INTERRUPTED runs are terminal in v1 (durability guarantee — see
-    # ``_action_run_branch`` docstring + ``runs.recover_in_flight_runs``).
-    # The client must rerun with the same ``inputs_json``; it cannot be
-    # polled to recovery. Surface this explicitly so chatbots don't
-    # busy-wait forever.
+    # INTERRUPTED runs are restart-recovered rows. They are resumable only
+    # when the SqliteSaver checkpoint for their thread is still present.
+    # Surface the distinction explicitly so chatbots can choose resume_run
+    # when it can work and rerun from inputs when it cannot.
     if run_record["status"] == "interrupted":
-        snapshot["resumable"] = False
-        snapshot["resumable_reason"] = "v1 terminal-on-restart"
+        from workflow.runs import _has_checkpoint
+
+        thread_id = run_record.get("thread_id") or run_record["run_id"]
+        if _has_checkpoint(_base_path(), thread_id):
+            snapshot["resumable"] = True
+            snapshot["resumable_reason"] = "sqlite-checkpoint-available"
+            snapshot["suggested_action"] = "Use resume_run to continue from the last checkpoint."
+        else:
+            snapshot["resumable"] = False
+            snapshot["resumable_reason"] = "v1 terminal-on-restart"
     # BUG-029: enrich failed snapshots so chatbots have a user-actionable hint.
     # `actionable_by` tells the chatbot WHO can fix it — chatbot/host/user —
     # so it doesn't have to guess (Mara's failure mode 2026-04-24).

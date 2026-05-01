@@ -1,14 +1,16 @@
-"""Tests for the v1 terminal-on-restart contract surfaced by get_run.
+"""Tests for the restart-interrupted run contract surfaced by get_run.
 
 STATUS.md Approved-bugs 2026-04-22 — in-flight run recovery surface.
 ``recover_in_flight_runs`` already marks restart-interrupted runs as
 ``interrupted`` with a descriptive error. The MCP ``get_run`` tool now
-exposes this explicitly so clients don't busy-wait an interrupted run
-expecting it to flip back.
+exposes this explicitly so clients resume only when a checkpoint exists
+and don't busy-wait an interrupted run expecting it to flip back.
 
 Invariants:
+- get_run on INTERRUPTED returns ``resumable=True`` when its SqliteSaver
+  checkpoint exists.
 - get_run on INTERRUPTED returns ``resumable=False`` + a
-  ``resumable_reason`` string.
+  ``resumable_reason`` string when no checkpoint exists.
 - The original error message (``"Server restarted while this run was in
   flight."``) is preserved in the ``error`` field.
 - Non-interrupted runs don't carry ``resumable`` (absence = not
@@ -20,6 +22,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -74,6 +77,23 @@ def test_interrupted_run_get_run_surfaces_resumable_false(run_env):
     assert got["status"] == "interrupted"
     assert got["resumable"] is False
     assert got["resumable_reason"] == "v1 terminal-on-restart"
+    assert "Server restarted" in got["error"]
+
+
+def test_interrupted_run_get_run_surfaces_resumable_true_with_checkpoint(run_env):
+    us, base = run_env
+    rid = _create_running_run(base, us)
+
+    from workflow.runs import recover_in_flight_runs
+    assert recover_in_flight_runs(base) == 1
+
+    with patch("workflow.runs._has_checkpoint", return_value=True):
+        got = _call(us, "get_run", run_id=rid)
+
+    assert got["status"] == "interrupted"
+    assert got["resumable"] is True
+    assert got["resumable_reason"] == "sqlite-checkpoint-available"
+    assert got["suggested_action"] == "Use resume_run to continue from the last checkpoint."
     assert "Server restarted" in got["error"]
 
 

@@ -2241,13 +2241,13 @@ def recover_in_flight_runs(base_path: str | Path) -> int:
     Called at Workflow Server startup to clean up runs that were in
     flight when the server died. Returns the number of rows updated.
 
-    v1 contract: ``interrupted`` is terminal. Callers rerun with the
-    same ``inputs_json`` to continue; the MCP surface exposes this via
-    ``get_run.resumable=false`` (see ``_compose_run_snapshot``). Mid-run
-    resume via SqliteSaver checkpoint + thread_id is a future extension
-    — not available today. Hard-rule #8 (fail loudly) is satisfied by
-    the descriptive error field + terminal status; do not silently
-    drop interrupted runs or loop a poll expecting them to re-run.
+    Contract: ``interrupted`` is a restart-recovered status, not automatic
+    background recovery. Callers inspect ``get_run.resumable``. If the
+    run's SqliteSaver checkpoint is still present, ``resume_run`` can
+    continue from it; otherwise callers rerun with the same ``inputs_json``.
+    Hard-rule #8 (fail loudly) is satisfied by the descriptive error field
+    + explicit status; do not silently drop interrupted runs or loop a poll
+    expecting them to re-run.
     """
     initialize_runs_db(base_path)
     now = _now()
