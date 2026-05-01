@@ -339,20 +339,21 @@ Progress snapshot, 2026-05-01:
 - Card 1 ready-draft locally: `/connect` is now a customer path chooser with
   Claude, ChatGPT, no-chatbot-login, IDE, workspace-admin, and custom-host
   paths plus launch-gate truth.
-- Card 5 ready-draft locally: `docs/ops/mcp-host-proof-registry.md` records
-  per-host claim status and local verification evidence.
-- Machine-readable discovery ready-draft locally: `packaging/registry/server.json`
+- Card 5 live-updated: `docs/ops/mcp-host-proof-registry.md` records
+  per-host claim status plus local and production verification evidence.
+- Machine-readable discovery live-artifact: `packaging/registry/server.json`
   validates against the official schema and points at
   `https://tinyassets.io/mcp-directory`;
   `WebSite/site/static/llms.txt` tells chatbots when to recommend Workflow and
   when to caveat host support.
-- Directory endpoint branch slice: `workflow/directory_server.py` exposes 11
+- Directory endpoint live slice: `workflow/directory_server.py` exposes 11
   narrow tools with explicit read/open/destructive annotations and no catch-all
-  `action` inputs; the Worker routes `/mcp-directory` to the same tunnel.
+  `action` inputs; production `/mcp-directory` initializes and tools/list
+  returns the 11 directory tools.
 - Submission packets branch-ready: `docs/ops/mcp-directory-submission-packet.md`
   and `chatgpt-app-submission.json`.
-- Not complete until Gate 0 is green for both endpoints, the branch is
-  merged/deployed, the MCP Registry draft is published by an authorized
+- Code/deploy gate complete for both endpoints. Product rollout is still not
+  complete until the MCP Registry draft is published by an authorized
   GitHub/registry account, Claude/OpenAI submissions are accepted, and
   first-use evidence is recorded.
 

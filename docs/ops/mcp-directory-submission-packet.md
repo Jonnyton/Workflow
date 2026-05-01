@@ -202,7 +202,19 @@ Blockers:
   - `python scripts/mcp_public_canary.py --url http://127.0.0.1:8017/mcp-directory --timeout 10 --verbose`
   - `python scripts/mcp_probe.py --url http://127.0.0.1:8017/mcp-directory --raw tools`
 
-After deployment, run:
+## Live Evidence
+
+Production evidence, 2026-05-01:
+
+- PR #123 merged as `d6a44eb`; prod deploy run `25233226847` passed.
+- PR #124 merged as `de4a921`; Worker workflow can derive account ID from the
+  `tinyassets.io` zone when the optional account ID secret is missing.
+- PR #125 merged as `e8e0fd0`; manual Worker deploy run `25233386849` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` returned OK.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` returned OK.
+- `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory tools` returned the 11 directory tools listed above.
+
+For future deployment checks, run:
 
 ```powershell
 python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose
