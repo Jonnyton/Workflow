@@ -32,50 +32,50 @@
   ];
   const customerPaths = [
     {
-      title: 'App directory',
-      status: 'Pending host acceptance',
-      account: 'Normal eligible Claude or ChatGPT user. No Developer Mode or custom URL once that host accepts Workflow.',
-      setup: 'Find Workflow in the host connector/app directory after acceptance. Until then, use the custom URL path.',
-      proof: 'Do not claim listed until Claude directory or ChatGPT App Directory proof is recorded.',
-      anchor: '#directory-status'
-    },
-    {
-      title: 'Custom URL today',
-      status: 'Live',
-      account: 'Use any host that lets you add a custom remote MCP connector. Claude is the best current hosted-chat path.',
-      setup: `Paste ${url} into the host connector settings, then enable it in a conversation.`,
-      proof: 'The full custom connector endpoint is live; each host still needs fresh user-surface proof before parity claims.',
+      title: 'Claude.ai',
+      status: 'Best live chat path',
+      account: 'Use this if Claude is where you already ask for help. Free, Pro, Max, Team, and Enterprise can use custom remote MCP with plan limits.',
+      setup: `Click Add it, paste ${url} into Claude connector settings, approve it, then start a chat with Workflow enabled.`,
+      proof: 'Custom URL is the current path. Claude directory listing is still pending, so the page does not claim directory acceptance.',
       anchor: '#mcp-server-url'
     },
     {
-      title: 'No chatbot login',
-      status: 'Local/self-hosted path',
-      account: 'No Claude or ChatGPT login required when you control the host surface.',
-      setup: 'Use Open WebUI, LibreChat, LM Studio, Jan, OpenClaw/channel gateways, or a custom MCP host when that path has proof.',
-      proof: 'Open WebUI Streamable HTTP is the first verification target; unverified hosts stay labeled compatible-by-spec.',
+      title: 'ChatGPT',
+      status: 'Apps path pending',
+      account: 'Use this if ChatGPT is your main chat surface or your workspace will approve apps/connectors centrally.',
+      setup: 'Watch for the Apps or admin-approved connector path. Until proof lands, do not treat the raw MCP endpoint as a normal browser page.',
+      proof: 'ChatGPT public claims wait for Apps SDK, BUG-034, and workspace approval proof.',
+      anchor: '#chatgpt-status'
+    },
+    {
+      title: 'Open WebUI / LibreChat / OpenClaw',
+      status: 'Self-hosted path',
+      account: 'Use this if you run your own chat UI, local model shell, or channel gateway and do not want a Claude or ChatGPT login.',
+      setup: `Add ${url} as a Streamable HTTP / remote MCP server. Use a bridge only when that host requires one.`,
+      proof: 'Open WebUI is the first no-login verification target. LibreChat, OpenClaw, and peers stay compatible-by-spec until smoke traces land.',
       anchor: '#host-coverage-title'
     },
     {
-      title: 'IDE agents',
+      title: 'VS Code / Cursor / Codex',
       status: 'Builder path',
-      account: 'Depends on the IDE host: VS Code/GitHub Copilot, Cursor, Gemini CLI, Cline/Roo, Continue, Windsurf, Replit Agent.',
-      setup: 'Use the official MCP Registry path when available, or host-specific MCP config pointed at the canonical URL.',
-      proof: 'Each host needs a tool-list plus safe tool-call smoke before public verified copy.',
+      account: 'Use this if you want Workflow available inside your coding agent or IDE while you work in a repo.',
+      setup: `Point the host MCP config or registry entry at ${url}, then enable Workflow for the workspace.`,
+      proof: 'Registry metadata validates. Each IDE host still needs a tool-list plus safe read smoke before verified copy.',
       anchor: '#host-coverage-title'
     },
     {
-      title: 'Workspace admins',
+      title: 'Team / enterprise workspace',
       status: 'One approval for many users',
-      account: 'Admin or owner approval may be required for ChatGPT Business/Enterprise/Edu, Claude Team/Enterprise, Mistral, and Copilot Studio.',
-      setup: 'Use the submission/admin packet: scopes, safety copy, tests, support path, and proof registry.',
+      account: 'Use this if an admin controls connectors, apps, or agent tools for ChatGPT Business/Enterprise/Edu, Claude Team/Enterprise, Mistral, or Copilot Studio.',
+      setup: 'Send the admin packet: scopes, safety copy, test plan, support path, and proof registry.',
       proof: 'Submission kits are in progress; public claims wait for host approval.',
       anchor: '#host-coverage-title'
     },
     {
       title: 'Custom MCP host',
       status: 'Protocol path',
-      account: 'No specific chatbot account required.',
-      setup: 'Implement Streamable HTTP MCP client support and run the public canary/smoke prompts against the right endpoint for your use case.',
+      account: 'Use this if you are building your own chatbot, agent host, app, or integration surface.',
+      setup: `Implement Streamable HTTP MCP client support, call ${url}, and run the public canary/smoke prompts against your host.`,
       proof: 'Compatible by spec until your host is added to the proof registry.',
       anchor: '#host-coverage-title'
     }
@@ -224,7 +224,7 @@
       <RitualLabel color="var(--signal-live)">· Pick the customer path ·</RitualLabel>
       <h2 id="chooser-title">Connect from the host you already use.</h2>
       <p class="chooser__lead">
-        The goal is not to make people understand MCP. The goal is to make Workflow the obvious durable-work tool when their chatbot, IDE, local model UI, or workspace admin needs one.
+        Pick the card with the tool you already use. Each path says what to do now, and what still waits for public proof.
       </p>
 
       <div class="path-grid">
@@ -236,15 +236,15 @@
             </div>
             <dl>
               <div>
-                <dt>Login</dt>
+                <dt>This is me</dt>
                 <dd>{path.account}</dd>
               </div>
               <div>
-                <dt>Setup</dt>
+                <dt>Do this</dt>
                 <dd>{path.setup}</dd>
               </div>
               <div>
-                <dt>Proof</dt>
+                <dt>Proof state</dt>
                 <dd>{path.proof}</dd>
               </div>
             </dl>
