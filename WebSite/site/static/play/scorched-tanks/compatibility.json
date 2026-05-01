@@ -2,11 +2,13 @@
   "title": "Scorched Tanks",
   "platform": "Amiga OCS/ECS",
   "exact_game_state": "NEEDS_RIGHTS_CLEARED_FIRMWARE",
+  "compatibility_port_state": "PLAYABLE_WITH_LOCAL_PROOF",
   "media": {
     "source": "Scorched Tanks v1.90 ADF",
     "runtime_asset": "assets/scorched-tanks-v1.90-autostart-30582ca3.adf",
     "patches": [
-      "S/Startup-Sequence autostarts Scorched_TanksV1.90 with corrected file metadata"
+      "S/Startup-Sequence autostarts Scorched_TanksV1.90 with corrected file metadata",
+      "Injected ADF can be mounted into df0 after media injection"
     ]
   },
   "runtime": {
@@ -16,6 +18,7 @@
   },
   "verification": {
     "date": "2026-05-01",
-    "result": "v1.90 autostart media now boots with a valid Startup-Sequence header and reaches the game executable under AROS; exact play still requires rights-cleared Kickstart verification."
+    "exact_result": "v1.90 autostart media has valid boot metadata and reaches the AROS shell in vAmigaWeb, but the AROS firmware path still does not reach playable Scorched Tanks.",
+    "compatibility_port_result": "Local browser proof hit Kade with a real canvas click, Big Shot, and WebAudio running; this is a labeled fallback, not exact original-game proof."
   }
 }
