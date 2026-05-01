@@ -88,7 +88,11 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
     # 1. ENV-UNREADABLE (Task #3 class) — most specific, check first.
     (
         TriageClass.ENV_UNREADABLE,
-        re.compile(r"ENV-UNREADABLE"),
+        re.compile(
+            r"(?m)^(?!.*ExecStartPre=)"
+            r"(?!.*\becho\s+['\"]?ENV-UNREADABLE:)"
+            r".*ENV-UNREADABLE:"
+        ),
         True,
         False,
         "systemd/entrypoint/sed-site emitted the canonical marker",

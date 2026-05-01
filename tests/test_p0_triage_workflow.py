@@ -132,6 +132,12 @@ def test_restart_uses_env_file():
     assert "--env-file /etc/workflow/env" in _text()
 
 
+def test_triage_uses_live_systemd_compose_file():
+    text = _text()
+    assert "/opt/workflow/compose.yml" in text
+    assert "/opt/workflow/deploy/compose.yml" not in text
+
+
 # ---------------------------------------------------------------------------
 # (f) Re-probe uses canonical URL
 # ---------------------------------------------------------------------------
