@@ -242,6 +242,12 @@ def test_wait_for_run_rejects_unknown_run(us_env):
     assert "not found" in result["error"].lower()
 
 
+def test_wait_for_run_is_advertised_in_available_actions(us_env):
+    us, _ = us_env
+    result = json.loads(us.extensions(action="not-a-real-action"))
+    assert "wait_for_run" in result["available_actions"]
+
+
 def test_wait_for_run_caps_max_wait_at_120s(us_env):
     """A client asking for a 10-minute wait should be capped at 120s
     so the server thread isn't tied up forever."""
