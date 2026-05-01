@@ -270,6 +270,60 @@ def _extract_set_tier_config(
     )
 
 
+def _extract_daemon_create(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    daemon = result.get("daemon", {}) if isinstance(result.get("daemon"), dict) else {}
+    daemon_id = str(daemon.get("daemon_id") or "")
+    name = str(daemon.get("display_name") or "")
+    return (
+        daemon_id,
+        _truncate(f"create daemon {name}"),
+        {
+            "soul_mode": daemon.get("soul_mode"),
+            "has_soul": daemon.get("has_soul"),
+            "domain_claims": daemon.get("domain_claims", []),
+        },
+    )
+
+
+def _extract_daemon_summon(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    runtime = result.get("runtime", {}) if isinstance(result.get("runtime"), dict) else {}
+    runtime_id = str(runtime.get("runtime_instance_id") or "")
+    provider = str(runtime.get("provider_name") or "")
+    daemon_id = str(runtime.get("daemon_id") or "")
+    return (
+        runtime_id,
+        _truncate(f"summon {daemon_id} on {provider}"),
+        {
+            "daemon_id": daemon_id,
+            "provider_name": provider,
+            "model_name": runtime.get("model_name"),
+            "status": runtime.get("status"),
+        },
+    )
+
+
+def _extract_daemon_banish(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    runtime = result.get("runtime", {}) if isinstance(result.get("runtime"), dict) else {}
+    runtime_id = str(runtime.get("runtime_instance_id") or "")
+    return (
+        runtime_id,
+        _truncate(f"banish runtime {runtime_id}"),
+        {
+            "daemon_id": runtime.get("daemon_id"),
+            "status": runtime.get("status"),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -285,6 +339,9 @@ WRITE_ACTIONS: dict[str, Any] = {
     "post_to_goal_pool": (_extract_post_to_goal_pool, None),
     "submit_node_bid": (_extract_submit_node_bid, None),
     "set_tier_config": (_extract_set_tier_config, None),
+    "daemon_create": (_extract_daemon_create, None),
+    "daemon_summon": (_extract_daemon_summon, None),
+    "daemon_banish": (_extract_daemon_banish, None),
 }
 
 
@@ -1057,6 +1114,167 @@ def _action_queue_list(
         "running_count": sum(1 for r in rows if r.get("status") == "running"),
         "tier_status": cfg.tier_status_map(),
     })
+
+
+# ---------------------------------------------------------------------------
+# Daemon roster + runtime actions
+# ---------------------------------------------------------------------------
+
+
+def _parse_inputs_object(inputs_json: str) -> tuple[dict[str, Any], str | None]:
+    if not inputs_json.strip():
+        return {}, None
+    try:
+        parsed = json.loads(inputs_json)
+    except json.JSONDecodeError as exc:
+        return {}, f"inputs_json invalid JSON: {exc}"
+    if not isinstance(parsed, dict):
+        return {}, "inputs_json must be a JSON object."
+    return parsed, None
+
+
+def _action_daemon_list(
+    universe_id: str = "",
+    limit: Any = 30,
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_registry import list_daemons, list_runtime_instances
+
+    uid = universe_id or _default_universe()
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = 30
+    if n <= 0:
+        n = 30
+    daemons = list_daemons(_base_path())[:n]
+    runtimes = list_runtime_instances(_base_path(), universe_id=uid)
+    return json.dumps({
+        "universe_id": uid,
+        "daemons": daemons,
+        "runtimes": runtimes,
+        "count": len(daemons),
+        "runtime_count": len(runtimes),
+    }, default=str)
+
+
+def _action_daemon_get(
+    inputs_json: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_registry import get_daemon
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
+    if not daemon_id:
+        return json.dumps({"error": "daemon_id is required."})
+    try:
+        daemon = get_daemon(
+            _base_path(),
+            daemon_id=daemon_id,
+            include_soul=bool(data.get("include_soul", False)),
+        )
+    except KeyError:
+        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
+    return json.dumps({"daemon": daemon}, default=str)
+
+
+def _action_daemon_create(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import create_daemon
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    display_name = str(data.get("display_name") or text or "").strip()
+    if not display_name:
+        return json.dumps({"error": "display_name is required."})
+    try:
+        daemon = create_daemon(
+            _base_path(),
+            display_name=display_name,
+            created_by=_current_actor(),
+            soul_mode=str(data.get("soul_mode") or "").strip() or None,
+            soul_text=str(data.get("soul_text") or ""),
+            domain_claims=data.get("domain_claims")
+            if isinstance(data.get("domain_claims"), list)
+            else None,
+            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({
+        "universe_id": universe_id or _default_universe(),
+        "daemon": daemon,
+    }, default=str)
+
+
+def _action_daemon_summon(
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import summon_daemon
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    daemon_id = str(data.get("daemon_id") or "").strip()
+    provider_name = str(data.get("provider_name") or "").strip()
+    model_name = str(data.get("model_name") or provider_name).strip()
+    uid = universe_id or str(data.get("universe_id") or "").strip() or _default_universe()
+    if not daemon_id:
+        return json.dumps({"error": "daemon_id is required."})
+    if not provider_name:
+        return json.dumps({"error": "provider_name is required."})
+    try:
+        runtime = summon_daemon(
+            _base_path(),
+            daemon_id=daemon_id,
+            universe_id=uid,
+            provider_name=provider_name,
+            model_name=model_name,
+            branch_id=branch_id or data.get("branch_id") or None,
+            created_by=_current_actor(),
+            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+        )
+    except KeyError:
+        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
+    return json.dumps({"universe_id": uid, "runtime": runtime}, default=str)
+
+
+def _action_daemon_banish(
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_registry import banish_daemon
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    runtime_id = str(data.get("runtime_instance_id") or branch_task_id or "").strip()
+    if not runtime_id:
+        return json.dumps({"error": "runtime_instance_id is required."})
+    try:
+        runtime = banish_daemon(_base_path(), runtime_instance_id=runtime_id)
+    except KeyError:
+        return json.dumps({"error": f"Runtime '{runtime_id}' not found."})
+    return json.dumps({
+        "universe_id": universe_id or _default_universe(),
+        "runtime": runtime,
+    }, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -2927,6 +3145,11 @@ def _universe_impl(
         "post_to_goal_pool": _action_post_to_goal_pool,
         "submit_node_bid": _action_submit_node_bid,
         "daemon_overview": _action_daemon_overview,
+        "daemon_list": _action_daemon_list,
+        "daemon_get": _action_daemon_get,
+        "daemon_create": _action_daemon_create,
+        "daemon_summon": _action_daemon_summon,
+        "daemon_banish": _action_daemon_banish,
         "set_tier_config": _action_set_tier_config,
     }
 

@@ -12,13 +12,15 @@ Surface guarded:
 - `WRITE_ACTIONS` table contract — every action mapped to (extractor, daemon-gate)
 - `_dispatch_with_ledger`, `_scope_universe_response`, `_ledger_target_dir`
   ledger trio — universe-tool internal pipeline
-- 27 `_action_*` handler set — present, callable, owned by this module
+- 32 `_action_*` handler set — present, callable, owned by this module
 - Daemon-liveness telemetry helpers — present, owned by this module
 - Pattern A2 wrapper: `workflow.universe_server.universe` delegates to
   `workflow.api.universe._universe_impl` (verified via simple round-trip)
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 
@@ -30,7 +32,7 @@ from workflow.api import universe as univ_mod
 def test_module_exposes_expected_public_names() -> None:
     """Contract surface — guards against silent removal post-Step-9."""
     expected = {
-        # WRITE_ACTIONS table + 14 extractor closures
+        # WRITE_ACTIONS table + 17 extractor closures
         "WRITE_ACTIONS",
         "_extract_submit_request", "_extract_give_direction",
         "_extract_set_premise", "_extract_add_canon",
@@ -39,6 +41,8 @@ def test_module_exposes_expected_public_names() -> None:
         "_extract_queue_cancel", "_extract_subscribe_goal",
         "_extract_unsubscribe_goal", "_extract_post_to_goal_pool",
         "_extract_submit_node_bid", "_extract_set_tier_config",
+        "_extract_daemon_create", "_extract_daemon_summon",
+        "_extract_daemon_banish",
         # Ledger dispatcher trio
         "_ledger_target_dir", "_scope_universe_response",
         "_dispatch_with_ledger",
@@ -48,10 +52,13 @@ def test_module_exposes_expected_public_names() -> None:
         "_last_activity_at", "_staleness_bucket", "_phase_human",
         "_compute_accept_rate_from_db", "_compute_word_count_from_files",
         "_daemon_liveness", "_parse_activity_line",
-        # 27 universe-tool action handlers
+        # 32 universe-tool action handlers
         "_action_list_universes", "_action_inspect_universe",
         "_action_read_output", "_action_submit_request",
         "_action_queue_list", "_action_daemon_overview",
+        "_action_daemon_list", "_action_daemon_get",
+        "_action_daemon_create", "_action_daemon_summon",
+        "_action_daemon_banish",
         "_action_set_tier_config", "_action_queue_cancel",
         "_action_subscribe_goal", "_action_unsubscribe_goal",
         "_action_list_subscriptions", "_action_post_to_goal_pool",
@@ -71,9 +78,9 @@ def test_module_exposes_expected_public_names() -> None:
     )
 
 
-def test_write_actions_table_has_14_entries() -> None:
-    """WRITE_ACTIONS dict literal locked at 14 entries (per Step 9 prep §2.1)."""
-    assert len(univ_mod.WRITE_ACTIONS) == 14
+def test_write_actions_table_has_17_entries() -> None:
+    """WRITE_ACTIONS dict literal includes daemon create/summon/banish writes."""
+    assert len(univ_mod.WRITE_ACTIONS) == 17
 
 
 def test_write_actions_entries_are_extractor_gate_tuples() -> None:
@@ -160,14 +167,11 @@ def test_daemon_liveness_returns_dict_with_required_keys(tmp_path) -> None:
     )
 
 
-# ── 27-handler dispatch table sanity ─────────────────────────────────────────
+# ── 32-handler dispatch table sanity ─────────────────────────────────────────
 
 
-def test_universe_impl_dispatch_table_has_27_actions() -> None:
-    """The `dispatch` table inside `_universe_impl` must cover 27 actions
-    (corrected from prep §2.3's 28 — `daemon_overview` and `set_tier_config`
-    were already in the table, no additional handlers added). Smoke-tested
-    via 'list' which is read-only."""
+def test_universe_impl_dispatch_table_has_32_actions() -> None:
+    """The `dispatch` table inside `_universe_impl` includes daemon roster actions."""
     # Round-trip "list" through _universe_impl to confirm the dispatch
     # table is wired and covers at least one read action.
     out = univ_mod._universe_impl(action="list")
@@ -177,7 +181,8 @@ def test_universe_impl_dispatch_table_has_27_actions() -> None:
 
 @pytest.mark.parametrize("action", [
     "list", "inspect", "read_output", "submit_request", "queue_list",
-    "daemon_overview", "set_tier_config", "queue_cancel",
+    "daemon_overview", "daemon_list", "daemon_get", "daemon_create",
+    "daemon_summon", "daemon_banish", "set_tier_config", "queue_cancel",
     "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
     "post_to_goal_pool", "submit_node_bid", "give_direction",
     "query_world", "read_premise", "set_premise", "add_canon",
@@ -201,3 +206,55 @@ def test_every_universe_action_dispatches(action: str) -> None:
     assert sentinel not in out, (
         f"action {action!r} dropped from _universe_impl dispatch table"
     )
+
+
+def test_daemon_actions_create_summon_and_banish(tmp_path, monkeypatch) -> None:
+    """Daemon roster actions round-trip through the public universe API body."""
+    universe_dir = tmp_path / "u1"
+    universe_dir.mkdir()
+    monkeypatch.setattr(univ_mod, "_base_path", lambda: tmp_path)
+    monkeypatch.setattr(univ_mod, "_default_universe", lambda: "u1")
+    monkeypatch.setattr(univ_mod, "_universe_dir", lambda uid: tmp_path / uid)
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "host-test")
+
+    create_out = json.loads(univ_mod._universe_impl(
+        action="daemon_create",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "display_name": "Node Scout",
+            "soul_text": "Prefer graph-science nodes with verified sources.",
+            "domain_claims": ["scientist"],
+        }),
+    ))
+    daemon = create_out["daemon"]
+    assert daemon["daemon_id"].startswith("daemon::")
+    assert daemon["soul_mode"] == "soul"
+    assert daemon["domain_claims"] == ["scientist"]
+
+    list_out = json.loads(univ_mod._universe_impl(
+        action="daemon_list",
+        universe_id="u1",
+    ))
+    assert any(item["daemon_id"] == daemon["daemon_id"] for item in list_out["daemons"])
+
+    summon_out = json.loads(univ_mod._universe_impl(
+        action="daemon_summon",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "daemon_id": daemon["daemon_id"],
+            "provider_name": "claude-code",
+            "model_name": "sonnet",
+        }),
+    ))
+    runtime = summon_out["runtime"]
+    assert runtime["daemon_id"] == daemon["daemon_id"]
+    assert runtime["provider_name"] == "claude-code"
+
+    banish_out = json.loads(univ_mod._universe_impl(
+        action="daemon_banish",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "runtime_instance_id": runtime["runtime_instance_id"],
+        }),
+    ))
+    assert banish_out["runtime"]["status"] == "retired"
