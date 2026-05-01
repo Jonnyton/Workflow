@@ -4,7 +4,7 @@ Double-click the desktop shortcut -> this script starts:
   1. One daemon per preferred provider (Author Daemons, LangGraph writing
      engines) with the writer role pinned via ``--provider <name>``
   2. MCP Workflow Server (Python, port 8001)
-  3. Cloudflare Tunnel (cloudflared, routes tinyassets.io -> localhost:8001)
+  3. Optional local Cloudflare Tunnel for dev-only debugging
 
 A system tray icon shows live status. Hover aggregates active providers.
 Right-click to start/stop per-provider daemons, change defaults, or quit.
@@ -47,18 +47,31 @@ from workflow.singleton_lock import (
 MCP_PORT = 8001
 MCP_URL = "https://tinyassets.io/mcp"
 ACTIVE_UNIVERSE_FILENAME = ".active_universe"
-TUNNEL_TOKEN = (
-    "eyJhIjoiYTQ2ZWI0ZjY5MjhkN2M1MzhiMzlmYmNlYmRlYmE0OWIi"
-    "LCJ0IjoiYjU5ZjNjZDktYTQ3YS00Yzk3LTgwZTQtNzgyNjUxM2RlNj"
-    "MwIiwicyI6Ik1EQmlPVGN6WVRBdE5qWmtPQzAwTldWaUxUa3paR1V0"
-    "T1RjeE16UXpNMll3WkdNMCJ9"
-)
+TRAY_TUNNEL_ENABLED_ENV = "WORKFLOW_TRAY_ENABLE_TUNNEL"
+TUNNEL_TOKEN_ENV = "CLOUDFLARE_TUNNEL_TOKEN"
+LEGACY_TUNNEL_TOKEN_ENV = "TUNNEL_TOKEN"
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
 PROJECT_DIR = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_DIR / "logs"
 SINGLETON_LOCK_PATH = LOG_DIR / ".tray.lock"
 
 _LOCAL_PROVIDER_SET = set(LOCAL_PROVIDERS)
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in TRUE_VALUES
+
+
+def _local_tunnel_enabled() -> bool:
+    return _env_truthy(TRAY_TUNNEL_ENABLED_ENV)
+
+
+def _local_tunnel_token() -> str:
+    return (
+        os.environ.get(TUNNEL_TOKEN_ENV, "").strip()
+        or os.environ.get(LEGACY_TUNNEL_TOKEN_ENV, "").strip()
+    )
 
 # ---------------------------------------------------------------------------
 # Icon rendering
@@ -99,7 +112,7 @@ def make_icon(color: tuple, size: int = 64) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 class UniverseServerManager:
-    """Manages N pinned-provider daemons + MCP server + cloudflared tunnel + tab watchdog."""
+    """Manages daemons, local MCP, optional dev tunnel, and tab watchdog."""
 
     def __init__(self) -> None:
         # One daemon per provider. Value is (Popen, log_handle) so the
@@ -388,8 +401,27 @@ class UniverseServerManager:
         log.write(f"\n--- Tunnel start {time.strftime('%H:%M:%S')} ---\n")
         log.flush()
 
+        if not _local_tunnel_enabled():
+            self.tunnel_proc = None
+            self._tunnel_alive = False
+            self._tunnel_ok = False
+            log.write(
+                "local tunnel disabled by default; set "
+                f"{TRAY_TUNNEL_ENABLED_ENV}=1 and {TUNNEL_TOKEN_ENV} for "
+                "dev-only tunnel debugging\n"
+            )
+            log.close()
+            return
+
+        token = _local_tunnel_token()
+        if not token:
+            log.close()
+            raise RuntimeError(
+                f"{TRAY_TUNNEL_ENABLED_ENV}=1 requires {TUNNEL_TOKEN_ENV}"
+            )
+
         self.tunnel_proc = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", "--token", TUNNEL_TOKEN],
+            ["cloudflared", "tunnel", "run", "--token", token],
             stdout=log,
             stderr=subprocess.STDOUT,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -687,7 +719,11 @@ class UniverseServerManager:
         self._phase = "Starting MCP server on port 8001..."
         self.start_mcp()
         time.sleep(2)
-        self._phase = "Starting Cloudflare tunnel..."
+        self._phase = (
+            "Starting Cloudflare tunnel..."
+            if _local_tunnel_enabled()
+            else "Skipping local Cloudflare tunnel"
+        )
         self.start_tunnel()
         self._phase = "Starting tab watchdog..."
         self.start_watchdog()
@@ -772,10 +808,17 @@ class UniverseServerManager:
 
         time.sleep(2)
 
-        # 3. Launch tunnel
-        self._phase = "Starting Cloudflare tunnel..."
+        # 3. Launch optional dev tunnel
+        self._phase = (
+            "Starting Cloudflare tunnel..."
+            if _local_tunnel_enabled()
+            else "Skipping local Cloudflare tunnel"
+        )
         self.start_tunnel()
-        print("  [OK] Cloudflare tunnel starting")
+        if self.tunnel_proc is not None:
+            print("  [OK] Cloudflare tunnel starting")
+        else:
+            print("  [skip] Local Cloudflare tunnel disabled")
 
         # 4. Launch tab watchdog
         self._phase = "Starting tab watchdog..."
