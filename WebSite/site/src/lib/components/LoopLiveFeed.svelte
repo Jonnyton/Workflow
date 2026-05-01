@@ -805,6 +805,7 @@
   .stage-detail__grid {
     display: grid;
     grid-template-columns: minmax(220px, 0.78fr) minmax(280px, 1fr) minmax(340px, 1.4fr);
+    align-items: start;
     min-width: 0;
   }
 
@@ -813,6 +814,7 @@
     align-content: start;
     gap: 10px;
     min-width: 0;
+    min-height: 0;
     padding: 16px;
     border-left: 1px solid var(--border-1);
   }
@@ -825,6 +827,7 @@
     color: var(--fg-2);
     font-size: 13.5px;
     line-height: 1.55;
+    overflow-wrap: anywhere;
   }
 
   .stage-card > strong {
@@ -885,6 +888,25 @@
     color: var(--fg-2);
     font-size: 12.5px;
     line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .stage-card--latest {
+    max-height: min(620px, 72vh);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .stage-card--latest > p {
+    max-height: min(280px, 36vh);
+    overflow-y: auto;
+    padding-right: 6px;
+    scrollbar-gutter: stable;
+  }
+
+  .stage-card--events {
+    max-height: min(620px, 72vh);
+    overflow: hidden;
   }
 
   .stage-card--events ol,
@@ -894,6 +916,13 @@
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  .stage-card--events ol {
+    max-height: min(520px, calc(72vh - 82px));
+    overflow-y: auto;
+    padding-right: 6px;
+    scrollbar-gutter: stable;
   }
 
   .stage-card--events li,
@@ -935,6 +964,7 @@
     font-size: 12.5px;
     line-height: 1.45;
     margin-bottom: 5px;
+    overflow-wrap: anywhere;
   }
 
   .stage-card a,
@@ -944,6 +974,8 @@
     font-size: 11px;
     text-decoration: none;
     text-transform: uppercase;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     width: fit-content;
   }
 
