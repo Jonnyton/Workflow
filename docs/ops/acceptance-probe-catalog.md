@@ -20,6 +20,9 @@ checks, and new-connector verification.
 **Source audit:** `docs/audits/user-chat-intelligence/2026-04-20-do-cutover-acceptance.md`
 **Persona:** bare-curious-user (no persona framing; minimal context)
 **Connector URL under test:** `https://tinyassets.io/mcp`
+**Rendered chatbot client:** Claude.ai, ChatGPT Developer Mode, or another
+browser chatbot with the Workflow connector visibly installed. Record which
+client produced the evidence.
 
 ### Prompt (paste verbatim)
 

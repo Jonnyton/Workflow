@@ -2,12 +2,12 @@
 
 **Status:** Shipped after the 2026-04-20 single-entry cutover. This is the real
 fix for the 2026-04-19 P0 URL-mismatch outage: route `tinyassets.io/mcp*`
-to the tunnel origin at `mcp.tinyassets.io`, while leaving the GoDaddy
-Website Builder landing intact for all other paths.
+to the tunnel origin at `mcp.tinyassets.io`, while leaving the GitHub Pages
+landing intact for all other paths.
 
 **After deploy:** the canonical public MCP URL returns to
-`https://tinyassets.io/mcp`. Installed Claude.ai connectors pointing at
-that URL start working again without any user action.
+`https://tinyassets.io/mcp`. Installed Workflow chatbot connectors pointing
+at that URL start working again without any user action.
 
 ---
 
@@ -15,19 +15,19 @@ that URL start working again without any user action.
 
 Before the Worker:
 
-- `tinyassets.io` apex serves GoDaddy Website Builder (landing page).
+- `tinyassets.io` apex serves GitHub Pages (landing page).
 - `mcp.tinyassets.io` serves the Cloudflare Tunnel → Workflow daemon.
-- Installed Claude.ai connectors point at `https://tinyassets.io/mcp`.
-- `tinyassets.io/mcp` has no route rule → falls through to GoDaddy's 404
+- Installed Workflow chatbot connectors point at `https://tinyassets.io/mcp`.
+- `tinyassets.io/mcp` has no route rule → falls through to the landing origin's 404
   → Claude.ai reports "Session terminated." This was the 2026-04-19 P0.
 
 After the Worker deploys:
 
 - Same DNS (tinyassets.io still Cloudflare-fronted).
-- Same GoDaddy origin for apex paths (landing unchanged).
+- Same GitHub Pages origin for apex paths (landing unchanged).
 - NEW: the Worker runs on route `tinyassets.io/mcp*`. Any `/mcp*`
   request gets proxied to `mcp.tinyassets.io` (tunnel origin) as a
-  streaming pass-through. Apex `/` + non-`/mcp` paths still hit GoDaddy.
+  streaming pass-through. Apex `/` + non-`/mcp` paths still hit GitHub Pages.
 
 ---
 
@@ -114,9 +114,9 @@ Post-deploy:
 
 | URL | Purpose |
 |---|---|
-| `https://tinyassets.io/mcp` | **Canonical — installed Claude.ai connectors.** Worker routes to tunnel. |
+| `https://tinyassets.io/mcp` | **Canonical — installed Workflow chatbot connectors.** Worker routes to tunnel. |
 | `https://mcp.tinyassets.io/mcp` | Direct-tunnel origin — Access-gated, not user-facing. Use only for internal Access/service-token debugging. |
-| `https://tinyassets.io/` | GoDaddy Website Builder landing (unchanged). |
+| `https://tinyassets.io/` | GitHub Pages landing (unchanged). |
 
 ---
 
@@ -154,7 +154,7 @@ The Worker returns **502 Bad Gateway** with a JSON body in two cases:
 - Tunnel origin returns 5xx.
 
 This is deliberate. A 502 is unambiguous: the Worker saw an upstream
-problem. Letting the fallthrough go to GoDaddy's 404 is what caused the
+problem. Letting the fallthrough go to the landing origin's 404 is what caused the
 original P0's diagnostic confusion ("is the tunnel down? or is the
 Worker broken? or is the route wrong?"). Explicit 502s end that
 ambiguity.
