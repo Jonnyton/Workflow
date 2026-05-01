@@ -280,6 +280,8 @@ def test_deploy_verifies_cloud_worker_running():
     assert "workflow-worker" in run_script
     assert "docker inspect" in run_script
     assert "State.Running" in run_script
+    assert "for i in $(seq 1 30)" in run_script
+    assert "sleep 2" in run_script
     assert "exit 1" in run_script
 
 
