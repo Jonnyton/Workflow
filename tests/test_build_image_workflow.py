@@ -40,6 +40,7 @@ def test_build_image_push_is_limited_to_runtime_paths():
     assert "STATUS.md" not in paths
     assert "docs/**" not in paths
     assert "WebSite/**" not in paths
+    assert ".github/workflows/build-image.yml" not in paths
 
     for required in {
         "Dockerfile",
@@ -52,7 +53,6 @@ def test_build_image_push_is_limited_to_runtime_paths():
         "data/world_rules.lp",
         "scripts/mcp_public_canary.py",
         "deploy/**",
-        ".github/workflows/build-image.yml",
     }:
         assert required in paths
 
