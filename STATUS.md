@@ -24,7 +24,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Spec | Status |
 |---|---|
-| [deferred] Chatbot-first daemon host controls + daemon roster/soul policy/ledger/attribution/royalty/outcome/bounty items | needs-scoping |
+| [deferred] Chatbot-first daemon host controls + daemon roster/soul/wiki/decision policy/ledger/attribution/royalty/outcome/bounty items | needs-scoping; soul/wiki/runtime boundary refined 2026-05-01 |
 
 ## Work
 
@@ -34,7 +34,6 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Daemon soul/wiki refinement — canonicalize soul identity vs wiki learning vs runtime execution. | PLAN.md, docs/vetted-specs.md, STATUS.md | - | claimed:codex-gpt5-desktop |
 | Scorched exact-original proof — live mount guard green; acceptance still requires rights-cleared Kickstart path plus input, sound, and tank hit. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart entitlement/source | host-action |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT (dev Step 7/10, fail-fast iteration; first failure landed). Target ~940 LOC residual (ROI §5.2 floor). Lock: workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, plugin mirror, ~53 test files, workflow/storage/__init__.py. | workflow/universe_server.py, workflow/api/evaluation.py, workflow/api/market.py, workflow/api/runs.py, workflow/api/status.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/ | - | claimed:dev |
 | **#24 Arc C** — Phase 1 entrypoint env migration landed; remaining fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | #18 | dev-ready |
