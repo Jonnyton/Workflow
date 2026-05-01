@@ -49,9 +49,9 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Clean-clone MCP config test mismatch — test expects ignored local `.mcp.json`; retarget to safe example config. | tests/test_mcp_server.py, .mcp.example.json, .gitignore | #18 | dev-ready |
 | R7 closure pass — items 6+7 OBVIATED (audit `2026-04-28-internal-scoping-threads-abc.md` §3); 1-5 cover Arc B/C; 8 by #25. Doc-only retirement when #25 ships. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
 | #28 + #29 audit-doc review | `docs/audits/2026-04-25-{engine-domain-api-separation,universe-server-decomposition}.md` | host | host-review |
-| Wiki #32 — wiki.py fix LIVE in prod (116a657 deployed 05:04Z); F4 composition-patterns promoted (45 pages); awaits lowercase BUG-003/023 `rm`s + BUG-018 old-canonical cleanup. Verified 2026-05-01: MCP promote alone would leave the trailing-hyphen canonical page. | wiki droplet + MCP | host | host-action |
-| Host action: `rm pages/bugs/bug-003-...md` + `rm pages/bugs/bug-023-...md` (lowercase duplicates) | wiki droplet | - | host-action |
-| Host action: BUG-018 cleanup — live canonical is `pages/bugs/BUG-018-...-.md` and draft is `drafts/bugs/bug-018-....md`; rename/delete old canonical before promoting or merging the cleaned slug. | wiki droplet + MCP | Wiki #32 | host-action |
+| Wiki #32 — loop-owned backlog; wiki.py fix LIVE in prod (116a657 deployed 05:04Z); F4 composition-patterns promoted (45 pages); loop clears lowercase BUG-003/023 `rm`s + BUG-018 old-canonical cleanup. Verified 2026-05-01: MCP promote alone would leave the trailing-hyphen canonical page. | wiki droplet + MCP | loop dev | claimed:loop-dev |
+| Loop action: `rm pages/bugs/bug-003-...md` + `rm pages/bugs/bug-023-...md` (lowercase duplicates) | wiki droplet | Wiki #32 | claimed:loop-dev |
+| Loop action: BUG-018 cleanup — live canonical is `pages/bugs/BUG-018-...-.md` and draft is `drafts/bugs/bug-018-....md`; rename/delete old canonical before promoting or merging the cleaned slug. | wiki droplet + MCP | Wiki #32 | claimed:loop-dev |
 | Arch audit #5/#6 + multi-week #9-#11 | `docs/design-notes/2026-04-24-architecture-audit.md` | host-review | host-review |
 | Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | - | host or lead-with-PAT |
