@@ -71,7 +71,10 @@ reuse:
     move actually lands.
 
 13. **Continue autonomous burn-down (discover and land next slices)**
-    Status: next
+    Status: waiting for new non-overlapping slice (2026-05-01 pass complete)
+    Scope: latest pass landed STATUS trim, reference no-op, and recency inbox
+    cleanup. Remaining concrete work is #18-blocked, Mission-10-blocked,
+    loop-owned, host/admin-owned, or date-gated.
 
 ## Stop conditions
 
