@@ -858,7 +858,7 @@ async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise
         const allFeed = await callTool('extensions', { action: 'list_runs', limit: Math.max(limit, 24) });
         const recentRuns: LoopPatchRun[] = (Array.isArray(allFeed?.runs) ? allFeed.runs.map(normalizeRun) : [])
           .filter((run: LoopPatchRun) => run.run_id !== selectedRun?.run_id)
-          .filter(isRecentRun)
+          .filter((run: LoopPatchRun) => isRecentRun(run))
           .slice(0, limit);
         if (recentRuns.length) {
           const recentEvents = recentRuns.map(runToEvent);
