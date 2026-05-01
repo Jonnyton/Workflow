@@ -172,8 +172,8 @@
   function stageEventSummary(stage: LoopStageId): string {
     const latest = latestFor(stage);
     if (!latest) return activeRun?.current_stage === stage ? 'Current stage is waiting for an event' : 'No recent event in this stage';
-    const location = latest.node_id || sourceLabel(latest.source);
-    return `Last event: ${[latest.status, location].filter(Boolean).join(' - ')}`;
+    const eventName = latest.title || latest.node_id || sourceLabel(latest.source);
+    return `${latest.status} - ${eventName}`;
   }
 
   function stageCueLabel(stage: LoopStageId): string {
@@ -711,15 +711,14 @@
   .live-stage__event {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     color: var(--fg-2) !important;
     font-family: var(--font-mono);
     font-size: 11px !important;
     line-height: 1.35 !important;
     overflow: hidden;
     overflow-wrap: anywhere;
-    text-transform: uppercase;
   }
 
   .live-stage__footer {

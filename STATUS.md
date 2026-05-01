@@ -4,7 +4,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 ## Concerns
 
-- **[P1 filed:2026-05-01]** ChatGPT Workflow connector approved branch patch then stalled post-approval; direct MCP was needed to verify/repair live branch (see BUG-034).
+- **[P1 filed:2026-05-01]** Public MCP host storage critical: `get_status` 2026-05-01 06:21Z reported 97.5% full / ~1.3GB free; prune or resize before uptime risk.
 - [filed:2026-04-23] **P0 revert-loop: daemon PAUSED.** Auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [filed:2026-04-22 verified:2026-04-25] `/etc/workflow/env` mode flip — Fix A landed (bc079a0: atomic mutator); awaits host review of installer behavior.
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval::test_record_and_get_stats_roundtrip` flake — Fix B landed (16d4823: wal_checkpoint(PASSIVE)); watching for recurrence ≥30d.
@@ -12,7 +12,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-18 verified:2026-04-28] `add_canon_from_path` sensitivity note: 3 host-Qs all REFRAMED by commons-first audit F3 (self-auditing-tools structured caveats, not tool extraction). Audit: same as above.
 - [filed:2026-04-19] Navigator follow-up: modularity audit flags `universe_server`, discovery, and `daemon_server` seams.
 - [filed:2026-04-24] Task #9 host Qs: are GROQ/GEMINI/XAI in GH Actions secrets? Host validates rotation e2e after deploy step ships.
-- **[P1 filed:2026-04-25 verified:2026-04-28]** BUG-034 ("No approval received") = ChatGPT connector approval bug (see BUG-034). Platform-side mitigation track + OpenAI-side escalation track both needed. Status comment landed on wiki page during 2026-04-28 drain. Rows 19/20 (Update Node + Run Branch approval) RETIRED as duplicates; row 21 (name-vs-ID UX) RETIRED — self-resolved per `.agents/activity.log:2026-04-24T20:11Z`. Audit: `docs/audits/2026-04-28-status-md-coordination-gap.md`.
+- **[P1 filed:2026-04-25 verified:2026-05-01]** BUG-034 ("No approval received") = ChatGPT connector approval/post-approval stall; direct MCP needed to repair live branches. Audit: `docs/audits/2026-04-28-status-md-coordination-gap.md`.
 - [filed:2026-04-28] Commons-first audit landed: 5 findings. F1 (`mcp_server.py` 12 stdio tools collapse to canonical-adapter) UNGATED — host 2026-04-28: no real users yet, dev-phase, deprecate freely. Auth-parity = navigator-internal investigation, not host-decision.
 - [filed:2026-04-28] Internal-scoping items moved off host queue per `feedback_dont_ask_host_internal_scoping`: Phase 6 db rename + fantasy_author_original timing + R7 state + ChatGPT P1 fold-in are navigator+lead autonomous now.
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
