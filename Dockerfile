@@ -90,6 +90,7 @@ FROM python:3.11-slim
 # runtime; the codex module tree is COPY'd from the builder.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        bubblewrap \
         ca-certificates \
         curl \
         libgomp1 \

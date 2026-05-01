@@ -273,16 +273,15 @@ jobs:
       - name: Verify subscription LLM binding after synced Codex auth
         if: env.HAS_CODEX_AUTH_BUNDLE == 'true'
         run: |
-          python scripts/verify_llm_binding.py --url "${CANARY_URL}" --timeout 20
+          python scripts/verify_llm_binding.py \
+              --url "${CANARY_URL}" --timeout 20 --require-sandbox
 
       - name: Report subscription LLM binding when no deploy auth bundle is configured
         if: env.HAS_CODEX_AUTH_BUNDLE != 'true'
         run: |
-          if python scripts/verify_llm_binding.py --url "${CANARY_URL}" --timeout 20; then
-            echo "Subscription LLM binding is already live."
-          else
-            echo "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64 and live LLM binding is not proven. Add the subscription bundle secret or repair droplet auth."
-          fi
+          python scripts/verify_llm_binding.py \
+              --url "${CANARY_URL}" --timeout 20 --require-sandbox
+          echo "Subscription LLM binding and sandbox runtime are already live."
 
       - name: Verify CF Access gates direct URL (expects 403/401)
         id: access-gate

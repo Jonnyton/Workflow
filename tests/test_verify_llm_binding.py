@@ -45,6 +45,37 @@ _STATUS_BOUND_NESTED = {
         ]
     },
 }
+_STATUS_BOUND_SANDBOX_OK = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
+                    '"sandbox_status": {"bwrap_available": true, "reason": null}}'
+                ),
+            }
+        ]
+    },
+}
+_STATUS_BOUND_SANDBOX_MISSING = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
+                    '"sandbox_status": {"bwrap_available": false, '
+                    '"reason": "bwrap not found on PATH"}}'
+                ),
+            }
+        ]
+    },
+}
 _STATUS_UNBOUND = {
     "jsonrpc": "2.0",
     "id": 10,
@@ -119,6 +150,33 @@ def test_llm_bound_add_canon_non_fatal():
     )
     result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
     assert result.get("llm_endpoint_bound") == "anthropic"
+
+
+def test_require_sandbox_accepts_bwrap_available():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND_SANDBOX_OK, "sid1"),
+        (_ADD_CANON_OK, "sid1"),
+    )
+    result = check_llm_binding(
+        "http://fake/mcp", 10.0, require_sandbox=True, post_fn=post_fn
+    )
+    assert result["sandbox_status"]["bwrap_available"] is True
+
+
+def test_require_sandbox_rejects_missing_bwrap():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
+    )
+    with pytest.raises(VerifyError) as exc_info:
+        check_llm_binding(
+            "http://fake/mcp", 10.0, require_sandbox=True, post_fn=post_fn
+        )
+    assert exc_info.value.code == 5
+    assert "bwrap not found" in exc_info.value.msg
 
 
 # ---------------------------------------------------------------------------
@@ -261,3 +319,18 @@ def test_main_returns_2_on_network_error():
     with patch("verify_llm_binding._post", side_effect=_failing):
         code = main(["--url", "http://fake/mcp", "--timeout", "5"])
     assert code == 2
+
+
+def test_main_returns_5_when_required_sandbox_missing():
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
+    )
+    with patch("verify_llm_binding._post", side_effect=post_fn):
+        code = main([
+            "--url", "http://fake/mcp",
+            "--timeout", "5",
+            "--require-sandbox",
+        ])
+    assert code == 5

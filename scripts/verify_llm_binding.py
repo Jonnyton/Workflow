@@ -13,6 +13,7 @@ Exit codes
 2   Network / connectivity error.
 3   llm_endpoint_bound is "unset" — daemon has no LLM.
 4   Provider chain exercise failed (canon write or status regression).
+5   Required sandbox runtime is unavailable on the daemon host.
 
 Usage
 -----
@@ -117,10 +118,16 @@ def _llm_endpoint_bound(status: dict[str, Any]) -> Any:
     return "unset"
 
 
+def _sandbox_status(status: dict[str, Any]) -> dict[str, Any]:
+    value = status.get("sandbox_status")
+    return value if isinstance(value, dict) else {}
+
+
 def check_llm_binding(
     url: str,
     timeout: float,
     *,
+    require_sandbox: bool = False,
     post_fn=None,  # injection seam for tests
 ) -> dict[str, Any]:
     """Run the full binding verification. Returns the final status dict.
@@ -151,6 +158,18 @@ def check_llm_binding(
             "restart the container. API-key billing lanes are ignored when "
             "WORKFLOW_ALLOW_API_KEY_PROVIDERS is not explicitly truthy.",
         )
+
+    if require_sandbox:
+        sandbox = _sandbox_status(status)
+        if not sandbox.get("bwrap_available"):
+            reason = sandbox.get("reason", "sandbox_status missing")
+            raise VerifyError(
+                5,
+                "subscription LLM is bound, but Linux sandbox runtime is "
+                f"unavailable: {reason}. Install/enable bubblewrap so Codex "
+                "can execute without silently stalling node work.",
+            )
+        print("[verify-llm] sandbox_status.bwrap_available=true")
 
     # Step 3: exercise provider chain with a minimal add_canon call.
     # add_canon writes a short throwaway entry — cheapest tool call that
@@ -220,10 +239,19 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_TIMEOUT,
         help=f"Per-request timeout seconds (default {DEFAULT_TIMEOUT})",
     )
+    ap.add_argument(
+        "--require-sandbox",
+        action="store_true",
+        help="Fail unless get_status reports sandbox_status.bwrap_available=true.",
+    )
     args = ap.parse_args(argv)
 
     try:
-        status = check_llm_binding(args.url, args.timeout)
+        status = check_llm_binding(
+            args.url,
+            args.timeout,
+            require_sandbox=args.require_sandbox,
+        )
         llm_bound = _llm_endpoint_bound(status)
         print(
             f"[verify-llm] PASS — llm_endpoint_bound={llm_bound!r}"

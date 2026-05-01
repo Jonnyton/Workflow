@@ -277,6 +277,25 @@ def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
     for step in _steps(wf):
         if "Verify subscription LLM binding" in (step.get("name") or ""):
             assert "HAS_CODEX_AUTH_BUNDLE" in str(step.get("if", ""))
-            assert "verify_llm_binding.py" in (step.get("run", "") or "")
+            run_script = step.get("run", "") or ""
+            assert "verify_llm_binding.py" in run_script
+            assert "--require-sandbox" in run_script
             return
     pytest.fail("deploy must verify LLM binding when it syncs Codex subscription auth")
+
+
+def test_deploy_requires_llm_binding_even_without_visible_deploy_secret():
+    wf = _load()
+    step_name = "Report subscription LLM binding when no deploy auth bundle is configured"
+    step = next(
+        (
+            s for s in _steps(wf)
+            if s.get("name") == step_name
+        ),
+        None,
+    )
+    assert step is not None
+    run_script = step.get("run", "") or ""
+    assert "verify_llm_binding.py" in run_script
+    assert "--require-sandbox" in run_script
+    assert "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64" not in run_script
