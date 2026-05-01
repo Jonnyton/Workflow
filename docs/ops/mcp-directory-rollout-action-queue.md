@@ -139,6 +139,8 @@ These can be picked up by any non-website dev with a narrow worktree.
 
 First target: Open WebUI.
 
+Setup pack: `docs/ops/open-webui-no-login-pack.md`.
+
 Deliverables:
 
 - Host version and transport notes.
