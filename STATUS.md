@@ -57,7 +57,7 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | - | host or lead-with-PAT |
 | Mission 10 retest | user-sim | host watches browser | claimed:user |
 | Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin (was filed as Plus/private app 2026-04-25, blocks publish). | OpenAI workspace admin | - | host-action |
-| Memory-scope Stage 2c flag | - | 30d clean | monitoring |
+| Memory-scope Stage 2c flag — 30d clean watch started 2026-04-16; earliest flip date 2026-05-16. Prep checklist exists; do not dispatch NodeScope dedup or flag flip before watch ends. | `docs/exec-plans/active/2026-04-27-memory-scope-stage-2c-flip-prep.md` | date gate | monitoring |
 | Provider/DO key exposure audit — 2026-05-01 grep found no concrete tokens in deploy surfaces; API-key providers strip by default. Remaining DO references are GH Actions secret names for DR/P0 workflows; host decides whether to remove or keep those workflows. | `deploy/*`, `.github/workflows/{dr-drill,p0-outage-triage}.yml` | host decision | host-decision |
 | Site cert flip — GitHub Pages HTTPS enforcement still blocked: 2026-05-01 recheck returned "certificate does not exist yet"; CF edge green via MCP canaries + in-app `/loop` to `/connect`/`/host` smoke. | - | - | monitoring |
 
