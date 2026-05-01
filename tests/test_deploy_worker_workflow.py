@@ -108,6 +108,14 @@ def test_workflow_job_runs_on_ubuntu():
     assert "ubuntu" in job.get("runs-on", "")
 
 
+def test_workflow_uses_wrangler_supported_node_version():
+    wf = _load_workflow()
+    steps = wf["jobs"]["deploy-worker"]["steps"]
+    setup = _get_step(steps, "Set up Node")
+    assert setup is not None
+    assert setup.get("with", {}).get("node-version") == "22"
+
+
 # ---------------------------------------------------------------------------
 # (c) wrangler.toml name matches actual Worker
 # ---------------------------------------------------------------------------
@@ -197,6 +205,7 @@ def test_live_deploy_resolves_account_id_from_zone_when_secret_missing():
     text = _workflow_text()
     assert "zones?name=tinyassets.io" in text
     assert "CLOUDFLARE_ACCOUNT_ID=${account_id}" in text
+    assert "CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" not in text
 
 
 # ---------------------------------------------------------------------------
