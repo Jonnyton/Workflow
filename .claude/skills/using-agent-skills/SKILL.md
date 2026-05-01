@@ -31,6 +31,8 @@ Task arrives
     |-- Have a spec, need tasks? --------------------> planning-and-task-breakdown
     |-- Implementing code? --------------------------> incremental-implementation
     |   |-- UI work? --------------------------------> frontend-ui-engineering
+    |   |-- Game or interactive prototype? ----------> game-prototyping
+    |   |-- Workflow website edit? ------------------> website-editing
     |   |-- API / interface work? -------------------> api-and-interface-design
     |   |-- Mostly simplification / clarity? --------> code-simplification
     |   `-- Need better context loaded? -------------> context-engineering
@@ -49,7 +51,8 @@ Task arrives
     |-- GoDaddy domain / DNS / site ops? ------------> godaddy-ops
     |-- Writing docs or rationale? ------------------> documentation-and-adrs
     |-- Deploying or launching? ---------------------> shipping-and-launch
-    `-- Agent-team behavior needs tuning? -----------> team-iterate
+    |-- Agent-team behavior needs tuning? -----------> team-iterate
+    `-- Recurring agent behavior failure? ----------> auto-iterate
 ```
 
 ## Rules
@@ -145,6 +148,8 @@ Not every task needs every step. Bug triage might be:
 | Build | incremental-implementation | Ship thin vertical slices |
 | Build | context-engineering | Load the right context at the right time |
 | Build | frontend-ui-engineering | Build production-quality user interfaces |
+| Build | game-prototyping | Build playable games and game-like prototypes with asset and archetype discipline |
+| Build | website-editing | Apply Workflow site preview, live-feed, affordance, and ship-loop conventions |
 | Build | api-and-interface-design | Design stable interfaces and contracts |
 | Build | code-simplification | Simplify working code without changing behavior |
 | Build | improve-codebase-architecture | Find and fix weak module boundaries |
@@ -165,3 +170,4 @@ Not every task needs every step. Bug triage might be:
 | Ops | godaddy-ops | Operate GoDaddy domain and site surfaces |
 | Meta | skill-authoring | Create or update project-local skills correctly |
 | Meta | team-iterate | Improve agent-team definitions and launch prompts |
+| Meta | auto-iterate | Ratchet recurring agent behavior failures into stronger prevention |
