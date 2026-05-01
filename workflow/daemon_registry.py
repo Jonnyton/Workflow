@@ -161,10 +161,14 @@ def create_daemon(
         "domain_claims": clean_claims,
     })
     if mode == "soul":
-        merged_metadata["daemon_wiki"] = {
-            "host_local": True,
-            "schema_version": 1,
-        }
+        wiki_metadata = (
+            dict(merged_metadata.get("daemon_wiki"))
+            if isinstance(merged_metadata.get("daemon_wiki"), dict)
+            else {}
+        )
+        wiki_metadata["host_local"] = True
+        wiki_metadata["schema_version"] = 1
+        merged_metadata["daemon_wiki"] = wiki_metadata
 
     author = daemon_server.register_author(
         base_path,

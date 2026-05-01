@@ -84,9 +84,14 @@ evidence, and more reliable across nodes and gates.
 ## Layers
 
 - `raw/signals/`: immutable records from passed, failed, blocked, or cancelled
-  nodes and gates. Do not edit these files after recording.
+  nodes and gates. Do not edit these files after recording; the memory governor
+  may compact older raw signals after they have been summarized.
 - `pages/`: maintained synthesis pages. Update these when new signals change
   what the daemon has learned.
+- `decision_log/`: durable records of work considered, chosen, or declined.
+- `soul_versions/`: immutable soul amendments and forks.
+- `claim_proofs/`: domain claims, credentials, attestations, and tests.
+- `status/`: machine-readable memory status snapshots.
 - `drafts/soul-evolution/`: proposed soul edits. Do not rewrite the soul file
   directly from a failure. Prefer small proposals that preserve the original
   spirit.
@@ -104,6 +109,8 @@ evidence, and more reliable across nodes and gates.
    core intent.
 5. If a node or gate supplied a temporary soul/header, separate what was learned
    for that context from what belongs to the daemon's own lasting identity.
+6. Respect memory caps. Long life should improve retrieval and synthesis
+   quality without growing the normal prompt packet.
 """
 
 
@@ -238,6 +245,10 @@ def scaffold_daemon_wiki(
 
     for rel in (
         "raw/signals",
+        "decision_log",
+        "soul_versions",
+        "claim_proofs",
+        "status",
         "pages/self-model",
         "pages/signals",
         "pages/decisions",
@@ -402,7 +413,7 @@ def read_daemon_wiki_context(
     daemon_id: str,
     max_chars: int = 8000,
 ) -> dict[str, Any]:
-    """Read the small set of pages future runs should load before reflection."""
+    """Read the bounded memory packet future runs may load before reflection."""
     root = daemon_wiki_root(base_path, daemon_id)
     if not root.exists():
         return {
@@ -411,26 +422,13 @@ def read_daemon_wiki_context(
             "exists": False,
             "context": "",
         }
+    from workflow.daemon_memory import build_daemon_memory_packet
 
-    parts = []
-    for rel in (
-        "WIKI.md",
-        "index.md",
-        "pages/self-model/current-self.md",
-        "pages/signals/learning-signals.md",
-        "pages/decisions/decision-policy.md",
-        "pages/soul-evolution/proposals.md",
-    ):
-        path = root / rel
-        if path.exists():
-            parts.append(f"\n\n<!-- {rel} -->\n" + path.read_text(encoding="utf-8"))
-    context = "".join(parts).strip()
-    if max_chars > 0 and len(context) > max_chars:
-        context = context[:max_chars].rstrip() + "\n\n[truncated]"
-    return {
-        "daemon_id": daemon_id,
-        "host_local": True,
-        "exists": True,
-        "schema_version": SCHEMA_VERSION,
-        "context": context,
-    }
+    packet = build_daemon_memory_packet(
+        base_path,
+        daemon_id=daemon_id,
+        max_chars=max_chars,
+        enforce_cap=True,
+    )
+    packet["schema_version"] = SCHEMA_VERSION
+    return packet
