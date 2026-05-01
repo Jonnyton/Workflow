@@ -72,7 +72,7 @@ def detect_bwrap() -> SandboxStatus:
     """Probe whether bwrap is present and executable on the current host.
 
     Returns a SandboxStatus with:
-      - available=True if bwrap is on PATH and ``bwrap --version`` exits 0.
+      - available=True if bwrap is on PATH and can create a minimal namespace.
       - available=False with a human-readable reason otherwise.
 
     Result is NOT cached here — callers should cache at their appropriate scope.
@@ -95,7 +95,7 @@ def detect_bwrap() -> SandboxStatus:
         )
 
     try:
-        result = subprocess.run(
+        version_result = subprocess.run(
             [bwrap_path, "--version"],
             capture_output=True,
             text=True,
@@ -108,14 +108,48 @@ def detect_bwrap() -> SandboxStatus:
             reason=f"probe error: {exc}",
         )
 
-    if result.returncode != 0:
+    if version_result.returncode != 0:
         return SandboxStatus(
             available=False,
             bwrap_path=bwrap_path,
-            reason=result.stderr.strip() or "bwrap --version failed",
+            reason=version_result.stderr.strip() or "bwrap --version failed",
         )
 
-    version = result.stdout.strip() or result.stderr.strip() or None
+    try:
+        smoke_result = subprocess.run(
+            [
+                bwrap_path,
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--unshare-all",
+                "--die-with-parent",
+                "/bin/true",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except OSError as exc:
+        return SandboxStatus(
+            available=False,
+            bwrap_path=bwrap_path,
+            reason=f"probe error: {exc}",
+        )
+
+    if smoke_result.returncode != 0:
+        smoke_output = (smoke_result.stderr or smoke_result.stdout).strip()
+        return SandboxStatus(
+            available=False,
+            bwrap_path=bwrap_path,
+            reason=smoke_output or "bwrap namespace probe failed",
+        )
+
+    version = version_result.stdout.strip() or version_result.stderr.strip() or None
     return SandboxStatus(
         available=True,
         bwrap_path=bwrap_path,

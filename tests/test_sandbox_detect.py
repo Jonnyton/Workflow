@@ -116,20 +116,22 @@ class TestDetectBwrap:
         assert status.available is False
         assert "PATH" in (status.reason or "")
 
-    def test_bwrap_version_success_returns_available(self, monkeypatch):
+    def test_bwrap_smoke_test_success_returns_available(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
-        mock_result = type("R", (), {
+        mock_version = type("R", (), {
             "returncode": 0,
             "stdout": "bwrap 0.6.0",
             "stderr": "",
         })()
+        mock_smoke = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         with patch("shutil.which", return_value="/usr/bin/bwrap"):
-            with patch("subprocess.run", return_value=mock_result):
+            with patch("subprocess.run", side_effect=[mock_version, mock_smoke]) as run:
                 status = detect_bwrap()
         assert status.available is True
         assert status.bwrap_path == "/usr/bin/bwrap"
         assert status.version == "bwrap 0.6.0"
         assert status.reason is None
+        assert "--unshare-all" in run.call_args_list[1].args[0]
 
     def test_bwrap_version_fails_returns_unavailable(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
@@ -144,6 +146,25 @@ class TestDetectBwrap:
         assert status.available is False
         assert status.bwrap_path == "/usr/bin/bwrap"
         assert "permission denied" in (status.reason or "")
+
+    def test_bwrap_namespace_smoke_failure_returns_unavailable(self, monkeypatch):
+        monkeypatch.setattr("sys.platform", "linux")
+        mock_version = type("R", (), {
+            "returncode": 0,
+            "stdout": "bwrap 0.6.0",
+            "stderr": "",
+        })()
+        mock_smoke = type("R", (), {
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "bwrap: No permissions to create a new namespace",
+        })()
+        with patch("shutil.which", return_value="/usr/bin/bwrap"):
+            with patch("subprocess.run", side_effect=[mock_version, mock_smoke]):
+                status = detect_bwrap()
+        assert status.available is False
+        assert status.bwrap_path == "/usr/bin/bwrap"
+        assert "No permissions" in (status.reason or "")
 
     def test_probe_oserror_returns_unavailable(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")

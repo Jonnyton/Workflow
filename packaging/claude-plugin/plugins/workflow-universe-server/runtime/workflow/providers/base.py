@@ -136,8 +136,10 @@ def check_bwrap_failure(stderr_text: str) -> None:
 def probe_sandbox_available() -> dict[str, object]:
     """Probe whether bwrap is available on this host.
 
-    Returns {bwrap_available: bool, reason: str | None}.  Cached at
-    module level after first call so get_status probes once at startup.
+    Returns {bwrap_available: bool, reason: str | None}. The probe runs a
+    minimal bwrap command so hosts without user-namespace permissions fail
+    here instead of later during dev/checker execution.
+    Cached at module level after first call so get_status probes once at startup.
     """
     import shutil as _shutil
     import subprocess as _subprocess
@@ -146,19 +148,49 @@ def probe_sandbox_available() -> dict[str, object]:
     if _sys.platform == "win32":
         return {"bwrap_available": False, "reason": "bwrap is Linux-only (win32 host)"}
 
-    if not _shutil.which("bwrap"):
+    bwrap_path = _shutil.which("bwrap")
+    if not bwrap_path:
         return {"bwrap_available": False, "reason": "bwrap not found on PATH"}
 
     try:
-        result = _subprocess.run(
-            ["bwrap", "--version"],
+        version_result = _subprocess.run(
+            [bwrap_path, "--version"],
             capture_output=True, text=True, check=False, timeout=5,
         )
-        if result.returncode == 0:
+        if version_result.returncode != 0:
+            return {
+                "bwrap_available": False,
+                "reason": (
+                    f"bwrap --version exited {version_result.returncode}: "
+                    f"{version_result.stderr[:200]}"
+                ),
+            }
+
+        smoke_result = _subprocess.run(
+            [
+                bwrap_path,
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--unshare-all",
+                "--die-with-parent",
+                "/bin/true",
+            ],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        if smoke_result.returncode == 0:
             return {"bwrap_available": True, "reason": None}
+        smoke_output = (smoke_result.stderr or smoke_result.stdout).strip()
         return {
             "bwrap_available": False,
-            "reason": f"bwrap --version exited {result.returncode}: {result.stderr[:200]}",
+            "reason": (
+                f"bwrap namespace probe exited {smoke_result.returncode}: "
+                f"{smoke_output[:200]}"
+            ),
         }
     except Exception as exc:  # noqa: BLE001
         return {"bwrap_available": False, "reason": f"probe error: {exc}"}
