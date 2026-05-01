@@ -7,25 +7,29 @@ silently succeeded even when ``other_node_output`` wasn't in
 ``input_keys``. That's an implicit cross-node dependency which reduces
 branch portability and hides unintentional coupling.
 
-Contract (per STATUS.md "Approved bugs" entry 2026-04-22):
+Contract:
 
-- ``NodeDefinition.strict_input_isolation: bool = False`` — default
-  preserves back-compat.
-- When strict=true, ``_build_prompt_template_node`` renders against a
-  state view filtered to ``input_keys`` only. Out-of-keys placeholders
-  raise ``CompilerError`` at runtime.
+- When ``input_keys`` is non-empty, ``_build_prompt_template_node``
+  renders against a state view filtered to ``input_keys`` only.
+  Out-of-keys placeholders raise ``CompilerError`` at runtime.
 - Regardless of flag, ``collect_build_warnings(branch)`` emits one
   warning per out-of-input_keys placeholder so authors see the leak.
-- When ``event_sink`` is provided and strict=false, the runtime emits
-  ``phase="warning"`` events per leak — giving per-run visibility
-  without forcing a hard fail.
+- When ``event_sink`` is provided, the runtime emits
+  ``phase="warning"`` events per leak before the isolation error.
+- ``strict_input_isolation`` remains a legacy schema field from the
+  opt-in period; it no longer controls prompt-template isolation.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from workflow.branches import BranchDefinition, EdgeDefinition, GraphNodeRef, NodeDefinition
+from workflow.branches import (
+    BranchDefinition,
+    EdgeDefinition,
+    GraphNodeRef,
+    NodeDefinition,
+)
 from workflow.graph_compiler import (
     CompilerError,
     _build_prompt_template_node,
@@ -136,9 +140,9 @@ def test_collect_build_warnings_one_per_placeholder():
 
 
 def test_collect_build_warnings_fires_regardless_of_strict_flag():
-    """Build-time warnings are flag-independent. Strict controls
-    *runtime* behavior; warnings always surface at build time so
-    authors see leaks either way."""
+    """Build-time warnings are flag-independent. The legacy flag no
+    longer controls runtime isolation, but persisted values should not
+    affect warning visibility."""
     node_strict = NodeDefinition(
         node_id="n1",
         display_name="n1",
@@ -212,7 +216,7 @@ def test_compile_branch_emits_warnings_through_event_sink():
     assert warning_events[0]["node_id"] == "n1"
 
 
-# ─── strict_input_isolation runtime behavior ──────────────────────────────
+# ─── input_keys isolation runtime behavior ────────────────────────────────
 
 
 def _make_prompt_fn(
@@ -226,58 +230,55 @@ def _make_prompt_fn(
     )
 
 
-def test_strict_isolation_valid_renders_normally():
-    """Strict mode with placeholders all inside input_keys: happy path."""
+def test_input_keys_isolation_valid_renders_normally():
+    """Placeholders inside input_keys render normally."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
         input_keys=["topic"],
         output_keys=["draft"],
         prompt_template="Write about {topic}.",
-        strict_input_isolation=True,
     )
     fn = _make_prompt_fn(node)
     result = fn({"topic": "whales", "leaked_key": "should not reach model"})
     assert result == {"draft": "RENDERED::Write about whales."}
 
 
-def test_strict_isolation_rejects_out_of_input_keys():
-    """Strict mode: placeholder outside input_keys raises CompilerError
-    EVEN when the state has that key (the isolation is the point)."""
+def test_input_keys_isolation_rejects_out_of_input_keys():
+    """Placeholder outside input_keys raises CompilerError even when
+    the state has that key."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
         input_keys=["topic"],
         output_keys=["draft"],
         prompt_template="Write {topic} with {leaked_key}.",
-        strict_input_isolation=True,
     )
     fn = _make_prompt_fn(node)
     with pytest.raises(CompilerError) as exc:
         fn({"topic": "whales", "leaked_key": "should not be readable"})
-    assert "strict_input_isolation=true" in str(exc.value)
     assert "leaked_key" in str(exc.value)
+    assert "outside declared input_keys" in str(exc.value)
 
 
-def test_strict_isolation_rejects_even_when_state_has_key():
-    """The whole point: even if state HAS the out-of-keys value, strict
-    mode refuses to read it. Symmetry with code-node sandbox."""
+def test_input_keys_isolation_rejects_even_when_state_has_key():
+    """The whole point: even if state HAS the out-of-keys value,
+    input_keys isolation refuses to read it."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
         input_keys=["topic"],
         output_keys=["draft"],
         prompt_template="{leaked_key}",
-        strict_input_isolation=True,
     )
     fn = _make_prompt_fn(node)
     with pytest.raises(CompilerError):
         fn({"topic": "whales", "leaked_key": "present but filtered out"})
 
 
-def test_non_strict_mode_renders_with_leaked_state():
-    """Back-compat: strict=false preserves the pre-BUG-007 behavior
-    where templates freely read non-input_keys state."""
+def test_legacy_strict_false_still_rejects_leaked_state():
+    """BUG-007: strict_input_isolation is legacy metadata; a declared
+    input_keys contract is enforced even when the flag is false."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
@@ -287,13 +288,15 @@ def test_non_strict_mode_renders_with_leaked_state():
         strict_input_isolation=False,
     )
     fn = _make_prompt_fn(node)
-    result = fn({"topic": "whales", "leaked_key": "style-guide"})
-    assert result == {"draft": "RENDERED::Write whales with style-guide."}
+    with pytest.raises(CompilerError) as exc:
+        fn({"topic": "whales", "leaked_key": "style-guide"})
+    assert "leaked_key" in str(exc.value)
+    assert "outside declared input_keys" in str(exc.value)
 
 
-def test_non_strict_mode_emits_runtime_warning_for_leaks():
-    """Non-strict mode still tells the operator about leaks via
-    event_sink, so they can audit runs without flipping the flag."""
+def test_runtime_warning_emits_before_isolation_error():
+    """Runtime still tells the operator about leaks via event_sink
+    before rejecting the prompt."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
@@ -308,7 +311,8 @@ def test_non_strict_mode_emits_runtime_warning_for_leaks():
         events.append(kwargs)
 
     fn = _make_prompt_fn(node, event_sink=sink)
-    fn({"topic": "whales", "leaked": "style"})
+    with pytest.raises(CompilerError):
+        fn({"topic": "whales", "leaked": "style"})
 
     warning_events = [e for e in events if e.get("phase") == "warning"]
     assert len(warning_events) == 1
@@ -316,8 +320,8 @@ def test_non_strict_mode_emits_runtime_warning_for_leaks():
     assert warning_events[0]["placeholder"] == "leaked"
 
 
-def test_non_strict_mode_no_warning_when_clean():
-    """No leaks → no warnings, even in non-strict mode."""
+def test_no_runtime_warning_when_clean():
+    """No leaks -> no warnings."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
@@ -337,11 +341,9 @@ def test_non_strict_mode_no_warning_when_clean():
     assert warning_events == []
 
 
-def test_strict_mode_without_declared_input_keys_is_permissive():
-    """If input_keys is empty, the node has opted out of the static
-    contract. Strict-isolation has nothing to filter against and
-    degrades to normal render behavior. Documented edge case —
-    strictness requires a declared contract."""
+def test_without_declared_input_keys_is_permissive():
+    """If input_keys is empty, the node has not declared a state
+    contract, so rendering uses the normal state view."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
@@ -355,13 +357,13 @@ def test_strict_mode_without_declared_input_keys_is_permissive():
     assert result == {"draft": "RENDERED::Write whales."}
 
 
-def test_non_strict_still_raises_on_genuinely_missing_keys():
-    """A placeholder with NO state entry (not in input_keys, not in
-    state) must still raise — that's a different class from leak."""
+def test_isolated_prompt_still_raises_on_genuinely_missing_input_keys():
+    """A placeholder declared in input_keys but absent from state raises
+    the generic missing-state error."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
-        input_keys=["topic"],
+        input_keys=["topic", "never_defined"],
         output_keys=["draft"],
         prompt_template="{topic} {never_defined}",
         strict_input_isolation=False,
@@ -369,9 +371,7 @@ def test_non_strict_still_raises_on_genuinely_missing_keys():
     fn = _make_prompt_fn(node)
     with pytest.raises(CompilerError) as exc:
         fn({"topic": "whales"})
-    # Non-strict path → generic "missing state keys" error, NOT the
-    # strict-isolation-specific message.
-    assert "strict_input_isolation=true" not in str(exc.value)
+    assert "outside declared input_keys" not in str(exc.value)
     assert "never_defined" in str(exc.value)
 
 
@@ -393,16 +393,15 @@ def test_strict_input_isolation_roundtrips_through_to_dict():
 
 
 def test_strict_input_isolation_default_false():
-    """Back-compat: default must be False so existing branches work
-    unchanged after the schema update."""
+    """Legacy schema default remains False for persisted metadata."""
     node = NodeDefinition(node_id="n1", display_name="n1")
     assert node.strict_input_isolation is False
 
 
 def test_node_registration_shape_excludes_strict_flag():
     """Legacy NodeRegistration dict is a stable sandbox contract —
-    strict_input_isolation is a prompt-template-only concept and
-    should not leak into that surface."""
+    strict_input_isolation is legacy prompt-template metadata and should
+    not leak into that surface."""
     node = NodeDefinition(
         node_id="n1",
         display_name="n1",
