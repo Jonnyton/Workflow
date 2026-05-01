@@ -47,6 +47,28 @@ if [[ "${_any_set}" -eq 0 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------
+# Required static data-file probe
+# ---------------------------------------------------------------------
+# Keep this shell-native: the container command provides the Python
+# executable contract, and host-side verification may not have a
+# `python` alias on PATH.
+_package_root="${WORKFLOW_PACKAGE_ROOT:-/app}"
+if command -v cygpath >/dev/null 2>&1 && [[ "${_package_root}" == [A-Za-z]:* ]]; then
+    _package_root="$(cygpath -u "${_package_root}")"
+fi
+
+_required_data_files=(
+    data/world_rules.lp
+)
+for _rel_path in "${_required_data_files[@]}"; do
+    _full_path="${_package_root}/${_rel_path}"
+    if [[ ! -f "${_full_path}" ]]; then
+        echo "DATA-FILE-MISSING: ${_rel_path} (expected at ${_full_path})" >&2
+        exit 1
+    fi
+done
+
 _truthy() {
     case "${1:-}" in
         1|true|TRUE|True|yes|YES|Yes|on|ON|On) return 0 ;;

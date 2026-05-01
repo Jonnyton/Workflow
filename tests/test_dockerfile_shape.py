@@ -219,6 +219,16 @@ def test_entrypoint_replaces_auth_bundle_atomically():
     )
 
 
+def test_entrypoint_probes_required_data_files_without_python_alias():
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "DATA-FILE-MISSING" in text
+    assert "data/world_rules.lp" in text
+    assert "startup_file_probe" not in text, (
+        "entrypoint data-file probe must not invoke the Python startup_file_probe; "
+        "host-side bash verification may not have a python alias on PATH"
+    )
+
+
 def test_entrypoint_execs_cmd():
     text = ENTRYPOINT.read_text(encoding="utf-8")
     assert 'exec "$@"' in text, (

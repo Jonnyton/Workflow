@@ -57,6 +57,7 @@ def _run_entrypoint_via_stdin(
     preamble_lines = [
         # Clear sentinels first so ambient-shell values don't leak through.
         "unset CLOUDFLARE_TUNNEL_TOKEN SUPABASE_DB_URL WORKFLOW_IMAGE",
+        f"export WORKFLOW_PACKAGE_ROOT={str(_REPO)!r}",
     ]
     for key, value in (extra_env or {}).items():
         preamble_lines.append(f"export {key}={value!r}")
@@ -108,6 +109,46 @@ def test_entrypoint_passes_through_when_one_sentinel_set():
     assert CANONICAL_MARKER not in result.stderr, (
         "marker should NOT fire when a sentinel is set"
     )
+    assert "would-exec" in result.stdout
+
+
+@pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
+def test_entrypoint_fails_loudly_when_required_data_file_missing(tmp_path: Path):
+    """Missing required static data files fail before daemon startup."""
+    result = _run_entrypoint_via_stdin(
+        exec_replacement='echo "[harness] would-exec: $@"',
+        extra_env={
+            "WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123",
+            "WORKFLOW_PACKAGE_ROOT": str(tmp_path),
+        },
+    )
+    assert result.returncode == 1, (
+        f"expected missing-data exit 1; got {result.returncode}. "
+        f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    )
+    assert "DATA-FILE-MISSING: data/world_rules.lp" in result.stderr
+    assert "startup data-file probe crashed" not in result.stderr
+    assert "would-exec" not in result.stdout
+
+
+@pytest.mark.skipif(not _have_bash(), reason="bash not on PATH")
+def test_entrypoint_data_file_probe_does_not_require_python_alias(tmp_path: Path):
+    """The data-file probe must not depend on host PATH containing python."""
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "world_rules.lp").write_text("% ok\n", encoding="utf-8")
+    result = _run_entrypoint_via_stdin(
+        exec_replacement='echo "[harness] would-exec: $@"',
+        extra_env={
+            "PATH": "/usr/bin:/bin",
+            "WORKFLOW_IMAGE": "ghcr.io/jonnyton/workflow-daemon:abc123",
+            "WORKFLOW_PACKAGE_ROOT": str(tmp_path),
+        },
+    )
+    assert result.returncode == 0, (
+        f"expected happy-path exit 0; got {result.returncode}. "
+        f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    )
+    assert "DATA-FILE-MISSING" not in result.stderr
     assert "would-exec" in result.stdout
 
 
