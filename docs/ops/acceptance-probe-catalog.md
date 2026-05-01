@@ -20,6 +20,10 @@ checks, and new-connector verification.
 **Source audit:** `docs/audits/user-chat-intelligence/2026-04-20-do-cutover-acceptance.md`
 **Persona:** bare-curious-user (no persona framing; minimal context)
 **Connector URL under test:** `https://tinyassets.io/mcp`
+**Apex URL under test:** `https://tinyassets.io/` (Layer-1 wrapper requires HTTP 200)
+**Rendered chatbot client:** Claude.ai, ChatGPT Developer Mode, or another
+browser chatbot with the Workflow connector visibly installed. Record which
+client produced the evidence.
 
 ### Prompt (paste verbatim)
 
@@ -32,7 +36,8 @@ paper on deep space population — can you walk me through it?
 
 | Layer | What's tested |
 |---|---|
-| System | MCP endpoint reachable via Claude.ai → Cloudflare Worker → tunnel → daemon |
+| System | MCP endpoint reachable via browser chatbot → Cloudflare Worker → tunnel → daemon |
+| System | Apex site `/` returns HTTP 200 alongside the `/mcp` endpoint |
 | Chatbot | `control_station` Hard Rule 10 (anti-fabrication): assume → tool-call → correct-if-wrong |
 | Chatbot | Chatbot-assumes-Workflow directive (rule 7): no disambiguation picker |
 | Chatbot | User-vocabulary discipline (rule 9): no engine-vocab in first response |
@@ -42,6 +47,7 @@ paper on deep space population — can you walk me through it?
 
 - Chatbot invokes at least one Workflow MCP tool (visible in thinking-block or response).
 - Response references real daemon state (e.g., empty workspace, named primitives from actual tool output).
+- Layer-1 wrapper confirms `https://tinyassets.io/` returns HTTP 200 while `/mcp` is green.
 - No fabricated workflow JSON, no fabricated prior-session history.
 - Settle time under 150s. (>150s with tool invocation = soft-yellow; >150s without tool invocation = suspected fabrication-mode.)
 - Zero "Session terminated" errors.
@@ -52,6 +58,7 @@ paper on deep space population — can you walk me through it?
 - Chatbot produces a workflow spec without invoking a tool.
 - Chatbot claims prior-session context that was never established in this chat.
 - No tool call at all (chatbot responded from memory only).
+- Layer-1 wrapper reports apex `/` non-200 or unreachable while `/mcp` is otherwise green.
 - Settle time >180s with no tool call confirmed.
 
 ### Baseline evidence
@@ -456,7 +463,7 @@ These canary-adjacent scripts exist in the repo but do NOT earn standalone catal
 
 | Script | Why no slot |
 |---|---|
-| `scripts/uptime_canary.py` | Thin wrapper around `mcp_public_canary.probe_result` that adds local-log persistence. Same surface as PROBE-001 — duplicating it as a slot would double-count. The wrapper is the Task-Scheduler-invoked form; PROBE-001 is the user-invocable form. |
+| `scripts/uptime_canary.py` | Thin wrapper around `mcp_public_canary.probe_result` that adds local-log persistence and production apex `/` HTTP-200 coverage. Same surface as PROBE-001 — duplicating it as a slot would double-count. The wrapper is the Task-Scheduler-invoked form; PROBE-001 is the user-invocable form. |
 | `scripts/uptime_alarm.py` | Escalation **action**, not a probe. Tails `.agents/uptime.log` and emits alarm lines. Note: per task #20, prod alarm log moved to `/var/log/workflow/uptime_alarms.log` (env-overridable). |
 | `scripts/selfhost_smoke.py` | Time-bounded Row-F acceptance script (48h offline trial — hour 1, 24, 47). Targets the canonical endpoint plus the Access-gated tunnel origin through internal/service-token plumbing for parity comparison; not a steady-state public probe. Once Row F closes, this script is archived. |
 | `.github/workflows/p0-outage-triage.yml` | Escalation **action**, not a probe. Auto-fired by `uptime-canary.yml` on CRITICAL alarm; runs forensics + opens triage issue. Same shape as `uptime_alarm.py` (action, not green/red signal). |

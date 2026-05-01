@@ -2357,7 +2357,7 @@ def main() -> None:
     if args.universe_server:
         # Set base path for the Workflow MCP server (resolves universe directories)
         base = str(Path(args.universe).resolve())
-        os.environ.setdefault("UNIVERSE_SERVER_BASE", base)
+        os.environ.setdefault("WORKFLOW_DATA_DIR", base)
         logger.info(
             "Starting Workflow MCP server on %s:%d (transport=%s, base=%s)",
             args.host, args.mcp_port, args.mcp_transport, base,

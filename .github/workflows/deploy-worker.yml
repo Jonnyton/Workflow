@@ -57,24 +57,39 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Wrangler
         run: npm install -g wrangler@latest
 
       - name: Verify secrets present
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_SECRET: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN secret is not set."
             echo "::error::Required scope: Account:Workers Scripts:Edit + Zone:Workers Routes:Edit + Zone:Zone:Read"
             echo "::error::Mint at: dash.cloudflare.com/profile/api-tokens → Custom Token"
             exit 1
           fi
-          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
-            echo "::error::CLOUDFLARE_ACCOUNT_ID secret is not set."
-            echo "::error::Find it at: dash.cloudflare.com → right-side Account ID widget"
+
+          account_id="${CLOUDFLARE_ACCOUNT_ID_SECRET}"
+          if [ -z "${account_id}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID secret is not set; resolving from tinyassets.io zone."
+            response="$(curl -fsS \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones?name=tinyassets.io")"
+            account_id="$(python -c 'import json,sys; data=json.load(sys.stdin); result=data.get("result") or []; print(((result[0].get("account") or {}).get("id") or "") if result else "")' <<< "${response}")"
+          fi
+
+          if [ -z "${account_id}" ]; then
+            echo "::error::Could not resolve Cloudflare account ID for tinyassets.io."
             exit 1
           fi
+          echo "CLOUDFLARE_ACCOUNT_ID=${account_id}" >> "${GITHUB_ENV}"
 
       - name: Run Worker unit tests
         working-directory: deploy/cloudflare-worker
@@ -87,9 +102,12 @@ jobs:
         working-directory: deploy/cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=== dry-run — validating wrangler config + worker bundle ==="
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "Cloudflare deploy credentials are unavailable on this PR; unit tests already ran, skipping Wrangler dry-run."
+            exit 0
+          fi
           wrangler deploy --dry-run --outdir /tmp/wrangler-out
           echo "=== dry-run passed ==="
           ls -lh /tmp/wrangler-out/
@@ -101,7 +119,6 @@ jobs:
         working-directory: deploy/cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "=== deploying Worker tinyassets-mcp-proxy ==="
           wrangler deploy

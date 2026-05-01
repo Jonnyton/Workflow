@@ -8,6 +8,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pyproject.toml'
+      - 'PLAN.md'
+      - 'workflow/**'
+      - 'domains/**'
+      - 'fantasy_daemon/**'
+      - 'data/world_rules.lp'
+      - 'scripts/mcp_public_canary.py'
+      - 'deploy/**'
   workflow_dispatch:
 
 permissions:
@@ -39,9 +50,9 @@ jobs:
           image="${REGISTRY}/${owner}/${IMAGE_NAME}"
           short_sha="$(git rev-parse --short=12 HEAD)"
 
-          echo "image=${image}" >> "${GITHUB_OUTPUT}"
-          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
           {
+            echo "image=${image}"
+            echo "short_sha=${short_sha}"
             echo "tags<<EOF"
             echo "${image}:latest"
             echo "${image}:${short_sha}"
