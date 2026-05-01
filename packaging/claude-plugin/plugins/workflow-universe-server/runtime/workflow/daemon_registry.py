@@ -8,6 +8,7 @@ move later without changing the caller contract.
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,11 @@ from workflow import daemon_server
 SOULLESS_SOUL_TEXT = "Default soulless daemon. Uses the platform dispatcher policy."
 VALID_SOUL_MODES = {"soul", "soulless"}
 PROJECT_LOOP_FLAG = "project_loop_default"
+RUNTIME_CONTROL_STATUSES = {
+    "pause": "paused",
+    "resume": "provisioned",
+    "restart": "restart_requested",
+}
 
 
 def _daemon_id_from_author_id(author_id: str) -> str:
@@ -55,6 +61,7 @@ def _domain_claims(row: dict[str, Any]) -> list[str]:
 
 def _daemon_from_author(row: dict[str, Any], *, include_soul: bool = False) -> dict[str, Any]:
     mode = _soul_mode(row)
+    metadata = _metadata(row)
     out = {
         "daemon_id": _daemon_id_from_author_id(str(row["author_id"])),
         "legacy_author_id": str(row["author_id"]),
@@ -63,6 +70,8 @@ def _daemon_from_author(row: dict[str, Any], *, include_soul: bool = False) -> d
         "soul_mode": mode,
         "has_soul": mode == "soul",
         "domain_claims": _domain_claims(row),
+        "owner_user_id": str(metadata.get("owner_user_id") or metadata.get("created_by") or "host"),
+        "tenant_id": str(metadata.get("tenant_id") or metadata.get("owner_user_id") or "host"),
         "lineage_parent_id": (
             _daemon_id_from_author_id(str(row["lineage_parent_id"]))
             if row.get("lineage_parent_id")
@@ -70,7 +79,7 @@ def _daemon_from_author(row: dict[str, Any], *, include_soul: bool = False) -> d
         ),
         "reputation_score": float(row.get("reputation_score") or 0.0),
         "created_at": row.get("created_at"),
-        "metadata": _metadata(row),
+        "metadata": metadata,
     }
     if include_soul:
         out["soul_text"] = str(row.get("soul_text") or "")
@@ -82,6 +91,7 @@ def _runtime_from_author_runtime(
     *,
     daemon: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    metadata = dict(row.get("metadata") or {})
     daemon_id = (
         daemon["daemon_id"]
         if daemon is not None
@@ -97,9 +107,15 @@ def _runtime_from_author_runtime(
         "branch_id": row.get("branch_id"),
         "status": str(row["status"]),
         "created_by": str(row["created_by"]),
+        "owner_user_id": str(metadata.get("owner_user_id") or row["created_by"]),
+        "tenant_id": str(
+            metadata.get("tenant_id")
+            or metadata.get("owner_user_id")
+            or row["created_by"],
+        ),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
-        "metadata": dict(row.get("metadata") or {}),
+        "metadata": metadata,
     }
 
 
@@ -136,6 +152,9 @@ def create_daemon(
         if str(item).strip()
     ]
     merged_metadata = dict(metadata or {})
+    merged_metadata.setdefault("owner_user_id", created_by)
+    merged_metadata.setdefault("tenant_id", merged_metadata["owner_user_id"])
+    merged_metadata.setdefault("created_by", created_by)
     merged_metadata.update({
         "daemon_registry": True,
         "daemon_soul_mode": mode,
@@ -235,6 +254,8 @@ def summon_daemon(
     daemon_server.initialize_author_server(base_path)
     daemon = get_daemon(base_path, daemon_id=daemon_id)
     merged_metadata = dict(metadata or {})
+    merged_metadata.setdefault("owner_user_id", daemon["owner_user_id"])
+    merged_metadata.setdefault("tenant_id", daemon["tenant_id"])
     merged_metadata.update({
         "daemon_id": daemon["daemon_id"],
         "daemon_soul_hash": daemon["soul_hash"],
@@ -252,6 +273,230 @@ def summon_daemon(
         metadata=merged_metadata,
     )
     return _runtime_from_author_runtime(runtime, daemon=daemon)
+
+
+def _authority_scope(
+    *,
+    daemon: dict[str, Any],
+    runtime: dict[str, Any] | None,
+    actor_id: str,
+) -> str:
+    if not actor_id or actor_id == "anonymous":
+        return "none"
+    delegated = daemon.get("metadata", {}).get("delegated_hosts", [])
+    runtime_delegated = []
+    if runtime is not None:
+        runtime_delegated = runtime.get("metadata", {}).get("delegated_hosts", [])
+    if actor_id in {daemon.get("owner_user_id"), runtime.get("created_by") if runtime else None}:
+        return "owner"
+    if actor_id in delegated or actor_id in runtime_delegated:
+        return "delegated_host"
+    if (
+        actor_id == "host"
+        and runtime is not None
+        and runtime.get("created_by") in {"host", "anonymous"}
+    ):
+        return "local_host"
+    return "none"
+
+
+def _control_result(
+    *,
+    daemon_id: str,
+    runtime_instance_id: str | None,
+    authority_scope: str,
+    effect: str,
+    action: str,
+    runtime: dict[str, Any] | None = None,
+    daemon: dict[str, Any] | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    return {
+        "action_id": f"daemon-control::{uuid.uuid4().hex}",
+        "daemon_id": daemon_id,
+        "runtime_instance_id": runtime_instance_id,
+        "authority_scope": authority_scope,
+        "effect": effect,
+        "control_state": effect,
+        "action": action,
+        "runtime": runtime,
+        "daemon": daemon,
+        "note": note,
+    }
+
+
+def control_runtime_instance(
+    base_path: str | Path,
+    *,
+    runtime_instance_id: str,
+    actor_id: str,
+    action: str,
+) -> dict[str, Any]:
+    """Apply an ownership-scoped runtime control command."""
+    normalized = action.strip().lower()
+    if normalized not in {*RUNTIME_CONTROL_STATUSES, "banish"}:
+        raise ValueError("action must be pause, resume, restart, or banish")
+    daemon_server.initialize_author_server(base_path)
+    row = daemon_server.get_runtime_instance(
+        base_path,
+        instance_id=runtime_instance_id,
+    )
+    daemon = get_daemon(
+        base_path,
+        daemon_id=_daemon_id_from_author_id(str(row["author_id"])),
+    )
+    runtime = _runtime_from_author_runtime(row, daemon=daemon)
+    scope = _authority_scope(daemon=daemon, runtime=runtime, actor_id=actor_id)
+    if scope == "none":
+        return _control_result(
+            daemon_id=daemon["daemon_id"],
+            runtime_instance_id=runtime_instance_id,
+            authority_scope=scope,
+            effect="refused",
+            action=normalized,
+            runtime=runtime,
+            daemon=daemon,
+            note="Actor is not authorized to control this daemon runtime.",
+        )
+
+    metadata_patch = {
+        "last_control_action": normalized,
+        "last_control_actor": actor_id,
+    }
+    if normalized == "banish":
+        updated = banish_daemon(base_path, runtime_instance_id=runtime_instance_id)
+        return _control_result(
+            daemon_id=daemon["daemon_id"],
+            runtime_instance_id=runtime_instance_id,
+            authority_scope=scope,
+            effect="applied",
+            action=normalized,
+            runtime=updated,
+            daemon=daemon,
+        )
+
+    updated_row = daemon_server.update_runtime_instance_status(
+        base_path,
+        instance_id=runtime_instance_id,
+        status=RUNTIME_CONTROL_STATUSES[normalized],
+        metadata_patch=metadata_patch,
+    )
+    updated = _runtime_from_author_runtime(updated_row, daemon=daemon)
+    effect = "queued" if normalized == "restart" else "applied"
+    return _control_result(
+        daemon_id=daemon["daemon_id"],
+        runtime_instance_id=runtime_instance_id,
+        authority_scope=scope,
+        effect=effect,
+        action=normalized,
+        runtime=updated,
+        daemon=daemon,
+    )
+
+
+def update_daemon_behavior(
+    base_path: str | Path,
+    *,
+    daemon_id: str,
+    actor_id: str,
+    behavior_update: dict[str, Any],
+    apply_now: bool = False,
+) -> dict[str, Any]:
+    """Record an ownership-scoped daemon behavior proposal or update."""
+    daemon = get_daemon(base_path, daemon_id=daemon_id)
+    scope = _authority_scope(daemon=daemon, runtime=None, actor_id=actor_id)
+    if scope == "none":
+        return _control_result(
+            daemon_id=daemon_id,
+            runtime_instance_id=None,
+            authority_scope=scope,
+            effect="refused",
+            action="update_behavior",
+            daemon=daemon,
+            note="Actor is not authorized to update this daemon.",
+        )
+
+    metadata = dict(daemon.get("metadata") or {})
+    version = int(metadata.get("behavior_version") or 0) + 1
+    proposal = {
+        "proposal_id": f"daemon-behavior::{uuid.uuid4().hex}",
+        "version": version,
+        "proposed_by": actor_id,
+        "status": "applied" if apply_now else "proposed",
+        "behavior_update": dict(behavior_update),
+    }
+    proposals = list(metadata.get("behavior_updates", []))
+    proposals.append(proposal)
+    patch: dict[str, Any] = {
+        "behavior_version": version,
+        "behavior_updates": proposals[-25:],
+    }
+    if apply_now:
+        patch["behavior_policy"] = dict(behavior_update)
+    updated_row = daemon_server.update_author_metadata(
+        base_path,
+        author_id=_author_id_from_daemon_id(daemon_id),
+        metadata_patch=patch,
+    )
+    updated = _daemon_from_author(updated_row, include_soul=False)
+    return _control_result(
+        daemon_id=daemon_id,
+        runtime_instance_id=None,
+        authority_scope=scope,
+        effect="applied" if apply_now else "queued",
+        action="update_behavior",
+        daemon=updated,
+        note="Behavior update applied." if apply_now else "Behavior update recorded as a proposal.",
+    )
+
+
+def daemon_control_status(
+    base_path: str | Path,
+    *,
+    actor_id: str,
+    daemon_id: str | None = None,
+    runtime_instance_id: str | None = None,
+    universe_id: str | None = None,
+) -> dict[str, Any]:
+    """Return ownership-scoped daemon control status for chat/web surfaces."""
+    daemons = list_daemons(base_path)
+    runtimes = list_runtime_instances(base_path, universe_id=universe_id)
+    if daemon_id:
+        daemons = [d for d in daemons if d["daemon_id"] == daemon_id]
+        runtimes = [r for r in runtimes if r["daemon_id"] == daemon_id]
+    if runtime_instance_id:
+        runtimes = [r for r in runtimes if r["runtime_instance_id"] == runtime_instance_id]
+        daemon_ids = {r["daemon_id"] for r in runtimes}
+        daemons = [d for d in daemons if d["daemon_id"] in daemon_ids]
+
+    daemon_by_id = {d["daemon_id"]: d for d in daemons}
+    authorized_daemons = [
+        d for d in daemons
+        if _authority_scope(daemon=d, runtime=None, actor_id=actor_id) != "none"
+    ]
+    authorized_ids = {d["daemon_id"] for d in authorized_daemons}
+    authorized_runtimes = []
+    for runtime in runtimes:
+        daemon = daemon_by_id.get(runtime["daemon_id"])
+        if daemon is None:
+            try:
+                daemon = get_daemon(base_path, daemon_id=runtime["daemon_id"])
+            except KeyError:
+                continue
+        if _authority_scope(daemon=daemon, runtime=runtime, actor_id=actor_id) != "none":
+            authorized_runtimes.append(runtime)
+            authorized_ids.add(runtime["daemon_id"])
+
+    return {
+        "action_id": f"daemon-control::{uuid.uuid4().hex}",
+        "authority_scope": "owner" if authorized_ids else "none",
+        "effect": "applied",
+        "control_state": "applied",
+        "daemons": [d for d in daemons if d["daemon_id"] in authorized_ids],
+        "runtimes": authorized_runtimes,
+        "daemon_count": len(authorized_ids),
+        "runtime_count": len(authorized_runtimes),
+    }
 
 
 def banish_daemon(

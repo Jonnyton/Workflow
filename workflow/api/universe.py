@@ -327,6 +327,42 @@ def _extract_daemon_banish(
     )
 
 
+def _extract_daemon_control(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    runtime_id = str(result.get("runtime_instance_id") or "")
+    action = str(result.get("action") or kwargs.get("action", "daemon_control"))
+    return (
+        runtime_id or str(result.get("daemon_id", "")),
+        _truncate(f"{action} {runtime_id}"),
+        {
+            "daemon_id": result.get("daemon_id"),
+            "runtime_instance_id": result.get("runtime_instance_id"),
+            "authority_scope": result.get("authority_scope"),
+            "effect": result.get("effect"),
+            "action_id": result.get("action_id"),
+        },
+    )
+
+
+def _extract_daemon_update_behavior(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    daemon_id = str(result.get("daemon_id") or "")
+    return (
+        daemon_id,
+        _truncate(f"update daemon behavior {daemon_id}"),
+        {
+            "daemon_id": daemon_id,
+            "authority_scope": result.get("authority_scope"),
+            "effect": result.get("effect"),
+            "action_id": result.get("action_id"),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -345,6 +381,10 @@ WRITE_ACTIONS: dict[str, Any] = {
     "daemon_create": (_extract_daemon_create, None),
     "daemon_summon": (_extract_daemon_summon, None),
     "daemon_banish": (_extract_daemon_banish, None),
+    "daemon_pause": (_extract_daemon_control, None),
+    "daemon_resume": (_extract_daemon_control, None),
+    "daemon_restart": (_extract_daemon_control, None),
+    "daemon_update_behavior": (_extract_daemon_update_behavior, None),
 }
 
 
@@ -1262,7 +1302,8 @@ def _action_daemon_banish(
     branch_task_id: str = "",
     **_kwargs: Any,
 ) -> str:
-    from workflow.daemon_registry import banish_daemon
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import control_runtime_instance
 
     data, err = _parse_inputs_object(inputs_json)
     if err:
@@ -1271,13 +1312,149 @@ def _action_daemon_banish(
     if not runtime_id:
         return json.dumps({"error": "runtime_instance_id is required."})
     try:
-        runtime = banish_daemon(_base_path(), runtime_instance_id=runtime_id)
+        result = control_runtime_instance(
+            _base_path(),
+            runtime_instance_id=runtime_id,
+            actor_id=_current_actor(),
+            action="banish",
+        )
     except KeyError:
         return json.dumps({"error": f"Runtime '{runtime_id}' not found."})
-    return json.dumps({
-        "universe_id": universe_id or _default_universe(),
-        "runtime": runtime,
-    }, default=str)
+    result["universe_id"] = universe_id or _default_universe()
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_runtime_control(
+    action_name: str,
+    *,
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_task_id: str = "",
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import control_runtime_instance
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    runtime_id = str(data.get("runtime_instance_id") or branch_task_id or "").strip()
+    if not runtime_id:
+        return json.dumps({"error": "runtime_instance_id is required."})
+    try:
+        result = control_runtime_instance(
+            _base_path(),
+            runtime_instance_id=runtime_id,
+            actor_id=_current_actor(),
+            action=action_name,
+        )
+    except KeyError:
+        return json.dumps({"error": f"Runtime '{runtime_id}' not found."})
+    result["universe_id"] = universe_id or _default_universe()
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_pause(
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    return _action_daemon_runtime_control(
+        "pause",
+        universe_id=universe_id,
+        inputs_json=inputs_json,
+        branch_task_id=branch_task_id,
+    )
+
+
+def _action_daemon_resume(
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    return _action_daemon_runtime_control(
+        "resume",
+        universe_id=universe_id,
+        inputs_json=inputs_json,
+        branch_task_id=branch_task_id,
+    )
+
+
+def _action_daemon_restart(
+    universe_id: str = "",
+    inputs_json: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    return _action_daemon_runtime_control(
+        "restart",
+        universe_id=universe_id,
+        inputs_json=inputs_json,
+        branch_task_id=branch_task_id,
+    )
+
+
+def _action_daemon_update_behavior(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import update_daemon_behavior
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
+    if not daemon_id:
+        return json.dumps({"error": "daemon_id is required."})
+    behavior = data.get("behavior_update")
+    if not isinstance(behavior, dict):
+        behavior = {"note": text.strip()} if text.strip() else {}
+    if not behavior:
+        return json.dumps({"error": "behavior_update is required."})
+    try:
+        result = update_daemon_behavior(
+            _base_path(),
+            daemon_id=daemon_id,
+            actor_id=_current_actor(),
+            behavior_update=behavior,
+            apply_now=bool(data.get("apply_now") or data.get("apply")),
+        )
+    except KeyError:
+        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
+    result["universe_id"] = universe_id or _default_universe()
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_control_status(
+    universe_id: str = "",
+    inputs_json: str = "",
+    node_def_id: str = "",
+    branch_task_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_registry import daemon_control_status
+
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return json.dumps({"error": err})
+    result = daemon_control_status(
+        _base_path(),
+        actor_id=_current_actor(),
+        daemon_id=str(data.get("daemon_id") or node_def_id or "").strip() or None,
+        runtime_instance_id=(
+            str(data.get("runtime_instance_id") or branch_task_id or "").strip()
+            or None
+        ),
+        universe_id=universe_id or str(data.get("universe_id") or "").strip() or None,
+    )
+    result["universe_id"] = universe_id or _default_universe()
+    return json.dumps(result, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -3472,7 +3649,12 @@ def _universe_impl(
         "daemon_get": _action_daemon_get,
         "daemon_create": _action_daemon_create,
         "daemon_summon": _action_daemon_summon,
+        "daemon_pause": _action_daemon_pause,
+        "daemon_resume": _action_daemon_resume,
+        "daemon_restart": _action_daemon_restart,
         "daemon_banish": _action_daemon_banish,
+        "daemon_update_behavior": _action_daemon_update_behavior,
+        "daemon_control_status": _action_daemon_control_status,
         "set_tier_config": _action_set_tier_config,
     }
 

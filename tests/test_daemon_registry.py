@@ -93,6 +93,65 @@ def test_summon_and_banish_daemon_wrap_runtime_instance(tmp_path):
     assert retired["status"] == "retired"
 
 
+def test_runtime_control_is_owner_scoped(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Control Runner",
+        created_by="host",
+        soul_text="Accept direct host control.",
+    )
+    runtime = daemon_registry.summon_daemon(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        universe_id="default-universe",
+        provider_name="codex",
+        model_name="gpt-5.4",
+        created_by="host",
+    )
+
+    refused = daemon_registry.control_runtime_instance(
+        tmp_path,
+        runtime_instance_id=runtime["runtime_instance_id"],
+        actor_id="someone-else",
+        action="pause",
+    )
+    assert refused["effect"] == "refused"
+    assert refused["authority_scope"] == "none"
+
+    paused = daemon_registry.control_runtime_instance(
+        tmp_path,
+        runtime_instance_id=runtime["runtime_instance_id"],
+        actor_id="host",
+        action="pause",
+    )
+    assert paused["effect"] == "applied"
+    assert paused["authority_scope"] == "owner"
+    assert paused["runtime"]["status"] == "paused"
+
+
+def test_update_daemon_behavior_records_versioned_policy(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Policy Runner",
+        created_by="host",
+        soul_text="Let policy guide work selection.",
+    )
+
+    result = daemon_registry.update_daemon_behavior(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        actor_id="host",
+        behavior_update={"preferred_domains": ["workflow-platform"]},
+        apply_now=True,
+    )
+
+    assert result["effect"] == "applied"
+    assert result["daemon"]["metadata"]["behavior_version"] == 1
+    assert result["daemon"]["metadata"]["behavior_policy"] == {
+        "preferred_domains": ["workflow-platform"],
+    }
+
+
 def test_provider_capacity_warning_is_advisory():
     assert daemon_registry.provider_capacity_warning(
         "claude-code", running_count=0,
