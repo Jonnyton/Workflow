@@ -99,6 +99,8 @@ Use host-specific wording, but each host should prove at least one of these:
 
 ## Open Follow-Ups
 
+Detailed execution queue: `docs/ops/mcp-directory-rollout-action-queue.md`.
+
 - Publish `packaging/registry/server.json` to the official MCP Registry after
   the public directory endpoint is deployed and green.
 - Submit the Claude directory packet through Anthropic's review flow.
