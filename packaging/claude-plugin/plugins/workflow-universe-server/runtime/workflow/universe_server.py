@@ -499,6 +499,9 @@ def extensions(
     to_version: str = "",
     goal_id: str = "",
     node_ref_json: str = "",
+    invoke_branch_spec_json: str = "",
+    invoke_branch_version_spec_json: str = "",
+    await_run_spec_json: str = "",
     intent: str = "",
     node_query: str = "",
     force: bool = False,
@@ -595,6 +598,10 @@ def extensions(
 
     Node reuse uses `node_ref_json`. A bare node_id colliding with a
     standalone registration is rejected; pass node_ref_json or intent="copy".
+    Atomic `add_node` can create invoke/await nodes with
+    `invoke_branch_spec_json`, `invoke_branch_version_spec_json`, or
+    `await_run_spec_json`. Composite `build_branch` / `patch_branch` pass
+    those object fields inside `spec_json` / `changes_json`.
 
     `run_branch` is async (returns run_id; poll get_run or stream_run).
     `get_run` emits a ```mermaid``` diagram for Claude.ai auto-render.
@@ -645,6 +652,9 @@ def extensions(
         to_version=to_version,
         goal_id=goal_id,
         node_ref_json=node_ref_json,
+        invoke_branch_spec_json=invoke_branch_spec_json,
+        invoke_branch_version_spec_json=invoke_branch_version_spec_json,
+        await_run_spec_json=await_run_spec_json,
         intent=intent,
         node_query=node_query,
         force=force,

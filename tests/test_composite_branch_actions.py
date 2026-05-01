@@ -97,6 +97,44 @@ def test_build_branch_persists(comp_env):
     assert got["name"] == "Recipe tracker"
 
 
+def test_build_branch_accepts_invoke_branch_node(comp_env):
+    us, _ = comp_env
+    child = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    child_bid = child["branch_def_id"]
+    parent_spec = {
+        "name": "Parent caller",
+        "entry_point": "call_child",
+        "node_defs": [{
+            "node_id": "call_child",
+            "display_name": "Call child",
+            "input_keys": ["raw_recipe"],
+            "output_keys": ["archive_output"],
+            "invoke_branch_spec": {
+                "branch_def_id": child_bid,
+                "inputs_mapping": {"raw_recipe": "raw_recipe"},
+                "output_mapping": {"archive_output": "archive_output"},
+                "wait_mode": "blocking",
+            },
+        }],
+        "edges": [
+            {"from": "START", "to": "call_child"},
+            {"from": "call_child", "to": "END"},
+        ],
+        "state_schema": [
+            {"name": "raw_recipe", "type": "str"},
+            {"name": "archive_output", "type": "str"},
+        ],
+    }
+
+    result = _call(us, "build_branch", spec_json=json.dumps(parent_spec))
+
+    assert result["status"] == "built", result
+    got = _call(us, "get_branch", branch_def_id=result["branch_def_id"])
+    node = got["node_defs"][0]
+    assert node["invoke_branch_spec"]["branch_def_id"] == child_bid
+    assert not node["prompt_template"]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AC #2 — strict-with-suggestions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +257,38 @@ def test_patch_branch_batch_succeeds(comp_env):
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert any(n["node_id"] == "novelty_check" for n in got["node_defs"])
+
+
+def test_patch_branch_add_node_accepts_invoke_branch_spec(comp_env):
+    us, _ = comp_env
+    child = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    child_bid = child["branch_def_id"]
+    built = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    bid = built["branch_def_id"]
+
+    changes = [
+        {"op": "add_state_field", "name": "child_archive", "type": "str"},
+        {"op": "add_node", "node_id": "call_child",
+         "display_name": "Call child",
+         "input_keys": ["raw_recipe"],
+         "output_keys": ["child_archive"],
+         "invoke_branch_spec": {
+             "branch_def_id": child_bid,
+             "inputs_mapping": {"raw_recipe": "raw_recipe"},
+             "output_mapping": {"child_archive": "archive_output"},
+             "wait_mode": "blocking",
+         }},
+        {"op": "remove_edge", "from": "capture", "to": "categorize"},
+        {"op": "add_edge", "from": "capture", "to": "call_child"},
+        {"op": "add_edge", "from": "call_child", "to": "categorize"},
+    ]
+    result = _call(us, "patch_branch", branch_def_id=bid,
+                   changes_json=json.dumps(changes))
+
+    assert result["status"] == "patched", result
+    got = _call(us, "get_branch", branch_def_id=bid)
+    node = next(n for n in got["node_defs"] if n["node_id"] == "call_child")
+    assert node["invoke_branch_spec"]["branch_def_id"] == child_bid
 
 
 def test_patch_branch_rollback_on_any_op_failure(comp_env):
@@ -378,6 +448,37 @@ def test_atomic_actions_still_work(comp_env):
           field_name="x", field_type="str")
     validated = _call(us, "validate_branch", branch_def_id=bid)
     assert validated["valid"] is True
+
+
+def test_atomic_add_node_accepts_invoke_branch_spec_json(comp_env):
+    us, _ = comp_env
+    child = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    child_bid = child["branch_def_id"]
+    bid = _call(us, "create_branch", name="Atomic invoke")["branch_def_id"]
+    _call(us, "add_state_field", branch_def_id=bid,
+          field_name="raw_recipe", field_type="str")
+    _call(us, "add_state_field", branch_def_id=bid,
+          field_name="archive_output", field_type="str")
+
+    add = _call(
+        us, "add_node",
+        branch_def_id=bid,
+        node_id="call_child",
+        display_name="Call child",
+        input_keys="raw_recipe",
+        output_keys="archive_output",
+        invoke_branch_spec_json=json.dumps({
+            "branch_def_id": child_bid,
+            "inputs_mapping": {"raw_recipe": "raw_recipe"},
+            "output_mapping": {"archive_output": "archive_output"},
+            "wait_mode": "blocking",
+        }),
+    )
+
+    assert add["status"] == "added", add
+    got = _call(us, "get_branch", branch_def_id=bid)
+    node = next(n for n in got["node_defs"] if n["node_id"] == "call_child")
+    assert node["invoke_branch_spec"]["branch_def_id"] == child_bid
 
 
 # ─────────────────────────────────────────────────────────────────────────────

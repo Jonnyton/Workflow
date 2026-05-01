@@ -94,6 +94,12 @@ from workflow.catalog import CommitFailedError, DirtyFileError
 
 logger = logging.getLogger("universe_server.branches")
 
+_NODE_EXEC_SPEC_FIELDS = (
+    "invoke_branch_spec",
+    "invoke_branch_version_spec",
+    "await_run_spec",
+)
+
 
 # ───────────────────────────────────────────────────────────────────────────
 # Phase 2: Community Branches — author/edit BranchDefinition over MCP
@@ -466,6 +472,9 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "prompt_template": kwargs.get("prompt_template", ""),
         "author": kwargs.get("author") or _current_actor(),
     }
+    for field_key in _NODE_EXEC_SPEC_FIELDS:
+        if field_key in kwargs:
+            raw[field_key] = kwargs[field_key]
     if "node_ref" in kwargs:
         raw["node_ref"] = kwargs["node_ref"]
     if "intent" in kwargs:
@@ -1157,6 +1166,7 @@ def _resolve_node_spec(
         for field_key in (
             "display_name", "description", "phase", "input_keys",
             "output_keys", "source_code", "prompt_template", "author",
+            *_NODE_EXEC_SPEC_FIELDS,
         ):
             if field_key in raw and raw[field_key] not in (None, ""):
                 merged[field_key] = raw[field_key]
@@ -1220,6 +1230,9 @@ def _lookup_node_body(
             "output_keys": list(hit.get("output_keys") or []),
             "source_code": hit.get("source_code", ""),
             "prompt_template": hit.get("prompt_template", ""),
+            "invoke_branch_spec": hit.get("invoke_branch_spec"),
+            "invoke_branch_version_spec": hit.get("invoke_branch_version_spec"),
+            "await_run_spec": hit.get("await_run_spec"),
             "author": hit.get("author", ""),
             "approved": bool(hit.get("approved", False)),
         }, ""
@@ -1247,6 +1260,9 @@ def _lookup_node_body(
                 "output_keys": list(nd.get("output_keys") or []),
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
+                "invoke_branch_spec": nd.get("invoke_branch_spec"),
+                "invoke_branch_version_spec": nd.get("invoke_branch_version_spec"),
+                "await_run_spec": nd.get("await_run_spec"),
                 "author": nd.get("author", ""),
                 "approved": bool(nd.get("approved", False)),
             }, ""
@@ -1277,6 +1293,19 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             f"node '{nid}' has both source_code and prompt_template — "
             "pick one."
         )
+    exec_specs: dict[str, Any] = {}
+    for field_key in _NODE_EXEC_SPEC_FIELDS:
+        value = raw.get(field_key)
+        if value in (None, ""):
+            continue
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                return f"{field_key} for node '{nid}' is not valid JSON: {exc}"
+        if not isinstance(value, dict):
+            return f"{field_key} for node '{nid}' must be an object"
+        exec_specs[field_key] = value
 
     phase = (raw.get("phase") or "").strip() or "custom"
     in_keys, err = _coerce_node_keys(raw.get("input_keys"), "input_keys")
@@ -1295,6 +1324,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             output_keys=out_keys,
             source_code=source_code,
             prompt_template=prompt_template,
+            **exec_specs,
             author=raw.get("author") or _current_actor(),
             approved=bool(raw.get("approved", False)),
         )
@@ -2898,6 +2928,22 @@ Pass `source_code="def run(state): ..."` instead of `prompt_template`
 for code nodes. Pass `reducer="append"` on `add_state_field` for
 accumulating list fields. The same 10 actions cover both audiences;
 the difference is how much you abstract on the user's behalf.
+
+To invoke another branch as a node, omit `prompt_template` and
+`source_code`, then pass one of:
+
+```
+{"node_id": "call_child", "display_name": "Call child branch",
+ "invoke_branch_spec": {
+   "branch_def_id": "<child_branch_def_id>",
+   "inputs_mapping": {"parent_input": "child_input"},
+   "output_mapping": {"parent_output": "child_output"},
+   "wait_mode": "blocking"
+ }}
+```
+
+For atomic `add_node`, pass the same object as
+`invoke_branch_spec_json='{"branch_def_id":"...","wait_mode":"blocking"}'`.
 
 ## Running a branch
 

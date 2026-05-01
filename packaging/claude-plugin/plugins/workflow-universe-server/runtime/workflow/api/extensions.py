@@ -271,6 +271,9 @@ def _extensions_impl(
     to_version: str = "",
     goal_id: str = "",
     node_ref_json: str = "",
+    invoke_branch_spec_json: str = "",
+    invoke_branch_version_spec_json: str = "",
+    await_run_spec_json: str = "",
     intent: str = "",
     node_query: str = "",
     force: bool = False,
@@ -386,6 +389,25 @@ def _extensions_impl(
                 "error": f"node_ref_json is not valid JSON: {exc}",
             })
         branch_kwargs["node_ref"] = parsed_ref
+    for arg_name, field_name in (
+        ("invoke_branch_spec_json", "invoke_branch_spec"),
+        ("invoke_branch_version_spec_json", "invoke_branch_version_spec"),
+        ("await_run_spec_json", "await_run_spec"),
+    ):
+        raw_spec = locals()[arg_name]
+        if not raw_spec:
+            continue
+        try:
+            parsed_spec = json.loads(raw_spec)
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "error": f"{arg_name} is not valid JSON: {exc}",
+            })
+        if not isinstance(parsed_spec, dict):
+            return json.dumps({
+                "error": f"{arg_name} must decode to a JSON object.",
+            })
+        branch_kwargs[field_name] = parsed_spec
     branch_handler = _BRANCH_ACTIONS.get(action)
     if branch_handler is not None:
         return _dispatch_branch_action(action, branch_handler, branch_kwargs)
