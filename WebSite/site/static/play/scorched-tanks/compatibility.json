@@ -1,0 +1,21 @@
+{
+  "title": "Scorched Tanks",
+  "platform": "Amiga OCS/ECS",
+  "exact_game_state": "NEEDS_RIGHTS_CLEARED_FIRMWARE",
+  "media": {
+    "source": "Scorched Tanks v1.90 ADF",
+    "runtime_asset": "assets/scorched-tanks-v1.90-autostart-a642eb46.adf",
+    "patches": [
+      "S/Startup-Sequence autostarts Scorched_TanksV1.90"
+    ]
+  },
+  "runtime": {
+    "browser_core": "vAmigaWeb",
+    "preferred_firmware": "licensed/kickstart-a500-1.3.rom",
+    "fallback_firmware": "AROS Kickstart replacement"
+  },
+  "verification": {
+    "date": "2026-04-30",
+    "result": "v1.90, Aminet v1.85, and public-domain v0.95 boot under AROS but black-screen when the AMOS executable takes over."
+  }
+}

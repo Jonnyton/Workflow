@@ -1,12 +1,12 @@
 {
-  "name": "Scorched Tanks Browser Port",
+  "name": "Scorched Tanks Original Amiga",
   "short_name": "Scorched Tanks",
-  "description": "Browser-playable Scorched Tanks compatibility port prepared by a Workflow branch.",
+  "description": "Original Scorched Tanks Amiga disk autostarted in a browser runtime by a Workflow branch.",
   "start_url": "/play/scorched-tanks/",
   "scope": "/play/scorched-tanks/",
   "display": "standalone",
-  "background_color": "#111619",
-  "theme_color": "#171f24",
+  "background_color": "#161a18",
+  "theme_color": "#20231d",
   "icons": [
     {
       "src": "./icons/icon-192.png",
