@@ -9,10 +9,10 @@
       content="default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; worker-src 'self'; connect-src 'self' https://cloudflareinsights.com; frame-src https://vamigaweb.github.io; child-src https://vamigaweb.github.io; style-src 'self'; img-src 'self' data:; media-src 'self';"
     />
     <title>Scorched Tanks Original Amiga Disk</title>
-    <link rel="manifest" href="./manifest.webmanifest?v=restart-stable" />
+    <link rel="manifest" href="./manifest.webmanifest?v=full-window-proof" />
     <link rel="icon" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=restart-stable" />
+    <link rel="stylesheet" href="./styles.css?v=full-window-proof" />
   </head>
   <body>
     <main class="shell">
@@ -44,6 +44,7 @@
             <span id="runtime-status" role="status">Runtime booting</span>
             <span id="media-status">Original disk pending</span>
             <span id="rom-status">AROS trial; use ROM if stuck</span>
+            <span id="audio-status">Audio locked</span>
           </div>
           <div class="runtime-actions">
             <button id="start-aros-button" class="button primary" type="button">
@@ -139,7 +140,7 @@
       </footer>
     </main>
 
-    <script src="./original.js?v=restart-stable"></script>
-    <script src="./app.js?v=restart-stable"></script>
+    <script src="./original.js?v=full-window-proof"></script>
+    <script src="./app.js?v=full-window-proof"></script>
   </body>
 </html>

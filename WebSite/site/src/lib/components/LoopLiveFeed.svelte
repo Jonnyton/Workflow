@@ -89,6 +89,7 @@
     const status = latest.status.toLowerCase();
     if (status.includes('fail') || status.includes('error') || status.includes('revert')) return 'failed';
     if (status.includes('complete') || status.includes('success') || status.includes('done') || status.includes('accept')) return 'done';
+    if (status.includes('pending') || status.includes('queued') || status.includes('waiting')) return 'waiting';
     return 'running';
   }
 
@@ -144,6 +145,12 @@
       {:else}
         <strong>{headline}</strong>
         <p><code>{feed?.branchDefId ?? 'fd5c66b1d87d'}</code> · {subhead}</p>
+      {/if}
+      {#if activeRun?.error}
+        <p class="feed-error">{activeRun.error}</p>
+      {/if}
+      {#if activeRun?.suggested_action}
+        <p class="feed-hint">{activeRun.suggested_action}</p>
       {/if}
       {#if latestError}
         <p class="feed-error">{latestError}</p>
@@ -331,6 +338,13 @@
 
   .feed-error {
     color: var(--ember-300) !important;
+    font-family: var(--font-mono);
+    font-size: 11px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .feed-hint {
+    color: var(--fg-3) !important;
     font-family: var(--font-mono);
     font-size: 11px !important;
     overflow-wrap: anywhere;

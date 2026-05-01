@@ -32,6 +32,16 @@
 
   let lastFrame = 0;
   let botTimer = null;
+  let audioContext = null;
+  let audioGain = null;
+
+  const proof = {
+    mode: "compatibility-port",
+    humanShots: 0,
+    humanHits: 0,
+    lastHumanHit: null,
+    audioState: "locked"
+  };
 
   const state = {
     round: 1,
@@ -58,6 +68,90 @@
   function setStatus(text) {
     state.message = text;
     status.textContent = text;
+  }
+
+  function updateProofAudioState() {
+    proof.audioState = audioContext ? audioContext.state : "locked";
+  }
+
+  function ensureAudio() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      proof.audioState = "unsupported";
+      return null;
+    }
+
+    if (!audioContext) {
+      audioContext = new AudioCtor();
+      audioGain = audioContext.createGain();
+      audioGain.gain.value = 0.18;
+      audioGain.connect(audioContext.destination);
+      audioContext.addEventListener("statechange", updateProofAudioState);
+    }
+
+    if (audioContext.state === "suspended") {
+      audioContext.resume();
+    }
+    updateProofAudioState();
+    return audioContext;
+  }
+
+  function playTone(startFrequency, endFrequency, duration, gain = 0.16) {
+    const context = ensureAudio();
+    if (!context || !audioGain) {
+      return;
+    }
+
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(startFrequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+    envelope.gain.setValueAtTime(0.0001, now);
+    envelope.gain.exponentialRampToValueAtTime(gain, now + 0.025);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    oscillator.connect(envelope);
+    envelope.connect(audioGain);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.05);
+  }
+
+  function playFireSound() {
+    playTone(190, 70, 0.22, 0.12);
+  }
+
+  function playExplosionSound(intensity) {
+    const context = ensureAudio();
+    if (!context || !audioGain) {
+      return;
+    }
+
+    const now = context.currentTime;
+    const duration = 0.36;
+    const bufferSize = Math.max(1, Math.floor(context.sampleRate * duration));
+    const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i += 1) {
+      const decay = 1 - i / bufferSize;
+      data[i] = (Math.random() * 2 - 1) * decay;
+    }
+
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const envelope = context.createGain();
+    source.buffer = buffer;
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(900, now);
+    filter.frequency.exponentialRampToValueAtTime(120, now + duration);
+    envelope.gain.setValueAtTime(0.0001, now);
+    envelope.gain.exponentialRampToValueAtTime(clamp(intensity, 0.08, 0.28), now + 0.02);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    source.connect(filter);
+    filter.connect(envelope);
+    envelope.connect(audioGain);
+    source.start(now);
+    source.stop(now + duration + 0.05);
   }
 
   function updateReadouts() {
@@ -263,11 +357,17 @@
         vx: Math.cos(angle) * speed,
         vy: -Math.sin(angle) * speed,
         weaponKey: tank.weapon,
+        ownerName: tank.name,
+        humanShot: tank.human,
         trail: [],
         age: index * -5
       };
     });
 
+    if (tank.human) {
+      proof.humanShots += 1;
+    }
+    playFireSound();
     state.phase = "firing";
     setControlsEnabled(false);
     setStatus(`${tank.name} fired ${weapon.name}`);
@@ -346,7 +446,13 @@
         projectile.y > HEIGHT + 80;
 
       if (impactTank || hitTerrain) {
-        explode(projectile.x, projectile.y, projectile.weaponKey);
+        explode(
+          projectile.x,
+          projectile.y,
+          projectile.weaponKey,
+          projectile.ownerName,
+          projectile.humanShot
+        );
       } else if (!outOfBounds) {
         survivors.push(projectile);
       }
@@ -362,9 +468,10 @@
     }
   }
 
-  function explode(x, y, weaponKey) {
+  function explode(x, y, weaponKey, ownerName, humanShot) {
     const weapon = weapons[weaponKey] || weapons.single;
     const radius = weapon.radius;
+    let totalDamage = 0;
     state.flashes.push({ x, y, radius: 4, max: radius * 1.6, life: 1 });
 
     if (weapon.dirt) {
@@ -398,6 +505,16 @@
       if (distance < radius * 2.2) {
         const damage = Math.max(0, (1 - distance / (radius * 2.2)) * weapon.damage);
         tank.hp -= damage;
+        totalDamage += damage;
+        if (humanShot && tank.name !== ownerName && damage > 0) {
+          proof.humanHits += 1;
+          proof.lastHumanHit = {
+            target: tank.name,
+            damage: Number(damage.toFixed(1)),
+            targetHp: Number(Math.max(0, tank.hp).toFixed(1)),
+            weapon: weapon.name
+          };
+        }
         if (tank.hp <= 0) {
           tank.hp = 0;
           tank.alive = false;
@@ -422,6 +539,7 @@
 
     settleTanks();
     updateReadouts();
+    playExplosionSound(totalDamage > 0 ? 0.24 : 0.12);
   }
 
   function updateParticles(delta) {
@@ -704,6 +822,11 @@
     powerControl.addEventListener("input", onControlInput);
     weaponControl.addEventListener("change", onControlInput);
     fireButton.addEventListener("click", fireCurrentTank);
+    canvas.addEventListener("click", () => {
+      if (!fireButton.disabled && state.phase === "aim") {
+        fireCurrentTank();
+      }
+    });
     newRoundButton.addEventListener("click", () => {
       state.round += 1;
       startRound();
@@ -744,5 +867,19 @@
   bindUi();
   initStars();
   startRound();
+  window.__scorchedTanksCompat = {
+    getProof: () => JSON.parse(JSON.stringify(proof)),
+    getState: () =>
+      JSON.parse(
+        JSON.stringify({
+          phase: state.phase,
+          current: state.current,
+          wind: state.wind,
+          message: state.message,
+          tanks: state.tanks,
+          terrain: state.terrain
+        })
+      )
+  };
   window.requestAnimationFrame(frame);
 })();

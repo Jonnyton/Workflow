@@ -19,6 +19,7 @@
   const runtimeStatus = document.getElementById("runtime-status");
   const mediaStatus = document.getElementById("media-status");
   const romStatus = document.getElementById("rom-status");
+  const audioStatus = document.getElementById("audio-status");
 
   let installPrompt = null;
   let frame = null;
@@ -30,6 +31,7 @@
   let kickstartRom = null;
   let adfBytes = null;
   let runtimeReady = false;
+  let audioUnlocked = false;
   let lastFrameLoadAt = 0;
 
   function setRuntimeStatus(text) {
@@ -42,6 +44,10 @@
 
   function setRomStatus(text) {
     romStatus.textContent = text;
+  }
+
+  function setAudioStatus(text) {
+    audioStatus.textContent = text;
   }
 
   function reportAsync(task) {
@@ -137,8 +143,16 @@
     postToRuntime({
       cmd: "script",
       script:
-        "if (typeof insert_file === 'function' && typeof wasm_has_disk === 'function' && !wasm_has_disk('df0')) { insert_file(0); show_drive_select(false); }",
+        "if (typeof wasm_loadfile === 'function' && typeof file_slot_file !== 'undefined' && typeof file_slot_file_name !== 'undefined') { if (typeof wasm_has_disk !== 'function' || !wasm_has_disk('df0')) { wasm_loadfile(file_slot_file_name, file_slot_file, 0); } if (typeof show_drive_select === 'function') { show_drive_select(false); } if (typeof wasm_reset === 'function') { wasm_reset(); } if (typeof wasm_run === 'function') { setTimeout(() => { try { wasm_run(); } catch (error) { console.error(error); } }, 200); } }",
     });
+  }
+
+  function unlockAudio() {
+    if (audioUnlocked || !frame?.contentWindow) {
+      return;
+    }
+    postToRuntime("toggle_audio()");
+    setAudioStatus("Audio requested");
   }
 
   function scheduleDiskInsert(delay) {
@@ -186,11 +200,11 @@
       clearDiskInsertTimers();
       scheduleDiskInsert(250);
       scheduleDiskInsert(1000);
-      setMediaStatus("Original v1.90 autostart ADF assigned to df0");
+      setMediaStatus("Original v1.90 autostart ADF booting from df0");
       if (launch.kickstartRom) {
         setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
       } else {
-        setRuntimeStatus("Running AROS compatibility trial");
+        setRuntimeStatus("Booting original disk with AROS");
       }
     } catch (error) {
       pendingLaunch = launch;
@@ -221,6 +235,7 @@
       clearLaunchTimer();
       clearDiskInsertTimers();
       runtimeReady = false;
+      audioUnlocked = false;
       lastFrameLoadAt = Date.now();
       if (!pendingLaunch && currentLaunch) {
         pendingLaunch = currentLaunch;
@@ -376,6 +391,15 @@
         return;
       }
       scheduleLaunchInjection();
+      return;
+    }
+
+    if (event.data?.msg === "render_current_audio_state") {
+      const audioState = event.data.value || "unknown";
+      audioUnlocked = audioState === "running";
+      setAudioStatus(
+        audioState === "running" ? "Audio running" : `Audio ${audioState}`,
+      );
     }
   });
 
@@ -397,8 +421,11 @@
   );
   resetButton.addEventListener("click", () => reportAsync(resetEmulator()));
   kickstartInput.addEventListener("change", onKickstartSelected);
+  window.addEventListener("pointerdown", unlockAudio, { capture: true });
+  window.addEventListener("keydown", unlockAudio, { capture: true });
 
   bindInstall();
   setMediaStatus("Original v1.90 autostart ADF ready");
+  setAudioStatus("Audio locked");
   reportAsync(startPreferredRuntime());
 })();

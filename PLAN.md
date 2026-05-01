@@ -70,6 +70,18 @@ Depth: lead memory `project_commons_first_architecture.md`.
 
 **How to apply:** Every feature design names its target capability tier and provider coverage. Local-app: daemon hosting, file system I/O, local program invocation, autoresearch overnight, multi-tenant tray, OSS-clone-and-extend. Browser-only: cloud-mediated equivalents for everything actionable. Provider parity: test on both Claude and ChatGPT before claiming feature ships. A primitive earns its keep MORE if it works equivalently across both capability tiers + both providers; a primitive that only helps local-app users is a much higher bar to ship. Hopeful future: the gap collapses (Claude.ai gaining computer-use, ChatGPT gaining MCP local-file capabilities, browser sandboxing improving) — primitives should compose the same way regardless of capability tier; tier just determines leverage paths, not feature existence.
 
+**Daemon controls apply this rule directly.** A host should be able to create,
+summon, inspect, pause, resume, banish, restart, and adjust daemon behavior from
+the same chatbot surface they already use for Workflow. The chat surface may be
+Claude.ai on a phone, ChatGPT in a browser, Claude/Codex on the host computer,
+or a cloud-hosted control session; the feature is the same, but the execution
+path changes. Browser/phone sessions issue authenticated control intents to a
+cloud host or home host relay. Local-app sessions can additionally perform
+immediate local process, file, provider, and tray controls. If the current chat
+does not have authority or live reachability, the tool returns an explicit
+`queued` / `needs_host_connection` / `forbidden` state with the smallest next
+step, not a suggestion to switch clients.
+
 Depth: lead memory `project_user_capability_axis.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
 
 ---
@@ -216,6 +228,18 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Daemon learning wiki.** Every soul-bearing daemon owns a host-local markdown wiki under the host's Workflow data directory. The wiki follows the raw-sources -> maintained wiki -> schema pattern: immutable raw node/gate signals are recorded first, maintained synthesis pages evolve from those signals, and `WIKI.md` tells future daemon runs how to update and use the wiki. The wiki is private host memory, not platform-published content. It helps the daemon recursively learn how to become a better version of itself as defined by its soul. Soul edits are rare proposals: the wiki may draft clarifications that preserve the soul's spirit, but failed nodes/gates should first update tactics, self-model, and decision policy rather than automatically rewriting the soul.
 
+**Chatbot-first host control.** The notification tray is a convenience surface,
+not the primary control plane. Hosts control daemons through conversation:
+create/summon daemons, bind them to providers and models, inspect runtime state,
+pause/resume/restart/banish runtimes, change provider/capacity settings, and
+modify behavior through soul proposals, decision-policy/wiki edits,
+domain-interest preferences, allow/deny work domains, and node/gate eligibility
+preferences. All control actions are scoped to daemon identities and runtime
+instances owned by, delegated to, or explicitly hosted by the authenticated
+chat/host identity. Phone/browser control of a home-hosted daemon is a relayed
+command: it can be accepted and queued by the control plane, then applied only
+by the connected host agent that proves authority over that daemon.
+
 Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
 **Zero daemons required for authoring.** Node/branch/goal creation, editing, forking, and collaboration work with no daemon running anywhere. Daemon hosting is opt-in for execution work. This is a load-bearing requirement — any architecture where authoring depends on a running daemon violates it. (The phased plan was rejected on this basis; see `docs/design-notes/2026-04-18-full-platform-architecture.md §1`.)
@@ -307,6 +331,18 @@ Daemon learning wikis are one host-local memory backend for soul-bearing daemons
 **Principle:** Any MCP-compatible client is a control station, not a creator. The daemon does the creative work. If a chat surface writes story content itself, that indicates a missing daemon path.
 
 **Shipping rule:** MCP tools and prompts publish explicit titles, tags, and behavior hints through the registered FastMCP surface — the daemon exposes a small number of coarse-grained tools, so discoverability metadata is part of the interface contract.
+
+**Daemon-control contract.** Chatbot tools expose daemon control as
+ownership-scoped operations, not tray-only commands. The public contract should
+cover at least: `daemon_list`, `daemon_get`, `daemon_create`,
+`daemon_summon`, `daemon_pause`, `daemon_resume`, `daemon_restart`,
+`daemon_banish`, `daemon_update_behavior`, and `daemon_control_status`.
+Responses name the target `daemon_id` / `runtime_instance_id`, the authority
+scope used (`owner`, `delegated_host`, `cloud_host`, `local_host`, or
+`none`), the effect (`applied`, `queued`, `refused`, or `needs_connection`),
+and an audit/action id. Behavior updates are versioned and reviewable: direct
+runtime preferences may apply immediately, while soul changes are proposals
+unless the host explicitly authorizes adoption.
 
 **Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** `workflow/universe_server.py` (12.4k LOC as of 2026-04-26, down from 14k peak) is in-flight refactor scope per `docs/audits/2026-04-25-universe-server-decomposition.md` — 3 of 8 steps landed (helpers, wiki, status); 5 remain (runs, evaluation, runtime_ops, market, branches).
 

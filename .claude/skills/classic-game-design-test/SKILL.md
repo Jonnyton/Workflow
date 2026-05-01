@@ -83,6 +83,8 @@ a remake satisfies it.
 5. **Integrate media deterministically.** Loading a disk/archive is not enough.
    The launcher must wait for the runtime to be ready, inject media once, avoid
    reload loops, and expose status that distinguishes "loaded" from "playing."
+   If the runtime stages media in a file slot, use its explicit boot/mount with
+   reset semantics; do not count a post-boot insert as an autostart proof.
 6. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
    mappings needed by the target game. Include a real browser click/tap path
    for any action the user naturally expects to perform with the mouse.
@@ -123,6 +125,10 @@ Never claim final playability from:
 - A remake running when the user requested the original.
 - Code inspection without live runtime evidence.
 
+Observation-only test instrumentation is allowed, but it must not change game
+state to manufacture the proof. The user-facing input path, such as a real
+button or canvas click, still has to trigger the gameplay action.
+
 ## Browser Verification Checklist
 
 Use `browser-testing-with-devtools` or an equivalent real browser path.
@@ -132,10 +138,15 @@ Capture evidence with date, environment, URL, and exact build/version.
 - [ ] Mobile or narrow viewport is usable when the experience is public web.
 - [ ] Canvas/frame fills the intended window or tab; no tiny default viewport.
 - [ ] Runtime does not restart, reload, or lose media after start.
+- [ ] Bootable media actually boots after injection; a shell prompt with a
+      mounted disk is not proof that Startup-Sequence ran.
 - [ ] Console and network logs have no fatal load/input/audio errors.
 - [ ] Input proof uses real browser events, not only internal function calls.
 - [ ] Audio proof shows user gesture, `AudioContext` running/unmuted, and
       observable runtime audio activity; use headed/manual proof when needed.
+- [ ] Emulator pages that monkey-patch browser globals can break object
+      serialization in test tools; read proof/state as JSON strings before
+      parsing in the test process.
 - [ ] Screenshots or video show before/action/after gameplay state.
 - [ ] The original/remake/fallback class is stated in the verification note.
 

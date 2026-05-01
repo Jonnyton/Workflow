@@ -106,3 +106,45 @@ def test_provider_capacity_warning_is_advisory():
     assert warning["provider_name"] == "claude-code"
     assert warning["next_count"] == 3
     assert warning["can_override"] is True
+
+
+def test_select_project_loop_daemon_prefers_latest_soul_default(tmp_path):
+    daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Old Loop Default",
+        created_by="host",
+        soul_text="Prefer old maintenance work.",
+        metadata={"project_loop_default": True},
+    )
+    selected = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Developer Loop Default",
+        created_by="host",
+        soul_text="Prefer project uptime and verified development work.",
+        metadata={"project_loop_default": True},
+        domain_claims=["developer", "workflow-platform"],
+    )
+
+    loop_daemon = daemon_registry.select_project_loop_daemon(
+        tmp_path,
+        include_soul=True,
+    )
+
+    assert loop_daemon is not None
+    assert loop_daemon["daemon_id"] == selected["daemon_id"]
+    assert loop_daemon["soul_text"] == (
+        "Prefer project uptime and verified development work."
+    )
+    assert loop_daemon["domain_claims"] == ["developer", "workflow-platform"]
+
+
+def test_select_project_loop_daemon_ignores_soulless_defaults(tmp_path):
+    daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Soulless Loop Default",
+        created_by="host",
+        soul_mode="soulless",
+        metadata={"project_loop_default": True},
+    )
+
+    assert daemon_registry.select_project_loop_daemon(tmp_path) is None

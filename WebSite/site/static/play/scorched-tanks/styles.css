@@ -251,7 +251,17 @@ summary:focus-visible {
 }
 
 .compatibility-port[open] {
-  width: min(64rem, calc(100vw - 1.5rem));
+  inset: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  opacity: 1;
+  transform: none;
 }
 
 .compatibility-port summary {
@@ -269,6 +279,11 @@ summary:focus-visible {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   background: #070807;
+}
+
+.compatibility-port[open] .compat-stage {
+  height: auto;
+  min-height: 0;
 }
 
 #game {

@@ -137,6 +137,9 @@ export type LoopPatchRun = {
   finished_at?: string | null;
   last_node_id?: string;
   current_stage: LoopStageId;
+  error?: string;
+  failure_class?: string;
+  suggested_action?: string;
 };
 
 export type LoopPatchEvent = {
@@ -167,6 +170,16 @@ export type PatchLoopFeedSource = 'mcp' | 'github';
 
 const CHANGE_LOOP_BRANCH_IDS = ['fd5c66b1d87d', 'change_loop_v1'];
 
+const KNOWN_LOOP_NODES: Record<string, LoopStageId> = {
+  intake_router: 'intake',
+  investigation_gate: 'investigation',
+  coding_dispatch: 'coding',
+  review_release_gate: 'release',
+  release_safety_gate: 'release',
+  live_observation_gate: 'observe',
+  evolution_notes: 'observe'
+};
+
 const STAGE_TERMS: Record<LoopStageId, string[]> = {
   intake: ['intake', 'file_bug', 'file bug', 'request', 'report', 'classify', 'trigger', 'submitted', 'queued'],
   investigation: ['investigation', 'investigate', 'repro', 'root cause', 'cause', 'analysis', 'patch_packet', 'packet'],
@@ -187,6 +200,11 @@ function stringify(value: unknown): string {
   }
 }
 
+function isSparseText(value: string): boolean {
+  const text = value.trim();
+  return !text || text === '{}' || text === '[]' || text === 'null' || text === 'undefined';
+}
+
 function firstString(...values: unknown[]): string {
   for (const value of values) {
     const text = stringify(value).trim();
@@ -195,7 +213,47 @@ function firstString(...values: unknown[]): string {
   return '';
 }
 
+function firstDetailString(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stringify(value).trim();
+    if (!isSparseText(text)) return text;
+  }
+  return '';
+}
+
+function normalizeTimestamp(value: unknown): string | null {
+  const text = firstString(value);
+  if (!text) return null;
+  if (typeof value === 'number' || /^\d+(\.\d+)?$/.test(text)) {
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) {
+      const millis = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+      const date = new Date(millis);
+      if (!Number.isNaN(date.getTime())) return date.toISOString();
+    }
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+  return text;
+}
+
+function humanizeNodeId(value: unknown): string {
+  const text = firstString(value);
+  if (!text) return '';
+  return text
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function inferLoopStage(...values: unknown[]): LoopStageId {
+  for (const value of values) {
+    const text = stringify(value).toLowerCase();
+    for (const [nodeId, stage] of Object.entries(KNOWN_LOOP_NODES) as Array<[string, LoopStageId]>) {
+      if (text === nodeId || text.includes(nodeId)) return stage;
+    }
+  }
   const haystack = values.map(stringify).join(' ').toLowerCase();
   for (const [stage, terms] of Object.entries(STAGE_TERMS) as Array<[LoopStageId, string[]]>) {
     if (terms.some((term) => haystack.includes(term))) return stage;
@@ -209,6 +267,7 @@ function normalizeRun(raw: any): LoopPatchRun {
   const name = firstString(raw?.run_name, raw?.name, raw?.title, runId);
   const lastNode = firstString(raw?.last_node_id, raw?.lastNodeId, raw?.node_id, raw?.current_node);
   const status = firstString(raw?.status, raw?.state, 'unknown').toLowerCase();
+  const error = firstDetailString(raw?.error, raw?.failure, raw?.exception);
 
   return {
     run_id: runId,
@@ -216,10 +275,13 @@ function normalizeRun(raw: any): LoopPatchRun {
     name,
     status,
     actor: firstString(raw?.actor, raw?.author, raw?.claimed_by) || undefined,
-    started_at: raw?.started_at ?? raw?.startedAt ?? raw?.created_at ?? null,
-    finished_at: raw?.finished_at ?? raw?.finishedAt ?? raw?.completed_at ?? null,
+    started_at: normalizeTimestamp(raw?.started_at ?? raw?.startedAt ?? raw?.created_at),
+    finished_at: normalizeTimestamp(raw?.finished_at ?? raw?.finishedAt ?? raw?.completed_at),
     last_node_id: lastNode,
-    current_stage: inferLoopStage(lastNode, name, status)
+    current_stage: inferLoopStage(lastNode, name, status, error),
+    error: error || undefined,
+    failure_class: firstString(raw?.failure_class, raw?.failureClass) || undefined,
+    suggested_action: firstDetailString(raw?.suggested_action, raw?.suggestedAction) || undefined
   };
 }
 
@@ -227,8 +289,8 @@ function normalizeEvent(raw: any, index: number, run?: LoopPatchRun): LoopPatchE
   const runId = firstString(raw?.run_id, raw?.runId, run?.run_id);
   const nodeId = firstString(raw?.node_id, raw?.nodeId, raw?.node, raw?.step, raw?.stage);
   const status = firstString(raw?.status, raw?.state, raw?.event_type, raw?.type, run?.status, 'event').toLowerCase();
-  const title = firstString(raw?.title, raw?.label, nodeId, raw?.event_type, raw?.type, 'Loop event');
-  const detail = firstString(
+  const title = firstString(raw?.title, raw?.label, humanizeNodeId(nodeId), raw?.event_type, raw?.type, 'Loop event');
+  const detail = firstDetailString(
     raw?.detail,
     raw?.message,
     raw?.text,
@@ -240,15 +302,18 @@ function normalizeEvent(raw: any, index: number, run?: LoopPatchRun): LoopPatchE
     'Loop state changed.'
   );
   const step = firstString(raw?.step_index, raw?.index, index);
+  const fallbackDetail = run?.error
+    ? `${status === 'pending' ? 'Pending when run failed' : 'Run failed'}: ${run.error}`
+    : `${title} is ${status}.`;
 
   return {
     id: firstString(raw?.event_id, raw?.id, `${runId || 'loop'}:${step}:${nodeId || title}`),
     run_id: runId || undefined,
-    stage: inferLoopStage(raw?.stage, nodeId, title, detail, status),
+    stage: inferLoopStage(raw?.stage, nodeId, title, detail, status, run?.error),
     status,
     title,
-    detail,
-    at: raw?.created_at ?? raw?.timestamp ?? raw?.at ?? raw?.started_at ?? run?.started_at ?? null,
+    detail: detail || fallbackDetail,
+    at: normalizeTimestamp(raw?.created_at ?? raw?.timestamp ?? raw?.at ?? raw?.started_at ?? run?.started_at),
     node_id: nodeId || undefined,
     source: firstString(raw?.source, 'MCP run event')
   };
@@ -264,6 +329,17 @@ function runLooksLikePatchLoop(run: LoopPatchRun): boolean {
 
 function activeRun(runs: LoopPatchRun[]): LoopPatchRun | undefined {
   return runs.find((run) => !['completed', 'failed', 'cancelled', 'canceled'].includes(run.status)) ?? runs[0];
+}
+
+function mergeRunSnapshot(run: LoopPatchRun | undefined, snapshot: any): void {
+  if (!run || !snapshot || typeof snapshot !== 'object') return;
+  run.error = firstDetailString(snapshot.error, snapshot.failure, snapshot.exception, run.error) || undefined;
+  run.failure_class = firstString(snapshot.failure_class, snapshot.failureClass, run.failure_class) || undefined;
+  run.suggested_action = firstDetailString(snapshot.suggested_action, snapshot.suggestedAction, run.suggested_action) || undefined;
+  run.finished_at = normalizeTimestamp(snapshot.finished_at ?? snapshot.finishedAt ?? snapshot.completed_at) ?? run.finished_at;
+  run.started_at = normalizeTimestamp(snapshot.started_at ?? snapshot.startedAt ?? snapshot.created_at) ?? run.started_at;
+  run.last_node_id = firstString(snapshot.last_node_id, snapshot.lastNodeId, snapshot.node_id, run.last_node_id) || run.last_node_id;
+  run.current_stage = inferLoopStage(run.last_node_id, run.name, run.status, run.error);
 }
 
 function normalizeLoopToolFeed(raw: any): PatchLoopFeed | null {
@@ -495,6 +571,7 @@ async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise
     let events: LoopPatchEvent[] = [];
 
     if (selectedRun?.run_id) {
+      let runSnapshot: any = null;
       try {
         const streamed = await callTool('extensions', {
           action: 'stream_run',
@@ -508,18 +585,47 @@ async function fetchMcpPatchLoopFeed(limit: number, warnings: string[]): Promise
         warnings.push(warningText('extensions stream_run', error));
       }
 
-      if (!events.length) {
+      if (!events.length || selectedRun.status.includes('fail') || events.every((event) => isSparseText(event.detail))) {
         try {
-          const runSnapshot = await callTool('extensions', {
+          runSnapshot = await callTool('extensions', {
             action: 'get_run',
             run_id: selectedRun.run_id
           });
+          mergeRunSnapshot(selectedRun, runSnapshot);
           const rawEvents = runSnapshot?.events ?? runSnapshot?.timeline ?? runSnapshot?.steps ?? [];
-          events = Array.isArray(rawEvents)
+          if (!events.length) {
+            events = Array.isArray(rawEvents)
             ? rawEvents.map((event: any, index: number) => normalizeEvent(event, index, selectedRun))
             : [];
+          }
         } catch (error) {
           warnings.push(warningText('extensions get_run', error));
+        }
+      }
+
+      if (selectedRun.error) {
+        events = events.map((event) => ({
+          ...event,
+          detail: isSparseText(event.detail)
+            ? `${event.status === 'pending' ? 'Pending when run failed' : 'Run failed'}: ${selectedRun.error}`
+            : event.detail
+        }));
+        if (!events.some((event) => event.status.includes('fail') || event.detail.includes(selectedRun.error ?? ''))) {
+          events.push({
+            id: `${selectedRun.run_id}:failure`,
+            run_id: selectedRun.run_id,
+            stage: inferLoopStage(selectedRun.last_node_id, selectedRun.error, selectedRun.failure_class),
+            status: 'failed',
+            title: 'Run failed',
+            detail: [
+              selectedRun.error,
+              selectedRun.failure_class ? `class: ${selectedRun.failure_class}` : '',
+              selectedRun.suggested_action ? `next: ${selectedRun.suggested_action}` : ''
+            ].filter(Boolean).join(' · '),
+            at: selectedRun.finished_at ?? selectedRun.started_at ?? null,
+            node_id: selectedRun.last_node_id,
+            source: 'MCP extensions get_run'
+          });
         }
       }
     }
