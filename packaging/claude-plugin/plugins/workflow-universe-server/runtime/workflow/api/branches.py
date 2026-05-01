@@ -414,6 +414,7 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
             "domain_id": r.get("domain_id"),
             "goal_id": r.get("goal_id"),
             "node_count": node_count,
+            "skill_count": len(r.get("skills", []) or []),
             "published": r.get("published", False),
             "visibility": r.get("visibility", "public"),
             "has_sandbox_nodes": has_sandbox_nodes,
@@ -1385,7 +1386,7 @@ def _staged_branch_from_spec(
     spec: dict[str, Any],
 ) -> tuple[Any, list[str]]:
     from workflow.api.engine_helpers import _current_actor
-    from workflow.branches import BranchDefinition
+    from workflow.branches import BranchDefinition, normalize_branch_skill_snapshots
 
     errors: list[str] = []
     branch = BranchDefinition(
@@ -1395,8 +1396,14 @@ def _staged_branch_from_spec(
         goal_id=(spec.get("goal_id") or "").strip(),
         author=(spec.get("author") or _current_actor()),
         tags=list(spec.get("tags") or []),
+        skills=[],
         fork_from=spec.get("fork_from") or None,
     )
+
+    try:
+        branch.skills = normalize_branch_skill_snapshots(spec.get("skills") or [])
+    except ValueError as exc:
+        errors.append(str(exc))
 
     for idx, raw in enumerate(spec.get("node_defs") or spec.get("nodes") or []):
         err = _apply_node_spec(branch, raw)
@@ -1431,6 +1438,7 @@ def _build_branch_text(branch: Any, *, truncated: bool) -> str:
     head = (
         f"**Built branch '{branch.name or 'unnamed'}'**: "
         f"{node_count} nodes, {edge_count} edges, "
+        f"{len(getattr(branch, 'skills', []) or [])} skills, "
         f"entry=`{branch.entry_point}`."
     )
     if truncated:
@@ -1537,6 +1545,7 @@ def _ext_branch_build(kwargs: dict[str, Any]) -> str:
         "name": persisted.name,
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
+        "skill_count": len(persisted.skills),
         "entry_point": persisted.entry_point,
         "validation_summary": "ok",
     }
@@ -1661,6 +1670,63 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.output_keys = keys
                 return ""
         return f"update_node: node '{nid}' not found"
+    if name == "add_skill":
+        from workflow.branches import normalize_branch_skill_snapshot
+
+        raw_skill = op.get("skill") if isinstance(op.get("skill"), dict) else op
+        try:
+            skill = normalize_branch_skill_snapshot(raw_skill)
+        except ValueError as exc:
+            return str(exc)
+        if any(s.get("skill_id") == skill["skill_id"] for s in branch.skills):
+            return f"skill '{skill['skill_id']}' already exists"
+        branch.skills.append(skill)
+        return ""
+    if name == "update_skill":
+        from workflow.branches import normalize_branch_skill_snapshot
+
+        skill_id = (op.get("skill_id") or op.get("id") or "").strip()
+        if not skill_id:
+            return "update_skill requires skill_id"
+        for idx, existing in enumerate(branch.skills):
+            if existing.get("skill_id") != skill_id:
+                continue
+            merged = dict(existing)
+            update_payload = (
+                op.get("skill") if isinstance(op.get("skill"), dict) else op
+            )
+            for key, value in update_payload.items():
+                if key != "op":
+                    merged[key] = value
+            merged["skill_id"] = skill_id
+            try:
+                branch.skills[idx] = normalize_branch_skill_snapshot(merged)
+            except ValueError as exc:
+                return str(exc)
+            return ""
+        return f"update_skill: skill '{skill_id}' not found"
+    if name == "remove_skill":
+        skill_id = (op.get("skill_id") or op.get("id") or "").strip()
+        if not skill_id:
+            return "remove_skill requires skill_id"
+        before = len(branch.skills)
+        branch.skills = [
+            skill for skill in branch.skills
+            if skill.get("skill_id") != skill_id
+        ]
+        if len(branch.skills) == before:
+            return f"remove_skill: skill '{skill_id}' not found"
+        return ""
+    if name == "set_skills":
+        from workflow.branches import normalize_branch_skill_snapshots
+
+        if "skills" not in op:
+            return "set_skills requires a skills list"
+        try:
+            branch.skills = normalize_branch_skill_snapshots(op.get("skills"))
+        except ValueError as exc:
+            return str(exc)
+        return ""
     # Branch-level metadata ops (#67). These let patch_branch rename /
     # retag / redescribe / publish a branch atomically, without the
     # previous delete-and-rebuild workaround that lost run history and
@@ -1846,6 +1912,7 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "entry_point": persisted.entry_point,
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
+        "skill_count": len(persisted.skills),
         "visibility": persisted.visibility,
     }
 
@@ -1853,7 +1920,7 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
     text_lines = [
         f"**Patched branch '{persisted.name}'**: applied {len(changes)} op(s). "
         f"{len(persisted.node_defs)} nodes, {len(persisted.edges)} edges, "
-        f"entry=`{persisted.entry_point}`.",
+        f"{len(persisted.skills)} skills, entry=`{persisted.entry_point}`.",
     ]
     if patched_fields:
         text_lines += ["", f"Changed fields: {', '.join(patched_fields)}."]
@@ -1872,6 +1939,7 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "ops_applied": len(changes),
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
+        "skill_count": len(persisted.skills),
         "patched_fields": patched_fields,
         "name_updated": name_updated,
         "new_name": persisted.name,
@@ -2743,6 +2811,14 @@ extensions action=build_branch spec_json='{
   "name": "Recipe tracker",
   "description": "Capture, categorize, archive recipes",
   "entry_point": "capture",
+  "skills": [
+    {
+      "name": "Kitchen-note style",
+      "body": "Keep notes terse, ingredient-focused, and reversible.",
+      "source_url": "https://example.com/skill.md",
+      "source_note": "User asked to copy this from a public post."
+    }
+  ],
   "node_defs": [
     {"node_id": "capture", "display_name": "Capture raw recipe",
      "prompt_template": "Read the user's message and extract recipe name."},
@@ -2768,6 +2844,16 @@ extensions action=build_branch spec_json='{
 If validation fails, `build_branch` returns concrete `suggestions` with
 proposed fixes — apply them and retry. No partial branch is ever visible.
 
+## Branch skills
+
+When the user wants to create a skill, remix one, or copy one they found
+elsewhere, attach it to the Branch as a `skills` snapshot. A skill is
+Branch context, not executable code. It must include `name` and `body`;
+include `source_url`, `source_note`, `parent_skill_id`, `license`,
+`version`, `tags`, or `metadata` when the user gives that provenance.
+Do not write skill text to the wiki as a workaround when the user wants
+the Branch to carry it.
+
 ## Editing an existing workflow (PREFERRED)
 
 Use `patch_branch` with a batch of ops. Transactional — all land or none:
@@ -2780,7 +2866,10 @@ extensions action=patch_branch branch_def_id=... changes_json='[
   {"op": "add_edge", "from": "categorize", "to": "novelty_check"},
   {"op": "add_edge", "from": "novelty_check", "to": "archive"},
   {"op": "remove_edge", "from": "categorize", "to": "archive"},
-  {"op": "add_state_field", "name": "novelty_score", "type": "float"}
+  {"op": "add_state_field", "name": "novelty_score", "type": "float"},
+  {"op": "add_skill",
+   "skill": {"name": "Review checklist",
+             "body": "Check tests, code shape, and live proof."}}
 ]'
 ```
 

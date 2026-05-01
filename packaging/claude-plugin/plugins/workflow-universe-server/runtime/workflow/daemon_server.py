@@ -276,6 +276,7 @@ def initialize_author_server(base_path: str | Path) -> Path:
         domain_id TEXT NOT NULL DEFAULT 'workflow',
         tags_json TEXT NOT NULL DEFAULT '[]',
         version INTEGER NOT NULL DEFAULT 1,
+        skills_json TEXT NOT NULL DEFAULT '[]',
         parent_def_id TEXT,
         entry_point TEXT NOT NULL DEFAULT '',  -- also in graph_json for export/fork
         graph_json TEXT NOT NULL DEFAULT '{}',
@@ -422,6 +423,13 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "CREATE INDEX IF NOT EXISTS idx_branch_defs_visibility "
             "ON branch_definitions(visibility)"
         )
+        # Branch-carried skill snapshots. These are user-authored or
+        # copied instruction/rubric artifacts that travel with forks.
+        if "skills_json" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE branch_definitions ADD COLUMN skills_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            )
         # Phase 6 migration: goals.gate_ladder_json inline ladder column.
         goal_cols = {
             row["name"]
@@ -1940,6 +1948,7 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         row["visibility"] if "visibility" in row_keys else "public"
     ) or "public"
     fork_from = row["fork_from"] if "fork_from" in row_keys else None
+    skills = _json_loads(row["skills_json"], []) if "skills_json" in row_keys else []
     return {
         "branch_def_id": row["branch_def_id"],
         "name": row["name"],
@@ -1948,6 +1957,7 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "domain_id": row["domain_id"],
         "tags": _json_loads(row["tags_json"], []),
         "version": row["version"],
+        "skills": skills,
         "parent_def_id": row["parent_def_id"],
         "entry_point": row["entry_point"],
         "graph": _json_loads(row["graph_json"], {}),
@@ -2001,6 +2011,9 @@ def save_branch_definition(
 
     # Node definitions — separate from graph topology
     node_defs = branch_def.get("node_defs", [])
+    from workflow.branches import normalize_branch_skill_snapshots
+
+    skills = normalize_branch_skill_snapshots(branch_def.get("skills", []))
 
     # Phase 6.2.2: visibility defaults to 'public' when absent or
     # falsy. Anything other than 'private' normalizes to 'public' so
@@ -2013,11 +2026,11 @@ def save_branch_definition(
             """
             INSERT OR REPLACE INTO branch_definitions (
                 branch_def_id, name, description, author, domain_id,
-                tags_json, version, parent_def_id, entry_point,
+                tags_json, version, skills_json, parent_def_id, entry_point,
                 graph_json, node_defs_json, state_schema_json,
                 published, stats_json, created_at, updated_at, goal_id,
                 visibility, fork_from
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 branch_def_id,
@@ -2027,6 +2040,7 @@ def save_branch_definition(
                 branch_def.get("domain_id", "workflow"),
                 _json_dumps(branch_def.get("tags", [])),
                 branch_def.get("version", 1),
+                _json_dumps(skills),
                 branch_def.get("parent_def_id"),
                 branch_def.get("entry_point", ""),
                 _json_dumps(graph),
@@ -2187,11 +2201,16 @@ def update_branch_definition(
 
     json_fields = {
         "tags": "tags_json",
+        "skills": "skills_json",
         "stats": "stats_json",
         "state_schema": "state_schema_json",
     }
     for key, col in json_fields.items():
         if key in updates:
+            if key == "skills":
+                from workflow.branches import normalize_branch_skill_snapshots
+
+                updates[key] = normalize_branch_skill_snapshots(updates[key])
             sets.append(f"{col} = ?")
             params.append(_json_dumps(updates[key]))
 

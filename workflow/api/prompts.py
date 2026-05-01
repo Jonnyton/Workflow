@@ -190,6 +190,8 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
    | Edit / refine a workflow       | `extensions action=patch_branch` with   |
    |                                | changes_json ops batch (preferred,      |
    |                                | batch ALL ops in ONE call)              |
+   | Create / remix / copy a skill  | Branch `skills` in build_branch or      |
+   |                                | patch_branch add_skill/update_skill     |
    | Pick up / continue / resume    | `extensions action=continue_branch`     |
    |                                | with branch_def_id — call FIRST before  |
    |                                | asking user what was done last session  |
@@ -237,6 +239,12 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
   Transactional (all-or-none). **When making multiple node edits, batch
   them in a single patch_branch call — do NOT loop patch_branch 7 times
   for 7 edits. One call, one list of ops, all or none.**
+- "Create / remix / copy a skill for this workflow" ?
+  `extensions action=build_branch` with top-level `skills` snapshots, or
+  `extensions action=patch_branch` with `add_skill`, `update_skill`,
+  `remove_skill`, or `set_skills`. A skill snapshot requires `name` and
+  `body`; preserve `source_url` / `source_note` when the user found it on
+  the internet.
 - "Pick up where we left off / continue / resume on my workflow" →
   `extensions action=continue_branch branch_def_id=...`. Returns run
   history, open notes, current phase, and a ready-made chatbot_summary

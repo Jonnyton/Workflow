@@ -407,6 +407,17 @@ visible to external daemon claimants.
 
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 
+**Skills are branch-carried remix material.** A Skill is reusable branch context
+or know-how: instructions, rubrics, source references, or implementation notes
+that help a Branch execute or evolve. Users can create a Skill from scratch,
+remix an existing Skill, or copy a Skill they found elsewhere by telling their
+chatbot about it. The Branch stores a reviewable snapshot plus optional source
+metadata so the skill travels with forks, gates, and bounty eligibility instead
+of depending on an operator's local repo files. The platform primitive is the
+smallest durable carrier: store, inspect, attach, update, and remove skill
+snapshots. Skill quality, taxonomies, and import policies remain
+community-evolved.
+
 **Diverse-by-default.** 100 different research-paper workflows from 100 users is a feature, not duplication. Consolidation into "the best" workflow is an anti-pattern; the value is the ecology.
 
 **Outcome gates — real-world impact is the truth signal.** Each Goal declares a ladder of real-world gates beyond the workflow's immediate output. Research papers: draft → peer feedback → submission → acceptance → publication → citations → breakthrough. Legal briefs: draft → attorney review → filing → survives dismissal → trial → conviction. Workflows succeed when outputs advance up the ladder, not when drafts merely look polished. Leaderboards rank on outcome progression. Tracking is self-report first, automated later (DOI, court-docket, sales, awards).
@@ -420,6 +431,8 @@ visible to external daemon claimants.
 - Aggregated social judgment signals per node/branch/Goal.
 - Authorship + attribution lineage chains.
 - Cross-Branch node library per Goal — patterns that work become shared primitives.
+- Cross-Branch skill library per Goal — copied/remixed Skill snapshots can be
+  discovered, compared, and reused across Branches.
 
 **Privacy default:** Per-piece, chatbot-judged. Concept-public by default; instance-private when user data is involved. Chatbot makes per-piece visibility decisions dynamically. (See `docs/design-notes/2026-04-18-full-platform-architecture.md` §17 + memory `project_privacy_per_piece_chatbot_judged.md`.) The earlier "public-by-default; users can mark a branch private for drafting" framing has been refined to per-piece granularity.
 

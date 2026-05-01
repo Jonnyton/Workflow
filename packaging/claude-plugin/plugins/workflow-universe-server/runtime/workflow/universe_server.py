@@ -561,6 +561,8 @@ def extensions(
     Action groups:
     - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
     - Branch composite (prefer): build_branch (spec_json), patch_branch (changes_json).
+      Branch skill snapshots ride in build_branch `skills` or patch_branch
+      add_skill/update_skill/remove_skill/set_skills ops.
     - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
       add_state_field, update_node, validate_branch, delete_branch.
     - Branch ops: continue_branch, fork_tree, patch_nodes.

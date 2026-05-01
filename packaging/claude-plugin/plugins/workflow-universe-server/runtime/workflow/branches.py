@@ -63,6 +63,102 @@ def _template_placeholders(template: str) -> list[str]:
             out.append(k)
     return out
 
+
+_BRANCH_SKILL_ID_RE = re.compile(r"[^a-z0-9._-]+")
+_BRANCH_SKILL_BODY_MAX_CHARS = 200_000
+
+
+def _slugify_branch_skill_id(value: str) -> str:
+    """Return a stable identifier for a branch-carried skill snapshot."""
+    slug = _BRANCH_SKILL_ID_RE.sub("-", value.strip().lower())
+    slug = re.sub(r"-{2,}", "-", slug).strip("-._")
+    return slug[:80]
+
+
+def normalize_branch_skill_snapshot(raw: Any) -> dict[str, Any]:
+    """Normalize one user-authored/copied Branch skill snapshot.
+
+    Branch skills are data carried by a Branch, not executable plugins.
+    The body is required so the skill remains useful if an internet
+    source link changes or disappears.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("skill must be an object")
+
+    name = str(raw.get("name") or "").strip()
+    if not name:
+        raise ValueError("skill name is required")
+
+    body = str(raw.get("body") or raw.get("instructions") or "").strip()
+    if not body:
+        raise ValueError("skill body is required")
+    if len(body) > _BRANCH_SKILL_BODY_MAX_CHARS:
+        raise ValueError(
+            f"skill body exceeds {_BRANCH_SKILL_BODY_MAX_CHARS} characters"
+        )
+
+    skill_id_raw = str(raw.get("skill_id") or raw.get("id") or name).strip()
+    skill_id = _slugify_branch_skill_id(skill_id_raw)
+    if not skill_id:
+        raise ValueError("skill_id is required")
+
+    tags_raw = raw.get("tags", [])
+    if tags_raw is None:
+        tags_raw = []
+    if isinstance(tags_raw, str):
+        tags_raw = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    if not isinstance(tags_raw, list):
+        raise ValueError("skill tags must be a list or CSV string")
+
+    metadata = raw.get("metadata", {})
+    if metadata is None:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        raise ValueError("skill metadata must be an object")
+
+    normalized: dict[str, Any] = {
+        "skill_id": skill_id,
+        "name": name,
+        "body": body,
+    }
+    optional_string_fields = (
+        "description",
+        "source_url",
+        "source_note",
+        "parent_skill_id",
+        "license",
+        "version",
+    )
+    for field_name in optional_string_fields:
+        value = str(raw.get(field_name) or "").strip()
+        if value:
+            normalized[field_name] = value
+    tags = [str(t).strip() for t in tags_raw if str(t).strip()]
+    if tags:
+        normalized["tags"] = tags
+    if metadata:
+        normalized["metadata"] = metadata
+    return normalized
+
+
+def normalize_branch_skill_snapshots(raw: Any) -> list[dict[str, Any]]:
+    """Normalize and dedupe a list of branch skill snapshots."""
+    if raw in (None, ""):
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("skills must be a list")
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for entry in raw:
+        skill = normalize_branch_skill_snapshot(entry)
+        skill_id = skill["skill_id"]
+        if skill_id in seen:
+            raise ValueError(f"duplicate skill_id '{skill_id}'")
+        seen.add(skill_id)
+        out.append(skill)
+    return out
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Validation errors
 # ═══════════════════════════════════════════════════════════════════════════
@@ -684,6 +780,7 @@ class BranchDefinition:
     A branch definition is the unit of sharing and forking. It contains:
 
     - Identity and metadata (name, author, domain_id, tags, version).
+    - Branch-carried skill snapshots users create, remix, or copy.
     - A full graph topology as embedded JSON (nodes + edges).
     - A state schema as an unvalidated JSON blob (formal validation
       deferred to Phase 3).
@@ -706,6 +803,7 @@ class BranchDefinition:
     goal_id: str = ""
     tags: list[str] = field(default_factory=list)
     version: int = 1
+    skills: list[dict[str, Any]] = field(default_factory=list)
 
     # Fork lineage
     parent_def_id: str | None = None
@@ -764,6 +862,7 @@ class BranchDefinition:
             "goal_id": self.goal_id,
             "tags": self.tags,
             "version": self.version,
+            "skills": normalize_branch_skill_snapshots(self.skills),
             "parent_def_id": self.parent_def_id,
             "fork_from": self.fork_from,
             "entry_point": self.entry_point,
@@ -822,6 +921,7 @@ class BranchDefinition:
         cond_edges_raw = data.pop("conditional_edges", [])
         node_defs_raw = data.pop("node_defs", [])
         state_schema_raw = data.pop("state_schema", [])
+        skills_raw = data.pop("skills", [])
 
         # Legacy compat: "nodes" key from old format becomes node_defs
         legacy_nodes = data.pop("nodes", [])
@@ -838,6 +938,7 @@ class BranchDefinition:
         branch.conditional_edges = [ConditionalEdge.from_dict(c) for c in cond_edges_raw]
         branch.node_defs = [NodeDefinition.from_dict(n) for n in node_defs_raw]
         branch.state_schema = state_schema_raw
+        branch.skills = normalize_branch_skill_snapshots(skills_raw)
         return branch
 
     @classmethod
@@ -988,6 +1089,11 @@ class BranchDefinition:
                 if name in field_names:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
+
+        try:
+            normalize_branch_skill_snapshots(self.skills)
+        except ValueError as exc:
+            errors.append(str(exc))
 
         # Build-time placeholder validation: every ``{ident}`` in a
         # node's prompt_template must resolve via the node's
