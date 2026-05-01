@@ -969,6 +969,29 @@ def get_author(base_path: str | Path, *, author_id: str) -> dict[str, Any]:
     return result
 
 
+def update_author_metadata(
+    base_path: str | Path,
+    *,
+    author_id: str,
+    metadata_patch: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge metadata onto a daemon/author identity and return the row."""
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT metadata_json FROM author_definitions WHERE author_id = ?",
+            (author_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(author_id)
+        metadata = _json_loads(row["metadata_json"], {})
+        metadata.update(metadata_patch)
+        conn.execute(
+            "UPDATE author_definitions SET metadata_json = ? WHERE author_id = ?",
+            (_json_dumps(metadata), author_id),
+        )
+    return get_author(base_path, author_id=author_id)
+
+
 def spawn_runtime_instance(
     base_path: str | Path,
     *,
@@ -1018,6 +1041,34 @@ def retire_runtime_instance(
             WHERE instance_id = ?
             """,
             (_now(), instance_id),
+        )
+    return get_runtime_instance(base_path, instance_id=instance_id)
+
+
+def update_runtime_instance_status(
+    base_path: str | Path,
+    *,
+    instance_id: str,
+    status: str,
+    metadata_patch: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Update runtime status and merge control metadata."""
+    with _connect(base_path) as conn:
+        row = conn.execute(
+            "SELECT metadata_json FROM author_runtime_instances WHERE instance_id = ?",
+            (instance_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(instance_id)
+        metadata = _json_loads(row["metadata_json"], {})
+        metadata.update(metadata_patch or {})
+        conn.execute(
+            """
+            UPDATE author_runtime_instances
+            SET status = ?, updated_at = ?, metadata_json = ?
+            WHERE instance_id = ?
+            """,
+            (status, _now(), _json_dumps(metadata), instance_id),
         )
     return get_runtime_instance(base_path, instance_id=instance_id)
 

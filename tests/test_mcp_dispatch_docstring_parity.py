@@ -115,7 +115,9 @@ def _universe_dispatch_keys() -> set[str]:
         "post_to_goal_pool", "submit_node_bid",
         "community_change_context",
         "daemon_overview", "daemon_list", "daemon_get",
-        "daemon_create", "daemon_summon", "daemon_banish",
+        "daemon_create", "daemon_summon", "daemon_pause",
+        "daemon_resume", "daemon_restart", "daemon_banish",
+        "daemon_update_behavior", "daemon_control_status",
         "set_tier_config",
     }
 

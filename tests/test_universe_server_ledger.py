@@ -94,6 +94,9 @@ def test_write_actions_table_is_exhaustive() -> None:
         "subscribe_goal", "unsubscribe_goal", "post_to_goal_pool",
         "submit_node_bid",  # Phase G
         "set_tier_config",  # Phase H
+        "daemon_create", "daemon_summon", "daemon_banish",
+        "daemon_pause", "daemon_resume", "daemon_restart",
+        "daemon_update_behavior",
     }
     assert set(us.WRITE_ACTIONS.keys()) == expected
 

@@ -335,7 +335,9 @@ def universe(
             goal-pool / bid: post_to_goal_pool, submit_node_bid;
             community change-loop review: community_change_context;
             daemon: daemon_overview, daemon_list, daemon_get,
-            daemon_create, daemon_summon, daemon_banish;
+            daemon_create, daemon_summon, daemon_pause, daemon_resume,
+            daemon_restart, daemon_banish, daemon_update_behavior,
+            daemon_control_status;
             config: set_tier_config.
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
@@ -560,9 +562,7 @@ def extensions(
 
     Action groups:
     - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
-    - Branch composite (prefer): build_branch (spec_json), patch_branch (changes_json).
-      Branch skill snapshots ride in build_branch `skills` or patch_branch
-      add_skill/update_skill/remove_skill/set_skills ops.
+    - Branch composite (prefer): build_branch, patch_branch.
     - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
       add_state_field, update_node, validate_branch, delete_branch.
     - Branch ops: continue_branch, fork_tree, patch_nodes.
@@ -579,6 +579,9 @@ def extensions(
     - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
     - Self-audit: get_routing_evidence, get_memory_scope_status.
+
+    Branch skill snapshots ride in build_branch `skills` or patch_branch
+    add_skill/update_skill/remove_skill/set_skills ops.
 
     Feature-flag caveats: Outcome gates live in the separate `gates` tool,
     gated by GATES_ENABLED=1. Paid-market actions on `gates` additionally

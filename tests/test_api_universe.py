@@ -12,7 +12,7 @@ Surface guarded:
 - `WRITE_ACTIONS` table contract — every action mapped to (extractor, daemon-gate)
 - `_dispatch_with_ledger`, `_scope_universe_response`, `_ledger_target_dir`
   ledger trio — universe-tool internal pipeline
-- 33 `_action_*` handler set — present, callable, owned by this module
+- 38 `_action_*` handler set — present, callable, owned by this module
 - Daemon-liveness telemetry helpers — present, owned by this module
 - Pattern A2 wrapper: `workflow.universe_server.universe` delegates to
   `workflow.api.universe._universe_impl` (verified via simple round-trip)
@@ -42,7 +42,8 @@ def test_module_exposes_expected_public_names() -> None:
         "_extract_unsubscribe_goal", "_extract_post_to_goal_pool",
         "_extract_submit_node_bid", "_extract_set_tier_config",
         "_extract_daemon_create", "_extract_daemon_summon",
-        "_extract_daemon_banish",
+        "_extract_daemon_banish", "_extract_daemon_control",
+        "_extract_daemon_update_behavior",
         # Ledger dispatcher trio
         "_ledger_target_dir", "_scope_universe_response",
         "_dispatch_with_ledger",
@@ -58,7 +59,9 @@ def test_module_exposes_expected_public_names() -> None:
         "_action_queue_list", "_action_daemon_overview",
         "_action_daemon_list", "_action_daemon_get",
         "_action_daemon_create", "_action_daemon_summon",
-        "_action_daemon_banish",
+        "_action_daemon_banish", "_action_daemon_pause",
+        "_action_daemon_resume", "_action_daemon_restart",
+        "_action_daemon_update_behavior", "_action_daemon_control_status",
         "_action_set_tier_config", "_action_queue_cancel",
         "_action_subscribe_goal", "_action_unsubscribe_goal",
         "_action_list_subscriptions", "_action_post_to_goal_pool",
@@ -79,9 +82,9 @@ def test_module_exposes_expected_public_names() -> None:
     )
 
 
-def test_write_actions_table_has_17_entries() -> None:
+def test_write_actions_table_has_21_entries() -> None:
     """WRITE_ACTIONS dict literal includes daemon create/summon/banish writes."""
-    assert len(univ_mod.WRITE_ACTIONS) == 17
+    assert len(univ_mod.WRITE_ACTIONS) == 21
 
 
 def test_write_actions_entries_are_extractor_gate_tuples() -> None:
@@ -205,7 +208,9 @@ def test_universe_impl_dispatch_table_has_33_actions() -> None:
 @pytest.mark.parametrize("action", [
     "list", "inspect", "read_output", "submit_request", "queue_list",
     "daemon_overview", "daemon_list", "daemon_get", "daemon_create",
-    "daemon_summon", "daemon_banish", "set_tier_config", "queue_cancel",
+    "daemon_summon", "daemon_pause", "daemon_resume", "daemon_restart",
+    "daemon_banish", "daemon_update_behavior", "daemon_control_status",
+    "set_tier_config", "queue_cancel",
     "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
     "post_to_goal_pool", "submit_node_bid", "community_change_context",
     "give_direction",
@@ -432,6 +437,62 @@ def test_daemon_actions_create_summon_and_banish(tmp_path, monkeypatch) -> None:
     assert runtime["daemon_id"] == daemon["daemon_id"]
     assert runtime["provider_name"] == "claude-code"
 
+    pause_out = json.loads(univ_mod._universe_impl(
+        action="daemon_pause",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "runtime_instance_id": runtime["runtime_instance_id"],
+        }),
+    ))
+    assert pause_out["effect"] == "applied"
+    assert pause_out["authority_scope"] == "owner"
+    assert pause_out["runtime"]["status"] == "paused"
+
+    resume_out = json.loads(univ_mod._universe_impl(
+        action="daemon_resume",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "runtime_instance_id": runtime["runtime_instance_id"],
+        }),
+    ))
+    assert resume_out["effect"] == "applied"
+    assert resume_out["runtime"]["status"] == "provisioned"
+
+    restart_out = json.loads(univ_mod._universe_impl(
+        action="daemon_restart",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "runtime_instance_id": runtime["runtime_instance_id"],
+        }),
+    ))
+    assert restart_out["effect"] == "queued"
+    assert restart_out["runtime"]["status"] == "restart_requested"
+
+    behavior_out = json.loads(univ_mod._universe_impl(
+        action="daemon_update_behavior",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "daemon_id": daemon["daemon_id"],
+            "behavior_update": {"work_domains": ["workflow-platform"]},
+            "apply_now": True,
+        }),
+    ))
+    assert behavior_out["effect"] == "applied"
+    assert behavior_out["daemon"]["metadata"]["behavior_version"] == 1
+    assert behavior_out["daemon"]["metadata"]["behavior_policy"] == {
+        "work_domains": ["workflow-platform"],
+    }
+
+    status_out = json.loads(univ_mod._universe_impl(
+        action="daemon_control_status",
+        universe_id="u1",
+        inputs_json=json.dumps({
+            "daemon_id": daemon["daemon_id"],
+        }),
+    ))
+    assert status_out["daemon_count"] == 1
+    assert status_out["runtime_count"] == 1
+
     banish_out = json.loads(univ_mod._universe_impl(
         action="daemon_banish",
         universe_id="u1",
@@ -439,4 +500,5 @@ def test_daemon_actions_create_summon_and_banish(tmp_path, monkeypatch) -> None:
             "runtime_instance_id": runtime["runtime_instance_id"],
         }),
     ))
+    assert banish_out["effect"] == "applied"
     assert banish_out["runtime"]["status"] == "retired"
