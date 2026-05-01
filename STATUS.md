@@ -25,8 +25,7 @@ Full specs: `docs/vetted-specs.md` (H2 heading per spec). Dev reads there, never
 
 | Spec | Status |
 |---|---|
-| [deferred] Chatbot-first daemon host controls + daemon roster/soul/wiki/decision policy/ledger/attribution/royalty/outcome/bounty items | needs-scoping; soul/wiki/runtime boundary refined 2026-05-01 |
-| Daemon bounded wiki memory caps — set default age-plateau storage/context budgets for soul-bearing daemons. | claimed:codex-gpt5-desktop |
+| [deferred] Chatbot-first daemon host controls + daemon roster/soul/wiki/decision policy/ledger/attribution/royalty/outcome/bounty items | needs-scoping; soul/wiki/runtime + bounded memory caps refined 2026-05-01 |
 
 ## Work
 

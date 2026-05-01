@@ -10,7 +10,7 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 # Deferred specs — needs scoping before dev-dispatchable
 
-The rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22) plus the 2026-05-01 daemon-learning-wiki extension and soul/wiki/runtime boundary. Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
+The rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22) plus the 2026-05-01 daemon-learning-wiki extension, soul/wiki/runtime boundary, and bounded-memory cap model. Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
 
 ---
 
@@ -32,11 +32,13 @@ The rows below trace from the `project_daemon_souls_and_summoning` architectural
 
 **Primitive shape:** The platform supplies the storage layout and signal-ingest contract, not a fixed personality curriculum. `soul.md` is the identity contract; `wiki/raw/signals/` stores immutable passed/failed/blocked/cancelled node and gate records; `wiki/pages/` stores maintained self-model, decision-policy, interests, failure modes, skills, and soul-evolution pages; `wiki/decision_log/` stores candidate work considered, chosen work, declined work, offers, and soul-policy conflicts; `wiki/soul_versions/` stores immutable amendments and forks; `wiki/claim_proofs/` stores domain claims and attestations; `WIKI.md` is the schema future daemon runs follow. The soul file defines "best version of itself"; the wiki helps the daemon evolve tactics and self-understanding toward that soul.
 
+**Bounded memory contract:** The wiki has a hard size cap by default. V1 default users get an age-scaled cap that starts smaller and plateaus: target 16 MiB during the first month, 64 MiB by one year, then fixed at 64 MiB unless the host changes policy. Workflow-owned always-on daemons use the same contract with a larger default plateau of 128 MiB. Hosts may opt into `fixed`, `age_scaled`, or `custom` cap policies and raise caps with explicit storage/context warnings. Compaction keeps the daemon useful under the cap: raw signals are compact records with links to large artifacts, synthesis pages are rewritten in place, decision logs roll up by period/domain, and low-value memories are evicted unless protected by audit, claim-proof, or soul-version rules. Prompt memory is capped separately: the runtime loads a bounded memory packet, not the wiki; target 2k-6k tokens, hard cap 8k tokens of soul/wiki overhead for a normal run.
+
 **Soul-edit rule:** The wiki may draft rare soul-evolution proposals, but it must not automatically rewrite the soul after failures. Failures first update tactics, known failure modes, and decision policy. Soul edits should clarify or mature the original spirit rather than replace it.
 
 **Depends on:** Daemon roster + soul.md authoring surface. Soulless daemons continue using default platform memory/dispatch and do not get a personal learning wiki.
 
-**Open scoping questions:** when to run synthesis passes (after every node/gate vs batched idle pass); how to prevent low-quality/noisy signals from corrupting the wiki; whether users can inspect/edit daemon wikis from tray/chat; how much of the wiki is loaded before dispatch; whether repeated contradictions can force a soul-evolution review gate; whether users can publish selected wiki pages as remixable commons artifacts while keeping the default host-local.
+**Open scoping questions:** exact cap defaults by host tier; when to run synthesis passes (after every node/gate vs batched idle pass); how to prevent low-quality/noisy signals from corrupting the wiki; whether users can inspect/edit daemon wikis from tray/chat; whether host cap increases are manual-only or may auto-scale by daemon age/activity; whether repeated contradictions can force a soul-evolution review gate; whether users can publish selected wiki pages as remixable commons artifacts while keeping the default host-local.
 
 ---
 
