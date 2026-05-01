@@ -179,39 +179,64 @@ class TestHappyCaseRouting:
 
 
 class TestGraphNodeIdDifferentFromDefId:
-    """Step 1 hypothesis was wrong: the bug is NOT graph_node.id vs
-    node_def.id mismatch. The bug is the router-to-LangGraph contract
-    inversion (see module docstring of graph_compiler._build_conditional_router).
+    """BUG-022: conditional routing must use the graph node's node_def_id.
 
-    After the fix, routing works correctly in both id-match and
-    id-mismatch cases — kept as regression guard for the id-mismatch
-    path since source_def=None when ids differ (router falls through
-    to the ``if not output_key: return fallback`` branch, which now
-    returns a valid label key).
+    A conditional edge is authored against a graph placement ID, while
+    the state output key lives on the referenced node definition. When
+    the compiler looked up the source definition by placement ID, the
+    router had no output key and always returned the first declared
+    condition. If that first condition looped, a terminal decision such
+    as DONE fell through to the loop target.
     """
 
-    def test_gate_with_distinct_ids_routes_to_fallback(self):
-        """When graph_node.id != node_def.id, source_def=None →
-        output_key="" → router returns the fallback label. With the
-        fix, fallback is a LABEL (valid path_map key) so the graph
-        advances instead of KeyError-ing. The routing still collapses
-        to a single branch (the fallback), but the graph runs.
-        """
-        branch = _build_two_path_branch(
-            gate_graph_id="gate_placement",
-            gate_def_id="gate_core",  # different from graph_node.id
+    def test_distinct_graph_id_terminal_label_does_not_fall_through_to_loop(self):
+        invocations = {"n": 0}
+
+        def scripted(prompt: str, system: str = "", *, role: str = "writer") -> str:
+            if "decide" not in prompt:
+                return "terminal node ran"
+            invocations["n"] += 1
+            return "DONE"
+
+        branch = BranchDefinition(
+            branch_def_id="bug-022",
+            name="BUG-022 terminal no-op routing",
+            node_defs=[
+                _mk_gate_node("gate_core"),
+                _mk_leaf_node("noop"),
+            ],
+            graph_nodes=[
+                GraphNodeRef(id="gate_placement", node_def_id="gate_core"),
+                GraphNodeRef(id="noop", node_def_id="noop"),
+            ],
+            edges=[
+                EdgeDefinition(from_node="noop", to_node="END"),
+            ],
+            conditional_edges=[
+                ConditionalEdge(
+                    from_node="gate_placement",
+                    conditions={"LOOP": "gate_placement", "DONE": "noop"},
+                ),
+            ],
+            entry_point="gate_placement",
+            state_schema=[
+                {"name": "scene_input", "type": "str"},
+                {"name": "gate_out", "type": "str"},
+                {"name": "noop_out", "type": "str"},
+            ],
         )
-        compiled = compile_branch(
-            branch, provider_call=_scripted_provider("A"),
-        )
+        errors = branch.validate()
+        assert errors == [], f"branch failed validation: {errors}"
+
+        compiled = compile_branch(branch, provider_call=scripted)
         result = _run_compiled(compiled, initial_state={"scene_input": "test"})
 
-        # With source_def=None, output_key="" → fallback label ("A") →
-        # path_a. This is deterministic given the first-declared-label
-        # fallback policy. Before the fix: KeyError'd on graph.invoke.
-        assert result.get("path_a_out"), (
-            "Graph should advance even when source_def is unresolvable "
-            f"(id-mismatch case); final state: {dict(result)}"
+        assert invocations["n"] == 1, (
+            "gate should route DONE to the terminal node, not fall through "
+            f"to the first LOOP condition; visits={invocations['n']}"
+        )
+        assert result.get("noop_out"), (
+            f"DONE should visit the terminal node; final state: {dict(result)}"
         )
 
 
