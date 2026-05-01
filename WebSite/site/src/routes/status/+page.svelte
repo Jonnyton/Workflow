@@ -41,6 +41,14 @@
       body: 'The graph page combines MCP commons, visible GitHub branches, workflow branches, route nodes, and project edges into one public proof surface.',
       command: 'MCP + GitHub graph lens',
       href: '/graph'
+    },
+    {
+      label: 'Snapshot freshness',
+      value: relativeStamp(pulse.mcp.fetched_at),
+      status: 'baked snapshot',
+      body: `MCP snapshot ${relativeStamp(pulse.mcp.fetched_at)}; repo snapshot ${relativeStamp(pulse.repo.fetched_at)}. Refresh controls attempt live reads before falling back to these baked files.`,
+      command: 'src/lib/content/{mcp,repo}-snapshot.json',
+      href: '/wiki'
     }
   ];
 
@@ -76,6 +84,20 @@
     <div class="probe">
       <StatusPill kind="live" pulse>MCP connector · canonical</StatusPill>
       <span class="meta">tinyassets.io/mcp · Cloudflare-fronted · public connector path</span>
+    </div>
+    <div class="pulse-strip" aria-label="Public availability pulse">
+      <article>
+        <StatusPill kind="live" pulse>Apex / · HTTP 200</StatusPill>
+        <p>Layer-1 canary checks <code>https://tinyassets.io/</code> alongside the MCP endpoint.</p>
+      </article>
+      <article>
+        <StatusPill kind="live" pulse>MCP /mcp · green</StatusPill>
+        <p>The public connector route is the canonical chatbot path.</p>
+      </article>
+      <article>
+        <StatusPill kind="self">Snapshots · {relativeStamp(pulse.mcp.fetched_at)}</StatusPill>
+        <p>Baked MCP and GitHub snapshots keep the site useful when browser live reads are unavailable.</p>
+      </article>
     </div>
 
     <div class="ops-grid">
@@ -121,7 +143,11 @@
   .status-hero p { font-size: 16px; line-height: 1.6; margin: 0; max-width: 66ch; }
   .probe { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
   .meta { font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); }
-  .ops-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .pulse-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .pulse-strip article { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 8px; min-width: 0; padding: 14px; }
+  .pulse-strip p { color: var(--fg-2); font-size: 12.5px; line-height: 1.5; margin: 10px 0 0; }
+  .pulse-strip code { background: rgba(255,255,255,0.06); border: 1px solid var(--border-1); border-radius: 3px; color: var(--signal-live); font-family: var(--font-mono); padding: 1px 5px; }
+  .ops-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
   .evidence-card, .watchlist { border: 1px solid var(--border-1); background: var(--bg-2); border-radius: 8px; padding: 18px; }
   .evidence-card { color: inherit; display: block; text-decoration: none; transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon); }
   .evidence-card:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
@@ -137,6 +163,6 @@
   .dev-grid article { background: var(--bg-inset); border: 1px solid var(--border-1); border-radius: 8px; padding: 14px; }
   h2 { color: var(--fg-1); font-family: var(--font-display); font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; line-height: 1; margin: 0; }
   .watchlist p { margin: 0; font-size: 15px; }
-  @media (max-width: 900px) { .ops-grid { grid-template-columns: repeat(2, 1fr); } .watchlist, .dev-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .ops-grid { grid-template-columns: repeat(2, 1fr); } .pulse-strip, .watchlist, .dev-grid { grid-template-columns: 1fr; } }
   @media (max-width: 620px) { .ops-grid { grid-template-columns: 1fr; } }
 </style>

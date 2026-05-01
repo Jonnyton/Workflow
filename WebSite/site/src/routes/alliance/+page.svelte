@@ -2,7 +2,6 @@
 <script lang="ts">
   import LiveSourceBar from '$lib/components/LiveSourceBar.svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
-  import Button from '$lib/components/Primitives/Button.svelte';
   import legal from '$lib/content/legal-info.json';
   import { compactNumber, createPulse } from '$lib/live/project';
 
@@ -63,7 +62,7 @@
       <label class="full">What community mission are you most passionate about?
         <textarea name="mission" rows="6" required bind:value={mission} placeholder="A real-world goal you'd want a daemon to help pursue — your own, or someone else's."></textarea>
       </label>
-      <Button variant="primary">Send via email →</Button>
+      <button class="submit" type="submit">Send via email →</button>
       <p class="meta">Opens your email client with the message pre-filled. Or write directly: <a href="mailto:{legal.contact.general}">{legal.contact.general}</a></p>
     </form>
 
@@ -121,6 +120,8 @@
   .form label { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.14em; }
   .form input, .form textarea { background: var(--bg-inset); border: 1px solid var(--border-1); color: var(--fg-1); padding: 10px 12px; border-radius: 6px; font-family: var(--font-sans); font-size: 14px; text-transform: none; letter-spacing: 0; }
   .form input:focus, .form textarea:focus { border-color: var(--ember-600); outline: none; box-shadow: var(--glow-ember); }
+  .submit { align-self: flex-start; background: var(--ember-600); border: 1px solid transparent; border-radius: 8px; color: var(--fg-on-ember); cursor: pointer; font-family: var(--font-sans); font-size: 14px; font-weight: 600; line-height: 1; padding: 11px 18px; transition: all var(--dur-base) var(--ease-summon); }
+  .submit:hover { background: var(--ember-500); box-shadow: var(--glow-ember); }
   .meta { font-size: 12px; color: var(--fg-3); font-style: italic; margin: 4px 0 0; }
   .meta a { color: var(--ember-600); text-decoration: none; }
 

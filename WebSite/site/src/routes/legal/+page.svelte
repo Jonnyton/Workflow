@@ -35,6 +35,7 @@
       <a href="#risk-factors">Risk factors</a>
       <a href="#dmca">DMCA</a>
       <a href="#dispute">Disputes</a>
+      <a href="#references">References</a>
       <a href="#contact">Contact</a>
     </nav>
 
@@ -126,6 +127,14 @@
     <p><strong>Indemnification.</strong> You will indemnify us for misuse of the service, IP infringement in your content, sanctions-law violations, and false geo-attestations. We will indemnify you for IP infringement of the platform code within the scope of the MIT license, capped at the liability limit above.</p>
     <p><strong>Force majeure.</strong> Neither party is liable for delay or failure caused by events beyond reasonable control: {legal.force_majeure.join("; ")}. We may suspend performance for up to 30 days; longer suspensions trigger pro-rated refund of any prepaid fees.</p>
     <p><strong>Severability + entire agreement.</strong> If any provision is unenforceable, the rest survives. These terms are the entire agreement between you and us regarding the service.</p>
+
+    <h2 id="references">References</h2>
+    <ul>
+      <li><a href="https://github.com/Jonnyton/Workflow/blob/main/LICENSE" target="_blank" rel="noreferrer">Workflow MIT license</a>.</li>
+      <li><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0-1.0 public-domain dedication</a> for public catalog content.</li>
+      <li><a href="https://github.com/Jonnyton/Workflow/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">Contributor response and review process</a>.</li>
+      <li><a href="https://github.com/Jonnyton/Workflow/blob/main/WebSite/07-legal-pass-notes.md" target="_blank" rel="noreferrer">Website legal-pass notes</a> tracking open counsel-review items.</li>
+    </ul>
 
     <h2 id="contact">Contact</h2>
     <p>

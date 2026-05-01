@@ -1,11 +1,11 @@
 {
-  "fetched_at": "2026-04-30T02:40:04.938Z",
+  "fetched_at": "2026-05-01T20:13:50.543Z",
   "source": "tinyassets.io/mcp",
   "stats": {
-    "wiki_promoted": 55,
+    "wiki_promoted": 56,
     "wiki_drafts": 8,
     "goals": 6,
-    "universes": 3,
+    "universes": 4,
     "edges": 130
   },
   "goals": [
@@ -100,10 +100,17 @@
       "accept_rate": 1
     },
     {
-      "id": "echoes-of-the-cosmos",
-      "phase": "universe_cycle_wrapper",
+      "id": "daemon_wikis",
+      "phase": "idle-no-premise",
       "word_count": 0,
-      "last_activity_at": "2026-04-29T23:04:33.417425+00:00",
+      "last_activity_at": null,
+      "accept_rate": null
+    },
+    {
+      "id": "echoes-of-the-cosmos",
+      "phase": "universe_start",
+      "word_count": 0,
+      "last_activity_at": "2026-05-01T20:13:46.599321+00:00",
       "accept_rate": null
     },
     {
@@ -330,6 +337,11 @@
         "id": "BUG-043",
         "title": "Classic-game MCP branch cannot complete local desktop install",
         "slug": "pages/bugs/bug-043-classic-game-mcp-branch-cannot-complete-local-desktop-instal.md"
+      },
+      {
+        "id": "BUG-044",
+        "title": "change_loop_v1 compile fails because node id collides with state key",
+        "slug": "pages/bugs/bug-044-change-loop-v1-compile-fails-because-node-id-collides-with-s.md"
       }
     ],
     "concepts": [
@@ -434,6 +446,11 @@
       "kind": "ref"
     },
     {
+      "from": "bug:BUG-019",
+      "to": "bug:BUG-003",
+      "kind": "ref"
+    },
+    {
       "from": "bug:BUG-018",
       "to": "bug:BUG-014",
       "kind": "ref"
@@ -449,18 +466,8 @@
       "kind": "ref"
     },
     {
-      "from": "bug:BUG-019",
-      "to": "bug:BUG-003",
-      "kind": "ref"
-    },
-    {
       "from": "bug:BUG-022",
       "to": "bug:BUG-019",
-      "kind": "ref"
-    },
-    {
-      "from": "bug:BUG-026",
-      "to": "bug:BUG-027",
       "kind": "ref"
     },
     {
@@ -471,6 +478,11 @@
     {
       "from": "bug:BUG-027",
       "to": "bug:BUG-026",
+      "kind": "ref"
+    },
+    {
+      "from": "bug:BUG-026",
+      "to": "bug:BUG-027",
       "kind": "ref"
     },
     {
@@ -744,8 +756,13 @@
       "kind": "ref"
     },
     {
-      "from": "plan:feature-prompt-template-literal-braces-and-build-time-validation",
-      "to": "bug:BUG-014",
+      "from": "plan:composition-patterns",
+      "to": "bug:BUG-031",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:composition-patterns",
+      "to": "bug:BUG-028",
       "kind": "ref"
     },
     {
@@ -754,13 +771,8 @@
       "kind": "ref"
     },
     {
-      "from": "plan:composition-patterns",
-      "to": "bug:BUG-031",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:composition-patterns",
-      "to": "bug:BUG-028",
+      "from": "plan:feature-prompt-template-literal-braces-and-build-time-validation",
+      "to": "bug:BUG-014",
       "kind": "ref"
     },
     {
@@ -919,81 +931,6 @@
       "kind": "source"
     },
     {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-019",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-021",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-022",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-003",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-014",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "plan:next-level-primitives-roadmap",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "note:builder-notes-agent-teams",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "plan:chatbot-builder-behaviors",
-      "kind": "ref"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "plan:next-level-primitives-roadmap",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-003",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-015",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-016",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-019",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-021",
-      "kind": "source"
-    },
-    {
-      "from": "plan:tier-1-investigation-routing-resolver",
-      "to": "bug:BUG-022",
-      "kind": "source"
-    },
-    {
       "from": "plan:strategic-synthesis-2026-04-24",
       "to": "plan:next-level-primitives-roadmap",
       "kind": "ref"
@@ -1067,18 +1004,93 @@
       "from": "plan:strategic-synthesis-2026-04-24",
       "to": "note:builder-notes-agent-teams",
       "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-019",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-021",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-022",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-003",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-014",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "plan:next-level-primitives-roadmap",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "note:builder-notes-agent-teams",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "plan:chatbot-builder-behaviors",
+      "kind": "ref"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "plan:next-level-primitives-roadmap",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-003",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-015",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-016",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-019",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-021",
+      "kind": "source"
+    },
+    {
+      "from": "plan:tier-1-investigation-routing-resolver",
+      "to": "bug:BUG-022",
+      "kind": "source"
     }
   ],
   "tags": {
-    "bug:BUG-002": [
-      "bug",
-      "extensions"
-    ],
     "bug:BUG-003": [
       "bug",
       "extensions"
     ],
     "bug:BUG-001": [
+      "bug",
+      "extensions"
+    ],
+    "bug:BUG-002": [
       "bug",
       "extensions"
     ],
@@ -1098,21 +1110,21 @@
       "bug",
       "extensions"
     ],
-    "bug:BUG-009": [
+    "bug:BUG-008": [
       "bug",
       "extensions"
     ],
-    "bug:BUG-010": [
-      "bug",
-      "extensions state model / universe memory"
-    ],
-    "bug:BUG-008": [
+    "bug:BUG-009": [
       "bug",
       "extensions"
     ],
     "bug:BUG-011": [
       "bug",
       "extensions"
+    ],
+    "bug:BUG-010": [
+      "bug",
+      "extensions state model / universe memory"
     ],
     "bug:BUG-012": [
       "bug",
@@ -1122,19 +1134,15 @@
       "bug",
       "wiki"
     ],
+    "bug:BUG-015": [
+      "bug",
+      "extensions"
+    ],
     "bug:BUG-014": [
       "bug",
       "extensions"
     ],
     "bug:BUG-016": [
-      "bug",
-      "extensions"
-    ],
-    "bug:BUG-015": [
-      "bug",
-      "extensions"
-    ],
-    "bug:BUG-018": [
       "bug",
       "extensions"
     ],
@@ -1150,6 +1158,10 @@
       "bug",
       "extensions"
     ],
+    "bug:BUG-018": [
+      "bug",
+      "extensions"
+    ],
     "bug:BUG-021": [
       "bug",
       "extensions"
@@ -1158,21 +1170,21 @@
       "bug",
       "extensions"
     ],
-    "bug:BUG-024": [
-      "bug",
-      "workflow"
-    ],
     "bug:BUG-025": [
       "bug",
       "providers"
     ],
-    "bug:BUG-026": [
+    "bug:BUG-024": [
       "bug",
-      "constraints"
+      "workflow"
     ],
     "bug:BUG-027": [
       "bug",
       "startup"
+    ],
+    "bug:BUG-026": [
+      "bug",
+      "constraints"
     ],
     "bug:BUG-028": [
       "bug",
@@ -1194,13 +1206,13 @@
       "bug",
       "get_status"
     ],
-    "bug:BUG-034": [
-      "bug",
-      "extensions"
-    ],
     "bug:BUG-033": [
       "bug",
       "goals"
+    ],
+    "bug:BUG-034": [
+      "bug",
+      "extensions"
     ],
     "bug:BUG-035": [
       "bug",
@@ -1238,6 +1250,10 @@
       "bug",
       "workflow"
     ],
+    "bug:BUG-044": [
+      "bug",
+      "extensions"
+    ],
     "concept:structured-json-node-outputs": [
       "pattern",
       "workaround",
@@ -1249,29 +1265,22 @@
       "agent-teams",
       "workflow"
     ],
-    "plan:feature-prompt-template-literal-braces-and-build-time-validation": [
-      "feature",
-      "compiler",
-      "prompt-template"
-    ],
     "plan:feature-describe-branch-related-wiki-pages": [
       "feature",
       "extensions",
       "wiki",
       "convergent-commons"
     ],
+    "plan:feature-prompt-template-literal-braces-and-build-time-validation": [
+      "feature",
+      "compiler",
+      "prompt-template"
+    ],
     "plan:next-level-primitives-roadmap": [
       "roadmap",
       "primitives",
       "architecture",
       "agent-teams"
-    ],
-    "plan:tier-1-investigation-routing-resolver": [
-      "investigation",
-      "routing",
-      "conditional-edges",
-      "langgraph",
-      "tier-1"
     ],
     "plan:strategic-synthesis-2026-04-24": [
       "strategy",
@@ -1281,6 +1290,13 @@
       "positioning",
       "forkable",
       "distribution"
+    ],
+    "plan:tier-1-investigation-routing-resolver": [
+      "investigation",
+      "routing",
+      "conditional-edges",
+      "langgraph",
+      "tier-1"
     ],
     "goal:62f977e7ff0c": [
       "classic-games",

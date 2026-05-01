@@ -99,7 +99,7 @@ python -m fantasy_daemon
 workflow-mcp</code></pre>
 
       <div class="ctas">
-        <Button variant="primary" href="https://github.com/Jonnyton/Workflow#quick-start">Build from source →</Button>
+        <Button variant="primary" href="https://github.com/Jonnyton/Workflow#quick-start-for-contributors">Build from source →</Button>
         <Button variant="ghost" href="/status">Track installer status</Button>
       </div>
 
