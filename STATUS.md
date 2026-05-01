@@ -17,7 +17,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with `tests/test_claude_chat_inline_dismiss.py` legacy-connector fallback contract.
 - **[P1 filed:2026-04-30]** Castles II live branch run `28479d8ddfb44488` failed `provider_exhausted` at `candidate_discovery`; blocks branch-run proof (see BUG-038).
 - [filed:2026-04-30 verified:2026-04-30] Claude.ai rendered `ui-test` blocked until 2026-05-01 19:00 PT; rendered ChatGPT UI fallback green: `get_status` succeeded, universe `echoes-of-the-cosmos`.
-- [filed:2026-04-30 verified:2026-04-30] Scorched Tanks full-window + same-site ADF injection fixed; AROS black-screens, needs rights-cleared Kickstart.
+- [filed:2026-04-30 verified:2026-05-01] Scorched Tanks full-window + valid ADF autostart fixed; AROS gray-screens, needs rights-cleared Kickstart.
 
 ## Approved Specs
 

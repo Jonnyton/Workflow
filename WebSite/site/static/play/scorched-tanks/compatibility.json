@@ -4,9 +4,9 @@
   "exact_game_state": "NEEDS_RIGHTS_CLEARED_FIRMWARE",
   "media": {
     "source": "Scorched Tanks v1.90 ADF",
-    "runtime_asset": "assets/scorched-tanks-v1.90-autostart-a642eb46.adf",
+    "runtime_asset": "assets/scorched-tanks-v1.90-autostart-30582ca3.adf",
     "patches": [
-      "S/Startup-Sequence autostarts Scorched_TanksV1.90"
+      "S/Startup-Sequence autostarts Scorched_TanksV1.90 with corrected file metadata"
     ]
   },
   "runtime": {
@@ -15,7 +15,7 @@
     "fallback_firmware": "AROS Kickstart replacement"
   },
   "verification": {
-    "date": "2026-04-30",
-    "result": "v1.90, Aminet v1.85, and public-domain v0.95 boot under AROS but black-screen when the AMOS executable takes over."
+    "date": "2026-05-01",
+    "result": "v1.90 autostart media now boots with a valid Startup-Sequence header and reaches the game executable under AROS; exact play still requires rights-cleared Kickstart verification."
   }
 }

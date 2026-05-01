@@ -1,7 +1,7 @@
 (function () {
   const VAMIGA_ORIGIN = "https://vamigaweb.github.io";
   const VAMIGA_URL = `${VAMIGA_ORIGIN}/`;
-  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart-a642eb46.adf";
+  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart-30582ca3.adf";
   const HOSTED_KICKSTART_URL = "./licensed/kickstart-a500-1.3.rom";
   const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
 
