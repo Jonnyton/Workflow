@@ -83,6 +83,7 @@ class TestNodeDefinition:
         assert n.node_id == "test"
         assert n.display_name == "Test Node"
         assert n.phase == "custom"
+        assert n.maintainer_notes == ""
         assert n.input_keys == []
         assert n.output_keys == []
         assert n.source_code == ""
@@ -113,6 +114,7 @@ class TestNodeDefinition:
             node_id="checker",
             display_name="Consistency Checker",
             description="Checks facts for consistency",
+            maintainer_notes="Builder note: keep this narrow.",
             phase="commit",
             input_keys=["draft_output", "extracted_facts"],
             output_keys=["consistency_notes"],
@@ -131,6 +133,7 @@ class TestNodeDefinition:
         n2 = NodeDefinition.from_dict(d)
         assert n2.node_id == n.node_id
         assert n2.display_name == n.display_name
+        assert n2.maintainer_notes == n.maintainer_notes
         assert n2.phase == n.phase
         assert n2.input_keys == n.input_keys
         assert n2.output_keys == n.output_keys
@@ -167,6 +170,7 @@ class TestNodeDefinition:
         assert reg["author"] == "alice"
         assert reg["enabled"] is True
         assert reg["approved"] is True
+        assert "maintainer_notes" not in reg
 
     def test_from_node_registration(self):
         reg = {
@@ -195,6 +199,16 @@ class TestNodeDefinition:
             "extra_field": True,
         })
         assert n.node_id == "x"
+
+    def test_maintainer_notes_must_be_string(self):
+        with pytest.raises(NodeDefinitionValidationError) as exc_info:
+            NodeDefinition(
+                node_id="x",
+                display_name="X",
+                maintainer_notes=["not", "text"],  # type: ignore[arg-type]
+            )
+        assert exc_info.value.field == "maintainer_notes"
+        assert "must be a string" in exc_info.value.message
 
 
 # ═══════════════════════════════════════════════════════════════════════════

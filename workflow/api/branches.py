@@ -458,6 +458,7 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "node_id": nid,
         "display_name": kwargs.get("display_name", "").strip(),
         "description": kwargs.get("description", ""),
+        "maintainer_notes": kwargs.get("maintainer_notes", ""),
         "phase": kwargs.get("phase", "") or "custom",
         "input_keys": kwargs.get("input_keys", ""),
         "output_keys": kwargs.get("output_keys", ""),
@@ -1156,6 +1157,7 @@ def _resolve_node_spec(
         for field_key in (
             "display_name", "description", "phase", "input_keys",
             "output_keys", "source_code", "prompt_template", "author",
+            "maintainer_notes",
         ):
             if field_key in raw and raw[field_key] not in (None, ""):
                 merged[field_key] = raw[field_key]
@@ -1214,6 +1216,7 @@ def _lookup_node_body(
             "node_id": hit.get("node_id", node_id),
             "display_name": hit.get("display_name", node_id),
             "description": hit.get("description", ""),
+            "maintainer_notes": hit.get("maintainer_notes", ""),
             "phase": hit.get("phase", "custom"),
             "input_keys": list(hit.get("input_keys") or []),
             "output_keys": list(hit.get("output_keys") or []),
@@ -1241,6 +1244,7 @@ def _lookup_node_body(
                 "node_id": nd.get("node_id", node_id),
                 "display_name": nd.get("display_name", node_id),
                 "description": nd.get("description", ""),
+                "maintainer_notes": nd.get("maintainer_notes", ""),
                 "phase": nd.get("phase", "custom"),
                 "input_keys": list(nd.get("input_keys") or []),
                 "output_keys": list(nd.get("output_keys") or []),
@@ -1289,6 +1293,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             node_id=nid,
             display_name=display,
             description=raw.get("description", ""),
+            maintainer_notes=raw.get("maintainer_notes", ""),
             phase=phase,
             input_keys=in_keys,
             output_keys=out_keys,
@@ -1641,6 +1646,8 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.display_name = op["display_name"]
                 if "description" in op:
                     n.description = op["description"]
+                if "maintainer_notes" in op:
+                    n.maintainer_notes = str(op["maintainer_notes"] or "")
                 if "prompt_template" in op:
                     n.prompt_template = op["prompt_template"]
                 if "source_code" in op:
@@ -1908,8 +1915,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
         })
 
     # Accept updates as a JSON blob (changes_json) OR as individual
-    # kwargs (display_name, description, phase, prompt_template,
-    # source_code, input_keys, output_keys). Individual kwargs are
+    # kwargs (display_name, description, maintainer_notes, phase,
+    # prompt_template, source_code, input_keys, output_keys). Individual kwargs are
     # the phone-friendly shape; changes_json is for scripts batching.
     changes_raw = (kwargs.get("changes_json") or "").strip()
     updates: dict[str, Any] = {}
@@ -1931,7 +1938,7 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
         # Pull supported fields from the top-level kwargs.
         for field in (
             "display_name", "description", "phase",
-            "prompt_template", "source_code",
+            "maintainer_notes", "prompt_template", "source_code",
         ):
             if kwargs.get(field):
                 updates[field] = kwargs[field]
@@ -1945,8 +1952,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": (
                 "No fields to update. Pass one or more of "
-                "display_name / description / phase / prompt_template / "
-                "source_code / input_keys / output_keys, or a "
+                "display_name / description / maintainer_notes / phase / "
+                "prompt_template / source_code / input_keys / output_keys, or a "
                 "changes_json object."
             ),
         })
@@ -1987,6 +1994,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             target_node.display_name = updates["display_name"]
         if "description" in updates:
             target_node.description = updates["description"]
+        if "maintainer_notes" in updates:
+            target_node.maintainer_notes = str(updates["maintainer_notes"] or "")
         if "phase" in updates:
             # NodeDefinition.__post_init__ guards valid phases, so we
             # validate here too.
@@ -2194,6 +2203,7 @@ def _ext_branch_search_nodes(kwargs: dict[str, Any]) -> str:
 _PATCH_NODES_FIELDS: dict[str, Any] = {
     "display_name": str,
     "description": str,
+    "maintainer_notes": str,
     "phase": str,
     "prompt_template": str,
     "source_code": str,

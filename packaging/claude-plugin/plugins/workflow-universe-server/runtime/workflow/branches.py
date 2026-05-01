@@ -184,6 +184,10 @@ class NodeDefinition:
     node_id: str
     display_name: str
     description: str = ""
+    # Builder-to-builder notes. Serialized with the node for maintainers,
+    # but intentionally excluded from execution registration so daemon runs
+    # do not consume it as prompt/code context.
+    maintainer_notes: str = ""
     phase: str = "custom"
 
     # State contract
@@ -304,6 +308,11 @@ class NodeDefinition:
             raise ValueError(
                 f"Invalid phase '{self.phase}'. "
                 f"Must be one of: {', '.join(sorted(VALID_PHASES))}"
+            )
+        if not isinstance(self.maintainer_notes, str):
+            raise NodeDefinitionValidationError(
+                "maintainer_notes",
+                f"must be a string, got {type(self.maintainer_notes).__name__}",
             )
         # Read-side strict validation for input_keys / output_keys
         # (Task #12, Option B). Fail loudly when a persisted branch row
