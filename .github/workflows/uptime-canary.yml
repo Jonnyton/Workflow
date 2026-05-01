@@ -26,6 +26,9 @@ on:
     # GHA's best-effort schedule policy.
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy prod"]
+    types: [completed]
 
 # Permissions: canary reads repo; alarm sink writes issues.
 permissions:
@@ -47,6 +50,7 @@ env:
 
 jobs:
   probe:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
