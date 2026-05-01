@@ -52,15 +52,16 @@ Ordered for fastest de-risking while #18/#23 remain in flight. Before moving
 any row to `STATUS.md`, run
 `python scripts/claim_check.py --provider <name> --check-files "<Files>"`.
 
-| Priority | Claim-ready slice | Files boundary | Depends / blocker | Suggested owner | Exit check |
-|---|---|---|---|---|---|
-| 5 | Agent-teams-on-Workflow scoping exercise. Treat as user project validation of platform primitives, not a platform build item. | `docs/notes/2026-04-20-agent-teams-on-workflow-research.md`, future scoping note | Blocked on uptime-track close + daemon-economy first draft. | navigator-followup | Scoping note maps required user-project primitives to existing roadmap without inventing a new platform track. |
+No claim-ready burn-down rows remain. Add new rows here only after
+`claim_check.py --check-files` confirms a non-overlapping write set and the row
+has a concrete exit check.
 
 ## Archive
 
 - [2026-05-01] F2 recency/continue backlog rows retired. Recency actions are superseded by existing query-run composition; continuation is the dev-ready `run_branch resume_from=<run_id>` row in `STATUS.md`.
 - [2026-05-01] Burn-down rows 1, 2, 3, and 6 retired after freshness check: methods-prose reframe, cross-algorithm parity template, CONTRIBUTORS file-first decision, and trust metric/query pack already exist under their 2026-04-27 artifact names.
 - [2026-05-01] `hyperparameter_importance` burn-down row retired: `docs/catalogs/scientific-computing-domain-catalog.md` now has SCI-EVAL-001 and keeps v1 out of engine scope.
+- [2026-05-01] Agent-teams burn-down row retired: Active Promotions plus `docs/notes/2026-04-27-agent-teams-post-uptime-scoping-checklist.md` already hold the post-unblock gates; still blocked on uptime-track close + daemon-economy first draft.
 - [YYYY-MM-DD] Workflow seed-style retrofit initialized.
 # 2026-04-09
 
