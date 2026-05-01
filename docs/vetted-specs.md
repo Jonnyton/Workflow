@@ -10,7 +10,7 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 # Deferred specs — needs scoping before dev-dispatchable
 
-The four rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22). Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
+The rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22) plus the 2026-05-01 daemon-learning-wiki extension. Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
 
 ---
 
@@ -23,6 +23,20 @@ The four rows below trace from the `project_daemon_souls_and_summoning` architec
 **Open scoping questions:** tray interaction pattern for soul editor (external editor vs embedded); live-daemon soul-edit semantics (hot-reload vs require-banish-resummon); soul versioning schema; default-soul shape for users who never author one; migration path from today's generic `UNIVERSE_SERVER_HOST_USER` identity to named-daemons; relationship to `cloud-droplet` executor identity (is cloud-worker a single default-souled daemon, or multiple?).
 
 **Needs scoping with:** host (UX + identity model), dev team (tray + storage), navigator (strategy + security of soul-spoof attacks).
+
+---
+
+## [deferred] Daemon learning wiki
+
+**One-line:** Every soul-bearing daemon gets a host-local markdown wiki that records raw node/gate signals, maintains synthesis pages, and guides recursive self-learning according to the daemon's soul.
+
+**Primitive shape:** The platform supplies the storage layout and signal-ingest contract, not a fixed personality curriculum. `raw/signals/` stores immutable passed/failed/blocked/cancelled node and gate records; `pages/` stores maintained self-model, decision-policy, learning-signal, and soul-evolution pages; `WIKI.md` is the schema that future daemon runs follow. The soul file defines "best version of itself"; the wiki helps the daemon evolve tactics and self-understanding toward that soul.
+
+**Soul-edit rule:** The wiki may draft rare soul-evolution proposals, but it must not automatically rewrite the soul after failures. Failures first update tactics, known failure modes, and decision policy. Soul edits should clarify or mature the original spirit rather than replace it.
+
+**Depends on:** Daemon roster + soul.md authoring surface. Soulless daemons continue using default platform memory/dispatch and do not get a personal learning wiki.
+
+**Open scoping questions:** when to run synthesis passes (after every node/gate vs batched idle pass); how to prevent low-quality/noisy signals from corrupting the wiki; whether users can inspect/edit daemon wikis from the tray; how much of the wiki is loaded before dispatch; whether repeated contradictions can force a soul-evolution review gate.
 
 ---
 

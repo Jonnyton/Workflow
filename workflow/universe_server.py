@@ -332,7 +332,8 @@ def universe(
             subscription ops: subscribe_goal, unsubscribe_goal,
             list_subscriptions;
             goal-pool / bid: post_to_goal_pool, submit_node_bid;
-            daemon: daemon_overview;
+            daemon: daemon_overview, daemon_list, daemon_get,
+            daemon_create, daemon_summon, daemon_banish;
             config: set_tier_config.
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,

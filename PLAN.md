@@ -208,7 +208,13 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Goal:** A multi-tenant workflow platform where many users and daemons collaborate without collapsing into one shared chat or one hidden runtime.
 
-**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape.
+**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape. Host fleet size is an operating-cost decision, not a platform cap: hosts can run many daemons, including many on one provider, with warning-only provider-plan/rate-limit estimates for additional same-provider daemons.
+
+**Soul eligibility.** Nodes and gates may declare whether daemon souls are allowed, forbidden, required, replaced by a node/gate-provided soul, or combined with a temporary node/gate header. They may also declare domain requirements for eligible souls, such as scientific, legal, artistic, local-model-only, or other community-defined qualifications. Claim-time verification checks the daemon soul fingerprint and required claims/proofs before execution; prompt composition then applies the accepted host soul, provided soul, or temporary header according to the node/gate policy.
+
+**Soul-guided dispatch.** After a daemon finishes a node or gate, a soul-bearing daemon returns to a decision step that lists all work it is eligible to claim, including node/gate soul policy, domain requirements, required provider/capability, and any offer. The daemon may choose highest money, specific interests, reputation, public-good impact, or refusal to work on soul-incompatible nodes according to its soul. Soulless daemons use the default platform dispatcher policy.
+
+**Daemon learning wiki.** Every soul-bearing daemon owns a host-local markdown wiki under the host's Workflow data directory. The wiki follows the raw-sources -> maintained wiki -> schema pattern: immutable raw node/gate signals are recorded first, maintained synthesis pages evolve from those signals, and `WIKI.md` tells future daemon runs how to update and use the wiki. The wiki is private host memory, not platform-published content. It helps the daemon recursively learn how to become a better version of itself as defined by its soul. Soul edits are rare proposals: the wiki may draft clarifications that preserve the soul's spirit, but failed nodes/gates should first update tactics, self-model, and decision policy rather than automatically rewriting the soul.
 
 Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
@@ -259,6 +265,8 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 **Goal:** Ground every decision in the best available evidence without flooding the model with irrelevant context.
 
 **Principle:** Retrieval and memory are one system with multiple backends (KG, vector, hierarchical summaries, world-state DB, notes, direct tool calls). The routing policy matters more than any individual backend.
+
+Daemon learning wikis are one host-local memory backend for soul-bearing daemons. They should be read before soul-guided dispatch, reflection, and post-run learning; they should not replace the soul file or the platform wiki. Pasted, passed, failed, blocked, and cancelled node/gate outcomes enter as immutable raw signals, then get summarized into maintained self-model, decision-policy, learning-signal, and soul-evolution pages.
 
 ---
 

@@ -115,8 +115,10 @@ class UniverseServerManager:
     """Manages daemons, local MCP, optional dev tunnel, and tab watchdog."""
 
     def __init__(self) -> None:
-        # One daemon per provider. Value is (Popen, log_handle) so the
-        # log handle can be closed on teardown (FD-leak guard).
+        # One entry per daemon process. The first process for a provider uses
+        # the provider name as key; later same-provider processes use
+        # provider#N. Value is (Popen, log_handle) so the log handle can be
+        # closed on teardown (FD-leak guard).
         self.daemon_procs: dict[str, tuple[subprocess.Popen, IO]] = {}
         self.mcp_proc: subprocess.Popen | None = None
         self.tunnel_proc: subprocess.Popen | None = None
@@ -224,9 +226,29 @@ class UniverseServerManager:
         """Return provider names whose daemon subprocess is still alive."""
         with self._procs_lock:
             return [
-                name for name, (proc, _) in self.daemon_procs.items()
+                self._provider_for_daemon_key(name)
+                for name, (proc, _) in self.daemon_procs.items()
                 if proc.poll() is None
             ]
+
+    @staticmethod
+    def _provider_for_daemon_key(key: str) -> str:
+        return key.split("#", 1)[0]
+
+    def _running_provider_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for provider in self._running_providers():
+            counts[provider] = counts.get(provider, 0) + 1
+        return counts
+
+    def _next_daemon_key(self, provider: str) -> str:
+        ordinal = self._running_provider_counts().get(provider, 0) + 1
+        key = provider if ordinal == 1 else f"{provider}#{ordinal}"
+        with self._procs_lock:
+            while key in self.daemon_procs:
+                ordinal += 1
+                key = f"{provider}#{ordinal}"
+        return key
 
     @property
     def _any_daemon_alive(self) -> bool:
@@ -301,15 +323,13 @@ class UniverseServerManager:
     def _can_start(self, provider: str) -> tuple[bool, str]:
         """Check constraint rules before spawning a daemon for *provider*.
 
-        Returns ``(ok, reason)``. ``ok`` is False when another daemon
-        already owns this provider name (subscription uniqueness) or
-        when another local provider is already running.
+        Returns ``(ok, reason)``. ``ok`` is False for unknown providers or
+        when another local provider is already running. Subscription providers
+        may run multiple same-provider daemons; the tray warns separately.
         """
         if provider not in ALL_PROVIDERS:
             return False, f"unknown provider {provider!r}"
         running = self._running_providers()
-        if provider in running:
-            return False, f"{provider} already running"
         if provider in _LOCAL_PROVIDER_SET:
             other_local = [p for p in running if p in _LOCAL_PROVIDER_SET]
             if other_local:
@@ -327,9 +347,25 @@ class UniverseServerManager:
             return False
 
         LOG_DIR.mkdir(exist_ok=True)
-        log_path = LOG_DIR / f"daemon.{provider}.log"
+        runtime_key = self._next_daemon_key(provider)
+        try:
+            from workflow.daemon_registry import provider_capacity_warning
+
+            warning = provider_capacity_warning(
+                provider,
+                running_count=self._running_provider_counts().get(provider, 0),
+            )
+            if warning:
+                print(f"  [warn] {warning['message']}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [warn] capacity warning unavailable for {provider}: {exc}")
+
+        log_name = runtime_key.replace("#", ".")
+        log_path = LOG_DIR / f"daemon.{log_name}.log"
         log = open(log_path, "a", encoding="utf-8")
-        log.write(f"\n--- Daemon ({provider}) start {time.strftime('%H:%M:%S')} ---\n")
+        log.write(
+            f"\n--- Daemon ({runtime_key}) start {time.strftime('%H:%M:%S')} ---\n"
+        )
         log.flush()
 
         universe_path = self._data_dir() / self._active_universe
@@ -338,6 +374,7 @@ class UniverseServerManager:
         # WORKFLOW_PIN_WRITER itself, but setting it in the env too means
         # the router pin survives even if the flag parsing changes.
         env["WORKFLOW_PIN_WRITER"] = provider
+        env["WORKFLOW_DAEMON_INSTANCE_KEY"] = runtime_key
         # Pin the data root so child's data_dir() resolves to the same
         # absolute path the tray picked. Prevents CWD drift between tray
         # and daemon when they launch from different working directories.
@@ -362,7 +399,7 @@ class UniverseServerManager:
             raise
 
         with self._procs_lock:
-            self.daemon_procs[provider] = (proc, log)
+            self.daemon_procs[runtime_key] = (proc, log)
         return True
 
     def start_mcp(self) -> None:
@@ -542,25 +579,31 @@ class UniverseServerManager:
     def _kill_daemon_for(self, provider: str) -> None:
         """Terminate the daemon pinned to *provider* and close its log."""
         with self._procs_lock:
-            entry = self.daemon_procs.pop(provider, None)
-        if entry is None:
-            return
-        proc, log = entry
-        try:
-            if proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-        finally:
+            keys = [
+                key for key in self.daemon_procs
+                if self._provider_for_daemon_key(key) == provider
+            ]
+            entries = [self.daemon_procs.pop(key) for key in keys]
+        for proc, log in entries:
             try:
-                log.close()
-            except Exception:
-                pass
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+            finally:
+                try:
+                    log.close()
+                except Exception:
+                    pass
 
     def _kill_all_daemons(self) -> None:
-        for provider in list(self.daemon_procs.keys()):
+        providers = {
+            self._provider_for_daemon_key(key)
+            for key in list(self.daemon_procs.keys())
+        }
+        for provider in providers:
             self._kill_daemon_for(provider)
 
     def kill_all(self) -> None:

@@ -119,11 +119,13 @@ def test_start_refuses_unknown_provider(mgr: workflow_tray.UniverseServerManager
     assert mgr.daemon_procs == {}
 
 
-def test_start_refuses_duplicate_subscription_provider(mgr) -> None:
+def test_start_allows_duplicate_subscription_provider_with_warning(mgr) -> None:
     assert mgr.start_daemon_for("claude-code") is True
-    # Second start for same provider is refused.
-    assert mgr.start_daemon_for("claude-code") is False
-    assert list(mgr.daemon_procs.keys()) == ["claude-code"]
+    # Product behavior: same-provider daemons are allowed. The tray warns
+    # about provider capacity but does not enforce a Workflow cap.
+    assert mgr.start_daemon_for("claude-code") is True
+    assert list(mgr.daemon_procs.keys()) == ["claude-code", "claude-code#2"]
+    assert mgr._running_providers() == ["claude-code", "claude-code"]
 
 
 def test_start_refuses_second_local_provider(mgr, monkeypatch) -> None:
@@ -158,6 +160,17 @@ def test_kill_closes_log_handle(mgr) -> None:
     mgr._kill_daemon_for("codex")
     assert "codex" not in mgr.daemon_procs
     assert log.closed
+
+
+def test_kill_provider_closes_all_same_provider_handles(mgr) -> None:
+    mgr.start_daemon_for("claude-code")
+    mgr.start_daemon_for("claude-code")
+    handles = [log for _, log in mgr.daemon_procs.values()]
+
+    mgr._kill_daemon_for("claude-code")
+
+    assert mgr.daemon_procs == {}
+    assert all(log.closed for log in handles)
 
 
 def test_kill_all_daemons_closes_every_log(mgr) -> None:
@@ -258,6 +271,7 @@ def test_spawn_passes_provider_flag_and_env(mgr) -> None:
     flag_idx = record["cmd"].index("--provider")
     assert record["cmd"][flag_idx + 1] == "claude-code"
     assert record["kwargs"]["env"]["WORKFLOW_PIN_WRITER"] == "claude-code"
+    assert record["kwargs"]["env"]["WORKFLOW_DAEMON_INSTANCE_KEY"] == "claude-code"
     # Task #7: daemon child must inherit the tray's data_dir() as an
     # absolute WORKFLOW_DATA_DIR, not a CWD-relative path. Previously
     # the tray set UNIVERSE_SERVER_BASE="output" which drifted whenever
@@ -283,6 +297,21 @@ def test_spawn_writes_per_provider_log_name(mgr, monkeypatch) -> None:
     assert any(p.name == "daemon.grok-free.log" for p in opened)
     # Restore not strictly needed; pytest unwinds monkeypatch at test end.
     _ = real_open
+
+
+def test_second_same_provider_spawn_writes_distinct_log_name(mgr, monkeypatch) -> None:
+    opened: list[Path] = []
+
+    def tracking_open(path, *args, **kwargs):
+        opened.append(Path(path))
+        return FakeLog()
+
+    monkeypatch.setattr("builtins.open", tracking_open, raising=False)
+    mgr.start_daemon_for("claude-code")
+    mgr.start_daemon_for("claude-code")
+
+    assert any(p.name == "daemon.claude-code.log" for p in opened)
+    assert any(p.name == "daemon.claude-code.2.log" for p in opened)
 
 
 # ---------------------------------------------------------------------------

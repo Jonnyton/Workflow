@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import pytest
+
+from workflow import daemon_registry
+
+
+def test_create_soulless_daemon_uses_project_wide_daemon_id(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Quiet Worker",
+        created_by="host",
+        soul_mode="soulless",
+    )
+
+    assert daemon["daemon_id"].startswith("daemon::quiet-worker::")
+    assert daemon["legacy_author_id"].startswith("author::quiet-worker::")
+    assert daemon["display_name"] == "Quiet Worker"
+    assert daemon["soul_mode"] == "soulless"
+    assert daemon["has_soul"] is False
+    assert daemon["domain_claims"] == []
+    assert "soul_text" not in daemon
+
+
+def test_create_soul_daemon_preserves_soul_claims_and_hash(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Lab Navigator",
+        created_by="host",
+        soul_mode="soul",
+        soul_text="I prefer research nodes and cite uncertainty.",
+        domain_claims=["scientist", "literature-review"],
+    )
+
+    loaded = daemon_registry.get_daemon(
+        tmp_path, daemon_id=daemon["daemon_id"], include_soul=True,
+    )
+    assert loaded["soul_mode"] == "soul"
+    assert loaded["has_soul"] is True
+    assert loaded["domain_claims"] == ["scientist", "literature-review"]
+    assert loaded["soul_text"] == "I prefer research nodes and cite uncertainty."
+    assert len(loaded["soul_hash"]) == 64
+
+
+def test_soul_daemon_requires_non_empty_soul_text(tmp_path):
+    with pytest.raises(ValueError, match="soul_text is required"):
+        daemon_registry.create_daemon(
+            tmp_path,
+            display_name="Empty Soul",
+            created_by="host",
+            soul_mode="soul",
+            soul_text=" ",
+        )
+
+
+def test_list_daemons_maps_existing_default_author_to_default_daemon(tmp_path):
+    daemons = daemon_registry.list_daemons(tmp_path)
+
+    assert len(daemons) == 1
+    assert daemons[0]["display_name"] == "House Daemon"
+    assert daemons[0]["daemon_id"].startswith("daemon::")
+    assert daemons[0]["soul_mode"] == "soulless"
+
+
+def test_summon_and_banish_daemon_wrap_runtime_instance(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Codex Runner",
+        created_by="host",
+        soul_text="Pick implementation work and finish it.",
+    )
+
+    runtime = daemon_registry.summon_daemon(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        universe_id="default-universe",
+        provider_name="codex",
+        model_name="gpt-5.4",
+        created_by="host",
+    )
+
+    assert runtime["daemon_id"] == daemon["daemon_id"]
+    assert runtime["legacy_author_id"] == daemon["legacy_author_id"]
+    assert runtime["provider_name"] == "codex"
+    assert runtime["model_name"] == "gpt-5.4"
+    assert runtime["status"] == "provisioned"
+    assert runtime["metadata"]["daemon_soul_hash"] == daemon["soul_hash"]
+
+    retired = daemon_registry.banish_daemon(
+        tmp_path, runtime_instance_id=runtime["runtime_instance_id"],
+    )
+    assert retired["runtime_instance_id"] == runtime["runtime_instance_id"]
+    assert retired["status"] == "retired"
+
+
+def test_provider_capacity_warning_is_advisory():
+    assert daemon_registry.provider_capacity_warning(
+        "claude-code", running_count=0,
+    ) is None
+
+    warning = daemon_registry.provider_capacity_warning(
+        "claude-code", running_count=2,
+    )
+
+    assert warning is not None
+    assert warning["provider_name"] == "claude-code"
+    assert warning["next_count"] == 3
+    assert warning["can_override"] is True
