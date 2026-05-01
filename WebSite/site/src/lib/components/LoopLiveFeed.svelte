@@ -16,6 +16,39 @@
     label: string;
   };
 
+  const STAGE_DETAIL: Record<LoopStageId, { action: string; description: string; empty: string }> = {
+    intake: {
+      action: 'File or classify',
+      description: 'User reports, wiki bugs, and daemon requests enter the loop here before they become scoped patch work.',
+      empty: 'No intake signal is visible in the current feed.'
+    },
+    investigation: {
+      action: 'Turn bug into packet',
+      description: 'The loop turns raw friction into a reproducible patch packet with the context a writer needs.',
+      empty: 'No investigation packet is visible in the current feed.'
+    },
+    gate: {
+      action: 'Scope and evidence check',
+      description: 'Evidence gates decide whether the request is ready, blocked, too broad, or needs a different route.',
+      empty: 'No gate decision is visible in the current feed.'
+    },
+    coding: {
+      action: 'Agent team builds',
+      description: 'Writer capacity turns accepted packets into branches, diffs, checks, and review handoffs.',
+      empty: 'No coding signal is visible in the current feed.'
+    },
+    release: {
+      action: 'Ship with rollback path',
+      description: 'Release signals show deploys, PR handoffs, branch landing, and rollback-aware shipping.',
+      empty: 'No release signal is visible in the current feed.'
+    },
+    observe: {
+      action: 'Ratify or loop back',
+      description: 'Watch signals show canaries, user-visible checks, monitoring, and whether work loops back.',
+      empty: 'No watch signal is visible in the current feed.'
+    }
+  };
+
   let {
     stages,
     selectedStageId = 'intake',
@@ -55,6 +88,26 @@
 
   const recentEvents = $derived.by((): LoopPatchEvent[] => {
     return [...(feed?.events ?? [])].slice(-8).reverse();
+  });
+
+  const selectedStage = $derived.by((): Stage => {
+    return stages.find((stage) => stage.id === selectedStageId) ?? stages[0];
+  });
+
+  const selectedStageNumber = $derived.by(() => {
+    return Math.max(1, stages.findIndex((stage) => stage.id === selectedStageId) + 1);
+  });
+
+  const selectedStageEvents = $derived.by((): LoopPatchEvent[] => {
+    return eventsFor(selectedStageId);
+  });
+
+  const selectedStageRecentEvents = $derived.by((): LoopPatchEvent[] => {
+    return [...selectedStageEvents].slice(-6).reverse();
+  });
+
+  const selectedStageLatest = $derived.by((): LoopPatchEvent | null => {
+    return latestFor(selectedStageId);
   });
 
   async function refresh(source: PatchLoopFeedSource = activeSource) {
@@ -192,14 +245,30 @@
       {/each}
     </div>
 
-    <div class="event-stream">
+    <div class="event-stream" aria-live="polite">
       <div class="event-stream__head">
-        <span>Recent loop events</span>
-        <strong>{feed?.events.length ?? 0}</strong>
+        <span>Selected stage</span>
+        <strong>{selectedStageEvents.length}</strong>
       </div>
-      {#if recentEvents.length}
+
+      <div class="stage-inspector">
+        <span>Stage {selectedStageNumber}</span>
+        <strong>{selectedStage?.label ?? 'Loop stage'}</strong>
+        <p>{STAGE_DETAIL[selectedStageId].action}</p>
+        <small>{STAGE_DETAIL[selectedStageId].description}</small>
+        {#if selectedStageLatest}
+          <div class="stage-inspector__latest">
+            <span>{selectedStageLatest.status}</span>
+            <strong>{selectedStageLatest.title}</strong>
+            <p>{selectedStageLatest.detail}</p>
+            <small>{relativeStamp(selectedStageLatest.at)}</small>
+          </div>
+        {/if}
+      </div>
+
+      {#if selectedStageRecentEvents.length}
         <ol>
-          {#each recentEvents as event}
+          {#each selectedStageRecentEvents as event}
             <li>
               <span>{event.stage}</span>
               <div>
@@ -211,7 +280,25 @@
           {/each}
         </ol>
       {:else}
-        <p class="empty">Waiting for the first patch event from the operational loop feed.</p>
+        <p class="empty">{STAGE_DETAIL[selectedStageId].empty} {feed?.events.length ? `${feed.events.length} signal${feed.events.length === 1 ? '' : 's'} are visible elsewhere in the loop.` : 'Waiting for the first patch event from the operational loop feed.'}</p>
+      {/if}
+
+      {#if recentEvents.length}
+        <details class="all-events">
+          <summary>All recent loop signals</summary>
+          <ol>
+            {#each recentEvents as event}
+              <li>
+                <span>{event.stage}</span>
+                <div>
+                  <strong>{event.title}</strong>
+                  <p>{event.detail}</p>
+                  <small>{event.status} · {relativeStamp(event.at)}</small>
+                </div>
+              </li>
+            {/each}
+          </ol>
+        </details>
       {/if}
     </div>
   </div>
@@ -413,6 +500,12 @@
     background: rgba(204, 120, 92, 0.065);
   }
 
+  .live-stage.selected {
+    border-color: rgba(109, 211, 166, 0.72);
+    background: rgba(109, 211, 166, 0.09);
+    box-shadow: inset 0 0 0 1px rgba(109, 211, 166, 0.18);
+  }
+
   .live-stage--running::before {
     background: var(--violet-400);
     box-shadow: 0 0 12px rgba(138, 99, 206, 0.9);
@@ -472,6 +565,68 @@
     border-bottom: 1px solid var(--border-1);
   }
 
+  .stage-inspector {
+    display: grid;
+    gap: 7px;
+    padding: 14px;
+    border-bottom: 1px solid var(--border-1);
+    background: rgba(109, 211, 166, 0.035);
+  }
+
+  .stage-inspector > span,
+  .stage-inspector small,
+  .stage-inspector__latest span,
+  .stage-inspector__latest small,
+  .all-events summary {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+  }
+
+  .stage-inspector > strong {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1.05;
+  }
+
+  .stage-inspector > p {
+    color: var(--signal-live);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    text-transform: uppercase;
+  }
+
+  .stage-inspector small {
+    line-height: 1.45;
+    text-transform: none;
+  }
+
+  .stage-inspector__latest {
+    display: grid;
+    gap: 4px;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-1);
+  }
+
+  .stage-inspector__latest strong {
+    color: var(--fg-1);
+    font-size: 13px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .stage-inspector__latest p {
+    color: var(--fg-2);
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
   .event-stream ol {
     display: grid;
     gap: 0;
@@ -519,6 +674,20 @@
   .empty {
     color: var(--fg-3) !important;
     padding: 14px;
+  }
+
+  .all-events {
+    border-top: 1px solid var(--border-1);
+  }
+
+  .all-events summary {
+    cursor: pointer;
+    padding: 12px 14px;
+    width: fit-content;
+  }
+
+  .all-events[open] summary {
+    border-bottom: 1px solid var(--border-1);
   }
 
   .source-trail {
