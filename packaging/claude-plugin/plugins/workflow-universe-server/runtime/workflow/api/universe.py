@@ -53,6 +53,9 @@ import logging
 import os
 import re
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1395,6 +1398,325 @@ def _tail_file_lines(path: Path, n: int) -> list[str]:
         return [ln.rstrip("\n") for ln in lines[-n:]]
     except OSError:
         return []
+
+
+_CHANGE_LOOP_PLAN_HEADINGS = (
+    "Scoping Rules",
+    "Work Targets And Review Gates",
+    "Multiplayer Daemon Platform",
+    "Multi-User Evolutionary Design",
+)
+
+
+def _repo_root() -> Path:
+    override = os.environ.get("WORKFLOW_REPO_ROOT")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[2]
+
+
+def _shorten(value: Any, max_chars: int) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[: max(0, max_chars - 15)].rstrip() + "\n...[truncated]"
+
+
+def _github_repo() -> str:
+    return os.environ.get("WORKFLOW_GITHUB_REPO", "Jonnyton/Workflow")
+
+
+def _github_get_json(
+    path: str,
+    *,
+    params: dict[str, str | int] | None = None,
+    timeout: float = 10.0,
+) -> Any:
+    api = os.environ.get("WORKFLOW_GITHUB_API", "https://api.github.com")
+    query = f"?{urllib.parse.urlencode(params)}" if params else ""
+    url = f"{api.rstrip('/')}{path}{query}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "workflow-community-change-context/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _github_read(
+    path: str,
+    *,
+    params: dict[str, str | int] | None = None,
+) -> tuple[Any | None, str | None]:
+    try:
+        return _github_get_json(path, params=params), None
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:300]
+        return None, f"GitHub HTTP {exc.code} for {path}: {body}"
+    except (TimeoutError, OSError, urllib.error.URLError) as exc:
+        return None, f"GitHub request failed for {path}: {exc}"
+    except json.JSONDecodeError as exc:
+        return None, f"GitHub response was not JSON for {path}: {exc}"
+
+
+def _issue_label_names(item: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+    for label in item.get("labels", []) or []:
+        if isinstance(label, str):
+            labels.append(label)
+        elif isinstance(label, dict) and label.get("name"):
+            labels.append(str(label["name"]))
+    return labels
+
+
+def _extract_plan_section(text: str, heading: str) -> str:
+    lines = text.splitlines()
+    start = None
+    marker = f"## {heading}"
+    for idx, line in enumerate(lines):
+        if line.strip() == marker:
+            start = idx
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        if lines[idx].startswith("## "):
+            end = idx
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def _change_loop_plan_context() -> dict[str, str]:
+    plan_path = _repo_root() / "PLAN.md"
+    try:
+        text = plan_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    sections: dict[str, str] = {}
+    for heading in _CHANGE_LOOP_PLAN_HEADINGS:
+        excerpt = _extract_plan_section(text, heading)
+        if excerpt:
+            sections[heading] = _shorten(excerpt, 2400)
+    return sections
+
+
+def _summarize_pr(pr: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "number": pr.get("number"),
+        "title": pr.get("title"),
+        "state": pr.get("state"),
+        "draft": pr.get("draft"),
+        "html_url": pr.get("html_url"),
+        "head": (pr.get("head") or {}).get("ref"),
+        "head_sha": (pr.get("head") or {}).get("sha"),
+        "base": (pr.get("base") or {}).get("ref"),
+        "labels": _issue_label_names(pr),
+        "created_at": pr.get("created_at"),
+        "updated_at": pr.get("updated_at"),
+        "body_excerpt": _shorten(pr.get("body", ""), 1000),
+    }
+
+
+def _summarize_issue(issue: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "number": issue.get("number"),
+        "title": issue.get("title"),
+        "state": issue.get("state"),
+        "html_url": issue.get("html_url"),
+        "labels": _issue_label_names(issue),
+        "created_at": issue.get("created_at"),
+        "updated_at": issue.get("updated_at"),
+        "body_excerpt": _shorten(issue.get("body", ""), 1200),
+    }
+
+
+def _comments_excerpt(comments: list[dict[str, Any]], max_items: int) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for comment in comments[-max_items:]:
+        user = comment.get("user") or {}
+        rows.append({
+            "author": str(user.get("login", "unknown")),
+            "created_at": str(comment.get("created_at", "")),
+            "body_excerpt": _shorten(comment.get("body", ""), 1400),
+        })
+    return rows
+
+
+def _action_community_change_context(
+    *,
+    filter_text: str = "",
+    limit: int = 10,
+    **_kwargs: Any,
+) -> str:
+    """Read-only community change-loop context for chatbot review.
+
+    `filter_text` selects the slice:
+    - empty / "queue": open PRs, auto-change PRs, open change requests,
+      latest auto-fix runs, and relevant PLAN.md sections.
+    - "pr:NUMBER": PR metadata, changed files, patch excerpts, comments, and
+      reviews.
+    - "issue:NUMBER": issue metadata and recent comments.
+    """
+    repo = _github_repo()
+    selector = (filter_text or "").strip().lower()
+    try:
+        n_limit = max(1, min(int(limit or 10), 25))
+    except (TypeError, ValueError):
+        n_limit = 10
+
+    result: dict[str, Any] = {
+        "kind": "community_change_context",
+        "repo": repo,
+        "selector": selector or "queue",
+        "plan_sections": _change_loop_plan_context(),
+        "review_standard": [
+            "Judge design fit against PLAN.md, not only test status.",
+            "Prefer minimal primitives and community-build paths over convenience tools.",
+            "Reject patch-on-patch fixes that hide missing base capability.",
+            "For Codex-written PRs, require Claude-family checker before merge.",
+        ],
+        "errors": [],
+    }
+
+    if selector.startswith("pr:") or (
+        selector.startswith("#") and selector[1:].isdigit()
+    ):
+        number_text = selector.split(":", 1)[1] if ":" in selector else selector[1:]
+        try:
+            pr_number = int(number_text)
+        except ValueError:
+            return json.dumps({"error": f"Invalid PR selector: {filter_text!r}"})
+        pr, err = _github_read(f"/repos/{repo}/pulls/{pr_number}")
+        if err:
+            result["errors"].append(err)
+        files, files_err = _github_read(
+            f"/repos/{repo}/pulls/{pr_number}/files",
+            params={"per_page": n_limit},
+        )
+        if files_err:
+            result["errors"].append(files_err)
+        comments, comments_err = _github_read(
+            f"/repos/{repo}/issues/{pr_number}/comments",
+            params={"per_page": n_limit},
+        )
+        if comments_err:
+            result["errors"].append(comments_err)
+        reviews, reviews_err = _github_read(
+            f"/repos/{repo}/pulls/{pr_number}/reviews",
+            params={"per_page": n_limit},
+        )
+        if reviews_err:
+            result["errors"].append(reviews_err)
+
+        result["target"] = f"pr:{pr_number}"
+        if isinstance(pr, dict):
+            result["pr"] = _summarize_pr(pr)
+        if isinstance(files, list):
+            result["files"] = [
+                {
+                    "filename": f.get("filename"),
+                    "status": f.get("status"),
+                    "additions": f.get("additions"),
+                    "deletions": f.get("deletions"),
+                    "changes": f.get("changes"),
+                    "patch_excerpt": _shorten(f.get("patch", ""), 1800),
+                }
+                for f in files[:n_limit]
+            ]
+        if isinstance(comments, list):
+            result["comments"] = _comments_excerpt(comments, n_limit)
+        if isinstance(reviews, list):
+            result["reviews"] = [
+                {
+                    "author": str((r.get("user") or {}).get("login", "unknown")),
+                    "state": r.get("state"),
+                    "submitted_at": r.get("submitted_at"),
+                    "body_excerpt": _shorten(r.get("body", ""), 1200),
+                }
+                for r in reviews[-n_limit:]
+            ]
+        return json.dumps(result, default=str)
+
+    if selector.startswith("issue:"):
+        try:
+            issue_number = int(selector.split(":", 1)[1])
+        except ValueError:
+            return json.dumps({"error": f"Invalid issue selector: {filter_text!r}"})
+        issue, err = _github_read(f"/repos/{repo}/issues/{issue_number}")
+        if err:
+            result["errors"].append(err)
+        comments, comments_err = _github_read(
+            f"/repos/{repo}/issues/{issue_number}/comments",
+            params={"per_page": n_limit},
+        )
+        if comments_err:
+            result["errors"].append(comments_err)
+        result["target"] = f"issue:{issue_number}"
+        if isinstance(issue, dict):
+            result["issue"] = _summarize_issue(issue)
+        if isinstance(comments, list):
+            result["comments"] = _comments_excerpt(comments, n_limit)
+        return json.dumps(result, default=str)
+
+    prs, prs_err = _github_read(
+        f"/repos/{repo}/pulls",
+        params={"state": "open", "per_page": n_limit},
+    )
+    if prs_err:
+        result["errors"].append(prs_err)
+    issues, issues_err = _github_read(
+        f"/repos/{repo}/issues",
+        params={"state": "open", "per_page": n_limit},
+    )
+    if issues_err:
+        result["errors"].append(issues_err)
+    runs, runs_err = _github_read(
+        f"/repos/{repo}/actions/workflows/auto-fix-bug.yml/runs",
+        params={"per_page": min(n_limit, 10)},
+    )
+    if runs_err:
+        result["errors"].append(runs_err)
+
+    if isinstance(prs, list):
+        result["open_prs"] = [_summarize_pr(pr) for pr in prs[:n_limit]]
+        result["open_auto_change_prs"] = [
+            _summarize_pr(pr)
+            for pr in prs
+            if str(pr.get("title", "")).startswith("[auto-change]")
+            or str((pr.get("head") or {}).get("ref", "")).startswith("auto-change/")
+        ]
+    if isinstance(issues, list):
+        change_requests = [
+            _summarize_issue(issue) for issue in issues if "pull_request" not in issue
+        ]
+        result["open_change_requests"] = change_requests
+        result["open_daemon_request_issues"] = [
+            issue for issue in change_requests if "daemon-request" in issue["labels"]
+        ]
+    if isinstance(runs, dict):
+        result["latest_auto_fix_runs"] = [
+            {
+                "id": run.get("id"),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+                "event": run.get("event"),
+                "head_sha": run.get("head_sha"),
+                "created_at": run.get("created_at"),
+                "html_url": run.get("html_url"),
+            }
+            for run in runs.get("workflow_runs", [])[: min(n_limit, 10)]
+        ]
+    result["usage"] = (
+        "Use filter_text='pr:NUMBER' for changed files/comments/reviews, "
+        "or filter_text='issue:NUMBER' for the request thread."
+    )
+    return json.dumps(result, default=str)
 
 
 def _action_daemon_overview(
@@ -3144,6 +3466,7 @@ def _universe_impl(
         "list_subscriptions": _action_list_subscriptions,
         "post_to_goal_pool": _action_post_to_goal_pool,
         "submit_node_bid": _action_submit_node_bid,
+        "community_change_context": _action_community_change_context,
         "daemon_overview": _action_daemon_overview,
         "daemon_list": _action_daemon_list,
         "daemon_get": _action_daemon_get,

@@ -12,7 +12,7 @@ Surface guarded:
 - `WRITE_ACTIONS` table contract — every action mapped to (extractor, daemon-gate)
 - `_dispatch_with_ledger`, `_scope_universe_response`, `_ledger_target_dir`
   ledger trio — universe-tool internal pipeline
-- 32 `_action_*` handler set — present, callable, owned by this module
+- 33 `_action_*` handler set — present, callable, owned by this module
 - Daemon-liveness telemetry helpers — present, owned by this module
 - Pattern A2 wrapper: `workflow.universe_server.universe` delegates to
   `workflow.api.universe._universe_impl` (verified via simple round-trip)
@@ -52,7 +52,7 @@ def test_module_exposes_expected_public_names() -> None:
         "_last_activity_at", "_staleness_bucket", "_phase_human",
         "_compute_accept_rate_from_db", "_compute_word_count_from_files",
         "_daemon_liveness", "_parse_activity_line",
-        # 32 universe-tool action handlers
+        # 33 universe-tool action handlers
         "_action_list_universes", "_action_inspect_universe",
         "_action_read_output", "_action_submit_request",
         "_action_queue_list", "_action_daemon_overview",
@@ -62,7 +62,8 @@ def test_module_exposes_expected_public_names() -> None:
         "_action_set_tier_config", "_action_queue_cancel",
         "_action_subscribe_goal", "_action_unsubscribe_goal",
         "_action_list_subscriptions", "_action_post_to_goal_pool",
-        "_action_submit_node_bid", "_action_give_direction",
+        "_action_submit_node_bid", "_action_community_change_context",
+        "_action_give_direction",
         "_action_query_world", "_action_read_premise",
         "_action_set_premise", "_action_add_canon",
         "_action_add_canon_from_path", "_action_list_canon",
@@ -167,10 +168,10 @@ def test_daemon_liveness_returns_dict_with_required_keys(tmp_path) -> None:
     )
 
 
-# ── 32-handler dispatch table sanity ─────────────────────────────────────────
+# ── 33-handler dispatch table sanity ─────────────────────────────────────────
 
 
-def test_universe_impl_dispatch_table_has_32_actions() -> None:
+def test_universe_impl_dispatch_table_has_33_actions() -> None:
     """The `dispatch` table inside `_universe_impl` includes daemon roster actions."""
     # Round-trip "list" through _universe_impl to confirm the dispatch
     # table is wired and covers at least one read action.
@@ -184,13 +185,14 @@ def test_universe_impl_dispatch_table_has_32_actions() -> None:
     "daemon_overview", "daemon_list", "daemon_get", "daemon_create",
     "daemon_summon", "daemon_banish", "set_tier_config", "queue_cancel",
     "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
-    "post_to_goal_pool", "submit_node_bid", "give_direction",
+    "post_to_goal_pool", "submit_node_bid", "community_change_context",
+    "give_direction",
     "query_world", "read_premise", "set_premise", "add_canon",
     "add_canon_from_path", "list_canon", "read_canon",
     "control_daemon", "get_activity", "get_recent_events",
     "get_ledger", "switch_universe", "create_universe",
 ])
-def test_every_universe_action_dispatches(action: str) -> None:
+def test_every_universe_action_dispatches(action: str, monkeypatch) -> None:
     """Every action verb resolves to a handler (no `Unknown action 'X'` errors
     from the top-level dispatch table).
 
@@ -201,11 +203,169 @@ def test_every_universe_action_dispatches(action: str) -> None:
     universe() dispatch table" — caught by the exact-string `"Unknown action
     '<action>'"` sentinel.
     """
+    if action == "community_change_context":
+        monkeypatch.setattr(univ_mod, "_github_read", lambda *a, **k: ([], None))
+        monkeypatch.setattr(univ_mod, "_change_loop_plan_context", lambda: {})
     out = univ_mod._universe_impl(action=action)
     sentinel = f"Unknown action '{action}'"
     assert sentinel not in out, (
         f"action {action!r} dropped from _universe_impl dispatch table"
     )
+
+
+def test_community_change_context_overview(monkeypatch) -> None:
+    """Queue view exposes PRs, change requests, auto-fix runs, and PLAN."""
+    monkeypatch.setattr(univ_mod, "_github_repo", lambda: "owner/repo")
+    monkeypatch.setattr(
+        univ_mod,
+        "_change_loop_plan_context",
+        lambda: {"Scoping Rules": "## Scoping Rules\nPrefer minimal primitives."},
+    )
+
+    def fake_github_read(path: str, *, params=None):
+        if path == "/repos/owner/repo/pulls":
+            return ([{
+                "number": 100,
+                "title": "[auto-change] BUG-001: fix request flow",
+                "state": "open",
+                "html_url": "https://example.test/pull/100",
+                "head": {"ref": "auto-change/issue-1-codex"},
+                "base": {"ref": "main"},
+                "labels": [{"name": "daemon-request"}],
+            }, {
+                "number": 101,
+                "title": "manual maintenance",
+                "state": "open",
+                "head": {"ref": "codex/manual"},
+                "base": {"ref": "main"},
+            }], None)
+        if path == "/repos/owner/repo/issues":
+            return ([{
+                "number": 57,
+                "title": "BUG-027: startup probe missing",
+                "state": "open",
+                "html_url": "https://example.test/issues/57",
+                "labels": [{"name": "daemon-request"}],
+            }, {
+                "number": 100,
+                "title": "PR issue wrapper",
+                "pull_request": {"url": "https://example.test/pulls/100"},
+            }], None)
+        if path == "/repos/owner/repo/actions/workflows/auto-fix-bug.yml/runs":
+            return ({"workflow_runs": [{
+                "id": 2520,
+                "status": "completed",
+                "conclusion": "success",
+                "event": "issues",
+                "head_sha": "abc123",
+                "html_url": "https://example.test/actions/runs/2520",
+            }]}, None)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(univ_mod, "_github_read", fake_github_read)
+
+    data = json.loads(univ_mod._action_community_change_context(limit=5))
+
+    assert data["repo"] == "owner/repo"
+    assert data["selector"] == "queue"
+    assert data["plan_sections"]["Scoping Rules"].startswith("## Scoping Rules")
+    assert [pr["number"] for pr in data["open_prs"]] == [100, 101]
+    assert [pr["number"] for pr in data["open_auto_change_prs"]] == [100]
+    assert [issue["number"] for issue in data["open_change_requests"]] == [57]
+    assert [issue["number"] for issue in data["open_daemon_request_issues"]] == [57]
+    assert data["latest_auto_fix_runs"][0]["id"] == 2520
+    assert data["errors"] == []
+
+
+def test_community_change_context_pr_detail(monkeypatch) -> None:
+    """PR selector returns reviewable code context, not just metadata."""
+    monkeypatch.setattr(univ_mod, "_github_repo", lambda: "owner/repo")
+    monkeypatch.setattr(univ_mod, "_change_loop_plan_context", lambda: {})
+
+    def fake_github_read(path: str, *, params=None):
+        if path == "/repos/owner/repo/pulls/57":
+            return ({
+                "number": 57,
+                "title": "[auto-change] BUG-027",
+                "state": "open",
+                "draft": False,
+                "html_url": "https://example.test/pull/57",
+                "head": {"ref": "auto-change/issue-57-codex", "sha": "abc123"},
+                "base": {"ref": "main"},
+                "body": "Fixes the startup probe.",
+            }, None)
+        if path == "/repos/owner/repo/pulls/57/files":
+            return ([{
+                "filename": "workflow/startup.py",
+                "status": "modified",
+                "additions": 4,
+                "deletions": 1,
+                "changes": 5,
+                "patch": "@@ -1 +1 @@\n-old\n+new",
+            }], None)
+        if path == "/repos/owner/repo/issues/57/comments":
+            return ([{
+                "user": {"login": "reviewer"},
+                "created_at": "2026-05-01T00:00:00Z",
+                "body": "Please explain why this is not patch-on-patch.",
+            }], None)
+        if path == "/repos/owner/repo/pulls/57/reviews":
+            return ([{
+                "user": {"login": "checker"},
+                "state": "COMMENTED",
+                "submitted_at": "2026-05-01T00:01:00Z",
+                "body": "Needs design context.",
+            }], None)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(univ_mod, "_github_read", fake_github_read)
+
+    data = json.loads(univ_mod._action_community_change_context(
+        filter_text="pr:57",
+        limit=2,
+    ))
+
+    assert data["target"] == "pr:57"
+    assert data["pr"]["head"] == "auto-change/issue-57-codex"
+    assert data["files"][0]["filename"] == "workflow/startup.py"
+    assert data["files"][0]["patch_excerpt"].startswith("@@")
+    assert data["comments"][0]["author"] == "reviewer"
+    assert data["reviews"][0]["state"] == "COMMENTED"
+
+
+def test_community_change_context_issue_detail(monkeypatch) -> None:
+    """Issue selector returns the request thread the loop should satisfy."""
+    monkeypatch.setattr(univ_mod, "_github_repo", lambda: "owner/repo")
+    monkeypatch.setattr(univ_mod, "_change_loop_plan_context", lambda: {})
+
+    def fake_github_read(path: str, *, params=None):
+        if path == "/repos/owner/repo/issues/39":
+            return ({
+                "number": 39,
+                "title": "BUG-013: missing feature request verb",
+                "state": "open",
+                "html_url": "https://example.test/issues/39",
+                "labels": [{"name": "daemon-request"}],
+                "body": "The live connector needs a file_feature_request verb.",
+            }, None)
+        if path == "/repos/owner/repo/issues/39/comments":
+            return ([{
+                "user": {"login": "daemon"},
+                "created_at": "2026-05-01T00:02:00Z",
+                "body": "I am preparing a branch.",
+            }], None)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(univ_mod, "_github_read", fake_github_read)
+
+    data = json.loads(univ_mod._action_community_change_context(
+        filter_text="issue:39",
+        limit=1,
+    ))
+
+    assert data["target"] == "issue:39"
+    assert data["issue"]["number"] == 39
+    assert data["comments"][0]["author"] == "daemon"
 
 
 def test_daemon_actions_create_summon_and_banish(tmp_path, monkeypatch) -> None:
