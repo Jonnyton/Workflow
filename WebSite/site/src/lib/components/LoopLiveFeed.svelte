@@ -169,6 +169,13 @@
     return `Last ran ${relativeStamp(latest.at)}`;
   }
 
+  function stageEventSummary(stage: LoopStageId): string {
+    const latest = latestFor(stage);
+    if (!latest) return activeRun?.current_stage === stage ? 'Current stage is waiting for an event' : 'No recent event in this stage';
+    const location = latest.node_id || sourceLabel(latest.source);
+    return `Last event: ${[latest.status, location].filter(Boolean).join(' - ')}`;
+  }
+
   function stageCueLabel(stage: LoopStageId): string {
     const latest = latestFor(stage);
     if (!latest) return activeRun?.current_stage === stage ? 'Open active stage' : 'Waiting for live event';
@@ -270,6 +277,7 @@
           >
             <span>{index + 1}. {stage.label}</span>
             <strong>{latest?.title ?? 'Waiting for live event'}</strong>
+            <p class="live-stage__event">{stageEventSummary(stage.id)}</p>
             <div class="live-stage__footer">
               <small>{stageTimeLabel(stage.id)}</small>
               <small class="live-stage__cue">{stageCueLabel(stage.id)}</small>
@@ -627,10 +635,10 @@
   .live-stage {
     position: relative;
     display: grid;
-    grid-template-rows: auto auto auto 1fr;
+    grid-template-rows: auto auto auto auto 1fr;
     gap: 5px;
-    min-height: 132px;
-    height: 132px;
+    min-height: 158px;
+    height: 158px;
     min-width: 0;
     padding: 12px;
     border: 1px solid var(--border-1);
@@ -698,6 +706,20 @@
     line-height: 1.2;
     overflow: hidden;
     overflow-wrap: anywhere;
+  }
+
+  .live-stage__event {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    color: var(--fg-2) !important;
+    font-family: var(--font-mono);
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-transform: uppercase;
   }
 
   .live-stage__footer {
@@ -1021,7 +1043,7 @@
       grid-template-columns: 1fr;
     }
     .live-stage {
-      min-height: 108px;
+      min-height: 132px;
       height: auto;
     }
     .stage-detail__head,
