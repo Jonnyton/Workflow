@@ -13,24 +13,24 @@ from pathlib import Path
 
 
 def main() -> None:
-    base = os.environ.get("UNIVERSE_SERVER_BASE", "").strip()
+    base = os.environ.get("WORKFLOW_DATA_DIR", "").strip()
     if not base:
         raise RuntimeError(
-            "UNIVERSE_SERVER_BASE is required. Configure the plugin's "
-            "'Universe Base Directory' before launching it."
+            "WORKFLOW_DATA_DIR is required. Configure the plugin's "
+            "'Workflow Data Directory' before launching it."
         )
 
     base_path = Path(base).expanduser().resolve()
     if not base_path.exists():
         raise RuntimeError(
-            f"UNIVERSE_SERVER_BASE does not exist: {base_path}"
+            f"WORKFLOW_DATA_DIR does not exist: {base_path}"
         )
     if not base_path.is_dir():
         raise RuntimeError(
-            f"UNIVERSE_SERVER_BASE must be a directory: {base_path}"
+            f"WORKFLOW_DATA_DIR must be a directory: {base_path}"
         )
 
-    os.environ["UNIVERSE_SERVER_BASE"] = str(base_path)
+    os.environ["WORKFLOW_DATA_DIR"] = str(base_path)
 
     runtime_root = Path(__file__).resolve().parent
     if str(runtime_root) not in sys.path:

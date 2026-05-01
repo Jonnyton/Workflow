@@ -407,9 +407,9 @@ class UniverseServerManager:
         env = os.environ.copy()
         # Pin the canonical data root as an absolute path so the MCP
         # subprocess's data_dir() resolves identically no matter what
-        # CWD it inherits. Previously we set the legacy
-        # UNIVERSE_SERVER_BASE to the literal "output" — a CWD-relative
-        # string that made the tray and MCP server drift onto different
+        # CWD it inherits. Previously the tray used a CWD-relative
+        # "output" string for the daemon data root, which made the tray
+        # and MCP server drift onto different
         # on-disk trees whenever the tray wasn't launched from the repo
         # root (Task #7 / 2026-04-20 observability bug).
         env["WORKFLOW_DATA_DIR"] = str(self._data_dir())
