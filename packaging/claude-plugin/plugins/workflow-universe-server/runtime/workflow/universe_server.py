@@ -334,7 +334,7 @@ def universe(
             goal-pool / bid: post_to_goal_pool, submit_node_bid;
             daemon: daemon_overview, daemon_list, daemon_get,
             daemon_create, daemon_summon, daemon_banish;
-            config: set_tier_config.
+            config: set_tier_config;
         universe_id: Target universe. Defaults to the active universe.
         text: Content for write ops (request text, direction, premise,
             canon body). For `control_daemon` this is the daemon
@@ -864,7 +864,7 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint;
             writes: write, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug, cosign_bug.
+            sync_projects, file_bug, file_feature_request, cosign_bug.
     """
     return _wiki_impl(
         action=action,

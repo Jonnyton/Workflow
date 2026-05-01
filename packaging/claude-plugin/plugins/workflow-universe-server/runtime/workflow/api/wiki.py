@@ -1246,6 +1246,7 @@ def _wiki_file_bug(
     workaround: str = "",
     kind: str = "bug",
     tags: str = "",
+    log_action: str = "file_bug",
     force_new: bool = False,
     **_kwargs: Any,
 ) -> str:
@@ -1359,7 +1360,7 @@ def _wiki_file_bug(
 
     rel_path = f"pages/{category_dir}/{filename}"
     _append_wiki_log(
-        f"file_bug | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
+        f"{log_action} | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
     return json.dumps({
         "path": rel_path,
@@ -1371,6 +1372,11 @@ def _wiki_file_bug(
         "note": "Filing sent to navigator triage pipeline. "
                 f"Use `wiki action=list category={category_dir}` to view.",
     })
+
+
+def _wiki_file_feature_request(**kwargs: Any) -> str:
+    """File a feature request through the same triage pipeline as bugs."""
+    return _wiki_file_bug(kind="feature", log_action="file_feature_request", **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -1459,6 +1465,7 @@ def wiki(
         "supersede": _wiki_supersede,
         "sync_projects": _wiki_sync_projects,
         "file_bug": _wiki_file_bug,
+        "file_feature_request": _wiki_file_feature_request,
         "cosign_bug": _wiki_cosign_bug,
     }
 

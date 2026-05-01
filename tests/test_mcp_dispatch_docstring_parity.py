@@ -35,6 +35,7 @@ handlers are parameterless single-action tools (`get_status`, `pause`,
 from __future__ import annotations
 
 import re
+import textwrap
 
 import pytest
 
@@ -113,7 +114,9 @@ def _universe_dispatch_keys() -> set[str]:
         "queue_list", "queue_cancel",
         "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
         "post_to_goal_pool", "submit_node_bid",
-        "daemon_overview", "set_tier_config",
+        "daemon_overview", "daemon_list", "daemon_get",
+        "daemon_create", "daemon_summon", "daemon_banish",
+        "set_tier_config",
     }
 
 
@@ -123,7 +126,7 @@ def _wiki_dispatch_keys() -> set[str]:
         "read", "search", "list", "lint",
         "write", "consolidate", "promote", "ingest", "supersede",
         "sync_projects",
-        "file_bug", "cosign_bug",
+        "file_bug", "file_feature_request", "cosign_bug",
     }
 
 
@@ -174,7 +177,8 @@ def _extract_slab(doc: str, start_re: str, end_re: str) -> str:
         return ""
     rest = doc[sm.end():]
     em = re.search(end_re, rest)
-    return rest[:em.start()] if em else rest
+    slab = rest[:em.start()] if em else rest
+    return textwrap.dedent(slab)
 
 
 def _flat_group_actions(slab: str) -> set[str]:
@@ -229,7 +233,7 @@ def _bullet_group_actions(slab: str) -> set[str]:
     return out
 
 
-def _block_actions(slab: str, indent: int = 2) -> set[str]:
+def _block_actions(slab: str, indent: int = 0) -> set[str]:
     """Parse an `Actions:`-style block (one action per line) into names.
 
     Each action line is `<indent-spaces><name><whitespace><description>`.
@@ -276,20 +280,20 @@ def _docstring_actions_wiki() -> set[str]:
 
 def _docstring_actions_gates() -> set[str]:
     doc = us.gates.__doc__ or ""
-    primary = _extract_slab(doc, r"\nActions \([^)]*\):\s*\n", r"\n\n")
-    bonus = _extract_slab(doc, r"\nBonus actions \([^)]*\):\s*\n", r"\n\n")
+    primary = _extract_slab(doc, r"\n\s*Actions \([^)]*\):\s*\n", r"\n\n")
+    bonus = _extract_slab(doc, r"\n\s*Bonus actions \([^)]*\):\s*\n", r"\n\n")
     return _block_actions(primary) | _block_actions(bonus)
 
 
 def _docstring_actions_goals() -> set[str]:
     doc = us.goals.__doc__ or ""
-    slab = _extract_slab(doc, r"\nActions:\s*\n", r"\n\n")
+    slab = _extract_slab(doc, r"\n\s*Actions:\s*\n", r"\n\n")
     return _block_actions(slab)
 
 
 def _docstring_actions_extensions() -> set[str]:
     doc = us.extensions.__doc__ or ""
-    slab = _extract_slab(doc, r"\nAction groups:\s*\n", r"\n\n")
+    slab = _extract_slab(doc, r"\n\s*Action groups:\s*\n", r"\n\n")
     return _bullet_group_actions(slab)
 
 

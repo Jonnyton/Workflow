@@ -568,6 +568,27 @@ class TestWikiFileBugDispatch:
         assert out["bug_id"].startswith("BUG-")
         assert "path" in out
 
+    def test_file_feature_request_routes_to_feature_requests(self, wiki_dir):
+        (wiki_dir / "pages" / "feature-requests").mkdir(parents=True, exist_ok=True)
+        (wiki_dir / "drafts" / "feature-requests").mkdir(parents=True, exist_ok=True)
+
+        out = json.loads(
+            wiki(
+                "file_feature_request",
+                component="wiki",
+                severity="minor",
+                title="Let wiki file feature requests directly",
+                observed="Only file_bug is exposed.",
+                expected="A feature request verb is available.",
+            )
+        )
+
+        assert out["status"] == "filed"
+        assert out["kind"] == "feature"
+        assert out["bug_id"].startswith("FEAT-")
+        assert out["path"].startswith("pages/feature-requests/")
+        assert "file_feature_request |" in (wiki_dir / "log.md").read_text()
+
     def test_id_collision_retry_via_dispatch(self, wiki_dir):
         """Collision retry is end-to-end via the wiki() router."""
         from pathlib import Path
