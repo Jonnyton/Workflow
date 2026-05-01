@@ -396,7 +396,7 @@ def universe(
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=False,
-        openWorldHint=False,
+        openWorldHint=True,
     ),
 )
 def extensions(

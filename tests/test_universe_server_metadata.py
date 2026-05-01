@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 
 from workflow.universe_server import mcp
+
+
 def _list_tools():
     return asyncio.run(mcp.list_tools(run_middleware=False))
 
@@ -30,7 +32,7 @@ class TestUniverseServerMetadata:
         assert extensions.annotations.readOnlyHint is False
         assert extensions.annotations.destructiveHint is False
         assert extensions.annotations.idempotentHint is False
-        assert extensions.annotations.openWorldHint is False
+        assert extensions.annotations.openWorldHint is True
         assert "extension_guide" in extensions.description
 
     def test_prompt_metadata_is_present(self):
