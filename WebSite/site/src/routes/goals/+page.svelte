@@ -36,6 +36,7 @@
     external: boolean;
     score: number;
   };
+  type FocusKind = 'goal' | 'commons' | 'branch';
 
   const STOP_WORDS = new Set([
     'and',
@@ -71,6 +72,8 @@
   let repo = $state(initialRepoSnapshot);
   let selectedGoalId = $state(initialMcpSnapshot.goals[0]?.id ?? '');
   let selectedEvidenceKey = $state('');
+  let selectedBranchKey = $state('');
+  let focusKind = $state<FocusKind>('goal');
   let activeTag = $state('all');
   let query = $state('');
   let mcpLoading = $state(false);
@@ -105,6 +108,9 @@
   const branchEvidence = $derived.by(() => (selectedGoal ? relatedBranchEvidence(selectedGoal, repo) : []));
   const selectedEvidence = $derived.by(
     () => wikiEvidence.find((item) => item.key === selectedEvidenceKey) ?? wikiEvidence[0] ?? null
+  );
+  const selectedBranch = $derived.by(
+    () => branchEvidence.find((branch) => branch.key === selectedBranchKey) ?? branchEvidence[0] ?? null
   );
   const explicitGoalEdges = $derived.by(() => {
     if (!selectedGoal) return [];
@@ -144,6 +150,18 @@
   function selectGoal(goalId: string) {
     selectedGoalId = goalId;
     selectedEvidenceKey = '';
+    selectedBranchKey = '';
+    focusKind = 'goal';
+  }
+
+  function selectEvidence(key: string) {
+    selectedEvidenceKey = key;
+    focusKind = 'commons';
+  }
+
+  function selectBranch(key: string) {
+    selectedBranchKey = key;
+    focusKind = 'branch';
   }
 
   function toggleTag(tag: string) {
@@ -194,6 +212,15 @@
       if (!needle || !haystack.includes(needle)) return score;
       return score + (needle.includes('-') ? 4 : 1);
     }, 0);
+  }
+
+  function tagLine(tags: string[] | undefined): string {
+    const clean = (tags ?? []).filter(Boolean);
+    return clean.length ? clean.slice(0, 8).join(', ') : 'none in current snapshot';
+  }
+
+  function branchSource(branch: BranchEvidence): string {
+    return branch.external ? 'GitHub branch' : 'Workflow branch definition';
   }
 
   function wikiItems(snapshot: Snapshot): Omit<WikiEvidence, 'score' | 'relation'>[] {
@@ -477,9 +504,9 @@
                 <button
                   type="button"
                   class="evidence-item"
-                  class:active={selectedEvidence?.key === item.key}
-                  aria-pressed={selectedEvidence?.key === item.key}
-                  onclick={() => (selectedEvidenceKey = item.key)}
+                  class:active={focusKind === 'commons' && selectedEvidence?.key === item.key}
+                  aria-pressed={focusKind === 'commons' && selectedEvidence?.key === item.key}
+                  onclick={() => selectEvidence(item.key)}
                 >
                   <span>{item.kind}</span>
                   <strong>{item.title}</strong>
@@ -498,11 +525,17 @@
             </div>
             <div class="evidence-list">
               {#each branchEvidence as branch (branch.key)}
-                <a class="evidence-item" href={branch.href} target={branch.external ? '_blank' : undefined} rel={branch.external ? 'noreferrer' : undefined}>
+                <button
+                  type="button"
+                  class="evidence-item"
+                  class:active={focusKind === 'branch' && selectedBranch?.key === branch.key}
+                  aria-pressed={focusKind === 'branch' && selectedBranch?.key === branch.key}
+                  onclick={() => selectBranch(branch.key)}
+                >
                   <span>{branch.kind}</span>
                   <strong>{branch.name}</strong>
                   <small>{branch.summary} · {branch.meta}</small>
-                </a>
+                </button>
               {:else}
                 <p class="empty-copy">No repo or workflow branch currently matches this goal. That is a real gap, not a hidden leaderboard.</p>
               {/each}
@@ -510,26 +543,107 @@
           </section>
         </div>
 
-        <section class="selected-evidence" aria-label="Selected evidence detail">
-          {#if selectedEvidence}
+        <section class="click-detail click-detail--{focusKind}" aria-label="Clicked item detail">
+          {#if focusKind === 'goal'}
+            <div>
+              <RitualLabel>· Goal detail · {selectedGoal.id} ·</RitualLabel>
+              <h3>{selectedGoal.name}</h3>
+              <p>{selectedGoal.summary}</p>
+              <div class="detail-grid" aria-label="Selected goal fields">
+                <article>
+                  <span>Goal ID</span>
+                  <strong>{selectedGoal.id}</strong>
+                </article>
+                <article>
+                  <span>Visibility</span>
+                  <strong>{selectedGoal.visibility}</strong>
+                </article>
+                <article>
+                  <span>Author</span>
+                  <strong>{selectedGoal.author || 'anonymous'}</strong>
+                </article>
+                <article>
+                  <span>Tags</span>
+                  <strong>{tagLine(selectedGoal.tags)}</strong>
+                </article>
+              </div>
+            </div>
+            <div class="detail-side">
+              <a href="/connect">Use through MCP</a>
+              <a href="/graph">Open in graph</a>
+            </div>
+          {:else if focusKind === 'commons' && selectedEvidence}
             <div>
               <RitualLabel>· Evidence detail · {selectedEvidence.kind} ·</RitualLabel>
               <h3>{selectedEvidence.title}</h3>
               <p>{selectedEvidence.subtitle}</p>
+              <div class="detail-grid" aria-label="Selected commons fields">
+                <article>
+                  <span>Node ID</span>
+                  <strong>{selectedEvidence.nodeId}</strong>
+                </article>
+                <article>
+                  <span>Why shown</span>
+                  <strong>{selectedEvidence.relation}</strong>
+                </article>
+                <article>
+                  <span>Source</span>
+                  <strong>MCP wiki snapshot</strong>
+                </article>
+                <article>
+                  <span>Tags</span>
+                  <strong>{tagLine(selectedEvidence.tags)}</strong>
+                </article>
+              </div>
               <div class="evidence-tags">
                 {#each selectedEvidence.tags.slice(0, 6) as tag}
                   <span>{tag}</span>
                 {/each}
               </div>
             </div>
-            <a href={selectedEvidence.href}>Open live wiki</a>
+            <div class="detail-side">
+              <a href={selectedEvidence.href}>Open live wiki</a>
+              <a href="/graph">Show relationship graph</a>
+            </div>
+          {:else if focusKind === 'branch' && selectedBranch}
+            <div>
+              <RitualLabel>· Branch detail · {selectedBranch.kind} ·</RitualLabel>
+              <h3>{selectedBranch.name}</h3>
+              <p>{selectedBranch.summary}</p>
+              <div class="detail-grid" aria-label="Selected branch fields">
+                <article>
+                  <span>Source</span>
+                  <strong>{branchSource(selectedBranch)}</strong>
+                </article>
+                <article>
+                  <span>State</span>
+                  <strong>{selectedBranch.meta}</strong>
+                </article>
+                <article>
+                  <span>Match</span>
+                  <strong>goal text and tag overlap</strong>
+                </article>
+                <article>
+                  <span>Route</span>
+                  <strong>{selectedBranch.external ? 'GitHub source' : 'project graph'}</strong>
+                </article>
+              </div>
+            </div>
+            <div class="detail-side">
+              <a href={selectedBranch.href} target={selectedBranch.external ? '_blank' : undefined} rel={selectedBranch.external ? 'noreferrer' : undefined}>
+                {selectedBranch.external ? 'Open branch' : 'Open in graph'}
+              </a>
+              <a href="/loop">Route into loop</a>
+            </div>
           {:else}
             <div>
-              <RitualLabel>· Evidence detail ·</RitualLabel>
-              <h3>No related commons record selected.</h3>
-              <p>The goal is still live; the related-record list will populate when MCP exposes matching wiki state.</p>
+              <RitualLabel>· Click detail ·</RitualLabel>
+              <h3>No related item selected.</h3>
+              <p>Click a goal, commons record, or branch signal to inspect the live detail behind it.</p>
             </div>
-            <a href="/wiki">Open live wiki</a>
+            <div class="detail-side">
+              <a href="/wiki">Open live wiki</a>
+            </div>
           {/if}
         </section>
       </section>
@@ -595,7 +709,7 @@
   .detail-actions button,
   .detail-actions a,
   .tag-cloud button,
-  .selected-evidence a {
+  .click-detail a {
     align-items: center;
     border-radius: 6px;
     display: inline-flex;
@@ -607,7 +721,7 @@
   .refresh-box button,
   .detail-actions button,
   .detail-actions a,
-  .selected-evidence a {
+  .click-detail a {
     background: rgba(109, 211, 166, 0.1);
     border: 1px solid rgba(109, 211, 166, 0.28);
     color: var(--fg-1);
@@ -622,7 +736,7 @@
   .refresh-box button:hover,
   .detail-actions button:hover,
   .detail-actions a:hover,
-  .selected-evidence a:hover {
+  .click-detail a:hover {
     background: rgba(109, 211, 166, 0.16);
     border-color: rgba(109, 211, 166, 0.5);
   }
@@ -923,7 +1037,7 @@
   }
 
   .evidence-card h3,
-  .selected-evidence h3 {
+  .click-detail h3 {
     color: var(--fg-1);
     font-family: var(--font-display);
     font-size: 24px;
@@ -953,10 +1067,13 @@
     border-radius: 8px;
     color: inherit;
     cursor: pointer;
+    display: block;
+    font: inherit;
     min-width: 0;
     padding: 12px;
     text-align: left;
     text-decoration: none;
+    width: 100%;
   }
 
   .evidence-item:hover,
@@ -973,23 +1090,62 @@
     overflow-wrap: anywhere;
   }
 
-  .selected-evidence {
-    align-items: center;
+  .click-detail {
+    align-items: start;
     background: var(--bg-inset);
     border: 1px solid var(--border-1);
     border-radius: 8px;
     display: grid;
     gap: 14px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
     margin-top: 12px;
     padding: 16px;
   }
 
-  .selected-evidence p {
+  .click-detail p {
     font-size: 13px;
     line-height: 1.6;
     margin-top: 8px;
     overflow-wrap: anywhere;
+  }
+
+  .detail-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+  }
+
+  .detail-grid article {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    min-width: 0;
+    padding: 10px;
+  }
+
+  .detail-grid span {
+    color: var(--fg-3);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .detail-grid strong {
+    color: var(--fg-1);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.45;
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-side {
+    display: grid;
+    gap: 8px;
   }
 
   .evidence-tags {
@@ -1001,7 +1157,7 @@
     .toolbar,
     .detail-head,
     .evidence-grid,
-    .selected-evidence {
+    .click-detail {
       grid-template-columns: 1fr;
     }
 
