@@ -163,11 +163,16 @@
     return 'waiting for feed';
   }
 
-  function stageDetailLabel(stage: LoopStageId): string {
+  function stageTimeLabel(stage: LoopStageId): string {
     const latest = latestFor(stage);
     if (!latest) return statusLabel(stage);
-    if (latest.status.includes('fail') || latest.detail.length > 96) return `${latest.status} - see recent events`;
-    return latest.detail;
+    return `Last ran ${relativeStamp(latest.at)}`;
+  }
+
+  function stageCueLabel(stage: LoopStageId): string {
+    const latest = latestFor(stage);
+    if (!latest) return activeRun?.current_stage === stage ? 'Open active stage' : 'Waiting for live event';
+    return 'See recent events';
   }
 
   function signalLabel(count: number): string {
@@ -265,7 +270,10 @@
           >
             <span>{index + 1}. {stage.label}</span>
             <strong>{latest?.title ?? 'Waiting for live event'}</strong>
-            <small>{stageDetailLabel(stage.id)}</small>
+            <div class="live-stage__footer">
+              <small>{stageTimeLabel(stage.id)}</small>
+              <small class="live-stage__cue">{stageCueLabel(stage.id)}</small>
+            </div>
           </button>
         {/each}
       </div>
@@ -619,8 +627,8 @@
   .live-stage {
     position: relative;
     display: grid;
-    grid-template-rows: auto auto 1fr;
-    gap: 6px;
+    grid-template-rows: auto auto auto 1fr;
+    gap: 5px;
     min-height: 132px;
     height: 132px;
     min-width: 0;
@@ -683,8 +691,8 @@
   .live-stage strong {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     color: var(--fg-1);
     font-size: 13.5px;
     line-height: 1.2;
@@ -692,16 +700,30 @@
     overflow-wrap: anywhere;
   }
 
-  .live-stage small {
+  .live-stage__footer {
+    display: grid;
+    gap: 3px;
+    align-self: end;
+    min-width: 0;
+  }
+
+  .live-stage__footer small {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
     color: var(--fg-3);
-    font-size: 12px;
+    font-size: 11.5px;
     line-height: 1.35;
     overflow: hidden;
     overflow-wrap: anywhere;
+  }
+
+  .live-stage__cue {
+    color: var(--signal-live) !important;
+    font-family: var(--font-mono);
+    font-size: 10px !important;
+    text-transform: uppercase;
   }
 
   .stage-detail {
