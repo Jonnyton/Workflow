@@ -1,76 +1,1096 @@
-<!-- /catalog — Phase 1.5+ stub. Real implementation lifts from design-source/ui_kits/workflow-web/Catalog.jsx. -->
+<!-- /catalog — Discover lens. Compatibility route for the live goal explorer. -->
 <script lang="ts">
-  import LiveSourceBar from '$lib/components/LiveSourceBar.svelte';
   import RitualLabel from '$lib/components/Primitives/RitualLabel.svelte';
-  import { initialMcpSnapshot } from '$lib/live/project';
+  import {
+    compactNumber,
+    initialMcpSnapshot,
+    initialRepoSnapshot,
+    refreshMcpSnapshot,
+    refreshRepoSnapshot,
+    relativeStamp,
+    shortHash,
+    type RepoBranch
+  } from '$lib/live/project';
+  import type { Snapshot } from '$lib/mcp/types';
 
-  const goals = initialMcpSnapshot.goals;
+  type Goal = Snapshot['goals'][number];
+  type WikiKind = 'bug' | 'concept' | 'note' | 'plan' | 'draft';
+  type WikiEvidence = {
+    key: string;
+    nodeId: string;
+    kind: WikiKind;
+    title: string;
+    subtitle: string;
+    tags: string[];
+    score: number;
+    relation: string;
+    href: string;
+  };
+  type BranchEvidence = {
+    key: string;
+    name: string;
+    kind: string;
+    summary: string;
+    meta: string;
+    href: string;
+    external: boolean;
+    score: number;
+  };
+
+  const STOP_WORDS = new Set([
+    'and',
+    'the',
+    'that',
+    'this',
+    'with',
+    'from',
+    'into',
+    'through',
+    'under',
+    'public',
+    'workflow',
+    'mcp',
+    'chatbot',
+    'chatbots',
+    'goal',
+    'goals',
+    'bug',
+    'bugs',
+    'branch',
+    'branches',
+    'live',
+    'state',
+    'states',
+    'route',
+    'routes',
+    'user',
+    'users'
+  ]);
+
+  let mcp = $state(initialMcpSnapshot);
+  let repo = $state(initialRepoSnapshot);
+  let selectedGoalId = $state(initialMcpSnapshot.goals[0]?.id ?? '');
+  let selectedEvidenceKey = $state('');
+  let activeTag = $state('all');
+  let query = $state('');
+  let mcpLoading = $state(false);
+  let githubLoading = $state(false);
+  let mcpError = $state('');
+  let githubError = $state('');
+  let copiedPrompt = $state(false);
+
+  const goals = $derived(mcp.goals ?? []);
+  const selectedGoal = $derived(goals.find((goal) => goal.id === selectedGoalId) ?? goals[0] ?? null);
+  const repoUrl = $derived(repo.repo.remote_url?.replace(/\.git$/, '') || 'https://github.com/Jonnyton/Workflow');
+  const allTags = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const goal of goals) {
+      for (const tag of goal.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 14);
+  });
+  const filteredGoals = $derived.by(() => {
+    const needle = query.trim().toLowerCase();
+    return goals.filter((goal) => {
+      const tagMatch = activeTag === 'all' || goal.tags?.includes(activeTag);
+      const queryMatch =
+        !needle ||
+        [goal.name, goal.summary, goal.id, ...(goal.tags ?? [])].join(' ').toLowerCase().includes(needle);
+      return tagMatch && queryMatch;
+    });
+  });
+  const wikiEvidence = $derived.by(() => (selectedGoal ? relatedWikiEvidence(selectedGoal, mcp) : []));
+  const branchEvidence = $derived.by(() => (selectedGoal ? relatedBranchEvidence(selectedGoal, repo) : []));
+  const selectedEvidence = $derived.by(
+    () => wikiEvidence.find((item) => item.key === selectedEvidenceKey) ?? wikiEvidence[0] ?? null
+  );
+  const explicitGoalEdges = $derived.by(() => {
+    if (!selectedGoal) return [];
+    const goalNode = `goal:${selectedGoal.id}`;
+    return (mcp.edges ?? []).filter((edge) => edge.from === goalNode || edge.to === goalNode);
+  });
+
+  async function refreshMcp() {
+    mcpLoading = true;
+    mcpError = '';
+    try {
+      const next = await refreshMcpSnapshot(mcp);
+      mcp = next;
+      if (!next.goals.some((goal) => goal.id === selectedGoalId)) {
+        selectedGoalId = next.goals[0]?.id ?? '';
+        selectedEvidenceKey = '';
+      }
+    } catch (error) {
+      mcpError = error instanceof Error ? error.message : String(error);
+    } finally {
+      mcpLoading = false;
+    }
+  }
+
+  async function refreshGithub() {
+    githubLoading = true;
+    githubError = '';
+    try {
+      repo = await refreshRepoSnapshot(repo);
+    } catch (error) {
+      githubError = error instanceof Error ? error.message : String(error);
+    } finally {
+      githubLoading = false;
+    }
+  }
+
+  function selectGoal(goalId: string) {
+    selectedGoalId = goalId;
+    selectedEvidenceKey = '';
+  }
+
+  function toggleTag(tag: string) {
+    activeTag = activeTag === tag ? 'all' : tag;
+  }
+
+  async function copyGoalPrompt() {
+    if (!selectedGoal) return;
+    try {
+      await navigator.clipboard.writeText(promptFor(selectedGoal));
+      copiedPrompt = true;
+      window.setTimeout(() => (copiedPrompt = false), 1400);
+    } catch {
+      copiedPrompt = false;
+    }
+  }
+
+  function promptFor(goal: Goal): string {
+    return `Using Workflow, browse the live goal "${goal.name}" (${goal.id}), show the related commons context, and tell me the safest next action I can take through MCP.`;
+  }
+
+  function slugId(path: string): string {
+    return path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+  }
+
+  function uniq(values: string[]): string[] {
+    return [...new Set(values.filter(Boolean))];
+  }
+
+  function words(value: string | undefined): string[] {
+    return uniq(
+      (value ?? '')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 2 && !STOP_WORDS.has(word))
+    );
+  }
+
+  function goalNeedles(goal: Goal): string[] {
+    const tagParts = (goal.tags ?? []).flatMap((tag) => [tag.toLowerCase(), ...words(tag)]);
+    const summaryTerms = words(goal.summary).filter((word) => word.length > 6).slice(0, 10);
+    return uniq([...tagParts, ...words(goal.name), ...summaryTerms]);
+  }
+
+  function scoreAgainst(needles: string[], values: Array<string | undefined>): number {
+    const haystack = values.filter(Boolean).join(' ').toLowerCase();
+    return needles.reduce((score, needle) => {
+      if (!needle || !haystack.includes(needle)) return score;
+      return score + (needle.includes('-') ? 4 : 1);
+    }, 0);
+  }
+
+  function wikiItems(snapshot: Snapshot): Omit<WikiEvidence, 'score' | 'relation'>[] {
+    const tags = snapshot.tags ?? {};
+    const items: Omit<WikiEvidence, 'score' | 'relation'>[] = [];
+    for (const bug of snapshot.wiki?.bugs ?? []) {
+      const nodeId = `bug:${bug.id}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        kind: 'bug',
+        title: `${bug.id} — ${bug.title}`,
+        subtitle: bug.slug ?? bug.id,
+        tags: tags[nodeId] ?? ['bug'],
+        href: '/wiki'
+      });
+    }
+    for (const plan of snapshot.wiki?.plans ?? []) {
+      const nodeId = `plan:${slugId(plan.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        kind: 'plan',
+        title: plan.title,
+        subtitle: plan.slug,
+        tags: tags[nodeId] ?? ['plan'],
+        href: '/wiki'
+      });
+    }
+    for (const concept of snapshot.wiki?.concepts ?? []) {
+      const nodeId = `concept:${slugId(concept.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        kind: 'concept',
+        title: concept.title,
+        subtitle: concept.slug,
+        tags: tags[nodeId] ?? ['concept'],
+        href: '/wiki'
+      });
+    }
+    for (const note of snapshot.wiki?.notes ?? []) {
+      const nodeId = `note:${slugId(note.slug)}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        kind: 'note',
+        title: note.title,
+        subtitle: note.slug,
+        tags: tags[nodeId] ?? ['note'],
+        href: '/wiki'
+      });
+    }
+    for (const draft of snapshot.wiki?.drafts ?? []) {
+      const nodeId = `draft:${draft.slug}`;
+      items.push({
+        key: nodeId,
+        nodeId,
+        kind: 'draft',
+        title: draft.title,
+        subtitle: draft.slug,
+        tags: tags[nodeId] ?? ['draft'],
+        href: '/wiki'
+      });
+    }
+    return items;
+  }
+
+  function relatedWikiEvidence(goal: Goal, snapshot: Snapshot): WikiEvidence[] {
+    const goalNode = `goal:${goal.id}`;
+    const edgeMap = new Set<string>();
+    for (const edge of snapshot.edges ?? []) {
+      if (edge.from === goalNode) edgeMap.add(edge.to);
+      if (edge.to === goalNode) edgeMap.add(edge.from);
+    }
+    const needles = goalNeedles(goal);
+    return wikiItems(snapshot)
+      .map((item) => {
+        const explicit = edgeMap.has(item.nodeId);
+        const score =
+          scoreAgainst(needles, [item.title, item.subtitle, ...item.tags]) +
+          (explicit ? 20 : 0) +
+          (item.kind === 'bug' && needles.some((needle) => ['bug', 'bugs', 'patch', 'patch-loop'].includes(needle)) ? 3 : 0);
+        return {
+          ...item,
+          score,
+          relation: explicit ? 'explicit MCP edge' : 'matched by live tags/title'
+        };
+      })
+      .filter((item) => item.score >= 2)
+      .toSorted((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+      .slice(0, 8);
+  }
+
+  function relatedBranchEvidence(goal: Goal, snapshot: typeof initialRepoSnapshot): BranchEvidence[] {
+    const needles = goalNeedles(goal);
+    const workflowBranches: BranchEvidence[] = (snapshot.workflow_branches ?? []).map((branch: Record<string, any>) => {
+      const score = scoreAgainst(needles, [branch.name, branch.summary, branch.area, branch.state]);
+      return {
+        key: String(branch.id ?? branch.name),
+        name: String(branch.name ?? branch.id),
+        kind: String(branch.area ?? 'workflow branch'),
+        summary: String(branch.summary ?? 'Workflow branch from the repo snapshot.'),
+        meta: String(branch.state ?? 'snapshot'),
+        href: '/graph',
+        external: false,
+        score
+      };
+    });
+    const gitBranches: BranchEvidence[] = (snapshot.branches ?? []).map((branch: RepoBranch) => {
+      const score = scoreAgainst(needles, [branch.name, branch.subject, branch.kind]);
+      return {
+        key: branch.id,
+        name: branch.name,
+        kind: branch.kind,
+        summary: branch.subject ?? 'GitHub branch from the repo snapshot.',
+        meta: `${shortHash(branch.commit)}${branch.date ? ` · ${relativeStamp(branch.date)}` : ''}`,
+        href: `${repoUrl}/tree/${encodeURIComponent(branch.name)}`,
+        external: true,
+        score
+      };
+    });
+    return [...workflowBranches, ...gitBranches]
+      .filter((branch) => branch.score >= 2)
+      .toSorted((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .slice(0, 6);
+  }
 </script>
 
 <svelte:head>
-  <title>Catalog — Workflow</title>
+  <title>Discover — Workflow</title>
+  <meta
+    name="description"
+    content="Discover live Workflow goals, related MCP commons records, and repo branches from the same data a chatbot can read."
+  />
 </svelte:head>
 
-<section class="catalog-note">
+<section class="discover">
   <div class="wrap">
-    <div class="section-head">
+    <header class="hero">
       <div>
-        <RitualLabel color="var(--violet-400)">· Catalog lens · live MCP goals ·</RitualLabel>
-        <h1>Start from goals. Let branches compete underneath.</h1>
+        <RitualLabel color="var(--signal-live)">· Discover lens · live MCP goals ·</RitualLabel>
+        <h1>Discover what Workflow can do right now.</h1>
+        <p class="lead">
+          Start with a live goal from MCP, then inspect the commons records, workflow branches, and repo signals that show where the work already has traction.
+        </p>
       </div>
-      <p>Your chatbot can already browse this catalog directly via the <a href="/connect">MCP connector</a>. Say "browse goals" or "show me research-paper branches" once connected.</p>
+      <div class="refresh-box" aria-label="Live data controls">
+        <button type="button" onclick={refreshMcp} disabled={mcpLoading}>
+          {mcpLoading ? 'MCP...' : 'Refresh MCP'}
+        </button>
+        <button type="button" onclick={refreshGithub} disabled={githubLoading}>
+          {githubLoading ? 'GitHub...' : 'Refresh GitHub'}
+        </button>
+        <span>MCP {relativeStamp(mcp.fetched_at)}</span>
+        <span>GitHub {relativeStamp(repo.fetched_at)}</span>
+      </div>
+    </header>
+
+    {#if mcpError || githubError}
+      <div class="errors" role="status">
+        {#if mcpError}<p>MCP refresh failed: <code>{mcpError}</code></p>{/if}
+        {#if githubError}<p>GitHub refresh failed: <code>{githubError}</code></p>{/if}
+      </div>
+    {/if}
+
+    <div class="proof-row" aria-label="Live discover metrics">
+      <article>
+        <span>Goals</span>
+        <strong>{compactNumber(goals.length)}</strong>
+        <small>{mcp.source}</small>
+      </article>
+      <article>
+        <span>Commons records</span>
+        <strong>{compactNumber((mcp.wiki?.bugs?.length ?? 0) + (mcp.wiki?.plans?.length ?? 0) + (mcp.wiki?.drafts?.length ?? 0))}</strong>
+        <small>bugs, plans, drafts</small>
+      </article>
+      <article>
+        <span>Branches</span>
+        <strong>{compactNumber((repo.branches?.length ?? 0) + (repo.workflow_branches?.length ?? 0))}</strong>
+        <small>{repo.source}</small>
+      </article>
+      <article>
+        <span>Related</span>
+        <strong>{compactNumber(wikiEvidence.length + branchEvidence.length)}</strong>
+        <small>{selectedGoal ? selectedGoal.id : 'no goal selected'}</small>
+      </article>
     </div>
 
-    <LiveSourceBar label="Goal source" detail={`${goals.length} public goals are visible from the current MCP snapshot; branch leaderboards stay explicit until that feed exists.`} tone="violet" />
+    <section class="browser" aria-label="Live goal browser">
+      <aside class="filters">
+        <label>
+          <span>Search goals</span>
+          <input bind:value={query} placeholder="patch, games, research..." />
+        </label>
 
-    <div class="goal-board">
-      {#each goals as goal, index}
-        <a class="goal-card" href="/wiki" aria-label={`Inspect ${goal.name} in the live commons`}>
-          <span class="goal-card__rank">G{index + 1}</span>
-          <h3>{goal.name}</h3>
-          <p>{goal.summary}</p>
-          <div class="tags">
-            {#if goal.tags.length}
-              {#each goal.tags.slice(0, 5) as tag}
-                <span>{tag}</span>
-              {/each}
-            {:else}
-              <span>untagged</span>
-            {/if}
+        <div class="tag-cloud" aria-label="Goal tag filters">
+          <button type="button" class:active={activeTag === 'all'} aria-pressed={activeTag === 'all'} onclick={() => (activeTag = 'all')}>
+            All
+          </button>
+          {#each allTags as [tag, count] (tag)}
+            <button type="button" class:active={activeTag === tag} aria-pressed={activeTag === tag} onclick={() => toggleTag(tag)}>
+              {tag}<small>{count}</small>
+            </button>
+          {/each}
+        </div>
+      </aside>
+
+      <div class="goal-list" aria-label="Public goals">
+        {#each filteredGoals as goal, index (goal.id)}
+          <button
+            type="button"
+            class="goal-card"
+            class:active={selectedGoal?.id === goal.id}
+            aria-pressed={selectedGoal?.id === goal.id}
+            onclick={() => selectGoal(goal.id)}
+          >
+            <span class="goal-card__rank">G{index + 1}</span>
+            <span class="goal-card__title">{goal.name}</span>
+            <span class="goal-card__summary">{goal.summary}</span>
+            <span class="goal-card__foot">
+              <span>{goal.visibility}</span>
+              <span>{goal.id}</span>
+            </span>
+          </button>
+        {:else}
+          <div class="empty">
+            <strong>No matching live goals.</strong>
+            <p>Clear the search or tag filter to return to the current MCP goal set.</p>
           </div>
-          <small>{goal.id} · {goal.visibility}</small>
-        </a>
-      {/each}
-    </div>
+        {/each}
+      </div>
+    </section>
 
-    <div class="next-surface">
-      <RitualLabel>Not faked yet</RitualLabel>
-      <p>The missing layer is the branch leaderboard under each goal: canonical branch, forks, gates, runs, judge score, and remix path. Until that feed exists, the page keeps the gap visible instead of inventing rows.</p>
-    </div>
+    {#if selectedGoal}
+      <section class="selected" aria-labelledby="selected-goal-title">
+        <div class="selected__head">
+          <div>
+            <RitualLabel color="var(--ember-500)">· Selected goal · {selectedGoal.id} ·</RitualLabel>
+            <h2 id="selected-goal-title">{selectedGoal.name}</h2>
+            <p>{selectedGoal.summary}</p>
+          </div>
+          <div class="selected__actions">
+            <button type="button" onclick={copyGoalPrompt}>{copiedPrompt ? 'Copied prompt' : 'Copy prompt'}</button>
+            <a href="/connect">Use through MCP</a>
+            <a href="/graph">Open in graph</a>
+            <a href="/loop">Route into loop</a>
+          </div>
+        </div>
+
+        <div class="tags" aria-label="Selected goal tags">
+          {#if selectedGoal.tags?.length}
+            {#each selectedGoal.tags as tag}
+              <button type="button" onclick={() => toggleTag(tag)} class:active={activeTag === tag}>{tag}</button>
+            {/each}
+          {:else}
+            <span>untagged</span>
+          {/if}
+        </div>
+
+        <div class="work-map" aria-label="Selected goal live relationship map">
+          <div class="work-map__center">
+            <span>goal</span>
+            <strong>{selectedGoal.name}</strong>
+            <small>{selectedGoal.id}</small>
+          </div>
+          <div class="work-map__spokes">
+            <a href="/connect">
+              <span>MCP</span>
+              <strong>goals action=list</strong>
+              <small>{mcp.source}</small>
+            </a>
+            <a href="/wiki">
+              <span>Commons</span>
+              <strong>{compactNumber(wikiEvidence.length)} related records</strong>
+              <small>matched from live wiki state</small>
+            </a>
+            <a href="/graph">
+              <span>Graph</span>
+              <strong>{compactNumber(explicitGoalEdges.length)} explicit edges</strong>
+              <small>plus truthful tag/title matches</small>
+            </a>
+            <a href={repoUrl} target="_blank" rel="noreferrer">
+              <span>Repo</span>
+              <strong>{compactNumber(branchEvidence.length)} branch signals</strong>
+              <small>head {shortHash(repo.repo.head)}</small>
+            </a>
+          </div>
+        </div>
+
+        <div class="evidence-grid">
+          <section class="evidence-card" aria-labelledby="commons-title">
+            <div class="evidence-card__head">
+              <h3 id="commons-title">Related commons</h3>
+              <small>{wikiEvidence.length ? 'live match reasons' : 'empty state is explicit'}</small>
+            </div>
+            <div class="evidence-list">
+              {#each wikiEvidence as item (item.key)}
+                <button
+                  type="button"
+                  class="evidence-item"
+                  class:active={selectedEvidence?.key === item.key}
+                  aria-pressed={selectedEvidence?.key === item.key}
+                  onclick={() => (selectedEvidenceKey = item.key)}
+                >
+                  <span>{item.kind}</span>
+                  <strong>{item.title}</strong>
+                  <small>{item.relation}</small>
+                </button>
+              {:else}
+                <p class="empty-copy">No related wiki records were found from current tags, titles, or explicit goal edges.</p>
+              {/each}
+            </div>
+          </section>
+
+          <section class="evidence-card" aria-labelledby="branches-title">
+            <div class="evidence-card__head">
+              <h3 id="branches-title">Branch signals</h3>
+              <small>{branchEvidence.length ? 'workflow + GitHub snapshot matches' : 'no branch match yet'}</small>
+            </div>
+            <div class="evidence-list">
+              {#each branchEvidence as branch (branch.key)}
+                <a class="evidence-item" href={branch.href} target={branch.external ? '_blank' : undefined} rel={branch.external ? 'noreferrer' : undefined}>
+                  <span>{branch.kind}</span>
+                  <strong>{branch.name}</strong>
+                  <small>{branch.summary} · {branch.meta}</small>
+                </a>
+              {:else}
+                <p class="empty-copy">No repo or workflow branch currently matches this goal. That is a real gap, not a hidden leaderboard.</p>
+              {/each}
+            </div>
+          </section>
+        </div>
+
+        <section class="selected-evidence" aria-label="Selected evidence detail">
+          {#if selectedEvidence}
+            <div>
+              <RitualLabel>· Evidence detail · {selectedEvidence.kind} ·</RitualLabel>
+              <h3>{selectedEvidence.title}</h3>
+              <p>{selectedEvidence.subtitle}</p>
+              <div class="tags tags--small">
+                {#each selectedEvidence.tags.slice(0, 6) as tag}
+                  <span>{tag}</span>
+                {/each}
+              </div>
+            </div>
+            <a href={selectedEvidence.href}>Open live wiki</a>
+          {:else}
+            <div>
+              <RitualLabel>· Evidence detail ·</RitualLabel>
+              <h3>No related commons record selected.</h3>
+              <p>The goal is still live; the related-record list will populate when MCP exposes matching wiki state.</p>
+            </div>
+            <a href="/wiki">Open live wiki</a>
+          {/if}
+        </section>
+      </section>
+    {/if}
   </div>
 </section>
 
 <style>
-  .catalog-note { padding-block: 72px; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 32px); color: var(--fg-2); }
-  .section-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.55fr); gap: 30px; align-items: end; margin-bottom: 18px; }
-  h1 { color: var(--fg-1); font-family: var(--font-display); font-size: clamp(42px, 7vw, 68px); font-weight: 400; letter-spacing: 0; line-height: 0.98; margin: 12px 0 0; text-wrap: balance; }
-  p { line-height: 1.7; margin: 0 0 14px; font-size: 15px; }
-  a { color: var(--ember-600); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .goal-board { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .goal-card { background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 8px; color: inherit; display: block; padding: 20px; min-width: 0; text-decoration: none; transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon); }
-  .goal-card:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
-  .goal-card__rank { color: var(--ember-600); display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; margin-bottom: 10px; text-transform: uppercase; }
-  h3 { color: var(--fg-1); font-family: var(--font-display); font-size: 24px; font-weight: 500; letter-spacing: 0; line-height: 1.12; margin: 0 0 10px; }
-  .goal-card p { font-size: 13.5px; line-height: 1.6; margin-bottom: 14px; }
-  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .tags span { border: 1px solid var(--border-1); border-radius: 4px; color: var(--fg-2); font-family: var(--font-mono); font-size: 10px; padding: 3px 7px; }
-  small { color: var(--fg-3); font-family: var(--font-mono); font-size: 10.5px; overflow-wrap: anywhere; }
-  .next-surface { background: var(--bg-inset); border: 1px dashed var(--border-2); border-radius: 8px; margin-top: 12px; padding: 18px 20px; }
-  .next-surface p { margin: 10px 0 0; }
-  @media (max-width: 800px) {
-    .section-head,
-    .goal-board { grid-template-columns: 1fr; }
+  .discover {
+    padding-block: 70px 48px;
+  }
+
+  .wrap {
+    color: var(--fg-2);
+    margin: 0 auto;
+    max-width: 1180px;
+    padding-inline: clamp(16px, 4vw, 32px);
+  }
+
+  .hero {
+    align-items: end;
+    display: grid;
+    gap: 28px;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    margin-bottom: 20px;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h1 {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: clamp(42px, 7vw, 72px);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 0.98;
+    margin-top: 12px;
+    max-width: 820px;
+    text-wrap: balance;
+  }
+
+  .lead {
+    color: var(--fg-2);
+    font-size: 16px;
+    line-height: 1.7;
+    margin-top: 18px;
+    max-width: 740px;
+  }
+
+  .refresh-box {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+  }
+
+  .refresh-box button,
+  .selected__actions button,
+  .selected__actions a,
+  .tag-cloud button,
+  .tags button,
+  .selected-evidence a {
+    align-items: center;
+    border-radius: 6px;
+    display: inline-flex;
+    justify-content: center;
+    min-height: 36px;
+    text-decoration: none;
+  }
+
+  .refresh-box button,
+  .selected__actions button,
+  .selected__actions a,
+  .selected-evidence a {
+    background: rgba(109, 211, 166, 0.1);
+    border: 1px solid rgba(109, 211, 166, 0.28);
+    color: var(--fg-1);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 8px 10px;
+    text-transform: uppercase;
+  }
+
+  .refresh-box button:hover,
+  .selected__actions button:hover,
+  .selected__actions a:hover,
+  .selected-evidence a:hover {
+    background: rgba(109, 211, 166, 0.16);
+    border-color: rgba(109, 211, 166, 0.5);
+  }
+
+  .refresh-box button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
+
+  .refresh-box span {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .errors {
+    background: rgba(233, 93, 123, 0.1);
+    border: 1px solid rgba(233, 93, 123, 0.36);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+  }
+
+  .errors p {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .proof-row {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: 14px;
+  }
+
+  .proof-row article {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    min-width: 0;
+    padding: 14px;
+  }
+
+  .proof-row span,
+  .work-map span,
+  .evidence-item span {
+    color: var(--fg-3);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .proof-row strong {
+    color: var(--fg-1);
+    display: block;
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    margin-top: 8px;
+  }
+
+  .proof-row small,
+  .work-map small,
+  .evidence-item small,
+  .goal-card__foot {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .browser {
+    align-items: start;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .filters {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    padding: 14px;
+    position: sticky;
+    top: 84px;
+  }
+
+  .filters label span {
+    color: var(--fg-3);
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .filters input {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-1);
+    border-radius: 6px;
+    color: var(--fg-1);
+    font: inherit;
+    min-height: 40px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+
+  .tag-cloud,
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+  }
+
+  .tag-cloud button,
+  .tags button,
+  .tags span {
+    background: transparent;
+    border: 1px solid var(--border-1);
+    color: var(--fg-2);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    gap: 6px;
+    letter-spacing: 0.02em;
+    padding: 6px 8px;
+  }
+
+  .tag-cloud button:hover,
+  .tag-cloud button.active,
+  .tags button:hover,
+  .tags button.active {
+    background: rgba(246, 193, 119, 0.1);
+    border-color: rgba(246, 193, 119, 0.46);
+    color: var(--fg-1);
+  }
+
+  .tag-cloud small {
+    color: var(--fg-3);
+  }
+
+  .goal-list {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goal-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    min-height: 270px;
+    min-width: 0;
+    padding: 18px;
+    text-align: left;
+    transition:
+      background var(--dur-base) var(--ease-summon),
+      border-color var(--dur-base) var(--ease-summon),
+      transform var(--dur-base) var(--ease-summon);
+  }
+
+  .goal-card:hover,
+  .goal-card.active {
+    background: rgba(109, 211, 166, 0.055);
+    border-color: rgba(109, 211, 166, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .goal-card__rank {
+    color: var(--ember-600);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+
+  .goal-card__title {
+    color: var(--fg-1);
+    display: block;
+    font-family: var(--font-display);
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.08;
+    margin-bottom: 12px;
+  }
+
+  .goal-card__summary {
+    color: var(--fg-2);
+    display: block;
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+  }
+
+  .goal-card__foot {
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    margin-top: auto;
+  }
+
+  .empty,
+  .empty-copy {
+    background: var(--bg-inset);
+    border: 1px dashed var(--border-2);
+    border-radius: 8px;
+    color: var(--fg-2);
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 16px;
+  }
+
+  .selected {
+    border-top: 1px solid var(--border-1);
+    margin-top: 28px;
+    padding-top: 28px;
+  }
+
+  .selected__head {
+    align-items: start;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  }
+
+  .selected h2 {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: clamp(32px, 5vw, 54px);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1;
+    margin-top: 10px;
+    text-wrap: balance;
+  }
+
+  .selected__head p {
+    font-size: 15px;
+    line-height: 1.7;
+    margin-top: 14px;
+    max-width: 760px;
+  }
+
+  .selected__actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .work-map {
+    align-items: stretch;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+    margin-top: 18px;
+  }
+
+  .work-map__center,
+  .work-map__spokes a {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    color: inherit;
+    min-width: 0;
+    padding: 16px;
+    text-decoration: none;
+  }
+
+  .work-map__center {
+    background:
+      linear-gradient(135deg, rgba(246, 193, 119, 0.13), rgba(109, 211, 166, 0.08)),
+      var(--bg-2);
+  }
+
+  .work-map__center strong,
+  .work-map__spokes strong {
+    color: var(--fg-1);
+    display: block;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1.1;
+    margin: 8px 0;
+  }
+
+  .work-map__spokes {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .work-map__spokes a:hover {
+    border-color: rgba(246, 193, 119, 0.5);
+  }
+
+  .evidence-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+  }
+
+  .evidence-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .evidence-card__head {
+    align-items: baseline;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .evidence-card h3,
+  .selected-evidence h3 {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.12;
+  }
+
+  .evidence-card__head small {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-align: right;
+  }
+
+  .evidence-list {
+    display: grid;
+    gap: 8px;
+    max-height: 460px;
+    overflow: auto;
+    padding-right: 3px;
+  }
+
+  .evidence-item {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    color: inherit;
+    cursor: pointer;
+    min-width: 0;
+    padding: 12px;
+    text-align: left;
+    text-decoration: none;
+  }
+
+  .evidence-item:hover,
+  .evidence-item.active {
+    border-color: rgba(115, 167, 255, 0.5);
+  }
+
+  .evidence-item strong {
+    color: var(--fg-1);
+    display: block;
+    font-size: 13px;
+    line-height: 1.35;
+    margin: 6px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .selected-evidence {
+    align-items: center;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-1);
+    border-radius: 8px;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 12px;
+    padding: 16px;
+  }
+
+  .selected-evidence p {
+    font-size: 13px;
+    line-height: 1.6;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+  }
+
+  .tags--small span {
+    cursor: default;
+    min-height: 0;
+  }
+
+  @media (max-width: 980px) {
+    .hero,
+    .browser,
+    .selected__head,
+    .work-map,
+    .evidence-grid,
+    .selected-evidence {
+      grid-template-columns: 1fr;
+    }
+
+    .filters {
+      position: static;
+    }
+
+    .proof-row,
+    .goal-list,
+    .work-map__spokes {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .discover {
+      padding-block: 44px 30px;
+    }
+
+    .proof-row,
+    .goal-list,
+    .work-map__spokes,
+    .refresh-box {
+      grid-template-columns: 1fr;
+    }
+
+    .goal-card {
+      min-height: 0;
+    }
+
+    .selected__actions {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

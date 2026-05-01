@@ -57,7 +57,7 @@
       <a class="card" href="/catalog">
         <h3>The DAO governs.</h3>
         <p>Which goals are canonical. Which third-party verifiers count. Which outcome-gates qualify. Real Destiny governance is deferred until the token integration is live.</p>
-        <div class="card__foot">testnet only / reference only · governance over the catalog, not the code</div>
+        <div class="card__foot">testnet only / reference only · governance over public goals, not the code</div>
       </a>
     </div>
 

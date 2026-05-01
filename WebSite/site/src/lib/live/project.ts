@@ -112,13 +112,13 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     primaryLabel: 'Copy connector URL'
   },
   catalog: {
-    eyebrow: 'Goal market',
-    title: 'Goals first; branches compete underneath.',
-    question: 'Catalog answers: what public work targets exist, and which ones can be remixed?',
-    watches: 'Public goals, branch edges, wiki relationships',
-    proof: 'The goal list is connector data first; missing branch leaderboards are called out instead of faked.',
+    eyebrow: 'Discover lens',
+    title: 'Live goals, related state, and real ways in.',
+    question: 'Discover answers: what can Workflow do right now, what live project records prove it exists, and where can I act on it?',
+    watches: 'Public goals, related commons, repo branches',
+    proof: 'The goal explorer is connector data first; related wiki records and branch signals are derived from current MCP/GitHub state.',
     primaryHref: '/catalog',
-    primaryLabel: 'Browse goals'
+    primaryLabel: 'Discover goals'
   },
   host: {
     eyebrow: 'Daemon fleet',

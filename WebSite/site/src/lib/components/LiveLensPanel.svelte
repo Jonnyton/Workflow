@@ -113,7 +113,7 @@
 
     if (activeLens === 'status') return [shared.wiki, shared.goals, shared.universes, shared.head];
     if (activeLens === 'connect') return [shared.wiki, shared.goals, shared.universes, { label: 'Endpoint', value: '200?', note: 'probe with MCP refresh', href: '/connect' }];
-    if (activeLens === 'catalog') return [shared.goals, shared.branches, { label: 'Edges', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'goal/wiki relationships', href: '/graph' }, shared.wiki];
+    if (activeLens === 'catalog') return [shared.goals, shared.branches, { label: 'Matches', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'goal/wiki relationships', href: '/graph' }, shared.wiki];
     if (activeLens === 'host') return [shared.universes, shared.branches, { label: 'Routes', value: compactNumber(project.routeCount), note: 'website host surfaces', href: '/graph' }, shared.head];
     if (activeLens === 'economy') return [shared.goals, { label: 'Gate work', value: compactNumber(project.mcp.wiki.plans.length), note: 'plans feeding settlement', href: '/loop' }, shared.branches, shared.wiki];
     if (activeLens === 'alliance') return [shared.wiki, shared.goals, { label: 'Entry paths', value: '4', note: 'chatbot, GitHub, email, wiki', href: '/alliance' }, shared.branches];
@@ -195,7 +195,7 @@
       { id: 'site', x: 31, y: 78, r: 6, kind: 'site', label: 'site' },
       { id: 'connect', x: 18, y: 82, r: 4, kind: 'site', label: 'connect' },
       { id: 'status', x: 24, y: 68, r: 4, kind: 'site', label: 'status' },
-      { id: 'catalog', x: 39, y: 86, r: 4, kind: 'goal', label: 'catalog' },
+      { id: 'catalog', x: 39, y: 86, r: 4, kind: 'goal', label: 'discover' },
       { id: 'economy', x: 42, y: 92, r: 4, kind: 'goal', label: 'economy' },
       { id: 'alliance', x: 12, y: 72, r: 4, kind: 'wiki', label: 'alliance' }
     ];

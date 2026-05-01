@@ -28,7 +28,7 @@
       <p>
         Leaderboards rank branches by the <em>highest gate reached</em>, not by judge scores. Personal goals stop wherever you want. Public ones go as far as the real world agrees.
       </p>
-      <Button variant="ghost" href="/catalog">Browse goals</Button>
+      <Button variant="ghost" href="/catalog">Discover goals</Button>
     </div>
     <a class="gates__panel" href="/catalog" aria-label="Open live goals and outcome gates">
       <div class="panel__head">
