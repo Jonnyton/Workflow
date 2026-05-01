@@ -103,11 +103,15 @@
   });
 
   const selectedStageRecentEvents = $derived.by((): LoopPatchEvent[] => {
-    return [...selectedStageEvents].slice(-6).reverse();
+    return [...selectedStageEvents].slice(-8).reverse();
   });
 
   const selectedStageLatest = $derived.by((): LoopPatchEvent | null => {
     return latestFor(selectedStageId);
+  });
+
+  const relatedStageEvents = $derived.by((): LoopPatchEvent[] => {
+    return recentEvents.filter((event) => event.stage !== selectedStageId).slice(0, 4);
   });
 
   async function refresh(source: PatchLoopFeedSource = activeSource) {
@@ -166,6 +170,26 @@
     return latest.detail;
   }
 
+  function signalLabel(count: number): string {
+    return `${count} live signal${count === 1 ? '' : 's'}`;
+  }
+
+  function sourceHref(source?: string): string {
+    const value = source?.trim() ?? '';
+    return /^https?:\/\//i.test(value) ? value : '';
+  }
+
+  function sourceLabel(source?: string): string {
+    const value = source?.trim() ?? '';
+    if (!value) return 'Live feed';
+    try {
+      const url = new URL(value);
+      return url.hostname.replace(/^www\./, '');
+    } catch {
+      return value;
+    }
+  }
+
   function isTerminalRunStatus(status: string): boolean {
     return ['completed', 'failed', 'cancelled', 'canceled'].includes(status.toLowerCase());
   }
@@ -204,96 +228,209 @@
   </div>
 
   <div class="live-loop__body">
-    <div class="run-card">
-      <span>{activeRun ? 'Current patch run' : 'Live loop monitor'}</span>
-      {#if activeRun}
-        <strong>{headline}</strong>
-        <p><code>{activeRun.run_id}</code> · {subhead}</p>
-      {:else if feed?.events.length}
-        <strong>{headline}</strong>
-        <p><code>{feed.source}</code> · {subhead}</p>
-      {:else}
-        <strong>{headline}</strong>
-        <p><code>{feed?.branchDefId ?? 'fd5c66b1d87d'}</code> · {subhead}</p>
-      {/if}
-      {#if activeRun?.error}
-        <p class="feed-error">{activeRun.error}</p>
-      {/if}
-      {#if activeRun?.suggested_action}
-        <p class="feed-hint">{activeRun.suggested_action}</p>
-      {/if}
-      {#if latestError}
-        <p class="feed-error">{latestError}</p>
-      {/if}
-    </div>
-
-    <div class="live-rail" aria-label="Live loop stages">
-      {#each stages as stage, index}
-        {@const latest = latestFor(stage.id)}
-        <button
-          type="button"
-          class={`live-stage live-stage--${stageStatus(stage.id)}`}
-          class:selected={selectedStageId === stage.id}
-          aria-pressed={selectedStageId === stage.id}
-          title={latest?.detail ?? statusLabel(stage.id)}
-          onclick={() => onSelectStage(stage.id)}
-        >
-          <span>{index + 1}. {stage.label}</span>
-          <strong>{latest?.title ?? 'Waiting for live event'}</strong>
-          <small>{stageDetailLabel(stage.id)}</small>
-        </button>
-      {/each}
-    </div>
-
-    <div class="event-stream" aria-live="polite">
-      <div class="event-stream__head">
-        <span>Selected stage</span>
-        <strong>{selectedStageEvents.length}</strong>
-      </div>
-
-      <div class="stage-inspector">
-        <span>Stage {selectedStageNumber}</span>
-        <strong>{selectedStage?.label ?? 'Loop stage'}</strong>
-        <p>{STAGE_DETAIL[selectedStageId].action}</p>
-        <small>{STAGE_DETAIL[selectedStageId].description}</small>
-        {#if selectedStageLatest}
-          <div class="stage-inspector__latest">
-            <span>{selectedStageLatest.status}</span>
-            <strong>{selectedStageLatest.title}</strong>
-            <p>{selectedStageLatest.detail}</p>
-            <small>{relativeStamp(selectedStageLatest.at)}</small>
-          </div>
+    <div class="loop-overview">
+      <div class="run-card">
+        <span>{activeRun ? 'Current patch run' : 'Live loop monitor'}</span>
+        {#if activeRun}
+          <strong>{headline}</strong>
+          <p><code>{activeRun.run_id}</code> · {subhead}</p>
+        {:else if feed?.events.length}
+          <strong>{headline}</strong>
+          <p><code>{feed.source}</code> · {subhead}</p>
+        {:else}
+          <strong>{headline}</strong>
+          <p><code>{feed?.branchDefId ?? 'fd5c66b1d87d'}</code> · {subhead}</p>
+        {/if}
+        {#if activeRun?.error}
+          <p class="feed-error">{activeRun.error}</p>
+        {/if}
+        {#if activeRun?.suggested_action}
+          <p class="feed-hint">{activeRun.suggested_action}</p>
+        {/if}
+        {#if latestError}
+          <p class="feed-error">{latestError}</p>
         {/if}
       </div>
 
-      {#if selectedStageRecentEvents.length}
-        <ol>
-          {#each selectedStageRecentEvents as event}
-            <li>
-              <span>{event.stage}</span>
+      <div class="live-rail" aria-label="Live loop stages">
+        {#each stages as stage, index}
+          {@const latest = latestFor(stage.id)}
+          <button
+            type="button"
+            class={`live-stage live-stage--${stageStatus(stage.id)}`}
+            class:selected={selectedStageId === stage.id}
+            aria-pressed={selectedStageId === stage.id}
+            title={latest?.detail ?? statusLabel(stage.id)}
+            onclick={() => onSelectStage(stage.id)}
+          >
+            <span>{index + 1}. {stage.label}</span>
+            <strong>{latest?.title ?? 'Waiting for live event'}</strong>
+            <small>{stageDetailLabel(stage.id)}</small>
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="stage-detail" aria-live="polite">
+      <div class="stage-detail__head">
+        <div>
+          <span>Selected stage</span>
+          <strong>Stage {selectedStageNumber} · {selectedStage?.label ?? 'Loop stage'}</strong>
+          <p>{STAGE_DETAIL[selectedStageId].action}</p>
+        </div>
+        <div class="stage-detail__meta" aria-label="Selected stage live feed status">
+          <span>{signalLabel(selectedStageEvents.length)}</span>
+          <span>{feed?.source ?? 'MCP loop feed'}</span>
+          <span>{feed ? `Fetched ${relativeStamp(feed.fetchedAt)}` : 'Waiting for live feed'}</span>
+        </div>
+      </div>
+
+      <div class="stage-detail__grid">
+        <section class="stage-card stage-card--about" aria-label="Stage purpose">
+          <span>What this stage does</span>
+          <p>{STAGE_DETAIL[selectedStageId].description}</p>
+          <dl>
+            <div>
+              <dt>Stage state</dt>
+              <dd>{stageStatus(selectedStageId)}</dd>
+            </div>
+            <div>
+              <dt>Current source</dt>
+              <dd>{feed?.source ?? activeSource.toUpperCase()}</dd>
+            </div>
+            {#if activeRun}
               <div>
-                <strong>{event.title}</strong>
-                <p>{event.detail}</p>
-                <small>{event.status} · {relativeStamp(event.at)}</small>
+                <dt>Run</dt>
+                <dd>{activeRun.run_id}</dd>
               </div>
-            </li>
-          {/each}
-        </ol>
-      {:else}
-        <p class="empty">{STAGE_DETAIL[selectedStageId].empty} {feed?.events.length ? `${feed.events.length} signal${feed.events.length === 1 ? '' : 's'} are visible elsewhere in the loop.` : 'Waiting for the first patch event from the operational loop feed.'}</p>
-      {/if}
+              <div>
+                <dt>Run status</dt>
+                <dd>{activeRun.status}</dd>
+              </div>
+            {/if}
+          </dl>
+        </section>
+
+        <section class="stage-card stage-card--latest" aria-label="Latest stage signal">
+          <span>Latest live signal</span>
+          {#if selectedStageLatest}
+            {@const href = sourceHref(selectedStageLatest.source)}
+            <strong>{selectedStageLatest.title}</strong>
+            <p>{selectedStageLatest.detail}</p>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{selectedStageLatest.status}</dd>
+              </div>
+              <div>
+                <dt>Seen</dt>
+                <dd>{relativeStamp(selectedStageLatest.at)}</dd>
+              </div>
+              {#if selectedStageLatest.run_id}
+                <div>
+                  <dt>Run id</dt>
+                  <dd>{selectedStageLatest.run_id}</dd>
+                </div>
+              {/if}
+              {#if selectedStageLatest.node_id}
+                <div>
+                  <dt>Node</dt>
+                  <dd>{selectedStageLatest.node_id}</dd>
+                </div>
+              {/if}
+            </dl>
+            {#if href}
+              <a class="source-link" href={href} target="_blank" rel="noreferrer">Open {sourceLabel(selectedStageLatest.source)}</a>
+            {:else}
+              <small>{sourceLabel(selectedStageLatest.source)}</small>
+            {/if}
+          {:else}
+            <p>{STAGE_DETAIL[selectedStageId].empty} {feed?.events.length ? `${signalLabel(feed.events.length)} are visible elsewhere in the loop.` : 'Waiting for the first patch event from the operational loop feed.'}</p>
+            {#if recentEvents[0]}
+              {@const href = sourceHref(recentEvents[0].source)}
+              <div class="stage-card__fallback">
+                <span>Most recent loop signal</span>
+                <strong>{recentEvents[0].title}</strong>
+                <p>{recentEvents[0].detail}</p>
+                <small>{recentEvents[0].stage} · {recentEvents[0].status} · {relativeStamp(recentEvents[0].at)}</small>
+                {#if href}
+                  <a href={href} target="_blank" rel="noreferrer">Open source</a>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+        </section>
+
+        <section class="stage-card stage-card--events" aria-label="Selected stage event history">
+          <div class="stage-card__head">
+            <span>Stage history</span>
+            <strong>{selectedStageEvents.length}</strong>
+          </div>
+          {#if selectedStageRecentEvents.length}
+            <ol>
+              {#each selectedStageRecentEvents as event}
+                {@const href = sourceHref(event.source)}
+                <li>
+                  <span>{event.status}</span>
+                  <div>
+                    <strong>{event.title}</strong>
+                    <p>{event.detail}</p>
+                    <small>
+                      {relativeStamp(event.at)}
+                      {#if event.node_id} · {event.node_id}{/if}
+                      {#if event.run_id} · {event.run_id}{/if}
+                    </small>
+                    {#if href}
+                      <a href={href} target="_blank" rel="noreferrer">Open source</a>
+                    {:else}
+                      <small>{sourceLabel(event.source)}</small>
+                    {/if}
+                  </div>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <p class="empty">{STAGE_DETAIL[selectedStageId].empty}</p>
+            {#if relatedStageEvents.length}
+              <div class="related-signals">
+                <span>Visible elsewhere in the loop</span>
+                <ol>
+                  {#each relatedStageEvents as event}
+                    {@const href = sourceHref(event.source)}
+                    <li>
+                      <span>{event.stage}</span>
+                      <div>
+                        <strong>{event.title}</strong>
+                        <p>{event.detail}</p>
+                        <small>{event.status} · {relativeStamp(event.at)}</small>
+                        {#if href}
+                          <a href={href} target="_blank" rel="noreferrer">Open source</a>
+                        {/if}
+                      </div>
+                    </li>
+                  {/each}
+                </ol>
+              </div>
+            {/if}
+          {/if}
+        </section>
+      </div>
 
       {#if recentEvents.length}
         <details class="all-events">
           <summary>All recent loop signals</summary>
           <ol>
             {#each recentEvents as event}
+              {@const href = sourceHref(event.source)}
               <li>
                 <span>{event.stage}</span>
                 <div>
                   <strong>{event.title}</strong>
                   <p>{event.detail}</p>
                   <small>{event.status} · {relativeStamp(event.at)}</small>
+                  {#if href}
+                    <a href={href} target="_blank" rel="noreferrer">Open source</a>
+                  {/if}
                 </div>
               </li>
             {/each}
@@ -365,8 +502,16 @@
 
   .live-loop__actions span,
   .run-card span,
-  .event-stream__head span,
-  .event-stream__head strong {
+  .stage-detail__head span,
+  .stage-detail__meta span,
+  .stage-card > span,
+  .stage-card__fallback > span,
+  .stage-card__head span,
+  .stage-card__head strong,
+  .related-signals > span,
+  .stage-card dt,
+  .stage-card small,
+  .all-events summary {
     color: var(--fg-3);
     font-family: var(--font-mono);
     font-size: 10.5px;
@@ -405,14 +550,20 @@
 
   .live-loop__body {
     display: grid;
-    grid-template-columns: minmax(210px, 0.45fr) minmax(0, 1fr) minmax(250px, 0.55fr);
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .loop-overview {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.34fr) minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     min-width: 0;
   }
 
   .run-card,
-  .event-stream {
+  .stage-detail {
     border: 1px solid var(--border-1);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.16);
@@ -553,46 +704,36 @@
     overflow-wrap: anywhere;
   }
 
-  .event-stream {
+  .stage-detail {
+    display: grid;
     overflow: hidden;
   }
 
-  .event-stream__head {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--border-1);
-  }
-
-  .stage-inspector {
+  .stage-detail__head {
     display: grid;
-    gap: 7px;
-    padding: 14px;
-    border-bottom: 1px solid var(--border-1);
-    background: rgba(109, 211, 166, 0.035);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, max-content);
+    gap: 18px;
+    align-items: start;
+    padding: 16px;
+    border-bottom: 1px solid rgba(109, 211, 166, 0.2);
+    background: rgba(109, 211, 166, 0.045);
   }
 
-  .stage-inspector > span,
-  .stage-inspector small,
-  .stage-inspector__latest span,
-  .stage-inspector__latest small,
-  .all-events summary {
-    color: var(--fg-3);
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    text-transform: uppercase;
+  .stage-detail__head > div:first-child {
+    display: grid;
+    gap: 6px;
   }
 
-  .stage-inspector > strong {
+  .stage-detail__head strong {
     color: var(--fg-1);
     font-family: var(--font-display);
-    font-size: 25px;
+    font-size: clamp(24px, 3.4vw, 34px);
     font-weight: 500;
-    line-height: 1.05;
+    line-height: 1.04;
+    overflow-wrap: anywhere;
   }
 
-  .stage-inspector > p {
+  .stage-detail__head p {
     color: var(--signal-live);
     font-family: var(--font-mono);
     font-size: 12px;
@@ -600,34 +741,111 @@
     text-transform: uppercase;
   }
 
-  .stage-inspector small {
-    line-height: 1.45;
-    text-transform: none;
+  .stage-detail__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    justify-content: end;
   }
 
-  .stage-inspector__latest {
+  .stage-detail__meta span {
+    max-width: 230px;
+    padding: 6px 8px;
+    border: 1px solid rgba(109, 211, 166, 0.18);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.14);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stage-detail__grid {
     display: grid;
-    gap: 4px;
-    margin-top: 4px;
-    padding-top: 10px;
+    grid-template-columns: minmax(220px, 0.78fr) minmax(280px, 1fr) minmax(340px, 1.4fr);
+    min-width: 0;
+  }
+
+  .stage-card {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    min-width: 0;
+    padding: 16px;
+    border-left: 1px solid var(--border-1);
+  }
+
+  .stage-card:first-child {
+    border-left: 0;
+  }
+
+  .stage-card > p {
+    color: var(--fg-2);
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  .stage-card > strong {
+    color: var(--fg-1);
+    font-size: 17px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .stage-card dl {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .stage-card dl div {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .stage-card dt {
+    font-size: 10px;
+  }
+
+  .stage-card dd {
+    color: var(--fg-2);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.35;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .stage-card__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .stage-card__fallback,
+  .related-signals {
+    display: grid;
+    gap: 8px;
+    margin-top: 2px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-1);
   }
 
-  .stage-inspector__latest strong {
+  .stage-card__fallback strong {
     color: var(--fg-1);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.3;
     overflow-wrap: anywhere;
   }
 
-  .stage-inspector__latest p {
+  .stage-card__fallback p {
     color: var(--fg-2);
     font-size: 12.5px;
     line-height: 1.45;
-    overflow-wrap: anywhere;
   }
 
-  .event-stream ol {
+  .stage-card--events ol,
+  .all-events ol {
     display: grid;
     gap: 0;
     list-style: none;
@@ -635,27 +853,31 @@
     padding: 0;
   }
 
-  .event-stream li {
+  .stage-card--events li,
+  .all-events li {
     display: grid;
     grid-template-columns: 72px minmax(0, 1fr);
     gap: 10px;
-    padding: 12px 14px;
+    padding: 12px 0;
     border-top: 1px solid var(--border-1);
   }
 
-  .event-stream li:first-child {
+  .stage-card--events li:first-child,
+  .all-events li:first-child {
     border-top: 0;
   }
 
-  .event-stream li > span,
-  .event-stream small {
+  .stage-card--events li > span,
+  .all-events li > span,
+  .all-events small {
     color: var(--fg-3);
     font-family: var(--font-mono);
     font-size: 10px;
     text-transform: uppercase;
   }
 
-  .event-stream strong {
+  .stage-card--events strong,
+  .all-events strong {
     display: block;
     color: var(--fg-1);
     font-size: 13px;
@@ -664,25 +886,41 @@
     overflow-wrap: anywhere;
   }
 
-  .event-stream p {
+  .stage-card--events p,
+  .all-events p {
     color: var(--fg-2);
     font-size: 12.5px;
     line-height: 1.45;
     margin-bottom: 5px;
   }
 
+  .stage-card a,
+  .source-link {
+    color: var(--signal-live);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-decoration: none;
+    text-transform: uppercase;
+    width: fit-content;
+  }
+
+  .stage-card a:hover,
+  .source-link:hover {
+    text-decoration: underline;
+  }
+
   .empty {
     color: var(--fg-3) !important;
-    padding: 14px;
   }
 
   .all-events {
     border-top: 1px solid var(--border-1);
+    padding: 0 16px 4px;
   }
 
   .all-events summary {
     cursor: pointer;
-    padding: 12px 14px;
+    padding: 12px 0;
     width: fit-content;
   }
 
@@ -715,8 +953,20 @@
   }
 
   @media (max-width: 1180px) {
-    .live-loop__body {
+    .loop-overview,
+    .stage-detail__head,
+    .stage-detail__grid {
       grid-template-columns: 1fr;
+    }
+    .stage-detail__meta {
+      justify-content: start;
+    }
+    .stage-card {
+      border-left: 0;
+      border-top: 1px solid var(--border-1);
+    }
+    .stage-card:first-child {
+      border-top: 0;
     }
   }
 
@@ -752,7 +1002,16 @@
       min-height: 108px;
       height: auto;
     }
-    .event-stream li {
+    .stage-detail__head,
+    .stage-card {
+      padding: 14px;
+    }
+    .stage-detail__meta span {
+      max-width: 100%;
+    }
+    .stage-card dl div,
+    .stage-card--events li,
+    .all-events li {
       grid-template-columns: 1fr;
     }
   }
