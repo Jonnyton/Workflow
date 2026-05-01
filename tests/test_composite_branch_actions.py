@@ -97,6 +97,43 @@ def test_build_branch_persists(comp_env):
     assert got["name"] == "Recipe tracker"
 
 
+def test_build_branch_preserves_sub_branch_invocation_spec(comp_env):
+    us, _ = comp_env
+    spec = {
+        "name": "Parent workflow",
+        "entry_point": "invoke_child",
+        "node_defs": [
+            {
+                "node_id": "invoke_child",
+                "display_name": "Invoke child",
+                "invoke_branch_spec": {
+                    "branch_def_id": "child-bdef",
+                    "inputs_mapping": {"parent_in": "child_in"},
+                    "output_mapping": {"parent_out": "child_out"},
+                    "wait_mode": "blocking",
+                },
+            },
+        ],
+        "edges": [
+            {"from": "START", "to": "invoke_child"},
+            {"from": "invoke_child", "to": "END"},
+        ],
+        "state_schema": [
+            {"name": "parent_in", "type": "str"},
+            {"name": "parent_out", "type": "str"},
+        ],
+    }
+
+    built = _call(us, "build_branch", spec_json=json.dumps(spec))
+
+    assert built["status"] == "built", built
+    got = _call(us, "get_branch", branch_def_id=built["branch_def_id"])
+    node = got["node_defs"][0]
+    assert node["invoke_branch_spec"] == spec["node_defs"][0]["invoke_branch_spec"]
+    assert node["prompt_template"] == ""
+    assert node["source_code"] == ""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AC #2 — strict-with-suggestions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +256,40 @@ def test_patch_branch_batch_succeeds(comp_env):
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert any(n["node_id"] == "novelty_check" for n in got["node_defs"])
+
+
+def test_patch_branch_add_node_preserves_await_run_spec(comp_env):
+    us, _ = comp_env
+    built = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    bid = built["branch_def_id"]
+
+    await_spec = {
+        "run_id_field": "child_run_id",
+        "output_mapping": {"archive_output": "child_out"},
+        "timeout_seconds": 30,
+    }
+    changes = [
+        {"op": "add_state_field", "name": "child_run_id", "type": "str"},
+        {
+            "op": "add_node",
+            "node_id": "await_child",
+            "display_name": "Await child",
+            "await_run_spec": await_spec,
+        },
+        {"op": "remove_edge", "from": "categorize", "to": "archive"},
+        {"op": "add_edge", "from": "categorize", "to": "await_child"},
+        {"op": "add_edge", "from": "await_child", "to": "archive"},
+    ]
+
+    result = _call(us, "patch_branch", branch_def_id=bid,
+                   changes_json=json.dumps(changes))
+
+    assert result["status"] == "patched", result
+    got = _call(us, "get_branch", branch_def_id=bid)
+    node = next(n for n in got["node_defs"] if n["node_id"] == "await_child")
+    assert node["await_run_spec"] == await_spec
+    assert node["prompt_template"] == ""
+    assert node["source_code"] == ""
 
 
 def test_patch_branch_rollback_on_any_op_failure(comp_env):

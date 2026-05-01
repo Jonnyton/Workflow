@@ -1246,6 +1246,11 @@ def _lookup_node_body(
                 "output_keys": list(nd.get("output_keys") or []),
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
+                "invoke_branch_spec": nd.get("invoke_branch_spec"),
+                "invoke_branch_version_spec": nd.get(
+                    "invoke_branch_version_spec",
+                ),
+                "await_run_spec": nd.get("await_run_spec"),
                 "author": nd.get("author", ""),
                 "approved": bool(nd.get("approved", False)),
             }, ""
@@ -1294,6 +1299,9 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             output_keys=out_keys,
             source_code=source_code,
             prompt_template=prompt_template,
+            invoke_branch_spec=raw.get("invoke_branch_spec"),
+            invoke_branch_version_spec=raw.get("invoke_branch_version_spec"),
+            await_run_spec=raw.get("await_run_spec"),
             author=raw.get("author") or _current_actor(),
             approved=bool(raw.get("approved", False)),
         )
