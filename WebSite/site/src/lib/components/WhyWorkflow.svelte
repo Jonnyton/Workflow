@@ -22,7 +22,7 @@
       title: 'Outcome-gated.',
       body:
         'Ranking is driven by real-world gates, not judge polish. Third-party verification where it counts.',
-      href: '/catalog'
+      href: '/goals'
     },
     {
       title: 'Your data stays yours.',

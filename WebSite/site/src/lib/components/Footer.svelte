@@ -29,7 +29,7 @@
         <li><a href="/connect">Connect</a></li>
         <li><a href="/loop">Join the loop</a></li>
         <li><a href="/host">Host a daemon</a></li>
-        <li><a href="/catalog">Discover goals</a></li>
+        <li><a href="/goals">Goals</a></li>
       </ul>
     </div>
     <div class="col">

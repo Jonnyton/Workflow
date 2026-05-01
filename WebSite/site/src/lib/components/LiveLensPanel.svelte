@@ -88,7 +88,7 @@
         label: 'Goals',
         value: compactNumber(project.mcp.goals.length),
         note: 'live MCP goal targets',
-        href: '/catalog'
+        href: '/goals'
       },
       branches: {
         label: 'Branches',
@@ -113,7 +113,7 @@
 
     if (activeLens === 'status') return [shared.wiki, shared.goals, shared.universes, shared.head];
     if (activeLens === 'connect') return [shared.wiki, shared.goals, shared.universes, { label: 'Endpoint', value: '200?', note: 'probe with MCP refresh', href: '/connect' }];
-    if (activeLens === 'catalog') return [shared.goals, shared.branches, { label: 'Matches', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'goal/wiki relationships', href: '/graph' }, shared.wiki];
+    if (activeLens === 'goals') return [shared.goals, shared.branches, { label: 'Matches', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'goal/wiki relationships', href: '/graph' }, shared.wiki];
     if (activeLens === 'host') return [shared.universes, shared.branches, { label: 'Routes', value: compactNumber(project.routeCount), note: 'website host surfaces', href: '/graph' }, shared.head];
     if (activeLens === 'economy') return [shared.goals, { label: 'Gate work', value: compactNumber(project.mcp.wiki.plans.length), note: 'plans feeding settlement', href: '/loop' }, shared.branches, shared.wiki];
     if (activeLens === 'alliance') return [shared.wiki, shared.goals, { label: 'Entry paths', value: '4', note: 'chatbot, GitHub, email, wiki', href: '/alliance' }, shared.branches];
@@ -124,18 +124,18 @@
     if (activeLens === 'connect') {
       return [
         { kicker: 'MCP call', title: 'wiki action=list', body: `${project.mcp.stats.wiki_promoted} promoted pages and ${project.mcp.stats.wiki_drafts} drafts are visible to the browser path.`, meta: project.mcp.source, href: '/wiki' },
-        { kicker: 'MCP call', title: 'goals action=list', body: `${project.mcp.goals.length} public goals can be browsed by the same connector URL.`, meta: project.currentGoal?.id, href: '/catalog' },
+        { kicker: 'MCP call', title: 'goals action=list', body: `${project.mcp.goals.length} public goals can be browsed by the same connector URL.`, meta: project.currentGoal?.id, href: '/goals' },
         { kicker: 'MCP call', title: 'universe action=list', body: `${project.mcp.universes.length} universes are in the current snapshot.`, meta: project.activeUniverse?.phase, href: '/host' }
       ];
     }
 
-    if (activeLens === 'catalog') {
+    if (activeLens === 'goals') {
       return project.mcp.goals.slice(0, 4).map((goal) => ({
         kicker: 'Goal',
         title: goal.name,
         body: goal.summary || 'No summary in snapshot.',
         meta: goal.id,
-        href: '/wiki'
+        href: '/goals'
       }));
     }
 
@@ -152,7 +152,7 @@
 
     if (activeLens === 'economy') {
       return [
-        { kicker: 'Work target', title: project.currentGoal?.name ?? 'No public goal', body: project.currentGoal?.summary ?? 'Refresh MCP to inspect current goals.', meta: project.currentGoal?.id, href: '/catalog' },
+        { kicker: 'Work target', title: project.currentGoal?.name ?? 'No public goal', body: project.currentGoal?.summary ?? 'Refresh MCP to inspect current goals.', meta: project.currentGoal?.id, href: '/goals' },
         { kicker: 'Gate source', title: 'Outcome evidence', body: `${project.mcp.wiki.plans.length} plans and ${project.mcp.wiki.bugs.length} bugs can become claim, gate, or settlement inputs.`, meta: 'MCP commons', href: '/wiki' },
         { kicker: 'Repo rail', title: project.repo.repo.name, body: `Settlement code and disclosure copy live with the repo state at ${shortHash(project.repo.repo.head)}.`, meta: project.repo.source, href: '/graph' }
       ];
@@ -184,7 +184,7 @@
   function graphPreviewFor(project: ProjectPulse, activeLens: LensKey): MiniGraph {
     const activeId =
       activeLens === 'home' ? 'site' :
-      activeLens === 'catalog' ? 'catalog' :
+      activeLens === 'goals' ? 'goals' :
       activeLens;
     const nodes: MiniGraphNode[] = [
       { id: 'repo', x: 20, y: 48, r: 7, kind: 'repo', label: project.repo.repo.name || 'repo' },
@@ -195,7 +195,7 @@
       { id: 'site', x: 31, y: 78, r: 6, kind: 'site', label: 'site' },
       { id: 'connect', x: 18, y: 82, r: 4, kind: 'site', label: 'connect' },
       { id: 'status', x: 24, y: 68, r: 4, kind: 'site', label: 'status' },
-      { id: 'catalog', x: 39, y: 86, r: 4, kind: 'goal', label: 'discover' },
+      { id: 'goals', x: 39, y: 86, r: 4, kind: 'goal', label: 'goals' },
       { id: 'economy', x: 42, y: 92, r: 4, kind: 'goal', label: 'economy' },
       { id: 'alliance', x: 12, y: 72, r: 4, kind: 'wiki', label: 'alliance' }
     ];
@@ -226,7 +226,7 @@
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const edgePairs = [
       ['graph', 'repo'], ['graph', 'wiki'], ['graph', 'loop'], ['graph', 'host'], ['repo', 'loop'], ['wiki', 'loop'], ['host', 'loop'], ['site', 'graph'],
-      ['site', 'connect'], ['site', 'status'], ['site', 'catalog'], ['site', 'loop'], ['site', 'economy'], ['site', 'alliance'],
+      ['site', 'connect'], ['site', 'status'], ['site', 'goals'], ['site', 'loop'], ['site', 'economy'], ['site', 'alliance'],
       ...satellites.map((satellite) => [satellite.anchor, satellite.id])
     ];
     const edges = edgePairs.flatMap(([from, to], index) => {

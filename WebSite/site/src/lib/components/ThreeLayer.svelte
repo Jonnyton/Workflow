@@ -12,7 +12,7 @@
         'A named shared pursuit. Anyone declares one. Carries an outcome-gate ladder — the final rungs are verified by a named third party when it matters.',
       example: 'research-paper · fantasy-novel · investigative-piece',
       color: 'var(--ember-600)',
-      href: '/catalog'
+      href: '/goals'
     },
     {
       name: 'Branch',

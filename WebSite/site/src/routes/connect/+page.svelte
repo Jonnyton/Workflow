@@ -23,7 +23,7 @@
   );
   const protocolFacts = [
     { label: 'read commons', href: '/wiki' },
-    { label: 'discover goals', href: '/catalog' },
+    { label: 'browse goals', href: '/goals' },
     { label: 'inspect universes', href: '/host' }
   ];
   const launchHosts = ['Claude.ai', 'Claude Desktop', 'Claude mobile', 'ChatGPT Apps', 'ChatGPT developer mode'];

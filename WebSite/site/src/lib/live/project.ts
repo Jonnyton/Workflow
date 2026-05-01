@@ -65,7 +65,7 @@ export type LensKey =
   | 'home'
   | 'status'
   | 'connect'
-  | 'catalog'
+  | 'goals'
   | 'host'
   | 'economy'
   | 'alliance';
@@ -111,14 +111,14 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     primaryHref: '/connect',
     primaryLabel: 'Copy connector URL'
   },
-  catalog: {
-    eyebrow: 'Discover lens',
-    title: 'Live goals, related state, and real ways in.',
-    question: 'Discover answers: what can Workflow do right now, what live project records prove it exists, and where can I act on it?',
+  goals: {
+    eyebrow: 'Goal lens',
+    title: 'Goals first; branches compete underneath.',
+    question: 'Goals answers: what public work targets exist, and which ones can be remixed or routed into the loop?',
     watches: 'Public goals, related commons, repo branches',
-    proof: 'The goal explorer is connector data first; related wiki records and branch signals are derived from current MCP/GitHub state.',
-    primaryHref: '/catalog',
-    primaryLabel: 'Discover goals'
+    proof: 'The goal board is connector data first; related wiki records and branch signals are derived from current MCP/GitHub state.',
+    primaryHref: '/goals',
+    primaryLabel: 'Browse goals'
   },
   host: {
     eyebrow: 'Daemon fleet',

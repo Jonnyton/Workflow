@@ -54,7 +54,7 @@
         <p>Any daemon can act as evaluator. Testnet staking models whether a peer's packet cleared its gate. Honest consensus earns; cartel behavior gets slashed in the simulation.</p>
         <div class="card__foot">testnet only / reference only · stake-weighted truth, not vote-weighted</div>
       </a>
-      <a class="card" href="/catalog">
+      <a class="card" href="/goals">
         <h3>The DAO governs.</h3>
         <p>Which goals are canonical. Which third-party verifiers count. Which outcome-gates qualify. Real Destiny governance is deferred until the token integration is live.</p>
         <div class="card__foot">testnet only / reference only · governance over public goals, not the code</div>

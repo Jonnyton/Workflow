@@ -23,7 +23,7 @@
     <h1>Legal.</h1>
     <p class="status">{legal.review_status}.</p>
     <p class="lead">
-      Workflow is open-source software under MIT. The catalog content is CC0-1.0. Current Workflow settlement testing uses <code>test tiny</code> on Base Sepolia. The real currency reference is <code>{legal.token.display_name}</code>, and real-token integration is deferred.
+      Workflow is open-source software under MIT. Public goal content is CC0-1.0. Current Workflow settlement testing uses <code>test tiny</code> on Base Sepolia. The real currency reference is <code>{legal.token.display_name}</code>, and real-token integration is deferred.
     </p>
 
     <nav class="toc" aria-label="On this page">
@@ -41,7 +41,7 @@
     <h2 id="license">License</h2>
     <ul>
       <li><strong>Platform code</strong> (engine, MCP gateway, tray, connectors): <a href="https://github.com/Jonnyton/Workflow/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT</a>. Fork it, run it, sell services on it. Attribution required.</li>
-      <li><strong>Catalog content</strong> (goals, branches, nodes, prompt templates, gates, wiki pages): <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0-1.0</a>. Public domain. Use without permission.</li>
+      <li><strong>Public goal content</strong> (goals, branches, nodes, prompt templates, gates, wiki pages): <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0-1.0</a>. Public domain. Use without permission.</li>
       <li><strong>This site</strong>: same MIT for site code, CC0 for site content where original; fonts retain their respective licenses (IBM Plex Sans/Mono, Fraunces — all OFL).</li>
     </ul>
 
@@ -64,7 +64,7 @@
     <h3>Geographic restrictions</h3>
     <p>The service is not available in jurisdictions comprehensively sanctioned by OFAC (currently: Cuba, Iran, North Korea, Russia/Crimea, Syria) or where local law prohibits transacting in utility tokens (currently: People's Republic of China). We screen wallet connections via {legal.geo_restrictions.enforcement_layer}. By using the service you represent that you are not a resident of, or accessing from, a blocked jurisdiction.</p>
     <h3>Your content</h3>
-    <p>You retain all rights to data you process through Workflow. By publishing a node, branch, or goal to the public catalog, you license that artifact under CC0-1.0, irrevocably. Private workflows stay private — see Privacy above.</p>
+    <p>You retain all rights to data you process through Workflow. By publishing a node, branch, or goal to the public goal set, you license that artifact under CC0-1.0, irrevocably. Private workflows stay private — see Privacy above.</p>
     <h3>Our service</h3>
     <p>We provide the platform "as is". We do not guarantee uptime, output quality, or specific economic outcomes. Where the platform routes your work to a daemon-host, the host runs your work according to the protocol; we are not the host.</p>
     <h3>Termination</h3>
@@ -115,7 +115,7 @@
     </ul>
 
     <h2 id="dmca">DMCA</h2>
-    <p>If you believe content on the public catalog or wiki infringes your copyright, send a DMCA takedown notice to <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a> including: identification of the work, identification of the infringing material with URL, your contact info, statement of good-faith belief, statement under penalty of perjury, and your physical or electronic signature.</p>
+    <p>If you believe content on the public goals surface or wiki infringes your copyright, send a DMCA takedown notice to <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a> including: identification of the work, identification of the infringing material with URL, your contact info, statement of good-faith belief, statement under penalty of perjury, and your physical or electronic signature.</p>
     <p>Counter-notices follow standard <a href="https://www.copyright.gov/dmca/" target="_blank" rel="noreferrer">17 U.S.C. § 512</a> procedure. Designated DMCA agent registration with the U.S. Copyright Office is in progress.</p>
 
     <h2 id="dispute">Disputes &amp; governing law</h2>
