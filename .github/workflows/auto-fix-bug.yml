@@ -509,6 +509,21 @@ jobs:
             core.setOutput('short_title', shortTitle);
             core.setOutput('pr_title', `[auto-change] ${requestId}: ${shortTitle}`);
             core.setOutput('issue_body', body);
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.issue_number,
+              per_page: 10,
+            });
+            const recentComments = comments
+              .slice(-5)
+              .map((comment) => [
+                `Comment by @${comment.user?.login || 'unknown'} at ${comment.created_at}:`,
+                comment.body || '',
+              ].join('\n'))
+              .join('\n\n---\n\n')
+              .slice(0, 8000);
+            core.setOutput('issue_comments', recentComments);
 
       - name: Mark auto-fix attempted
         if: >
@@ -546,21 +561,25 @@ jobs:
             Issue body:
             ${{ steps.meta.outputs.issue_body }}
 
+            Recent issue comments and loop feedback:
+            ${{ steps.meta.outputs.issue_comments }}
+
             Instructions:
             1. Read AGENTS.md and STATUS.md for project context.
             2. Classify the request as bug, patch, feature, docs/ops, branch refinement, or project design.
             3. For bugs, reproduce or reason about the root cause. For non-bug requests, identify the smallest useful project change.
             4. Implement a minimal, targeted change; no refactoring beyond what's needed.
             5. Add or update tests/docs/checks appropriate to the risk.
-            6. Run `python -m ruff check` on touched files and fix any violations.
-            7. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and commit the plugin mirror changes.
-            8. If you make changes, open a pull request titled:
+            6. If recent comments mention verification failures or review blockers, address those failures first.
+            7. Run `python -m ruff check` on touched Python files and the relevant focused tests for changed test files; fix failures before finishing.
+            8. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and commit the plugin mirror changes.
+            9. If you make changes, open a pull request titled:
                ${{ steps.meta.outputs.pr_title }}
-            9. The PR body must start with:
+            10. The PR body must start with:
                Fixes #${{ steps.meta.outputs.issue_number }}
-            10. Include `Writer family: Claude` and `Required checker family: Codex`.
-            11. Include a short fix summary, tests run, and any remaining risks.
-            12. Do not redesign community-authored branches unless the issue explicitly asks for that.
+            11. Include `Writer family: Claude` and `Required checker family: Codex`.
+            12. Include a short fix summary, tests run, and any remaining risks.
+            13. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
             If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
@@ -597,16 +616,20 @@ jobs:
           Issue body:
           ${{ steps.meta.outputs.issue_body }}
 
+          Recent issue comments and loop feedback:
+          ${{ steps.meta.outputs.issue_comments }}
+
           Instructions:
           1. Read AGENTS.md and STATUS.md for project context.
           2. Classify the request as bug, patch, feature, docs/ops, branch refinement, or project design.
           3. For bugs, reproduce or reason about the root cause. For non-bug requests, identify the smallest useful project change.
           4. Implement a minimal, targeted change; no refactoring beyond what's needed.
           5. Add or update tests/docs/checks appropriate to the risk.
-          6. Run `python -m ruff check` on touched files and fix any violations.
-          7. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and leave the plugin mirror changes in the working tree.
-          8. Do not commit, push, or open a PR. Leave any changes in the working tree for this workflow to commit.
-          9. Do not redesign community-authored branches unless the issue explicitly asks for that.
+          6. If recent comments mention verification failures or review blockers, address those failures first.
+          7. Run `python -m ruff check` on touched Python files and the relevant focused tests for changed test files; fix failures before finishing.
+          8. If you edit canonical `workflow/*` runtime files, run `python packaging/claude-plugin/build_plugin.py` and leave the plugin mirror changes in the working tree.
+          9. Do not commit, push, or open a PR. Leave any changes in the working tree for this workflow to commit.
+          10. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
           If you cannot find a safe targeted change or are not confident, leave the
           working tree unchanged and explain why in your final message. Do not guess.
@@ -635,6 +658,68 @@ jobs:
               echo "${_delim}"
             } >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+
+          verification_log="$RUNNER_TEMP/codex-verification.log"
+          mapfile -t changed_files < <(git diff --name-only)
+          py_files=()
+          test_files=()
+          for file in "${changed_files[@]}"; do
+            case "$file" in
+              *.py) py_files+=("$file") ;;
+            esac
+            case "$file" in
+              tests/*.py) test_files+=("$file") ;;
+            esac
+          done
+
+          {
+            echo "Post-Codex verification"
+            echo ""
+            echo "Changed files:"
+            printf -- "- %s\n" "${changed_files[@]}"
+          } > "$verification_log"
+
+          verification_status=0
+          set +e
+          if ((${#py_files[@]})); then
+            {
+              echo ""
+              echo "python -m ruff check ${py_files[*]}"
+            } >> "$verification_log"
+            python -m ruff check "${py_files[@]}" 2>&1 | tee -a "$verification_log"
+            status=${PIPESTATUS[0]}
+            if [[ "$status" -ne 0 ]]; then
+              verification_status=$status
+            fi
+          fi
+          if ((${#test_files[@]})); then
+            {
+              echo ""
+              echo "python -m pytest ${test_files[*]} -q"
+            } >> "$verification_log"
+            python -m pytest "${test_files[@]}" -q 2>&1 | tee -a "$verification_log"
+            status=${PIPESTATUS[0]}
+            if [[ "$status" -ne 0 ]]; then
+              verification_status=$status
+            fi
+          fi
+          set -e
+
+          if [[ "$verification_status" -ne 0 ]]; then
+            _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+            {
+              echo "changed=false"
+              echo "no_change_reason="
+              echo "push_blocked=false"
+              echo "push_block_reason="
+              echo "last_message<<${_delim}"
+              head -c 4000 "$verification_log"
+              echo
+              echo "${_delim}"
+            } >> "$GITHUB_OUTPUT"
+            echo "::error::Post-Codex verification failed; leaving request retryable."
+            exit "$verification_status"
           fi
 
           git status --short

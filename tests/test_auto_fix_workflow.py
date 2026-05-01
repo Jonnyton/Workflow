@@ -332,6 +332,16 @@ def test_pr_title_includes_auto_fix_prefix(wf):
     assert "[auto-change]" in script, "PR title must start with [auto-change]"
 
 
+def test_meta_step_fetches_recent_issue_comments_for_feedback(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
+    assert meta_step is not None
+    script = str(meta_step.get("with", {}).get("script", ""))
+    assert "issues.listComments" in script
+    assert "issue_comments" in script
+    assert "slice(-5)" in script
+
+
 def test_pr_body_references_fixes_keyword(wf):
     steps = wf["jobs"]["fix"]["steps"]
     oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
@@ -354,6 +364,35 @@ def test_writer_prompts_require_plugin_mirror_for_workflow_runtime_edits(wf):
     assert "python packaging/claude-plugin/build_plugin.py" in codex_prompt
     assert "workflow/*" in oauth_prompt
     assert "workflow/*" in codex_prompt
+
+
+def test_writer_prompts_include_recent_feedback_and_focused_verification(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    assert codex_step is not None, "Must have a Codex subscription step"
+    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    codex_prompt = str(codex_step.get("run", ""))
+    for prompt in (oauth_prompt, codex_prompt):
+        assert "Recent issue comments and loop feedback" in prompt
+        assert "verification failures" in prompt
+        assert "python -m ruff check" in prompt
+        assert "focused tests" in prompt
+
+
+def test_codex_step_enforces_post_generation_verification(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert codex_step is not None
+    run_script = codex_step.get("run", "")
+    assert "Post-Codex verification" in run_script
+    assert "git diff --name-only" in run_script
+    assert "python -m ruff check" in run_script
+    assert "python -m pytest" in run_script
+    assert "verification_status" in run_script
+    assert "Post-Codex verification failed; leaving request retryable" in run_script
+    assert "exit \"$verification_status\"" in run_script
 
 
 def test_no_pr_step_marks_review_without_failing_workflow(wf):
