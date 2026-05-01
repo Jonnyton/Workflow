@@ -118,23 +118,40 @@
 
   let copied = $state(false);
   let copiedDirectory = $state(false);
-  async function copyUrl() {
+
+  async function copyText(value: string) {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      if (typeof document === 'undefined') return false;
+      const textArea = document.createElement('textarea');
+      textArea.value = value;
+      textArea.setAttribute('readonly', '');
+      textArea.style.left = '-9999px';
+      textArea.style.opacity = '0';
+      textArea.style.position = 'fixed';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        return document.execCommand('copy');
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    }
+  }
+
+  async function copyUrl() {
+    if (await copyText(url)) {
       copied = true;
       setTimeout(() => (copied = false), 1400);
-    } catch {
-      /* noop */
     }
   }
 
   async function copyDirectoryUrl() {
-    try {
-      await navigator.clipboard.writeText(directoryUrl);
+    if (await copyText(directoryUrl)) {
       copiedDirectory = true;
       setTimeout(() => (copiedDirectory = false), 1400);
-    } catch {
-      /* noop */
     }
   }
 </script>
@@ -152,7 +169,20 @@
       Paste one URL into your MCP-capable chatbot or agent host. Your host can browse the commons, read goals, inspect universes, and route work into the same loop the site shows.
     </p>
 
-    <LiveSourceBar label="Connector proof" detail="Refresh the public MCP route or GitHub source before copying the URL." />
+    <section class="primary-flow" aria-label="Primary connection actions">
+      <button type="button" class="flow-card flow-card--copy" class:copied onclick={copyUrl}>
+        <span class="flow-card__num">1</span>
+        <span class="flow-card__title">Add it.</span>
+        <span class="flow-card__body">Copy the MCP URL, paste it into your chatbot connector settings, then approve.</span>
+        <span class="flow-card__action">{copied ? 'Copied URL' : 'Copy MCP URL'}</span>
+      </button>
+      <a class="flow-card" href="/wiki">
+        <span class="flow-card__num">2</span>
+        <span class="flow-card__title">Talk.</span>
+        <span class="flow-card__body">Start a chat and ask Workflow to browse goals, read the wiki, or route work into the loop.</span>
+        <span class="flow-card__action">Open live wiki</span>
+      </a>
+    </section>
 
     <div class="endpoint-grid">
       <div class="card" id="mcp-server-url">
@@ -187,6 +217,8 @@
         <p class="endpoint-note">Live for registry and host review. Not a claim that any host directory has accepted Workflow.</p>
       </div>
     </div>
+
+    <LiveSourceBar label="Connector proof" detail="Refresh the public MCP route or GitHub source before copying the URL." />
 
     <section class="chooser" aria-labelledby="chooser-title">
       <RitualLabel color="var(--signal-live)">· Pick the customer path ·</RitualLabel>
@@ -294,23 +326,6 @@
       </div>
     </section>
 
-    <div class="steps">
-      <a class="step" href="#mcp-server-url">
-        <div class="step__num">1</div>
-        <div class="step__title">Add it.</div>
-        <p class="step__body">
-          In your chatbot or agent host, open connector settings and paste the URL. Approve.
-        </p>
-      </a>
-      <a class="step" href="/wiki">
-        <div class="step__num">2</div>
-        <div class="step__title">Talk.</div>
-        <p class="step__body">
-          Start a new chat. Say: "browse research-paper branches" or "fork fantasy-novel / claim-first." Your chatbot steers.
-        </p>
-      </a>
-    </div>
-
     <div class="step-by-step">
       <RitualLabel>How to connect (Claude.ai)</RitualLabel>
       <ol class="ol">
@@ -355,8 +370,70 @@
   .lead {
     font-size: 18px;
     color: var(--fg-2);
-    margin: 0 0 52px;
+    margin: 0 0 22px;
     line-height: 1.5;
+  }
+  .primary-flow {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 16px;
+  }
+  .flow-card {
+    background:
+      linear-gradient(180deg, rgba(109, 211, 166, 0.08), rgba(109, 211, 166, 0.015)),
+      var(--bg-2);
+    border: 1px solid rgba(109, 211, 166, 0.3);
+    border-radius: 8px;
+    color: inherit;
+    cursor: pointer;
+    display: grid;
+    gap: 10px;
+    min-height: 210px;
+    min-width: 0;
+    padding: 22px;
+    text-align: left;
+    text-decoration: none;
+    transition:
+      background var(--dur-base) var(--ease-summon),
+      border-color var(--dur-base) var(--ease-summon),
+      transform var(--dur-base) var(--ease-summon);
+  }
+  .flow-card:hover,
+  .flow-card.copied {
+    background:
+      linear-gradient(180deg, rgba(109, 211, 166, 0.12), rgba(109, 211, 166, 0.035)),
+      var(--bg-2);
+    border-color: rgba(109, 211, 166, 0.58);
+    transform: translateY(-1px);
+  }
+  .flow-card__num {
+    color: var(--ember-600);
+    font-family: var(--font-display);
+    font-size: 48px;
+    font-weight: 400;
+    line-height: 0.9;
+  }
+  .flow-card__title {
+    color: var(--fg-1);
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1;
+  }
+  .flow-card__body {
+    color: var(--fg-2);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .flow-card__action {
+    align-self: end;
+    color: var(--signal-live);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .card {
     background: var(--bg-2);
@@ -368,7 +445,7 @@
   .endpoint-grid {
     display: grid;
     gap: 14px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
   }
   .endpoint-grid .card {
     margin-bottom: 0;
@@ -567,49 +644,6 @@
       grid-template-columns: 1fr;
     }
   }
-  .steps {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 48px;
-  }
-  @media (max-width: 600px) {
-    .steps { grid-template-columns: 1fr; }
-  }
-  .step {
-    background: var(--bg-2);
-    border: 1px solid var(--border-1);
-    border-radius: 12px;
-    color: inherit;
-    display: block;
-    padding: 24px 26px;
-    text-decoration: none;
-    transition: border-color var(--dur-base) var(--ease-summon), background var(--dur-base) var(--ease-summon), transform var(--dur-base) var(--ease-summon);
-  }
-  .step:hover { border-color: rgba(109, 211, 166, 0.42); background: rgba(109, 211, 166, 0.045); transform: translateY(-1px); }
-  .step__num {
-    font-family: var(--font-display);
-    font-size: 48px;
-    font-weight: 400;
-    color: var(--ember-600);
-    line-height: 1;
-    font-variation-settings: 'opsz' 144, 'SOFT' 50;
-    margin-bottom: 12px;
-  }
-  .step__title {
-    font-family: var(--font-display);
-    font-size: 22px;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    color: var(--fg-1);
-    margin-bottom: 8px;
-  }
-  .step__body {
-    font-size: 14px;
-    color: var(--fg-2);
-    line-height: 1.55;
-    margin: 0;
-  }
   .step-by-step ol {
     margin-top: 16px;
     padding-left: 22px;
@@ -776,6 +810,12 @@
     font-weight: 600;
   }
   @media (max-width: 760px) {
+    .primary-flow {
+      grid-template-columns: 1fr;
+    }
+    .flow-card {
+      min-height: 0;
+    }
     .host-clouds { grid-template-columns: 1fr; }
     .host-table__head { display: none; }
     .host-table__row {
