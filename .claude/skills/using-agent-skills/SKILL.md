@@ -26,6 +26,7 @@ Task arrives
     |-- Vague idea / need refinement? ---------------> idea-refine
     |-- Domain terms drifting / overloaded? ---------> ubiquitous-language
     |-- Need to challenge plan vs domain model? -----> domain-model
+    |-- Old/classic game design or proof? -----------> classic-game-design-test
     |-- Architecture or modularity audit? -----------> improve-codebase-architecture
     |-- New feature / change with no spec? ----------> spec-driven-development
     |-- Have a spec, need tasks? --------------------> planning-and-task-breakdown
@@ -140,6 +141,7 @@ Not every task needs every step. Bug triage might be:
 | Define | idea-refine | Refine ideas through structured divergence and convergence |
 | Define | ubiquitous-language | Harden domain terms and remove naming drift |
 | Define | domain-model | Stress-test a plan against concepts, invariants, and boundaries |
+| Define | classic-game-design-test | Design and prove old-game experiences without silently substituting remakes |
 | Define | spec-driven-development | Write requirements and acceptance criteria before code |
 | Plan | planning-and-task-breakdown | Decompose work into small verifiable tasks |
 | Build | incremental-implementation | Ship thin vertical slices |
