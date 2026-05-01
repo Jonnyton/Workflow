@@ -135,11 +135,14 @@ jobs:
       # droplet env file, making wiki_path() resolve to /app/C:\Users\...
       # Strip any legacy WIKI_PATH / WORKFLOW_WIKI_PATH lines so the
       # resolver falls back to $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
-      - name: Scrub legacy Windows WIKI_PATH env leakage
+      # Also strip WORKFLOW_UNIVERSE: it is a stdio-shim override, and
+      # leaving it in the cloud env can bind workflow-worker to a
+      # different universe than the public MCP default.
+      - name: Scrub stale cloud env overrides
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH' \
+              'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE' \
               < deploy/install-workflow-env.sh
 
       - name: Sync runtime deploy files
@@ -262,6 +265,47 @@ jobs:
             exit 1
           fi
           echo "workflow-worker running"
+          if ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo docker exec workflow-worker env | grep -q '^WORKFLOW_UNIVERSE='"; then
+            echo "::error::workflow-worker inherited WORKFLOW_UNIVERSE from /etc/workflow/env. That stdio-only override can bind the worker to a different universe than the public MCP default."
+            exit 1
+          fi
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              "sudo docker logs --tail 160 workflow-worker 2>&1 | grep -E 'cloud_worker:|Registered|Graph execution failed|subprocess exited|spawn failed|No module named|Traceback' || true"
+          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+              'sudo docker exec -i workflow-worker python -' <<'PY'
+          import os
+          from pathlib import Path
+          from workflow.cloud_worker import _resolve_universe_path
+
+          root = Path(os.environ.get("WORKFLOW_DATA_DIR", "/data"))
+          active_marker = root / ".active_universe"
+          try:
+              active = active_marker.read_text(encoding="utf-8").strip()
+          except OSError:
+              active = ""
+
+          universe = _resolve_universe_path()
+          print(f"worker diagnostic: data_root={root}")
+          print(f"worker diagnostic: active_marker={active or '<unset>'}")
+          print(f"worker diagnostic: resolved_universe={universe}")
+          for name in (
+              ".runtime_status.json",
+              "status.json",
+              "activity.log",
+              "worldbuild_signals.json",
+              "work_targets.json",
+          ):
+              path = universe / name
+              try:
+                  size = path.stat().st_size if path.exists() else 0
+              except OSError:
+                  size = -1
+              print(f"worker diagnostic: {name} exists={path.exists()} bytes={size}")
+          PY
 
       - name: Post-deploy canary — canonical URL only
         id: canary

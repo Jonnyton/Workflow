@@ -258,6 +258,17 @@ def test_deploy_syncs_runtime_compose_and_systemd_files():
     assert "vector-entrypoint.sh" in run_script
 
 
+def test_deploy_scrubs_stdio_only_workflow_universe_from_cloud_env():
+    wf = _load()
+    scrub_step = next(
+        (s for s in _steps(wf) if s.get("name") == "Scrub stale cloud env overrides"),
+        None,
+    )
+    assert scrub_step is not None
+    run_script = scrub_step.get("run", "") or ""
+    assert "delete WIKI_PATH WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE" in run_script
+
+
 def test_deploy_verifies_cloud_worker_running():
     wf = _load()
     worker_step = next(
@@ -270,6 +281,19 @@ def test_deploy_verifies_cloud_worker_running():
     assert "docker inspect" in run_script
     assert "State.Running" in run_script
     assert "exit 1" in run_script
+
+
+def test_deploy_rejects_cloud_worker_workflow_universe_override():
+    wf = _load()
+    worker_step = next(
+        (s for s in _steps(wf) if s.get("name") == "Verify cloud worker is running"),
+        None,
+    )
+    assert worker_step is not None
+    run_script = worker_step.get("run", "") or ""
+    assert "grep -q '^WORKFLOW_UNIVERSE='" in run_script
+    assert "stdio-only override" in run_script
+    assert "_resolve_universe_path" in run_script
 
 
 def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
