@@ -19,6 +19,7 @@ row but should still be driven to a shipped outcome.
 - [active/2026-04-26-decomp-arc-c-prep.md](active/2026-04-26-decomp-arc-c-prep.md) — Arc C prep: env-var deprecation alias deletion (UNIVERSE_SERVER_BASE, WIKI_PATH). STATUS Work #24. Blocked on Arc B.
 - [active/2026-04-26-engine-domain-coupling-inventory.md](active/2026-04-26-engine-domain-coupling-inventory.md) — Read-only inventory of every `workflow/` import that reaches into `domains.fantasy_*`. Input for Task #11/#28/#29 host-review queue.
 - [active/2026-04-27-step-11plus-retarget-sweep-roi.md](active/2026-04-27-step-11plus-retarget-sweep-roi.md) — ROI analysis for the post-Step-11 retarget sweep (audit's "~100-LOC routing shell" target). Host decision pending.
+- [active/2026-05-01-host-discoverability-and-onboarding-rollout.md](active/2026-05-01-host-discoverability-and-onboarding-rollout.md) — Host discoverability and customer onboarding rollout across directories, MCP registry, no-chatbot-login users, IDE agents, and long-tail MCP hosts.
 
 ## Completed
 
