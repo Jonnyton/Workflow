@@ -77,6 +77,12 @@ def test_has_pull_requests_write(wf):
 # ---------------------------------------------------------------------------
 
 
+def test_workflow_concurrency_serializes_subscription_writer_lane(wf):
+    conc = wf.get("concurrency", {})
+    assert conc.get("group") == "auto-fix-subscription-writer"
+    assert conc.get("cancel-in-progress") is False
+
+
 def test_concurrency_scoped_to_issue(wf):
     conc = wf["jobs"]["fix"].get("concurrency", {})
     group = conc.get("group", "")
