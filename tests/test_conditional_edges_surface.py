@@ -95,6 +95,24 @@ def test_build_branch_accepts_conditional_edges(branch_env):
     ]
 
 
+def test_extensions_docstring_exposes_conditional_edge_surface(branch_env):
+    us, _ = branch_env
+    text = us.extensions.__doc__ or ""
+
+    assert "conditional_edges" in text
+    assert "add_conditional_edge" in text
+    assert "remove_conditional_edge" in text
+
+
+def test_branch_design_guide_documents_conditional_edge_surface(branch_env):
+    us, _ = branch_env
+    text = us.branch_design_guide()
+
+    assert '"conditional_edges"' in text
+    assert '"add_conditional_edge"' in text
+    assert '"remove_conditional_edge"' in text
+
+
 def test_patch_branch_add_conditional_edge_appends(branch_env):
     us, _ = branch_env
     result = _call(

@@ -222,12 +222,15 @@ enumerate ALL FOUR. Don't list extensions actions and forget the rest.
 
 - "Build / design / create a workflow", "track something", "design an
   AI system for X" → `extensions action=build_branch` with the FULL
-  spec_json in ONE call (nodes + edges + state_schema + entry_point).
+  spec_json in ONE call (nodes + edges + conditional_edges +
+  state_schema + entry_point).
   Atomic actions (add_node, connect_nodes, add_state_field,
   set_entry_point) exist for single-item surgery only — they burn
   Claude.ai per-turn tool-call budget. Default to `build_branch`.
 - "Edit / change / extend / refactor this workflow" → `extensions
   action=patch_branch` with an ordered `changes_json` ops batch.
+  Use `add_conditional_edge` / `remove_conditional_edge` inside the
+  batch for in-workflow routing and retry loops.
   Transactional (all-or-none). **When making multiple node edits, batch
   them in a single patch_branch call — do NOT loop patch_branch 7 times
   for 7 edits. One call, one list of ops, all or none.**

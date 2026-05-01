@@ -2754,8 +2754,11 @@ extensions action=build_branch spec_json='{
   "edges": [
     {"from": "START", "to": "capture"},
     {"from": "capture", "to": "categorize"},
-    {"from": "categorize", "to": "archive"},
     {"from": "archive", "to": "END"}
+  ],
+  "conditional_edges": [
+    {"from": "categorize",
+     "conditions": {"needs_review": "capture", "ready": "archive"}}
   ],
   "state_schema": [
     {"name": "raw_recipe", "type": "str"},
@@ -2778,8 +2781,11 @@ extensions action=patch_branch branch_def_id=... changes_json='[
    "display_name": "Novelty assessor",
    "prompt_template": "Rate novelty of: {claim}"},
   {"op": "add_edge", "from": "categorize", "to": "novelty_check"},
-  {"op": "add_edge", "from": "novelty_check", "to": "archive"},
+  {"op": "add_conditional_edge", "from": "novelty_check",
+   "conditions": {"revise": "categorize", "accept": "archive"}},
   {"op": "remove_edge", "from": "categorize", "to": "archive"},
+  {"op": "remove_conditional_edge", "from": "novelty_check",
+   "outcome": "revise"},
   {"op": "add_state_field", "name": "novelty_score", "type": "float"}
 ]'
 ```
