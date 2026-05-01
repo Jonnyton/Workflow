@@ -15,6 +15,7 @@ from workflow import daemon_server
 
 SOULLESS_SOUL_TEXT = "Default soulless daemon. Uses the platform dispatcher policy."
 VALID_SOUL_MODES = {"soul", "soulless"}
+PROJECT_LOOP_FLAG = "project_loop_default"
 
 
 def _daemon_id_from_author_id(author_id: str) -> str:
@@ -167,6 +168,45 @@ def list_daemons(base_path: str | Path) -> list[dict[str, Any]]:
         _daemon_from_author(row, include_soul=False)
         for row in daemon_server.list_authors(base_path)
     ]
+
+
+def _is_project_loop_daemon(daemon: dict[str, Any]) -> bool:
+    metadata = daemon.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    if not daemon.get("has_soul"):
+        return False
+    return bool(
+        metadata.get(PROJECT_LOOP_FLAG)
+        or (
+            metadata.get("project_default")
+            and metadata.get("loop_primary")
+        )
+    )
+
+
+def select_project_loop_daemon(
+    base_path: str | Path,
+    *,
+    include_soul: bool = False,
+) -> dict[str, Any] | None:
+    """Return the latest soul-bearing daemon marked as the project loop default.
+
+    The autonomous loop still has a deterministic soulless fallback. This
+    selector only opts into a soul when the host explicitly marked that daemon
+    as the project loop default.
+    """
+    daemon_server.initialize_author_server(base_path)
+    for daemon in reversed(list_daemons(base_path)):
+        if _is_project_loop_daemon(daemon):
+            if include_soul:
+                return get_daemon(
+                    base_path,
+                    daemon_id=daemon["daemon_id"],
+                    include_soul=True,
+                )
+            return daemon
+    return None
 
 
 def get_daemon(

@@ -175,6 +175,132 @@ def _paid_market_enabled() -> bool:
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
+def _resolve_loop_daemon_context(
+    universe_path: Path,
+    universe_id: str,
+) -> dict[str, Any]:
+    """Resolve the daemon identity used by the autonomous loop.
+
+    A configured env var is authoritative and fails loudly if invalid. Without
+    an env override, the loop opts into the host-marked project default soul
+    daemon when one exists, then falls back to the historical soulless id.
+    """
+    fallback = {
+        "daemon_id": f"daemon-{universe_id}",
+        "source": "legacy_fallback",
+        "has_soul": False,
+        "soul_text": "",
+        "soul_hash": "",
+        "domain_claims": [],
+        "daemon_wiki_context": "",
+    }
+    env_name = "WORKFLOW_LOOP_DAEMON_ID"
+    override = os.environ.get(env_name, "").strip()
+    if not override:
+        env_name = "WORKFLOW_DAEMON_ID"
+        override = os.environ.get(env_name, "").strip()
+
+    try:
+        from workflow.daemon_registry import (
+            get_daemon,
+            select_project_loop_daemon,
+        )
+        from workflow.daemon_wiki import read_daemon_wiki_context
+        from workflow.storage import data_dir
+
+        base_path = data_dir()
+        if override:
+            daemon = get_daemon(
+                base_path,
+                daemon_id=override,
+                include_soul=True,
+            )
+            source = f"env:{env_name}"
+        else:
+            daemon = select_project_loop_daemon(base_path, include_soul=True)
+            if daemon is None:
+                return fallback
+            source = "project_loop_default"
+
+        wiki_context = ""
+        if daemon.get("has_soul"):
+            wiki_context = read_daemon_wiki_context(
+                base_path,
+                daemon_id=daemon["daemon_id"],
+                max_chars=6000,
+            ).get("context", "")
+        return {
+            "daemon_id": str(daemon["daemon_id"]),
+            "source": source,
+            "has_soul": bool(daemon.get("has_soul")),
+            "soul_text": str(daemon.get("soul_text") or ""),
+            "soul_hash": str(daemon.get("soul_hash") or ""),
+            "domain_claims": list(daemon.get("domain_claims") or []),
+            "daemon_wiki_context": wiki_context,
+        }
+    except KeyError as exc:
+        if override:
+            raise RuntimeError(
+                f"{env_name}={override!r} does not match a registered daemon"
+            ) from exc
+        logger.exception(
+            "loop daemon lookup failed for universe %s at %s",
+            universe_id, universe_path,
+        )
+        return fallback
+    except Exception:
+        if override:
+            raise
+        logger.exception(
+            "project loop daemon lookup failed for universe %s at %s",
+            universe_id, universe_path,
+        )
+        return fallback
+
+
+def _record_loop_daemon_signal(
+    loop_daemon: dict[str, Any],
+    *,
+    universe_path: Path,
+    source_id: str,
+    outcome: str,
+    summary: str,
+    details: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Best-effort learning signal for a soul-bearing loop daemon."""
+    if not loop_daemon.get("has_soul"):
+        return
+    daemon_id = str(loop_daemon.get("daemon_id") or "")
+    if not daemon_id:
+        return
+    try:
+        from workflow.daemon_wiki import record_daemon_signal
+        from workflow.storage import data_dir
+
+        merged_metadata = {
+            "loop_daemon": True,
+            "universe_path": str(Path(universe_path).resolve()),
+            "daemon_source": loop_daemon.get("source", ""),
+            **(metadata or {}),
+        }
+        record_daemon_signal(
+            data_dir(),
+            daemon_id=daemon_id,
+            source_kind="node",
+            source_id=source_id,
+            outcome=outcome,
+            summary=summary,
+            details=details,
+            metadata=merged_metadata,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "daemon wiki signal write failed for %s source=%s",
+            daemon_id, source_id,
+        )
+
+
 def _run_branch_task_producers_if_enabled(universe_path: Path) -> int:
     """Phase F: call registered BranchTaskProducers at cycle boundary.
 
@@ -982,7 +1108,27 @@ class DaemonController:
             # pick BEFORE the stream. If a task is claimed, merge its
             # inputs into initial_state (inputs win on overlap).
             # Unclaimed picks fall through to default graph behavior.
-            daemon_id = f"daemon-{universe_id}"
+            loop_daemon_context = _resolve_loop_daemon_context(
+                output_dir, universe_id,
+            )
+            daemon_id = loop_daemon_context["daemon_id"]
+            initial_state.update({
+                "daemon_id": daemon_id,
+                "daemon_soul_text": loop_daemon_context.get("soul_text", ""),
+                "daemon_soul_hash": loop_daemon_context.get("soul_hash", ""),
+                "daemon_domain_claims": loop_daemon_context.get(
+                    "domain_claims", [],
+                ),
+                "daemon_wiki_context": loop_daemon_context.get(
+                    "daemon_wiki_context", "",
+                ),
+            })
+            logger.info(
+                "loop daemon identity: %s source=%s has_soul=%s",
+                daemon_id,
+                loop_daemon_context.get("source", ""),
+                loop_daemon_context.get("has_soul", False),
+            )
             claimed_task, claimed_inputs = _try_dispatcher_pick(
                 output_dir, daemon_id,
             )
@@ -1008,6 +1154,21 @@ class DaemonController:
             ):
                 nb_success, nb_error = _try_execute_claimed_node_bid(
                     output_dir, claimed_task, daemon_id,
+                )
+                _record_loop_daemon_signal(
+                    loop_daemon_context,
+                    universe_path=output_dir,
+                    source_id=f"node_bid:{claimed_task.branch_task_id}",
+                    outcome="passed" if nb_success else "failed",
+                    summary=(
+                        f"NodeBid {claimed_task.branch_task_id} "
+                        f"{'succeeded' if nb_success else 'failed'}."
+                    ),
+                    details=nb_error,
+                    metadata={
+                        "branch_def_id": claimed_task.branch_def_id,
+                        "trigger_source": claimed_task.trigger_source,
+                    },
                 )
                 _finalize_claimed_task(
                     output_dir, claimed_task,
@@ -1117,12 +1278,44 @@ class DaemonController:
                                 success=False,
                                 error="cancel_finalize_failed",
                             )
+                        _record_loop_daemon_signal(
+                            loop_daemon_context,
+                            universe_path=output_dir,
+                            source_id=claimed_task.branch_task_id,
+                            outcome="cancelled",
+                            summary=(
+                                f"Branch task {claimed_task.branch_task_id} "
+                                "was cancelled during the loop run."
+                            ),
+                            metadata={
+                                "branch_def_id": claimed_task.branch_def_id,
+                                "trigger_source": claimed_task.trigger_source,
+                            },
+                        )
                     else:
                         _finalize_claimed_task(
                             output_dir,
                             claimed_task,
                             success=not claimed_failed_reason,
                             error=claimed_failed_reason,
+                        )
+                        _record_loop_daemon_signal(
+                            loop_daemon_context,
+                            universe_path=output_dir,
+                            source_id=claimed_task.branch_task_id,
+                            outcome=(
+                                "failed" if claimed_failed_reason else "passed"
+                            ),
+                            summary=(
+                                f"Branch task {claimed_task.branch_task_id} "
+                                f"{'failed' if claimed_failed_reason else 'passed'} "
+                                "in the loop run."
+                            ),
+                            details=claimed_failed_reason,
+                            metadata={
+                                "branch_def_id": claimed_task.branch_def_id,
+                                "trigger_source": claimed_task.trigger_source,
+                            },
                         )
                 self._cleanup()
 
