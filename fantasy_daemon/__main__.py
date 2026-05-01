@@ -1051,8 +1051,10 @@ class DaemonController:
                     ):
                         self._paused.wait(timeout=1.0)
 
-                    # Stream events to dashboard
-                    if self._dashboard and isinstance(event, dict):
+                    # Activity/status handling must run even in --no-tray
+                    # cloud-worker mode; dashboard emission is gated inside
+                    # _handle_node_output.
+                    if isinstance(event, dict):
                         for node_name, node_output in event.items():
                             self._handle_node_output(node_name, node_output)
 
