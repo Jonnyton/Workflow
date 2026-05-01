@@ -2,9 +2,11 @@
 
 Per ``docs/design-notes/2026-04-19-uptime-canary-layered.md``.
 
-Runs ``mcp_public_canary.probe_result`` against the canonical MCP URL,
-appends one timestamped line to ``.agents/uptime.log``. Does not
-mutate STATUS.md; alarm escalation is the separate ``scripts/uptime_alarm.py``'s job.
+Runs ``mcp_public_canary.probe_result`` against the canonical MCP URL
+and, for the production default, verifies the apex site ``/`` returns
+HTTP 200. Appends one timestamped line to ``.agents/uptime.log``. Does
+not mutate STATUS.md; alarm escalation is the separate
+``scripts/uptime_alarm.py``'s job.
 
 Invocation
 ----------
@@ -23,11 +25,19 @@ itself the alarm (per design-note §7).
 
 URL precedence
 --------------
+MCP URL:
 1. ``--url`` CLI arg.
 2. ``WORKFLOW_MCP_CANARY_URL`` env var.
 3. ``https://tinyassets.io/mcp`` default (canonical public endpoint via
    Cloudflare Worker; host directive 2026-04-20 retired the direct-tunnel
    ``mcp.tinyassets.io/mcp`` as a public URL — single entry point only).
+
+Apex URL:
+1. ``--apex-url`` CLI arg.
+2. ``WORKFLOW_APEX_CANARY_URL`` env var.
+3. ``https://tinyassets.io/`` when the MCP URL is the canonical
+   production endpoint; disabled for non-production URLs to keep local
+   tests offline.
 """
 
 from __future__ import annotations
@@ -37,6 +47,9 @@ import datetime as _dt
 import os
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 # Make the script importable regardless of CWD — Task Scheduler runs from
@@ -48,9 +61,15 @@ if str(_REPO_ROOT / "scripts") not in sys.path:
 from mcp_public_canary import CanaryError, probe_result  # noqa: E402
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
+DEFAULT_APEX_URL = "https://tinyassets.io/"
 DEFAULT_TIMEOUT = 10.0
 LOG_PATH = _REPO_ROOT / ".agents" / "uptime.log"
 LOG_ROTATE_BYTES = 10 * 1024 * 1024
+APEX_FAILURE_EXIT_CODE = 12
+
+
+class ApexProbeError(Exception):
+    """Raised when the apex site check fails after the MCP probe is green."""
 
 
 def _now_local_iso() -> str:
@@ -77,8 +96,11 @@ def _append_log(line: str) -> None:
         fp.write(line + "\n")
 
 
-def _format_green(ts: str, url: str, rtt_ms: int) -> str:
-    return f"{ts} GREEN layer=1 url={url} rtt_ms={rtt_ms}"
+def _format_green(ts: str, url: str, rtt_ms: int, apex_url: str | None = None) -> str:
+    line = f"{ts} GREEN layer=1 url={url} rtt_ms={rtt_ms}"
+    if apex_url:
+        line += f" apex_url={apex_url} apex_status=200"
+    return line
 
 
 def _format_red(ts: str, url: str, exit_code: int, reason: str, rtt_ms: int) -> str:
@@ -106,7 +128,47 @@ def _emit_gha_kv(key: str, value: str) -> None:
         print(f"{key}={value}")
 
 
-def run_probe(url: str, timeout: float, fmt: str = "log") -> int:
+def _resolve_apex_url(mcp_url: str, explicit_apex_url: str | None) -> str | None:
+    if explicit_apex_url is not None:
+        return explicit_apex_url.strip() or None
+
+    parsed = urllib.parse.urlsplit(mcp_url)
+    if (
+        parsed.scheme == "https"
+        and parsed.netloc.lower() == "tinyassets.io"
+        and parsed.path.rstrip("/") == "/mcp"
+    ):
+        return DEFAULT_APEX_URL
+    return None
+
+
+def _probe_apex(apex_url: str, timeout: float) -> None:
+    parsed = urllib.parse.urlsplit(apex_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ApexProbeError(f"invalid apex URL: {apex_url!r}")
+
+    req = urllib.request.Request(
+        apex_url,
+        method="GET",
+        headers={"User-Agent": "workflow-uptime-canary/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            status = response.getcode()
+            if status != 200:
+                raise ApexProbeError(f"apex {apex_url} returned HTTP {status}")
+    except urllib.error.HTTPError as exc:
+        raise ApexProbeError(f"apex {apex_url} returned HTTP {exc.code}") from exc
+    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        raise ApexProbeError(f"apex {apex_url} failed: {exc}") from exc
+
+
+def run_probe(
+    url: str,
+    timeout: float,
+    fmt: str = "log",
+    apex_url: str | None = None,
+) -> int:
     """Probe ``url`` once.
 
     ``fmt`` controls side-channel output:
@@ -116,8 +178,11 @@ def run_probe(url: str, timeout: float, fmt: str = "log") -> int:
     """
     ts = _now_local_iso()
     start = time.monotonic()
+    resolved_apex_url = _resolve_apex_url(url, apex_url)
     try:
         probe_result(url, timeout)
+        if resolved_apex_url:
+            _probe_apex(resolved_apex_url, timeout)
     except CanaryError as exc:
         rtt_ms = int((time.monotonic() - start) * 1000)
         _append_log(_format_red(ts, url, exc.code, exc.msg, rtt_ms))
@@ -125,6 +190,14 @@ def run_probe(url: str, timeout: float, fmt: str = "log") -> int:
             _emit_gha_kv("status", str(exc.code))
             _emit_gha_kv("msg", exc.msg)
         return exc.code
+    except ApexProbeError as exc:
+        rtt_ms = int((time.monotonic() - start) * 1000)
+        msg = str(exc)
+        _append_log(_format_red(ts, url, APEX_FAILURE_EXIT_CODE, msg, rtt_ms))
+        if fmt == "gha":
+            _emit_gha_kv("status", str(APEX_FAILURE_EXIT_CODE))
+            _emit_gha_kv("msg", msg)
+        return APEX_FAILURE_EXIT_CODE
     except Exception as exc:  # defensive — canary must never crash silently
         rtt_ms = int((time.monotonic() - start) * 1000)
         msg = f"unexpected: {exc!r}"
@@ -134,10 +207,13 @@ def run_probe(url: str, timeout: float, fmt: str = "log") -> int:
             _emit_gha_kv("msg", msg)
         return 99
     rtt_ms = int((time.monotonic() - start) * 1000)
-    _append_log(_format_green(ts, url, rtt_ms))
+    _append_log(_format_green(ts, url, rtt_ms, resolved_apex_url))
     if fmt == "gha":
         _emit_gha_kv("status", "0")
-        _emit_gha_kv("msg", f"OK {url} rtt_ms={rtt_ms}")
+        msg = f"OK {url} rtt_ms={rtt_ms}"
+        if resolved_apex_url:
+            msg += f" apex_url={resolved_apex_url} apex_status=200"
+        _emit_gha_kv("msg", msg)
     return 0
 
 
@@ -149,6 +225,14 @@ def main(argv: list[str]) -> int:
         help=f"MCP endpoint URL (default: env WORKFLOW_MCP_CANARY_URL or {DEFAULT_URL})",
     )
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    ap.add_argument(
+        "--apex-url",
+        default=os.environ.get("WORKFLOW_APEX_CANARY_URL"),
+        help=(
+            "Optional apex site URL that must return HTTP 200. Defaults to "
+            f"{DEFAULT_APEX_URL} only when --url is the canonical production MCP URL."
+        ),
+    )
     ap.add_argument(
         "--once",
         action="store_true",
@@ -165,7 +249,7 @@ def main(argv: list[str]) -> int:
         ),
     )
     args = ap.parse_args(argv)
-    return run_probe(args.url, args.timeout, fmt=args.fmt)
+    return run_probe(args.url, args.timeout, fmt=args.fmt, apex_url=args.apex_url)
 
 
 if __name__ == "__main__":
