@@ -11,11 +11,16 @@ import json
 import pytest
 
 from workflow.runs import initialize_runs_db
+from workflow.scheduler import shutdown_scheduler
 from workflow.universe_server import extensions
+
+
 @pytest.fixture(autouse=True)
 def _set_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     initialize_runs_db(tmp_path)
+    yield
+    shutdown_scheduler(timeout=1.0)
 
 
 # ── schedule_branch ───────────────────────────────────────────────────────────
@@ -92,6 +97,23 @@ class TestScheduleBranch:
             owner_actor="alice",
         ))
         assert r1["schedule_id"] != r2["schedule_id"]
+
+    def test_schedule_starts_scheduler(self, monkeypatch):
+        started: list[bool] = []
+
+        def _fake_start():
+            started.append(True)
+
+        monkeypatch.setattr("workflow.api.runtime_ops._ensure_scheduler_started", _fake_start)
+        result = json.loads(extensions(
+            action="schedule_branch",
+            branch_def_id="b1",
+            interval_seconds=60.0,
+            owner_actor="alice",
+        ))
+
+        assert result["status"] == "scheduled"
+        assert started == [True]
 
 
 # ── unschedule_branch ─────────────────────────────────────────────────────────
@@ -277,6 +299,67 @@ class TestSubscribeBranch:
         ))
         assert r1["subscription_id"] != r2["subscription_id"]
 
+    def test_subscribe_starts_scheduler(self, monkeypatch):
+        started: list[bool] = []
+
+        def _fake_start():
+            started.append(True)
+
+        monkeypatch.setattr("workflow.api.runtime_ops._ensure_scheduler_started", _fake_start)
+        result = json.loads(extensions(
+            action="subscribe_branch",
+            branch_def_id="b1",
+            event_type="canon_change",
+            owner_actor="alice",
+        ))
+
+        assert result["status"] == "subscribed"
+        assert started == [True]
+
+
+# ── emit_scheduler_event ─────────────────────────────────────────────────────
+
+class TestEmitSchedulerEvent:
+    def test_emit_event_queues_scheduler_event(self, monkeypatch):
+        started: list[bool] = []
+        emitted: list = []
+
+        monkeypatch.setattr(
+            "workflow.api.runtime_ops._ensure_scheduler_started",
+            lambda: started.append(True),
+        )
+        monkeypatch.setattr("workflow.scheduler.emit_event", emitted.append)
+
+        result = json.loads(extensions(
+            action="emit_scheduler_event",
+            event_type="canon_change",
+            event_id="evt-1",
+            event_payload_json='{"file":"world.md"}',
+        ))
+
+        assert result == {
+            "status": "queued",
+            "event_id": "evt-1",
+            "event_type": "canon_change",
+        }
+        assert started == [True]
+        assert len(emitted) == 1
+        assert emitted[0].event_type == "canon_change"
+        assert emitted[0].event_id == "evt-1"
+        assert emitted[0].payload == {"file": "world.md"}
+
+    def test_emit_event_rejects_invalid_payload_json(self, monkeypatch):
+        monkeypatch.setattr("workflow.api.runtime_ops._ensure_scheduler_started", lambda: None)
+
+        result = json.loads(extensions(
+            action="emit_scheduler_event",
+            event_type="canon_change",
+            event_payload_json="[1, 2]",
+        ))
+
+        assert "error" in result
+        assert "JSON object" in result["error"]
+
 
 # ── unsubscribe_branch ────────────────────────────────────────────────────────
 
@@ -336,6 +419,7 @@ class TestSchedulerActionsInAvailableList:
         assert "list_schedules" in available
         assert "subscribe_branch" in available
         assert "unsubscribe_branch" in available
+        assert "emit_scheduler_event" in available
         assert "pause_schedule" in available
         assert "unpause_schedule" in available
         assert "list_scheduler_subscriptions" in available

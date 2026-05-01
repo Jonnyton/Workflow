@@ -375,6 +375,55 @@ _MESSAGING_ACTIONS: dict[str, Any] = {
 # ── Scheduler MCP actions ─────────────────────────────────────────────────
 
 
+def _scheduler_run_branch(
+    branch_def_id: str,
+    actor: str,
+    inputs: dict[str, Any],
+    run_name: str,
+) -> None:
+    """Run function used by the background scheduler."""
+    from workflow.api.branches import _resolve_branch_id
+    from workflow.branches import BranchDefinition
+    from workflow.daemon_server import get_branch_definition
+    from workflow.runs import execute_branch_async
+
+    bid = _resolve_branch_id(branch_def_id.strip(), _base_path())
+    if not bid:
+        raise ValueError("branch_def_id is required.")
+
+    source_dict = get_branch_definition(_base_path(), branch_def_id=bid)
+    branch = BranchDefinition.from_dict(source_dict)
+    errors = branch.validate()
+    if errors:
+        raise ValueError(f"Branch '{bid}' is not valid: {errors}")
+
+    provider_call: Any = None
+    try:
+        from domains.fantasy_daemon.phases._provider_stub import (
+            call_provider as provider_call,
+        )
+    except ImportError:
+        provider_call = None
+
+    execute_branch_async(
+        _base_path(),
+        branch=branch,
+        inputs=inputs,
+        run_name=run_name,
+        actor=actor,
+        provider_call=provider_call,
+    )
+
+
+def _ensure_scheduler_started() -> None:
+    from workflow.runs import initialize_runs_db
+    from workflow.scheduler import get_or_create_scheduler
+
+    base = _base_path()
+    initialize_runs_db(base)
+    get_or_create_scheduler(base, _scheduler_run_branch)
+
+
 def _action_schedule_branch(kwargs: dict[str, Any]) -> str:
     from workflow.runs import initialize_runs_db
     from workflow.scheduler import CronParseError, register_schedule
@@ -413,6 +462,11 @@ def _action_schedule_branch(kwargs: dict[str, Any]) -> str:
         return json.dumps({"error": f"Invalid cron_expr: {exc}"})
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
+    try:
+        _ensure_scheduler_started()
+    except Exception as exc:
+        logger.exception("scheduler start failed after schedule registration")
+        return json.dumps({"error": f"Schedule registered but scheduler failed to start: {exc}"})
     return json.dumps({
         "status": "scheduled",
         "schedule_id": schedule_id,
@@ -478,6 +532,13 @@ def _action_subscribe_branch(kwargs: dict[str, Any]) -> str:
         )
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
+    try:
+        _ensure_scheduler_started()
+    except Exception as exc:
+        logger.exception("scheduler start failed after subscription registration")
+        return json.dumps({
+            "error": f"Subscription registered but scheduler failed to start: {exc}",
+        })
     return json.dumps({
         "status": "subscribed",
         "subscription_id": sub_id,
@@ -552,6 +613,45 @@ def _action_list_scheduler_subscriptions(kwargs: dict[str, Any]) -> str:
     return json.dumps({"subscriptions": rows, "count": len(rows)})
 
 
+def _action_emit_scheduler_event(kwargs: dict[str, Any]) -> str:
+    from workflow.scheduler import VALID_EVENT_TYPES, SchedulerEvent, emit_event
+
+    event_type = (kwargs.get("event_type") or "").strip()
+    if not event_type:
+        return json.dumps({"error": "event_type is required."})
+    if event_type not in VALID_EVENT_TYPES:
+        return json.dumps({
+            "error": f"Unknown event_type '{event_type}'.",
+            "valid": sorted(VALID_EVENT_TYPES),
+        })
+
+    raw_payload = kwargs.get("event_payload_json") or "{}"
+    try:
+        payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+    except (json.JSONDecodeError, TypeError) as exc:
+        return json.dumps({"error": f"event_payload_json is not valid JSON: {exc}"})
+    if not isinstance(payload, dict):
+        return json.dumps({"error": "event_payload_json must decode to a JSON object."})
+
+    event_id = (kwargs.get("event_id") or "").strip()
+    event = (
+        SchedulerEvent(event_type=event_type, event_id=event_id, payload=payload)
+        if event_id
+        else SchedulerEvent(event_type=event_type, payload=payload)
+    )
+    try:
+        _ensure_scheduler_started()
+    except Exception as exc:
+        logger.exception("scheduler start failed before event emission")
+        return json.dumps({"error": f"Scheduler failed to start: {exc}"})
+    emit_event(event)
+    return json.dumps({
+        "status": "queued",
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+    })
+
+
 _SCHEDULER_ACTIONS: dict[str, Any] = {
     "schedule_branch": _action_schedule_branch,
     "unschedule_branch": _action_unschedule_branch,
@@ -561,5 +661,5 @@ _SCHEDULER_ACTIONS: dict[str, Any] = {
     "pause_schedule": _action_pause_schedule,
     "unpause_schedule": _action_unpause_schedule,
     "list_scheduler_subscriptions": _action_list_scheduler_subscriptions,
+    "emit_scheduler_event": _action_emit_scheduler_event,
 }
-

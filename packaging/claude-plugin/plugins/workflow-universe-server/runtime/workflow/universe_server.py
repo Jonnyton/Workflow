@@ -488,6 +488,7 @@ def extensions(
     inputs_template_json: str = "",
     skip_if_running: bool = False,
     subscription_id: str = "",
+    event_payload_json: str = "",
     active_only: bool = True,
     outcome_id: str = "",
     evidence_url: str = "",
@@ -523,7 +524,8 @@ def extensions(
     - Surgical rollback: rollback_merge (host-only), get_rollback_history.
     - Versioning: publish_version, get_branch_version, list_branch_versions.
     - Scheduler: schedule_branch, unschedule_branch, list_schedules,
-      subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
+      subscribe_branch, unsubscribe_branch, emit_scheduler_event,
+      list_scheduler_subscriptions.
     - Project memory: project_memory_get, project_memory_set, project_memory_list.
     - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
       suggest_node_edit, get_node_output, rollback_node, list_node_versions.
@@ -631,6 +633,7 @@ def extensions(
         inputs_template_json=inputs_template_json,
         skip_if_running=skip_if_running,
         subscription_id=subscription_id,
+        event_payload_json=event_payload_json,
         active_only=active_only,
         outcome_id=outcome_id,
         evidence_url=evidence_url,

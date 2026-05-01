@@ -315,6 +315,7 @@ def _extensions_impl(
     inputs_template_json: str = "",
     skip_if_running: bool = False,
     subscription_id: str = "",
+    event_payload_json: str = "",
     active_only: bool = True,
     outcome_id: str = "",
     evidence_url: str = "",
@@ -551,6 +552,8 @@ def _extensions_impl(
             "schedule_id": schedule_id,
             "subscription_id": subscription_id,
             "event_type": event_type,
+            "event_id": event_id,
+            "event_payload_json": event_payload_json,
             "active_only": active_only,
         }
         return scheduler_handler(sched_kwargs)
@@ -610,7 +613,7 @@ def _extensions_impl(
             "attest_gate_event", "verify_gate_event", "dispute_gate_event",
             "retract_gate_event", "get_gate_event", "list_gate_events",
             "schedule_branch", "unschedule_branch", "list_schedules",
-            "subscribe_branch", "unsubscribe_branch",
+            "subscribe_branch", "unsubscribe_branch", "emit_scheduler_event",
             "pause_schedule", "unpause_schedule", "list_scheduler_subscriptions",
             "record_outcome", "list_outcomes", "get_outcome",
             "record_remix", "get_provenance",
