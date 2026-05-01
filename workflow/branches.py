@@ -1082,6 +1082,8 @@ class BranchDefinition:
                 )
 
         # Check state schema field names are unique (basic check on raw dicts)
+        # and do not collide with LangGraph node names. StateGraph rejects
+        # adding a node whose name is already present in the state schema.
         field_names: set[str] = set()
         for f in self.state_schema:
             name = f.get("name", "")
@@ -1089,6 +1091,12 @@ class BranchDefinition:
                 if name in field_names:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
+                if name in all_node_ids:
+                    errors.append(
+                        f"State field name '{name}' collides with a graph "
+                        "node ID. Rename the state field or node before "
+                        "running this branch."
+                    )
 
         try:
             normalize_branch_skill_snapshots(self.skills)

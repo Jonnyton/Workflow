@@ -4,6 +4,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 ## Concerns
 
+- **[P1 filed:2026-05-01]** ChatGPT Workflow connector approved branch patch then stalled post-approval; direct MCP was needed to verify/repair live branch (see BUG-034).
 - [filed:2026-04-23] **P0 revert-loop: daemon PAUSED.** Auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [filed:2026-04-22 verified:2026-04-25] `/etc/workflow/env` mode flip — Fix A landed (bc079a0: atomic mutator); awaits host review of installer behavior.
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval::test_record_and_get_stats_roundtrip` flake — Fix B landed (16d4823: wal_checkpoint(PASSIVE)); watching for recurrence ≥30d.
