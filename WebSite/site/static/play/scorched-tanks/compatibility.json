@@ -8,7 +8,8 @@
     "runtime_asset": "assets/scorched-tanks-v1.90-autostart-30582ca3.adf",
     "patches": [
       "S/Startup-Sequence autostarts Scorched_TanksV1.90 with corrected file metadata",
-      "Injected ADF can be mounted into df0 after media injection"
+      "Injected ADF is mounted once through vAmigaWeb insert_file(0) with reset-on-load semantics",
+      "Launcher records mount attempts, audio state, firmware path, and exact-game blocker"
     ]
   },
   "runtime": {
@@ -18,7 +19,7 @@
   },
   "verification": {
     "date": "2026-05-01",
-    "exact_result": "v1.90 autostart media has valid boot metadata and reaches the AROS shell in vAmigaWeb, but the AROS firmware path still does not reach playable Scorched Tanks.",
+    "exact_result": "v1.90 autostart media has valid boot metadata; local browser proof mounted the ADF once with audio running and no repeated reset loop, but the AROS firmware path still does not reach playable Scorched Tanks.",
     "compatibility_port_result": "Live public browser proof at tinyassets.io hit Kade with a real canvas click, Big Shot, and WebAudio running; this is a labeled fallback, not exact original-game proof.",
     "compatibility_port_proof": "output/scorched-compat-hit-tank-audio-live.json"
   }

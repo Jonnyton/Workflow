@@ -85,6 +85,9 @@ a remake satisfies it.
    reload loops, and expose status that distinguishes "loaded" from "playing."
    If the runtime stages media in a file slot, use its explicit boot/mount with
    reset semantics; do not count a post-boot insert as an autostart proof.
+   For emulator APIs that acknowledge disk/ROM insertion asynchronously, wire a
+   mount acknowledgement or bounded retry. Never schedule blind repeated resets;
+   a reset loop is a blocker even when the disk eventually appears mounted.
 6. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
    mappings needed by the target game. Include a real browser click/tap path
    for any action the user naturally expects to perform with the mouse.

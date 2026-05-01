@@ -5,6 +5,7 @@
   const HOSTED_KICKSTART_URL = "./licensed/kickstart-a500-1.3.rom";
   const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
   const VAMIGA_RELOAD_SETTLE_MS = 1800;
+  const DISK_INSERT_RETRY_DELAYS_MS = [300, 900, 1800, 3200];
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -33,6 +34,26 @@
   let runtimeReady = false;
   let audioUnlocked = false;
   let lastFrameLoadAt = 0;
+  let diskMountState = "idle";
+  let diskMountGeneration = 0;
+
+  const originalProof = {
+    mode: "original-amiga",
+    runtime: "vAmigaWeb",
+    media: ADF_FILE_NAME,
+    firmware: "not-started",
+    mountState: diskMountState,
+    mountAttempts: 0,
+    runtimeReadyEvents: 0,
+    frameLoads: 0,
+    audioState: "locked",
+    exactPlayable: false,
+    blocker: "not-started",
+  };
+
+  window.__scorchedTanksOriginal = {
+    getProof: () => JSON.parse(JSON.stringify(originalProof)),
+  };
 
   function setRuntimeStatus(text) {
     runtimeStatus.textContent = text;
@@ -48,6 +69,14 @@
 
   function setAudioStatus(text) {
     audioStatus.textContent = text;
+  }
+
+  function setDiskMountState(state, blocker) {
+    diskMountState = state;
+    originalProof.mountState = state;
+    if (arguments.length > 1) {
+      originalProof.blocker = blocker;
+    }
   }
 
   function reportAsync(task) {
@@ -140,10 +169,106 @@
   }
 
   function insertInjectedDiskIntoDf0() {
+    if (diskMountState === "mounted" || diskMountState === "already-mounted") {
+      return;
+    }
+
+    const generation = diskMountGeneration;
+    originalProof.mountAttempts += 1;
+    setDiskMountState("mount-script-posted", null);
     postToRuntime({
       cmd: "script",
-      script:
-        "if (typeof wasm_loadfile === 'function' && typeof file_slot_file !== 'undefined' && typeof file_slot_file_name !== 'undefined') { if (typeof wasm_has_disk !== 'function' || !wasm_has_disk('df0')) { wasm_loadfile(file_slot_file_name, file_slot_file, 0); } if (typeof show_drive_select === 'function') { show_drive_select(false); } if (typeof wasm_reset === 'function') { wasm_reset(); } if (typeof wasm_run === 'function') { setTimeout(() => { try { wasm_run(); } catch (error) { console.error(error); } }, 200); } }",
+      script: `
+        (() => {
+          const generation = ${generation};
+          const postMountState = (state, detail = "") => {
+            try {
+              window.parent.postMessage({
+                msg: "scorched_original_mount",
+                state,
+                generation,
+                detail
+              }, "*");
+            } catch (error) {
+              console.error(error);
+            }
+          };
+
+          if (
+            typeof file_slot_file === "undefined" ||
+            typeof file_slot_file_name === "undefined"
+          ) {
+            postMountState("slot-not-ready");
+            return;
+          }
+
+          if (typeof wasm_has_disk === "function" && wasm_has_disk("df0")) {
+            if (typeof show_drive_select === "function") {
+              show_drive_select(false);
+            }
+            postMountState("already-mounted");
+            if (
+              typeof wasm_run === "function" &&
+              typeof is_running === "function" &&
+              !is_running()
+            ) {
+              setTimeout(() => {
+                try { wasm_run(); } catch (error) { console.error(error); }
+              }, 200);
+            }
+            return;
+          }
+
+          if (typeof insert_file === "function") {
+            try {
+              reset_before_load = true;
+              insert_file(0);
+              if (typeof show_drive_select === "function") {
+                show_drive_select(false);
+              }
+              postMountState("mounted", "insert_file_reset");
+              setTimeout(() => {
+                try {
+                  if (
+                    typeof wasm_run === "function" &&
+                    typeof is_running === "function" &&
+                    !is_running()
+                  ) {
+                    wasm_run();
+                  }
+                } catch (error) {
+                  console.error(error);
+                }
+              }, 250);
+            } catch (error) {
+              postMountState("mount-error", error?.message || String(error));
+            }
+            return;
+          }
+
+          if (typeof wasm_loadfile === "function") {
+            try {
+              wasm_loadfile(file_slot_file_name, file_slot_file, 0);
+              if (typeof show_drive_select === "function") {
+                show_drive_select(false);
+              }
+              if (typeof wasm_reset === "function") {
+                wasm_reset();
+              }
+              postMountState("mounted", "wasm_loadfile_reset");
+              setTimeout(() => {
+                try { if (typeof wasm_run === "function") { wasm_run(); } }
+                catch (error) { console.error(error); }
+              }, 250);
+            } catch (error) {
+              postMountState("mount-error", error?.message || String(error));
+            }
+            return;
+          }
+
+          postMountState("runtime-api-not-ready");
+        })();
+      `,
     });
   }
 
@@ -157,6 +282,11 @@
 
   function scheduleDiskInsert(delay) {
     diskInsertTimers.push(window.setTimeout(insertInjectedDiskIntoDf0, delay));
+  }
+
+  function scheduleDiskInsertRetries() {
+    clearDiskInsertTimers();
+    DISK_INSERT_RETRY_DELAYS_MS.forEach(scheduleDiskInsert);
   }
 
   function scheduleLaunchInjection() {
@@ -197,13 +327,17 @@
       }
 
       postToRuntime(payload);
-      clearDiskInsertTimers();
-      scheduleDiskInsert(250);
-      scheduleDiskInsert(1000);
+      diskMountGeneration += 1;
+      setDiskMountState("queued", null);
+      scheduleDiskInsertRetries();
       setMediaStatus("Original v1.90 autostart ADF booting from df0");
       if (launch.kickstartRom) {
+        originalProof.firmware = launch.kickstartRom.name;
+        originalProof.blocker = "gameplay-proof-pending";
         setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
       } else {
+        originalProof.firmware = "AROS Kickstart replacement";
+        originalProof.blocker = "needs-rights-cleared-kickstart";
         setRuntimeStatus("Booting original disk with AROS");
       }
     } catch (error) {
@@ -215,10 +349,18 @@
   function mountEmulator(config, launch) {
     pendingLaunch = launch;
     currentLaunch = launch;
+    originalProof.firmware = launch.kickstartRom
+      ? launch.kickstartRom.name
+      : "AROS Kickstart replacement";
+    originalProof.exactPlayable = false;
+    originalProof.blocker = launch.kickstartRom
+      ? "gameplay-proof-pending"
+      : "needs-rights-cleared-kickstart";
     clearPoller();
     clearLaunchTimer();
     clearDiskInsertTimers();
     runtimeReady = false;
+    setDiskMountState("idle", "runtime-loading");
     lastFrameLoadAt = 0;
     document.body.classList.remove("is-playing");
     emulatorFrameHost.textContent = "";
@@ -237,8 +379,10 @@
       runtimeReady = false;
       audioUnlocked = false;
       lastFrameLoadAt = Date.now();
+      originalProof.frameLoads += 1;
       if (!pendingLaunch && currentLaunch) {
         pendingLaunch = currentLaunch;
+        setDiskMountState("idle", "runtime-reloaded");
         setMediaStatus("Runtime restarted; original disk queued");
       }
       document.body.classList.add("is-playing");
@@ -384,9 +528,14 @@
 
     if (event.data?.msg === "render_run_state") {
       runtimeReady = true;
+      originalProof.runtimeReadyEvents += 1;
       if (!pendingLaunch) {
         setRuntimeStatus(
-          event.data.value ? "Running AROS trial" : "Runtime ready",
+          event.data.value
+            ? currentLaunch?.kickstartRom
+              ? "Running original disk"
+              : "AROS diagnostic running"
+            : "Runtime ready",
         );
         return;
       }
@@ -397,8 +546,35 @@
     if (event.data?.msg === "render_current_audio_state") {
       const audioState = event.data.value || "unknown";
       audioUnlocked = audioState === "running";
+      originalProof.audioState = audioState;
       setAudioStatus(
         audioState === "running" ? "Audio running" : `Audio ${audioState}`,
+      );
+    }
+
+    if (event.data?.msg === "scorched_original_mount") {
+      if (event.data.generation !== diskMountGeneration) {
+        return;
+      }
+
+      if (
+        event.data.state === "mounted" ||
+        event.data.state === "already-mounted"
+      ) {
+        clearDiskInsertTimers();
+        setDiskMountState(
+          event.data.state,
+          currentLaunch?.kickstartRom
+            ? "gameplay-proof-pending"
+            : "needs-rights-cleared-kickstart",
+        );
+        setMediaStatus("Original disk mounted in df0; booting");
+        return;
+      }
+
+      setDiskMountState(
+        event.data.state || "mount-unknown",
+        event.data.detail || "mount-not-complete",
       );
     }
   });
