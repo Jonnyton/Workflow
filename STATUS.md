@@ -59,14 +59,12 @@ Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db renam
 | Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin (was filed as Plus/private app 2026-04-25, blocks publish). | OpenAI workspace admin | - | host-action |
 | Memory-scope Stage 2c flag | - | 30d clean | monitoring |
 | Remove provider+DO keys from persistent uptime surfaces | `deploy/*` | host Qs answered | host->e2e |
-| Site cert flip — GitHub Pages HTTPS enforcement still blocked: 2026-05-01 recheck returned "certificate does not exist yet"; CF edge green via MCP canaries + in-app `/loop`→`/connect`/`/host` smoke. | - | - | monitoring |
+| Site cert flip — GitHub Pages HTTPS enforcement still blocked: 2026-05-01 recheck returned "certificate does not exist yet"; CF edge green via MCP canaries + in-app `/loop` to `/connect`/`/host` smoke. | - | - | monitoring |
 
 ## Next
 
 1. **Today 2026-05-01:** `/mcp-directory` is live/protocol-green; completion now means MCP Registry publish + Claude/ChatGPT directory acceptance + no-dev-mode proof + first-user evidence.
 
-2. **Active session 2026-04-27c**: dev resuming #18 (171 files unstaged, 972 LOC); dev-2 = #2 Layer-2 smoke DONE (exit 10 — module fix confirmed; heuristic loosen filed Task #7) → #3 methods-prose reframe → #4 Q6.3 platform impl; navigator = wiki sweep clean + Option C scoping rules → PLAN.md; verifier standby.
-3. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
-4. **Decision pile awaiting host (large):** primitive-set proposal §7 (10 asks) + engine substrate §7 (4 asks) + Tomás persona approval + A.1 fantasy_daemon unpack §7 (7 asks) + Phase 6 db rename (6 asks) + parked Q D (file-reading split). Plus Task #29 commons-first audit deliverables when navigator lands them next session.
-5. **No-shims-ever rule active** + **platform responsibility model** + **public-surface probes after DNS/tunnel/Worker/connector changes** (canonical: https://tinyassets.io/mcp).
-6. **BUG-028 reframe (nav 2026-04-27 evidence)**: alias-resolution at `wiki.py:409-423` is live in prod (6/8 writes succeeded 2026-04-28). 2 misroutes are CODE GAPS (BUG-003 `path.exists` wins; BUG-018 `.strip("-")` breaks trailing-hyphen) — dev-2 patching now. Not a redeploy gate.
+2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
+3. **Decision pile awaiting host (large):** primitive-set proposal section 7 (10 asks) + engine substrate section 7 (4 asks) + Tomas persona approval + A.1 fantasy_daemon unpack section 7 (7 asks) + Phase 6 db rename (6 asks) + parked Q D (file-reading split). Commons-first audit deliverables have landed.
+4. **No-shims-ever rule active** + **platform responsibility model** + **public-surface probes after DNS/tunnel/Worker/connector changes** (canonical: https://tinyassets.io/mcp).
