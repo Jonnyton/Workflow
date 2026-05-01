@@ -1,13 +1,13 @@
-const CACHE_NAME = "scorched-tanks-original-amiga-v11";
+const CACHE_NAME = "scorched-tanks-original-amiga-v12";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=boot-reset-audio",
-  "./original.js?v=boot-reset-audio",
-  "./app.js?v=boot-reset-audio",
+  "./styles.css?v=full-window-proof",
+  "./original.js?v=full-window-proof",
+  "./app.js?v=full-window-proof",
   "./compatibility.json",
   "./assets/scorched-tanks-v1.90-autostart-30582ca3.adf",
-  "./manifest.webmanifest?v=boot-reset-audio",
+  "./manifest.webmanifest?v=full-window-proof",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
 ];

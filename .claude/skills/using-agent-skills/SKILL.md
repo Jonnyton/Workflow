@@ -31,6 +31,7 @@ Task arrives
     |-- New feature / change with no spec? ----------> spec-driven-development
     |-- Have a spec, need tasks? --------------------> planning-and-task-breakdown
     |-- Implementing code? --------------------------> incremental-implementation
+    |   |-- Website edit / preview loop? -----------> website-editing
     |   |-- UI work? --------------------------------> frontend-ui-engineering
     |   |-- API / interface work? -------------------> api-and-interface-design
     |   |-- Mostly simplification / clarity? --------> code-simplification
@@ -145,6 +146,7 @@ Not every task needs every step. Bug triage might be:
 | Define | spec-driven-development | Write requirements and acceptance criteria before code |
 | Plan | planning-and-task-breakdown | Decompose work into small verifiable tasks |
 | Build | incremental-implementation | Ship thin vertical slices |
+| Build | website-editing | Edit the Workflow website with its preview and ship loop |
 | Build | context-engineering | Load the right context at the right time |
 | Build | frontend-ui-engineering | Build production-quality user interfaces |
 | Build | api-and-interface-design | Design stable interfaces and contracts |

@@ -144,6 +144,9 @@ Capture evidence with date, environment, URL, and exact build/version.
 - [ ] Input proof uses real browser events, not only internal function calls.
 - [ ] Audio proof shows user gesture, `AudioContext` running/unmuted, and
       observable runtime audio activity; use headed/manual proof when needed.
+- [ ] Emulator pages that monkey-patch browser globals can break object
+      serialization in test tools; read proof/state as JSON strings before
+      parsing in the test process.
 - [ ] Screenshots or video show before/action/after gameplay state.
 - [ ] The original/remake/fallback class is stated in the verification note.
 
