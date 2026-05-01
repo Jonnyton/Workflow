@@ -4,6 +4,7 @@
   const ADF_URL = "./assets/scorched-tanks-v1.90-autostart-30582ca3.adf";
   const HOSTED_KICKSTART_URL = "./licensed/kickstart-a500-1.3.rom";
   const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
+  const VAMIGA_RELOAD_SETTLE_MS = 1800;
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -22,10 +23,14 @@
   let installPrompt = null;
   let frame = null;
   let pollTimer = null;
+  let launchTimer = null;
+  let diskInsertTimers = [];
   let pendingLaunch = null;
   let currentLaunch = null;
   let kickstartRom = null;
   let adfBytes = null;
+  let runtimeReady = false;
+  let lastFrameLoadAt = 0;
 
   function setRuntimeStatus(text) {
     runtimeStatus.textContent = text;
@@ -105,22 +110,56 @@
     }
   }
 
+  function clearLaunchTimer() {
+    if (launchTimer) {
+      window.clearTimeout(launchTimer);
+      launchTimer = null;
+    }
+  }
+
+  function clearDiskInsertTimers() {
+    diskInsertTimers.forEach((timer) => window.clearTimeout(timer));
+    diskInsertTimers = [];
+  }
+
+  function postToRuntime(message) {
+    frame?.contentWindow?.postMessage(message, VAMIGA_ORIGIN);
+  }
+
   function startPoller() {
     clearPoller();
     pollTimer = window.setInterval(() => {
-      frame?.contentWindow?.postMessage("poll_state", VAMIGA_ORIGIN);
+      postToRuntime("poll_state");
     }, 700);
   }
 
   function insertInjectedDiskIntoDf0() {
-    frame?.contentWindow?.postMessage(
-      {
-        cmd: "script",
-        script:
-          "if (typeof insert_file === 'function' && typeof wasm_has_disk === 'function' && !wasm_has_disk('df0')) { insert_file(0); show_drive_select(false); }",
-      },
-      VAMIGA_ORIGIN,
-    );
+    postToRuntime({
+      cmd: "script",
+      script:
+        "if (typeof insert_file === 'function' && typeof wasm_has_disk === 'function' && !wasm_has_disk('df0')) { insert_file(0); show_drive_select(false); }",
+    });
+  }
+
+  function scheduleDiskInsert(delay) {
+    diskInsertTimers.push(window.setTimeout(insertInjectedDiskIntoDf0, delay));
+  }
+
+  function scheduleLaunchInjection() {
+    if (!pendingLaunch || !runtimeReady || !frame?.contentWindow) {
+      return;
+    }
+
+    clearLaunchTimer();
+    const msSinceFrameLoad = lastFrameLoadAt
+      ? Date.now() - lastFrameLoadAt
+      : 0;
+    const delay = Math.max(0, VAMIGA_RELOAD_SETTLE_MS - msSinceFrameLoad);
+    setRuntimeStatus("Runtime ready; loading original media");
+    launchTimer = window.setTimeout(() => {
+      launchTimer = null;
+      injectLaunch();
+    }, delay);
   }
 
   async function injectLaunch() {
@@ -143,9 +182,10 @@
         payload.kickstart_rom = launch.kickstartRom.bytes;
       }
 
-      frame.contentWindow.postMessage(payload, VAMIGA_ORIGIN);
-      window.setTimeout(insertInjectedDiskIntoDf0, 250);
-      window.setTimeout(insertInjectedDiskIntoDf0, 1000);
+      postToRuntime(payload);
+      clearDiskInsertTimers();
+      scheduleDiskInsert(250);
+      scheduleDiskInsert(1000);
       setMediaStatus("Original v1.90 autostart ADF assigned to df0");
       if (launch.kickstartRom) {
         setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
@@ -162,15 +202,30 @@
     pendingLaunch = launch;
     currentLaunch = launch;
     clearPoller();
+    clearLaunchTimer();
+    clearDiskInsertTimers();
+    runtimeReady = false;
+    lastFrameLoadAt = 0;
     document.body.classList.remove("is-playing");
     emulatorFrameHost.textContent = "";
     frame = document.createElement("iframe");
     frame.id = "vAmigaWeb";
     frame.title = "vAmigaWeb running Scorched Tanks";
     frame.allow = "fullscreen; gamepad; autoplay";
+    if ("credentialless" in frame) {
+      frame.credentialless = true;
+    }
     frame.src = emulatorSrc(config);
     frame.addEventListener("load", () => {
       setRuntimeStatus("Runtime booting");
+      clearLaunchTimer();
+      clearDiskInsertTimers();
+      runtimeReady = false;
+      lastFrameLoadAt = Date.now();
+      if (!pendingLaunch && currentLaunch) {
+        pendingLaunch = currentLaunch;
+        setMediaStatus("Runtime restarted; original disk queued");
+      }
       document.body.classList.add("is-playing");
       startPoller();
     });
@@ -313,12 +368,14 @@
     }
 
     if (event.data?.msg === "render_run_state") {
+      runtimeReady = true;
       if (!pendingLaunch) {
         setRuntimeStatus(
           event.data.value ? "Running AROS trial" : "Runtime ready",
         );
+        return;
       }
-      injectLaunch();
+      scheduleLaunchInjection();
     }
   });
 
