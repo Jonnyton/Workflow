@@ -156,6 +156,30 @@ def _stage(
     }
 
 
+def _recent_workflow_runs(
+    repo: str,
+    workflow_id: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+    per_page: int = 20,
+) -> list[dict[str, Any]]:
+    data = _gh_get(
+        f"/repos/{repo}/actions/workflows/{workflow_id}/runs",
+        api=api,
+        token=token,
+        timeout=timeout,
+        params={"per_page": per_page},
+    )
+    runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
+    return runs if isinstance(runs, list) else []
+
+
+def _is_neutral_skipped_run(run: dict[str, Any]) -> bool:
+    return run.get("status") == "completed" and run.get("conclusion") == "skipped"
+
+
 def _latest_workflow_run(
     repo: str,
     workflow_id: str,
@@ -164,14 +188,12 @@ def _latest_workflow_run(
     token: str | None,
     timeout: float,
 ) -> dict[str, Any] | None:
-    data = _gh_get(
-        f"/repos/{repo}/actions/workflows/{workflow_id}/runs",
-        api=api,
-        token=token,
-        timeout=timeout,
-        params={"per_page": 1},
+    runs = _recent_workflow_runs(
+        repo, workflow_id, api=api, token=token, timeout=timeout
     )
-    runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
+    for run in runs:
+        if not _is_neutral_skipped_run(run):
+            return run
     return runs[0] if runs else None
 
 
@@ -187,9 +209,16 @@ def workflow_stage(
     max_age_min: int | None,
     stale_status: str = "red",
 ) -> dict[str, Any]:
-    run = _latest_workflow_run(
+    runs = _recent_workflow_runs(
         repo, workflow_id, api=api, token=token, timeout=timeout
     )
+    skipped_runs = [candidate for candidate in runs if _is_neutral_skipped_run(candidate)]
+    run = next(
+        (candidate for candidate in runs if not _is_neutral_skipped_run(candidate)),
+        None,
+    )
+    if run is None and runs:
+        run = runs[0]
     if not run:
         return _stage(label, "red", f"{workflow_id} has no visible runs")
 
@@ -207,6 +236,9 @@ def workflow_stage(
         "conclusion": conclusion,
         "created_at": run.get("created_at"),
         "updated_at": run.get("updated_at"),
+        "ignored_skipped_run_ids": [
+            skipped.get("id") for skipped in skipped_runs if skipped is not run
+        ],
     }
 
     if status != "completed":
