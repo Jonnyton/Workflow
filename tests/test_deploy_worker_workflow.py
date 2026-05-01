@@ -192,6 +192,13 @@ def test_pull_requests_do_not_require_cloudflare_secrets():
     assert "skipping Wrangler dry-run" in dry_run.get("run", "")
 
 
+def test_live_deploy_resolves_account_id_from_zone_when_secret_missing():
+    """The API token has Zone:Read, so the workflow can derive account ID."""
+    text = _workflow_text()
+    assert "zones?name=tinyassets.io" in text
+    assert "CLOUDFLARE_ACCOUNT_ID=${account_id}" in text
+
+
 # ---------------------------------------------------------------------------
 # (e) Required secrets referenced
 # ---------------------------------------------------------------------------
