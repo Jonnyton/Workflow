@@ -50,6 +50,12 @@ on:
   schedule:
     - cron: "7,22,37,52 * * * *"
 
+concurrency:
+  # Subscription-backed writer sessions are a shared daemon lane. Queue triggers
+  # instead of overlapping writers and burning through subscription rate limits.
+  group: auto-fix-subscription-writer
+  cancel-in-progress: false
+
 permissions:
   contents: write        # create branch + push commits
   issues: write          # add labels + comments
