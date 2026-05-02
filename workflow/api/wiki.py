@@ -1363,9 +1363,16 @@ def _wiki_file_bug(
     _append_wiki_log(
         f"file_bug | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
+    # FEAT-004: per-request-id traceable trigger receipt. Created BEFORE the
+    # enqueue so a crash in the trigger helper still leaves a durable record
+    # showing a trigger was expected. Backward-compatible: the existing
+    # ``investigation`` block in the response is preserved verbatim, and the
+    # new ``trigger`` block is additive.
     investigation: dict[str, Any] = {"status": "skipped"}
+    trigger_block: dict[str, Any] | None = None
     try:
         from workflow import bug_investigation
+        from workflow.wiki import trigger_receipts as _tr
 
         frontmatter = {
             "bug_id": bug_id,
@@ -1381,12 +1388,44 @@ def _wiki_file_bug(
             "workaround": workaround,
         }
         universe_id = _default_universe()
-        request_id = bug_investigation._maybe_enqueue_investigation(
-            bug_id=bug_id,
-            frontmatter=frontmatter,
-            base_path=_universe_dir(universe_id),
-            universe_id=universe_id,
-        )
+        # Pre-write trigger receipt (status=pending). Read canonical branch_def_id
+        # from env so the receipt records what we *expected* to invoke even if the
+        # enqueue helper rejects.
+        import os as _os
+        canonical_branch_def_id = _os.environ.get(
+            "WORKFLOW_BUG_INVESTIGATION_BRANCH_DEF_ID", "",
+        ).strip() or None
+        try:
+            _receipt = _tr.create_pending(
+                request_id=bug_id,
+                request_kind=effective_kind,
+                request_page=rel_path,
+                branch_def_id=canonical_branch_def_id,
+            )
+        except Exception as _rcpt_exc:  # noqa: BLE001 - filing must survive receipt-store outage.
+            _logger_wiki.warning(
+                "file_bug trigger_receipt create failed for %s: %s", bug_id, _rcpt_exc,
+            )
+            _receipt = None
+
+        try:
+            request_id = bug_investigation._maybe_enqueue_investigation(
+                bug_id=bug_id,
+                frontmatter=frontmatter,
+                base_path=_universe_dir(universe_id),
+                universe_id=universe_id,
+            )
+        except Exception as _enq_exc:
+            # Trigger helper raised. Update receipt then re-raise into the outer
+            # except so the existing investigation = {"status": "error"} branch
+            # behavior is preserved.
+            if _receipt is not None:
+                try:
+                    _tr.mark_failed(_receipt, error=_enq_exc)
+                except Exception:  # noqa: BLE001 - last-resort, don't break filing.
+                    pass
+            raise
+
         if request_id:
             investigation_section = bug_investigation.format_investigation_comment(
                 request_id=request_id,
@@ -1398,11 +1437,27 @@ def _wiki_file_bug(
                 "status": "queued",
                 "dispatcher_request_id": request_id,
             }
+            if _receipt is not None:
+                try:
+                    _tr.mark_queued(_receipt, dispatcher_request_id=request_id)
+                except Exception:  # noqa: BLE001
+                    pass
+        else:
+            # Skipped because no canonical branch configured (env var empty
+            # or filing without bug_id). Record on the receipt for audit.
+            if _receipt is not None:
+                try:
+                    _tr.mark_skipped(_receipt, reason="no_canonical_branch")
+                except Exception:  # noqa: BLE001
+                    pass
+
+        if _receipt is not None:
+            trigger_block = _receipt.to_response()
     except Exception as exc:  # noqa: BLE001 - bug filing itself must survive trigger failure.
         _logger_wiki.warning("file_bug investigation trigger failed for %s: %s", bug_id, exc)
         investigation = {"status": "error", "error": str(exc)}
 
-    return json.dumps({
+    response_body: dict[str, Any] = {
         "path": rel_path,
         "bug_id": bug_id,
         "status": "filed",
@@ -1412,7 +1467,13 @@ def _wiki_file_bug(
         "investigation": investigation,
         "note": "Filing sent to navigator triage pipeline. "
                 f"Use `wiki action=list category={category_dir}` to view.",
-    })
+    }
+    if trigger_block is not None:
+        # FEAT-004: surface the structured trigger receipt so callers (canaries
+        # / chatbots / operators) have a per-request-id join key without log
+        # scraping. ``investigation`` is preserved above for backward compat.
+        response_body["trigger"] = trigger_block
+    return json.dumps(response_body)
 
 
 # ---------------------------------------------------------------------------
