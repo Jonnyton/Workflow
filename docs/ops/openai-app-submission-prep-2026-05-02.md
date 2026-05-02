@@ -139,9 +139,10 @@ Required before final submit:
 - Optional proof uploads if we choose to provide them: logo, screenshots, and
   demo recording URL. The dashboard says screenshots are optional for non-UI
   apps, but submission docs still list screenshots among form information.
-- Retry the real ChatGPT write-path test for `propose_workflow_goal` and
-  `submit_workflow_request` after the `/mcp-directory` goal-tool import fix is
-  live. This mutates Workflow state, so run only with action-time host approval.
+- Resolve the ChatGPT approval-card stall for `propose_workflow_goal`.
+  Direct `/mcp-directory` and `/mcp` goal writes are fixed and deployed, and
+  ChatGPT can read goals and submit requests, but goal-proposal approval cards
+  still stall after approval (BUG-034).
 - Mobile evidence for the main flows, because the OpenAI testing docs say to
   invoke the connector in ChatGPT iOS or Android apps.
 - Keep expected outputs clear and free of personal identifiers or irrelevant
@@ -200,12 +201,30 @@ Write-path attempt:
   `/mcp-directory` probe reproduced `cannot import name '_ensure_author_server_db'
   from 'workflow.api.branches'`; final write-path proof is blocked until the
   directory goal-tool fix is deployed and retested.
+- Follow-up after PR #149 deployment (`2a1651f`, deploy run 25245035290):
+  - Direct `/mcp-directory` `propose_workflow_goal` succeeded and created goal
+    `35f70887461e` (`Onboard new MCP hosts`).
+  - Direct `/mcp` `goals action=propose` also succeeded, creating
+    `975e8fbdead0` (`Workflow legacy propose probe 2026-05-02`).
+  - ChatGPT Developer Mode read proof succeeded: `Workflow Dev` found
+    `35f70887461e` by exact title.
+  - ChatGPT Developer Mode request write succeeded:
+    `submit_workflow_request` returned `req_1777701087_d215c1fa` in
+    `echoes-of-the-cosmos`.
+  - ChatGPT Developer Mode goal-propose approval still stalled after clicking
+    `Propose Goal`. A fresh chat with `Workflow Dev` attached reproduced the
+    stall; the opened tool-call payload still showed the legacy
+    `Goals`/`action: "propose"` router shape. The platform MCP Server section
+    lists the narrow `/mcp-directory` tool set, including
+    `propose_workflow_goal`, so this looks like a stale ChatGPT dev-attachment
+    or BUG-034 approval-routing issue rather than the old
+    `_ensure_author_server_db` backend failure.
 
 Not yet tested:
 
-- Positive Test Case 5, because it creates a shared/public goal proposal and a
-  queued Workflow request, and the first approved attempt exposed the live
-  `/mcp-directory` goal-tool import regression above.
+- Positive Test Case 5 is only partially proven: direct goal proposal works and
+  ChatGPT request submission works, but ChatGPT goal-proposal approval still
+  stalls after approval.
 - Negative cases 2 and 3, because the submitted prompts ask ChatGPT not to route
   unrelated email/credential/destructive work through Workflow; run them in
   Developer Mode before final submit and verify no Workflow write tool is called.

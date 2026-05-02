@@ -9,7 +9,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval` roundtrip flake: Fix B landed 16d4823; watch ≥30d.
 - [filed:2026-04-18 verified:2026-04-28] `add_canon_from_path` sensitivity: host Qs reframed by commons-first audit F3.
 - [filed:2026-04-24] Task #9 host Qs: GH Actions GROQ/GEMINI/XAI secrets + rotation e2e after deploy step.
-- **[P1 filed:2026-04-25 verified:2026-05-01]** BUG-034 ChatGPT approval stall; direct MCP needed to repair live branches.
+- **[P1 filed:2026-04-25 verified:2026-05-02]** BUG-034 ChatGPT goal-propose approval stalls; dev chat still calls legacy Goals router.
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with legacy connector fallback test.
 - **[P1 filed:2026-04-30]** Castles II run `28479d8ddfb44488` failed `provider_exhausted` at discovery; blocks branch-run proof (BUG-038).
 
@@ -22,7 +22,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence - OpenAI app draft at Submit; read paths green; write-path hit `/mcp-directory` goal import regression, fix in flight. Final blocked on legal fields, mobile, submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md, workflow/api/{market,evaluation}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/{market,evaluation}.py, tests/test_directory_server.py | action-time compliance/final-submit approval | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
+| Directory submissions + first-use evidence - #149 deployed; direct goal write + ChatGPT search/request green. Final blocked on BUG-034 propose-card stall, mobile, legal fields, submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | action-time compliance/final-submit approval | host-action |
 | Community change loop - watch/canary green 2026-05-02 05:36Z; P1a + invoke provider path live; actual proof parent `2ff26ffa401a4829`, child `ce6678fc08dd4a83` completed REVIEW_READY; next: incentive-directed pickup + stress. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | API/tests claim | monitoring |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
