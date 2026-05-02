@@ -24,8 +24,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | Directory submissions + first-use evidence - OpenAI app draft at Submit; `/mcp-directory` scan green; web read tests green; TC2 no-match copy saved. Final blocked on release notes, submit-page legal fields, write-path/mobile tests, and submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | action-time compliance/final-submit approval | host-action |
-| Community change loop - watch/canary green 2026-05-02 04:01Z; goal_pool post->queue green, but branch_task can succeed without visible requested branch run; next blocker: execution bridge. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
-| Goal-pool branch-task execution bridge - claimed task must run requested branch_def_id, not only seed default universe wrapper. | fantasy_daemon/__main__.py, STATUS.md | goal_pool pickup proof | claimed:codex-loop-uptime |
+| Community change loop - watch/canary green 2026-05-02 04:39Z; goal_pool post->queue->branch run green (`bt_1777696380033_0980b44b` -> `c048d1505c5c42a9`); next blocker: P1a receipt validator/true child invoke. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Daemon soul followups - mini-brain pytest promotion and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, workflow/api/{branches,extensions,prompts}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/{branches,extensions,prompts}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
@@ -45,7 +44,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; fix branch_task execution bridge, then P1a receipt validation plus incentive/requester-directed queueing.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; next is P1a receipt validation/true child invoke plus incentive/requester-directed queueing.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
