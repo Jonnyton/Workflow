@@ -23,7 +23,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | Directory submissions + first-use evidence - #149 deployed; direct goal write + ChatGPT search/request green. Final blocked on BUG-034 propose-card stall, mobile, legal fields, submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | action-time compliance/final-submit approval | host-action |
-| Community change loop - watch/canary green 2026-05-02 05:36Z; P1a + invoke provider path live; actual proof parent `2ff26ffa401a4829`, child `ce6678fc08dd4a83` completed REVIEW_READY; next: incentive-directed pickup + stress. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | API/tests claim | monitoring |
+| Community loop canonical invoke smoke - old proof parent `2ff26ffa401a4829` green; current parent `4da58d59ff4c4e18` spawned child `c788bb7380484196` but child is stuck at `keep_reject_gate`; diagnose/fix/rerun. | workflow/runs.py, workflow/graph_compiler.py, workflow/api/runs.py, tests/test_sub_branch_invocation.py, tests/test_wait_for_run.py, docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, MCP live branches fd5c66b1d87d/e019229850f9 | API/tests claim; Claude review when back | claimed:codex-loop-uptime-chatgpt |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | R7 closure pass — items 6+7 obviated; 1-5 cover Arc B/C; 8 by #25. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
@@ -42,7 +42,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a receipt validation is live; next is true child invoke authoring plus incentive/requester-directed queueing.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; active blocker is canonical invoke smoke parent `4da58d59ff4c4e18`/child `c788bb7380484196` stuck before REVIEW_READY.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
