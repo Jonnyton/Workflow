@@ -521,6 +521,7 @@ def extensions(
     since: str = "",
     branch_version_id: str = "",
     parent_version_id: str = "",
+    child_run_id: str = "",
     notes: str = "",
     lock_id: str = "",
     escrow_amount: int = 0,
@@ -551,6 +552,7 @@ def extensions(
     outcome_note: str = "",
     parent_branch_def_id: str = "",
     child_branch_def_id: str = "",
+    output_digest: str = "",
     contribution_kind: str = "remix",
     credit_share: float = 0.0,
     max_depth: int = 10,
@@ -572,7 +574,7 @@ def extensions(
     - Branch ops: continue_branch, fork_tree, patch_nodes.
     - Branch query: describe_branch, get_branch, list_branches, search_nodes.
     - Run (Phase 3): run_branch, get_run, list_runs, stream_run, cancel_run,
-      get_run_output.
+      get_run_output, attach_existing_child_run.
     - Run extensions: wait_for_run, resume_run, query_runs, estimate_run_cost,
       run_branch_version.
     - Surgical rollback: rollback_merge (host-only), get_rollback_history.
@@ -667,6 +669,7 @@ def extensions(
         since=since,
         branch_version_id=branch_version_id,
         parent_version_id=parent_version_id,
+        child_run_id=child_run_id,
         notes=notes,
         lock_id=lock_id,
         escrow_amount=escrow_amount,
@@ -697,6 +700,7 @@ def extensions(
         outcome_note=outcome_note,
         parent_branch_def_id=parent_branch_def_id,
         child_branch_def_id=child_branch_def_id,
+        output_digest=output_digest,
         contribution_kind=contribution_kind,
         credit_share=credit_share,
         max_depth=max_depth,
