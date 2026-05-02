@@ -219,6 +219,32 @@ Write-path attempt:
     `propose_workflow_goal`, so this looks like a stale ChatGPT dev-attachment
     or BUG-034 approval-routing issue rather than the old
     `_ensure_author_server_db` backend failure.
+- Follow-up after Platform MCP Server `Scan Tools` and `Continue` on
+  2026-05-02:
+  - Platform draft remained configured to `https://tinyassets.io/mcp-directory`
+    with the narrow tool set, including `propose_workflow_goal` and
+    `submit_workflow_request`; no legacy `Goals` tool appeared in the Platform
+    MCP Server section.
+  - Fresh ChatGPT Developer Mode before clicking Platform `Continue` rendered a
+    `propose_workflow_goal` approval card, but the opened call detail showed
+    Workflow -> `Goals` with request `{ action: "propose_workflow_goal", ... }`.
+    Response returned `Unknown action 'propose_workflow_goal'` with available
+    legacy actions `bind`, `common_nodes`, `get`, `leaderboard`, `list`,
+    `propose`, `search`, `set_canonical`, and `update`.
+  - After clicking Platform `Continue` into the Testing section, a second fresh
+    ChatGPT Developer Mode chat again rendered the `propose_workflow_goal`
+    approval card. After approval, the tool detail still showed Workflow ->
+    `Goals` with `action: "propose_workflow_goal"` and remained stuck at
+    `Access granted for Workflow` / `Thinking`; no response body appeared
+    before the browser automation timeout.
+  - Direct public canaries stayed green for both `https://tinyassets.io/mcp`
+    and `https://tinyassets.io/mcp-directory` after the hung ChatGPT attempt.
+    Direct `/mcp-directory` search did not show either post-rescan proof goal
+    title, so the ChatGPT attempts did not produce confirmed new goals.
+  - Current boundary: the app draft scan is fresh, but the ChatGPT Developer
+    Mode attachment still routes the goal approval through the legacy `Goals`
+    action wrapper. Treat this as BUG-034 / ChatGPT app-attachment routing until
+    a no-legacy tool-call proof succeeds.
 
 Not yet tested:
 
