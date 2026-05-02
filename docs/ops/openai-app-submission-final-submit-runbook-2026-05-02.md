@@ -19,6 +19,12 @@ Do not swap to the full custom connector endpoint `https://tinyassets.io/mcp`
 without regenerating `chatgpt-app-submission.json` and re-running the tool
 audit, because `/mcp` exposes the broader legacy surface.
 
+2026-05-02T15:37-07:00: ChatGPT Settings -> Apps -> `Workflow DEV` still
+points to `https://tinyassets.io/mcp`. That enabled developer app is stale for
+submission testing and returned raw legacy diagnostics in a fresh ChatGPT web
+prompt. Re-register or create the ChatGPT Developer Mode test app against
+`https://tinyassets.io/mcp-directory` before final web/mobile proof.
+
 ## Official Docs Checked
 
 Checked 2026-05-02:
@@ -79,6 +85,9 @@ Use `chatgpt-app-submission.json`.
   widget CSP domains are required for this submission packet.
 - Source regression coverage verifies packet tools match the directory source
   tool set and hints.
+- 2026-05-02T15:27-07:00 regression coverage added a direct
+  `submit_workflow_request` temp-data-dir write-path test; the directory test
+  suite now passes with 8 tests.
 
 Review-facing write boundaries:
 
@@ -102,6 +111,11 @@ Current local assets in `output/openai-submission-assets/`:
 The older failed goal screenshots were removed from this asset folder so they
 cannot be mistaken for positive proof. The historical failure record remains in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
+
+Current proof caveat: the ChatGPT web screenshots are historical and should not
+be used as final directory-safe proof until the Developer Mode app is
+re-registered to `/mcp-directory` and the web golden prompts are rerun in a
+fresh chat.
 
 ## Final Gate
 
@@ -130,6 +144,11 @@ Confirm live `get_workflow_status` from `/mcp-directory` still includes
 arrays, local filesystem paths, host account identifiers, session-boundary
 account data, or internal policy hashes.
 
+Confirm ChatGPT Settings -> Apps -> the enabled developer app for testing shows
+URL `https://tinyassets.io/mcp-directory`. If it still shows
+`https://tinyassets.io/mcp`, do not use ChatGPT web/mobile results as OpenAI
+submission proof.
+
 Confirm the OpenAI Apps domain challenge is still live:
 
 ```powershell
@@ -145,6 +164,8 @@ review.
 These remain blocked until action-time host approval:
 
 - ChatGPT mobile iOS or Android golden prompt proof.
+- ChatGPT Developer Mode re-registration to `/mcp-directory`, including the
+  custom MCP elevated-risk warning, followed by fresh ChatGPT web proof.
 - Mature/adult-content answer.
 - Publisher selector and verification assertion.
 - Compliance/legal checkboxes.

@@ -333,3 +333,14 @@ Notes:
   was already on `main`.
 - Ship condition: local worktrees gone, local + remote refs deleted, row
   removed in closeout commit.
+
+## OpenAI Final Readiness - 2026-05-02
+
+- 2026-05-02 create `../wf-openai-final-readiness` on
+  `codex/openai-final-readiness` by codex-openai-final-readiness.
+- STATUS row: OpenAI/Claude directory submission host actions.
+- Purpose: close repo-side OpenAI/Claude onboarding submission evidence gaps
+  before final host review.
+- Ship condition: directory-safe source and live MCP evidence are current; only
+  real mobile, legal/publisher, upload, Claude form, and final submit approvals
+  remain action-time gates.
