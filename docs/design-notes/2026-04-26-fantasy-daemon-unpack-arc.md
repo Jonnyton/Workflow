@@ -228,8 +228,8 @@ The largest risk in the arc.
 
 ### Hard dependencies (must ship first)
 
-- **Arc B Phase 2 (test caller migration) SHIPPED** — `tests/test_api.py` etc. need to be retarget-able. If Arc B Phase 2 hasn't landed, this arc's Phase 1 must include a sub-pass migrating those tests.
-- **Arc B Phase 3 (4-file deletion) SHIPPED** — `_rename_compat.py` infrastructure must die first; this arc's Phase 4 shim deletion can't run while Arc B's PEP-451 alias finder is still installed.
+- **Arc B Phase 2 (test caller migration) — satisfied.** Arc B Phase 2 has shipped; this arc no longer needs a sub-pass for those test callers.
+- **Arc B Phase 3 (4-file deletion) — satisfied.** Arc B Phase 3 has shipped; this arc's Phase 4 shim deletion no longer has to wait on Arc B's PEP-451 alias finder.
 
 ### Soft dependencies (nice-to-have but not blocking)
 
@@ -246,8 +246,8 @@ The largest risk in the arc.
 ```
 ... (current arcs in flight) ...
   → Task #18 retarget sweep SHIP
-  → Arc B Phase 2 SHIP (test caller migration)
-  → Arc B Phase 3 SHIP (4-file deletion + smoke)
+  → Arc B Phase 2 SHIP (test caller migration) [done]
+  → Arc B Phase 3 SHIP (4-file deletion + smoke) [done]
   → Arc C Phase 1+2+3 SHIP (env-var deprecation deletion)
   → Phase 6 SHIP (.author_server.db rename)
   → THIS ARC Phase 1 (api.py move)
@@ -263,7 +263,7 @@ This arc closes **the rename's package layer** (after Arc B closes import-path l
 ## 7. Decision asks for the lead → host
 
 1. **Approve the arc?** Recommend yes — completes the rename arc at the package layer; aligns with `feedback_no_shims_ever`. Alternative is "leave fantasy_daemon/ as a 118-shim alias package indefinitely" — viable but inconsistent with the rule.
-2. **Confirm sequencing post-Arc B/C/Phase 6?** This arc has hard deps on Arc B Phase 2+3.
+2. **Confirm sequencing post-Arc C/Phase 6?** Arc B Phase 2+3 are now satisfied; this arc still waits on Arc C + Phase 6 if we want every rename layer closed before package deletion.
 3. **Pick the new home for `api.py`:** `workflow/http_api.py` (top-level workflow module — recommend) or `workflow/api/http.py` (under api/ subpackage). Recommendation: `workflow/http_api.py` — avoids `workflow/api/api.py` collision with the `workflow/api/` MCP-tool subpackage which exports `extensions`, `branches`, `runs`, etc.
 4. **Pick `__main__.py` hoist target:**
    - Option A: hoist into `workflow/__main__.py` directly (single file, ~3000 LOC after merge)
@@ -281,8 +281,8 @@ This arc closes **the rename's package layer** (after Arc B closes import-path l
 ## 8. Cross-references
 
 - `docs/audits/2026-04-26-architecture-edges-sweep.md` §A.1 — original finding (122-file count + initial multi-week framing). This note REFINES that framing — the count was misleading; arc is ~6-9h dev work.
-- `docs/audits/2026-04-27-project-wide-shim-audit.md` Arc B §9 — `_rename_compat.py` infrastructure deletion (Phase 5 of rename); hard-deps on Arc B Phase 3 ship.
-- `docs/exec-plans/active/2026-04-26-decomp-arc-b-prep.md` — Arc B prep; this note is "post-Arc-B Phase 6 of the rename" in spirit (the rename has 4 layers; Arc B is import path, Arc C is env-var, Phase 6 is data, this is package).
+- `docs/audits/2026-04-27-project-wide-shim-audit.md` Arc B §9 — `_rename_compat.py` infrastructure deletion (Phase 5 of rename); Arc B Phase 3 has shipped.
+- `docs/exec-plans/completed/2026-04-26-decomp-arc-b-prep.md` — completed Arc B prep; this note is "post-Arc-B Phase 6 of the rename" in spirit (the rename has 4 layers; Arc B is import path, Arc C is env-var, Phase 6 is data, this is package).
 - `docs/design-notes/2026-04-27-author-server-db-filename-migration.md` — Phase 6 (data rename); this arc is Phase 7 (package rename) in the same overall rename arc.
 - `feedback_no_shims_ever` (memory) — the policy this arc serves at the package layer.
 - `feedback_no_destructive_git_ops_without_asking` — `git rm -r fantasy_daemon/` requires explicit host approval per §7.

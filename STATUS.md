@@ -50,7 +50,6 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Memory-scope Stage 2c flag — watch started 2026-04-16; earliest flip 2026-05-16. | `docs/exec-plans/active/2026-04-27-memory-scope-stage-2c-flip-prep.md` | date gate | monitoring |
 | Provider/DO key exposure audit — no concrete tokens found 2026-05-01; remaining DO refs are GH secret names for DR/P0 workflows. | `deploy/*`, `.github/workflows/{dr-drill,p0-outage-triage}.yml` | host decision | host-decision |
 | Site cert flip — GitHub Pages still says "certificate does not exist yet"; CF edge green via MCP canaries + in-app smoke. | - | - | monitoring |
-| Refresh active design-note Arc B deps — Arc B Phase 2/3 shipped; Arc C/Phase 6 remain. | STATUS.md, docs/design-notes/2026-04-26-fantasy-daemon-unpack-arc.md, docs/design-notes/2026-04-27-host-resident-private-data-design.md | Arc B completed | claimed:codex-gpt5-desktop |
 
 ## Next
 
