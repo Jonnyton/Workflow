@@ -354,10 +354,10 @@ Progress snapshot, 2026-05-01:
   returns the 11 directory tools.
 - Submission packets branch-ready: `docs/ops/mcp-directory-submission-packet.md`
   and `chatgpt-app-submission.json`.
-- Code/deploy gate complete for both endpoints. Product rollout is still not
-  complete until the MCP Registry draft is published by an authorized
-  GitHub/registry account, Claude/OpenAI submissions are accepted, and
-  first-use evidence is recorded.
+- Code/deploy gate complete for both endpoints, and MCP Registry publication
+  landed on 2026-05-01 as `io.github.Jonnyton/workflow-universe-server`.
+  Product rollout is still not complete until Claude/OpenAI submissions are
+  accepted and first-use evidence is recorded.
 
 ### Card 1: Publish Host Chooser Copy
 
