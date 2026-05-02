@@ -86,7 +86,7 @@ spec" or "planned", not "works".
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
 | VS Code / GitHub Copilot | Developer/IDE user | planned | Verify `.vscode/mcp.json` or user MCP config with Copilot Chat |
-| Codex CLI/IDE | Developer/IDE user | registration-path verified; tool-call pending | 2026-05-02 proof: `docs/ops/mcp-codex-registration-proof-2026-05-02.md`; Codex CLI 0.104.0 wrote isolated Streamable HTTP config for `https://tinyassets.io/mcp-directory`; needs Codex tool-list plus read call before public verified copy |
+| Codex CLI/IDE | Developer/IDE user | verified: Codex CLI 0.104.0 | 2026-05-02 proofs: `docs/ops/mcp-codex-registration-proof-2026-05-02.md` and `docs/ops/mcp-codex-runtime-proof-2026-05-02.md`; Codex CLI listed directory tools from `https://tinyassets.io/mcp-directory` and called `get_workflow_status`, returning `"schema_version": 1`; CLI 0.104.0 needed `-m gpt-5.2` because the configured default `gpt-5.5` requires a newer CLI |
 | Cursor | Developer/IDE user | registration-path verified; tool-call pending | 2026-05-01 proof: `docs/ops/mcp-cursor-registration-proof-2026-05-01.md`; Cursor 3.2.16 CLI wrote isolated Streamable HTTP config for `https://tinyassets.io/mcp-directory`; needs UI/agent tool-list plus read call before public verified copy |
 | Gemini CLI | Developer/CLI user | planned | Verify `settings.json`/command path and a safe tool call |
 | Microsoft Copilot Studio | Enterprise maker/admin | planned | Build custom MCP connector/Power Platform package or OpenAPI fallback |

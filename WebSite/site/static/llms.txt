@@ -46,9 +46,12 @@ surface a chatbot uses when the user's work needs to survive the current chat.
   developer mode, region, and admin approval.
 - Open WebUI and LibreChat are verified local Docker/self-hosted paths when
   configured against https://tinyassets.io/mcp-directory.
-- LM Studio, Jan, OpenClaw/channel gateways, IDE hosts, and custom MCP hosts
-  remain planned or compatible-by-spec until the proof registry verifies that
-  host's MCP path.
+- Codex CLI 0.104.0 is verified as a developer CLI path when configured
+  against https://tinyassets.io/mcp-directory; use a CLI-supported model if
+  the configured default model is newer than the installed Codex CLI supports.
+- LM Studio, Jan, OpenClaw/channel gateways, VS Code/Copilot, Cursor, Gemini
+  CLI, and custom MCP hosts remain planned, registration-only, or
+  compatible-by-spec until the proof registry verifies that host's MCP path.
 - If a host has not been verified, say "compatible by spec, not verified yet."
 
 ## First Prompts

@@ -3,7 +3,7 @@
 Date: 2026-05-02
 Host: Codex CLI 0.104.0 on Windows x64
 Endpoint: `https://tinyassets.io/mcp-directory`
-Status: registration path verified; Codex tool-list/read-call proof still pending
+Status: registration path verified; runtime proof landed separately
 
 ## What This Proves
 
@@ -16,9 +16,8 @@ expected isolated configuration without mutating the user's real
 url = "https://tinyassets.io/mcp-directory"
 ```
 
-This is not yet a full Codex support claim. A full support claim still needs a
-Codex runtime/tool session to list Workflow tools and complete one safe
-read-only call.
+This file proves registration/config write behavior only. The follow-up runtime
+proof is `docs/ops/mcp-codex-runtime-proof-2026-05-02.md`.
 
 ## Commands
 
@@ -104,13 +103,9 @@ Output:
 }
 ```
 
-## Remaining Proof
+## Runtime Proof
 
-Before public copy says Codex is verified, run a Codex session with this MCP
-server enabled and record:
-
-- Workflow appears in the Codex MCP tool surface.
-- Codex lists Workflow tools from `https://tinyassets.io/mcp-directory`.
-- Codex completes one safe read-only call, preferably `get_workflow_status`.
-- The trace includes the Codex version, isolated config, transport, and visible
-  result.
+Codex CLI 0.104.0 later listed Workflow tools from
+`https://tinyassets.io/mcp-directory` and completed
+`get_workflow_status({})`, returning `"schema_version": 1`. See
+`docs/ops/mcp-codex-runtime-proof-2026-05-02.md`.
