@@ -99,8 +99,11 @@ def test_directory_tools_have_explicit_submission_annotations() -> None:
     tools = {tool.name: tool for tool in _list_tools()}
 
     for tool_name, expected in EXPECTED_TOOLS.items():
-        annotations = tools[tool_name].annotations
+        tool = tools[tool_name]
+        assert tool.title, f"{tool_name} missing tool title"
+        annotations = tool.annotations
         assert annotations is not None, f"{tool_name} missing annotations"
+        assert annotations.title, f"{tool_name} missing annotation title"
         for hint_name, expected_value in expected.items():
             assert getattr(annotations, hint_name) is expected_value, (
                 f"{tool_name}.{hint_name} must be {expected_value}"
