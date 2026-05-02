@@ -138,9 +138,10 @@ Recorded prior dashboard state from 2026-05-02:
 - Tool justifications and test cases were entered from
   `chatgpt-app-submission.json`.
 - 2026-05-02 in-app browser inspection found `tinyassets.io` domain
-  verification still pending. This branch publishes the required
-  `/.well-known/openai-apps-challenge` file; dashboard `Verify Domain` remains
-  an action-time host approval.
+  verification still pending. PR #204 published the required
+  `/.well-known/openai-apps-challenge` file and deploy-site run
+  `25262547528` passed; dashboard `Verify Domain` remains an action-time host
+  approval.
 - Final submit page was not completed.
 
 Not yet complete:
@@ -257,3 +258,22 @@ Suggested release notes:
   `/legal#privacy` desktop/mobile after the mobile URL-fit fix.
 - In-app browser screenshot captured ChatGPT web goal success with goal id
   `20e2339c82e3` and `Called tool was propose_workflow_goal: yes`.
+
+2026-05-02T14:40-07:00 OpenAI dashboard/domain closeout:
+
+- PR #204 merged as `361357b`; deploy-site run `25262547528` passed.
+- `https://tinyassets.io/.well-known/openai-apps-challenge` returned the
+  OpenAI token.
+- OpenAI dashboard still showed `Domain not verified`; click `Verify Domain`
+  only with action-time host approval.
+- Dashboard Testing section was populated with 5 positive and 3 negative cases.
+- Submit section still had release notes empty, publisher selector unset,
+  compliance checkboxes unchecked, mature-content radio unset, and final
+  `Submit for Review` untouched.
+
+2026-05-02T14:44-07:00 Claude.ai in-app browser proof:
+
+- Claude.ai chat `3959f3de-0244-4488-aa24-87a396e465c2` used the Workflow
+  connector from a naive read-only prompt and returned daemon status.
+- Screenshot:
+  `output/openai-submission-assets/claude-ai-workflow-connector-status-2026-05-02.png`.

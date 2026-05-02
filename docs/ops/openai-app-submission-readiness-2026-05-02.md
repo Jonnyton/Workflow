@@ -45,8 +45,8 @@ Source packet is review-aligned and deployed, ChatGPT web proof is clean, and
 the repo-side legal/asset closeout has landed. Final submission should wait for
 the OpenAI-specific blockers below:
 
-1. This domain-verification branch must land and the OpenAI dashboard must show
-   `tinyassets.io` verified.
+1. OpenAI dashboard `Verify Domain` must be clicked and show `tinyassets.io`
+   verified.
 2. ChatGPT mobile must complete the main read/write flows.
 3. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
@@ -136,7 +136,7 @@ Closed repo-side in `codex/onboarding-close-gaps` on
   `path` keys.
 - `npm run check` and `npm run build` passed in `WebSite/site`.
 
-Discovered 2026-05-02T15:00-07:00 during in-app browser dashboard review:
+Discovered 2026-05-02T14:35-07:00 during in-app browser dashboard review:
 
 - OpenAI Apps draft still showed `Domain not verified` for `tinyassets.io`.
 - Required challenge URL:
@@ -144,6 +144,26 @@ Discovered 2026-05-02T15:00-07:00 during in-app browser dashboard review:
 - Branch `codex/openai-domain-verification` publishes the challenge file.
 - Dashboard `Verify Domain` remains blocked on action-time host approval after
   the challenge URL is live.
+
+Closed 2026-05-02T14:40-07:00:
+
+- PR #204 merged to `main` at `361357b`.
+- Deploy-site run `25262547528` passed.
+- `https://tinyassets.io/.well-known/openai-apps-challenge` returned the
+  OpenAI token.
+- Dashboard `Verify Domain` still requires action-time host approval.
+- In-app browser inspection confirmed the Submit section still needs release
+  notes, publisher selector, compliance checkboxes, mature-content answer, and
+  final `Submit for Review`.
+
+Parallel Claude gap narrowed 2026-05-02T14:44-07:00:
+
+- Claude.ai in-app browser read-only proof succeeded in chat
+  `3959f3de-0244-4488-aa24-87a396e465c2`.
+- Prompt used naive connector language and Claude returned Workflow daemon
+  status after loading tools.
+- This closes the fresh rendered Claude read proof; Claude directory form
+  contact/org fields and final submit remain action-time host gates.
 
 ## Tool Hint Audit
 

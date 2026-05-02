@@ -243,3 +243,7 @@ Notes:
   `tinyassets.io` and record the updated submission gate.
 - Ship condition: challenge file is live and dashboard Verify Domain succeeds
   after action-time approval.
+- 2026-05-02 reuse same worktree on
+  `codex/onboarding-browser-proof-foldback` after PR #204 merged.
+- Purpose: fold back live challenge proof and Claude.ai rendered read proof.
+- Ship condition: STATUS/docs leave only true host action gates.
