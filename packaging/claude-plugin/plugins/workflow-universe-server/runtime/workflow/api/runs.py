@@ -1,16 +1,16 @@
 """Run-execution subsystem — extracted from workflow/universe_server.py
 (Task #11 — decomp Step 4).
 
-Contains the run dispatcher (_RUN_ACTIONS), 15 action handlers, and the
+Contains the run dispatcher (_RUN_ACTIONS), 16 action handlers, and the
 failure-classification taxonomy. The MCP tool registration stays in
 ``workflow/universe_server.py`` (Pattern A2 from the decomp plan); this
 module is plain functions consumed via the ``extensions()`` MCP tool.
 
 Public surface (back-compat re-exported via ``workflow.universe_server``):
-    _RUN_ACTIONS               : action dispatch table (15 entries)
+    _RUN_ACTIONS               : action dispatch table (16 entries)
     _RUN_WRITE_ACTIONS         : frozenset of write actions for ledger gating
     _dispatch_run_action       : ledger-aware action dispatcher
-    _action_*                  : 15 individual handlers
+    _action_*                  : 16 individual handlers
     _classify_run_error        : failure-class router (also test-imported)
     _classify_run_outcome_error: outcome-error parser (also test-imported)
     _ensure_runs_recovery      : startup-recovery idempotent gate
@@ -881,6 +881,46 @@ def _action_get_run_output(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_attach_existing_child_run(kwargs: dict[str, Any]) -> str:
+    """Attach a completed child run receipt to a waiting parent run."""
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.runs import ChildRunAttachmentError, attach_existing_child_run
+
+    parent_run_id = kwargs.get("run_id", "").strip()
+    child_run_id = kwargs.get("child_run_id", "").strip()
+    child_branch_def_id = kwargs.get("child_branch_def_id", "").strip()
+    output_digest = kwargs.get("output_digest", "").strip()
+
+    try:
+        result = attach_existing_child_run(
+            _base_path(),
+            parent_run_id=parent_run_id,
+            child_run_id=child_run_id,
+            child_branch_def_id=child_branch_def_id,
+            output_digest=output_digest,
+            actor=_current_actor(),
+        )
+    except ChildRunAttachmentError as exc:
+        payload: dict[str, Any] = {
+            "error": str(exc),
+            "error_code": exc.code,
+        }
+        payload.update(exc.details)
+        return json.dumps(payload, default=str)
+
+    text = (
+        "**Child receipt attached.** "
+        f"Parent run `{result['parent_run_id']}` now references child run "
+        f"`{result['child_run_id']}` via `{result['stable_evidence_handle']}`. "
+        "This is a receipt validation path only."
+    )
+    return json.dumps({
+        "text": text,
+        "run_id": result["parent_run_id"],
+        **result,
+    }, default=str)
+
+
 def _action_resume_run(kwargs: dict[str, Any]) -> str:
     """Resume an INTERRUPTED run from its SqliteSaver checkpoint.
 
@@ -1448,6 +1488,7 @@ _RUN_ACTIONS: dict[str, Any] = {
     "wait_for_run": _action_wait_for_run,
     "cancel_run": _action_cancel_run,
     "get_run_output": _action_get_run_output,
+    "attach_existing_child_run": _action_attach_existing_child_run,
     "resume_run": _action_resume_run,
     "estimate_run_cost": _action_estimate_run_cost,
     "query_runs": _action_query_runs,
@@ -1459,7 +1500,7 @@ _RUN_ACTIONS: dict[str, Any] = {
 
 _RUN_WRITE_ACTIONS: frozenset[str] = frozenset(
     {"run_branch", "run_branch_version", "cancel_run", "resume_run",
-     "rollback_merge"}
+     "rollback_merge", "attach_existing_child_run"}
 )
 
 
