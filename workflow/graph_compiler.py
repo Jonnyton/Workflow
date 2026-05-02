@@ -1381,6 +1381,7 @@ def _build_invoke_branch_node(
     *,
     base_path: str | Path,
     event_sink: Callable[..., None] | None,
+    provider_call: Callable[..., str] | None = None,
     depth: int = 0,
     parent_run_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -1447,6 +1448,7 @@ def _build_invoke_branch_node(
                 outcome = execute_branch(
                     _base, branch=child_branch, inputs=child_inputs,
                     actor=actor_arg,
+                    provider_call=provider_call,
                 )
                 if outcome.status == "completed":
                     try:
@@ -1493,6 +1495,7 @@ def _build_invoke_branch_node(
             outcome = execute_branch_async(
                 _base, branch=child_branch, inputs=child_inputs,
                 actor=actor_arg,
+                provider_call=provider_call,
                 _invocation_depth=depth + 1,
             )
             # async: write the child run_id into the first output_mapping target.
@@ -1512,6 +1515,7 @@ def _build_invoke_branch_version_node(
     *,
     base_path: str | Path,
     event_sink: Callable[..., None] | None,
+    provider_call: Callable[..., str] | None = None,
     depth: int = 0,
     parent_run_id: str = "",
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -1599,6 +1603,7 @@ def _build_invoke_branch_version_node(
                     branch_version_id=child_branch_version_id,
                     inputs=child_inputs,
                     actor=actor_arg,
+                    provider_call=provider_call,
                     _invocation_depth=depth + 1,
                 )
                 # Block until the child terminates; harvest its output dict.
@@ -1655,6 +1660,7 @@ def _build_invoke_branch_version_node(
                 branch_version_id=child_branch_version_id,
                 inputs=child_inputs,
                 actor=actor_arg,
+                provider_call=provider_call,
                 _invocation_depth=depth + 1,
             )
             # design_used emit deferred to await on success (mirrors
@@ -1778,6 +1784,7 @@ def _build_node(
             )
         inner = _build_invoke_branch_node(
             node, base_path=base_path, event_sink=event_sink,
+            provider_call=provider_call,
             parent_run_id=parent_run_id,
         )
         return _wrap_with_checkpoints(inner, node, event_sink)
@@ -1789,6 +1796,7 @@ def _build_node(
             )
         inner = _build_invoke_branch_version_node(
             node, base_path=base_path, event_sink=event_sink,
+            provider_call=provider_call,
             parent_run_id=parent_run_id,
         )
         return _wrap_with_checkpoints(inner, node, event_sink)
