@@ -52,7 +52,10 @@ Submission implications:
 - Support: `https://tinyassets.io/legal#contact` or `ops@tinyassets.io`
 - Privacy policy: `https://tinyassets.io/legal#privacy`
 - Terms: `https://tinyassets.io/legal#terms`
-- Domain verification: `https://tinyassets.io/.well-known/openai-apps-challenge`
+- Domain verification: `Domain verified` in the OpenAI dashboard on
+  2026-05-02T14:50-07:00; keep
+  `https://tinyassets.io/.well-known/openai-apps-challenge` live while under
+  review.
 - MCP Server URL: `https://tinyassets.io/mcp-directory`
 - Authentication: `No Auth`
 - Logo: `assets/brand/workflow-logo-icon.png` (1024x1024 PNG)
@@ -127,14 +130,15 @@ Confirm live `get_workflow_status` from `/mcp-directory` still includes
 arrays, local filesystem paths, host account identifiers, session-boundary
 account data, or internal policy hashes.
 
-Confirm the OpenAI Apps domain challenge is live:
+Confirm the OpenAI Apps domain challenge is still live:
 
 ```powershell
 Invoke-WebRequest https://tinyassets.io/.well-known/openai-apps-challenge
 ```
 
-Then click `Verify Domain` in the OpenAI Apps dashboard only with action-time
-host approval.
+Dashboard domain verification is already complete as of
+2026-05-02T14:50-07:00; do not rotate or remove the challenge before final
+review.
 
 ## Host-Only Answers
 
