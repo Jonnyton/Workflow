@@ -333,7 +333,12 @@ def _run_branch_task_producers_if_enabled(universe_path: Path) -> int:
 
 
 def _try_dispatcher_pick(
-    universe_path: Path, daemon_id: str,
+    universe_path: Path,
+    daemon_id: str,
+    *,
+    domain_claims: list[str] | None = None,
+    claim_proofs: list[str] | None = None,
+    borrowed_role_context_ids: list[str] | None = None,
 ) -> tuple[Any | None, dict[str, Any]]:
     """Phase F wire-up (preflight §4.10). Call the dispatcher, claim
     the picked task, return ``(claimed_task, inputs_merge)``.
@@ -360,10 +365,31 @@ def _try_dispatcher_pick(
         if not _workflow_unified_execution_enabled():
             return None, {}
         cfg = load_dispatcher_config(universe_path)
+        if cfg.daemon_id and cfg.daemon_id != daemon_id:
+            logger.warning(
+                "dispatcher_pick: daemon_id mismatch config=%s runtime=%s",
+                cfg.daemon_id, daemon_id,
+            )
+            return None, {}
+        cfg.daemon_id = daemon_id
+        if domain_claims and not cfg.domain_claims:
+            cfg.domain_claims = list(domain_claims)
+        if claim_proofs and not cfg.claim_proofs:
+            cfg.claim_proofs = list(claim_proofs)
+        if borrowed_role_context_ids and not cfg.borrowed_role_context_ids:
+            cfg.borrowed_role_context_ids = list(borrowed_role_context_ids)
         picked = select_next_task(universe_path, config=cfg)
         if picked is None:
             return None, {}
-        claimed = claim_task(universe_path, picked.branch_task_id, daemon_id)
+        claimed = claim_task(
+            universe_path,
+            picked.branch_task_id,
+            daemon_id,
+            claimer_daemon_id=cfg.daemon_id,
+            domain_claims=cfg.domain_claims,
+            claim_proofs=cfg.claim_proofs,
+            borrowed_role_context_ids=cfg.borrowed_role_context_ids,
+        )
         if claimed is None:
             logger.info(
                 "dispatcher_pick: claim_lost_to_cancel %s",
@@ -1232,7 +1258,9 @@ class DaemonController:
                 loop_daemon_context.get("has_soul", False),
             )
             claimed_task, claimed_inputs = _try_dispatcher_pick(
-                output_dir, daemon_id,
+                output_dir,
+                daemon_id,
+                domain_claims=loop_daemon_context.get("domain_claims", []),
             )
             claimed_failed_reason = ""
             cancel_requested_during_run = False

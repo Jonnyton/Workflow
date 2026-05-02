@@ -30,7 +30,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.branch_tasks import BranchTask, append_task, read_queue
+from workflow.branch_tasks import (
+    BranchTask,
+    append_task,
+    claim_eligibility_failure,
+    read_queue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,10 @@ class DispatcherConfig:
     goal_affinity_coefficient: float = 0.0
     cost_penalty_coefficient: float = 0.0
     served_llm_type: str = ""
+    daemon_id: str = ""
+    domain_claims: list[str] = field(default_factory=list)
+    claim_proofs: list[str] = field(default_factory=list)
+    borrowed_role_context_ids: list[str] = field(default_factory=list)
 
     def tier_enabled(self, trigger_source: str) -> bool:
         if trigger_source in {"host_request", "owner_queued"}:
@@ -270,6 +279,15 @@ def select_next_task(
         # Request-type filter: only claim types this daemon prefers.
         if not prefers_request_type(task.request_type):
             continue
+        if claim_eligibility_failure(
+            task,
+            claimer=config.daemon_id,
+            claimer_daemon_id=config.daemon_id,
+            domain_claims=config.domain_claims,
+            claim_proofs=config.claim_proofs,
+            borrowed_role_context_ids=config.borrowed_role_context_ids,
+        ):
+            continue
         s = score_task(task, now_iso=now, config=config)
         eligible.append((s, task))
     if not eligible:
@@ -321,10 +339,15 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
         "recency_half_life_seconds", "bid_coefficient",
         "bid_term_cap",
         "goal_affinity_coefficient", "cost_penalty_coefficient",
-        "served_llm_type",
+        "served_llm_type", "daemon_id",
     ):
         if key in data:
             kwargs[key] = data[key]
+    for key in (
+        "domain_claims", "claim_proofs", "borrowed_role_context_ids",
+    ):
+        if key in data and isinstance(data[key], list):
+            kwargs[key] = [str(item).strip() for item in data[key] if str(item).strip()]
     if "tier_weights" in data and isinstance(data["tier_weights"], dict):
         weights = dict(_DEFAULT_TIER_WEIGHTS)
         for k, v in data["tier_weights"].items():

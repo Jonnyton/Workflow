@@ -87,6 +87,9 @@ class BranchTask:
     goal_id: str = ""
     required_llm_type: str = ""
     directed_daemon_id: str = ""
+    required_domain_claims: list[str] = field(default_factory=list)
+    required_claim_proofs: list[str] = field(default_factory=list)
+    borrowed_role_context_id: str = ""
     evidence_url: str = ""
     error: str = ""
     cancel_requested: bool = False
@@ -231,11 +234,59 @@ def append_task(universe_path: Path, task: BranchTask) -> None:
         _write_raw(qp, raw)
 
 
+def _normalize_tokens(values: list[str] | None) -> set[str]:
+    if not values:
+        return set()
+    return {str(value).strip() for value in values if str(value).strip()}
+
+
+def claim_eligibility_failure(
+    task: BranchTask,
+    *,
+    claimer: str,
+    claimer_daemon_id: str = "",
+    domain_claims: list[str] | None = None,
+    claim_proofs: list[str] | None = None,
+    borrowed_role_context_ids: list[str] | None = None,
+) -> str:
+    """Return a machine-readable reason if this claimer cannot take task.
+
+    Empty string means eligible. This is intentionally separate from scoring:
+    claim-time identity, expertise, and proof requirements are hard filters.
+    """
+    claimed_identity = (claimer_daemon_id or claimer).strip()
+    directed = task.directed_daemon_id.strip()
+    if directed and claimed_identity != directed:
+        return "directed_daemon_mismatch"
+
+    required_domains = _normalize_tokens(task.required_domain_claims)
+    if required_domains:
+        domains = _normalize_tokens(domain_claims)
+        if not required_domains.issubset(domains):
+            borrowed = task.borrowed_role_context_id.strip()
+            borrowed_roles = _normalize_tokens(borrowed_role_context_ids)
+            if not borrowed or borrowed not in borrowed_roles:
+                return "missing_domain_claims"
+
+    required_proofs = _normalize_tokens(task.required_claim_proofs)
+    if required_proofs and not required_proofs.issubset(_normalize_tokens(claim_proofs)):
+        return "missing_claim_proofs"
+
+    return ""
+
+
 def claim_task(
-    universe_path: Path, task_id: str, claimer: str,
+    universe_path: Path,
+    task_id: str,
+    claimer: str,
+    *,
+    claimer_daemon_id: str = "",
+    domain_claims: list[str] | None = None,
+    claim_proofs: list[str] | None = None,
+    borrowed_role_context_ids: list[str] | None = None,
 ) -> BranchTask | None:
     """File-locked claim. Returns claimed task, or None if already
-    claimed / missing / not pending.
+    claimed / missing / not pending / ineligible.
     """
     qp = queue_path(universe_path)
     with _file_lock(universe_path):
@@ -246,6 +297,16 @@ def claim_task(
             if row.get("branch_task_id") != task_id:
                 continue
             if row.get("status") != "pending":
+                return None
+            task = BranchTask.from_dict(row)
+            if claim_eligibility_failure(
+                task,
+                claimer=claimer,
+                claimer_daemon_id=claimer_daemon_id,
+                domain_claims=domain_claims,
+                claim_proofs=claim_proofs,
+                borrowed_role_context_ids=borrowed_role_context_ids,
+            ):
                 return None
             row["status"] = "running"
             row["claimed_by"] = claimer
