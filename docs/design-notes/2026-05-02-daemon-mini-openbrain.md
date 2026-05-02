@@ -332,8 +332,8 @@ The first implementation adds:
 
 1. Focused pytest coverage landed in `tests/test_daemon_brain.py`; the smoke
    script remains as an operator CLI proof.
-2. Mirror the new runtime module into the packaged Claude plugin after #18
-   releases the mirror tree.
+2. Plugin mirror parity is green; `workflow/daemon_brain.py` is present in the
+   packaged Claude plugin runtime.
 3. Expose the minimal daemon-owned tool/API surface.
 4. Add a host review/editor surface for memory inspection and correction.
 5. Add memory quality evals that replay runs with and without selected memory
