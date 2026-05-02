@@ -1,7 +1,7 @@
 # Patch Request Incentives And Requester-Directed Daemons
 
 Date: 2026-05-01
-Status: accepted direction; implementation blocked by #18 and BUG-045/P1a
+Status: accepted direction; v0 pickup-signal routing implemented 2026-05-02
 
 ## Summary
 
@@ -61,6 +61,25 @@ Expected implementation homes:
 - `workflow/api/runs.py` / `workflow/universe_server.py` only where run/attach
   evidence is needed after BUG-045/P1a.
 
+## V0 Implementation Notes
+
+Implemented v0 keeps incentives deliberately small:
+
+- `universe action=submit_request` accepts `pickup_incentive`,
+  `directed_daemon_id`, and `directed_daemon_instruction`.
+- Non-host `priority_weight` is still clamped to `0.0`; incentives use a
+  separate capped `pickup_signal_weight` so they can rank ahead of comparable
+  user requests without crossing host/owner tiers.
+- The branch-task queue exposes `pickup_signal_weight` and
+  `directed_daemon_id`; dispatcher scoring caps pickup signal at `5.0`.
+- Work-target materialization preserves incentive and directed-daemon metadata
+  and ranks incentivized/directed request targets ahead of comparable plain
+  request targets.
+- Requester-directed daemon routing validates that the requester owns or is
+  delegated to the daemon and records `scope=proposal_only`.
+- Every stored/request response carries the authority boundary:
+  pickup priority may change; acceptance, release, and merge may not.
+
 ## Evidence
 
 - Public lab smoke `b2a2ca326a174898` completed on 2026-05-01 after storage
@@ -73,11 +92,10 @@ Expected implementation homes:
 
 ## Implementation Tests
 
-- Incentivized request can be claimed earlier by eligible daemons.
-- Incentive does not alter acceptance, release, merge, or moderation gates.
-- Requester-directed daemon can produce a proposal/run for the specified patch.
-- Requester-directed daemon output still requires normal review/gate evidence.
-- Audit log records incentive terms and directed daemon provenance.
-- Same request with no incentive still remains claimable through the normal
-  queue.
-- Conflicting incentive/directed-daemon updates are rejected or versioned.
+- `tests/test_patch_request_incentives.py` covers incentivized request pickup
+  score, authority-boundary fields, target materialization/ranking, and
+  requester-directed daemon ownership checks.
+- Existing `tests/test_phase_e_dispatcher.py` still proves non-host
+  `priority_weight` is clamped.
+- Incentive/directed-daemon output still requires normal review/gate evidence;
+  v0 only routes pickup and proposal work.

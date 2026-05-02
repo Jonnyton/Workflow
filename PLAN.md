@@ -427,6 +427,12 @@ specific patch request to speed up their private/community iteration loop. That
 owner-directed work can produce faster proposals, branches, and evidence, but it
 still does not guarantee that the patch lands.
 
+V0 implementation keeps this boundary explicit: non-host `priority_weight`
+remains clamped, optional incentives use a separate capped
+`pickup_signal_weight`, requester-directed daemon routing is
+`scope=proposal_only`, and every request records that pickup priority may change
+while acceptance, release, and merge do not.
+
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 
 **Skills are branch-carried remix material.** A Skill is reusable branch context

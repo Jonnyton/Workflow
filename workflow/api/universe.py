@@ -96,6 +96,8 @@ def _extract_submit_request(
         {
             "request_type": kwargs.get("request_type", "") or None,
             "branch_id": kwargs.get("branch_id", "") or None,
+            "pickup_incentive": kwargs.get("pickup_incentive", "") or None,
+            "directed_daemon_id": kwargs.get("directed_daemon_id", "") or None,
         },
     )
 
@@ -980,8 +982,15 @@ def _action_submit_request(
     request_type: str = "scene_direction",
     branch_id: str = "",
     priority_weight: float = 0.0,
+    pickup_incentive: str = "",
+    directed_daemon_id: str = "",
+    directed_daemon_instruction: str = "",
     **_kwargs: Any,
 ) -> str:
+    from workflow.api.market import (
+        PATCH_REQUEST_AUTHORITY_BOUNDARY,
+        normalize_patch_request_incentive,
+    )
     from workflow.branch_tasks import BranchTask, append_task, new_task_id
     from workflow.work_targets import REQUESTS_FILENAME
 
@@ -1028,6 +1037,29 @@ def _action_submit_request(
         pw = 0.0
 
     request_id = f"req_{int(time.time())}_{os.urandom(4).hex()}"
+    incentive = normalize_patch_request_incentive(
+        str(pickup_incentive or ""),
+        requester_id=source,
+    )
+    authority_boundary = dict(PATCH_REQUEST_AUTHORITY_BOUNDARY)
+    requester_directed_daemon: dict[str, Any] | None = None
+    if directed_daemon_id.strip():
+        from workflow.daemon_registry import (
+            build_requester_directed_daemon_assignment,
+        )
+
+        requester_directed_daemon = build_requester_directed_daemon_assignment(
+            _base_path(),
+            daemon_id=directed_daemon_id.strip(),
+            requester_id=source,
+            patch_request_id=request_id,
+            instruction=directed_daemon_instruction or text,
+        )
+        if requester_directed_daemon.get("effect") == "refused":
+            return json.dumps({
+                "error": "directed_daemon_not_authorized",
+                "requester_directed_daemon": requester_directed_daemon,
+            })
     request_obj = {
         "id": request_id,
         "type": request_type,
@@ -1036,7 +1068,11 @@ def _action_submit_request(
         "status": "pending",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": source,
+        "pickup_incentive": incentive,
+        "authority_boundary": authority_boundary,
     }
+    if requester_directed_daemon is not None:
+        request_obj["requester_directed_daemon"] = requester_directed_daemon
 
     requests_path = udir / REQUESTS_FILENAME
     existing = _read_json(requests_path)
@@ -1069,9 +1105,21 @@ def _action_submit_request(
                 "request_id": request_id,
                 "request_type": request_type,
                 "branch_id": branch_id or "",
+                "pickup_incentive": incentive,
+                "authority_boundary": authority_boundary,
+                "requester_directed_daemon": requester_directed_daemon,
             },
-            trigger_source="host_request" if is_host else "user_request",
+            trigger_source=(
+                "owner_queued"
+                if requester_directed_daemon is not None
+                else "host_request" if is_host else "user_request"
+            ),
             priority_weight=pw,
+            pickup_signal_weight=float(incentive.get("pickup_signal_weight") or 0.0),
+            directed_daemon_id=(
+                str(requester_directed_daemon.get("daemon_id", ""))
+                if requester_directed_daemon is not None else ""
+            ),
         )
         append_task(udir, task)
         branch_task_id = task.branch_task_id
@@ -1096,6 +1144,9 @@ def _action_submit_request(
         "branch_task_id": branch_task_id,
         "status": "pending",
         "priority_weight": pw,
+        "pickup_incentive": incentive,
+        "authority_boundary": authority_boundary,
+        "requester_directed_daemon": requester_directed_daemon,
         "queue_position": pending_count,
         "ahead_of_yours": ahead,
         "what_happens_next": (
@@ -3602,6 +3653,9 @@ def _universe_impl(
     provenance_tag: str = "",
     limit: int = 30,
     priority_weight: float = 0.0,
+    pickup_incentive: str = "",
+    directed_daemon_id: str = "",
+    directed_daemon_instruction: str = "",
     branch_task_id: str = "",
     goal_id: str = "",
     branch_def_id: str = "",
@@ -3680,6 +3734,9 @@ def _universe_impl(
         "provenance_tag": provenance_tag,
         "limit": limit,
         "priority_weight": priority_weight,
+        "pickup_incentive": pickup_incentive,
+        "directed_daemon_id": directed_daemon_id,
+        "directed_daemon_instruction": directed_daemon_instruction,
         "branch_task_id": branch_task_id,
         "goal_id": goal_id,
         "branch_def_id": branch_def_id,

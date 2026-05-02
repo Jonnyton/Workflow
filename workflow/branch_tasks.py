@@ -79,12 +79,14 @@ class BranchTask:
     inputs: dict = field(default_factory=dict)
     trigger_source: str = "user_request"
     priority_weight: float = 0.0
+    pickup_signal_weight: float = 0.0
     queued_at: str = ""
     claimed_by: str = ""
     status: str = "pending"
     bid: float = 0.0
     goal_id: str = ""
     required_llm_type: str = ""
+    directed_daemon_id: str = ""
     evidence_url: str = ""
     error: str = ""
     cancel_requested: bool = False

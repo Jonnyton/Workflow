@@ -67,6 +67,40 @@ from workflow.catalog import CommitFailedError, DirtyFileError
 
 logger = logging.getLogger("universe_server.market")
 
+PATCH_REQUEST_AUTHORITY_BOUNDARY: dict[str, bool] = {
+    "affects_pickup_priority": True,
+    "affects_acceptance": False,
+    "affects_release": False,
+    "affects_merge": False,
+}
+PATCH_REQUEST_PICKUP_SIGNAL_WEIGHT = 5.0
+
+
+def normalize_patch_request_incentive(
+    terms: str,
+    *,
+    requester_id: str,
+    visibility: str = "public",
+) -> dict[str, Any]:
+    """Return bounded pickup-only incentive metadata for a patch request."""
+    clean_terms = terms.strip()
+    if not clean_terms:
+        return {
+            "enabled": False,
+            "terms": "",
+            "visibility": visibility,
+            "requester_id": requester_id,
+            "pickup_signal_weight": 0.0,
+        }
+    return {
+        "enabled": True,
+        "terms": clean_terms,
+        "visibility": visibility,
+        "requester_id": requester_id,
+        "pickup_signal_weight": PATCH_REQUEST_PICKUP_SIGNAL_WEIGHT,
+        "authority_boundary": dict(PATCH_REQUEST_AUTHORITY_BOUNDARY),
+    }
+
 
 # ── Escrow MCP handlers ────────────────────────────────────────────────────────
 

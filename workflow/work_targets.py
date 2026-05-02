@@ -48,6 +48,9 @@ HARD_PRIORITY_RESOLVED = "resolved"
 DISCARD_REVIEW_DELAY = 20
 DISCARD_RETENTION_DAYS = 30
 SYNTHESIS_RETRY_LIMIT = 3
+PATCH_REQUEST_PICKUP_SIGNAL_TAG = "pickup-incentive"
+REQUESTER_DIRECTED_DAEMON_TAG = "requester-directed-daemon"
+PATCH_REQUEST_PICKUP_SIGNAL_CAP = 5.0
 
 EXECUTION_KIND_NOTES = "notes"
 # Phase C.2: BOOK/CHAPTER/SCENE moved to
@@ -65,6 +68,21 @@ def _slugify(text: str, fallback: str = "target") -> str:
 
 def _now() -> float:
     return time.time()
+
+
+def _bounded_pickup_signal(metadata: dict[str, Any]) -> float:
+    """Return capped pickup-priority signal, never an acceptance signal."""
+    weight = 0.0
+    incentive = metadata.get("pickup_incentive")
+    if isinstance(incentive, dict) and incentive.get("enabled"):
+        try:
+            weight = max(weight, float(incentive.get("pickup_signal_weight") or 0.0))
+        except (TypeError, ValueError):
+            pass
+    directed = metadata.get("requester_directed_daemon")
+    if isinstance(directed, dict) and directed.get("effect") == "applied":
+        weight = max(weight, PATCH_REQUEST_PICKUP_SIGNAL_CAP)
+    return min(max(0.0, weight), PATCH_REQUEST_PICKUP_SIGNAL_CAP)
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -429,6 +447,28 @@ def materialize_pending_requests(
         source = str(req.get("source") or "anonymous").strip()
         title_stub = text.splitlines()[0][:70] if text else req_type
         target_id = _slugify(f"request-{req_id}", fallback=f"request-{req_id}")
+        metadata = {
+            "request_id": req_id,
+            "request_type": req_type,
+            "request_source": source,
+            "request_timestamp": req.get("timestamp"),
+            "branch_id": req.get("branch_id"),
+        }
+        pickup_incentive = req.get("pickup_incentive")
+        if isinstance(pickup_incentive, dict):
+            metadata["pickup_incentive"] = dict(pickup_incentive)
+        authority_boundary = req.get("authority_boundary")
+        if isinstance(authority_boundary, dict):
+            metadata["authority_boundary"] = dict(authority_boundary)
+        directed_daemon = req.get("requester_directed_daemon")
+        if isinstance(directed_daemon, dict):
+            metadata["requester_directed_daemon"] = dict(directed_daemon)
+        tags = ["user-request", req_type]
+        if _bounded_pickup_signal(metadata) > 0:
+            if metadata.get("pickup_incentive"):
+                tags.append(PATCH_REQUEST_PICKUP_SIGNAL_TAG)
+            if metadata.get("requester_directed_daemon"):
+                tags.append(REQUESTER_DIRECTED_DAEMON_TAG)
         target = WorkTarget(
             target_id=target_id,
             title=f"Request: {title_stub or req_type}",
@@ -436,15 +476,9 @@ def materialize_pending_requests(
             publish_stage=PUBLISH_STAGE_NONE,
             lifecycle=LIFECYCLE_ACTIVE,
             current_intent=text or f"address user {req_type} request",
-            tags=["user-request", req_type],
+            tags=tags,
             selection_reason=f"user_request:{source}",
-            metadata={
-                "request_id": req_id,
-                "request_type": req_type,
-                "request_source": source,
-                "request_timestamp": req.get("timestamp"),
-                "branch_id": req.get("branch_id"),
-            },
+            metadata=metadata,
         )
         upsert_work_target(universe_path, target)
         created.append(target)
@@ -907,7 +941,7 @@ def choose_authorial_targets(
         # not resurrect completed or paused targets.
         candidates = list(candidate_override)
 
-    def score(target: WorkTarget) -> tuple[int, int, float]:
+    def score(target: WorkTarget) -> tuple[int, float, int, float]:
         role_score = 2 if target.role == ROLE_PUBLISHABLE else 1
         active_score = 2 if target.lifecycle == LIFECYCLE_ACTIVE else 1
         stage_score = (
@@ -915,7 +949,12 @@ def choose_authorial_targets(
             else 1 if target.publish_stage == PUBLISH_STAGE_PROVISIONAL
             else 0
         )
-        return (active_score + role_score, stage_score, -target.updated_at)
+        return (
+            active_score + role_score,
+            _bounded_pickup_signal(target.metadata),
+            stage_score,
+            -target.updated_at,
+        )
 
     ranked = sorted(candidates, key=score, reverse=True)
     return ranked
