@@ -155,7 +155,7 @@
       "user_prompt": "Use Workflow to search for goals related to onboarding and show the best matches.",
       "file_attachment_urls": null,
       "tools_triggered": "search_workflow_goals",
-      "expected_output": "Returns matching Workflow goals with enough context for the user to choose one.",
+      "expected_output": "Returns matching Workflow goals when present, or clearly reports that no goals matched and suggests a safe next step.",
       "expected_output_url": null
     },
     {

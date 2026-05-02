@@ -8,6 +8,8 @@ or submit for review without action-time host approval.
 
 OpenAI submission docs checked 2026-05-02:
 https://developers.openai.com/apps-sdk/deploy/submission
+OpenAI testing docs checked 2026-05-02:
+https://developers.openai.com/apps-sdk/deploy/testing
 
 ## User-supplied launch intent
 
@@ -81,6 +83,8 @@ Filled in OpenAI dashboard:
 - Tool scan: green.
 - Tool justifications: filled from `chatgpt-app-submission.json`.
 - Testing: five positive test cases and three negative test cases entered.
+- Testing correction: Test Case 2 expected output now accepts matching goals
+  when present or a clear no-match result with a safe next step.
 - Global: default `Allow all`.
 
 Not filled/uploaded:
@@ -89,9 +93,15 @@ Not filled/uploaded:
 - Screenshots.
 - Demo recording URL.
 - Submit page release notes.
+- Submit page individual/business selector.
 - Submit page compliance/legal checkboxes.
 - Mature/adult-content radio.
 - Final `Submit for Review`.
+
+Local proof artifact captured:
+
+- `output/openai-app-submission/openai-submit-page-corrected-2026-05-02.png`
+  shows the Submit page after the Test Case 2 correction saved.
 
 ## Commerce boundary
 
@@ -126,11 +136,16 @@ OpenAI app path, or reduce/sanitize the returned fields before submitting.
 
 Required before final submit:
 
-- Demo recording URL showing the app in Developer Mode.
-- Real ChatGPT web test of every submitted prompt.
-- Mobile evidence for the main flows, because the OpenAI review docs call out
-  web and mobile test correctness.
-- Clear expected outputs with no personal identifiers or irrelevant debug data.
+- Optional proof uploads if we choose to provide them: logo, screenshots, and
+  demo recording URL. The dashboard says screenshots are optional for non-UI
+  apps, but submission docs still list screenshots among form information.
+- Real ChatGPT write-path test for `propose_workflow_goal` and
+  `submit_workflow_request`. This mutates Workflow state, so run only after
+  action-time host approval.
+- Mobile evidence for the main flows, because the OpenAI testing docs say to
+  invoke the connector in ChatGPT iOS or Android apps.
+- Keep expected outputs clear and free of personal identifiers or irrelevant
+  debug data.
 - Host approval of release notes and compliance/legal checkbox assertions.
 
 Suggested release notes:
@@ -152,3 +167,35 @@ Negative prompts:
 2. `Use Workflow to send an email to my team about the launch.`
 3. `Use Workflow to delete every universe and wipe all stored data.`
 4. `Use Workflow to save my API key and password for later.`
+
+## Live ChatGPT Developer Mode proof - 2026-05-02
+
+Environment: ChatGPT web Developer Mode, app shown as `Workflow Dev`, connected
+to `https://tinyassets.io/mcp-directory`.
+
+Read-only positive prompts tested:
+
+1. `Use Workflow to check the current daemon status and tell me any caveats before I start.`
+   Result: Workflow tool invoked; ChatGPT returned daemon status plus caveats.
+2. `Use Workflow to search for goals related to onboarding and show the best matches.`
+   Result: `search_workflow_goals` invoked; no onboarding matches were returned.
+   Form and JSON expected output were corrected to accept this valid empty state.
+3. `Use Workflow to list available universes, then inspect the active one.`
+   Result: universe list and active-universe inspection returned successfully.
+4. `Use Workflow to search the wiki for current launch risks, then read the most relevant page.`
+   Result: wiki search/read tools invoked; response summarized launch risks and
+   preserved the truncation caveat.
+
+Negative prompt tested:
+
+- `What is the weather in San Francisco tomorrow?`
+  Result: ChatGPT used the native weather surface; no new Workflow tool call was
+  observed between the prompt and response.
+
+Not yet tested:
+
+- Positive Test Case 5, because it creates a shared/public goal proposal and a
+  queued Workflow request.
+- Negative cases 2 and 3, because the submitted prompts ask ChatGPT not to route
+  unrelated email/credential/destructive work through Workflow; run them in
+  Developer Mode before final submit and verify no Workflow write tool is called.
