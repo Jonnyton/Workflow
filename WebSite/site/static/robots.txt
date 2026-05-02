@@ -10,6 +10,7 @@ Allow: /graph
 Allow: /host
 Allow: /legal
 Allow: /loop
+Allow: /proof
 Allow: /status
 Allow: /wiki
 Allow: /alliance

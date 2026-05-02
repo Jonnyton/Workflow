@@ -336,8 +336,8 @@
       <RitualLabel color="var(--ember-500)">· {snapshot.source} · commons cockpit ·</RitualLabel>
       <div class="head__actions">
         <LiveBadge fetchedAt={snapshot.fetched_at} source={snapshot.source} {loading} />
-        <button type="button" class="refresh" disabled={loading} onclick={refreshLive}>
-          {loading ? 'Refreshing MCP' : 'Refresh MCP'}
+        <button type="button" class="refresh" disabled={loading} aria-busy={loading} onclick={refreshLive}>
+          Refresh MCP
         </button>
       </div>
     </div>

@@ -1,160 +1,40 @@
 {
-  "fetched_at": "2026-05-01T20:18:16.180Z",
+  "fetched_at": "2026-05-02T00:45:55.009Z",
   "source": "local git checkout + GitHub remote",
   "repo": {
     "id": "repo:Workflow",
     "name": "Workflow",
     "owner": "Jonnyton",
     "remote_url": "https://github.com/Jonnyton/Workflow.git",
-    "current_branch": "codex/hostless-byok-control-api",
-    "head": "bc85c30",
-    "main": "a9f721b",
+    "current_branch": "codex/website-live-lens-proof",
+    "head": "82f1a36",
+    "main": "6eb4ad6",
     "dirty_note": "Working tree clean when repo snapshot was generated."
   },
   "branches": [
     {
-      "id": "git:codex/arc-b-phase3",
-      "name": "codex/arc-b-phase3",
+      "id": "git:codex/website-live-lens-proof",
+      "name": "codex/website-live-lens-proof",
       "kind": "local",
-      "commit": "1ae48ef",
-      "date": "2026-04-29T17:57:55-07:00",
-      "subject": "refactor: remove author rename compatibility shims"
-    },
-    {
-      "id": "git:codex/browser-only-scorched-tanks-pwa",
-      "name": "codex/browser-only-scorched-tanks-pwa",
-      "kind": "local",
-      "commit": "1741a6b",
-      "date": "2026-04-29T18:17:41-07:00",
-      "subject": "docs: track local desktop game install blocker"
-    },
-    {
-      "id": "git:codex/bug037-publish-version-topology",
-      "name": "codex/bug037-publish-version-topology",
-      "kind": "local",
-      "commit": "8980315",
-      "date": "2026-04-28T00:15:25-07:00",
-      "subject": "docs: record autonomous backlog guardrails"
-    },
-    {
-      "id": "git:codex/bug037-publish-version-topology-live",
-      "name": "codex/bug037-publish-version-topology-live",
-      "kind": "local",
-      "commit": "b049f0d",
-      "date": "2026-04-29T18:07:14-07:00",
-      "subject": "chore: retire landed Arc B status rows"
-    },
-    {
-      "id": "git:codex/daemon-soul-summon-live",
-      "name": "codex/daemon-soul-summon-live",
-      "kind": "local",
-      "commit": "8980315",
-      "date": "2026-04-28T00:15:25-07:00",
-      "subject": "docs: record autonomous backlog guardrails"
-    },
-    {
-      "id": "git:codex/daemon-soul-summon-live-main",
-      "name": "codex/daemon-soul-summon-live-main",
-      "kind": "local",
-      "commit": "2969478",
-      "date": "2026-04-30T21:05:25-07:00",
-      "subject": "Merge remote-tracking branch 'origin/main' into codex/daemon-soul-summon-live-main"
-    },
-    {
-      "id": "git:codex/host-discoverability-live",
-      "name": "codex/host-discoverability-live",
-      "kind": "local",
-      "commit": "a9f721b",
-      "date": "2026-05-01T13:08:12-07:00",
-      "subject": "chore: claim site post-launch backlog"
-    },
-    {
-      "id": "git:codex/hostless-byok-control-api",
-      "name": "codex/hostless-byok-control-api",
-      "kind": "local",
-      "commit": "bc85c30",
-      "date": "2026-05-01T13:18:07-07:00",
-      "subject": "fix: clear site post-launch backlog"
-    },
-    {
-      "id": "git:codex/loop-subscription-binding",
-      "name": "codex/loop-subscription-binding",
-      "kind": "local",
-      "commit": "f2e9d38",
-      "date": "2026-04-30T23:18:04-07:00",
-      "subject": "Merge remote-tracking branch 'origin/main' into codex/loop-subscription-binding"
-    },
-    {
-      "id": "git:codex/loop-writer-family-policy",
-      "name": "codex/loop-writer-family-policy",
-      "kind": "local",
-      "commit": "972d36e",
-      "date": "2026-04-29T23:46:58-07:00",
-      "subject": "test: add Scorched Tanks root-exec disk"
-    },
-    {
-      "id": "git:codex/old-session-consolidation",
-      "name": "codex/old-session-consolidation",
-      "kind": "local",
-      "commit": "adb100f",
-      "date": "2026-04-29T17:29:27-07:00",
-      "subject": "Merge remote-tracking branch 'origin/main' into codex/old-session-consolidation"
-    },
-    {
-      "id": "git:codex/revert-loop-idle-canary",
-      "name": "codex/revert-loop-idle-canary",
-      "kind": "local",
-      "commit": "df35b4b",
-      "date": "2026-04-29T21:37:48-07:00",
-      "subject": "docs: record loop watch live state"
-    },
-    {
-      "id": "git:codex/scorched-tanks-browser-pwa-live",
-      "name": "codex/scorched-tanks-browser-pwa-live",
-      "kind": "local",
-      "commit": "7749b00",
-      "date": "2026-04-30T17:27:54-07:00",
-      "subject": "fix: make Scorched Tanks launcher rights-aware"
-    },
-    {
-      "id": "git:codex/scorched-tanks-browser-pwa-live-main",
-      "name": "codex/scorched-tanks-browser-pwa-live-main",
-      "kind": "local",
-      "commit": "417d2b3",
-      "date": "2026-04-30T22:04:37-07:00",
-      "subject": "skills: carry AROS proof rules in branch"
-    },
-    {
-      "id": "git:codex/scorched-tanks-browser-pwa-live-sync",
-      "name": "codex/scorched-tanks-browser-pwa-live-sync",
-      "kind": "local",
-      "commit": "9e27f82",
-      "date": "2026-04-30T17:32:04-07:00",
-      "subject": "fix: make Scorched Tanks launcher rights-aware"
-    },
-    {
-      "id": "git:cursor/claim-check-session-d",
-      "name": "cursor/claim-check-session-d",
-      "kind": "local",
-      "commit": "8980315",
-      "date": "2026-04-28T00:15:25-07:00",
-      "subject": "docs: record autonomous backlog guardrails"
+      "commit": "82f1a36",
+      "date": "2026-05-01T17:45:49-07:00",
+      "subject": "site: refresh graph repo snapshot"
     },
     {
       "id": "git:main",
       "name": "main",
       "kind": "local",
-      "commit": "a9f721b",
-      "date": "2026-05-01T13:08:12-07:00",
-      "subject": "chore: claim site post-launch backlog"
+      "commit": "6eb4ad6",
+      "date": "2026-05-01T17:40:49-07:00",
+      "subject": "Merge PR #137: record directory submission boundaries"
     },
     {
-      "id": "git:worktree-agent-a54683e4",
-      "name": "worktree-agent-a54683e4",
-      "kind": "local",
-      "commit": "e473f47",
-      "date": "2026-04-13T08:30:37-07:00",
-      "subject": "Phase 7.3 H2: goals cluster cutover"
+      "id": "git:origin/auto-change/issue-130-codex-25236021664",
+      "name": "origin/auto-change/issue-130-codex-25236021664",
+      "kind": "remote",
+      "commit": "2e6d2a5",
+      "date": "2026-05-01T22:38:47Z",
+      "subject": "[auto-change] BUG-045: Branch authoring surface cannot create invoke_branch nodes even though compiler supports invoke_branch_spec"
     },
     {
       "id": "git:origin/auto-change/issue-24-codex-25201829693",
@@ -533,6 +413,14 @@
       "subject": "[auto-change] BUG-044: change_loop_v1 compile fails because node id collides with state key"
     },
     {
+      "id": "git:origin/codex/agent-teams-burndown-retire",
+      "name": "origin/codex/agent-teams-burndown-retire",
+      "kind": "remote",
+      "commit": "1f2ec6d",
+      "date": "2026-05-01T15:17:57-07:00",
+      "subject": "docs: retire stale agent teams burn-down row"
+    },
+    {
       "id": "git:origin/codex/arc-b-phase3",
       "name": "origin/codex/arc-b-phase3",
       "kind": "remote",
@@ -544,9 +432,25 @@
       "id": "git:origin/codex/catalog-discover-reframe",
       "name": "origin/codex/catalog-discover-reframe",
       "kind": "remote",
-      "commit": "65ca4f3",
-      "date": "2026-05-01T12:59:54-07:00",
-      "subject": "feat(site): reframe catalog as discover lens"
+      "commit": "fd982f7",
+      "date": "2026-05-01T14:59:26-07:00",
+      "subject": "merge main directory rollout updates"
+    },
+    {
+      "id": "git:origin/codex/connect-primary-action",
+      "name": "origin/codex/connect-primary-action",
+      "kind": "remote",
+      "commit": "132b2fc",
+      "date": "2026-05-01T15:32:18-07:00",
+      "subject": "refactor(site): simplify connect page proof story"
+    },
+    {
+      "id": "git:origin/codex/daemon-memory-governor",
+      "name": "origin/codex/daemon-memory-governor",
+      "kind": "remote",
+      "commit": "fc39281",
+      "date": "2026-05-01T17:32:19-07:00",
+      "subject": "docs: pin community loop souls to fixed llms"
     },
     {
       "id": "git:origin/codex/daemon-soul-summon-live-main",
@@ -557,6 +461,46 @@
       "subject": "Merge remote-tracking branch 'origin/main' into codex/daemon-soul-summon-live-main"
     },
     {
+      "id": "git:origin/codex/directory-live-proof",
+      "name": "origin/codex/directory-live-proof",
+      "kind": "remote",
+      "commit": "4063813",
+      "date": "2026-05-01T14:14:37-07:00",
+      "subject": "docs: record live directory endpoint proof"
+    },
+    {
+      "id": "git:origin/codex/directory-rollout-queue",
+      "name": "origin/codex/directory-rollout-queue",
+      "kind": "remote",
+      "commit": "54cb5a1",
+      "date": "2026-05-01T14:42:26-07:00",
+      "subject": "Document MCP directory rollout queue"
+    },
+    {
+      "id": "git:origin/codex/directory-submission-boundaries",
+      "name": "origin/codex/directory-submission-boundaries",
+      "kind": "remote",
+      "commit": "a9ce4c7",
+      "date": "2026-05-01T17:39:06-07:00",
+      "subject": "Merge remote-tracking branch 'origin/main' into codex/directory-submission-boundaries"
+    },
+    {
+      "id": "git:origin/codex/ecosystem-directory-rollout",
+      "name": "origin/codex/ecosystem-directory-rollout",
+      "kind": "remote",
+      "commit": "f70bb66",
+      "date": "2026-05-01T14:00:32-07:00",
+      "subject": "fix: let worker PR checks run without deploy secrets"
+    },
+    {
+      "id": "git:origin/codex/f2-spec-retire",
+      "name": "origin/codex/f2-spec-retire",
+      "kind": "remote",
+      "commit": "dff5af7",
+      "date": "2026-05-01T15:06:23-07:00",
+      "subject": "docs: retire stale f2 recency primitive plan"
+    },
+    {
       "id": "git:origin/codex/graph-true-connection-layers",
       "name": "origin/codex/graph-true-connection-layers",
       "kind": "remote",
@@ -565,12 +509,44 @@
       "subject": "feat(site): add graph relationship layers"
     },
     {
+      "id": "git:origin/codex/host-customer-matrix",
+      "name": "origin/codex/host-customer-matrix",
+      "kind": "remote",
+      "commit": "60c6950",
+      "date": "2026-05-01T14:45:11-07:00",
+      "subject": "Add MCP host customer matrix"
+    },
+    {
+      "id": "git:origin/codex/host-discoverability-live",
+      "name": "origin/codex/host-discoverability-live",
+      "kind": "remote",
+      "commit": "d26f3b1",
+      "date": "2026-05-01T13:21:20-07:00",
+      "subject": "docs: prepare host discoverability rollout"
+    },
+    {
       "id": "git:origin/codex/hostless-byok-control-api",
       "name": "origin/codex/hostless-byok-control-api",
       "kind": "remote",
-      "commit": "a9f721b",
-      "date": "2026-05-01T13:08:12-07:00",
-      "subject": "chore: claim site post-launch backlog"
+      "commit": "de430f9",
+      "date": "2026-05-01T15:20:28-07:00",
+      "subject": "Add Open WebUI no-login setup pack"
+    },
+    {
+      "id": "git:origin/codex/librechat-no-login-pack",
+      "name": "origin/codex/librechat-no-login-pack",
+      "kind": "remote",
+      "commit": "7e6676c",
+      "date": "2026-05-01T16:11:03-07:00",
+      "subject": "Document LibreChat MCP directory proof"
+    },
+    {
+      "id": "git:origin/codex/librechat-no-login-pack-v2",
+      "name": "origin/codex/librechat-no-login-pack-v2",
+      "kind": "remote",
+      "commit": "607858c",
+      "date": "2026-05-01T16:13:25-07:00",
+      "subject": "Document LibreChat MCP directory proof"
     },
     {
       "id": "git:origin/codex/live-website-loop-pass",
@@ -685,6 +661,14 @@
       "subject": "fix(site): make loop rail event text readable"
     },
     {
+      "id": "git:origin/codex/loop-stage-signal-summary",
+      "name": "origin/codex/loop-stage-signal-summary",
+      "kind": "remote",
+      "commit": "524a165",
+      "date": "2026-05-01T17:25:05-07:00",
+      "subject": "feat: validate existing child run receipts"
+    },
+    {
       "id": "git:origin/codex/loop-subscription-binding",
       "name": "origin/codex/loop-subscription-binding",
       "kind": "remote",
@@ -709,6 +693,14 @@
       "subject": "docs(site): show MCP host coverage on connect"
     },
     {
+      "id": "git:origin/codex/mcp-rollout-acceptance",
+      "name": "origin/codex/mcp-rollout-acceptance",
+      "kind": "remote",
+      "commit": "1577900",
+      "date": "2026-05-01T17:17:36-07:00",
+      "subject": "docs: publish MCP registry rollout proof"
+    },
+    {
       "id": "git:origin/codex/old-session-consolidation",
       "name": "origin/codex/old-session-consolidation",
       "kind": "remote",
@@ -717,12 +709,52 @@
       "subject": "Merge remote-tracking branch 'origin/main' into codex/old-session-consolidation"
     },
     {
+      "id": "git:origin/codex/open-webui-no-login-pack",
+      "name": "origin/codex/open-webui-no-login-pack",
+      "kind": "remote",
+      "commit": "39dd783",
+      "date": "2026-05-01T15:19:50-07:00",
+      "subject": "Add Open WebUI no-login setup pack"
+    },
+    {
+      "id": "git:origin/codex/open-webui-runtime-proof",
+      "name": "origin/codex/open-webui-runtime-proof",
+      "kind": "remote",
+      "commit": "ff1acf4",
+      "date": "2026-05-01T15:45:06-07:00",
+      "subject": "docs: record open webui mcp proof"
+    },
+    {
+      "id": "git:origin/codex/p1a-child-run-receipts",
+      "name": "origin/codex/p1a-child-run-receipts",
+      "kind": "remote",
+      "commit": "20d42df",
+      "date": "2026-05-01T17:29:47-07:00",
+      "subject": "feat: validate existing child run receipts"
+    },
+    {
+      "id": "git:origin/codex/pipeline-burndown-cleanup",
+      "name": "origin/codex/pipeline-burndown-cleanup",
+      "kind": "remote",
+      "commit": "4d64350",
+      "date": "2026-05-01T15:09:20-07:00",
+      "subject": "docs: trim stale pipeline burn-down rows"
+    },
+    {
       "id": "git:origin/codex/revert-loop-idle-canary",
       "name": "origin/codex/revert-loop-idle-canary",
       "kind": "remote",
       "commit": "df35b4b",
       "date": "2026-04-29T21:37:48-07:00",
       "subject": "docs: record loop watch live state"
+    },
+    {
+      "id": "git:origin/codex/science-domain-catalog",
+      "name": "origin/codex/science-domain-catalog",
+      "kind": "remote",
+      "commit": "683b229",
+      "date": "2026-05-01T15:16:19-07:00",
+      "subject": "docs: seed scientific computing domain catalog"
     },
     {
       "id": "git:origin/codex/scorched-tanks-browser-pwa-live",
@@ -741,6 +773,14 @@
       "subject": "skills: carry AROS proof rules in branch"
     },
     {
+      "id": "git:origin/codex/site-cert-flip",
+      "name": "origin/codex/site-cert-flip",
+      "kind": "remote",
+      "commit": "84fd308",
+      "date": "2026-05-01T15:19:59-07:00",
+      "subject": "docs: stamp site cert flip blocker"
+    },
+    {
       "id": "git:origin/codex/website-logo-loop-live-20260430",
       "name": "origin/codex/website-logo-loop-live-20260430",
       "kind": "remote",
@@ -757,20 +797,36 @@
       "subject": "fix(site): avoid missing loop feed probes"
     },
     {
+      "id": "git:origin/codex/worker-account-id-fallback",
+      "name": "origin/codex/worker-account-id-fallback",
+      "kind": "remote",
+      "commit": "a887392",
+      "date": "2026-05-01T14:07:13-07:00",
+      "subject": "fix: derive Cloudflare account id in worker deploy"
+    },
+    {
+      "id": "git:origin/codex/worker-node22-account-env",
+      "name": "origin/codex/worker-node22-account-env",
+      "kind": "remote",
+      "commit": "8a60662",
+      "date": "2026-05-01T14:11:24-07:00",
+      "subject": "fix: run worker deploy with Node 22"
+    },
+    {
       "id": "git:origin/cursor/claim-check-session-d",
       "name": "origin/cursor/claim-check-session-d",
       "kind": "remote",
-      "commit": "528eeba",
-      "date": "2026-04-27T23:41:35-07:00",
-      "subject": "docs: add navigator reality sweep update"
+      "commit": "79baa96",
+      "date": "2026-05-01T16:32:00-07:00",
+      "subject": "docs: add game prototyping skill"
     },
     {
       "id": "git:origin/main",
       "name": "origin/main",
       "kind": "remote",
-      "commit": "a9f721b",
-      "date": "2026-05-01T13:08:12-07:00",
-      "subject": "chore: claim site post-launch backlog"
+      "commit": "6eb4ad6",
+      "date": "2026-05-01T17:40:49-07:00",
+      "subject": "Merge PR #137: record directory submission boundaries"
     },
     {
       "id": "git:origin/website/fix-live-crashes",
@@ -972,6 +1028,42 @@
       "path": "/host",
       "label": "Host",
       "summary": "Daemon host entry point."
+    },
+    {
+      "id": "route:/goals",
+      "path": "/goals",
+      "label": "Goals",
+      "summary": "Public goal lens backed by MCP goals, commons records, and branch signals."
+    },
+    {
+      "id": "route:/status",
+      "path": "/status",
+      "label": "Status",
+      "summary": "Operations room for public health, current work, and deployment evidence."
+    },
+    {
+      "id": "route:/economy",
+      "path": "/economy",
+      "label": "Economy",
+      "summary": "Settlement boundary and test tiny disclosure surface."
+    },
+    {
+      "id": "route:/alliance",
+      "path": "/alliance",
+      "label": "Alliance",
+      "summary": "Async-first community intake and collaboration path."
+    },
+    {
+      "id": "route:/proof",
+      "path": "/proof",
+      "label": "Proof packet",
+      "summary": "Five-minute evidence page for developers and serious evaluators."
+    },
+    {
+      "id": "route:/legal",
+      "path": "/legal",
+      "label": "Legal",
+      "summary": "Terms, privacy, licensing, and token disclosure ledger."
     }
   ],
   "edges": [
@@ -1068,6 +1160,36 @@
     {
       "from": "area:website",
       "to": "route:/host",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/goals",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/status",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/economy",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/alliance",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/proof",
+      "kind": "route"
+    },
+    {
+      "from": "area:website",
+      "to": "route:/legal",
       "kind": "route"
     },
     {
@@ -1189,6 +1311,36 @@
       "from": "route:/graph",
       "to": "repo:Workflow",
       "kind": "showcases"
+    },
+    {
+      "from": "route:/proof",
+      "to": "repo:Workflow",
+      "kind": "evidence"
+    },
+    {
+      "from": "route:/goals",
+      "to": "area:mcp-api",
+      "kind": "showcases"
+    },
+    {
+      "from": "route:/status",
+      "to": "area:packaging-ops",
+      "kind": "observes"
+    },
+    {
+      "from": "route:/economy",
+      "to": "area:docs-plans",
+      "kind": "discloses"
+    },
+    {
+      "from": "route:/alliance",
+      "to": "area:patch-loop",
+      "kind": "routes-to"
+    },
+    {
+      "from": "route:/legal",
+      "to": "area:docs-plans",
+      "kind": "discloses"
     },
     {
       "from": "area:docs-plans",

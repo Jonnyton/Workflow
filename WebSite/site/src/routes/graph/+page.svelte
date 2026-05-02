@@ -587,8 +587,8 @@
       </div>
 
       <div class="refresh-row">
-        <button onclick={refreshMcp} disabled={mcpLoading}>{mcpLoading ? 'MCP...' : 'Refresh MCP'}</button>
-        <button onclick={refreshGithub} disabled={githubLoading}>{githubLoading ? 'GitHub...' : 'Refresh GitHub'}</button>
+        <button onclick={refreshMcp} disabled={mcpLoading} aria-busy={mcpLoading}>Refresh MCP</button>
+        <button onclick={refreshGithub} disabled={githubLoading} aria-busy={githubLoading}>Refresh GitHub</button>
       </div>
       {#if mcpError}<p class="inline-error">MCP refresh failed: {mcpError}</p>{/if}
       {#if githubError}<p class="inline-error">GitHub refresh failed: {githubError}</p>{/if}
