@@ -7,8 +7,16 @@ OpenAI submission prep packet.
 
 - Surface: ChatGPT web Developer Mode.
 - App shown as: `Workflow Dev`.
-- Configured endpoint: `https://tinyassets.io/mcp-directory`.
+- Historical expectation: `https://tinyassets.io/mcp-directory`.
+- Current verified setting, 2026-05-02T15:37-07:00: the enabled ChatGPT
+  `Workflow DEV` app is still connected to `https://tinyassets.io/mcp`, not
+  `/mcp-directory`.
 - Related prep doc: `docs/ops/openai-app-submission-prep-2026-05-02.md`.
+
+Do not use this ChatGPT web proof as final directory-safe proof until the
+ChatGPT Developer Mode app is re-registered or refreshed to
+`https://tinyassets.io/mcp-directory` and the golden prompt set is rerun in a
+fresh chat.
 
 ## Read-Only Positive Proof
 
@@ -143,8 +151,42 @@ Current proof boundary:
 
 - BUG-034 `Unknown action` is fixed at the direct legacy-wrapper layer.
 - Public MCP endpoints are reachable as of 2026-05-02T13:13-07:00.
-- Clean rendered ChatGPT web read and public-write proof is complete for the
-  tested Developer Mode path.
-- Remaining OpenAI submission proof gaps are ChatGPT mobile, final submission
-  form/legal/publisher approval, and post-fix first-user evidence beyond this
-  controlled proof.
+- The approved public write proof for goal `20e2339c82e3` remains useful as a
+  ChatGPT-rendered approval-card proof, and direct `/mcp-directory` search/get
+  still verifies the created goal.
+- This is not final directory-safe ChatGPT web proof because a later settings
+  audit found the enabled `Workflow DEV` app is connected to the legacy
+  `/mcp` endpoint.
+- Remaining OpenAI submission proof gaps are directory-safe ChatGPT web,
+  ChatGPT mobile, final submission form/legal/publisher approval, and post-fix
+  first-user evidence beyond this controlled proof.
+
+## 2026-05-02T15:37-07:00 Settings Audit
+
+In-app browser inspected ChatGPT Settings -> Apps -> `Workflow DEV`.
+
+Observed:
+
+- Connected on: Apr 24, 2026.
+- URL: `https://tinyassets.io/mcp`.
+- Actions included legacy `get_status`, `goals`, `universe`, `wiki`, `gates`,
+  and `extensions`.
+- A fresh new ChatGPT web prompt invoked legacy `get_status` and returned raw
+  `activity_log_tail`, `last_n_calls`, `policy_hash`, `session_boundary`, and
+  local storage `path` values.
+
+Direct production `/mcp-directory` probes at the same time remained clean:
+
+- `get_workflow_status` returned `directory_privacy_note`.
+- Strict redaction assertion found no `activity_log_tail`, `last_n_calls`,
+  count labels, `policy_hash`, `session_boundary`, `host_id`, or storage
+  `path` keys.
+
+Action required before final ChatGPT user proof:
+
+1. Re-register or create a ChatGPT Developer Mode app pointed at
+   `https://tinyassets.io/mcp-directory`.
+2. Accept the custom MCP warning only with action-time approval because
+   ChatGPT warns that unverified MCP servers can modify or erase data.
+3. Rerun the web golden prompt set in a fresh chat.
+4. Rerun the same prompt set in ChatGPT iOS or Android.

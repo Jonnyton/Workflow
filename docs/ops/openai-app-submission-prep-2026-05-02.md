@@ -12,6 +12,13 @@ Final submit remains blocked on action-time host approval. Do not check
 legal/compliance boxes, assert business/individual verification, or click
 `Submit for Review` without that approval.
 
+2026-05-02T15:37-07:00 truth boundary: the OpenAI dashboard draft is
+configured to `https://tinyassets.io/mcp-directory`, but the enabled ChatGPT
+Developer Mode `Workflow DEV` app is still connected to the legacy
+`https://tinyassets.io/mcp` endpoint. Do not treat current ChatGPT web prompts
+through that enabled app as directory-safe proof until the app is
+re-registered/refreshed to `/mcp-directory`.
+
 ## Official OpenAI Docs Checked
 
 Checked on 2026-05-02:
@@ -48,6 +55,9 @@ Description:
 
 Final operator runbook:
 `docs/ops/openai-app-submission-final-submit-runbook-2026-05-02.md`.
+
+Current final-review packet:
+`docs/ops/openai-app-submission-final-review-2026-05-02.md`.
 
 ## Submission Asset Pack
 
@@ -159,6 +169,30 @@ Recorded prior dashboard state from 2026-05-02:
   unset, all seven legal/compliance boxes unchecked, both mature-content radio
   buttons unchecked, and `Submit for Review` untouched.
 
+2026-05-02T15:35-07:00 in-app browser dashboard re-audit:
+
+- App Info contains the expected app name, subtitle, description, category,
+  developer, website, support, privacy, and terms values.
+- MCP Server contains `https://tinyassets.io/mcp-directory`, `No Auth`, 11
+  complete tool-justification rows, and `Domain verified`.
+- Testing contains 5 positive and 3 negative dashboard cases. The source JSON
+  remains deeper at 10 positive and 4 negative cases.
+- Screenshots page states screenshots are optional for non-UI apps. Treat any
+  optional screenshot upload as an action-time upload choice.
+- Global localization/country page shows English (US) text and `Allow all`.
+- Submit section remains unfilled for release notes, publisher selector,
+  policy checkboxes, mature/adult-content answer, and final submit.
+
+2026-05-02T15:37-07:00 ChatGPT Developer Mode audit:
+
+- Settings -> Apps -> `Workflow DEV` shows URL `https://tinyassets.io/mcp`.
+- The tool list includes legacy `get_status`, `goals`, `universe`, `wiki`,
+  `gates`, and `extensions`.
+- A fresh ChatGPT web prompt in a new chat called legacy `get_status` and
+  returned raw status diagnostics.
+- Direct `/mcp-directory` probes stayed clean, so this is a ChatGPT app
+  registration mismatch, not a production `/mcp-directory` regression.
+
 Not yet complete:
 
 - Logo upload.
@@ -178,12 +212,16 @@ Not yet complete:
    logs, local paths, host account identifiers, or internal hashes.
 3. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
    call out testing iOS or Android.
-4. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
+4. Re-register or create the ChatGPT Developer Mode test app against
+   `https://tinyassets.io/mcp-directory`, then rerun the web golden prompt set
+   in a fresh chat. Creating a custom MCP app displays an elevated-risk
+   warning and should stay action-time approved.
+5. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
    action-time before approving public/state-changing writes.
-5. Confirm the legal/connect site closeout has landed and deployed before using
+6. Confirm the legal/connect site closeout has landed and deployed before using
    `https://tinyassets.io/legal#privacy` and `/connect` screenshots in final
    submit.
-6. Host approves logo/screenshots or demo asset choices, release notes,
+7. Host approves logo/screenshots or demo asset choices, release notes,
    compliance answers, mature-content answer, publisher selector, verification
    assertion, and final submit.
 
@@ -321,3 +359,31 @@ Suggested release notes:
 - OpenAI dashboard changed to `Domain verified`.
 - Screenshot:
   `output/openai-submission-assets/openai-dashboard-domain-verified-2026-05-02.png`.
+
+2026-05-02T15:27-07:00 from `codex/openai-final-readiness`:
+
+- `git diff --check` passed.
+- `python -m json.tool chatgpt-app-submission.json > $null` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 8 tests.
+- New test coverage proves `submit_workflow_request` queues a request in a
+  temporary Workflow data directory without mutating production.
+- Public and tool canaries passed for both `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- Live `/mcp-directory` descriptor listing showed all 11 directory tools with
+  explicit schemas, titles, descriptions, and annotations.
+- Strict `/mcp-directory` redaction assertion passed: no raw activity logs,
+  recent-call arrays, count labels, policy hash, session boundary, host id, or
+  storage `path` keys were present.
+- Direct read probes for goals, wiki, and runs succeeded; direct
+  `search_workflow_goals` and `get_workflow_goal` confirmed goal
+  `20e2339c82e3` remains public with tags `submission, smoke`.
+
+2026-05-02T15:37-07:00 ChatGPT web user-test caveat:
+
+- Current enabled `Workflow DEV` app in ChatGPT is stale and points to
+  `https://tinyassets.io/mcp`.
+- Fresh ChatGPT web prompt called legacy `get_status` and returned raw
+  diagnostics, so the current enabled app cannot be used as final
+  directory-safe proof.
+- Re-register/refresh ChatGPT Developer Mode to `/mcp-directory`, then rerun
+  web and mobile golden prompts before final submission.

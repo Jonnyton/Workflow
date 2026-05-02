@@ -9,6 +9,7 @@ from workflow.directory_server import (
     directory_mcp,
     propose_workflow_goal,
     search_workflow_goals,
+    submit_workflow_request,
 )
 
 EXPECTED_TOOLS = {
@@ -226,5 +227,40 @@ def test_directory_goal_write_and_search_round_trip(monkeypatch, tmp_path) -> No
             goal["goal_id"] == proposed["goal"]["goal_id"]
             for goal in searched["goals"]
         )
+    finally:
+        invalidate_backend_cache()
+
+
+def test_directory_submit_request_queues_temp_universe_request(monkeypatch, tmp_path) -> None:
+    """Guard the reviewed directory request write path without touching prod."""
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "directory-test")
+
+    from workflow.catalog import invalidate_backend_cache
+
+    invalidate_backend_cache()
+    universe_dir = tmp_path / "directory-universe"
+    universe_dir.mkdir()
+
+    try:
+        result = json.loads(
+            submit_workflow_request(
+                universe_id="directory-universe",
+                text="Summarize submission readiness blockers.",
+                request_type="general",
+            )
+        )
+
+        assert result["universe_id"] == "directory-universe"
+        assert result["status"] == "pending"
+        assert result["request_id"].startswith("req_")
+        assert result["queue_position"] == 1
+        assert result["ahead_of_yours"] == 0
+        assert "what_happens_next" in result
+
+        requests = json.loads((universe_dir / "requests.json").read_text(encoding="utf-8"))
+        assert requests[0]["id"] == result["request_id"]
+        assert requests[0]["text"] == "Summarize submission readiness blockers."
+        assert requests[0]["type"] == "general"
     finally:
         invalidate_backend_cache()

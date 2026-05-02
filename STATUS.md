@@ -21,7 +21,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| OpenAI/Claude directory submission host actions - repo closeout landed/deployed; OpenAI domain verified; Claude UI read proof captured; needs ChatGPT mobile proof, logo upload, publisher/legal/mature approvals, Claude form submit, final submit. | OpenAI Apps dashboard; ChatGPT mobile app; Claude directory form | action-time approval for uploads/legal/final submit | host-action |
+| OpenAI/Claude directory submission host actions - dashboard `/mcp-directory` green, domain verified, Claude UI read proof captured; ChatGPT DEV still `/mcp` as of 2026-05-02T15:37; needs directory-safe web/mobile proof after re-register, logo/publisher/legal/mature approvals, Claude form submit, final submit. | OpenAI Apps dashboard; ChatGPT dev/mobile app; Claude directory form | action-time approval for uploads/legal/final submit/custom MCP warning | host-action |
 | Community loop ALIVE end-to-end 2026-05-02 — BUG-050 first successful run post-#205 claim-grace; PR #198 (auto-ship canary v0 spec) + #206 (daemon-liveness watchdog spec) design-only, ready. Next: loop-content fix (BUG-051) + auto-ship canary build-out. | docs/milestones/auto-ship-canary-v0.md, docs/specs/daemon-liveness-watchdog.md | PR #198, #206 | review/landd, .agents/uptime.log, MCP live branches fd5c66b1d87d/e019229850f9 | deploy of `d897177` | claimed:codex-loop-uptime-chatgpt |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
@@ -34,7 +34,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | - | host or lead-with-PAT |
 | Mission 10 retest | user-sim | host watches browser | claimed:user |
-| Host-action: re-register `Workflow DEV` ChatGPT connector as workspace admin. | OpenAI workspace admin | - | host-action |
+| Host-action: re-register `Workflow DEV` ChatGPT connector to `/mcp-directory`; verified 2026-05-02T15:37 current ChatGPT DEV points to `/mcp` and exposes legacy `get_status`. | ChatGPT Apps settings | custom MCP warning approval | host-action |
 | Memory-scope Stage 2c flag — watch started 2026-04-16; earliest flip 2026-05-16. | `docs/exec-plans/active/2026-04-27-memory-scope-stage-2c-flip-prep.md` | date gate | monitoring |
 | Provider/DO key exposure audit — no concrete tokens found 2026-05-01; remaining DO refs are GH secret names for DR/P0 workflows. | `deploy/*`, `.github/workflows/{dr-drill,p0-outage-triage}.yml` | host decision | host-decision |
 | Site cert flip — GitHub Pages still says "certificate does not exist yet"; CF edge green via MCP canaries + in-app smoke. | - | - | monitoring |

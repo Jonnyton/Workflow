@@ -41,19 +41,26 @@ Sources:
 
 Verdict: not ready for final submit yet.
 
-Source packet is review-aligned and deployed, ChatGPT web proof is clean, and
-the repo-side legal/asset closeout has landed. Final submission should wait for
-the OpenAI-specific blockers below:
+Source packet is review-aligned and deployed, direct `/mcp-directory` proof is
+clean, and the repo-side legal/asset closeout has landed. A fresh
+2026-05-02T15:37-07:00 browser audit reopened the ChatGPT user-testing
+boundary: the enabled ChatGPT `Workflow DEV` app is still registered to
+`https://tinyassets.io/mcp`, while the OpenAI dashboard draft is correctly
+configured to `https://tinyassets.io/mcp-directory`. Final submission should
+wait for the OpenAI-specific blockers below:
 
-1. ChatGPT mobile must complete the main read/write flows.
-2. Logo/screenshots or demo asset choices, release notes, mature-content
+1. ChatGPT Developer Mode must be re-registered/refreshed to
+   `https://tinyassets.io/mcp-directory`, then the web golden prompt set must
+   pass in a fresh chat.
+2. ChatGPT mobile must complete the main read/write flows against the same
+   directory-safe app registration.
+3. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
    checkboxes need host review and action-time approval before dashboard edits.
-3. Host must approve final `Submit for Review` at action time.
+4. Host must approve final `Submit for Review` at action time.
 
 Parallel onboarding gaps that are not OpenAI-submit blockers:
 
-- Claude.ai rendered connector proof still needs a fresh live UI trace.
 - Claude Connectors Directory form submit still needs contact/org field and
   final-submit approval.
 
@@ -112,6 +119,8 @@ Closed 2026-05-02T13:23-07:00:
 
 Historical ChatGPT Developer Mode proof and BUG-034 boundaries are preserved in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
+Current final-review packet is
+`docs/ops/openai-app-submission-final-review-2026-05-02.md`.
 
 Closed repo-side in `codex/onboarding-close-gaps` on
 2026-05-02T14:08-07:00 to 2026-05-02T14:12-07:00:
@@ -170,6 +179,47 @@ Parallel Claude gap narrowed 2026-05-02T14:44-07:00:
 - This closes the fresh rendered Claude read proof; Claude directory form
   contact/org fields and final submit remain action-time host gates.
 
+Fresh final-readiness validation 2026-05-02T15:27-07:00 from
+`codex/openai-final-readiness`:
+
+- `git diff --check` passed.
+- `python -m json.tool chatgpt-app-submission.json > $null` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 8 tests.
+- The new eighth test covers `submit_workflow_request` against a temporary
+  Workflow data directory, proving the reviewed request-write path queues
+  state without touching production.
+- Public canaries passed for both `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- Tool canaries passed for both endpoints; `/mcp-directory` listed the 11
+  directory tools and invoked `get_workflow_status`.
+- Live `/mcp-directory` tool descriptors expose all 11 expected tools, clear
+  `Use this when...` descriptions, explicit schemas, and explicit
+  read/open-world/destructive annotations.
+- Strict live redaction probe passed: `evidence` only contained
+  `last_completed_request_llm_used` and `activity_log_line_count`;
+  `evidence_caveats` only contained `last_completed_request_llm_used`; and
+  raw logs, recent-call arrays, count labels, policy hash, session boundary,
+  host id, and storage `path` keys were absent.
+- Direct `/mcp-directory` read probes passed for status, goals, wiki search,
+  and run listing; direct search/get verified public goal `20e2339c82e3` still
+  exists with tags `submission, smoke`.
+- Post-rebase 2026-05-02T15:46-07:00 public canaries, tool canaries, and the
+  strict `/mcp-directory` redaction assertion still passed.
+
+ChatGPT web caveat discovered 2026-05-02T15:37-07:00:
+
+- ChatGPT Settings -> Apps -> `Workflow DEV` currently shows URL
+  `https://tinyassets.io/mcp` and legacy actions including `get_status`.
+- A fresh ChatGPT web prompt in a new chat invoked legacy `get_status` and
+  returned raw `activity_log_tail`, `last_n_calls`, `policy_hash`,
+  `session_boundary`, and storage `path` values.
+- This does not contradict the direct `/mcp-directory` proof. It means the
+  current ChatGPT user-testing app registration is stale and must be
+  re-registered to `/mcp-directory` before final web/mobile proof.
+- Creating a new custom MCP app in ChatGPT displays an elevated-risk warning;
+  accepting that warning and creating the persistent app should remain an
+  action-time host approval step.
+
 OpenAI dashboard audit 2026-05-02T15:05-07:00:
 
 - App Info still exposes the logo upload control, so the logo is not yet
@@ -183,10 +233,32 @@ OpenAI dashboard audit 2026-05-02T15:05-07:00:
   legal/compliance boxes unchecked; mature/adult-content answer unset; final
   `Submit for Review` not clicked.
 
+OpenAI dashboard re-audit 2026-05-02T15:35-07:00:
+
+- App Info values are populated: `Workflow`, `Build durable workflows`,
+  `Productivity`, developer `TinyAssets`, website/support/privacy/terms URLs,
+  and no commerce/purchase checkbox selected.
+- Logo upload control is still visible; logo not uploaded.
+- MCP Server values are populated with `https://tinyassets.io/mcp-directory`,
+  `No Auth`, 11 tool rows, complete justifications, and `Domain verified`.
+- Testing contains 5 positive and 3 negative dashboard cases. The source JSON
+  still carries 10 positive and 4 negative cases for audit depth.
+- Screenshots page says screenshots are optional for non-UI apps. If the host
+  chooses to upload optional screenshots, that is an outbound file upload and
+  should be handled at final review.
+- Global localization/country page shows English (US) text and `Allow all`
+  countries.
+- Submit page remains incomplete: release notes empty, publisher selector
+  unset, legal/compliance boxes unchecked, mature/adult-content answer unset,
+  and `Submit for Review` untouched.
+
 Next dashboard action should be one explicit approval bundle, not piecemeal
 guessing:
 
 - Fill release notes with: `Initial public alpha of Workflow. This app connects ChatGPT to the directory-safe Workflow MCP surface for daemon status, shared goals, project wiki lookup, run browsing, and bounded request submission.`
+- Re-register ChatGPT Developer Mode to `https://tinyassets.io/mcp-directory`
+  and rerun web/mobile golden prompts before treating ChatGPT user proof as
+  clean.
 - Select publisher type `Business` only if host confirms TinyAssets may publish
   on behalf of that business.
 - Select mature/adult content `No` only after host confirms Workflow is
@@ -367,6 +439,8 @@ diagnostic keys are absent:
 - Live status redaction proof captured.
 - ChatGPT web golden prompts captured.
 - ChatGPT mobile golden prompts captured.
+- ChatGPT Developer Mode app URL verified as `https://tinyassets.io/mcp-directory`,
+  not legacy `https://tinyassets.io/mcp`.
 - OpenAI dashboard shows `tinyassets.io` domain verified.
 - Logo and any chosen screenshots/demo assets uploaded.
 - Privacy policy categories reviewed.
