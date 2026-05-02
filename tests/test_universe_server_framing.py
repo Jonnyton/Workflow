@@ -155,6 +155,19 @@ def test_control_station_prompt_carries_the_rules() -> None:
     assert "stop" in text
 
 
+def test_control_station_promotes_chatbot_builder_behaviors_page() -> None:
+    """Navigator D8: build-branch-adjacent work should start from the
+    canonical chatbot-builder behavior guide, not stale memory.
+    """
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
+
+    text = _CONTROL_STATION_PROMPT.lower()
+    assert "chatbot-builder-behaviors.md" in text
+    assert "canonical chatbot-builder behavior" in text
+    assert "wiki action=read" in text
+    assert "stale memory" in text
+
+
 def test_extension_guide_prompt_points_to_control_station() -> None:
     """#15 (post-c97feac): _EXTENSION_GUIDE_PROMPT no longer dup'd the
     NO SIMULATION block. It now points to control_station as the

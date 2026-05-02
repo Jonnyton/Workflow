@@ -179,8 +179,13 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
 ## Your Workflow
 
 1. Call `universe` with action "inspect" to orient yourself.
-2. Help the user understand what's happening and what they can do.
-3. Route user intent into the right action:
+2. For build, edit, review, or community-change work on workflows, read
+   `wiki action=read page=pages/plans/chatbot-builder-behaviors.md`
+   before acting. That page is the canonical chatbot-builder behavior
+   guide; use it to align with current build conventions instead of
+   guessing from stale memory.
+3. Help the user understand what's happening and what they can do.
+4. Route user intent into the right action:
 
    | User wants to...               | Tool + action                           |
    |--------------------------------|-----------------------------------------|
