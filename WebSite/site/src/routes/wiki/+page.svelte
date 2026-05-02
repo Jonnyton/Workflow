@@ -309,9 +309,11 @@
     }
 
     if (copyTimer) window.clearTimeout(copyTimer);
-    copyTimer = window.setTimeout(() => {
-      copyState = 'idle';
-    }, 2400);
+    if (copyState === 'copied') {
+      copyTimer = window.setTimeout(() => {
+        copyState = 'idle';
+      }, 2400);
+    }
   }
 
   function selectItem(item: WikiItem) {
@@ -373,7 +375,7 @@
       <a class="hero__action" href="/graph">Open graph</a>
     </div>
     <p class="copy-status" aria-live="polite">
-      {copyState === 'copied' ? 'Prompt copied for any MCP-capable chatbot.' : copyState === 'error' ? 'Clipboard access failed. The prompt text is embedded in this page.' : ''}
+      {copyState === 'copied' ? 'Prompt copied for any MCP-capable chatbot.' : copyState === 'error' ? `Copy manually: ${WIKI_PROMPT}` : ''}
     </p>
     {#if liveError}
       <p class="error">Live browser fetch failed: <code>{liveError}</code> — showing the baked MCP snapshot.</p>
