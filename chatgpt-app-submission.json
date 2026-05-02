@@ -159,6 +159,14 @@
       "expected_output_url": null
     },
     {
+      "description": "Find durable workflow goals from an outcome-oriented prompt.",
+      "user_prompt": "I'm planning onboarding for new MCP hosts. Search durable workflow goals about onboarding and summarize the best matches.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_workflow_goals",
+      "expected_output": "Returns relevant shared Workflow goals when present, or clearly reports that no goals matched without creating new records.",
+      "expected_output_url": null
+    },
+    {
       "description": "Browse shared goals and inspect one selected result.",
       "user_prompt": "Use Workflow to list shared goals, then inspect the first relevant goal you find.",
       "file_attachment_urls": null,
@@ -196,6 +204,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "propose_workflow_goal",
       "expected_output": "Confirms that a new Workflow goal proposal was created and reports its identifier or next step.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a shared durable goal from an outcome-oriented prompt.",
+      "user_prompt": "Create a shared durable workflow goal named 'Reduce MCP onboarding friction' with tags onboarding,hosts.",
+      "file_attachment_urls": null,
+      "tools_triggered": "propose_workflow_goal",
+      "expected_output": "Shows write confirmation before creating the goal, then confirms the new Workflow goal proposal and reports its identifier or next step.",
       "expected_output_url": null
     },
     {
