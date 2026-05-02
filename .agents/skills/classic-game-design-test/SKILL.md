@@ -30,6 +30,8 @@ ending with a single launch surface that plays immediately.
 
 ## Does Not Own
 
+- Remakes, quick browser clones, or new playable prototypes once the user has
+  accepted that class of outcome. Use `game-prototyping`.
 - Generic UI implementation details. Use `frontend-ui-engineering`.
 - Generic browser debugging. Use `browser-testing-with-devtools`.
 - Core test strategy outside game/runtime proof. Use `test-driven-development`.
@@ -85,10 +87,24 @@ satisfies it.
    not a passive fallback. Build a diagnostic loop around it: boot media, log
    startup failures, vary runtime configuration, patch launch scripts, and only
    escalate to licensed firmware after the free path fails with evidence.
-5. **Design for browser/chatbot users.** The happy path must not require the
+5. **Sweep original releases before overfitting.** If one original release
+   fails before gameplay, search for adjacent official, shareware,
+   author-permitted, magazine-cover, Aminet, GameBase, WHDLoad, or public-
+   domain catalog releases before spending all effort on one binary. Record
+   provenance and hashes for each diagnostic copy. Count a release variant only
+   when the original executable reaches gameplay; Workbench, folders, title
+   screens, shell prompts, and "file not executable" messages are launch
+   diagnostics, not playability.
+6. **Escalate firmware blockers precisely.** When multiple rights-cleared
+   original releases fail at the same firmware/runtime boundary, write the
+   blocker as a capability primitive such as "user/host-supplied licensed
+   firmware" or "runtime compatibility patch," not as a vague emulator failure.
+   Keep testing free replacements, but stop treating a hidden sanity-check
+   patch as success unless gameplay proof follows.
+7. **Design for browser/chatbot users.** The happy path must not require the
    user to install a desktop app, restart, manually boot an emulator, hunt for
    firmware, or copy files unless that limitation is explicitly accepted.
-6. **Integrate media deterministically.** Loading a disk/archive is not enough.
+8. **Integrate media deterministically.** Loading a disk/archive is not enough.
    The launcher must wait for the runtime to be ready, inject media once, avoid
    reload loops, and expose status that distinguishes "loaded" from "playing."
    If the runtime stages media in a file slot, use its explicit boot/mount with
@@ -96,18 +112,87 @@ satisfies it.
    For emulator APIs that acknowledge disk/ROM insertion asynchronously, wire a
    mount acknowledgement or bounded retry. Never schedule blind repeated resets;
    a reset loop is a blocker even when the disk eventually appears mounted.
-7. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
+9. **Map input deliberately.** Define mouse, keyboard, touch, and gamepad
    mappings needed by the target game. Include a real browser click/tap path
    for any action the user naturally expects to perform with the mouse.
-8. **Unlock and prove audio.** Browser audio usually needs a user gesture.
+10. **Unlock and prove audio.** Browser audio usually needs a user gesture.
    Provide an explicit launch/play gesture, then verify the audio context is
    running and unmuted. Do not claim sound works from code inspection alone.
-9. **Instrument launch state.** Emit concise runtime status for media loaded,
+11. **Instrument launch state.** Emit concise runtime status for media loaded,
    emulator ready, game started, input accepted, audio running, and fatal
    blockers. Avoid mock success states that look playable.
-10. **Keep fallbacks honest.** If a remake or quick browser clone exists, label
-   it as a fallback/remix and keep it separate from the real-game acceptance
-   result.
+12. **Keep fallbacks honest.** If a remake or quick browser clone exists, label
+    it as a fallback/remix and keep it separate from the real-game acceptance
+    result.
+13. **Handoff prototypes deliberately.** When the accepted scope is a remake,
+    remix, compatibility-inspired prototype, or small browser game, hand off to
+    `game-prototyping` for the GDD, asset registry, archetype pack, and game
+    debug protocol. Keep this skill in the loop only to preserve the
+    original/remake distinction and rights/provenance notes.
+
+## Endpoint Delivery Model
+
+Classic-game work must separate the game from the runtime and from the user's
+current device. Model every deliverable with three parts:
+
+- `game_package`: rights-cleared game media, patch metadata, launch recipe,
+  provenance, and playability proof for one game/version.
+- `runtime_package`: reusable emulator/runtime such as PUAE, DOSBox, ScummVM,
+  MAME, BasiliskII, SheepShaver, vAmiga/SAE, or a source port. It is installed
+  or cached once per endpoint and reused by many games.
+- `endpoint_target`: browser session, desktop launcher, phone PWA/app, home
+  computer relay, or hosted live state. It owns install authority, storage
+  limits, and what "one click to play" means.
+
+Do not create per-game runtime bloat. If 100 games use DOSBox, the endpoint
+should have one shared DOSBox runtime package plus 100 small game packages and
+launch recipes, not 100 DOSBox installs.
+
+Choose the output by capability and user context:
+
+- Browser-only or work/shared device: hosted browser play, no local install.
+- Personal computer with local agent/app authority: desktop shortcut/native
+  launcher backed by shared runtimes.
+- Personal phone app/PWA: phone launcher or installed PWA backed by shared
+  runtimes where the platform allows it.
+- Phone while a home computer is reachable: queue or perform install on the
+  home computer through an authorized relay; otherwise save a durable install
+  intent and provide browser play now.
+
+Design for the same primitive graph across current and likely future clients.
+Do not second-class browser-only users; route around missing local authority
+with hosted play, queued intents, relays, or durable library entries.
+
+Treat endpoint capability as negotiated runtime state, not a fixed product
+assumption. A browser-only chat can launch hosted play and save intent, but it
+cannot silently install native runtimes or desktop shortcuts. A local desktop
+agent, phone app/PWA, enterprise-managed web app, or home-computer relay may
+have more authority. Record which authority was actually available, which
+output was chosen, and which future-capability hook would upgrade the result.
+
+## Cheat-To-User Loop Discipline
+
+Diagnostic work may use direct developer tools to discover what is technically
+possible, but final product proof must come from the same class of surface a
+future user will use.
+
+When a direct diagnostic path teaches you something useful:
+
+1. Save the evidence as a cheat sheet: source URLs, disk hashes, runtime
+   profile, launch patch, screenshots, logs, and exact blocker.
+2. Convert the finding into branch primitives: `game_package`,
+   `runtime_package`, `endpoint_target`, capability probe, install intent, or
+   library entry.
+3. Re-drive the live chatbot/MCP path as a user would, asking the chatbot to
+   propose missing primitives or patches instead of silently patching around
+   the workflow.
+4. Patch the live branch only to give that user path the missing capability.
+5. Re-test through the user surface. Do not count the diagnostic path as final
+   success if the user surface cannot reproduce it.
+
+This keeps reverse-engineering useful without letting it replace the target
+experience: a user asks in chat and ends at the correct playable output for
+their endpoint.
 
 ## Playable-Proof Acceptance
 
@@ -183,6 +268,7 @@ Typical sequence:
 
 ```text
 classic-game-design-test
+  -> game-prototyping (only for accepted remake/prototype/fallback builds)
   -> frontend-ui-engineering
   -> browser-testing-with-devtools
   -> test-driven-development

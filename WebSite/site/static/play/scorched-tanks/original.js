@@ -1,11 +1,52 @@
 (function () {
   const VAMIGA_ORIGIN = "https://vamigaweb.github.io";
   const VAMIGA_URL = `${VAMIGA_ORIGIN}/`;
-  const ADF_URL = "./assets/scorched-tanks-v1.90-autostart-30582ca3.adf";
+  const AROS_ROM_URL = "./assets/aros-rom-20260428.bin";
+  const AROS_EXT_URL = "./assets/aros-ext-20260428.bin";
+  const AROS_FIRMWARE_NAME = "AROS 68k 2026-04-28";
   const HOSTED_KICKSTART_URL = "./licensed/kickstart-a500-1.3.rom";
-  const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
+  const LICENSED_KICKSTART_HARDWARE_PROFILE =
+    "A500 OCS 1 MB licensed Kickstart diagnostic";
+  const LICENSED_KICKSTART_HARDWARE_CONFIG = [
+    ["CPU_REVISION", "0"],
+    ["AGNUS_REVISION", "OCS"],
+    ["DENISE_REVISION", "OCS"],
+    ["CHIP_RAM", "512"],
+    ["SLOW_RAM", "512"],
+    ["FAST_RAM", "0"],
+  ];
+  const MEDIA_VARIANTS = {
+    ap41v175: {
+      url: "./assets/scorched-tanks-v1.75-ap41-stack-d035687c.adf",
+      fileName: "scorched-tanks-v1.75-ap41-stack.adf",
+      label: "v1.75 AP41 A1200/AROS autostart",
+      hardwareProfile: "A1200-style AROS diagnostic",
+      hardwareConfig: [
+        ["CPU_REVISION", "2"],
+        ["AGNUS_REVISION", "ECS_2MB"],
+        ["DENISE_REVISION", "ECS"],
+        ["CHIP_RAM", "2048"],
+        ["SLOW_RAM", "0"],
+        ["FAST_RAM", "2048"],
+      ],
+    },
+    autostart: {
+      url: "./assets/scorched-tanks-v1.90-autostart-30582ca3.adf",
+      fileName: "scorched-tanks-v1.90-autostart.adf",
+      label: "v1.90 autostart",
+    },
+    workbenchStack: {
+      url: "./assets/scorched-tanks-v1.90-workbench-stack-4acdb588.adf",
+      fileName: "scorched-tanks-v1.90-workbench-stack.adf",
+      label: "v1.90 Workbench stack",
+    },
+  };
   const VAMIGA_RELOAD_SETTLE_MS = 1800;
   const DISK_INSERT_RETRY_DELAYS_MS = [300, 900, 1800, 3200];
+  const query = new URLSearchParams(window.location.search);
+  const selectedMedia =
+    MEDIA_VARIANTS[query.get("media")] || MEDIA_VARIANTS.ap41v175;
+  const selectedFirmwareMode = (query.get("firmware") || "auto").toLowerCase();
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -31,6 +72,7 @@
   let currentLaunch = null;
   let kickstartRom = null;
   let adfBytes = null;
+  let arosFirmware = null;
   let runtimeReady = false;
   let audioUnlocked = false;
   let lastFrameLoadAt = 0;
@@ -40,7 +82,8 @@
   const originalProof = {
     mode: "original-amiga",
     runtime: "vAmigaWeb",
-    media: ADF_FILE_NAME,
+    media: selectedMedia.fileName,
+    mediaVariant: selectedMedia.label,
     firmware: "not-started",
     mountState: diskMountState,
     mountAttempts: 0,
@@ -49,6 +92,8 @@
     audioState: "locked",
     exactPlayable: false,
     blocker: "not-started",
+    firmwareSource: "not-started",
+    hardwareProfile: selectedMedia.hardwareProfile || "default",
   };
 
   window.__scorchedTanksOriginal = {
@@ -94,11 +139,23 @@
   }
 
   function absoluteAdfUrl() {
-    return new URL(ADF_URL, window.location.href).href;
+    return new URL(selectedMedia.url, window.location.href).href;
   }
 
   function absoluteHostedKickstartUrl() {
     return new URL(HOSTED_KICKSTART_URL, window.location.href).href;
+  }
+
+  function absoluteArosRomUrl() {
+    return new URL(AROS_ROM_URL, window.location.href).href;
+  }
+
+  function absoluteArosExtUrl() {
+    return new URL(AROS_EXT_URL, window.location.href).href;
+  }
+
+  function firmwareModeIs(...modes) {
+    return modes.includes(selectedFirmwareMode);
   }
 
   function baseConfig(extra) {
@@ -108,6 +165,7 @@
       display: "adaptive",
       border: false,
       dialog_on_disk: false,
+      mouse: true,
       port2: true,
       touch: browserTouchMode(),
       warpto: 1200,
@@ -136,6 +194,64 @@
 
   async function loadHostedKickstartBytes() {
     return fetchBytes(absoluteHostedKickstartUrl(), true);
+  }
+
+  async function loadArosFirmware() {
+    if (!arosFirmware) {
+      setRomStatus(`Loading ${AROS_FIRMWARE_NAME}`);
+      const [romBytes, extBytes] = await Promise.all([
+        fetchBytes(absoluteArosRomUrl()),
+        fetchBytes(absoluteArosExtUrl()),
+      ]);
+      arosFirmware = {
+        kind: "aros",
+        name: AROS_FIRMWARE_NAME,
+        source: "bundled-free-aros-nightly",
+        romBytes,
+        extBytes,
+        proofBlocker: "aros-gameplay-proof-pending",
+      };
+    }
+    return arosFirmware;
+  }
+
+  function firmwareName(launch) {
+    return launch?.firmware?.name || "AROS Kickstart replacement";
+  }
+
+  function firmwareSource(launch) {
+    return launch?.firmware?.source || "vAmigaWeb-open-roms";
+  }
+
+  function firmwareBlocker(launch) {
+    return launch?.firmware?.proofBlocker || "aros-gameplay-proof-pending";
+  }
+
+  function firmwareConfig(launch) {
+    if (launch?.firmware?.romBytes) {
+      return { AROS: false, wait_for_kickstart_injection: true };
+    }
+    return { AROS: true };
+  }
+
+  function hardwareProfileForLaunch(launch) {
+    if (
+      launch?.firmware?.kind === "licensed-kickstart" ||
+      launch?.firmware?.kind === "user-kickstart"
+    ) {
+      return LICENSED_KICKSTART_HARDWARE_PROFILE;
+    }
+    return selectedMedia.hardwareProfile || "default";
+  }
+
+  function hardwareConfigForLaunch(launch) {
+    if (
+      launch?.firmware?.kind === "licensed-kickstart" ||
+      launch?.firmware?.kind === "user-kickstart"
+    ) {
+      return LICENSED_KICKSTART_HARDWARE_CONFIG;
+    }
+    return selectedMedia.hardwareConfig || [];
   }
 
   function clearPoller() {
@@ -174,6 +290,9 @@
     }
 
     const generation = diskMountGeneration;
+    const hardwareConfig = JSON.stringify(
+      hardwareConfigForLaunch(currentLaunch || pendingLaunch),
+    );
     originalProof.mountAttempts += 1;
     setDiskMountState("mount-script-posted", null);
     postToRuntime({
@@ -193,6 +312,26 @@
               console.error(error);
             }
           };
+
+          const hardwareConfig = ${hardwareConfig};
+          if (
+            Array.isArray(hardwareConfig) &&
+            typeof wasm_configure === "function"
+          ) {
+            for (const [key, value] of hardwareConfig) {
+              try {
+                wasm_configure(key, String(value));
+              } catch (error) {
+                postMountState(
+                  "hardware-config-error",
+                  key + ":" + (error?.message || String(error))
+                );
+              }
+            }
+            if (hardwareConfig.length) {
+              postMountState("hardware-configured");
+            }
+          }
 
           if (
             typeof file_slot_file === "undefined" ||
@@ -318,27 +457,30 @@
     try {
       const payload = {
         cmd: "load",
-        file_name: ADF_FILE_NAME,
+        file_name: selectedMedia.fileName,
         file: launch.adfBytes,
       };
 
-      if (launch.kickstartRom) {
-        payload.kickstart_rom = launch.kickstartRom.bytes;
+      if (launch.firmware?.romBytes) {
+        payload.kickstart_rom = launch.firmware.romBytes;
+      }
+
+      if (launch.firmware?.extBytes) {
+        payload.kickstart_ext = launch.firmware.extBytes;
       }
 
       postToRuntime(payload);
       diskMountGeneration += 1;
       setDiskMountState("queued", null);
       scheduleDiskInsertRetries();
-      setMediaStatus("Original v1.90 autostart ADF booting from df0");
-      if (launch.kickstartRom) {
-        originalProof.firmware = launch.kickstartRom.name;
-        originalProof.blocker = "gameplay-proof-pending";
-        setRuntimeStatus(`Running with ${launch.kickstartRom.name}`);
-      } else {
-        originalProof.firmware = "AROS Kickstart replacement";
-        originalProof.blocker = "needs-rights-cleared-kickstart";
+      setMediaStatus(`Original ${selectedMedia.label} ADF booting`);
+      originalProof.firmware = firmwareName(launch);
+      originalProof.firmwareSource = firmwareSource(launch);
+      originalProof.blocker = firmwareBlocker(launch);
+      if (launch.firmware?.kind === "aros") {
         setRuntimeStatus("Booting original disk with AROS");
+      } else {
+        setRuntimeStatus(`Running with ${firmwareName(launch)}`);
       }
     } catch (error) {
       pendingLaunch = launch;
@@ -349,13 +491,11 @@
   function mountEmulator(config, launch) {
     pendingLaunch = launch;
     currentLaunch = launch;
-    originalProof.firmware = launch.kickstartRom
-      ? launch.kickstartRom.name
-      : "AROS Kickstart replacement";
+    originalProof.firmware = firmwareName(launch);
+    originalProof.firmwareSource = firmwareSource(launch);
     originalProof.exactPlayable = false;
-    originalProof.blocker = launch.kickstartRom
-      ? "gameplay-proof-pending"
-      : "needs-rights-cleared-kickstart";
+    originalProof.blocker = firmwareBlocker(launch);
+    originalProof.hardwareProfile = hardwareProfileForLaunch(launch);
     clearPoller();
     clearLaunchTimer();
     clearDiskInsertTimers();
@@ -391,7 +531,7 @@
     emulatorFrameHost.appendChild(frame);
   }
 
-  async function startWithHostedKickstart() {
+  async function startWithHostedKickstart({ required = false } = {}) {
     setRuntimeStatus("Checking hosted Kickstart");
     const [loadedAdfBytes, hostedKickstartBytes] = await Promise.all([
       loadAdfBytes(),
@@ -399,10 +539,14 @@
     ]);
 
     if (!hostedKickstartBytes) {
+      setRomStatus("No hosted licensed Kickstart provisioned");
+      if (required) {
+        throw new Error("Hosted licensed Kickstart not provisioned");
+      }
       return false;
     }
 
-    setRomStatus("Licensed A500 Kickstart supplied by host");
+    setRomStatus("Licensed A500 Kickstart supplied by host fallback");
     mountEmulator(
       baseConfig({
         AROS: false,
@@ -410,9 +554,12 @@
       }),
       {
         adfBytes: loadedAdfBytes,
-        kickstartRom: {
+        firmware: {
+          kind: "licensed-kickstart",
           name: "hosted Kickstart 1.3",
-          bytes: hostedKickstartBytes,
+          source: "hosted-rights-cleared-fallback",
+          romBytes: hostedKickstartBytes,
+          proofBlocker: "gameplay-proof-pending",
         },
       },
     );
@@ -420,21 +567,66 @@
   }
 
   async function startWithAros() {
-    setRomStatus("AROS trial; exact play may need Kickstart 1.3");
+    if (selectedFirmwareMode === "builtin-aros") {
+      const firmware = {
+        kind: "aros",
+        name: "vAmigaWeb AROS 2025-02-19",
+        source: "vAmigaWeb-open-roms",
+        proofBlocker: "aros-gameplay-proof-pending",
+      };
+      setRomStatus(`${firmware.name} free firmware path`);
+      mountEmulator(
+        baseConfig({
+          AROS: true,
+        }),
+        { adfBytes: await loadAdfBytes(), firmware },
+      );
+      return;
+    }
+
+    setRomStatus(`${AROS_FIRMWARE_NAME} free firmware path`);
+    const [loadedAdfBytes, firmware] = await Promise.all([
+      loadAdfBytes(),
+      loadArosFirmware(),
+    ]);
     mountEmulator(
       baseConfig({
-        AROS: true,
+        AROS: false,
+        wait_for_kickstart_injection: true,
       }),
-      { adfBytes: await loadAdfBytes(), kickstartRom: null },
+      { adfBytes: loadedAdfBytes, firmware },
     );
   }
 
   async function startPreferredRuntime() {
     try {
-      const hosted = await startWithHostedKickstart();
-      if (!hosted) {
-        await startWithAros();
+      if (
+        firmwareModeIs(
+          "hosted-kickstart",
+          "licensed-kickstart",
+          "hosted",
+          "licensed",
+        )
+      ) {
+        await startWithHostedKickstart({ required: true });
+        return;
       }
+
+      if (
+        firmwareModeIs(
+          "auto",
+          "hosted-first",
+          "licensed-first",
+          "preferred",
+        )
+      ) {
+        const hostedKickstartStarted = await startWithHostedKickstart();
+        if (hostedKickstartStarted) {
+          return;
+        }
+      }
+
+      await startWithAros();
     } catch (error) {
       setRuntimeStatus(error.message || "Runtime launch failed");
     }
@@ -451,7 +643,16 @@
         AROS: false,
         wait_for_kickstart_injection: true,
       }),
-      { adfBytes: await loadAdfBytes(), kickstartRom },
+      {
+        adfBytes: await loadAdfBytes(),
+        firmware: {
+          kind: "user-kickstart",
+          name: kickstartRom.name,
+          source: "user-local-file",
+          romBytes: kickstartRom.bytes,
+          proofBlocker: "gameplay-proof-pending",
+        },
+      },
     );
   }
 
@@ -460,16 +661,12 @@
       await startPreferredRuntime();
       return;
     }
-    const relaunch = pendingLaunch || currentLaunch || { kickstartRom };
+    const relaunch = pendingLaunch || currentLaunch || {};
     mountEmulator(
-      baseConfig(
-        relaunch.kickstartRom
-          ? { AROS: false, wait_for_kickstart_injection: true }
-          : { AROS: true },
-      ),
+      baseConfig(firmwareConfig(relaunch)),
       {
         adfBytes: relaunch.adfBytes || (await loadAdfBytes()),
-        kickstartRom: relaunch.kickstartRom || null,
+        firmware: relaunch.firmware || (await loadArosFirmware()),
       },
     );
   }
@@ -532,7 +729,7 @@
       if (!pendingLaunch) {
         setRuntimeStatus(
           event.data.value
-            ? currentLaunch?.kickstartRom
+            ? currentLaunch?.firmware?.kind !== "aros"
               ? "Running original disk"
               : "AROS diagnostic running"
             : "Runtime ready",
@@ -564,9 +761,7 @@
         clearDiskInsertTimers();
         setDiskMountState(
           event.data.state,
-          currentLaunch?.kickstartRom
-            ? "gameplay-proof-pending"
-            : "needs-rights-cleared-kickstart",
+          firmwareBlocker(currentLaunch),
         );
         setMediaStatus("Original disk mounted in df0; booting");
         return;
@@ -601,7 +796,7 @@
   window.addEventListener("keydown", unlockAudio, { capture: true });
 
   bindInstall();
-  setMediaStatus("Original v1.90 autostart ADF ready");
+  setMediaStatus(`Original ${selectedMedia.label} ADF ready`);
   setAudioStatus("Audio locked");
   reportAsync(startPreferredRuntime());
 })();
