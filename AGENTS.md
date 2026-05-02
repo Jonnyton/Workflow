@@ -290,6 +290,47 @@ Files. Substring match either direction. If overlap fires, EITHER add a
 Depends edge (the overlap is real coordination) OR refine your row's
 Files to be narrower (the overlap was a hint, not a real write).
 
+### Worktree discipline
+
+When you create a worktree, also create a `_PURPOSE.md` at the worktree
+root. Run `python scripts/worktree_status.py` at session start to see
+what's pickup-ready. Append to `.agents/worktrees.md` on create + remove.
+
+**When to create:** collision with another provider's lock-set, fresh
+main-based branch for clean context, or read-only audit on a different
+ref. Default to in-place when the lock-set is yours alone.
+
+**Naming:** `wf-<purpose-slug>`, sibling to the main repo. Purpose-named,
+not hash-named. No sibling-of-repo prefix variants (no `Workflow-foo`,
+no `Workflow/foo`).
+
+**Required `_PURPOSE.md`** (≤30 lines): purpose, created (date +
+provider + actor), branch + base ref, ship condition, abandon condition,
+pickup hints. Lets a future session orient in one read.
+
+**Inventory** at `.agents/worktrees.md` — tracked, append-only log of
+create/remove events with provider, slug, branch, purpose-one-liner.
+Tear-downs note PR URL or abandon reason.
+
+**Cleanup:** PR lands → `git worktree remove ../wf-foo` + log the
+remove. No commits in 24h + no `_PURPOSE.md` + no upstream tracking =
+stale candidate; the scan script flags it; any provider sweeps with
+the reason logged.
+
+**Detached-HEAD review worktrees** (e.g., `wf-review-NNN` for PR review
+state) get `_PURPOSE.md` too — purpose: "PR-NNN review", ship: "review
+comment posted", abandon: "PR closed".
+
+**Cross-provider:** orthogonal to `claim_check.py`. claim_check covers
+STATUS Files-collision; worktree discipline covers cross-session
+directory persistence — work that lives in `../wf-foo/` between
+sessions and would be lost without a purpose marker.
+
+**Retrofit policy:** add `_PURPOSE.md` to existing worktrees on
+next-touch, not as a bulk sweep. The convention starts now; existing
+state is best-effort backfill. Initial inventory at `.agents/worktrees.md`
+flags anomalies for host review.
+
 ### Staying unblocked
 
 If `claim_check.py` shows zero CLAIMABLE rows, look for cross-cutting
