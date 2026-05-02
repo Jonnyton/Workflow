@@ -63,6 +63,11 @@ from fantasy_daemon.providers.router import ProviderRouter  # noqa: E402
 
 logger = logging.getLogger("fantasy_author")
 
+_UNIVERSE_CYCLE_BRANCH_IDS = frozenset({
+    "fantasy_author/universe-cycle",
+    "fantasy_author:universe_cycle_wrapper",
+})
+
 
 def _first_trace(output: dict[str, Any]) -> dict[str, Any]:
     """Extract the first quality_trace entry from node output."""
@@ -586,6 +591,95 @@ def _try_execute_claimed_node_bid(
     except Exception as exc:  # noqa: BLE001
         logger.exception("_try_execute_claimed_node_bid failed")
         return False, f"node_bid_execution_exception: {exc}"
+
+
+def _should_execute_claimed_branch_directly(claimed_task: Any) -> bool:
+    branch_def_id = str(getattr(claimed_task, "branch_def_id", "") or "")
+    if not branch_def_id or branch_def_id in _UNIVERSE_CYCLE_BRANCH_IDS:
+        return False
+    request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
+    return request_type == "branch_run"
+
+
+def _try_execute_claimed_branch_task(
+    universe_path: Path, claimed_task: Any, daemon_id: str,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Execute a claimed BranchTask's requested branch.
+
+    The default universe wrapper remains the long-running creative loop.
+    Community goal-pool tasks, however, carry an explicit branch_def_id
+    and must produce a durable Workflow run for that branch before the
+    queue row is marked terminal.
+    """
+    try:
+        from workflow.api.branches import _resolve_branch_id
+        from workflow.branches import BranchDefinition
+        from workflow.daemon_server import get_branch_definition
+        from workflow.runs import RUN_STATUS_COMPLETED, execute_branch
+        from workflow.storage import data_dir
+
+        base_path = data_dir()
+        requested = str(getattr(claimed_task, "branch_def_id", "") or "")
+        branch_def_id = _resolve_branch_id(requested, base_path)
+        if not branch_def_id:
+            return False, f"branch_not_found: {requested}", {
+                "requested_branch_def_id": requested,
+            }
+        try:
+            source_dict = get_branch_definition(base_path, branch_def_id=branch_def_id)
+        except KeyError:
+            return False, f"branch_not_found: {branch_def_id}", {
+                "branch_def_id": branch_def_id,
+            }
+        branch = BranchDefinition.from_dict(source_dict)
+        errors = branch.validate()
+        if errors:
+            return False, "branch_validation_failed", {
+                "branch_def_id": branch_def_id,
+                "validation_errors": errors,
+            }
+
+        provider_call: Any = None
+        try:
+            from domains.fantasy_daemon.phases._provider_stub import (
+                call_provider as provider_call,
+            )
+        except ImportError:
+            provider_call = None
+
+        actor = os.environ.get("UNIVERSE_SERVER_USER", "anonymous") or "anonymous"
+        outcome = execute_branch(
+            base_path,
+            branch=branch,
+            inputs=dict(getattr(claimed_task, "inputs", {}) or {}),
+            run_name=f"branch-task-{claimed_task.branch_task_id}",
+            actor=actor,
+            provider_call=provider_call,
+        )
+        metadata = {
+            "branch_def_id": branch_def_id,
+            "run_id": outcome.run_id,
+            "run_status": outcome.status,
+            "actor": actor,
+        }
+        success = outcome.status == RUN_STATUS_COMPLETED
+        error = outcome.error if outcome.error else (
+            "" if success else f"run_status:{outcome.status}"
+        )
+        logger.info(
+            "dispatcher_pick: executed branch task %s branch=%s run=%s status=%s",
+            claimed_task.branch_task_id,
+            branch_def_id,
+            outcome.run_id,
+            outcome.status,
+        )
+        return success, error, metadata
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("_try_execute_claimed_branch_task failed")
+        return False, f"branch_task_execution_exception: {exc}", {
+            "universe_path": str(Path(universe_path)),
+            "daemon_id": daemon_id,
+        }
 
 
 def _dispatcher_observe(universe_path: Path) -> None:
@@ -1183,6 +1277,40 @@ class DaemonController:
                     success=nb_success, error=nb_error,
                 )
                 claimed_task = None  # prevent double-finalization
+                self._cleanup()
+                return
+
+            if (
+                claimed_task is not None
+                and _should_execute_claimed_branch_directly(claimed_task)
+            ):
+                branch_success, branch_error, branch_metadata = (
+                    _try_execute_claimed_branch_task(
+                        output_dir, claimed_task, daemon_id,
+                    )
+                )
+                _record_loop_daemon_signal(
+                    loop_daemon_context,
+                    universe_path=output_dir,
+                    source_id=claimed_task.branch_task_id,
+                    outcome="passed" if branch_success else "failed",
+                    summary=(
+                        f"Branch task {claimed_task.branch_task_id} "
+                        f"{'succeeded' if branch_success else 'failed'} "
+                        "via direct branch execution."
+                    ),
+                    details=branch_error,
+                    metadata={
+                        "branch_def_id": claimed_task.branch_def_id,
+                        "trigger_source": claimed_task.trigger_source,
+                        **branch_metadata,
+                    },
+                )
+                _finalize_claimed_task(
+                    output_dir, claimed_task,
+                    success=branch_success, error=branch_error,
+                )
+                claimed_task = None  # prevent wrapper finalization
                 self._cleanup()
                 return
 
