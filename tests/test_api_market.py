@@ -136,6 +136,47 @@ def test_goal_read_actions_excluded_from_write_set():
         assert r not in _GOAL_WRITE_ACTIONS
 
 
+@pytest.mark.parametrize(
+    "provider_action, canonical_action, kwargs",
+    [
+        ("list_workflow_goals", "list", {}),
+        ("search_workflow_goals", "search", {"query": "onboarding"}),
+        ("get_workflow_goal", "get", {"goal_id": "goal_123"}),
+        ("propose_workflow_goal", "propose", {"name": "Alias smoke"}),
+    ],
+)
+def test_goal_directory_action_aliases_dispatch_to_canonical_actions(
+    monkeypatch, provider_action, canonical_action, kwargs,
+):
+    """ChatGPT can route directory tool names through legacy Goals."""
+    from workflow.api import branches as branches_mod
+
+    monkeypatch.setattr(branches_mod, "_ensure_workflow_db", lambda: None)
+    seen = {}
+
+    def fake_dispatch(action, handler, goal_kwargs):
+        seen["action"] = action
+        seen["handler"] = handler
+        seen["goal_kwargs"] = goal_kwargs
+        return json.dumps({"status": "ok", "canonical_action": action})
+
+    monkeypatch.setattr(mkt_mod, "_dispatch_goal_action", fake_dispatch)
+
+    out = json.loads(goals(action=provider_action, **kwargs))
+
+    assert out == {"status": "ok", "canonical_action": canonical_action}
+    assert seen["action"] == canonical_action
+    assert seen["handler"] is _GOAL_ACTIONS[canonical_action]
+    for key, value in kwargs.items():
+        assert seen["goal_kwargs"][key] == value
+
+
+def test_goals_unknown_action_lists_directory_aliases():
+    out = json.loads(goals(action="totally_bogus_action"))
+    assert "propose_workflow_goal" in out["available_actions"]
+    assert "search_workflow_goals" in out["available_actions"]
+
+
 # ── _GATES_ACTIONS dispatch table ───────────────────────────────────────────
 
 

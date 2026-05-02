@@ -1335,9 +1335,26 @@ _GOAL_ACTIONS: dict[str, Any] = {
     "set_canonical": _action_goal_set_canonical,
 }
 
+# Provider-routing compatibility: ChatGPT can render `/mcp-directory` tool
+# names but dispatch them through the legacy `Goals` wrapper.
+_GOAL_ACTION_ALIASES: dict[str, str] = {
+    "list_workflow_goals": "list",
+    "search_workflow_goals": "search",
+    "get_workflow_goal": "get",
+    "propose_workflow_goal": "propose",
+}
+
 _GOAL_WRITE_ACTIONS: frozenset[str] = frozenset({
     "propose", "update", "bind", "set_canonical",
 })
+
+
+def _canonical_goal_action(action: str) -> str:
+    return _GOAL_ACTION_ALIASES.get(action, action)
+
+
+def _available_goal_actions() -> list[str]:
+    return sorted(set(_GOAL_ACTIONS.keys()) | set(_GOAL_ACTION_ALIASES.keys()))
 
 
 def _dispatch_goal_action(
@@ -1486,13 +1503,14 @@ def goals(
         "scope": scope,
         "force": force,
     }
-    handler = _GOAL_ACTIONS.get(action)
+    canonical_action = _canonical_goal_action(action)
+    handler = _GOAL_ACTIONS.get(canonical_action)
     if handler is None:
         return json.dumps({
             "error": f"Unknown action '{action}'.",
-            "available_actions": sorted(_GOAL_ACTIONS.keys()),
+            "available_actions": _available_goal_actions(),
         })
-    return _dispatch_goal_action(action, handler, goal_kwargs)
+    return _dispatch_goal_action(canonical_action, handler, goal_kwargs)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TOOL 3b — Outcome Gates (Phase 6.1)
