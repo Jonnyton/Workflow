@@ -2,7 +2,13 @@
 title: Arc B prep — Author→Daemon rename infrastructure deletion (~406 LOC + caller migration)
 date: 2026-04-26
 author: navigator
-status: pre-flight scoping (no edits yet)
+status: completed
+completed_on: 2026-05-02
+completion_evidence:
+  - 0cbdea9 Arc B caller migration phase 1
+  - c967272 Arc B phase 2 import migration
+  - 1ae48ef Arc B phase 3 shim deletion
+  - b049f0d retired landed Arc B STATUS rows
 companion:
   - docs/audits/2026-04-27-project-wide-shim-audit.md (Arc B definition + original 4-file inventory; Phase 2 takeover found the fifth gated shim)
   - docs/exec-plans/completed/2026-04-15-author-to-daemon-rename.md (rename arc Phases 1-5)
@@ -13,6 +19,10 @@ gates_on: Task #18 (Step 11+ retarget sweep + Arc A/E shim deletion) MUST land f
 ---
 
 # Arc B (Author→Daemon rename infrastructure deletion) — pre-flight scope
+
+Completion note 2026-05-02: this plan is retained as the historical scope and
+execution record. Arc B is no longer live work; see the completion_evidence
+frontmatter for the landed commits.
 
 Read-only scope for deleting the Author→Daemon rename compat infrastructure: `workflow/_rename_compat.py` + 3 alias modules + their downstream consumers. **The biggest win-per-effort cleanup remaining** in the post-decomp shim ledger if rename caller-migration verifies clean.
 

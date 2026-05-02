@@ -19,13 +19,12 @@ Specs live in `docs/vetted-specs.md`; one deferred chatbot-first host-controls s
 
 ## Work
 
-Path: #18 retarget sweep (live) → Arc B phase 2 → Arc C → Phase 6 db rename. universe_server.py: 14012 → 972 LOC live in main.
+Path: #18 retarget sweep (live) → Arc C → Phase 6 db rename. universe_server.py: 14012 → 972 LOC live in main.
 
 Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by setting Status to `claimed:<name>`.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Arc B active-plan retirement — move landed Arc B plans out of active and refresh live path wording. | STATUS.md, docs/exec-plans/active/2026-04-26-decomp-arc-b-prep.md, docs/exec-plans/completed/2026-04-26-decomp-arc-b-prep.md, docs/exec-plans/active/2026-04-27-arc-b-phase-3-dispatch-card.md, docs/exec-plans/completed/2026-04-27-arc-b-phase-3-dispatch-card.md | b049f0d | claimed:codex-gpt5-desktop |
 | Scorched exact-original proof — mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | External directory acceptance — Open WebUI + LibreChat proofs green; needs MCP Registry/Claude/ChatGPT submissions, next local/IDE proof, first-user evidence. | packaging/registry/server.json, chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/open-webui-*.md, docs/ops/librechat-*.md, docs/design-notes/2026-05-01-mcp-host-customer-matrix.md, docs/exec-plans/active/2026-05-01-host-discoverability-and-onboarding-rollout.md | host/admin publisher | host-action |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |

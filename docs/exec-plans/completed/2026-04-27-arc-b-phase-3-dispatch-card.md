@@ -2,17 +2,26 @@
 title: Arc B Phase 3 Dispatch Card — author/daemon rename infrastructure deletion
 date: 2026-04-27
 author: navigator (claude-code, session d)
-status: dispatch-ready (gates on Arc B Phase 2 verifier SHIP)
+status: completed
+completed_on: 2026-05-02
+completion_evidence:
+  - c967272 Arc B Phase 2 import migration satisfied the dispatch gate
+  - 1ae48ef removed author rename compatibility shims
+  - b049f0d retired landed Arc B STATUS rows
 audience: lead, dev, verifier
-gates_on: Arc B Phase 2 verifier-shipped (zero `domains.fantasy_author` callers + zero `workflow.author_server` patch sites in non-shim files)
+gates_on: satisfied by c967272.
 load-bearing-question: When dev finishes Phase 2, what's the one-shot dispatch that closes the rename arc — file deletes + smoke + plugin mirror?
 companion:
-  - docs/exec-plans/active/2026-04-26-decomp-arc-b-prep.md (parent prep — full caller-migration enumeration)
+  - docs/exec-plans/completed/2026-04-26-decomp-arc-b-prep.md (parent prep — full caller-migration enumeration)
   - docs/audits/2026-04-27-project-wide-shim-audit.md (Arc B definition)
   - feedback_no_shims_ever (host directive driving this work)
 ---
 
 # Phase 3 Dispatch Card
+
+Completion note 2026-05-02: this dispatch card is historical. The Phase 3
+deletion landed in 1ae48ef after the Phase 2 import migration landed in
+c967272.
 
 When Arc B Phase 2 verifier-ships, paste the STATUS row below + dispatch dev with `execute card 2026-04-27-arc-b-phase-3-dispatch-card.md`. Estimated dev effort: ~45-90 min including smoke + plugin mirror.
 
@@ -244,7 +253,7 @@ Phase 3's Files cell overlaps:
 ## 7. STATUS.md Work row (lead pastes on Phase 2 SHIP)
 
 ```
-| **#25 Arc B phase 3** — delete rename-compat shims + obsolete tests/scripts + edit discovery.py + smoke `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q`. ~45-90 min. Card: `docs/exec-plans/active/2026-04-27-arc-b-phase-3-dispatch-card.md`. | workflow/_rename_compat.py, workflow/author_server.py, fantasy_daemon/author_server.py, fantasy_author/, workflow/discovery.py, domains/fantasy_author/, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/_rename_compat.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/author_server.py, tests/test_rename_compat.py, tests/test_discovery.py, tests/test_import_compatibility.py, scripts/build_shims.py, scripts/migrate_imports.py | #23 | dev-ready |
+| **#25 Arc B phase 3** — delete rename-compat shims + obsolete tests/scripts + edit discovery.py + smoke `WORKFLOW_AUTHOR_RENAME_COMPAT=0 pytest -q`. ~45-90 min. Card: `docs/exec-plans/completed/2026-04-27-arc-b-phase-3-dispatch-card.md` (historical). | workflow/_rename_compat.py, workflow/author_server.py, fantasy_daemon/author_server.py, fantasy_author/, workflow/discovery.py, domains/fantasy_author/, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/_rename_compat.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/author_server.py, tests/test_rename_compat.py, tests/test_discovery.py, tests/test_import_compatibility.py, scripts/build_shims.py, scripts/migrate_imports.py | #23 | dev-ready |
 ```
 
 **Files cell rationale:** lists every concrete path Phase 3 will write to (delete or edit). No collisions with any in-flight row at dispatch time (verified for current STATUS state; re-verify with `claim_check.py` at Phase 2 SHIP).
