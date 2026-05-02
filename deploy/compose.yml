@@ -41,6 +41,7 @@ services:
       - "127.0.0.1:8001:8001"
     environment:
       WORKFLOW_DATA_DIR: /data
+      WORKFLOW_REPO_ROOT: /app
       WORKFLOW_ALLOW_API_KEY_PROVIDERS: "0"
       WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY: "1"
       WORKFLOW_GOAL_POOL: "on"
@@ -50,6 +51,7 @@ services:
       - /etc/workflow/env
     volumes:
       - workflow-data:/data
+      - workflow-goal-pool:/app/goal_pool
     healthcheck:
       # Use the same canary shape as Layer-1 / tier-3 / docker-build
       # CI. Python already in the image.
@@ -140,6 +142,7 @@ services:
     command: ["python", "-m", "workflow.cloud_worker"]
     environment:
       WORKFLOW_DATA_DIR: /data
+      WORKFLOW_REPO_ROOT: /app
       WORKFLOW_ALLOW_API_KEY_PROVIDERS: "0"
       WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY: "1"
       WORKFLOW_GOAL_POOL: "on"
@@ -151,6 +154,7 @@ services:
       - /etc/workflow/env
     volumes:
       - workflow-data:/data
+      - workflow-goal-pool:/app/goal_pool
     depends_on:
       daemon:
         condition: service_healthy
@@ -163,6 +167,10 @@ volumes:
     name: workflow-data
     # Local named volume backed by Docker's default driver. Backups
     # (Row J) snapshot this to Hetzner Storage Box.
+  workflow-goal-pool:
+    name: workflow-goal-pool
+    # Shared pool posts must be visible to both the MCP daemon writer
+    # and the cloud worker reader across image redeploys.
 
 networks:
   default:
