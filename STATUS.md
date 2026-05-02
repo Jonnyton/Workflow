@@ -9,7 +9,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval` roundtrip flake: Fix B landed 16d4823; watch ≥30d.
 - [filed:2026-04-18 verified:2026-04-28] `add_canon_from_path` sensitivity: host Qs reframed by commons-first audit F3.
 - [filed:2026-04-24] Task #9 host Qs: GH Actions GROQ/GEMINI/XAI secrets + rotation e2e after deploy step.
-- **[P1 filed:2026-04-25 verified:2026-05-02]** BUG-034: PR #161 fixed legacy alias/`Unknown action`; public canaries green 2026-05-02T12:56-07:00; clean ChatGPT approval/write proof still pending. (see BUG-034)
+- **[P1 filed:2026-04-25 verified:2026-05-02]** BUG-034: PR #161 fixed legacy alias/`Unknown action`; public canaries green 2026-05-02T13:13-07:00; clean ChatGPT approval/write proof still pending. (see BUG-034)
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with legacy connector fallback test.
 - **[P1 filed:2026-04-30]** Castles II run `28479d8ddfb44488` failed `provider_exhausted` at discovery; blocks branch-run proof (BUG-038).
 
@@ -22,7 +22,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence - PR #183 deployed raw redaction; `codex/openai-live-proof` polishes diagnostic labels; needs ChatGPT/Claude proof + first-user evidence. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md, docs/ops/mcp-host-proof-registry.md, workflow/directory_server.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/directory_server.py, tests/test_directory_server.py | action-time compliance/final-submit approval | claimed:codex-gpt5-desktop-openai-submission |
+| Directory submissions + first-use evidence - PR #184 deployed strict `/mcp-directory` redaction; canaries green 2026-05-02T13:13-07:00; needs clean ChatGPT/Claude proof + first-user evidence. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md, docs/ops/mcp-host-proof-registry.md | action-time compliance/final-submit approval | claimed:codex-gpt5-desktop-openai-submission |
 | Community loop post-merge proof - #157 merged at `d897177`; verify deployed MCP, rerun canonical invoke smoke, then rendered connector proof. | output/user_sim_session.md, output/claude_chat_trace.md, .agents/uptime.log, MCP live branches fd5c66b1d87d/e019229850f9 | deploy of `d897177` | claimed:codex-loop-uptime-chatgpt |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
