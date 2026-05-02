@@ -85,9 +85,10 @@ WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY=1
 # the producer itself is a restart-time registration gate.
 WORKFLOW_GOAL_POOL=on
 
-# Container repo root used for shared branch catalogs and the
-# daemon/worker goal-pool handoff volume.
-WORKFLOW_REPO_ROOT=/app
+# Shared pool root used for daemon/worker goal-pool handoff. This path
+# intentionally lives under WORKFLOW_DATA_DIR so the non-root container
+# user can write it and both services see the same durable posts.
+WORKFLOW_REPO_ROOT=/data/community-pool
 
 # Optional base64-encoded ~/.codex/auth.json produced by a subscription
 # login. This is subscription auth material, not an OpenAI API key. The
