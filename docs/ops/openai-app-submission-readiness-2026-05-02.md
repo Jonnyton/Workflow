@@ -42,12 +42,11 @@ Sources:
 Verdict: not ready for final submit yet.
 
 Source packet is review-aligned and deployed, ChatGPT web proof is clean, and
-the repo-side legal/asset closeout is prepared in
-`codex/onboarding-close-gaps`. Final submission should wait for the
-OpenAI-specific blockers below:
+the repo-side legal/asset closeout has landed. Final submission should wait for
+the OpenAI-specific blockers below:
 
-1. This closeout branch must land and the legal/connect site changes must be
-   live before final submit uses `https://tinyassets.io/legal#privacy`.
+1. This domain-verification branch must land and the OpenAI dashboard must show
+   `tinyassets.io` verified.
 2. ChatGPT mobile must complete the main read/write flows.
 3. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
@@ -136,6 +135,15 @@ Closed repo-side in `codex/onboarding-close-gaps` on
   call arrays, count labels, policy hash, session boundary, host id, or storage
   `path` keys.
 - `npm run check` and `npm run build` passed in `WebSite/site`.
+
+Discovered 2026-05-02T15:00-07:00 during in-app browser dashboard review:
+
+- OpenAI Apps draft still showed `Domain not verified` for `tinyassets.io`.
+- Required challenge URL:
+  `https://tinyassets.io/.well-known/openai-apps-challenge`.
+- Branch `codex/openai-domain-verification` publishes the challenge file.
+- Dashboard `Verify Domain` remains blocked on action-time host approval after
+  the challenge URL is live.
 
 ## Tool Hint Audit
 
@@ -295,6 +303,7 @@ diagnostic keys are absent:
 - Live status redaction proof captured.
 - ChatGPT web golden prompts captured.
 - ChatGPT mobile golden prompts captured.
+- OpenAI dashboard shows `tinyassets.io` domain verified.
 - Logo and any chosen screenshots/demo assets uploaded.
 - Privacy policy categories reviewed.
 - Release notes reviewed.
