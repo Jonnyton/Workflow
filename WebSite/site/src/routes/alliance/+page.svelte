@@ -128,8 +128,7 @@
   .channels { box-sizing: border-box; min-width: 0; width: 100%; background: var(--bg-2); border: 1px solid var(--border-1); border-radius: 14px; padding: 24px 26px; }
   .channels__lead { font-size: 13.5px; color: var(--fg-2); line-height: 1.6; margin: 0 0 16px; }
   .channels__list { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 14px; }
-  .channels__list li { padding: 14px 16px; background: var(--bg-inset); border-radius: 8px; border: 1px solid transparent; transition: border-color var(--dur-fast) var(--ease-standard); }
-  .channels__list li:hover { border-color: var(--border-1); }
+  .channels__list li { padding: 14px 16px; background: var(--bg-inset); border-radius: 8px; border: 1px solid transparent; }
   .channel__name { display: block; font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--fg-1); letter-spacing: -0.005em; margin-bottom: 4px; }
   .channel__desc { font-size: 13px; color: var(--fg-2); line-height: 1.55; margin: 0 0 8px; }
   .channel__cta { display: inline-block; font-family: var(--font-mono); font-size: 11px; color: var(--ember-600); text-decoration: none; letter-spacing: 0.06em; }

@@ -71,6 +71,12 @@ Acceptance proof:
 - Trace goes to `output/claude_chat_trace.md` and summary to
   `output/user_sim_session.md`.
 
+Progress:
+
+- 2026-05-02 in-app browser reached the official Google Form page 2. Stopped
+  before entering required company/contact fields or submitting because that
+  would transmit contact data and signed-in Google identity to Google/Anthropic.
+
 ### ChatGPT App Directory Submission
 
 Artifact: `chatgpt-app-submission.json`
@@ -80,6 +86,7 @@ verification complete.
 
 Known blockers:
 
+- 2026-05-02 in-app browser reached the OpenAI Platform login screen.
 - BUG-034 tracks the current ChatGPT connector approval/post-approval stall.
 - If the App Directory dashboard requires an embedded app resource, a widget/CSP
   slice must land before pressing Submit.
@@ -151,6 +158,9 @@ Acceptance proof per host:
 
 Progress:
 
+- Codex CLI 0.104.0 registration path verified on 2026-05-02:
+  `docs/ops/mcp-codex-registration-proof-2026-05-02.md`. Tool-list/read-call
+  proof is still pending, so Codex must not be marketed as verified yet.
 - Cursor 3.2.16 registration path verified on 2026-05-01:
   `docs/ops/mcp-cursor-registration-proof-2026-05-01.md`. Tool-list/read-call
   proof is still pending, so Cursor must not be marketed as verified yet.
