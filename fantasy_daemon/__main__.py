@@ -598,7 +598,7 @@ def _should_execute_claimed_branch_directly(claimed_task: Any) -> bool:
     if not branch_def_id or branch_def_id in _UNIVERSE_CYCLE_BRANCH_IDS:
         return False
     request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
-    return request_type == "branch_run"
+    return request_type in {"branch_run", "bug_investigation"}
 
 
 def _try_execute_claimed_branch_task(

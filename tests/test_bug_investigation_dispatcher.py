@@ -249,3 +249,29 @@ class TestBranchTaskRequestTypeField:
         queue_path(tmp_path).write_text(json.dumps([task_dict]), encoding="utf-8")
         queue = read_queue(tmp_path)
         assert queue[0].request_type == "branch_run"
+
+
+class TestBugInvestigationDirectRunRouting:
+    def test_bug_investigation_tasks_execute_through_direct_run_path(self):
+        from fantasy_daemon.__main__ import _should_execute_claimed_branch_directly
+
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        assert _should_execute_claimed_branch_directly(task) is True
+
+    def test_universe_cycle_wrapper_still_uses_wrapper_path(self):
+        from fantasy_daemon.__main__ import _should_execute_claimed_branch_directly
+
+        task = BranchTask(
+            branch_task_id="bt-wrapper",
+            branch_def_id="fantasy_author:universe_cycle_wrapper",
+            universe_id="u",
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        assert _should_execute_claimed_branch_directly(task) is False
