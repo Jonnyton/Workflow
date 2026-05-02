@@ -95,7 +95,6 @@ packages = ["fantasy_author", "workflow", "domains"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["fantasy_author_original"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
