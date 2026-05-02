@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
-from workflow.directory_server import directory_mcp
+from workflow.directory_server import (
+    directory_mcp,
+    propose_workflow_goal,
+    search_workflow_goals,
+)
 
 EXPECTED_TOOLS = {
     "get_workflow_status": {
@@ -125,3 +130,31 @@ def test_directory_tool_inputs_avoid_sensitive_credentials() -> None:
         assert names.isdisjoint(sensitive_terms), (
             f"{tool.name} requests a sensitive credential-like field"
         )
+
+
+def test_directory_goal_write_and_search_round_trip(monkeypatch, tmp_path) -> None:
+    """Guard the reviewed directory goal path beyond tool-schema listing."""
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "directory-test")
+
+    from workflow.catalog import invalidate_backend_cache
+
+    invalidate_backend_cache()
+    try:
+        proposed = json.loads(
+            propose_workflow_goal(
+                name="Directory smoke goal",
+                tags="directory,smoke",
+                visibility="public",
+            )
+        )
+        assert proposed["status"] == "proposed"
+
+        searched = json.loads(search_workflow_goals("Directory smoke"))
+        assert searched["count"] >= 1
+        assert any(
+            goal["goal_id"] == proposed["goal"]["goal_id"]
+            for goal in searched["goals"]
+        )
+    finally:
+        invalidate_backend_cache()

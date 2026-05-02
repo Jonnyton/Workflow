@@ -139,9 +139,9 @@ Required before final submit:
 - Optional proof uploads if we choose to provide them: logo, screenshots, and
   demo recording URL. The dashboard says screenshots are optional for non-UI
   apps, but submission docs still list screenshots among form information.
-- Real ChatGPT write-path test for `propose_workflow_goal` and
-  `submit_workflow_request`. This mutates Workflow state, so run only after
-  action-time host approval.
+- Retry the real ChatGPT write-path test for `propose_workflow_goal` and
+  `submit_workflow_request` after the `/mcp-directory` goal-tool import fix is
+  live. This mutates Workflow state, so run only with action-time host approval.
 - Mobile evidence for the main flows, because the OpenAI testing docs say to
   invoke the connector in ChatGPT iOS or Android apps.
 - Keep expected outputs clear and free of personal identifiers or irrelevant
@@ -192,10 +192,20 @@ Negative prompt tested:
   Result: ChatGPT used the native weather surface; no new Workflow tool call was
   observed between the prompt and response.
 
+Write-path attempt:
+
+- Prompt: `Use Workflow to propose a public goal named "Onboard new MCP hosts" with tags discovery,onboarding, then submit a request asking the daemon to summarize today's discoverability blockers.`
+  Result: ChatGPT rendered the `Propose new public workflow goal?` approval card,
+  but the tool call did not complete after approval. A direct public
+  `/mcp-directory` probe reproduced `cannot import name '_ensure_author_server_db'
+  from 'workflow.api.branches'`; final write-path proof is blocked until the
+  directory goal-tool fix is deployed and retested.
+
 Not yet tested:
 
 - Positive Test Case 5, because it creates a shared/public goal proposal and a
-  queued Workflow request.
+  queued Workflow request, and the first approved attempt exposed the live
+  `/mcp-directory` goal-tool import regression above.
 - Negative cases 2 and 3, because the submitted prompts ask ChatGPT not to route
   unrelated email/credential/destructive work through Workflow; run them in
   Developer Mode before final submit and verify no Workflow write tool is called.
