@@ -33,7 +33,7 @@ surface and "client" only for protocol behavior.
 
 | Host surface | User shape | Likely Workflow path | Discovery/install path | Status | Minimum proof |
 |---|---|---|---|---|---|
-| Official MCP Registry | Any registry-aware MCP host | `https://tinyassets.io/mcp-directory` | Published `server.json` | artifact-ready; publish-blocked | Registry listing fetched publicly |
+| Official MCP Registry | Any registry-aware MCP host | `https://tinyassets.io/mcp-directory` | Published `server.json` | published-live | 2026-05-01 API search returned `io.github.Jonnyton/workflow-universe-server` active/latest |
 | Claude Connectors Directory | Logged-in Claude users/admins | `https://tinyassets.io/mcp-directory` | Anthropic directory review | packet-ready; submission-needed | Directory install plus live Claude tool call |
 | Claude custom connector | Logged-in Claude users | `https://tinyassets.io/mcp` | Custom connector settings | protocol-live; UI proof refresh needed | Claude.ai trace with visible result |
 | ChatGPT App Directory | Eligible logged-in ChatGPT users/admins | `https://tinyassets.io/mcp-directory` plus app metadata/widget if required | OpenAI app submission | packet-ready; submission-needed | App Directory install without Developer Mode |
@@ -43,7 +43,7 @@ surface and "client" only for protocol behavior.
 | Codex CLI/IDE | Local developer agent | MCP config | Codex config | planned | Codex tool list + read call |
 | Gemini CLI | Local developer agent | MCP server config | Gemini CLI settings | planned | Gemini CLI tool list + read call |
 | VS Code/GitHub Copilot | Local IDE user | `.vscode/mcp.json` or user MCP config | MCP gallery/config/command palette | planned | Copilot Agent mode calls Workflow |
-| Cursor | Local IDE user | Cursor MCP config | Cursor settings/add path | planned | Cursor lists and calls Workflow |
+| Cursor | Local IDE user | Cursor MCP config | Cursor settings/add path | registration-path verified; tool-call pending | 2026-05-01 CLI added isolated Streamable HTTP config; Cursor tool-list/read call still required |
 | Cline/Roo/Continue/Windsurf | Local IDE agent user | MCP config or marketplace | Host-specific settings | planned | Tool list plus safe read call |
 | Replit Agent | Cloud developer agent | Replit MCP integration | Replit MCP path | planned | Replit Agent invokes Workflow |
 | Open WebUI | Self-hosted/no-hosted-chat-login user | Native Streamable HTTP to `/mcp-directory` or `/mcp` | Admin Settings -> External Tools | verified: local Docker 0.9.2 | 2026-05-01 proof: chat invoked `workflow_get_workflow_status` |
