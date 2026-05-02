@@ -90,7 +90,7 @@ from workflow.api.wiki import (
 )
 from workflow.catalog import CommitFailedError, DirtyFileError
 
-logger = logging.getLogger("universe_server.branches")
+logger = logging.getLogger(__name__)
 
 
 # ───────────────────────────────────────────────────────────────────────────

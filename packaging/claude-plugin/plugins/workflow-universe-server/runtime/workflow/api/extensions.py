@@ -83,7 +83,7 @@ from workflow.api.runtime_ops import (
     _SCHEDULER_ACTIONS,
 )
 
-logger = logging.getLogger("universe_server.extensions")
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
