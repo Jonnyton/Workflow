@@ -298,3 +298,17 @@ Notes:
   `wf-reversible-approval-conventions` were `git cherry` patch-equivalent to
   `origin/main`; `wf-agents-envvars` was extracted into `ff66420`. Deleted
   only local branches/worktrees; remote refs were left intact.
+
+## 2026-05-02 - graph compiler failed-event foldback
+
+- Provider: codex-gpt5-desktop
+- Branch: `codex/status-loop-ownership`
+- Lane state: Swept after foldback
+- Worktree removed: `C:\Users\Jonathan\Projects\wf-graph-compiler-fix`
+- Local branch deleted: `fix/graph-compiler-event-sink`
+- STATUS/Issue/PR: STATUS row "Fold stale graph compiler failed-event branch"
+- Source commit: `d2884fe7eaee4918538da6e3e574bd57507536ed`
+- Purpose: preserve terminal failed node events when provider calls raise.
+- Ship condition: regression + adjacent run-event tests pass, plugin mirror
+  rebuilt, row removed in the landing commit.
+- Remote branch: left for post-push PR/ref check before deleting any GitHub ref.

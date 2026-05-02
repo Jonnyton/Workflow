@@ -1708,6 +1708,18 @@ def _invoke_graph(
             ))
             return
 
+        if phase == "failed":
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=node_id,
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
+                detail=detail,
+            ))
+            return
+
         if is_cancel_requested(base_path, run_id):
             raise RunCancelledError(f"Run {run_id} cancelled between nodes.")
         served = detail.get("provider_served")
@@ -2623,6 +2635,18 @@ def _invoke_graph_resume(
                 node_id=node_id,
                 status=NODE_STATUS_RUNNING,
                 started_at=_now(),
+                detail=detail,
+            ))
+            return
+
+        if phase == "failed":
+            record_event(base_path, RunStepEvent(
+                run_id=run_id,
+                step_index=step + _PENDING_OFFSET,
+                node_id=node_id,
+                status=NODE_STATUS_FAILED,
+                started_at=_now(),
+                finished_at=_now(),
                 detail=detail,
             ))
             return

@@ -221,6 +221,27 @@ def _is_cancel_exception(exc: BaseException) -> bool:
     return type(exc).__name__ == "RunCancelledError"
 
 
+def _emit_failed_event(
+    event_sink: Callable[..., None] | None,
+    node_id: str,
+    exc: BaseException,
+) -> None:
+    """Emit a terminal failed event before re-raising CompilerError."""
+    if event_sink is None:
+        return
+    try:
+        event_sink(
+            node_id=node_id,
+            phase="failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+    except Exception as sink_exc:  # noqa: BLE001
+        if _is_cancel_exception(sink_exc):
+            raise
+        logger.exception("event_sink raised in %s (failed)", node_id)
+
+
 def _dict_merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Shallow merge reducer for state fields declared ``reducer="merge"``."""
     out = dict(left)
@@ -848,6 +869,7 @@ def _build_prompt_template_node(
                     raise
                 except Exception as exc:
                     logger.exception("Policy provider call failed in %s", node.node_id)
+                    _emit_failed_event(event_sink, node.node_id, exc)
                     raise CompilerError(
                         f"Provider call failed in node '{node.node_id}': {exc}"
                     ) from exc
@@ -864,6 +886,7 @@ def _build_prompt_template_node(
                     raise
                 except Exception as exc:
                     logger.exception("Provider call failed in %s", node.node_id)
+                    _emit_failed_event(event_sink, node.node_id, exc)
                     raise CompilerError(
                         f"Provider call failed in node '{node.node_id}': {exc}"
                     ) from exc
