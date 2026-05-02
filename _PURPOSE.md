@@ -6,7 +6,7 @@
 - Base ref: origin/main at session start; branch is currently divergent and must be reconciled before PR.
 - STATUS row: Scorched AROS exact-original proof.
 - Worktree: C:\Users\Jonathan\Projects\Workflow-scorched-pwa-live (legacy pre-`wf-` name; do not use `Workflow-scorched-pwa-live-main`).
-- PR expectation: draft PR until exact original reaches gameplay, mouse input fires, a shot hits a tank, visible state changes, sound is verified, and opposite-provider review returns approve/adapt.
+- PR expectation: draft PR #162 until exact original reaches gameplay, mouse input fires, a shot hits a tank, visible state changes, sound is verified, and opposite-provider review returns approve/adapt.
 - Ship condition: exact original game is playable through the browser/user path with cited media provenance and compatibility proof.
 - Abandon/defer condition: no legal/free firmware path can reach gameplay; leave host-supplied licensed Kickstart path and AROS blocker documented.
 - Memory refs: none found in `.claude/agent-memory/` or `.agents/activity.log` for Scorched as of 2026-05-02.
