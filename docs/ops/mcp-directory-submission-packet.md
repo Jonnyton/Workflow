@@ -169,8 +169,17 @@ Acceptance proof:
 - Trace is saved to `output/claude_chat_trace.md` and summarized in
   `output/user_sim_session.md`.
 
-Blocker: actual submission requires Anthropic's form/review flow and any
-human/org fields not present in the repo.
+2026-05-02 browser check:
+
+- Official docs route to `https://clau.de/mcp-directory-submission`, which
+  resolves to the Google Form `MCP Directory Submission Form`.
+- Form page 2 is reachable in the in-app browser.
+- Stopped before entering required company/contact fields because the form
+  records the signed-in Google account identity on upload/submission and
+  contact fields transmit personal/professional data to Google/Anthropic.
+
+Blocker: actual submission requires Anthropic's form/review flow, action-time
+approval before transmitting contact details, and final Submit confirmation.
 
 ### ChatGPT App Directory
 
@@ -196,6 +205,15 @@ Blockers:
 
 - Actual submission requires the OpenAI app submission/dashboard flow from an
   account with app write/read permissions and completed org verification.
+- 2026-05-02 browser check reached `https://platform.openai.com/login` and
+  stopped at the OpenAI Platform login screen.
+- 2026-05-02 after host login, the authenticated dashboard reached
+  `https://platform.openai.com/apps-manage`, created a `Workflow` app draft,
+  and opened the app submission form. The visible form asks for
+  `chatgpt-app-submission.json`, logo assets, app metadata, developer/support
+  fields, website/privacy/TOS URLs, demo recording URL, commerce confirmation,
+  and later review submission. Browser work stopped before uploading files,
+  entering developer/support metadata, or pressing any final review submit.
 - OpenAI's submission requirements include a defined CSP for the app. This
   branch prepares the MCP tool surface and submission JSON; a widget/CSP slice
   must land before pressing Submit if the dashboard requires an embedded app

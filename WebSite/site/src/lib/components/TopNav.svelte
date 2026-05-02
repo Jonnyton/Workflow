@@ -8,6 +8,7 @@
     { href: '/goals', label: 'Goals' },
     { href: '/graph', label: 'Graph' },
     { href: '/loop', label: 'Loop' },
+    { href: '/proof', label: 'Proof' },
     { href: '/economy', label: 'Economy' },
     { href: '/status', label: 'Status' }
   ];

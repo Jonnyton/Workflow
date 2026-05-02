@@ -143,6 +143,25 @@ scoped reader at `python scripts/docview.py`.
 - When the right workflow skill is not obvious, start with `using-agent-skills` and then read the matching skill.
 - After editing shared skills, run `powershell -ExecutionPolicy Bypass -File scripts/sync-skills.ps1` to refresh the Claude Code mirror.
 
+### Where new conventions live
+
+This project is multi-provider: Codex, Cursor, Aider, Claude Code, Cowork,
+and future agents may work from the same repo. Project-level conventions go
+in `AGENTS.md` first so every provider can see the same process truth.
+Provider-specific files such as `CLAUDE.md`, `.claude/agents/*`,
+`.cursor/rules/*`, `.cursorrules`, and `.codex/*` are for harness-specific
+notes or pointers back to `AGENTS.md`.
+
+Before saving a rule, ask whether a teammate in another provider would need
+it. If yes, put it in `AGENTS.md`; if it is only about one harness, tag the
+section as `[harness-specific]`, `[Claude Code only]`, `[Cursor only]`,
+`[Codex only]`, `[Cowork only]`, or `[Aider only]`.
+
+Run `python scripts/check_cross_provider_drift.py` after editing
+provider-specific files. Claude Code also wires
+`.claude/hooks/cross_provider_drift_guard.py` as a PostToolUse hook for
+`Write`, `Edit`, and `MultiEdit` on the developer teammate.
+
 ### Multi-Session Steering
 
 - The user may steer multiple live sessions across different providers at once.

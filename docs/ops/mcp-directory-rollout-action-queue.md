@@ -71,6 +71,12 @@ Acceptance proof:
 - Trace goes to `output/claude_chat_trace.md` and summary to
   `output/user_sim_session.md`.
 
+Progress:
+
+- 2026-05-02 in-app browser reached the official Google Form page 2. Stopped
+  before entering required company/contact fields or submitting because that
+  would transmit contact data and signed-in Google identity to Google/Anthropic.
+
 ### ChatGPT App Directory Submission
 
 Artifact: `chatgpt-app-submission.json`
@@ -80,6 +86,12 @@ verification complete.
 
 Known blockers:
 
+- 2026-05-02 in-app browser reached the OpenAI Platform login screen.
+- 2026-05-02 after host login, in-app browser reached
+  `https://platform.openai.com/apps-manage`, created a `Workflow` app draft,
+  and stopped at the submission form before uploading
+  `chatgpt-app-submission.json`, logo assets, or entering developer/support,
+  privacy/TOS, demo recording, commerce, and final review fields.
 - BUG-034 tracks the current ChatGPT connector approval/post-approval stall.
 - If the App Directory dashboard requires an embedded app resource, a widget/CSP
   slice must land before pressing Submit.
@@ -101,8 +113,9 @@ Status: complete for the 2026-05-01 website pass.
 - This branch updates the same surfaces for MCP Registry publication while
   keeping Claude directory and ChatGPT App Directory acceptance pending.
 - Open WebUI and LibreChat remain the only verified no-hosted-chatbot-login
-  hosts; LM Studio, Jan, OpenClaw/channel gateway, and IDE hosts stay planned
-  or partial until host-specific proof lands.
+  hosts. Codex CLI is verified as a developer CLI path. LM Studio, Jan,
+  OpenClaw/channel gateway, and other IDE hosts stay planned or partial until
+  host-specific proof lands.
 
 ## Dev Verification Queue
 
@@ -151,6 +164,11 @@ Acceptance proof per host:
 
 Progress:
 
+- Codex CLI 0.104.0 verified on 2026-05-02:
+  `docs/ops/mcp-codex-registration-proof-2026-05-02.md` and
+  `docs/ops/mcp-codex-runtime-proof-2026-05-02.md`. Runtime proof listed
+  Workflow tools and called `get_workflow_status`, returning
+  `"schema_version": 1`.
 - Cursor 3.2.16 registration path verified on 2026-05-01:
   `docs/ops/mcp-cursor-registration-proof-2026-05-01.md`. Tool-list/read-call
   proof is still pending, so Cursor must not be marketed as verified yet.

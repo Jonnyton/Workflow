@@ -1,9 +1,11 @@
 <script lang="ts">
   import {
     createPulse,
+    compactNumber,
     refreshMcpSnapshot,
     refreshRepoSnapshot,
-    relativeStamp
+    relativeStamp,
+    shortHash
   } from '$lib/live/project';
 
   type Tone = 'live' | 'ember' | 'violet';
@@ -53,16 +55,19 @@
     <strong>{detail}</strong>
   </div>
   <div class="source-actions">
-    <button type="button" disabled={busy !== null} onclick={refreshMcp}>
-      {busy === 'mcp' ? 'Refreshing MCP' : 'Refresh MCP'}
+    <button type="button" disabled={busy !== null} aria-busy={busy === 'mcp'} onclick={refreshMcp}>
+      Refresh MCP
     </button>
-    <button type="button" disabled={busy !== null} onclick={refreshGithub}>
-      {busy === 'github' ? 'Refreshing GitHub' : 'Refresh GitHub'}
+    <button type="button" disabled={busy !== null} aria-busy={busy === 'github'} onclick={refreshGithub}>
+      Refresh GitHub
     </button>
   </div>
   <div class="source-stamps">
-    <span>MCP {relativeStamp(pulse.mcp.fetched_at)}</span>
-    <span>GitHub {relativeStamp(pulse.repo.fetched_at)}</span>
+    <span>MCP {relativeStamp(pulse.mcp.fetched_at)} · {compactNumber(pulse.knowledgeCount)} commons · {compactNumber(pulse.mcp.goals.length)} goals</span>
+    <span>GitHub {relativeStamp(pulse.repo.fetched_at)} · {compactNumber(pulse.branchCount)} branches · head {shortHash(pulse.repo.repo.head)}</span>
+    {#if busy}
+      <span>{busy === 'mcp' ? 'Refreshing MCP feed' : 'Refreshing GitHub feed'}</span>
+    {/if}
     {#if error}
       <span class="source-error">{error}</span>
     {/if}

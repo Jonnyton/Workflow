@@ -168,7 +168,7 @@
 
     if (activeLens === 'status') {
       return [
-        { kicker: 'MCP source', title: project.mcp.source, body: `Snapshot fetched ${relativeStamp(project.mcp.fetched_at)}. Refresh probes the live connector path.`, meta: 'tinyassets.io/mcp', href: '/connect' },
+        { kicker: 'MCP source', title: project.mcp.source, body: `Snapshot fetched ${relativeStamp(project.mcp.fetched_at)}. Refresh probes the live connector path.`, meta: 'tinyassets.io/mcp' },
         { kicker: 'GitHub source', title: project.repo.source, body: `Repo snapshot fetched ${relativeStamp(project.repo.fetched_at)}. Refresh pulls branch data from GitHub.`, meta: `head ${shortHash(project.repo.repo.head)}`, href: project.repo.repo.remote_url?.replace(/\.git$/, '') || 'https://github.com/Jonnyton/Workflow', external: true },
         { kicker: 'Current universe', title: project.activeUniverse?.id ?? 'No universe', body: project.activeUniverse ? `${project.activeUniverse.phase}, ${compactNumber(project.activeUniverse.word_count)} words.` : 'No live universe in snapshot.', meta: project.activeUniverse?.last_activity_at ? relativeStamp(project.activeUniverse.last_activity_at) : 'snapshot', href: '/host' }
       ];
@@ -258,14 +258,14 @@
       </div>
 
       <div class="refresh-box" aria-label="Live data controls">
-        <button type="button" onclick={refreshMcp} disabled={mcpLoading}>
-          {mcpLoading ? 'MCP...' : 'Refresh MCP'}
+        <button type="button" onclick={refreshMcp} disabled={mcpLoading} aria-busy={mcpLoading}>
+          Refresh MCP
         </button>
-        <button type="button" onclick={refreshGithub} disabled={githubLoading}>
-          {githubLoading ? 'GitHub...' : 'Refresh GitHub'}
+        <button type="button" onclick={refreshGithub} disabled={githubLoading} aria-busy={githubLoading}>
+          Refresh GitHub
         </button>
-        <span>MCP {relativeStamp(mcp.fetched_at)}</span>
-        <span>GitHub {relativeStamp(repo.fetched_at)}</span>
+        <span>MCP {relativeStamp(mcp.fetched_at)} · {compactNumber(pulse.knowledgeCount)} commons</span>
+        <span>GitHub {relativeStamp(repo.fetched_at)} · {compactNumber(pulse.branchCount)} branches</span>
       </div>
     </div>
 

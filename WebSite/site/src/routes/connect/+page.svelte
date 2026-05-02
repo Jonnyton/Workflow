@@ -83,15 +83,15 @@
       status: 'Verified self-hosted path',
       account: 'Use this if you run your own chat UI, local model shell, or channel gateway and do not want a Claude or ChatGPT login.',
       setup: `For Open WebUI or LibreChat, add ${directoryUrl} as a Streamable HTTP / remote MCP server. Use ${url} only when a host needs the full custom connector surface.`,
-      proof: 'Open WebUI local Docker 0.9.2 and LibreChat local Docker v0.8.5 are verified. LM Studio, Jan, OpenClaw/channel gateways, and IDE hosts stay planned until proof traces land.',
+      proof: 'Open WebUI local Docker 0.9.2 and LibreChat local Docker v0.8.5 are verified. LM Studio, Jan, and OpenClaw/channel gateways stay planned until proof traces land.',
       anchor: '#proof-state'
     },
     {
       title: 'VS Code / Cursor / Codex',
-      status: 'Builder path',
+      status: 'Codex verified; other IDEs pending',
       account: 'Use this if you want Workflow available inside your coding agent or IDE while you work in a repo.',
-      setup: `Use the MCP Registry listing or add ${directoryUrl} for the narrow directory surface. Use ${url} only when the host needs the full custom connector surface.`,
-      proof: 'MCP Registry metadata is live. Each IDE host still needs a tool-list plus safe read smoke before verified copy.',
+      setup: `For Codex CLI, add ${directoryUrl} as the Workflow MCP server or pass it with a Codex config override. Use ${url} only when the host needs the full custom connector surface.`,
+      proof: 'Codex CLI 0.104.0 listed Workflow tools and called get_workflow_status on 2026-05-02. Cursor is registration-only so far; VS Code/Copilot is still planned.',
       anchor: '#technical-proof'
     },
     {
@@ -125,7 +125,12 @@
     {
       label: 'Open WebUI and LibreChat',
       status: 'Verified self-hosted path',
-      body: `No-login local Docker proof exists for Open WebUI and LibreChat via ${directoryUrl}. LM Studio, Jan, OpenClaw, and IDE hosts stay planned until host-specific proof lands.`
+      body: `No-login local Docker proof exists for Open WebUI and LibreChat via ${directoryUrl}. LM Studio, Jan, and OpenClaw stay planned until host-specific proof lands.`
+    },
+    {
+      label: 'Codex CLI',
+      status: 'Verified developer CLI path',
+      body: `Codex CLI 0.104.0 can register ${directoryUrl}, list Workflow tools, and call get_workflow_status. Cursor and VS Code still need full read-call proof.`
     },
     {
       label: 'Directories and app stores',

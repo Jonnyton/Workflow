@@ -22,19 +22,18 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| Scorched exact-original proof — mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence — MCP Registry published; Claude/ChatGPT acceptance needs authenticated host/admin flow. | chatgpt-app-submission.json, docs/ops/mcp-host-proof-registry.md, docs/ops/mcp-directory-submission-packet.md | registry live 2026-05-01 | host-action |
-| **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |
-| **#24 Arc C** — fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | #18 | dev-ready |
+| Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
+| Directory submissions + first-use evidence - Claude form p2; OpenAI `Workflow` app draft form reached; Codex CLI verified. | chatgpt-app-submission.json, docs/ops/mcp-*.md | contact/upload/final-submit approval | host-action |
+| **#18 retarget sweep + Arc A/E shim deletion** - IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |
+| Patch-request incentives + requester-directed daemon routing - optional incentives affect daemon pickup order only, never acceptance/merge odds; parent `00e5e52661c240d2` now has live attached child receipt. | PLAN.md, docs/design-notes/2026-05-01-patch-request-incentives.md, workflow/api/market.py, workflow/work_targets.py, workflow/daemon_registry.py, tests/test_patch_request_incentives.py | #18 lock overlaps market/tests | dev-ready |
+| **#24 Arc C** - fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | #18 | dev-ready |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
 | `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28). Single param add. | workflow/api/runs.py, tests/ | #18 | dev-ready |
-| Claude.ai injection mitigation — §5/§5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | #18 | dev-ready |
-| Community change loop — controls live + chatbot proof green; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | #18 lock overlaps tests/docstrings | monitoring |
-| Daemon memory plugin mirror sync — rebuild packaged runtime after #18 releases mirror tree. | packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/daemon_{registry,wiki,memory}.py | #18; codex/daemon-memory-governor | dev-ready |
-| Soul-daemon uniqueness guard — block forkless duplicate soul hashes; explicit copy needs lineage + new name. | workflow/daemon_{registry,server}.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | #18 | dev-ready |
-| Community-loop core soul routing — prefer flagship-track role daemons; external claimants need eligible flagship model + confirmed claims or borrowed role soul. | workflow/dispatcher.py, workflow/daemon_registry.py, workflow/api/universe.py, tests/ | #18 | dev-ready |
-| Enable Actions PR creation for auto-fix — repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
-| Legacy-branding + architecture-edges cleanup arcs — remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | #18 | nav-then-dev |
+| Claude.ai injection mitigation - Section 5/5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | #18 | dev-ready |
+| Community change loop - controls live + chatbot proof green; P1a deployed/live attach proof green 2026-05-02; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | #18 lock overlaps tests/docstrings | monitoring |
+| Daemon soul followups - mirror sync after #18, duplicate-soul guard, and flagship core routing. | workflow/daemon_registry.py, workflow/daemon_wiki.py, workflow/daemon_memory.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | #18 | dev-ready |
+| Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
+| Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | #18 | nav-then-dev |
 | Windows full-suite backup.sh path fix — clean HEAD: `bash.exe` receives raw `C:\...` path and cannot find script. | tests/test_backup_script.py | #18 | dev-ready |
 | Clean-clone MCP config test mismatch — test expects ignored local `.mcp.json`; retarget to safe example config. | tests/test_mcp_server.py, .mcp.example.json, .gitignore | #18 | dev-ready |
 | R7 closure pass — items 6+7 obviated; 1-5 cover Arc B/C; 8 by #25. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
@@ -53,7 +52,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. Directory rollout completion = registry/directory acceptance + no-dev-mode proof + first-user evidence.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), next is clean chatbot/user evidence and #18 unblock for incentive routing.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.

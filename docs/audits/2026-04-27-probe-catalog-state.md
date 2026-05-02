@@ -20,13 +20,13 @@ The most consequential finding is **PROBE-007 missing**: `dns-canary.yml` runs e
 | Catalog probe | Implementing script | Live? | Last validated | Notes |
 |---|---|---|---|---|
 | PROBE-001 (full-stack smoke) | `scripts/mcp_public_canary.py` (+ `uptime_canary.py` wrapper) | YES | 2026-04-20 | Catalog correctly notes wrapper is borderline-not-cataloged. |
-| PROBE-002 (Layer-2 liveness) | `scripts/uptime_canary_layer2.py` | DESIGN-ONLY per catalog | 2026-04-19 design-only | Script exists with full exit-code table; catalog says "not yet live-run as automated probe." Verify: was Task Scheduler entry `Workflow-Canary-L2` ever wired? If yes, catalog is stale. If no, script is shelfware. |
+| PROBE-002 (Layer-2 liveness) | `scripts/uptime_canary_layer2.py` | DESIGN-ONLY / UNWIRED per catalog | 2026-05-01 read-only scheduled-task check | Script exists with full exit-code table; `Get-ScheduledTask -TaskName Workflow-Canary-L2` returned no task on 2026-05-01. Catalog remains correct: host `--once` smoke + task activation still pending. |
 | PROBE-003 (wiki write-roundtrip) | `scripts/wiki_canary.py` | YES (CI 5-min) | 2026-04-26 | Step in `.github/workflows/uptime-canary.yml`. Confirmed. |
 | PROBE-004 (MCP tool-invocation) | `scripts/mcp_tool_canary.py` | YES | 2026-04-22 | Confirmed. |
 | PROBE-005 (last-activity freshness) | `scripts/last_activity_canary.py` | YES (CI 5-min) | 2026-04-26 | Step in `.github/workflows/uptime-canary.yml`. Tests at `tests/test_last_activity_canary.py`. Confirmed. |
 | PROBE-006 (revert-loop detection) | `scripts/revert_loop_canary.py` | YES (CI 5-min) | 2026-04-26 | Step in `.github/workflows/uptime-canary.yml`. Spec at `docs/design-notes/2026-04-23-revert-loop-canary-spec.md`. Confirmed. |
 
-**(a) Documented-but-not-implemented:** none. All 6 catalogued probes have implementing scripts. PROBE-002's "design-validated only" caveat is internal to the catalog and not a contradiction — but worth re-checking whether the Task Scheduler L2 entry is still missing or has been wired since 2026-04-19.
+**(a) Documented-but-not-implemented:** none. All 6 catalogued probes have implementing scripts. PROBE-002's "design-validated only" caveat is internal to the catalog and not a contradiction. Freshness check 2026-05-01 confirmed the Task Scheduler L2 entry is still missing, so host activation remains pending rather than silently completed.
 
 **(b) Implemented-but-not-documented:** see §2.
 
@@ -128,12 +128,12 @@ The 2026-04-19 outage was "apex 200, /mcp 404" — caught by `/mcp` probe. The i
 
 ### 4.6 (Verify, don't add) PROBE-002 live-run status
 
-Catalog says PROBE-002 (Layer-2 liveness) is "design-validated (not yet live-run as automated probe)." Script `uptime_canary_layer2.py` is fully implemented with exit-code table + Windows Task Scheduler reference (`Workflow-Canary-L2`). Either:
+Catalog says PROBE-002 (Layer-2 liveness) is "design-validated (not yet live-run as automated probe)." Script `uptime_canary_layer2.py` is fully implemented with exit-code table + Windows Task Scheduler reference (`Workflow-Canary-L2`). 2026-05-01 read-only check: `Get-ScheduledTask -TaskName Workflow-Canary-L2` returned no task.
 
-- The Task Scheduler entry was wired and the catalog is stale → update catalog with live-run date.
-- The Task Scheduler entry was never wired → either wire it or move PROBE-002 to a "Designed but not live" appendix so the catalog's admission criterion ("run live, not just designed") stays true.
+- The Task Scheduler entry was never wired. Catalog updated with a 2026-05-01 freshness stamp.
+- Remaining action is host-owned activation after a `--once` GREEN smoke; do not treat PROBE-002 as a live hourly host probe yet.
 
-Either way, the inconsistency is small and low-risk — but worth resolving. ~30 min to investigate + decide.
+This audit uncertainty is resolved; activation itself remains outside this audit.
 
 ## 5. What this audit does NOT cover
 

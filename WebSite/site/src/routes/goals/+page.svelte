@@ -385,11 +385,11 @@
           Your chatbot can browse these goals directly through the MCP connector. Pick a goal to see the live commons records and branch signals currently attached to it.
         </p>
         <div class="refresh-box" aria-label="Live data controls">
-          <button type="button" onclick={refreshMcp} disabled={mcpLoading}>
-            {mcpLoading ? 'MCP...' : 'Refresh MCP'}
+          <button type="button" onclick={refreshMcp} disabled={mcpLoading} aria-busy={mcpLoading}>
+            Refresh MCP
           </button>
-          <button type="button" onclick={refreshGithub} disabled={githubLoading}>
-            {githubLoading ? 'GitHub...' : 'Refresh GitHub'}
+          <button type="button" onclick={refreshGithub} disabled={githubLoading} aria-busy={githubLoading}>
+            Refresh GitHub
           </button>
           <span>MCP {relativeStamp(mcp.fetched_at)}</span>
           <span>GitHub {relativeStamp(repo.fetched_at)}</span>

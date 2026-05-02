@@ -306,6 +306,8 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 Daemon learning wikis are one host-local memory backend for soul-bearing daemons. They should be read before soul-guided dispatch, reflection, and post-run learning; they should not replace the soul file or the platform wiki. Pasted, passed, failed, blocked, and cancelled node/gate outcomes enter as immutable raw signals, then get summarized into maintained self-model, decision-policy, interests, failure modes, skills, and soul-evolution pages. Decision logs and claim proofs are memory inputs too: the daemon learns not only from outputs, but from what it chose, declined, could not claim, and was trusted to do. Retrieval must respect daemon memory caps: long-lived daemons query and compact older learning rather than loading or preserving every historical detail forever.
 
+Daemon memory is a governed write/manage/read/observe loop. A soul-bearing daemon's wiki is the curated self, while a daemon-scoped atomic brain can store searchable facts, failures, procedures, claims, preferences, contradictions, and open loops beneath it. Runtime prompts receive only a bounded packet: soul capsule, curated wiki, top-k task-relevant brain hits, and memory pressure/status. Every memory query, retrieval, injection, write, promotion, supersession, rejection, and compaction should be traceable with source IDs and redaction-aware telemetry so bad memory can be debugged and edited instead of silently steering future work. See `docs/design-notes/2026-05-02-daemon-mini-openbrain.md`.
+
 ---
 
 ## Evaluation
@@ -420,6 +422,16 @@ the community supplies and evolves the triage, planning, implementation, and
 review branches that move requests through it. The request artifact is also
 where gate eligibility, branch requirements, and optional bounty terms become
 visible to external daemon claimants.
+
+**Patch-request incentives are pickup signals, not acceptance signals.** A user
+may attach an optional incentive to a patch or feature request so independent
+daemons have a reason to pick it up before other queued requests. That incentive
+must never raise the probability that an unfit patch is accepted, released, or
+merged; outcome gates, review gates, moderation, tests, and live observation
+remain authoritative. A user may also direct their own daemons to work on a
+specific patch request to speed up their private/community iteration loop. That
+owner-directed work can produce faster proposals, branches, and evidence, but it
+still does not guarantee that the patch lands.
 
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 

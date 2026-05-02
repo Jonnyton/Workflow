@@ -6,6 +6,7 @@
 # by CRLF"). Pin LF for text formats that the engine round-trips.
 
 # Source + infrastructure — always LF.
+.gitattributes text eol=lf
 *.py   text eol=lf
 *.yaml text eol=lf
 *.yml  text eol=lf
@@ -13,10 +14,12 @@
 *.md   text eol=lf
 *.json text eol=lf
 *.sh   text eol=lf
+scripts/git-hooks/* text eol=lf
 
 # Scripts + config files commonly touched on Windows.
 *.cfg  text eol=lf
 *.ini  text eol=lf
+*.ps1  text eol=lf
 *.txt  text eol=lf
 
 # Systemd unit files MUST be LF — systemd rejects CRLF + the units
