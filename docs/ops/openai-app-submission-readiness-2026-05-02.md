@@ -40,16 +40,33 @@ Sources:
 
 Verdict: not ready for final submit yet.
 
-Source packet in this branch is review-aligned, but final submission should wait
-for deploy and live proof:
+Source packet is review-aligned and deployed, but final submission should wait
+for one final redaction-polish deploy, hosted ChatGPT proof, and action-time
+approval:
 
-1. This branch's status redaction and metadata changes must land and deploy.
-2. Live `/mcp-directory` must prove the redacted status payload, not just local
-   tests.
-3. ChatGPT web must complete the golden prompts without `Unknown action`, hang,
+1. This follow-up branch must land/deploy to remove review-noisy diagnostic
+   count/caveat labels from the directory status payload.
+2. ChatGPT web must complete the golden prompts without `Unknown action`, hang,
    or 5xx.
-4. ChatGPT mobile must complete the main read/write flows.
-5. Host must approve legal/compliance checkboxes and final submit.
+3. ChatGPT mobile must complete the main read/write flows.
+4. Host must approve legal/compliance checkboxes and final submit.
+
+Closed 2026-05-02T12:56-07:00:
+
+- PR #183 merged to `main` at `69b93ae`.
+- Deploy prod run `25260452881` passed and deployed image tag
+  `69b93ae89027`.
+- Public canaries passed for both `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose`
+  passed from the updated worktree and invoked `get_workflow_status`.
+- Live `/mcp-directory` `get_workflow_status` no longer returns raw
+  `activity_log_tail`, raw `last_n_calls`, `policy_hash`,
+  `session_boundary`, `host_id`, or storage subsystem `path` fields. It
+  returns `directory_privacy_note`.
+- This follow-up branch removes remaining review-noisy
+  `activity_log_tail_count`, `last_n_calls_count`, and
+  `evidence_caveats.last_n_calls` labels before final OpenAI submit proof.
 
 Historical ChatGPT Developer Mode proof and BUG-034 boundaries are preserved in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
@@ -158,10 +175,13 @@ python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --ti
 python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool get_workflow_status --args "{}" --raw
 ```
 
-For the final probe, inspect the returned text and verify these are absent:
+For the final probe, parse the tool result text as JSON and verify these
+diagnostic keys are absent:
 
 - `activity_log_tail`
 - `last_n_calls`
+- `activity_log_tail_count`
+- `last_n_calls_count`
 - `policy_hash`
 - `session_boundary`
 - `host_id`

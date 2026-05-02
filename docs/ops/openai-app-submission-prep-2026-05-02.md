@@ -68,9 +68,9 @@ The full custom connector at `/mcp` exposes broader legacy tools (`universe`,
 `get_status`). Do not switch the OpenAI app to `/mcp` without regenerating and
 re-auditing the packet for that full surface.
 
-## Source Hardening In This Branch
+## Source Hardening Landed
 
-Branch `codex/openai-submission-hardening` makes the packet safer for review:
+PR #183 / merge `69b93ae` makes the packet safer for review:
 
 - `get_workflow_status` now redacts raw activity logs, local paths, host
   account identifiers, and internal hashes from the directory-safe response.
@@ -82,9 +82,16 @@ Branch `codex/openai-submission-hardening` makes the packet safer for review:
 - Positive tests now cover all read/write tool families, including goal
   list/get and run listing.
 
-This branch must land and deploy before final OpenAI submission, then live
-`https://tinyassets.io/mcp-directory` must be re-probed to prove the production
-status response is redacted.
+Deploy prod run `25260452881` passed on 2026-05-02 and deployed image tag
+`69b93ae89027`. Live `https://tinyassets.io/mcp-directory` has been re-probed
+and now returns redacted status with `directory_privacy_note`, without raw
+log/call arrays, host identifiers, local paths, session-boundary account data,
+or internal hashes.
+
+Follow-up branch `codex/openai-live-proof` removes the remaining
+review-noisy diagnostic count/caveat labels
+(`activity_log_tail_count`, `last_n_calls_count`, and
+`evidence_caveats.last_n_calls`) before final OpenAI submit proof.
 
 ## OpenAI Dashboard State
 
@@ -110,19 +117,18 @@ Not yet complete:
 
 ## Required Before Submit
 
-1. Land and deploy this branch.
-2. Run public canaries and tool canaries against both `/mcp` and
+1. Run public canaries and tool canaries against both `/mcp` and
    `/mcp-directory`.
-3. Verify live `/mcp-directory` `get_workflow_status` no longer returns raw
+2. Verify live `/mcp-directory` `get_workflow_status` no longer returns raw
    logs, local paths, host account identifiers, or internal hashes.
-4. Run the ChatGPT web golden prompt set with the app draft.
-5. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
+3. Run the ChatGPT web golden prompt set with the app draft.
+4. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
    call out testing iOS or Android.
-6. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
+5. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
    action-time before approving public/state-changing writes.
-7. Confirm privacy policy coverage for the categories listed in the readiness
+6. Confirm privacy policy coverage for the categories listed in the readiness
    doc.
-8. Host approves release notes, compliance answers, mature-content answer,
+7. Host approves release notes, compliance answers, mature-content answer,
    publisher selector, and final submit.
 
 Suggested release notes:
@@ -139,5 +145,15 @@ Suggested release notes:
 - `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
 - `python -m pytest tests/test_directory_server.py -q` passed locally for this branch.
 
-Live production still served the pre-hardening status payload at this time.
-Treat this branch's redaction as source-ready, not deployed proof.
+2026-05-02T12:56-07:00 from deployed `main` merge `69b93ae`:
+
+- PR #183 merged and deploy prod run `25260452881` passed for image tag
+  `69b93ae89027`.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed from the updated worktree and invoked `get_workflow_status`.
+- `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool get_workflow_status --args "{}" --raw` returned `directory_privacy_note`, with raw `activity_log_tail`, raw `last_n_calls`, `policy_hash`, `session_boundary`, `host_id`, and storage subsystem `path` fields absent.
+- Follow-up not yet deployed at this snapshot: `codex/openai-live-proof`
+  removes `activity_log_tail_count`, `last_n_calls_count`, and
+  `evidence_caveats.last_n_calls`; rerun the final probe after that deploy.

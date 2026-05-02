@@ -48,14 +48,20 @@ def _redact_directory_status(payload: dict[str, Any]) -> dict[str, Any]:
     evidence = redacted.get("evidence")
     if isinstance(evidence, dict):
         public_evidence = dict(evidence)
-        activity_tail = public_evidence.pop("activity_log_tail", None)
-        last_calls = public_evidence.pop("last_n_calls", None)
+        public_evidence.pop("activity_log_tail", None)
+        public_evidence.pop("last_n_calls", None)
         public_evidence.pop("policy_hash", None)
-        if isinstance(activity_tail, list):
-            public_evidence["activity_log_tail_count"] = len(activity_tail)
-        if isinstance(last_calls, list):
-            public_evidence["last_n_calls_count"] = len(last_calls)
         redacted["evidence"] = public_evidence
+
+    evidence_caveats = redacted.get("evidence_caveats")
+    if isinstance(evidence_caveats, dict):
+        public_caveats = dict(evidence_caveats)
+        public_caveats.pop("activity_log_tail", None)
+        public_caveats.pop("last_n_calls", None)
+        if public_caveats:
+            redacted["evidence_caveats"] = public_caveats
+        else:
+            redacted.pop("evidence_caveats", None)
 
     if "error" in redacted and "detail" in redacted:
         redacted["detail"] = "Internal diagnostic detail redacted from directory status."
@@ -83,13 +89,14 @@ def _redact_directory_status(payload: dict[str, Any]) -> dict[str, Any]:
             step
             for step in next_steps
             if "activity_log_tail" not in str(step)
+            and "last_n_calls" not in str(step)
         ]
 
     redacted.pop("session_boundary", None)
     redacted["directory_privacy_note"] = (
-        "Directory status redacts raw activity logs, local paths, host account "
-        "identifiers, and internal hashes. Use the full custom MCP surface for "
-        "operator diagnostics."
+        "Directory status redacts raw activity logs, recent call diagnostics, "
+        "local paths, host account identifiers, and internal hashes. Use the "
+        "full custom MCP surface for operator diagnostics."
     )
     return redacted
 
