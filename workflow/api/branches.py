@@ -53,7 +53,7 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     _PATCH_NODES_FIELDS            : whitelisted bulk-patch field map
     _split_csv, _coerce_node_keys  : input shape helpers
     _append_global_ledger          : branch-attribution ledger writer
-    _ensure_author_server_db       : lazy SQLite schema bootstrap
+    _ensure_workflow_db            : lazy SQLite schema bootstrap
     _BRANCH_DESIGN_GUIDE           : prompt body markdown
     _branch_design_guide_prompt    : prompt-body accessor for the
                                       universe_server.py @mcp.prompt wrapper
@@ -183,7 +183,7 @@ def _append_global_ledger(
     )
 
 
-def _ensure_author_server_db() -> None:
+def _ensure_workflow_db() -> None:
     """Ensure the shared SQLite schema exists before any branch action runs.
 
     Branch handlers read/write ``base_path/.workflow.db``. Calling this
@@ -207,7 +207,7 @@ def _dispatch_branch_action(
     """
     from workflow.api.engine_helpers import _format_dirty_file_conflict, _truncate
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         result_str = handler(kwargs)
     except DirtyFileError as exc:
@@ -2348,7 +2348,7 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
             ),
         })
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         source = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
