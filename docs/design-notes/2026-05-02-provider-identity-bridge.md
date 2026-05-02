@@ -1,7 +1,8 @@
 # Provider Identity Bridge
 
-Status: proposed capture from 2026-05-02 host direction. Not yet promoted into
-`PLAN.md` because `PLAN.md` is currently claimed by another lane.
+Status: accepted design direction from 2026-05-02 host direction; folded into
+`PLAN.md` and the MCP host customer matrix in branch
+`codex/provider-identity-bridge`.
 
 ## Problem
 
@@ -20,25 +21,52 @@ credential, or account-access authority has been delegated.
 
 Use a provider identity bridge:
 
-1. Workflow account identity remains canonical. Launch design currently names
-   GitHub OAuth as the first identity primitive, with native accounts later if
-   needed.
-2. Each chatbot/provider identity becomes a verified external identity binding
+1. **Person identity:** the Workflow account / real owner. Launch design
+   currently names GitHub OAuth as the first identity primitive, with native
+   accounts later if needed.
+2. **Client identity:** Claude.ai session, ChatGPT session, Claude Code, Codex
+   desktop, local tray, CLI, IDE host, or future MCP host. These are surfaces,
+   not users.
+3. **Daemon identity:** a soul-bearing daemon, separate from both the user and
+   the client surface that summoned or controlled it.
+4. **Runtime identity:** a temporary execution instance bound to provider,
+   model, executor backend, budget, and lease.
+5. **Authority binding:** the durable record of what a given client is allowed
+   to do on behalf of a given Workflow user.
+6. Each chatbot/provider identity becomes a verified external identity binding
    on the Workflow account: `provider`, `provider_subject`, verification time,
    assurance level, scopes, revocation status, and last proof.
-3. Binding a provider requires an explicit linking ceremony: OAuth/PKCE where
+7. Binding a provider requires an explicit linking ceremony: OAuth/PKCE where
    available, or a signed one-time nonce shown in Workflow and returned through
    the provider client. A provider session cannot self-assert ownership.
-4. Once linked, low-risk reads and reversible controls may feel automatic from
+8. Once linked, low-risk reads and reversible controls may feel automatic from
    that provider, but every operation still checks tenant, owner, grant,
    runtime lease, state scope, target version, and action class.
-5. High-risk classes stay gated even for linked sessions: irreversible actions,
+9. High-risk classes stay gated even for linked sessions: irreversible actions,
    credential custody, external account writes, financial/crypto transfers,
    regulated submissions, and final publish/submit boundaries.
-6. For crypto or money-like flows, Workflow may prepare, validate, simulate,
-   queue, explain, and hand off. It must not execute prohibited transfers on
-   the user's behalf. Reversible internal ledger proposals can be batched only
-   when the reversal semantics are real and tested.
+10. For crypto or money-like flows, Workflow may prepare, validate, simulate,
+    queue, explain, and hand off. It must not execute prohibited transfers on
+    the user's behalf. Reversible internal ledger proposals can be batched only
+    when the reversal semantics are real and tested.
+
+## Rollout Implications
+
+1. A request started in Claude should be inspectable or continuable from ChatGPT
+   if both are bound to the same Workflow user and the ChatGPT client has
+   authority for the requested action.
+2. A daemon summoned from ChatGPT must not create a duplicate of the
+   Claude-side daemon. Resolve by Workflow account, user-owned universe,
+   daemon identity, and soul/version before creating a new daemon.
+3. Approvals and ownership bind to the Workflow user/account and audited
+   authority grant, not just a chat thread.
+4. Daemon memory attaches to the daemon and user-owned universe, not the
+   chatbot surface that triggered it. Client/provider metadata is audit and
+   routing context.
+5. Security-sensitive actions may still require per-client re-authentication or
+   stronger evidence, even when the client is already linked.
+6. Public UX should avoid provider jargon: "same Workflow account, different
+   connected apps."
 
 ## Relationship To Existing Plan
 
@@ -98,17 +126,17 @@ authority_grants
   Codex, and OpenClaw sessions cannot cross-control another user's daemon,
   capacity, money-like grants, or connected accounts?
 
-## Next Step
+## Implementation Follow-Up
 
-Current STATUS lane:
+Current design fold-in lane:
 
-- Proposed branch: `codex/provider-identity-bridge`
-- Proposed worktree: `../wf-provider-identity-bridge`
-- PR expectation: draft PR until the current `PLAN.md` owner clears or
-  explicitly coordinates the edit
-- First write set: this note plus `PLAN.md`; implementation files are not
-  chosen yet
+- Branch: `codex/provider-identity-bridge`
+- Worktree: `../wf-provider-identity-bridge`
+- PR expectation: ready docs/design PR after checks
+- First write set: this note, `PLAN.md`, and
+  `docs/design-notes/2026-05-01-mcp-host-customer-matrix.md`
 
-Do not implement runtime identity or account-control code from this capture
-alone. First refactor the lane against current auth/control-plane work, active
-review gates, prior-provider memory refs, and related compliance implications.
+Do not implement runtime identity or account-control code from this design note
+alone. First create a new implementation lane against current auth/control-plane
+work, active review gates, prior-provider memory refs, and related compliance
+implications.

@@ -82,6 +82,14 @@ does not have authority or live reachability, the tool returns an explicit
 `queued` / `needs_host_connection` / `forbidden` state with the smallest next
 step, not a suggestion to switch clients.
 
+**Client surfaces are not users.** Workflow treats MCP/chat clients as
+surfaces, not user identities. The same human may operate through Claude,
+ChatGPT, local tray, CLI, IDE agents, and future MCP hosts. Cross-client
+continuity is allowed only through explicit Workflow account and authority
+binding; daemon identity and daemon memory remain stable across clients, and
+client-specific capability/security limits are enforced per action. Public UX
+should explain this as "same Workflow account, different connected apps."
+
 Depth: lead memory `project_user_capability_axis.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
 
 ---
@@ -200,7 +208,15 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Backend stack (target):** Supabase — Postgres (catalog + ledger + inbox), Realtime broadcast (presence + change broadcast), Auth (GitHub OAuth + sessions), Row-Level Security (visibility + sensitivity at DB layer), Storage (S3-compatible canon uploads). One stack covers five concerns otherwise requiring separate glue. Postgres exit path is self-hostable without application rewrite. Rejected: Convex (TypeScript lock-in), Firebase (pay-per-read unpredictable, no Postgres), custom realtime on small VPS (negative ROI at current scale). (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §3.2`.)
 
-**Auth + identity:** GitHub OAuth as the single identity primitive at launch, covering all three tiers without account stitching. OAuth 2.1 + PKCE at the MCP edge (MCP spec 2025-11-25 mandate). Session tokens scoped per user; RLS enforces per-user visibility at the DB layer. Native accounts (email/passkey) added when >~15% of sign-up attempts bounce at the GitHub wall. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §7`.)
+**Auth + identity:** GitHub OAuth as the single person-identity primitive at
+launch, covering all three tiers. OAuth 2.1 + PKCE at the MCP edge (MCP spec
+2025-11-25 mandate). Session tokens are scoped to the Workflow user, not to the
+chat thread. Claude.ai, ChatGPT, Claude Code, Codex desktop, local tray, CLI,
+and future MCP hosts are client surfaces that must bind to the Workflow account
+before they can act for that person. Native accounts (email/passkey) are added
+when >~15% of sign-up attempts bounce at the GitHub wall. (Decision rationale:
+`docs/design-notes/2026-04-18-full-platform-architecture.md §7`; client-surface
+binding rationale: `docs/design-notes/2026-05-02-provider-identity-bridge.md`.)
 
 **Real-time strategy — versioned rows + broadcast, NOT CRDT.** User collaboration is coarse-grained: users edit different nodes concurrently, or edit the same node with last-write-wins + update-since-you-viewed conflicts. Comments are append-only. Versioned Postgres rows + Supabase Realtime + presence channels covers this at a fraction of CRDT's complexity. CRDT is an escalation path for any specific artifact needing it later, not a baseline requirement. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §2.2`.)
 
@@ -226,6 +242,16 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Principle:** Separate identity, learning, and runtime. Daemons are public, forkable, summonable agent identities defined by soul files. Daemon wikis are host-local learning artifacts that help a daemon improve without mutating its identity every run. Runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape. Host fleet size is an operating-cost decision, not a platform cap: hosts can run many daemons, including many on one provider, with warning-only provider-plan/rate-limit estimates for additional same-provider daemons.
 
+**Person, client, daemon, runtime, authority.** A Workflow user/account is the
+real owner. Claude.ai, ChatGPT, Claude Code, Codex desktop, local tray, CLI, and
+future MCP hosts are client identities/surfaces. A soul-bearing daemon is a
+separate durable identity. A runtime is a temporary execution instance bound to
+a provider/model/executor. An authority binding records what a given client may
+do for a given Workflow user. A request started in Claude can be inspectable or
+continuable from ChatGPT only when both clients are bound to the same Workflow
+user; a daemon summoned from ChatGPT must resolve to the existing user-owned
+daemon instead of silently creating a duplicate Claude-side daemon.
+
 **Always ready for the next user and daemon fleet.** A host-only or private-alpha rollout is an exposure gate, not a single-user architecture. Storage, authorization, queues, budgets, audits, daemon bindings, and runtime activations carry tenant/owner boundaries from the first build so more users and more daemons can join by changing exposure and capacity limits, not by redesigning the substrate.
 
 **Soul identity uniqueness.** A soul-bearing daemon is a durable unique person-like identity, not a worker template. The system may create many runtime instances bound to one daemon identity, but it must not silently copy a soul-bearing daemon to satisfy demand. Extra capacity attaches more runtimes or hosts to the same daemon identity. A new soul-bearing daemon with substantially the same soul is allowed only as an explicit fork/copy action with lineage recorded, a distinct display name, and a new soul hash or approved soul-version record; accidental duplicate souls are rejected.
@@ -240,6 +266,10 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Daemon learning wiki.** Every soul-bearing daemon owns a host-local markdown wiki under the host's Workflow data directory. The wiki follows the raw-sources -> maintained wiki -> schema pattern: immutable raw node/gate signals are recorded first, maintained synthesis pages evolve from those signals, and `WIKI.md` tells future daemon runs how to update and use the wiki. The minimum layout is `soul.md` (identity), `wiki/raw/signals/` (immutable pass/fail/blocked/cancelled signals), `wiki/pages/` (maintained self-model, decision policy, interests, failure modes, and skills), `wiki/decision_log/` (why work was chosen or refused), `wiki/soul_versions/` (immutable soul amendments and forks), and `wiki/claim_proofs/` (domain claims and attestations). The wiki is private host memory by default, not platform-published content. It helps the daemon recursively learn how to become a better version of itself as defined by its soul. Soul edits are rare proposals: the wiki may draft clarifications that preserve the soul's spirit, but failed nodes/gates should first update tactics, self-model, and decision policy rather than automatically rewriting the soul.
 
+Daemon memory attaches to the daemon and the user-owned universe, not the
+chatbot surface that triggered the run. Provider/client metadata is audit and
+routing context; it is not the durable memory owner.
+
 **Bounded daemon memory.** Wiki maintenance includes compaction and pruning. Raw signals are compact records with pointers to large artifacts, not copied transcripts; synthesis pages are rewritten in place; decision logs roll up into periodic summaries; stale or low-value memories are discarded unless protected by host policy, audit requirements, claim proofs, or soul version history. Default prompt composition loads a small memory packet, not the full wiki: soul capsule, relevant learned rules, prior attempts, recent pass/fail signals, and decision constraints. Long life improves retrieval and synthesis quality without expanding the daemon's normal context budget.
 
 **Chatbot-first host control.** The notification tray is a convenience surface,
@@ -250,9 +280,12 @@ modify behavior through soul proposals, decision-policy/wiki edits,
 domain-interest preferences, allow/deny work domains, and node/gate eligibility
 preferences. All control actions are scoped to daemon identities and runtime
 instances owned by, delegated to, or explicitly hosted by the authenticated
-chat/host identity. Phone/browser control of a home-hosted daemon is a relayed
-command: it can be accepted and queued by the control plane, then applied only
-by the connected host agent that proves authority over that daemon.
+Workflow user and the client's authority binding. Approvals and ownership bind
+to the Workflow user/account and audited authority grant, not only to a chat
+thread. Phone/browser control of a home-hosted daemon is a relayed command: it
+can be accepted and queued by the control plane, then applied only by the
+connected host agent that proves authority over that daemon. Security-sensitive
+actions may still require per-client re-authentication or stronger evidence.
 
 Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
