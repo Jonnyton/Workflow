@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 
 from workflow.universe_server import mcp
+
+
 def _list_tools():
     return asyncio.run(mcp.list_tools(run_middleware=False))
 
@@ -67,9 +69,12 @@ def test_server_instructions_point_to_control_station_prompt() -> None:
     assert "control_station" in lower, (
         "server instructions must direct clients to the control_station prompt"
     )
-    # UNIVERSE ISOLATION hard rule stays at this level (legitimate single-
-    # directive callout per §5.3; not a lexical cluster).
-    assert "universe isolation" in lower or "universe: <id>" in lower
+    # Handshake points at the canonical prompt; it must not carry a hard-rule
+    # block itself.
+    assert "universe isolation" in lower
+    assert "hard rule" not in lower
+    assert "never transfer" not in lower
+    assert len(text) < 1600
 
 
 def test_extensions_tool_description_points_to_prompts_for_rules() -> None:
@@ -86,6 +91,9 @@ def test_extensions_tool_description_points_to_prompts_for_rules() -> None:
     # Still name core action surface so the bot can find it.
     assert "run_branch" in text
     assert "build_branch" in text
+    assert "no simulation" not in text
+    assert "affirmative consent" not in text
+    assert len(tool.description or "") < 900
 
 
 def test_wiki_tool_description_is_not_a_catchall() -> None:
@@ -122,6 +130,8 @@ def test_universe_tool_description_is_general_not_fiction_only() -> None:
     assert "workflow" in text or "workspace" in text
     # No fiction-exclusive framing.
     assert "only for fiction" not in text
+    assert "hard rule" not in text
+    assert len(tool.description or "") < 2200
 
 
 def test_control_station_prompt_carries_the_rules() -> None:

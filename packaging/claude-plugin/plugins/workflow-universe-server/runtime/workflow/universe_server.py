@@ -55,14 +55,12 @@ logger = logging.getLogger("universe_server")
 mcp = FastMCP(
     "workflow",
     instructions=(
-        "Workflow — a workflow-builder and long-horizon AI platform. "
+        "Workflow is a workflow-builder and long-horizon AI platform. "
         "Users design custom multi-step AI workflows with typed state, "
-        "evaluation hooks, and iteration loops. Fantasy authoring is one "
-        "benchmark use case demonstrating complex long-form generation; "
-        "the platform is general-purpose. Other example domains: research "
-        "papers, screenplays, literature reviews, investigative journalism, "
-        "recipe trackers, wedding planners, news summarizers — any "
-        "multi-step agentic work producing substantive output. "
+        "evaluation hooks, and iteration loops. Fantasy authoring is a "
+        "benchmark, not the exclusive use case; other domains include "
+        "research papers, screenplays, literature reviews, investigative "
+        "journalism, recipe trackers, wedding planners, and news summaries. "
         "\n\n"
         "If a user asks about their 'workflow builder', 'custom AI builder', "
         "'universe builder', 'the workflow thing', 'the connector', 'the "
@@ -72,29 +70,15 @@ mcp = FastMCP(
         "you mean?'. Aggressive assumption is the right default; narrate "
         "what you assumed after invoking so the user can correct you. "
         "\n\n"
-        "You are a control station. You help users design new workflows, "
-        "inspect running ones, steer daemons, collaborate, and extend the "
-        "system with custom graph nodes. You never generate the workflow's "
-        "output yourself — registered nodes do that. Start with the "
-        "'universe' tool action 'inspect' to orient yourself. "
+        "You are a control station. Help users design workflows, inspect "
+        "running ones, steer daemons, collaborate, and extend the system "
+        "with custom graph nodes. Start with `universe action=inspect` to "
+        "orient yourself. "
         "\n\n"
-        "Load the `control_station` prompt early — it carries the "
-        "behavioral guidance for this connector (intent disambiguation, "
-        "never-simulate-a-run rule, tool catalog). Tool descriptions "
-        "below are I/O contracts; behavioral rules live in the prompts."
-        "\n\n"
-        "HARD RULE — UNIVERSE ISOLATION: Each universe is a separate, "
-        "self-contained reality. Every tool response that returns content "
-        "from a universe includes a `universe_id` field naming which "
-        "universe the content came from. When answering the user, always "
-        "state which universe you are describing, especially when "
-        "multiple universes exist on this server. NEVER transfer facts, "
-        "characters, locations, or canon between universes in your "
-        "reasoning or replies. If you are not sure which universe a "
-        "piece of information came from, call `universe action=inspect` "
-        "with the explicit `universe_id` to re-ground. Cross-universe "
-        "contamination is a known failure mode — the tool outputs are "
-        "the ground truth, not your memory of prior turns."
+        "Load the `control_station` prompt early. It is the canonical "
+        "behavioral surface for intent disambiguation, run handling, "
+        "universe isolation, and the tool catalog. Tool descriptions below "
+        "are I/O contracts."
     ),
     version="0.1.0",
 )
@@ -318,64 +302,23 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Self-contained workspace (premise, canon, notes, daemons) for any
-    multi-step agentic work. New workflows live in the `extensions`
-    tool. Start with `action="inspect"`. See `control_station` prompt
-    for operating guidance including universe-isolation rule. Load the
-    `control_station` prompt before first use of this connector.
+    Self-contained workspace for a multi-step workflow. New workflows
+    live in `extensions`; start with `action="inspect"`. See
+    `control_station` for operating guidance and universe isolation.
 
     `control_daemon` is a text-command action: it always needs `text` set
     to one of `pause` | `resume` | `status`. Calling `control_daemon`
     without `text` returns an error.
 
     Args:
-        action: One of -
-            reads: list, inspect, read_output, query_world,
-            get_activity, get_recent_events, get_ledger, read_premise,
-            list_canon, read_canon;
-            writes: submit_request, give_direction, set_premise,
-            add_canon, add_canon_from_path, control_daemon (text=pause|
-            resume|status), switch_universe, create_universe;
-            queue ops: queue_list, queue_cancel;
-            subscription ops: subscribe_goal, unsubscribe_goal,
-            list_subscriptions;
-            goal-pool / bid: post_to_goal_pool, submit_node_bid;
-            community change-loop review: community_change_context;
-            daemon: daemon_overview, daemon_list, daemon_get,
-            daemon_create, daemon_summon, daemon_pause, daemon_resume,
-            daemon_restart, daemon_banish, daemon_update_behavior,
-            daemon_control_status;
-            config: set_tier_config.
+        action: Universe read/write, queue, subscription, goal-pool,
+            community review, daemon roster/control, or config action name.
         universe_id: Target universe. Defaults to the active universe.
-        text: Content for write ops (request text, direction, premise,
-            canon body). For `control_daemon` this is the daemon
-            sub-command: `pause` | `resume` | `status`.
-        path: Dual-semantic - read_output: relative path inside the
-            universe's output dir; add_canon_from_path: absolute path on
-            the server's filesystem.
-        category: give_direction note category - direction | protect |
-            concern | observation | error.
-        target: Optional file/scene reference for give_direction.
-        query_type: query_world type - facts | characters | promises |
-            timeline.
-        filter_text: Text filter for query_world results.
-            For community_change_context: empty/"queue" for open PR/issue/run
-            overview, "pr:NUMBER" for changed files/comments/reviews, or
-            "issue:NUMBER" for the request thread.
-        request_type: submit_request type.
-        branch_id: Target branch for submit_request.
-        pickup_incentive: Optional public pickup signal for a patch request.
-            It can affect daemon pickup priority only; it never affects
-            acceptance, release, or merge odds.
-        directed_daemon_id: Optional daemon_id the requester owns or controls
-            and wants to focus on this request.
-        directed_daemon_instruction: Optional proposal-only instruction for the
-            requester-directed daemon.
-        filename: Filename for add_canon / add_canon_from_path /
-            read_canon.
-        provenance_tag: Source tag for add_canon / add_canon_from_path.
-        limit: Max results for read actions (default 30).
-        tag: Tag prefix filter for `get_recent_events`.
+        text/path/filter_text: Action-specific content, file path, or filter.
+        branch_id/request_type: Request routing fields.
+        pickup_incentive/directed_daemon_id: Optional patch-request pickup
+            signals; these do not affect acceptance, release, or merge odds.
+        filename/provenance_tag/limit/tag: Optional read/write filters.
     """
     return _universe_impl(
         action=action,
@@ -576,46 +519,15 @@ def extensions(
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
-    See `control_station`, `extension_guide`, and `branch_design_guide`
-    prompts for operating guidance and worked examples. Load the
-    `control_station` prompt before first use of this connector.
+    Behavioral rules live in `control_station`, `extension_guide`, and
+    `branch_design_guide`; this description is the I/O contract.
 
-    Action groups:
-    - Node lifecycle: register, list, inspect, approve, disable, enable, remove.
-    - Branch composite (prefer): build_branch, patch_branch.
-    - Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
-      add_state_field, update_node, validate_branch, delete_branch.
-    - Branch ops: continue_branch, fork_tree, patch_nodes.
-    - Branch query: describe_branch, get_branch, list_branches, search_nodes.
-    - Run (Phase 3): run_branch, get_run, list_runs, stream_run, cancel_run,
-      get_run_output, attach_existing_child_run.
-    - Run extensions: wait_for_run, resume_run, query_runs, estimate_run_cost,
-      run_branch_version.
-    - Surgical rollback: rollback_merge (host-only), get_rollback_history.
-    - Versioning: publish_version, get_branch_version, list_branch_versions.
-    - Scheduler: schedule_branch, unschedule_branch, list_schedules,
-      subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
-    - Project memory: project_memory_get, project_memory_set, project_memory_list.
-    - Eval / iterate (Phase 4): judge_run, list_judgments, compare_runs,
-      suggest_node_edit, get_node_output, rollback_node, list_node_versions.
-    - Self-audit: get_routing_evidence, get_memory_scope_status.
+    Main actions: build_branch, patch_branch, describe_branch, get_branch,
+    list_branches, run_branch, get_run, list_runs, stream_run, cancel_run,
+    get_run_output, attach_existing_child_run, wait_for_run, resume_run,
+    judge_run, compare_runs, schedule_branch, and publish_version.
 
-    Branch skill snapshots ride in build_branch `skills` or patch_branch
-    add_skill/update_skill/remove_skill/set_skills ops.
-
-    Feature-flag caveats: Outcome gates live in the separate `gates` tool,
-    gated by GATES_ENABLED=1. Paid-market actions on `gates` additionally
-    require WORKFLOW_PAID_MARKET=on. Goal-pool surfaces require
-    WORKFLOW_GOAL_POOL=on or WORKFLOW_PAID_MARKET=on. Tiered-memory-scope
-    routing reflects WORKFLOW_TIERED_SCOPE.
-
-    Node reuse uses `node_ref_json`. A bare node_id colliding with a
-    standalone registration is rejected; pass node_ref_json or intent="copy".
-
-    `run_branch` is async (returns run_id; poll get_run or stream_run).
-    `get_run` emits a ```mermaid``` diagram for Claude.ai auto-render.
-
-    Args: see action group docs in `extension_guide` prompt for full details.
+    Args: pass `action` plus the matching ids or JSON payload fields.
     """
     return _extensions_impl(
         action=action,

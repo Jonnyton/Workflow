@@ -13,6 +13,7 @@ half-formed experiments.
 
 ## Inbox
 
+- [2026-05-02] (source: host, owner: unassigned, status: promoted, priority: post-#18, size: medium) **Daemon mini OpenBrain per soul-bearing daemon.** Research Nate B. Jones / Open Brain and adapt the pattern so each daemon controls an atomic, searchable memory backend that works with its existing daemon wiki. Direction captured in `docs/design-notes/2026-05-02-daemon-mini-openbrain.md`: wiki stays the curated face; mini brain is daemon-scoped capture/search/review/promote storage; observable memory traces query/retrieve/inject/write/promote/compact; no one flat pool, no soul copying, no Supabase/OpenRouter dependency by default.
 - [2026-05-01] (source: host, owner: unassigned, status: promoted, priority: uptime-loop, size: medium) **Patch-request incentives + requester-directed daemon work.** Users may attach optional incentives to patch/feature requests to make independent daemons more likely to pick them up earlier than other queued requests, but incentives must not influence whether a patch is accepted, released, or merged. Users may also direct their own daemons to work on a specific patch request to speed up their own iteration. This can produce faster proposals/evidence, not a landing guarantee. Promoted immediately to `PLAN.md` Multi-User Evolutionary Design and `STATUS.md` loop work because the live community patch loop is uptime-related.
   Links: `PLAN.md` Section Multi-User Evolutionary Design; `STATUS.md` Work row "Patch-request incentives + requester-directed daemon routing".
 

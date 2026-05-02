@@ -1301,6 +1301,7 @@ def _action_daemon_create(
             domain_claims=data.get("domain_claims")
             if isinstance(data.get("domain_claims"), list)
             else None,
+            lineage_parent_id=str(data.get("lineage_parent_id") or "").strip() or None,
             metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
         )
     except ValueError as exc:
@@ -1344,6 +1345,8 @@ def _action_daemon_summon(
         )
     except KeyError:
         return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
     return json.dumps({"universe_id": uid, "runtime": runtime}, default=str)
 
 
