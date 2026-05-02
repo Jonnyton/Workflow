@@ -44,6 +44,7 @@ from scripts.invariants.cross_provider_drift import (  # noqa: E402
 )
 from scripts.invariants.mirror_parity import MirrorParityInvariant  # noqa: E402
 from scripts.invariants.mojibake import MojibakeInvariant  # noqa: E402
+from scripts.invariants.skills_valid import SkillsValidInvariant  # noqa: E402
 from scripts.invariants.tab_single import TabSingleInvariant  # noqa: E402
 
 
@@ -52,6 +53,7 @@ def _all_invariants() -> list[Invariant]:
         CrossProviderDriftInvariant(),
         MirrorParityInvariant(),
         MojibakeInvariant(),
+        SkillsValidInvariant(),
         TabSingleInvariant(),
         ConcernsStalenessInvariant(),
     ]
