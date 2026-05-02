@@ -25,16 +25,16 @@ from workflow.providers.base import (
     ProviderResponse,
     api_key_providers_enabled,
 )
+from workflow.providers.diagnostics import (
+    ProviderAttemptDiagnostic,
+    build_chain_state,
+    classify_unavailable,
+)
 from workflow.providers.quota import (
     COOLDOWN_OTHER,
     COOLDOWN_TIMEOUT,
     COOLDOWN_UNAVAILABLE,
     QuotaTracker,
-)
-from workflow.providers.diagnostics import (
-    ProviderAttemptDiagnostic,
-    build_chain_state,
-    classify_unavailable,
 )
 
 logger = logging.getLogger(__name__)
@@ -387,7 +387,9 @@ class ProviderRouter:
             role=role,
             chain=chain,
             attempts=attempts,
+            api_key_providers_enabled=api_key_providers_enabled(),
             pinned_writer=pin_writer if is_pinned_writer else None,
+            allowlist=allowlist,
         )
         raise AllProvidersExhaustedError(
             f"All providers exhausted for role={role}. "

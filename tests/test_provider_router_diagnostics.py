@@ -16,13 +16,36 @@ from __future__ import annotations
 
 import pytest
 
-from workflow.exceptions import AllProvidersExhaustedError
+from workflow.exceptions import (
+    AllProvidersExhaustedError,
+    ProviderError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
+from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
 from workflow.providers.diagnostics import (
     ProviderAttemptDiagnostic,
-    SkipClass,
     build_chain_state,
     classify_unavailable,
 )
+from workflow.providers.router import ProviderRouter
+
+
+class FailingProvider(BaseProvider):
+    """Minimal provider stub for router-level diagnostic assertions."""
+
+    def __init__(self, name: str, family: str, error: Exception) -> None:
+        self.name = name
+        self.family = family
+        self._error = error
+
+    async def complete(
+        self,
+        prompt: str,
+        system: str,
+        config: ModelConfig,
+    ) -> ProviderResponse:
+        raise self._error
 
 
 class TestProviderAttemptDiagnostic:
@@ -151,3 +174,60 @@ class TestAllProvidersExhaustedError:
         assert err.chain_state["role"] == "writer"
         assert err.chain_state["api_key_providers_enabled"] is False
         assert err.chain_state["attempts"][0]["skip_class"] == "auth_invalid"
+
+
+class TestProviderRouterDiagnostics:
+    @pytest.mark.asyncio
+    async def test_router_attaches_attempts_and_chain_state(self, monkeypatch):
+        monkeypatch.delenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", raising=False)
+        router = ProviderRouter(
+            providers={
+                "codex": FailingProvider(
+                    "codex",
+                    "openai",
+                    ProviderUnavailableError("401 Unauthorized"),
+                ),
+                "ollama-local": FailingProvider(
+                    "ollama-local",
+                    "local",
+                    ProviderError("local model unavailable"),
+                ),
+            },
+        )
+
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            await router.call("writer", "prompt", "system")
+
+        err = exc_info.value
+        assert err.attempts is not None
+        assert err.chain_state is not None
+        assert err.chain_state["role"] == "writer"
+        assert err.chain_state["api_key_providers_enabled"] is False
+        assert err.chain_state["chain"] == ["claude-code", "codex", "ollama-local"]
+        attempts = {attempt.provider: attempt for attempt in err.attempts}
+        assert attempts["claude-code"].skip_class == "not_in_registry"
+        assert attempts["codex"].skip_class == "auth_invalid"
+        assert attempts["ollama-local"].skip_class == "provider_error"
+
+    @pytest.mark.asyncio
+    async def test_router_marks_timeouts(self):
+        router = ProviderRouter(
+            providers={
+                "codex": FailingProvider(
+                    "codex",
+                    "openai",
+                    ProviderTimeoutError("codex hung"),
+                ),
+                "ollama-local": FailingProvider(
+                    "ollama-local",
+                    "local",
+                    ProviderError("local unavailable"),
+                ),
+            },
+        )
+
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            await router.call("extract", "prompt", "system")
+
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["codex"].skip_class == "timed_out"
