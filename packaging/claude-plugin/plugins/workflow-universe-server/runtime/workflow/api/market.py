@@ -46,11 +46,11 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
         _current_actor_or_anon (goals-internal wrapper around _current_actor)
 
 Cross-module note: ``_append_global_ledger``, ``_truncate``, ``_current_actor``,
-``_ensure_author_server_db``, ``_storage_backend``, ``_format_commit_failed``,
+``_ensure_workflow_db``, ``_storage_backend``, ``_format_commit_failed``,
 ``_format_dirty_file_conflict``, ``_filter_claims_by_branch_visibility``,
 ``_filter_leaderboard_by_branch_visibility``, ``_split_csv`` all live in
-``workflow.universe_server`` (universe-engine territory) and are
-lazy-imported inside the functions that use them. Same pattern as Tasks
+their owning API/helper modules and are lazy-imported inside the functions that
+use them. Same pattern as Tasks
 #11/#12/#13 used for their cross-module symbols.
 """
 
@@ -586,7 +586,7 @@ def _format_goal_catalog_line(g: dict[str, Any]) -> str:
 
 def _action_goal_propose(kwargs: dict[str, Any]) -> str:
     from workflow.api.branches import (
-        _ensure_author_server_db,
+        _ensure_workflow_db,
         _split_csv,
     )
     from workflow.api.engine_helpers import (
@@ -602,7 +602,7 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "name is required for propose.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     tags = _split_csv(kwargs.get("tags", ""))
     visibility = (kwargs.get("visibility") or "public").strip().lower()
     if visibility not in {"public", "private"}:
@@ -644,7 +644,7 @@ def _action_goal_propose(kwargs: dict[str, Any]) -> str:
 
 def _action_goal_update(kwargs: dict[str, Any]) -> str:
     from workflow.api.branches import (
-        _ensure_author_server_db,
+        _ensure_workflow_db,
         _split_csv,
     )
     from workflow.api.engine_helpers import (
@@ -662,7 +662,7 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "goal_id is required.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         current = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -737,7 +737,7 @@ def _action_goal_update(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_bind(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
@@ -756,7 +756,7 @@ def _action_goal_bind(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "branch_def_id is required.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         branch = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -832,12 +832,12 @@ def _action_goal_bind(kwargs: dict[str, Any]) -> str:
 
 def _action_goal_list(kwargs: dict[str, Any]) -> str:
     from workflow.api.branches import (
-        _ensure_author_server_db,
+        _ensure_workflow_db,
         _split_csv,
     )
     from workflow.daemon_server import list_goals
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     rows = list_goals(
         _base_path(),
         author=kwargs.get("author", ""),
@@ -864,7 +864,7 @@ def _action_goal_list(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_get(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
     )
@@ -881,7 +881,7 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "goal_id is required.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         goal = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -953,7 +953,7 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_search(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.daemon_server import search_goals
 
     query = (kwargs.get("query") or "").strip()
@@ -962,7 +962,7 @@ def _action_goal_search(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "query is required for search.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     rows = search_goals(
         _base_path(), query=query,
         limit=int(kwargs.get("limit", 20) or 20),
@@ -995,7 +995,7 @@ _ALL_LEADERBOARD_METRICS = _V1_LEADERBOARD_METRICS + _GATE_EVENT_LEADERBOARD_MET
 
 
 def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
     )
@@ -1012,7 +1012,7 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
             "error": "goal_id is required.",
         })
     metric = (kwargs.get("metric") or "run_count").strip().lower()
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         goal = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -1137,7 +1137,7 @@ def _action_goal_leaderboard(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
     )
@@ -1147,7 +1147,7 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
         goal_common_nodes_all,
     )
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     min_branches = int(kwargs.get("min_branches", 2) or 2)
     limit = int(kwargs.get("limit", 20) or 20)
     scope = (kwargs.get("scope") or "this_goal").strip().lower() or "this_goal"
@@ -1266,7 +1266,7 @@ def _action_goal_common_nodes(kwargs: dict[str, Any]) -> str:
 
 
 def _action_goal_set_canonical(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
     )
@@ -1276,7 +1276,7 @@ def _action_goal_set_canonical(kwargs: dict[str, Any]) -> str:
     if not gid:
         return json.dumps({"status": "rejected", "error": "goal_id is required."})
     branch_version_id = (kwargs.get("branch_version_id") or "").strip() or None
-    _ensure_author_server_db()
+    _ensure_workflow_db()
 
     try:
         goal = get_goal(_base_path(), goal_id=gid)
@@ -1467,9 +1467,9 @@ def goals(
         the conflict surfaces as a structured response so the caller can
         commit / stash / discard first.
     """
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     goal_kwargs: dict[str, Any] = {
         "goal_id": goal_id,
         "branch_def_id": branch_def_id,
@@ -1524,7 +1524,7 @@ def _validate_evidence_url(url: str) -> str:
 
 
 def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
@@ -1577,7 +1577,7 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
                 "error": f"duplicate rung_key '{key}' in ladder.",
             })
         seen.add(key)
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         goal = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -1620,7 +1620,7 @@ def _action_gates_define_ladder(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.daemon_server import get_goal_ladder
 
     gid = (kwargs.get("goal_id") or "").strip()
@@ -1629,7 +1629,7 @@ def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "goal_id is required for get_ladder.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         ladder = get_goal_ladder(_base_path(), goal_id=gid)
     except KeyError:
@@ -1645,7 +1645,7 @@ def _action_gates_get_ladder(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_claim(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
@@ -1674,7 +1674,7 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
     url_err = _validate_evidence_url(evidence_url)
     if url_err:
         return json.dumps({"status": "rejected", "error": url_err})
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         branch = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -1771,7 +1771,7 @@ def _action_gates_claim(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_retract(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _format_commit_failed,
@@ -1799,7 +1799,7 @@ def _action_gates_retract(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "reason is required for retract (non-empty).",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     existing = get_gate_claim(
         _base_path(), branch_def_id=bid, rung_key=rung_key,
     )
@@ -1876,7 +1876,7 @@ _LIST_CLAIMS_LIMIT_CAP = 500
 
 
 def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _filter_claims_by_branch_visibility,
@@ -1897,7 +1897,7 @@ def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
     include_retracted = bool(kwargs.get("include_retracted", False))
     limit = int(kwargs.get("limit", 50) or 50)
     limit = max(1, min(limit, _LIST_CLAIMS_LIMIT_CAP))
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     # Unknown goal_id is a hard reject (caller asked about a specific
     # ID). Unknown branch_def_id falls through to an empty result set,
     # matching `branch list` ergonomics.
@@ -1936,7 +1936,7 @@ def _action_gates_list_claims(kwargs: dict[str, Any]) -> str:
 
 
 def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.api.engine_helpers import (
         _current_actor,
         _filter_leaderboard_by_branch_visibility,
@@ -1953,7 +1953,7 @@ def _action_gates_leaderboard(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": "goal_id is required for leaderboard.",
         })
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     try:
         goal = get_goal(_base_path(), goal_id=gid)
     except KeyError:
@@ -1993,7 +1993,7 @@ def _action_gates_stake_bonus(kwargs: dict[str, Any]) -> str:
     Rejected when WORKFLOW_PAID_MARKET is off, claim is retracted,
     or claim already has a bonus staked.
     """
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.gates.actions import stake_bonus, validate_stake_amount
     from workflow.producers.node_bid import paid_market_enabled
 
@@ -2025,7 +2025,7 @@ def _action_gates_stake_bonus(kwargs: dict[str, Any]) -> str:
             "error": "bonus_stake must be > 0 to stake a bonus.",
         })
 
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     from workflow.storage import _connect as _storage_connect
     with _storage_connect(_base_path()) as conn:
         result = stake_bonus(
@@ -2043,7 +2043,7 @@ def _action_gates_unstake_bonus(kwargs: dict[str, Any]) -> str:
 
     Requires: claim_id. Only the original staker can unstake.
     """
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.gates.actions import unstake_bonus
     from workflow.producers.node_bid import paid_market_enabled
 
@@ -2058,7 +2058,7 @@ def _action_gates_unstake_bonus(kwargs: dict[str, Any]) -> str:
         return json.dumps({"status": "rejected", "error": "claim_id is required."})
 
     actor = _current_actor_or_anon()
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     from workflow.storage import _connect as _storage_connect
     with _storage_connect(_base_path()) as conn:
         result = unstake_bonus(conn, claim_id=claim_id, actor=actor)
@@ -2072,7 +2072,7 @@ def _action_gates_release_bonus(kwargs: dict[str, Any]) -> str:
     node_last_claimer (who gets the payout on pass).
     Rejected when no verdict supplied or bonus_stake is 0.
     """
-    from workflow.api.branches import _ensure_author_server_db
+    from workflow.api.branches import _ensure_workflow_db
     from workflow.gates.actions import release_bonus
     from workflow.producers.node_bid import paid_market_enabled
 
@@ -2106,7 +2106,7 @@ def _action_gates_release_bonus(kwargs: dict[str, Any]) -> str:
         })
 
     staker = _current_actor_or_anon()
-    _ensure_author_server_db()
+    _ensure_workflow_db()
     from workflow.storage import _connect as _storage_connect
     with _storage_connect(_base_path()) as conn:
         result = release_bonus(
