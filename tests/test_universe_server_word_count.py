@@ -26,7 +26,7 @@ import workflow.api.universe as us
 def universe_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     return base
 
 

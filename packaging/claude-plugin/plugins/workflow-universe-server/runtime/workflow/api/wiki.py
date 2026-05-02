@@ -1413,15 +1413,14 @@ def wiki(
     try:
         wiki_root = _wiki_root()
     except ValueError as exc:
-        # _wiki_root() raises when WORKFLOW_WIKI_PATH / WIKI_PATH holds a
-        # Windows path on a POSIX runtime (2026-04-19 container incident
-        # — host env leaked into Linux container).
+        # _wiki_root() raises when WORKFLOW_WIKI_PATH holds a Windows path on
+        # a POSIX runtime (2026-04-19 container incident).
         return json.dumps({
             "error": str(exc),
             "hint": (
-                "Unset WORKFLOW_WIKI_PATH/WIKI_PATH to use the platform "
-                "default (data_dir()/wiki), or set it to a POSIX absolute "
-                "path like '/data/wiki'."
+                "Unset WORKFLOW_WIKI_PATH to use the platform default "
+                "(data_dir()/wiki), or set it to a POSIX absolute path "
+                "like '/data/wiki'."
             ),
         })
 
@@ -1442,8 +1441,7 @@ def wiki(
         return json.dumps({
             "error": f"Wiki not found at {wiki_root}.",
             "hint": (
-                "Set WORKFLOW_WIKI_PATH to the wiki directory (legacy "
-                "WIKI_PATH still honored)."
+                "Set WORKFLOW_WIKI_PATH to the wiki directory."
             ),
         })
 

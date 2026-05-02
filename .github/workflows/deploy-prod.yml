@@ -131,10 +131,10 @@ jobs:
       # any mode-flip class is caught at the call site, not later by
       # systemd ExecStartPre.
       #
-      # BUG-002 (2026-04-19): host's Windows WIKI_PATH leaked to the
+      # BUG-002 (2026-04-19): host's Windows wiki path leaked to the
       # droplet env file, making wiki_path() resolve to /app/C:\Users\...
-      # Strip any legacy WIKI_PATH / WORKFLOW_WIKI_PATH lines so the
-      # resolver falls back to $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
+      # Strip explicit WORKFLOW_WIKI_PATH so the resolver falls back to
+      # $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
       # Also strip WORKFLOW_UNIVERSE: it is a stdio-shim override, and
       # leaving it in the cloud env can bind workflow-worker to a
       # different universe than the public MCP default.
@@ -142,7 +142,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE' \
+              'sudo bash -s -- delete WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE' \
               < deploy/install-workflow-env.sh
 
       - name: Sync runtime deploy files

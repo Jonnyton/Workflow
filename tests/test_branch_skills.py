@@ -24,7 +24,7 @@ from workflow.daemon_server import (
 def branch_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "skill-tester")
     from workflow import universe_server as us
 

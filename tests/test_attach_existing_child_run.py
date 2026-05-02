@@ -40,7 +40,6 @@ def attach_env(tmp_path, monkeypatch):
     base = tmp_path / "data"
     base.mkdir()
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
-    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
     return base
 
 

@@ -40,7 +40,7 @@ def _isolate_storage_backend(monkeypatch):
     Phase 7 Rationale: the module-global :class:`SqliteCachedBackend`
     anchors to ``Path.cwd()`` on first use and, once cached, keeps
     writing to the real repo ``branches/`` / ``goals/`` / ``nodes/``
-    directories even when later tests point ``UNIVERSE_SERVER_BASE``
+    directories even when later tests point ``WORKFLOW_DATA_DIR``
     at a tmp dir. That causes (a) pollution of the working tree and
     (b) spurious ``DirtyFileError`` as tests fight over the same
     slug paths.

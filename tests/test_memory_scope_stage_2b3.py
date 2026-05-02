@@ -231,7 +231,7 @@ class TestDropCrossUniverseRowsWithFlag:
 def base_path(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     initialize_author_server(base)
     return base
 

@@ -24,7 +24,7 @@ import pytest
 def gates_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     from workflow import universe_server as us
@@ -64,7 +64,7 @@ _LADDER = [
 def test_gates_tool_gated_by_flag(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.delenv("GATES_ENABLED", raising=False)
     from workflow import universe_server as us

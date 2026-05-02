@@ -264,12 +264,12 @@ def test_select_next_empty_queue_returns_none(universe_dir):
 
 @pytest.fixture
 def server_base(tmp_path: Path, monkeypatch):
-    """Point UNIVERSE_SERVER_BASE at a fresh tmp dir with one universe."""
+    """Point WORKFLOW_DATA_DIR at a fresh tmp dir with one universe."""
     base = tmp_path / "output"
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     return base, uid
 
@@ -288,7 +288,7 @@ def test_submit_request_as_host_queues_host_request_branch_task(
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     resp = _call_submit(universe_id=uid, text="do a scene")
     assert "branch_task_id" in resp and resp["branch_task_id"]
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert len(q) == 1
     assert q[0].trigger_source == "host_request"
 
@@ -301,7 +301,7 @@ def test_submit_request_as_non_host_queues_user_request(
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     resp = _call_submit(universe_id=uid, text="please write")
     assert resp["branch_task_id"]
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert q[0].trigger_source == "user_request"
 
 
@@ -309,7 +309,7 @@ def test_submit_creates_both_request_and_branch_task(server_base, monkeypatch):
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     _call_submit(universe_id=uid, text="do a scene")
-    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    udir = Path(os.environ["WORKFLOW_DATA_DIR"]) / uid
     # requests.json populated
     from workflow.work_targets import REQUESTS_FILENAME
     reqs = json.loads((udir / REQUESTS_FILENAME).read_text(encoding="utf-8"))
@@ -331,7 +331,7 @@ def test_submit_host_priority_weight_persists(server_base, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "host")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     _call_submit(universe_id=uid, text="boosted", priority_weight=50.0)
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert q[0].priority_weight == 50.0
 
 
@@ -341,7 +341,7 @@ def test_submit_non_host_priority_weight_clamped(server_base, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     resp = _call_submit(universe_id=uid, text="sneaky", priority_weight=50.0)
     assert "error" not in resp
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert q[0].priority_weight == 0.0
 
 
@@ -351,7 +351,7 @@ def test_submit_negative_priority_weight_rejected(server_base, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     resp = _call_submit(universe_id=uid, text="bad", priority_weight=-10.0)
     assert "error" in resp
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert q == []
 
 
@@ -557,7 +557,7 @@ def test_invariant_2_cancel_branch_task_preserves_work_target(
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     _call_submit(universe_id=uid, text="keep this")
-    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    udir = Path(os.environ["WORKFLOW_DATA_DIR"]) / uid
     q_before = read_queue(udir)
     btid = q_before[0].branch_task_id
     resp = json.loads(
@@ -676,7 +676,7 @@ def test_invariant_9_priority_weight_clamp_at_submission(
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     _call_submit(universe_id=uid, text="anyone", priority_weight=999.0)
-    q = read_queue(Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid)
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
     assert q[0].priority_weight == 0.0
 
 
@@ -725,7 +725,7 @@ def test_queue_cancel_on_running_task_as_host_requests_cancel(
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "host")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     _call_submit(universe_id=uid, text="A")
-    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    udir = Path(os.environ["WORKFLOW_DATA_DIR"]) / uid
     q = read_queue(udir)
     btid = q[0].branch_task_id
     claim_task(udir, btid, "daemon-1")
@@ -753,7 +753,7 @@ def test_queue_cancel_on_running_task_as_owner_requests_cancel(
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "daemon-1")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     _call_submit(universe_id=uid, text="A")
-    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    udir = Path(os.environ["WORKFLOW_DATA_DIR"]) / uid
     q = read_queue(udir)
     btid = q[0].branch_task_id
     claim_task(udir, btid, "daemon-1")
@@ -779,7 +779,7 @@ def test_queue_cancel_on_running_task_unauthorized(
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "random-guest")
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     _call_submit(universe_id=uid, text="A")
-    udir = Path(os.environ["UNIVERSE_SERVER_BASE"]) / uid
+    udir = Path(os.environ["WORKFLOW_DATA_DIR"]) / uid
     q = read_queue(udir)
     btid = q[0].branch_task_id
     claim_task(udir, btid, "daemon-1")

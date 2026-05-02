@@ -21,7 +21,7 @@ import pytest
 def env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     monkeypatch.setenv("_FORCE_MOCK", "true")
     from workflow import universe_server as us

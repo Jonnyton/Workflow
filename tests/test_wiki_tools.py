@@ -143,7 +143,7 @@ def wiki_dir(tmp_path, monkeypatch):
         page_content, encoding="utf-8"
     )
 
-    monkeypatch.setenv("WIKI_PATH", str(wiki_root))
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
     return wiki_root
 
 
@@ -504,7 +504,7 @@ class TestWikiDispatch:
         """
         root = tmp_path / "nonexistent"
         assert not root.exists()
-        monkeypatch.setenv("WIKI_PATH", str(root))
+        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(root))
         result = json.loads(wiki("list"))
         assert "error" not in result, (
             f"wiki list errored instead of auto-scaffolding: {result!r}"

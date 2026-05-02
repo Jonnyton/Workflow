@@ -1,13 +1,10 @@
 """Row B cleanup: regression guard for the two call sites that were
 bypassing ``workflow.storage.data_dir()``.
 
-Pre-Row-B-cleanup state:
-    workflow/auth/provider.py:192 → direct UNIVERSE_SERVER_BASE env read.
-    workflow/node_eval.py:160     → direct UNIVERSE_SERVER_BASE env read.
-
-Both defaulted to CWD-relative ``output`` → /app/output in a container
-→ ephemeral writes lost on restart. Auth sessions specifically: users
-had to re-authenticate after every container restart.
+Pre-Row-B-cleanup state: both call sites bypassed ``data_dir()`` and
+defaulted to CWD-relative ``output`` → /app/output in a container →
+ephemeral writes lost on restart. Auth sessions specifically: users had
+to re-authenticate after every container restart.
 
 These tests prove both call sites now honor ``$WORKFLOW_DATA_DIR``.
 The pre-commit hook (invariant 5) prevents the bypass pattern from
@@ -23,7 +20,7 @@ import pytest
 @pytest.fixture
 def clean_env(monkeypatch):
     """Strip env vars the resolver reads so each test starts at zero."""
-    for name in ("WORKFLOW_DATA_DIR", "UNIVERSE_SERVER_BASE", "WORKFLOW_DEPRECATIONS"):
+    for name in ("WORKFLOW_DATA_DIR",):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -87,14 +84,3 @@ def test_explicit_db_path_still_works(clean_env, tmp_path):
     override = tmp_path / "explicit.db"
     ap = provider.OAuthProvider(db_path=override)
     assert ap._db_path == override
-
-
-def test_legacy_env_still_honored(clean_env, tmp_path):
-    """UNIVERSE_SERVER_BASE legacy alias still resolves via data_dir()."""
-    target = tmp_path / "legacy-root"
-    clean_env.setenv("UNIVERSE_SERVER_BASE", str(target))
-
-    from workflow.auth import provider
-
-    ap = provider.OAuthProvider()
-    assert ap._db_path.parent.resolve() == target.resolve()

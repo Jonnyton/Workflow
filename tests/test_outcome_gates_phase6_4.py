@@ -26,7 +26,7 @@ import pytest
 def gates_on_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     from workflow import universe_server as us
@@ -39,7 +39,7 @@ def gates_on_env(tmp_path, monkeypatch):
 def gates_off_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.delenv("GATES_ENABLED", raising=False)
     from workflow import universe_server as us
@@ -269,7 +269,7 @@ def test_goal_gate_summary_hides_existing_claims(tmp_path, monkeypatch):
     """
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     from workflow import universe_server as us
@@ -303,7 +303,7 @@ def test_get_branch_gates_off_hides_existing_claims(tmp_path, monkeypatch):
     """
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     from workflow import universe_server as us

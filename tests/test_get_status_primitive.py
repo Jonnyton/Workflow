@@ -140,7 +140,7 @@ def test_get_status_never_errors_on_missing_activity_log() -> None:
 def _write_activity_log(tmp_path, lines):
     """Write `lines` to a universe's activity.log. Returns universe_id."""
     import os
-    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
     udir = tmp_path / "track_q_universe"
     udir.mkdir(parents=True, exist_ok=True)
     (udir / "activity.log").write_text(
@@ -197,7 +197,7 @@ def test_get_status_evidence_caveats_flag_empty_log(tmp_path) -> None:
     """Track Q — when activity.log is empty, per-field caveats must flag
     BOTH activity_log_tail AND last_n_calls as unreliable."""
     import os
-    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
     udir = tmp_path / "empty_universe"
     udir.mkdir(parents=True, exist_ok=True)
     payload = json.loads(get_status(universe_id="empty_universe"))
@@ -539,7 +539,7 @@ def test_get_status_schema_contract() -> None:
 def test_get_status_session_boundary_no_prior_when_empty_log(tmp_path) -> None:
     """Universe with no activity returns prior_session_context_available=false."""
     import os
-    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
+    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
     udir = tmp_path / "empty_sb_universe"
     udir.mkdir(parents=True, exist_ok=True)
     payload = json.loads(get_status(universe_id="empty_sb_universe"))
@@ -553,7 +553,7 @@ def test_get_status_session_boundary_prior_when_log_has_user(tmp_path, monkeypat
     """Universe with activity for current user returns prior_session_context_available=true."""
     user = "test_session_user"
     monkeypatch.setenv("UNIVERSE_SERVER_USER", user)
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(tmp_path))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     udir = tmp_path / "active_sb_universe"
     udir.mkdir(parents=True, exist_ok=True)
     (udir / "activity.log").write_text(

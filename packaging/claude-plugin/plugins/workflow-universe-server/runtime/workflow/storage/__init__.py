@@ -125,8 +125,8 @@ def _looks_like_windows_path(raw: str) -> bool:
 
     Matches ``C:\\...``, ``c:/...``, ``D:\\...`` etc. Used to detect
     cross-OS env-var leakage: a host machine setting
-    ``WIKI_PATH=C:\\Users\\Jonathan\\...`` that then reaches a Linux
-    container joins against CWD on POSIX (``Path("C:\\Users\\...")``
+    ``WORKFLOW_WIKI_PATH=C:\\Users\\Jonathan\\...`` that then reaches a
+    Linux container joins against CWD on POSIX (``Path("C:\\Users\\...")``
     is NOT absolute on POSIX) and yields nonsense like
     ``/app/C:\\Users\\Jonathan\\Projects\\Wiki``.
     """
@@ -166,11 +166,7 @@ def data_dir() -> Path:
 
     Resolution order (first match wins):
       1. ``$WORKFLOW_DATA_DIR`` if set and non-empty.
-      2. Legacy ``$UNIVERSE_SERVER_BASE`` if set and non-empty. Emits a
-         deprecation warning when ``WORKFLOW_DEPRECATIONS=1`` so the
-         legacy name can be found and updated without noise in normal
-         operation.
-      3. Platform default:
+      2. Platform default:
          - Windows: ``%APPDATA%\\Workflow`` if ``APPDATA`` is set, else
            ``Path.home() / 'AppData' / 'Roaming' / 'Workflow'``.
          - macOS / Linux / container: ``~/.workflow``.
@@ -180,43 +176,26 @@ def data_dir() -> Path:
     daemon's on-disk root so that a containerized deploy setting
     ``WORKFLOW_DATA_DIR=/data`` gets all writes inside the bind-mount.
 
-    The previous shape (``UNIVERSE_SERVER_BASE`` defaulting to CWD-relative
-    ``"output"``) produced the 2026-04-19 container CWD-drift bug: running
-    the daemon from ``/app`` wrote to ``/app/output`` instead of
-    ``/data``. This function eliminates that class by refusing to return
-    CWD-relative paths.
+    The previous shape defaulted to CWD-relative ``"output"`` and produced
+    the 2026-04-19 container CWD-drift bug: running the daemon from ``/app``
+    wrote to ``/app/output`` instead of ``/data``. This function eliminates
+    that class by refusing to return CWD-relative paths.
 
     Notes
     -----
     - This is the *root* for all on-disk state, not the universe dir.
       Per-universe directories sit under this root. The previous
-      ``UNIVERSE_SERVER_BASE`` conflated the two; the new contract is
-      that ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and
-      universes are subdirectories (e.g., ``/data/my-universe``).
+      the previous root setting conflated the two; the contract is that
+      ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and universes are
+      subdirectories (e.g., ``/data/my-universe``).
     - The directory is not created here. Callers that write into it
       are responsible for ``mkdir(parents=True, exist_ok=True)``.
     """
     import os
-    import warnings
-
     explicit = os.environ.get("WORKFLOW_DATA_DIR", "").strip()
     if explicit:
         _reject_windows_path_on_posix(explicit, "WORKFLOW_DATA_DIR")
         return Path(explicit).expanduser().resolve()
-
-    legacy = os.environ.get("UNIVERSE_SERVER_BASE", "").strip()
-    if legacy:
-        _reject_windows_path_on_posix(legacy, "UNIVERSE_SERVER_BASE")
-        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
-            warnings.warn(
-                "UNIVERSE_SERVER_BASE is deprecated; migrate to "
-                "WORKFLOW_DATA_DIR. Both currently resolve to the same "
-                "path; UNIVERSE_SERVER_BASE will be removed in a future "
-                "release.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return Path(legacy).expanduser().resolve()
 
     # Platform default.
     appdata = os.environ.get("APPDATA", "").strip()
@@ -257,9 +236,7 @@ def wiki_path() -> Path:
 
     Resolution order (first match wins):
       1. ``$WORKFLOW_WIKI_PATH`` if set and non-empty.
-      2. Legacy ``$WIKI_PATH`` if set and non-empty. Emits a
-         deprecation warning when ``WORKFLOW_DEPRECATIONS=1``.
-      3. Platform default: ``data_dir() / "wiki"`` — inherits the
+      2. Platform default: ``data_dir() / "wiki"`` — inherits the
          canonical data root's platform handling (Windows
          ``%APPDATA%\\Workflow\\wiki``; Linux/macOS ``~/.workflow/wiki``).
 
@@ -269,36 +246,17 @@ def wiki_path() -> Path:
     leaked the developer's username into docs. Using this resolver
     closes that class the same way ``data_dir`` did for universe state.
 
-    If a Windows-style path leaks into a POSIX runtime (the
-    2026-04-19 container incident: host set ``WIKI_PATH`` on Windows,
-    value shipped into the Linux container, ``Path("C:\\...")``
-    joined against ``/app`` yielding ``/app/C:\\Users\\Jonathan\\...``),
-    this resolver raises ``ValueError`` rather than silently returning
-    a nonsense path.
+    If a Windows-style path leaks into a POSIX runtime, this resolver raises
+    ``ValueError`` rather than silently returning a nonsense path.
 
     Returns an absolute, resolved Path. Does not create the directory;
     callers mkdir on first write.
     """
     import os
-    import warnings
-
     explicit = os.environ.get("WORKFLOW_WIKI_PATH", "").strip()
     if explicit:
         _reject_windows_path_on_posix(explicit, "WORKFLOW_WIKI_PATH")
         return Path(explicit).expanduser().resolve()
-
-    legacy = os.environ.get("WIKI_PATH", "").strip()
-    if legacy:
-        _reject_windows_path_on_posix(legacy, "WIKI_PATH")
-        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
-            warnings.warn(
-                "WIKI_PATH is deprecated; migrate to WORKFLOW_WIKI_PATH. "
-                "Both currently resolve to the same path; WIKI_PATH will "
-                "be removed in a future release.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return Path(legacy).expanduser().resolve()
 
     # Platform default — inherit data_dir's platform handling.
     return (data_dir() / "wiki").resolve()

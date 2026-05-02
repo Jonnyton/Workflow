@@ -163,11 +163,10 @@ def tray_manager(tmp_path, monkeypatch):
 
     # Pin data_dir() to a throwaway root BEFORE importing workflow_tray
     # (manager's __init__ calls _read_active_universe which reads
-    # data_dir()). Clear legacy alias so it can't shadow the canonical.
+    # data_dir()).
     data_root = tmp_path / "data"
     data_root.mkdir()
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
-    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
 
     # Point workflow_tray at our tmp project root for tray-local state.
     import workflow_tray
@@ -273,7 +272,7 @@ def test_hover_text_no_suffix_when_status_absent(tray_manager) -> None:
 
 def test_cli_rejects_unknown_provider() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "fantasy_author", "--provider", "not-a-real-one"],
+        [sys.executable, "-m", "fantasy_daemon", "--provider", "not-a-real-one"],
         capture_output=True, text=True, timeout=30,
     )
     assert result.returncode != 0
@@ -283,7 +282,7 @@ def test_cli_rejects_unknown_provider() -> None:
 
 def test_cli_help_mentions_provider_flag() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "fantasy_author", "--help"],
+        [sys.executable, "-m", "fantasy_daemon", "--help"],
         capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0

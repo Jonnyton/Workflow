@@ -339,11 +339,9 @@ the process was launched from.
 |-----|---------|---------|
 | `WORKFLOW_DATA_DIR` | Canonical root for all on-disk state (SQLite checkpoint, LanceDB indexes, per-universe output dirs). Absolute path. | Platform default — Windows: `%APPDATA%\Workflow`; Linux/macOS/container: `~/.workflow`. |
 | `WORKFLOW_UNIVERSE` | Per-universe override — specific universe dir for the stdio MCP shim (`workflow.mcp_server`). | `$WORKFLOW_DATA_DIR/default-universe`. |
-| `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `UNIVERSE_SERVER_DEFAULT_UNIVERSE` | Which universe ID is active when none explicit. | First subdir of `$WORKFLOW_DATA_DIR`. |
 | `WORKFLOW_REPO_ROOT` | Path to the local git checkout for `workflow.producers.goal_pool` + git-backed catalog writes. When unset, resolved via `Path(__file__).resolve().parent.parent`. | Derived from module path. |
 | `WORKFLOW_WIKI_PATH` | Canonical root for the cross-project knowledge wiki the `wiki` tool reads/writes. Resolved via `workflow.storage.wiki_path()`; inherits `data_dir()` platform handling when unset. | `$WORKFLOW_DATA_DIR/wiki` (platform default). |
-| `WIKI_PATH` | **Deprecated.** Legacy alias for `WORKFLOW_WIKI_PATH`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `WORKFLOW_UPLOAD_WHITELIST` | Colon/semicolon-separated absolute-path prefixes allowed for `add_canon_from_path`. Unset = accept any absolute path. | Unset (permissive). |
 
 ### Auth + identity
@@ -387,7 +385,6 @@ Each flag reads as a string; truthy = `"on"`, `"1"`, `"true"`, `"yes"` (case-ins
 | Var | Purpose | Default |
 |-----|---------|---------|
 | `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. | `https://tinyassets.io/mcp` (canonical apex; `mcp.tinyassets.io` is an Access-gated internal tunnel origin, not user-facing — host directive 2026-04-20). |
-| `WORKFLOW_DEPRECATIONS` | Set to `1` / `true` / `yes` to surface deprecation warnings for legacy env vars + import shims. | Unset (silent). |
 | `TAB_WATCHDOG_INTERVAL_S` | Interval (seconds) for the tray tab-watchdog's polling. `scripts/tab_watchdog.py`. | `60`. |
 | `WORKFLOW_CLAUDE_CHAT_SCREENSHOTS` | User-sim skill flag — capture a screenshot on every `claude_chat.py` response settle. Cost: ~200 KB per response. | Unset (off). |
 

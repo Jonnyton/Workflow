@@ -18,7 +18,7 @@ import pytest
 def p4_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     from workflow import universe_server as us
 

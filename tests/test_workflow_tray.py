@@ -80,8 +80,6 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (data_root / "testverse").mkdir()
     (data_root / ".active_universe").write_text("testverse", encoding="utf-8")
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
-    # Clear legacy alias so it doesn't shadow the canonical var.
-    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
 
     # Still redirect PROJECT_DIR + LOG_DIR to tmp for tray-local state
     # (singleton lock, log files, script lookup) that is intentionally
@@ -274,13 +272,13 @@ def test_spawn_passes_provider_flag_and_env(mgr) -> None:
     assert record["kwargs"]["env"]["WORKFLOW_DAEMON_INSTANCE_KEY"] == "claude-code"
     # Task #7: daemon child must inherit the tray's data_dir() as an
     # absolute WORKFLOW_DATA_DIR, not a CWD-relative path. Previously
-    # the tray set UNIVERSE_SERVER_BASE="output" which drifted whenever
+    # the tray set WORKFLOW_DATA_DIR="output" which drifted whenever
     # tray CWD != data_dir().
     env = record["kwargs"]["env"]
     assert "WORKFLOW_DATA_DIR" in env
     assert Path(env["WORKFLOW_DATA_DIR"]).is_absolute()
-    assert env.get("UNIVERSE_SERVER_BASE", None) != "output", (
-        "legacy CWD-relative literal must not leak to child"
+    assert env.get("WORKFLOW_DATA_DIR", None) != "output", (
+        "CWD-relative literal must not leak to child"
     )
 
 
@@ -344,7 +342,6 @@ def test_active_universe_falls_back_to_enumeration_in_data_dir(
     # No .active_universe marker on purpose.
 
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
-    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
     monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
     monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 

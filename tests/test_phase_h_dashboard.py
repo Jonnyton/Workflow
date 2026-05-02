@@ -34,7 +34,7 @@ from workflow.api.universe import (
 
 @pytest.fixture
 def universe_harness(tmp_path, monkeypatch):
-    """UNIVERSE_SERVER_BASE + WORKFLOW_REPO_ROOT pinned."""
+    """WORKFLOW_DATA_DIR + WORKFLOW_REPO_ROOT pinned."""
     base = tmp_path / "output"
     base.mkdir()
     uid = "test-uni"
@@ -42,7 +42,7 @@ def universe_harness(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "bids").mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
     # Clear the cache between tests to avoid cross-contamination.

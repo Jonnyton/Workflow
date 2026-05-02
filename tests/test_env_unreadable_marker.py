@@ -161,7 +161,7 @@ def test_deploy_prod_yaml_sed_sites_emit_canonical_marker():
     )
 
     # Within YAML: every env-mutation site routes through the helper.
-    # Three known mutation sites (scrub WIKI_PATH + deploy pin + rollback)
+    # Three known mutation sites (scrub WORKFLOW_WIKI_PATH + deploy pin + rollback)
     # plus the standalone assertion step that still inlines the marker.
     helper_invocations = yaml_text.count("install-workflow-env.sh")
     assert helper_invocations >= 3, (

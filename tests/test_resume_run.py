@@ -115,7 +115,7 @@ class TestIdempotentByStep:
 
 @pytest.fixture
 def run_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(tmp_path))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
     from workflow import universe_server as us

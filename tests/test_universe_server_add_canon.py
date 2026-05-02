@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-import workflow.api.universe as us
 import workflow.api.engine_helpers as eh
+import workflow.api.universe as us
 
 
 def _call(action: str, **kwargs) -> dict:
@@ -56,7 +56,7 @@ def universe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     base = tmp_path / "output"
     uid = "test-uni"
     (base / uid).mkdir(parents=True)
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "test-user")
     return uid

@@ -149,14 +149,6 @@ STORAGEBOX_PASS=
 # BETTERSTACK_SOURCE_TOKEN=
 
 
-# ---------------------------------------------------------------------
-# Optional — deprecation + debug flags
-# ---------------------------------------------------------------------
-
-# Emit DeprecationWarning for legacy env vars (e.g. UNIVERSE_SERVER_BASE).
-# Default off (silent) to avoid log noise; flip to 1 when auditing.
-# WORKFLOW_DEPRECATIONS=1
-
 # Override the data-dir root. Default (unset) resolves to /data inside
 # the container (matches compose.yml volume mount). Only override for
 # unusual layouts.

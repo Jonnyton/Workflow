@@ -68,7 +68,7 @@ def universe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     base = tmp_path / "output"
     uid = "test-uni"
     (base / uid).mkdir(parents=True)
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "test-user")
     return uid
@@ -230,7 +230,7 @@ def test_actor_defaults_to_anonymous_without_env(
 ) -> None:
     base = tmp_path / "output"
     (base / "u").mkdir(parents=True)
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "u")
     monkeypatch.delenv("UNIVERSE_SERVER_USER", raising=False)
 

@@ -26,7 +26,7 @@ import pytest
 def ext_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     monkeypatch.delenv("WORKFLOW_TIERED_SCOPE", raising=False)
     from workflow import universe_server as us
@@ -104,7 +104,7 @@ class TestMemoryScopeStatusFlagOn:
     def env_on(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         base = tmp_path / "output"
         base.mkdir()
-        monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
         monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
         monkeypatch.setenv("WORKFLOW_TIERED_SCOPE", "on")
         from workflow import universe_server as us
@@ -149,7 +149,7 @@ class TestMemoryScopeStatusMismatchWarnings:
     ) -> None:
         base = tmp_path / "output"
         base.mkdir()
-        monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
         monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
         monkeypatch.delenv("WORKFLOW_TIERED_SCOPE", raising=False)
 

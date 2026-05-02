@@ -266,7 +266,7 @@ def test_deploy_scrubs_stdio_only_workflow_universe_from_cloud_env():
     )
     assert scrub_step is not None
     run_script = scrub_step.get("run", "") or ""
-    assert "delete WIKI_PATH WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE" in run_script
+    assert "delete WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE" in run_script
 
 
 def test_deploy_verifies_cloud_worker_running():

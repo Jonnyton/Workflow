@@ -538,7 +538,7 @@ def mcp_harness(tmp_path, monkeypatch, paid_flag_on):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "bids").mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
     return {"base": base, "uid": uid, "repo": repo}
@@ -552,7 +552,7 @@ def test_submit_node_bid_flag_off_returns_not_available(
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
     from workflow.api.universe import _action_submit_node_bid

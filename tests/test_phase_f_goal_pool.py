@@ -364,7 +364,7 @@ def test_list_subscriptions_mcp_drift_pool_enabled_no_subs(
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
     # Enable pool in dispatcher config
@@ -389,7 +389,7 @@ def test_list_subscriptions_mcp_drift_subs_but_pool_disabled(
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
     # accept_goal_pool defaults to False
@@ -406,7 +406,7 @@ def test_list_subscriptions_mcp_drift_subs_but_pool_disabled(
 
 @pytest.fixture
 def mcp_harness(tmp_path, monkeypatch, pool_flag_on):
-    """UNIVERSE_SERVER_BASE + WORKFLOW_REPO_ROOT pinned."""
+    """WORKFLOW_DATA_DIR + WORKFLOW_REPO_ROOT pinned."""
     base = tmp_path / "output"
     base.mkdir()
     uid = "test-uni"
@@ -414,7 +414,7 @@ def mcp_harness(tmp_path, monkeypatch, pool_flag_on):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "branches").mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
     return {"base": base, "uid": uid, "repo": repo}
@@ -514,7 +514,7 @@ def test_flag_matrix_f_off_mcp_post_returns_not_available(
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
     from workflow.api.universe import _action_post_to_goal_pool
@@ -928,7 +928,7 @@ def test_subscribe_unsubscribe_when_pool_flag_off_returns_not_available(
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
 
     for handler in (

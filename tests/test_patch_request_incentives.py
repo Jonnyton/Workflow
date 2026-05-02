@@ -23,7 +23,7 @@ def server_base(tmp_path: Path, monkeypatch):
     base.mkdir()
     uid = "test-uni"
     (base / uid).mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
     return base, uid

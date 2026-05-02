@@ -16,7 +16,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 ## Work
 
-Path: #18 cleared 2026-05-02 -> Arc C -> Phase 6 db rename. universe_server.py: 14012 -> 972 LOC live in main.
+Path: #18 cleared 2026-05-02 -> Arc C cleared -> Phase 6 db rename. universe_server.py: 14012 -> 972 LOC live in main.
 
 Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by setting Status to `claimed:<name>`.
 
@@ -24,8 +24,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | Directory submissions + first-use evidence - OpenAI public/full/global intent supplied; app packet blocked on `/mcp` vs `/mcp-directory` mismatch, data disclosure, demo URL, tested prompts. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | choose URL/data policy; action-time upload/final-submit approval | host-decision |
-| **#24 Arc C** - fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/{helpers,engine_helpers,wiki}.py, packaging/{mcpb,claude-plugin/plugins/workflow-universe-server/runtime}/, workflow_tray.py, fantasy_daemon/__main__.py, tests/, AGENTS.md, deploy/README.md | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
-| **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
+| **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | - | dev-ready |
 | Claude.ai injection mitigation - Section 5/5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | - | claimed:codex-loop-uptime ACTIVE 2026-05-02 |
 | Community change loop - controls live + ChatGPT proof refreshed 2026-05-01 19:00-07; P1a attach + incentive pickup v0 green; needs post-fix real-user evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Daemon soul/memory PR #140 - ready; branch refreshed from main, mirror rebuilt, identity guards added; CI running. | docs/souls/, workflow/daemon_memory.py, workflow/daemon_registry.py, workflow/daemon_wiki.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/ | - | monitoring |

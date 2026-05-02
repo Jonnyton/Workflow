@@ -20,11 +20,11 @@ def branch_env(tmp_path, monkeypatch):
     """Point the Universe Server at a temp base path for the test.
 
     The Community Branches storage layer uses ``_base_path()`` which
-    reads ``UNIVERSE_SERVER_BASE`` — pointing it at a temp dir keeps
+    reads ``WORKFLOW_DATA_DIR`` — pointing it at a temp dir keeps
     tests isolated from real universes. Storage backend is pinned to
     ``sqlite_only`` globally by the conftest autouse fixture.
     """
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(tmp_path))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     import importlib
 

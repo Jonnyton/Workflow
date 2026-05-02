@@ -28,7 +28,7 @@ from workflow.api.helpers import _base_path as _helpers_base_path
 def p5_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     from workflow import universe_server as us
 
