@@ -15,6 +15,7 @@
   type SortMode = 'connected' | 'type' | 'title';
   type ItemType = 'goal' | 'universe' | 'bug' | 'concept' | 'note' | 'plan' | 'draft';
   type BodyStatus = 'idle' | 'loading' | 'ready' | 'error';
+  type CopyState = 'idle' | 'copied' | 'error';
   type WikiItem = {
     key: string;
     nodeId: string;
@@ -34,6 +35,9 @@
     { id: 'graph', label: 'Graph' },
     { id: 'pulse', label: 'Pulse' }
   ];
+
+  const WIKI_PROMPT =
+    'Use Workflow to browse the community wiki. Show me current bugs, work targets, universes, and the most connected wiki pages, then suggest one patch or wiki improvement I can help with.';
 
   const TYPE_LABEL: Record<ItemType, string> = {
     goal: 'work target',
@@ -65,6 +69,8 @@
   let bodyByKey = $state<Record<string, string>>({});
   let bodyStatusByKey = $state<Record<string, BodyStatus>>({});
   let bodyErrorByKey = $state<Record<string, string>>({});
+  let copyState = $state<CopyState>('idle');
+  let copyTimer = $state<number | undefined>(undefined);
 
   function slugId(path: string): string {
     return path.split('/').pop()?.replace(/\.md$/, '') ?? path;
@@ -294,6 +300,22 @@
     }
   }
 
+  async function copyWikiPrompt() {
+    try {
+      await navigator.clipboard.writeText(WIKI_PROMPT);
+      copyState = 'copied';
+    } catch {
+      copyState = 'error';
+    }
+
+    if (copyTimer) window.clearTimeout(copyTimer);
+    if (copyState === 'copied') {
+      copyTimer = window.setTimeout(() => {
+        copyState = 'idle';
+      }, 2400);
+    }
+  }
+
   function selectItem(item: WikiItem) {
     selectedKey = item.key;
   }
@@ -344,6 +366,16 @@
     <h1>The community wiki is the public work surface.</h1>
     <p class="lead">
       Bugs, plans, work targets, universes, drafts, tags, and graph edges all resolve here through the same MCP-shaped records a connected chatbot can read.
+    </p>
+    <div class="hero__actions" aria-label="Community wiki actions">
+      <a class="hero__action hero__action--primary" href="/connect">Add it to chat</a>
+      <button type="button" class="hero__action" onclick={copyWikiPrompt}>
+        {copyState === 'copied' ? 'Copied prompt' : copyState === 'error' ? 'Copy failed' : 'Copy wiki prompt'}
+      </button>
+      <a class="hero__action" href="/graph">Open graph</a>
+    </div>
+    <p class="copy-status" aria-live="polite">
+      {copyState === 'copied' ? 'Prompt copied for any MCP-capable chatbot.' : copyState === 'error' ? `Copy manually: ${WIKI_PROMPT}` : ''}
     </p>
     {#if liveError}
       <p class="error">Live browser fetch failed: <code>{liveError}</code> — showing the baked MCP snapshot.</p>
@@ -509,10 +541,13 @@
         <p>Choose a wiki page, work target, draft, or universe to inspect tags, edges, body text, and the MCP request shape behind it.</p>
       {/if}
 
-      <div class="trace">
-        <RitualLabel color="var(--violet-400)">· MCP trace ·</RitualLabel>
+      <details class="trace">
+        <summary>
+          <span>Technical proof</span>
+          <strong>MCP request trace</strong>
+        </summary>
         <pre><code>{JSON.stringify(protocolTrace, null, 2)}</code></pre>
-      </div>
+      </details>
     </aside>
   </div>
 </section>
@@ -537,6 +572,54 @@
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+  }
+
+  .hero__actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .hero__action {
+    align-items: center;
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    color: var(--fg-1);
+    cursor: pointer;
+    display: inline-flex;
+    font: 12px var(--font-mono);
+    justify-content: center;
+    letter-spacing: 0.08em;
+    min-height: 38px;
+    padding: 0 14px;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+
+  .hero__action:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+
+  .hero__action--primary {
+    background: var(--ember-600);
+    border-color: var(--ember-600);
+    color: var(--bg-0);
+  }
+
+  .hero__action--primary:hover {
+    background: var(--ember-500);
+  }
+
+  .copy-status {
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    min-height: 18px;
+    margin: 8px 0 0;
   }
 
   .lead {
@@ -967,6 +1050,36 @@
     line-height: 1.55;
     padding: 0;
     white-space: pre-wrap;
+  }
+
+  .trace summary {
+    align-items: center;
+    color: var(--fg-1);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    list-style: none;
+    min-height: 38px;
+    padding-block: 4px;
+    touch-action: manipulation;
+  }
+
+  .trace summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .trace summary span {
+    color: var(--violet-200);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .trace summary strong {
+    font-size: 13px;
+    font-weight: 600;
   }
 
   .related__list {
