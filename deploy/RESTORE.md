@@ -95,7 +95,8 @@ sudo ls -la "${VOLUME_DIR}" | head
 ```
 
 Expect to see the daemon's state files: `.auth.db`, `.node_eval.db`,
-`.author_server.db`, per-universe subdirs, etc.
+`.workflow.db`, per-universe subdirs, etc. Older backups may still contain
+`.author_server.db`; current code renames it to `.workflow.db` on first boot.
 
 ## Step 6 — Start the daemon + verify (~30s)
 

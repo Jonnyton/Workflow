@@ -44,10 +44,10 @@ from workflow.storage import (  # noqa: F401  (re-exports for in-flight R7 split
     _now,
     _slugify,
     actor_has_capability,
-    author_server_db_path,
     base_path_from_universe,
     create_or_update_account,
     create_session,
+    db_path,
     ensure_host_account,
     get_account,
     grant_capabilities,
@@ -475,7 +475,7 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "WHERE canonical_branch_version_id IS NOT NULL"
         )
     ensure_default_author(base_path)
-    return author_server_db_path(base_path)
+    return db_path(base_path)
 
 
 def _author_id_for(display_name: str, soul_text: str) -> tuple[str, str]:

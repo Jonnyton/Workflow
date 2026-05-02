@@ -1,6 +1,6 @@
 {
   "name": "workflow-universe-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bundled Workflow Server runtime and explicit slash-style skills for inspecting and steering local universes.",
   "author": {
     "name": "Jonathan Farnsworth"
@@ -18,8 +18,8 @@
   "userConfig": {
     "universe_base": {
       "type": "directory",
-      "title": "Universe Base Directory",
-      "description": "Directory containing your Workflow universe folders, usually the repo output directory."
+      "title": "Workflow Data Directory",
+      "description": "Directory containing your Workflow data root, including universe folders."
     },
     "default_universe": {
       "type": "string",
@@ -35,7 +35,7 @@
         "${CLAUDE_PLUGIN_ROOT}/runtime/bootstrap.py"
       ],
       "env": {
-        "UNIVERSE_SERVER_BASE": "${user_config.universe_base}",
+        "WORKFLOW_DATA_DIR": "${user_config.universe_base}",
         "UNIVERSE_SERVER_DEFAULT_UNIVERSE": "${user_config.default_universe}"
       }
     }

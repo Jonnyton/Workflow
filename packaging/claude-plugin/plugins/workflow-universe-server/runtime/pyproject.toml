@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "workflow-universe-server-plugin"
-version = "0.1.0"
+version = "0.2.0"
 description = "Plugin runtime for the Workflow Server (auto-built from workflow/)."
 requires-python = ">=3.11"
 # Dep set mirrors packaging/mcpb/pyproject.toml. See its comment for

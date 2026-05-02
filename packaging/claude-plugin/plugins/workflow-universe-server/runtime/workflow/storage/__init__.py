@@ -32,6 +32,7 @@ intermediate file.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -41,7 +42,9 @@ from typing import Any
 # Constants
 # -------------------------------------------------------------------
 
-DB_FILENAME = ".author_server.db"
+DB_FILENAME = ".workflow.db"
+_LEGACY_DB_FILENAME = ".author_server.db"
+_SQLITE_SIBLING_SUFFIXES = ("-wal", "-shm")
 DEFAULT_BRANCH_MODE = "no_fixed_mainline"
 DEFAULT_QUICK_VOTE_SECONDS = 300
 SESSION_PREFIX = "fa_session_"
@@ -185,7 +188,7 @@ def data_dir() -> Path:
     -----
     - This is the *root* for all on-disk state, not the universe dir.
       Per-universe directories sit under this root. The previous
-      the previous root setting conflated the two; the contract is that
+      root setting conflated the two; the contract is that
       ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and universes are
       subdirectories (e.g., ``/data/my-universe``).
     - The directory is not created here. Callers that write into it
@@ -262,7 +265,84 @@ def wiki_path() -> Path:
     return (data_dir() / "wiki").resolve()
 
 
-def author_server_db_path(base_path: str | Path) -> Path:
+def _sqlite_db_siblings(db_file: Path) -> tuple[Path, ...]:
+    return tuple(
+        db_file.with_name(f"{db_file.name}{suffix}")
+        for suffix in _SQLITE_SIBLING_SUFFIXES
+    )
+
+
+def _replace_if_exists(source: Path, target: Path) -> bool:
+    if not source.exists():
+        return False
+    os.replace(source, target)
+    return True
+
+
+def _legacy_backup_path(legacy_db_path: Path) -> Path:
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    base = legacy_db_path.with_name(f"{legacy_db_path.name}.legacy-{timestamp}")
+    candidate = base
+    counter = 1
+    while candidate.exists() or any(
+        sibling.exists() for sibling in _sqlite_db_siblings(candidate)
+    ):
+        candidate = legacy_db_path.with_name(
+            f"{base.name}-{counter}"
+        )
+        counter += 1
+    return candidate
+
+
+def _move_db_with_sqlite_siblings(source: Path, target: Path) -> list[str]:
+    moved = []
+    if _replace_if_exists(source, target):
+        moved.append(source.name)
+    for source_sibling, target_sibling in zip(
+        _sqlite_db_siblings(source), _sqlite_db_siblings(target),
+        strict=True,
+    ):
+        if _replace_if_exists(source_sibling, target_sibling):
+            moved.append(source_sibling.name)
+    return moved
+
+
+def _migrate_legacy_db_filename(base_path: str | Path) -> None:
+    base = Path(base_path)
+    legacy_db = base / _LEGACY_DB_FILENAME
+    canonical_db = base / DB_FILENAME
+
+    if not legacy_db.exists():
+        return
+
+    if canonical_db.exists():
+        backup = _legacy_backup_path(legacy_db)
+        moved = _move_db_with_sqlite_siblings(legacy_db, backup)
+        _logger.warning(
+            "Both %s and %s existed in %s; using %s and backed up legacy "
+            "SQLite files to %s (%s)",
+            canonical_db.name,
+            legacy_db.name,
+            base,
+            canonical_db.name,
+            backup.name,
+            ", ".join(moved) if moved else "no files moved",
+        )
+        return
+
+    moved = _move_db_with_sqlite_siblings(legacy_db, canonical_db)
+    if moved:
+        _logger.info(
+            "Migrated legacy SQLite filename in %s from %s to %s (%s)",
+            base,
+            legacy_db.name,
+            canonical_db.name,
+            ", ".join(moved),
+        )
+
+
+def db_path(base_path: str | Path) -> Path:
+    _migrate_legacy_db_filename(base_path)
     return Path(base_path) / DB_FILENAME
 
 
@@ -482,9 +562,9 @@ def universe_id_from_path(universe_path: str | Path) -> str:
 
 
 def _connect(base_path: str | Path) -> sqlite3.Connection:
-    db_path = author_server_db_path(base_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30.0)
+    path = db_path(base_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
@@ -517,9 +597,9 @@ __all__ = [
     "_json_dumps",
     "_json_loads",
     "_slugify",
-    "author_server_db_path",
     "base_path_from_universe",
     "data_dir",
+    "db_path",
     "inspect_storage_utilization",
     "universe_id_from_path",
     "wiki_path",
