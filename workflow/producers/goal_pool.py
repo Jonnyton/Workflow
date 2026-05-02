@@ -17,7 +17,9 @@ and the dispatcher cycle is a no-op on pool reads.
 Subscriber-side slug resolution (R9, invariant 6): pool tasks
 referencing a ``branch_def_id`` that doesn't resolve against the
 subscriber's accessible Branch slugs are skipped silently (INFO
-log) — not enqueued-and-failed.
+log) — not enqueued-and-failed. Accessible slugs include static
+``branches/*.yaml`` files plus public runtime-catalog branches for the
+subscriber universe.
 
 Repo-root resolution (§4.1 #7, resolves Q3 as contract):
 1. ``WORKFLOW_REPO_ROOT`` env var.
@@ -104,18 +106,46 @@ def validate_pool_task_inputs(inputs: object) -> tuple[bool, str]:
     return True, ""
 
 
-def _accessible_branch_slugs(repo_root: Path) -> set[str]:
+def _catalog_branch_slugs(universe_path: Path) -> set[str]:
+    """Return public runtime-catalog branch IDs visible to subscribers.
+
+    Live community-authored branches are persisted in the daemon-server
+    catalog under the data root, not necessarily in the image's static
+    ``branches/`` directory. Keep this lazy so test repos without an
+    initialized catalog and early boot paths fail closed without
+    blocking static branch lookup.
+    """
+    try:
+        from workflow.daemon_server import list_branch_definitions
+        from workflow.storage import base_path_from_universe
+
+        branches = list_branch_definitions(
+            base_path_from_universe(universe_path),
+            include_private=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("goal_pool: runtime catalog unavailable: %s", exc)
+        return set()
+    return {
+        str(branch.get("branch_def_id") or "")
+        for branch in branches
+        if branch.get("branch_def_id")
+    }
+
+
+def _accessible_branch_slugs(repo_root: Path, universe_path: Path | None = None) -> set[str]:
     """Return set of branch slugs the subscriber can compile.
 
     Per R9: subscriber's accessible Branches = public (in
     ``<repo_root>/branches/*.yaml``) plus subscriber-local.
-    v1: just repo-root branches dir + the fantasy seed.
     """
     slugs: set[str] = set()
     branches_dir = repo_root / "branches"
     if branches_dir.is_dir():
         for p in branches_dir.glob("*.yaml"):
             slugs.add(p.stem)
+    if universe_path is not None:
+        slugs.update(_catalog_branch_slugs(universe_path))
     # Fantasy seed always available — the wrapper is registered
     # at import time via domain registry.
     slugs.add("fantasy_author/universe-cycle")
@@ -158,7 +188,7 @@ class GoalPoolProducer:
             return []
 
         try:
-            accessible = _accessible_branch_slugs(repo_root)
+            accessible = _accessible_branch_slugs(repo_root, Path(universe_path))
         except Exception:  # noqa: BLE001
             logger.exception("goal_pool: failed to enumerate branches")
             accessible = set()
