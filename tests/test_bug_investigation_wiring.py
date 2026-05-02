@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from workflow.branch_tasks import read_queue
 from workflow.bug_investigation import (
     REQUEST_TYPE_BUG_INVESTIGATION,
@@ -233,3 +231,34 @@ def test_wiki_file_bug_invokes_maybe_enqueue_investigation(tmp_path, monkeypatch
     assert "## Investigation" in (wiki_root / result["path"]).read_text(
         encoding="utf-8"
     )
+
+
+def test_wiki_file_bug_does_not_enqueue_under_wiki_dir(tmp_path, monkeypatch):
+    """A default wiki at WORKFLOW_DATA_DIR/wiki is not a universe directory."""
+    import json as _json
+
+    from workflow.api import wiki as wiki_api
+
+    data_root = tmp_path / "data"
+    wiki_root = data_root / "wiki"
+    wiki_api._ensure_wiki_scaffold(wiki_root)
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
+    monkeypatch.delenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", raising=False)
+    monkeypatch.setenv(
+        "WORKFLOW_BUG_INVESTIGATION_BRANCH_DEF_ID", "branch-canonical-abc"
+    )
+    monkeypatch.delenv("WORKFLOW_REQUEST_TYPE_PRIORITIES", raising=False)
+
+    result = _json.loads(
+        wiki_api._wiki_file_bug(
+            component="loop-circuit-smoke",
+            severity="minor",
+            title="investigation trigger smoke",
+            observed="no investigation request is claimed",
+        )
+    )
+
+    assert result["investigation"]["status"] == "queued"
+    assert read_queue(data_root / "default-universe")
+    assert read_queue(wiki_root) == []

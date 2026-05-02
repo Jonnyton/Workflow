@@ -37,6 +37,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_NON_UNIVERSE_DATA_DIRS = frozenset({"wiki"})
+
 
 def _base_path() -> Path:
     """Resolve the base directory containing all universe directories.
@@ -74,7 +76,11 @@ def _default_universe() -> str:
 
     if base.is_dir():
         for child in sorted(base.iterdir()):
-            if child.is_dir() and not child.name.startswith("."):
+            if (
+                child.is_dir()
+                and not child.name.startswith(".")
+                and child.name not in _NON_UNIVERSE_DATA_DIRS
+            ):
                 return child.name
     return "default-universe"
 
