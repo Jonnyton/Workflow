@@ -22,7 +22,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | OpenAI/Claude directory submission host actions - repo closeout landed/deployed; OpenAI domain verified; Claude UI read proof captured; needs ChatGPT mobile proof, logo upload, publisher/legal/mature approvals, Claude form submit, final submit. | OpenAI Apps dashboard; ChatGPT mobile app; Claude directory form | action-time approval for uploads/legal/final submit | host-action |
-| Community loop post-merge proof - #157 merged at `d897177`; verify deployed MCP, rerun canonical invoke smoke, then rendered connector proof. | output/user_sim_session.md, output/claude_chat_trace.md, .agents/uptime.log, MCP live branches fd5c66b1d87d/e019229850f9 | deploy of `d897177` | claimed:codex-loop-uptime-chatgpt |
+| Community loop ALIVE end-to-end 2026-05-02 — BUG-050 first successful run post-#205 claim-grace; PR #198 (auto-ship canary v0 spec) + #206 (daemon-liveness watchdog spec) design-only, ready. Next: loop-content fix (BUG-051) + auto-ship canary build-out. | docs/milestones/auto-ship-canary-v0.md, docs/specs/daemon-liveness-watchdog.md | PR #198, #206 | review/landd, .agents/uptime.log, MCP live branches fd5c66b1d87d/e019229850f9 | deploy of `d897177` | claimed:codex-loop-uptime-chatgpt |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | R7 closure pass — items 6+7 obviated; 1-5 cover Arc B/C; 8 by #25. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
@@ -41,7 +41,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop; #157 is merged to main, next is deploy/canary/rendered proof; P1a `attach_existing_child_run` follows.
+1. **Current uptime priority 2026-05-02 22:10Z:** Community patch loop ALIVE end-to-end. Substrate stack PASS: FEAT-004 trigger receipts + FEAT-006 provider diagnostics + BUG-009 dispatcher pickup + #205 claim-grace + BUG-045A child spawn. First successful end-to-end run BUG-050 (parent dee755 + child 1cdbd3) at 21:55-21:59. Bottleneck moved from substrate to loop-content (BUG-051: stale caution language in coding_packet/release_gate prompts) + auto-ship policy authoring (PR #198 spec). PR #198 + #206 are design-only, ready to land.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
