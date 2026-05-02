@@ -144,6 +144,21 @@ Recorded prior dashboard state from 2026-05-02:
   2026-05-02T14:50-07:00, and the dashboard changed to `Domain verified`.
 - Final submit page was not completed.
 
+2026-05-02T15:05-07:00 in-app browser dashboard audit:
+
+- App Info still shows the logo icon upload control. Treat logo upload as an
+  outbound file upload requiring host approval. Recommended file:
+  `assets/brand/workflow-logo-icon.png`.
+- MCP Server section shows `https://tinyassets.io/mcp-directory`, `No Auth`,
+  and 11 complete read/open-world/destructive tool-justification rows.
+- Testing section currently contains 5 positive and 3 negative test cases in
+  the dashboard UI. The source packet still carries the fuller 10 positive and
+  4 negative cases for review/audit, but the dashboard form did not show an
+  add-control during this audit.
+- Submit section still has an empty release-notes textarea, publisher selector
+  unset, all seven legal/compliance boxes unchecked, both mature-content radio
+  buttons unchecked, and `Submit for Review` untouched.
+
 Not yet complete:
 
 - Logo upload.
@@ -171,6 +186,20 @@ Not yet complete:
 6. Host approves logo/screenshots or demo asset choices, release notes,
    compliance answers, mature-content answer, publisher selector, verification
    assertion, and final submit.
+
+OpenAI Submit-section approval bundle ready for host review:
+
+- Release notes: `Initial public alpha of Workflow. This app connects ChatGPT to the directory-safe Workflow MCP surface for daemon status, shared goals, project wiki lookup, run browsing, and bounded request submission.`
+- Publisher selector: recommend `Business` only if the host confirms the
+  TinyAssets publisher/business assertion.
+- Mature/adult-content answer: recommend `No`.
+- Legal/compliance confirmations: all seven dashboard boxes must be approved by
+  the host before clicking because they assert terms review, policy/law
+  compliance, no money/crypto/investment execution, no ads, third-party
+  rights/API endpoint authorization, and not designed/marketed to children
+  under 13.
+- Final `Submit for Review`: separate action-time approval after the fields are
+  complete.
 
 Suggested release notes:
 
@@ -218,6 +247,16 @@ Suggested release notes:
   goal?` card.
 - ChatGPT returned goal id `20e2339c82e3` and stated
   `Called tool was propose_workflow_goal: yes`.
+
+2026-05-02T15:07-07:00 from `codex/openai-submission-closeout`:
+
+- `git diff --check` passed.
+- `python -m json.tool chatgpt-app-submission.json > $null` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 7 tests.
+- Public canaries passed for `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- Tool canaries passed for both endpoints; `/mcp-directory` listed the 11
+  directory tools and invoked `get_workflow_status`.
 - Direct `/mcp-directory` `search_workflow_goals` and `get_workflow_goal`
   probes confirmed goal `20e2339c82e3` exists, is public, and has tags
   `submission, smoke`.

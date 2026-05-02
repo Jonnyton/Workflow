@@ -48,7 +48,7 @@ the OpenAI-specific blockers below:
 1. ChatGPT mobile must complete the main read/write flows.
 2. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
-   checkboxes need host review.
+   checkboxes need host review and action-time approval before dashboard edits.
 3. Host must approve final `Submit for Review` at action time.
 
 Parallel onboarding gaps that are not OpenAI-submit blockers:
@@ -169,6 +169,45 @@ Parallel Claude gap narrowed 2026-05-02T14:44-07:00:
   status after loading tools.
 - This closes the fresh rendered Claude read proof; Claude directory form
   contact/org fields and final submit remain action-time host gates.
+
+OpenAI dashboard audit 2026-05-02T15:05-07:00:
+
+- App Info still exposes the logo upload control, so the logo is not yet
+  proven uploaded in the dashboard.
+- MCP Server section shows `https://tinyassets.io/mcp-directory`, `No Auth`,
+  and 11 complete tool-justification rows.
+- Testing section shows 5 positive and 3 negative dashboard test cases. The
+  repo packet remains fuller at 10 positive and 4 negative cases; no dashboard
+  add-control was visible during audit.
+- Submit section remains incomplete: release notes empty; publisher unset; 7
+  legal/compliance boxes unchecked; mature/adult-content answer unset; final
+  `Submit for Review` not clicked.
+
+Next dashboard action should be one explicit approval bundle, not piecemeal
+guessing:
+
+- Fill release notes with: `Initial public alpha of Workflow. This app connects ChatGPT to the directory-safe Workflow MCP surface for daemon status, shared goals, project wiki lookup, run browsing, and bounded request submission.`
+- Select publisher type `Business` only if host confirms TinyAssets may publish
+  on behalf of that business.
+- Select mature/adult content `No` only after host confirms Workflow is
+  suitable for under-18 users and contains no mature/adult content.
+- Check the seven legal/compliance boxes only after host confirms each
+  assertion.
+- Upload `assets/brand/workflow-logo-icon.png` only after host approves the
+  file upload.
+- Do not click `Submit for Review` until host gives separate final-submit
+  approval at action time.
+
+Fresh command/live validation 2026-05-02T15:07-07:00 from
+`codex/openai-submission-closeout`:
+
+- `git diff --check` passed.
+- `python -m json.tool chatgpt-app-submission.json > $null` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 7 tests.
+- Public canaries passed for both `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- Tool canaries passed for both endpoints; `/mcp-directory` listed the 11
+  directory tools and invoked `get_workflow_status`.
 
 ## Tool Hint Audit
 
