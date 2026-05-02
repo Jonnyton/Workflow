@@ -17,6 +17,7 @@ lancedb/
 
 # Agent tooling (local config)
 .codex/
+_PURPOSE.md
 .claude/projects/
 .claude/settings.json
 .claude/settings.local.json
