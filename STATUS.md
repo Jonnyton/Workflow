@@ -29,7 +29,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
 | `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28). Single param add. | workflow/api/runs.py, tests/ | - | dev-ready |
 | Claude.ai injection mitigation - Section 5/5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | - | dev-ready |
-| Community change loop - controls live + chatbot proof green; P1a deployed/live attach proof green 2026-05-02; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
+| Community change loop - controls live + ChatGPT proof refreshed 2026-05-01 19:00-07; P1a live attach green; needs post-fix real-user evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Daemon soul/memory PR #140 - draft; local daemon checks green, CI blocked on plugin mirror refresh after #18 clear. | docs/souls/, workflow/daemon_memory.py, workflow/daemon_registry.py, workflow/daemon_wiki.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | nav-then-dev |
@@ -51,7 +51,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), #18 cleared; next is clean chatbot/user evidence and incentive routing.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), #18 cleared; next is incentive routing + post-fix user evidence.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
