@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "Workflow",
     "subtitle": "Build durable workflows",
-    "description": "Workflow helps ChatGPT users inspect durable AI workflow state, browse shared goals and wiki knowledge, and submit bounded requests into a long-running Workflow daemon.",
+    "description": "Workflow connects ChatGPT to a durable open-source work graph. Users can check daemon status, browse shared goals and project wiki knowledge, and submit bounded requests that continue through the Workflow loop beyond a single chat.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
