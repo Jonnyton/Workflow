@@ -150,3 +150,14 @@ Notes:
 - 2026-05-02 create `../wf-provider-identity-bridge` on
   `codex/provider-identity-bridge` by codex-gpt5-desktop-identity-rollout;
   STATUS row: Provider identity bridge; PR expected ready after docs checks.
+
+## OpenAI Submission Hardening - 2026-05-02
+
+- 2026-05-02 create `../wf-openai-submission-hardening` on
+  `codex/openai-submission-hardening` by
+  codex-gpt5-desktop-openai-submission.
+- STATUS row: OpenAI app submission hardening.
+- Purpose: refresh official OpenAI requirements, audit `/mcp-directory`
+  source/tool hints, and refactor packet/docs before final submit approval.
+- Ship condition: submission packet is truthful and focused checks pass;
+  final OpenAI submit remains action-time host approval.

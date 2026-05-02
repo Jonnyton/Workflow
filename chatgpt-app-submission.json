@@ -15,7 +15,7 @@
         "destructiveHint": false
       },
       "justifications": {
-        "read_only_justification": "Retrieves daemon status, routing evidence, and caveats without changing Workflow state.",
+        "read_only_justification": "Returns a directory-safe daemon status snapshot with raw logs, local paths, and host identifiers redacted, without changing Workflow state.",
         "open_world_justification": "Does not publish content or modify public internet state.",
         "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
       }
@@ -159,6 +159,14 @@
       "expected_output_url": null
     },
     {
+      "description": "Browse shared goals and inspect one selected result.",
+      "user_prompt": "Use Workflow to list shared goals, then inspect the first relevant goal you find.",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_workflow_goals, get_workflow_goal",
+      "expected_output": "Lists shared Workflow goals and, when a relevant goal exists, summarizes the selected goal and bound branches.",
+      "expected_output_url": null
+    },
+    {
       "description": "Browse available universes before choosing where to work.",
       "user_prompt": "Use Workflow to list available universes, then inspect the active one.",
       "file_attachment_urls": null,
@@ -172,6 +180,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "search_workflow_wiki, read_workflow_wiki_page",
       "expected_output": "Returns relevant wiki search results and a grounded summary of the chosen page.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review recent Workflow run history.",
+      "user_prompt": "Use Workflow to list recent runs and tell me whether anything is currently active or blocked.",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_workflow_runs",
+      "expected_output": "Returns recent Workflow runs or a clear empty-state message without starting, stopping, or editing runs.",
       "expected_output_url": null
     },
     {
