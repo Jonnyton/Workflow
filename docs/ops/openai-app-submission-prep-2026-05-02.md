@@ -40,11 +40,30 @@ Historical ChatGPT Developer Mode proof is preserved in
 - Support: `https://tinyassets.io/legal#contact` or `ops@tinyassets.io`
 - Privacy Policy URL: `https://tinyassets.io/legal#privacy`
 - Terms of Service URL: `https://tinyassets.io/legal#terms`
-- Logo candidate: `assets/brand/workflow-logo-icon.png` (1024x1024 PNG)
+- Logo: `assets/brand/workflow-logo-icon.png` (1024x1024 PNG)
 
 Description:
 
 `Workflow connects ChatGPT to a durable open-source work graph. Users can check daemon status, browse shared goals and project wiki knowledge, and submit bounded requests that continue through the Workflow loop beyond a single chat.`
+
+Final operator runbook:
+`docs/ops/openai-app-submission-final-submit-runbook-2026-05-02.md`.
+
+## Submission Asset Pack
+
+Current local assets in `output/openai-submission-assets/`:
+
+- `chatgpt-web-workflow-proof-2026-05-02.png`
+- `chatgpt-web-goal-success-2026-05-02.png`
+- `workflow-connect-desktop-2026-05-02.png`
+- `workflow-connect-mobile-2026-05-02.png`
+- `workflow-legal-privacy-desktop-2026-05-02.png`
+- `workflow-legal-privacy-mobile-2026-05-02.png`
+
+The historical ChatGPT goal failure screenshots were removed from the local
+asset folder so they cannot be uploaded accidentally as positive proof.
+Failure history remains documented in
+`docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
 
 ## Tool Surface
 
@@ -98,6 +117,16 @@ count/caveat labels (`activity_log_tail_count`, `last_n_calls_count`, and
 `evidence_caveats.last_n_calls`) before final OpenAI submit proof. Deploy prod
 run `25260784025` passed and deployed image tag `30363c709a28`.
 
+2026-05-02 closeout branch:
+
+- `WebSite/site/src/routes/legal/+page.svelte` now discloses chatbot
+  connector data categories and retention for ChatGPT, Claude, and other MCP
+  clients.
+- `WebSite/site/src/routes/connect/+page.svelte` now keeps the full
+  `/mcp-directory` endpoint visible in mobile review screenshots.
+- `tests/test_directory_server.py` now asserts every directory tool has a
+  title as well as explicit submission annotations.
+
 ## OpenAI Dashboard State
 
 Recorded prior dashboard state from 2026-05-02:
@@ -131,8 +160,9 @@ Not yet complete:
    call out testing iOS or Android.
 4. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
    action-time before approving public/state-changing writes.
-5. Confirm privacy policy coverage for the categories listed in the readiness
-   doc.
+5. Confirm the legal/connect site closeout has landed and deployed before using
+   `https://tinyassets.io/legal#privacy` and `/connect` screenshots in final
+   submit.
 6. Host approves logo/screenshots or demo asset choices, release notes,
    compliance answers, mature-content answer, publisher selector, verification
    assertion, and final submit.
@@ -201,3 +231,23 @@ Suggested release notes:
   `session_boundary`, `host_id`, and storage `path` keys absent.
 - `python scripts/check_cross_provider_drift.py` and `git diff --check`
   passed.
+
+2026-05-02T14:08-07:00 to 2026-05-02T14:12-07:00 from
+`codex/onboarding-close-gaps`:
+
+- `python -m json.tool chatgpt-app-submission.json` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 7 tests.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed and listed the 11 directory tools.
+- Strict live `/mcp-directory` redaction probe passed with only
+  `activity_log_line_count` and `last_completed_request_llm_used` in
+  `evidence`, and only `last_completed_request_llm_used` in
+  `evidence_caveats`.
+- `npm run check` passed in `WebSite/site`.
+- `npm run build` passed in `WebSite/site`.
+- Local preview screenshots were regenerated for `/connect` and
+  `/legal#privacy` desktop/mobile after the mobile URL-fit fix.
+- In-app browser screenshot captured ChatGPT web goal success with goal id
+  `20e2339c82e3` and `Called tool was propose_workflow_goal: yes`.

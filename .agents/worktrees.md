@@ -217,3 +217,14 @@ Notes:
   and into explicit host-action state.
 - Ship condition: STATUS row no longer claims provider ownership for mobile,
   legal/publisher/assets, or final-submit approval.
+
+## Onboarding Submission Closeout - 2026-05-02
+
+- 2026-05-02 create `../wf-onboarding-closeout` on
+  `codex/onboarding-close-gaps` by
+  codex-gpt5-desktop-onboarding-closeout.
+- STATUS row: OpenAI/Claude directory submission closeout.
+- Purpose: close repo-side OpenAI/Claude onboarding submission gaps and
+  isolate unavoidable action-time host approvals.
+- Ship condition: submission assets/runbook/proofs are current; only external
+  mobile/legal/publisher/final-submit actions remain.

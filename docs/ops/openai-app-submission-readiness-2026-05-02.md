@@ -41,14 +41,18 @@ Sources:
 
 Verdict: not ready for final submit yet.
 
-Source packet is review-aligned and deployed, and ChatGPT web proof is clean.
-Final submission should wait for the OpenAI-specific blockers below:
+Source packet is review-aligned and deployed, ChatGPT web proof is clean, and
+the repo-side legal/asset closeout is prepared in
+`codex/onboarding-close-gaps`. Final submission should wait for the
+OpenAI-specific blockers below:
 
-1. ChatGPT mobile must complete the main read/write flows.
-2. Logo/screenshots or demo asset choices, release notes, mature-content
+1. This closeout branch must land and the legal/connect site changes must be
+   live before final submit uses `https://tinyassets.io/legal#privacy`.
+2. ChatGPT mobile must complete the main read/write flows.
+3. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
    checkboxes need host review.
-3. Host must approve final `Submit for Review` at action time.
+4. Host must approve final `Submit for Review` at action time.
 
 Parallel onboarding gaps that are not OpenAI-submit blockers:
 
@@ -112,12 +116,35 @@ Closed 2026-05-02T13:23-07:00:
 Historical ChatGPT Developer Mode proof and BUG-034 boundaries are preserved in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
 
+Closed repo-side in `codex/onboarding-close-gaps` on
+2026-05-02T14:08-07:00 to 2026-05-02T14:12-07:00:
+
+- `WebSite/site/src/routes/legal/+page.svelte` now discloses ChatGPT, Claude,
+  and other MCP connector data categories and retention boundaries.
+- `WebSite/site/src/routes/connect/+page.svelte` keeps the full
+  `https://tinyassets.io/mcp-directory` URL visible in the mobile copy field.
+- Local asset pack refreshed under `output/openai-submission-assets/`, with
+  ambiguous historical failed goal screenshots removed.
+- ChatGPT web goal-success screenshot captured for goal `20e2339c82e3`.
+- `tests/test_directory_server.py` now asserts directory tool titles in
+  addition to explicit annotation hints.
+- `python -m json.tool chatgpt-app-submission.json` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 7 tests.
+- Public and tool canaries passed for `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- Strict live `/mcp-directory` redaction probe passed with no raw logs, recent
+  call arrays, count labels, policy hash, session boundary, host id, or storage
+  `path` keys.
+- `npm run check` and `npm run build` passed in `WebSite/site`.
+
 ## Tool Hint Audit
 
 Source audited: `workflow/directory_server.py`.
 
 Result: 11 source tools match `chatgpt-app-submission.json` exactly for
 `readOnlyHint`, `openWorldHint`, and `destructiveHint`.
+All 11 source tools also have tool titles and annotation titles, matching
+Claude's current directory-review checklist.
 
 ChatGPT Apps submission packet audit on 2026-05-02:
 
@@ -180,8 +207,9 @@ Branch hardening:
   storage details.
 - Directory `get_workflow_status` removes session-boundary account data.
 
-Remaining categories the privacy policy should disclose for the OpenAI app
-path:
+The 2026-05-02 closeout branch updates the legal page source to disclose the
+OpenAI app path categories below. Final submit should wait until that source is
+landed and live:
 
 - User-submitted goal names, descriptions, tags, and visibility.
 - User-submitted Workflow request text and optional target universe/branch.
@@ -242,6 +270,9 @@ python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --
 python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose
 python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose
 python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool get_workflow_status --args "{}" --raw
+cd WebSite/site
+npm run check
+npm run build
 ```
 
 For the final probe, parse the tool result text as JSON and verify these
@@ -259,6 +290,7 @@ diagnostic keys are absent:
 ## Final Submit Checklist
 
 - Branch landed and deployed.
+- Legal/connect closeout source landed and live.
 - Public canaries green after deploy.
 - Live status redaction proof captured.
 - ChatGPT web golden prompts captured.

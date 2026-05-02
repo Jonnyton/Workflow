@@ -108,9 +108,9 @@ spec" or "planned", not "works".
 |---|---|---|---|
 | Official MCP Registry | Registry-aware MCP hosts | published-live | 2026-05-01 proof: `mcp-publisher publish packaging/registry/server.json`; API search returned `io.github.Jonnyton/workflow-universe-server` active/latest |
 | Claude.ai custom connector | Logged-in Claude user | protocol-live; UI refresh needed | Full surface is `https://tinyassets.io/mcp`; protocol proof green 2026-05-01; live Claude.ai proof still needs refresh |
-| Claude Connectors Directory | Logged-in Claude users/admins | form-reached; submit blocked on contact/final-submit approval | 2026-05-02: in-app browser reached Google Form page 2 from official Claude submission docs; stopped before entering required contact/org fields because submission records Google identity and transmits contact data |
+| Claude Connectors Directory | Logged-in Claude users/admins | form-reached; submit blocked on contact/final-submit approval | 2026-05-02: in-app browser reached Google Form page 2 from official Claude submission docs; stopped before entering required contact/org fields because submission records Google identity and transmits contact data. Closeout packet: `docs/ops/claude-directory-submission-closeout-2026-05-02.md` |
 | ChatGPT custom MCP / developer mode | Logged-in eligible ChatGPT user/workspace | verified: web read/write | 2026-05-02T13:23-07:00: read-only status prompt completed; approved `propose_workflow_goal` created public goal `20e2339c82e3`; direct `/mcp-directory` search/get verified it; no `Unknown action`, hang, or 5xx |
-| ChatGPT App Directory | Logged-in ChatGPT users/admins | app draft; submit blocked | `chatgpt-app-submission.json` covers the 11 directory tools with 10 positive and 4 negative tests; 2026-05-02 dashboard draft reached Submit page with `/mcp-directory`; PR #184 strict redaction deploy/proof and ChatGPT web read/write proof are green; final submit still blocked on mobile proof, assets/release notes, privacy/legal/publisher fields, and action-time host approval |
+| ChatGPT App Directory | Logged-in ChatGPT users/admins | app draft; submit blocked | `chatgpt-app-submission.json` covers the 11 directory tools with 10 positive and 4 negative tests; 2026-05-02 dashboard draft reached Submit page with `/mcp-directory`; PR #184 strict redaction deploy/proof and ChatGPT web read/write proof are green; closeout branch adds legal disclosure, asset pack, and final-submit runbook; final submit still blocked on branch deploy, mobile proof, legal/publisher assertions, and action-time host approval |
 | ChatGPT guest | No logged-in chatbot account | unsupported by ChatGPT path | Route to local/self-hosted/no-chatbot-login options |
 | Mistral Le Chat MCP connector | Logged-in Mistral user/admin | planned | Need connector config proof and directory/submission research |
 | Open WebUI | No hosted chatbot login if self-hosted | verified: local Docker 0.9.2 | 2026-05-01 proof: `docs/ops/open-webui-runtime-proof-2026-05-01.md`; Streamable HTTP MCP to `https://tinyassets.io/mcp-directory`, auth `None`, chat invoked `workflow_get_workflow_status` |
@@ -140,10 +140,12 @@ Detailed execution queue: `docs/ops/mcp-directory-rollout-action-queue.md`.
 
 - Monitor the official MCP Registry listing and add registry-aware client proof
   as clients consume `io.github.Jonnyton/workflow-universe-server`.
-- Submit the Claude directory packet through Anthropic's review flow.
+- Submit the Claude directory packet through Anthropic's review flow after the
+  live Claude.ai proof and host approval gates in
+  `docs/ops/claude-directory-submission-closeout-2026-05-02.md`.
 - Submit `chatgpt-app-submission.json` through OpenAI's app submission flow
-  only after ChatGPT mobile proof, submission assets/legal/publisher review,
-  and action-time host approval.
+  only after the final-submit runbook gates in
+  `docs/ops/openai-app-submission-final-submit-runbook-2026-05-02.md`.
 - Verify the next no-chatbot-login host after Open WebUI + LibreChat: LM
   Studio/Jan, OpenClaw/channel gateway, or custom hosts. Proof traces:
   `docs/ops/open-webui-runtime-proof-2026-05-01.md` and
