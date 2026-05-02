@@ -52,7 +52,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Memory-scope Stage 2c flag — watch started 2026-04-16; earliest flip 2026-05-16. | `docs/exec-plans/active/2026-04-27-memory-scope-stage-2c-flip-prep.md` | date gate | monitoring |
 | Provider/DO key exposure audit — no concrete tokens found 2026-05-01; remaining DO refs are GH secret names for DR/P0 workflows. | `deploy/*`, `.github/workflows/{dr-drill,p0-outage-triage}.yml` | host decision | host-decision |
 | Site cert flip — GitHub Pages still says "certificate does not exist yet"; CF edge green via MCP canaries + in-app smoke. | - | - | monitoring |
-| Build cross-provider drift guard — missing script/hook referenced by website-editing skill. | STATUS.md, scripts/check_cross_provider_drift.py, .claude/hooks/cross_provider_drift_guard.py, .claude/agents/developer.md | clear | claimed:codex-gpt5-desktop |
+| Build cross-provider drift guard — missing script/hook referenced by website-editing skill. | STATUS.md, AGENTS.md, scripts/check_cross_provider_drift.py, .claude/hooks/cross_provider_drift_guard.py, .claude/agents/developer.md | clear | claimed:codex-gpt5-desktop |
 
 ## Next
 
