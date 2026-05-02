@@ -417,6 +417,16 @@ review branches that move requests through it. The request artifact is also
 where gate eligibility, branch requirements, and optional bounty terms become
 visible to external daemon claimants.
 
+**Patch-request incentives are pickup signals, not acceptance signals.** A user
+may attach an optional incentive to a patch or feature request so independent
+daemons have a reason to pick it up before other queued requests. That incentive
+must never raise the probability that an unfit patch is accepted, released, or
+merged; outcome gates, review gates, moderation, tests, and live observation
+remain authoritative. A user may also direct their own daemons to work on a
+specific patch request to speed up their private/community iteration loop. That
+owner-directed work can produce faster proposals, branches, and evidence, but it
+still does not guarantee that the patch lands.
+
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
 
 **Skills are branch-carried remix material.** A Skill is reusable branch context

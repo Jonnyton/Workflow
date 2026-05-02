@@ -21,6 +21,8 @@ each operation opens, commits, closes.
 from __future__ import annotations
 
 import contextlib
+import copy
+import hashlib
 import json
 import logging
 import os
@@ -323,6 +325,21 @@ def initialize_runs_db(base_path: str | Path) -> Path:
         ON teammate_messages(to_node_id, sent_at);
     CREATE INDEX IF NOT EXISTS idx_tmsg_from_run
         ON teammate_messages(from_run_id);
+
+    CREATE TABLE IF NOT EXISTS run_child_attachments (
+        attachment_id       TEXT PRIMARY KEY,
+        parent_run_id       TEXT NOT NULL,
+        child_run_id        TEXT NOT NULL,
+        child_branch_def_id TEXT NOT NULL,
+        output_digest       TEXT NOT NULL,
+        evidence_handle     TEXT NOT NULL,
+        attached_at         REAL NOT NULL,
+        attachment_json     TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(parent_run_id, child_run_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_child_attachments_child
+        ON run_child_attachments(child_run_id);
     """
     from workflow.branch_versions import BRANCH_VERSIONS_SCHEMA
     from workflow.contribution_events import CONTRIBUTION_EVENTS_SCHEMA
@@ -616,6 +633,332 @@ def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:
     else:
         result["concurrency"] = None
     return result
+
+
+class ChildRunAttachmentError(ValueError):
+    """Structured validation failure for attach_existing_child_run."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
+
+_RECEIPT_WAITING_VALUES = frozenset({
+    "attach_required",
+    "blocked_before_child_attach",
+    "receipt_waiting",
+    "selected_attach_required",
+    "waiting_for_child_receipt",
+})
+
+
+def _normalise_digest(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if value.startswith("sha256:"):
+        return value
+    if len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value):
+        return f"sha256:{value.lower()}"
+    return value
+
+
+def _run_output_digest(output: dict[str, Any]) -> str:
+    payload = json.dumps(
+        output,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _parent_is_receipt_waiting(output: dict[str, Any]) -> bool:
+    if output.get("stable_evidence_handle"):
+        return False
+    for key in ("selected_child_status", "selected_branch_state", "automation_claim_status"):
+        value = str(output.get(key, "")).strip().lower()
+        if value in {
+            "attached_completed",
+            "child_attached_existing_receipt",
+            "child_attached_with_handle",
+        }:
+            return False
+    for key in (
+        "parent_loop_status",
+        "selected_child_status",
+        "selected_branch_state",
+        "automation_claim_status",
+        "final_outcome_label",
+    ):
+        value = str(output.get(key, "")).strip().lower()
+        if value in _RECEIPT_WAITING_VALUES:
+            return True
+        if value.endswith("_attach_required") or value.endswith("_receipt_waiting"):
+            return True
+    return False
+
+
+def _selected_child_branch(parent_output: dict[str, Any]) -> str:
+    return (
+        str(parent_output.get("selected_child_branch_def_id") or "").strip()
+        or str(parent_output.get("selected_loop_branch") or "").strip()
+        or str(parent_output.get("child_branch_def_id") or "").strip()
+    )
+
+
+def attach_existing_child_run(
+    base_path: str | Path,
+    *,
+    parent_run_id: str,
+    child_run_id: str,
+    child_branch_def_id: str = "",
+    output_digest: str = "",
+    actor: str = "anonymous",
+) -> dict[str, Any]:
+    """Validate and attach a completed child run receipt to a waiting parent.
+
+    This is intentionally a receipt primitive. It only records provenance for
+    an already-finished child.
+    """
+    initialize_runs_db(base_path)
+    parent_run_id = parent_run_id.strip()
+    child_run_id = child_run_id.strip()
+    if not parent_run_id:
+        raise ChildRunAttachmentError(
+            "parent_run_id_required",
+            "parent run_id is required.",
+        )
+    if not child_run_id:
+        raise ChildRunAttachmentError(
+            "child_run_id_required",
+            "child_run_id is required.",
+        )
+
+    parent = get_run(base_path, parent_run_id)
+    if parent is None:
+        raise ChildRunAttachmentError(
+            "parent_not_found",
+            f"Parent run '{parent_run_id}' not found.",
+            {"parent_run_id": parent_run_id},
+        )
+    child = get_run(base_path, child_run_id)
+    if child is None:
+        raise ChildRunAttachmentError(
+            "child_not_found",
+            f"Child run '{child_run_id}' not found.",
+            {"child_run_id": child_run_id},
+        )
+
+    parent_output = copy.deepcopy(parent.get("output") or {})
+    if not _parent_is_receipt_waiting(parent_output):
+        raise ChildRunAttachmentError(
+            "parent_not_receipt_waiting",
+            "Parent run is not in a receipt-waiting state.",
+            {
+                "parent_run_id": parent_run_id,
+                "parent_loop_status": parent_output.get("parent_loop_status", ""),
+                "selected_child_status": parent_output.get("selected_child_status", ""),
+            },
+        )
+
+    supplied_child_branch = child_branch_def_id.strip()
+    expected_child_branch = _selected_child_branch(parent_output) or supplied_child_branch
+    if not expected_child_branch:
+        raise ChildRunAttachmentError(
+            "child_branch_required",
+            "child_branch_def_id is required when parent output has no selected child branch.",
+            {"parent_run_id": parent_run_id},
+        )
+    actual_child_branch = str(child.get("branch_def_id") or "")
+    if supplied_child_branch and supplied_child_branch != expected_child_branch:
+        raise ChildRunAttachmentError(
+            "child_branch_mismatch",
+            "Supplied child branch does not match the parent selected child branch.",
+            {
+                "child_run_id": child_run_id,
+                "expected_child_branch_def_id": expected_child_branch,
+                "supplied_child_branch_def_id": supplied_child_branch,
+                "actual_child_branch_def_id": actual_child_branch,
+            },
+        )
+    if actual_child_branch != expected_child_branch:
+        raise ChildRunAttachmentError(
+            "child_branch_mismatch",
+            "Child run branch does not match the selected child branch.",
+            {
+                "child_run_id": child_run_id,
+                "expected_child_branch_def_id": expected_child_branch,
+                "actual_child_branch_def_id": actual_child_branch,
+            },
+        )
+
+    child_status = str(child.get("status") or "")
+    if child_status != RUN_STATUS_COMPLETED:
+        raise ChildRunAttachmentError(
+            "child_not_completed",
+            "Child run must be completed before it can be attached.",
+            {"child_run_id": child_run_id, "child_status": child_status},
+        )
+
+    child_output = copy.deepcopy(child.get("output") or {})
+    if not child_output:
+        raise ChildRunAttachmentError(
+            "child_output_missing",
+            "Child run completed but has no output to attach.",
+            {"child_run_id": child_run_id},
+        )
+
+    computed_digest = _run_output_digest(child_output)
+    supplied_digest = _normalise_digest(output_digest)
+    if supplied_digest and supplied_digest != computed_digest:
+        raise ChildRunAttachmentError(
+            "output_digest_mismatch",
+            "Supplied child output digest does not match the stored child output.",
+            {
+                "child_run_id": child_run_id,
+                "supplied_output_digest": supplied_digest,
+                "computed_output_digest": computed_digest,
+            },
+        )
+
+    digest_suffix = computed_digest.split(":", 1)[1][:16]
+    evidence_handle = f"run-attachment:{parent_run_id}:{child_run_id}:{digest_suffix}"
+    attachment_id = f"{parent_run_id}:{child_run_id}"
+    attached_at = _now()
+    receipt = {
+        "attachment_id": attachment_id,
+        "parent_run_id": parent_run_id,
+        "child_run_id": child_run_id,
+        "child_branch_def_id": actual_child_branch,
+        "output_digest": computed_digest,
+        "evidence_handle": evidence_handle,
+        "attached_at": attached_at,
+        "attached_by": actor,
+        "provenance": "attached_existing_child",
+        "automation_claim_status": "child_attached_with_handle",
+    }
+
+    with _connect(base_path) as conn:
+        existing_child = conn.execute(
+            """
+            SELECT output_digest, evidence_handle FROM run_child_attachments
+            WHERE child_run_id = ?
+            LIMIT 1
+            """,
+            (child_run_id,),
+        ).fetchone()
+        if existing_child and existing_child["output_digest"] != computed_digest:
+            raise ChildRunAttachmentError(
+                "conflicting_child_digest",
+                "Child run was already attached with a different output digest.",
+                {
+                    "child_run_id": child_run_id,
+                    "existing_output_digest": existing_child["output_digest"],
+                    "computed_output_digest": computed_digest,
+                },
+            )
+
+        existing_pair = conn.execute(
+            """
+            SELECT output_digest, evidence_handle FROM run_child_attachments
+            WHERE parent_run_id = ? AND child_run_id = ?
+            """,
+            (parent_run_id, child_run_id),
+        ).fetchone()
+        if existing_pair and existing_pair["output_digest"] != computed_digest:
+            raise ChildRunAttachmentError(
+                "conflicting_child_digest",
+                "Child run was already attached to this parent with a different digest.",
+                {
+                    "parent_run_id": parent_run_id,
+                    "child_run_id": child_run_id,
+                    "existing_output_digest": existing_pair["output_digest"],
+                    "computed_output_digest": computed_digest,
+                },
+            )
+        if not existing_pair:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO run_child_attachments (
+                    attachment_id, parent_run_id, child_run_id,
+                    child_branch_def_id, output_digest, evidence_handle,
+                    attached_at, attachment_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attachment_id,
+                    parent_run_id,
+                    child_run_id,
+                    actual_child_branch,
+                    computed_digest,
+                    evidence_handle,
+                    attached_at,
+                    json.dumps(receipt, sort_keys=True, default=str),
+                ),
+            )
+            existing_pair = conn.execute(
+                """
+                SELECT output_digest, evidence_handle FROM run_child_attachments
+                WHERE parent_run_id = ? AND child_run_id = ?
+                """,
+                (parent_run_id, child_run_id),
+            ).fetchone()
+        if existing_pair is None:
+            raise ChildRunAttachmentError(
+                "attachment_record_missing",
+                "Child attachment record could not be written.",
+                {"parent_run_id": parent_run_id, "child_run_id": child_run_id},
+            )
+        if existing_pair["output_digest"] != computed_digest:
+            raise ChildRunAttachmentError(
+                "conflicting_child_digest",
+                "Child run was already attached to this parent with a different digest.",
+                {
+                    "parent_run_id": parent_run_id,
+                    "child_run_id": child_run_id,
+                    "existing_output_digest": existing_pair["output_digest"],
+                    "computed_output_digest": computed_digest,
+                },
+            )
+        evidence_handle = existing_pair["evidence_handle"]
+        receipt["evidence_handle"] = evidence_handle
+
+    parent_output.update({
+        "selected_child_status": "attached_completed",
+        "selected_branch_state": "child_attached_existing_receipt",
+        "automation_claim_status": "child_attached_with_handle",
+        "stable_evidence_handle": evidence_handle,
+        "attached_child_run_id": child_run_id,
+        "attached_child_branch_def_id": actual_child_branch,
+        "attached_child_output_digest": computed_digest,
+        "attached_child_output": child_output,
+        "attached_child_receipt": receipt,
+        "blocked_execution_record": {},
+    })
+    if "keep_reject_decision" in child_output:
+        parent_output["attached_child_decision"] = child_output["keep_reject_decision"]
+
+    update_run_status(base_path, parent_run_id, output=parent_output)
+    return {
+        "status": "attached",
+        "parent_run_id": parent_run_id,
+        "child_run_id": child_run_id,
+        "child_branch_def_id": actual_child_branch,
+        "selected_child_status": "attached_completed",
+        "automation_claim_status": "child_attached_with_handle",
+        "stable_evidence_handle": evidence_handle,
+        "output_digest": computed_digest,
+        "attached_child_output": child_output,
+        "receipt": receipt,
+    }
 
 
 def list_runs(
@@ -3000,11 +3343,13 @@ __all__ = [
     "NODE_STATUS_RAN",
     "NODE_STATUS_FAILED",
     "ACTIONABLE_BY",
+    "ChildRunAttachmentError",
     "RunCancelledError",
     "RunOutcome",
     "RunStepEvent",
     # Phase 4 storage helpers
     "add_judgment",
+    "attach_existing_child_run",
     "build_node_status_map",
     "create_run",
     "execute_branch",

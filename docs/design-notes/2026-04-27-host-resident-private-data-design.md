@@ -322,7 +322,7 @@ For READ-MOSTLY private data (e.g. canon docs that change rarely), the user's ch
 
 - **A.1 fantasy_daemon/ unpack arc** — closes the rename's package layer; commons-first's data-layer changes operate on a clean tree.
 - **Phase 6 .author_server.db rename** — host-resident DB filename matches its semantic role.
-- **Arc B Phase 3 + Arc C Phase 3** — legacy code-rename + env-var aliases die before catalog migration.
+- **Arc C Phase 3** — legacy env-var aliases die before catalog migration. Arc B Phase 3 code-rename alias deletion has already shipped.
 
 ### §6.2 — Cannot block
 

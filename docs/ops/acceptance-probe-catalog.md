@@ -90,7 +90,7 @@ paper on deep space population — can you walk me through it?
 
 ## PROBE-002 — Layer-2 liveness (minimal)
 
-**Validated:** code-fix landed 2026-04-28 (`_real_browser_probe` reimplemented as `claude_chat ask` subprocess + trace-block parser); awaits host `--once` smoke + Task Scheduler `Workflow-Canary-L2` activation for live status. Original implementation (`lead_browser.navigate` + `claude_chat.send_and_wait`) referenced symbols that never existed — see `docs/design-notes/2026-04-19-layer2-canary-scope.md §Wiring runbook` for the recovery + API contract.
+**Validated:** code-fix landed 2026-04-28 (`_real_browser_probe` reimplemented as `claude_chat ask` subprocess + trace-block parser); still awaits host `--once` smoke + Task Scheduler `Workflow-Canary-L2` activation for live status. Freshness check 2026-05-01: `Get-ScheduledTask -TaskName Workflow-Canary-L2` returned no task. Original implementation (`lead_browser.navigate` + `claude_chat.send_and_wait`) referenced symbols that never existed — see `docs/design-notes/2026-04-19-layer2-canary-scope.md §Wiring runbook` for the recovery + API contract.
 **Source script:** `scripts/uptime_canary_layer2.py` (canary) + `scripts/claude_chat.py` (subprocess driver — `cmd_ask` is the canonical entry point).
 **Persona:** `uptime_canary` (dedicated automated persona; CDP profile at `C:\Users\Jonathan\.claude-ai-profile`).
 **Connector URL under test:** `https://tinyassets.io/mcp`
@@ -122,7 +122,7 @@ Are you there? Call get_status and tell me the llm_endpoint_bound value.
 
 ### When to use
 
-- Automated hourly Layer-2 canary (Windows Task Scheduler entry `Workflow-Canary-L2` invokes `python scripts/uptime_canary_layer2.py`). Currently UNWIRED on host as of 2026-04-28; host activates after `--once` GREEN smoke.
+- Automated hourly Layer-2 canary (Windows Task Scheduler entry `Workflow-Canary-L2` invokes `python scripts/uptime_canary_layer2.py`). Currently UNWIRED on host as of 2026-05-01; host activates after `--once` GREEN smoke.
 - Quick manual liveness check when Layer-1 is green but something feels wrong.
 
 ### Cross-host caveat

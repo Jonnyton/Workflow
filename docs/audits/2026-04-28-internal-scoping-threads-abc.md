@@ -2,7 +2,7 @@
 title: Internal-scoping Threads A/B/C — Phase 6 + fantasy_author_original deletion + R7 closure
 date: 2026-04-28
 author: navigator
-status: closure analysis — citation source for STATUS retires + reframes
+status: closure analysis; refreshed 2026-05-01 after Thread B cleanup landed in 98abd3a
 companion:
   - feedback_dont_ask_host_internal_scoping (lead memory) — these 3 threads were the first batch run under the new autonomy rule
   - feedback_status_md_evidence_based_retire (lead memory) — this audit IS the evidence citation for the retire/reframe
@@ -18,10 +18,15 @@ audience: lead, host (review only — not a host-decision queue item)
 
 Host kicked 3 of 6 items back from the 2026-04-28 decision batch as navigator+lead autonomous (per the new `feedback_dont_ask_host_internal_scoping` rule). All three decided + applied to STATUS this turn. Net result: 6 host-asks dispatched, 1 STATUS row retired, 1 reframed, 2 dev-tasks queued for post-#18.
 
+**2026-05-01 refresh:** Thread B is now complete. Current repo evidence shows
+`fantasy_author_original/` is absent, and commit `98abd3a` removed the stale
+`pyproject.toml` Ruff `extend-exclude` entry. Do not re-queue
+`fantasy_author_original/` deletion from this audit.
+
 | Thread | Subject | Decision | STATUS impact |
 |---|---|---|---|
 | **A** | Phase 6 `.author_server.db` rename, 6 sub-decisions | All 6 decided per §1 below | Work row reworded with decisions; TaskList #25 filed |
-| **B** | `fantasy_author_original/` deletion timing | DELETE NOW | TaskList #27 filed |
+| **B** | `fantasy_author_original/` deletion timing | COMPLETED 2026-05-01 | Closed by `98abd3a`; no remaining STATUS row |
 | **C** | R7 storage-split state | ACTIVE-with-OBVIATED-items; dependents must be preserved | Row reframed (not retired); dev-2 exec-plan-INDEX anchor preserved |
 
 ---
@@ -57,7 +62,7 @@ New: `**Phase 6 DECIDED 2026-04-28** (nav): \`.workflow.db\` filename, \`db_path
 
 ---
 
-## 2. Thread B — `fantasy_author_original/` deletion: DELETE NOW
+## 2. Thread B — `fantasy_author_original/` deletion: COMPLETED 2026-05-01
 
 ### Evidence
 
@@ -67,15 +72,22 @@ New: `**Phase 6 DECIDED 2026-04-28** (nav): \`.workflow.db\` filename, \`db_path
 | File contents | Pre-rename snapshot of original `work_targets.py`. First lines: `"""Work target and review persistence helpers. The daemon's universe-level scheduling..."""` + `from fantasy_author import author_server`. Useless reference material; git history preserves it. |
 | Live imports of `fantasy_author_original` | **ZERO** in canonical tree (`grep -r` returns only audit-doc + exec-plan refs) |
 | Original Phase 1 plan §9-B | Host-confirmed DELETE 2026-04-15; never executed |
-| `pyproject.toml:98` | `extend-exclude = ["fantasy_author_original"]` — also requires removal in same commit |
+| `pyproject.toml:98` | Historical: `extend-exclude = ["fantasy_author_original"]` also required removal in same commit. Current: removed by `98abd3a`. |
 
 ### Decision
 
-DELETE NOW. No dependency on Arc B Phase 3 / Phase 6 — orphaned since 2026-04-15 host-confirmation. Effort ~5 min: `git rm -r fantasy_author_original/` + delete `pyproject.toml:98` extend-exclude line + ruff/pytest pass.
+COMPLETED. No dependency on Arc B Phase 3 / Phase 6 remained. Current
+verification from 2026-05-01: `Test-Path fantasy_author_original` is false,
+`git ls-files fantasy_author_original` returns zero files, `pyproject.toml`
+has no `fantasy_author_original` / `extend-exclude` hit, TOML parse passes, and
+`python -m ruff check pyproject.toml` passes. Full `python -m ruff check`
+still reports unrelated pre-existing issues in `scripts/site_apex_cutover.py`
+and test files; those are outside this cleanup and tests are #18-owned.
 
 ### TaskList action
 
-Task #27 filed. blockedBy #1 (plugin-mirror collision via pyproject.toml workflow-adjacency).
+Historical: Task #27 filed. Current: closed by `98abd3a`; no follow-up work
+remains for `fantasy_author_original/` itself.
 
 ---
 
