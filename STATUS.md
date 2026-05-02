@@ -14,9 +14,6 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with legacy connector fallback test.
 - **[P1 filed:2026-04-30]** Castles II run `28479d8ddfb44488` failed `provider_exhausted` at discovery; blocks branch-run proof (BUG-038).
 
-## Approved Specs
-Specs live in `docs/vetted-specs.md`; one deferred chatbot-first host-controls spec needs scoping.
-
 ## Work
 
 Path: #18 retarget sweep (live) → Arc C → Phase 6 db rename. universe_server.py: 14012 → 972 LOC live in main.
@@ -35,7 +32,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Community change loop — controls live + chatbot proof green; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | #18 lock overlaps tests/docstrings | monitoring |
 | Daemon memory plugin mirror sync — rebuild packaged runtime after #18 releases mirror tree. | packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/daemon_{registry,wiki,memory}.py | #18; codex/daemon-memory-governor | dev-ready |
 | Soul-daemon uniqueness guard — block forkless duplicate soul hashes; explicit copy needs lineage + new name. | workflow/daemon_{registry,server}.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | #18 | dev-ready |
-| Community-loop core soul routing — prefer role daemons; external claimants need confirmed claims or borrowed role soul. | workflow/dispatcher.py, workflow/daemon_registry.py, workflow/api/universe.py, tests/ | #18 | dev-ready |
+| Community-loop core soul routing — prefer fixed-model role daemons; external claimants need confirmed claims or borrowed role soul. | workflow/dispatcher.py, workflow/daemon_registry.py, workflow/api/universe.py, tests/ | #18 | dev-ready |
 | Enable Actions PR creation for auto-fix — repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs — remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | #18 | nav-then-dev |
 | Windows full-suite backup.sh path fix — clean HEAD: `bash.exe` receives raw `C:\...` path and cannot find script. | tests/test_backup_script.py | #18 | dev-ready |
@@ -56,7 +53,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Today 2026-05-01:** `/mcp-directory` green; completion = registry/directory acceptance + no-dev-mode proof + first-user evidence.
+1. Directory rollout completion = registry/directory acceptance + no-dev-mode proof + first-user evidence.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.

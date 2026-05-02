@@ -10,21 +10,23 @@ corresponding role.
 
 ## Team
 
-| Role | Daemon | Soul file | Primary work |
-|------|--------|-----------|--------------|
-| Request intake | Ada Request Steward | `ada-request-steward.md` | Preserve request records, classify kind/severity, keep wiki/GitHub labels coherent. |
-| Investigation packet | Mira Investigation Planner | `mira-investigation-planner.md` | Turn a request into a bounded patch packet, feature spec, migration plan, or refusal. |
-| Implementation writer | Noor Patch Writer | `noor-patch-writer.md` | Produce the implementation branch or PR using approved Claude/Codex writer lanes. |
-| Cross-family check | Soren Cross Checker | `soren-cross-checker.md` | Verify code, policy labels, tests, and opposite-family review requirements. |
-| Release observation | Vera Release Observer | `vera-release-observer.md` | Watch CI, deploy, canaries, rendered user surfaces, and post-fix clean-use evidence. |
-| Contract and claims | Elias Contract Arbiter | `elias-contract-arbiter.md` | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements. |
+| Role | Daemon | Fixed LLM | Soul file | Primary work |
+|------|--------|-----------|-----------|--------------|
+| Request intake | Ada Request Steward | `claude-haiku-4-5-20251001` | `ada-request-steward.md` | Preserve request records, classify kind/severity, keep wiki/GitHub labels coherent. |
+| Investigation packet | Mira Investigation Planner | `claude-opus-4-7` | `mira-investigation-planner.md` | Turn a request into a bounded patch packet, feature spec, migration plan, or refusal. |
+| Implementation writer | Noor Patch Writer | `claude-sonnet-4-6` | `noor-patch-writer.md` | Produce the implementation branch or PR as the fixed Claude writer. |
+| Cross-family check | Soren Cross Checker | `gpt-5.3-codex` | `soren-cross-checker.md` | Verify Noor's Claude-written code, policy labels, tests, and Codex checker requirements. |
+| Release observation | Vera Release Observer | `gpt-5.3-codex` | `vera-release-observer.md` | Watch CI, deploy, canaries, rendered user surfaces, and post-fix clean-use evidence. |
+| Contract and claims | Elias Contract Arbiter | `claude-opus-4-7` | `elias-contract-arbiter.md` | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements. |
 
 ## Live Registration
 
 Registered in the host-local daemon registry on 2026-05-02 under
 `C:\Users\Jonathan\AppData\Roaming\Workflow`.
 The live daemon wikis were calibrated with the Claude/Codex family policy on
-2026-05-02 without changing daemon IDs or copying souls.
+2026-05-02 without changing daemon IDs or copying souls. They were then pinned
+to fixed model IDs on 2026-05-02; the pin is an active soul-version amendment,
+not a new daemon identity.
 
 | Daemon | daemon_id | Soul hash |
 |--------|-----------|-----------|
@@ -39,8 +41,10 @@ The live daemon wikis were calibrated with the Claude/Codex family policy on
 
 Loop nodes should prefer the core daemon assigned to the node's role when there
 is pending work and no better qualified claimant has already won the request.
-More capacity attaches more runtime instances to the same daemon identity; it
-does not copy the soul.
+More capacity attaches more runtime instances using that same daemon's fixed
+model. A different model is a different executor: either a renamed/forked daemon
+with lineage, or an external daemon borrowing the core role context. It does
+not become the core daemon and does not copy the soul.
 
 Community or house daemons can run loop work in two ways:
 
@@ -54,7 +58,7 @@ the borrowed core soul is cited as role context, and any learning signal should
 be routed back to the corresponding core daemon wiki when the runtime supports
 that write path.
 
-## Claude/Codex Calibration
+## Fixed LLM Calibration
 
 Research pass: 2026-05-02. Primary sources checked:
 
@@ -67,9 +71,17 @@ Research pass: 2026-05-02. Primary sources checked:
   standards such as `CLAUDE.md`, supports prompt-driven automation, and defaults
   to Sonnet unless a model is configured.
   Source: https://code.claude.com/docs/en/github-actions
+- Claude Code model configuration says production deployments should pin full
+  model names rather than aliases. Current relevant IDs include Claude Opus 4.7,
+  Claude Sonnet 4.6, and Claude Haiku 4.5.
+  Source: https://code.claude.com/docs/en/model-config
 - OpenAI Codex docs describe Codex as a coding agent that can read, edit, run
   code, work in background cloud environments, create PRs, and review PRs.
   Source: https://developers.openai.com/codex/cloud
+- OpenAI's model docs describe `gpt-5.3-codex` as optimized for agentic coding
+  tasks in Codex or similar environments, with a 400k context window and
+  high/xhigh reasoning options.
+  Source: https://developers.openai.com/api/docs/models/gpt-5.3-codex
 - OpenAI Codex review guidance emphasizes high-signal review for serious bugs,
   repository guidance through `AGENTS.md`, and human/owner responsibility for
   final merge decisions.
@@ -80,29 +92,34 @@ As-built Workflow loop alignment:
 
 - `.github/workflows/auto-fix-bug.yml` is the current reference free claimant.
   It picks Claude OAuth first, Codex subscription second, and never falls
-  through to API-key billing lanes for default daemon writing.
+  through to API-key billing lanes for default daemon writing. The v1 core team
+  makes that Claude-first path explicit: Noor is the fixed Claude writer and
+  Soren is the fixed Codex checker.
 - `daemon-request-policy.yml` enforces `writer:claude -> checker:codex` and
-  `writer:codex -> checker:claude`.
+  `writer:codex -> checker:claude`. The core team covers the first pair. A
+  Codex-writer fallback must use a distinct Codex writer identity and a distinct
+  Claude checker identity, not silently swap Noor or Soren's models.
 - `community_change_context` already presents PR/issue state with a review
   standard that requires Claude-family checking for Codex-written PRs.
 
-Family use is therefore role-specific, not a fixed "all-Claude" or
-"all-Codex" team:
+Model use is therefore fixed per daemon, not selected per run:
 
-| Role | Family policy |
-|------|---------------|
-| Ada Request Steward | Family-neutral; can run on either family. Prefer lower-cost/classifier-capable runtime because output is a durable request envelope, not code. |
-| Mira Investigation Planner | Claude-family preferred for narrative synthesis and refusal quality; Codex-family acceptable when the packet needs deeper repository/file impact analysis. |
-| Noor Patch Writer | Uses the workflow-selected writer family: Claude primary when `CLAUDE_CODE_OAUTH_TOKEN` is visible, Codex fallback when `WORKFLOW_CODEX_AUTH_JSON_B64` is visible. Must emit the matching `writer:*` label. |
-| Soren Cross Checker | Must run opposite the actual writer family. If writer is Claude, Soren's checker runtime is Codex; if writer is Codex, Soren's checker runtime is Claude. |
-| Vera Release Observer | Family-neutral; can run on either family. It must use concrete run IDs, canary output, rendered-chat proof, and clean-use evidence rather than model confidence. |
-| Elias Contract Arbiter | Claude-family preferred for policy interpretation; Codex-family acceptable for mechanical label/contract checks. Eligibility decisions must cite concrete claim proof. |
+| Role | Fixed LLM | Why this model fits the soul |
+|------|-----------|------------------------------|
+| Ada Request Steward | `claude-haiku-4-5-20251001` | Fast Claude intake for short, truthful request envelopes and label hygiene. |
+| Mira Investigation Planner | `claude-opus-4-7` | Deep Claude reasoning for evidence synthesis, uncertainty, refusals, and change-packet design. |
+| Noor Patch Writer | `claude-sonnet-4-6` | Claude Code's daily coding lane for concise implementation branches that follow repo conventions. |
+| Soren Cross Checker | `gpt-5.3-codex` | Codex review lane for tracing Claude-written diffs, CI, and serious code risks. |
+| Vera Release Observer | `gpt-5.3-codex` | Codex evidence tracing across code, Actions, deploy outputs, canaries, and proof artifacts. |
+| Elias Contract Arbiter | `claude-opus-4-7` | Deep Claude policy interpretation for contracts, claims, forks, and payment/gate boundaries. |
 
 Design consequence: the core team is a workflow with durable role identities,
 not six unconstrained autonomous agents. The loop should pass compact artifacts
 between roles: request envelope -> change packet -> branch/PR -> review
-verdict -> release observation. This matches the dev's current loop, which is
-issue/label/workflow/PR driven rather than a private multi-agent chat.
+verdict -> release observation. The fixed-model contract is part of identity:
+running another model in a role requires an external claimant, a borrowed-role
+context, or a renamed/forked daemon. This matches the dev's current loop, which
+is issue/label/workflow/PR driven rather than a private multi-agent chat.
 
 ## Non-Goals
 

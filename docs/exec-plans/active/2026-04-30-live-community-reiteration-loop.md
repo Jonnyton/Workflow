@@ -230,27 +230,33 @@ The host-provided v1 core team for this loop is documented in
 `docs/souls/community-loop-core-team-v1.md` and registered as live
 soul-bearing daemons in the host-local daemon registry.
 
-| Role | Core daemon | Loop responsibility |
-|------|-------------|---------------------|
-| Request intake | Ada Request Steward | Preserve request records, classify request kind, maintain wiki/GitHub request labels, and backfill missed intake. |
-| Investigation packet | Mira Investigation Planner | Convert a durable request into a patch packet, feature spec, migration plan, docs/ops plan, branch-refinement plan, or refusal. |
-| Implementation writer | Noor Patch Writer | Produce the implementation branch or PR through approved subscription-backed Claude/Codex writer lanes. |
-| Cross-family check | Soren Cross Checker | Verify machine-authored changes with opposite-family review, CI/policy labels, and required evidence. |
-| Release observation | Vera Release Observer | Follow CI, deploy, canaries, rendered user proof, and post-fix clean-use evidence; route failures back into the loop. |
-| Contract and claims | Elias Contract Arbiter | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements before a claimant takes work. |
+| Role | Core daemon | Fixed LLM | Loop responsibility |
+|------|-------------|-----------|---------------------|
+| Request intake | Ada Request Steward | `claude-haiku-4-5-20251001` | Preserve request records, classify request kind, maintain wiki/GitHub request labels, and backfill missed intake. |
+| Investigation packet | Mira Investigation Planner | `claude-opus-4-7` | Convert a durable request into a patch packet, feature spec, migration plan, docs/ops plan, branch-refinement plan, or refusal. |
+| Implementation writer | Noor Patch Writer | `claude-sonnet-4-6` | Produce the implementation branch or PR as the fixed Claude writer. |
+| Cross-family check | Soren Cross Checker | `gpt-5.3-codex` | Verify Noor's Claude-written changes as the fixed Codex checker, with CI/policy labels and required evidence. |
+| Release observation | Vera Release Observer | `gpt-5.3-codex` | Follow CI, deploy, canaries, rendered user proof, and post-fix clean-use evidence; route failures back into the loop. |
+| Contract and claims | Elias Contract Arbiter | `claude-opus-4-7` | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements before a claimant takes work. |
 
-Research calibration on 2026-05-02 against Anthropic agent-workflow guidance,
-Claude Code GitHub Actions v1 docs, and OpenAI Codex/Codex-review docs keeps
-this as a structured workflow, not a loose chat team. The as-built reference
-claimant chooses Claude OAuth first, Codex subscription second, ignores API-key
-billing lanes by default, and labels PRs so `writer:claude` requires
-`checker:codex` while `writer:codex` requires `checker:claude`.
+Research calibration on 2026-05-02 against Anthropic agent-workflow/model-pin
+guidance, Claude Code GitHub Actions v1 docs, and OpenAI Codex/Codex-review
+docs keeps this as a structured workflow, not a loose chat team. The as-built
+reference claimant chooses Claude OAuth first, Codex subscription second,
+ignores API-key billing lanes by default, and labels PRs so `writer:claude`
+requires `checker:codex` while `writer:codex` requires `checker:claude`. The
+v1 core path pins Noor to Claude Sonnet 4.6 and Soren to GPT-5.3-Codex. If the
+Codex writer fallback is used, it is not Noor; it needs a distinct Codex writer
+identity and a distinct Claude checker identity.
 
 Loop nodes should prefer the matching core daemon when pending work exists and
 no qualified external claimant has won the request. Other daemons can work a
 loop role only with confirmed role/domain claims, or by explicitly borrowing
 the corresponding core daemon soul and bounded wiki packet as temporary role
-context. Borrowed-soul execution does not copy the core daemon identity.
+context. Borrowed-soul execution does not copy the core daemon identity. Running
+a different LLM in the role also does not copy the core daemon identity; it must
+be a separate claimant, borrowed-role execution, or a renamed/forked daemon with
+lineage.
 
 ## Implementation Slices
 
