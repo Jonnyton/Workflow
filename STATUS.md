@@ -9,7 +9,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval` roundtrip flake: Fix B landed 16d4823; watch ≥30d.
 - [filed:2026-04-18 verified:2026-04-28] `add_canon_from_path` sensitivity: host Qs reframed by commons-first audit F3.
 - [filed:2026-04-24] Task #9 host Qs: GH Actions GROQ/GEMINI/XAI secrets + rotation e2e after deploy step.
-- **[P1 filed:2026-04-25 verified:2026-05-02]** BUG-034 ChatGPT goal-propose approval stalls; dev chat still calls legacy Goals router.
+- **[P1 filed:2026-04-25 verified:2026-05-02]** BUG-034: after Platform scan+Continue, ChatGPT still sends `propose_workflow_goal` through legacy `Goals`; one error + one hang.
 - [filed:2026-04-28] Claude card matcher cleanup conflicts with legacy connector fallback test.
 - **[P1 filed:2026-04-30]** Castles II run `28479d8ddfb44488` failed `provider_exhausted` at discovery; blocks branch-run proof (BUG-038).
 
@@ -22,7 +22,8 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence - #149 deployed; direct goal write + ChatGPT search/request green. Final blocked on BUG-034 propose-card stall, mobile, legal fields, submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | action-time compliance/final-submit approval | host-action |
+| Directory submissions + first-use evidence - #149 deployed; direct goal write + ChatGPT search/request green; Platform scan+Continue done. Docs proof branch `codex/openai-postcontinue-identity` / `../wf-openai-postcontinue-identity`; final blocked on BUG-034 legacy `Goals` routing, mobile, legal fields, submit approval. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | action-time compliance/final-submit approval | host-action |
+| Provider identity bridge - branch `codex/provider-identity-bridge`, worktree `../wf-provider-identity-bridge`, draft PR expected after PLAN owner clears; link Claude/ChatGPT/Codex/OpenClaw without chatbot-login-only authority for daemon, money, or connected-account control. | docs/design-notes/2026-05-02-provider-identity-bridge.md, PLAN.md | current PLAN claim clears; host approves design | pending |
 | Community loop canonical invoke smoke - parent `4da58d59ff4c4e18`/child `c788bb7380484196` hit Codex/bwrap; PR #157 draft fixes provider fail-loud/runtime; rerun after Claude review+merge. | workflow/providers/{base,codex_provider}.py, workflow/runs.py, workflow/graph_compiler.py, workflow/api/runs.py, tests/test_{providers,sandbox_unavailable,graph_compiler_empty_response,node_timeout,sub_branch_invocation,wait_for_run}.py, docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, MCP live branches fd5c66b1d87d/e019229850f9 | Claude review of #157 | claimed:codex-loop-uptime-chatgpt |
 | Daemon soul followups - flagship core routing + host review/editor. | workflow/daemon_{registry,wiki,memory}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
