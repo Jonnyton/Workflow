@@ -1,6 +1,6 @@
 ---
 name: website-editing
-description: Conventions for editing the Workflow site (WebSite/site/, deploys to tinyassets.io). Use when you make any change to the site: copy, components, routes, content, styling, captures of real chatbot conversations, deploy. Covers the preview loop, transparent-capture conventions, build/ship pipeline, FUSE quirks for Cowork, and auto-iteration on recurring failures.
+description: "Conventions for editing the Workflow site (WebSite/site/, deploys to tinyassets.io). Use when you make any change to the site: copy, components, routes, content, styling, captures of real chatbot conversations, deploy. Covers the preview loop, transparent-capture conventions, build/ship pipeline, FUSE quirks for Cowork, and auto-iteration on recurring failures."
 ---
 
 # Website editing
