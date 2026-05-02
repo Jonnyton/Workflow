@@ -80,6 +80,7 @@ DEFAULT_CRASH_BACKOFF_S = 5.0     # Initial backoff on non-zero exit.
 DEFAULT_MAX_BACKOFF_S = 300.0     # 5-min ceiling on exponential backoff.
 DEFAULT_BACKOFF_MULT = 2.0        # Doubling per consecutive crash.
 DEFAULT_POLL_INTERVAL_S = 0.5     # Subprocess monitor poll granularity.
+DEFAULT_PRODUCER_POLL_INTERVAL_S = 30.0  # Goal-pool pickup latency cap.
 
 # Host identity. Matches AGENTS.md §Configuration →
 # UNIVERSE_SERVER_HOST_USER semantics. We default to "cloud-droplet"
@@ -151,6 +152,64 @@ def _build_subprocess_env() -> dict[str, str]:
     # cloud worker behavior is deterministic regardless of env file.
     env.setdefault("WORKFLOW_UNIFIED_EXECUTION", "1")
     return env
+
+
+def _truthy_env(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _register_branch_task_producers_from_env() -> None:
+    """Register flag-enabled producers in this worker process.
+
+    The modules may have been imported before the env flags were set,
+    so call ``register_if_enabled()`` explicitly instead of relying on
+    import-time side effects.
+    """
+    if _truthy_env("WORKFLOW_GOAL_POOL"):
+        from workflow.producers.goal_pool import register_if_enabled
+
+        register_if_enabled()
+    if _truthy_env("WORKFLOW_PAID_MARKET"):
+        from workflow.producers.node_bid import register_if_enabled
+
+        register_if_enabled()
+
+
+def _queue_has_running_branch_task(universe: Path) -> bool:
+    """Return True when interrupting the subprocess may abandon a claim."""
+    try:
+        from workflow.branch_tasks import read_queue
+
+        return any(task.status == "running" for task in read_queue(universe))
+    except Exception:  # noqa: BLE001
+        logger.exception("cloud_worker: queue status check failed")
+        return True
+
+
+def _pump_branch_task_producers(universe: Path) -> int:
+    """Append producer output to ``branch_tasks.json``.
+
+    ``fantasy_daemon`` only scans producers at graph-start. The cloud
+    worker is long-running, so a public goal-pool post that lands after
+    startup can otherwise sit in ``goal_pool/`` indefinitely. Pumping
+    here keeps the queue fresh even while the default graph is active.
+    """
+    if not (_truthy_env("WORKFLOW_GOAL_POOL") or _truthy_env("WORKFLOW_PAID_MARKET")):
+        return 0
+    try:
+        _register_branch_task_producers_from_env()
+
+        from workflow.dispatcher import run_branch_task_producers_into_queue
+        from workflow.subscriptions import list_subscriptions
+
+        return run_branch_task_producers_into_queue(
+            universe,
+            subscribed_goals=list_subscriptions(universe),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("cloud_worker: branch-task producer pump failed")
+        return 0
 
 
 def _spawn_fantasy_daemon(
@@ -236,6 +295,7 @@ def run_supervisor(
     max_backoff: float = DEFAULT_MAX_BACKOFF_S,
     backoff_mult: float = DEFAULT_BACKOFF_MULT,
     poll_interval: float = DEFAULT_POLL_INTERVAL_S,
+    producer_poll_interval: float = DEFAULT_PRODUCER_POLL_INTERVAL_S,
     max_iterations: int | None = None,
     spawn_fn=None,
     sleep_fn=None,
@@ -306,6 +366,8 @@ def run_supervisor(
 
         # Poll until subprocess exits, while respecting stop signal.
         returncode: int | None = None
+        producer_restart_requested = False
+        last_producer_poll = 0.0
         while True:
             if stopping["flag"]:
                 logger.info("cloud_worker: terminating subprocess on stop signal")
@@ -327,13 +389,49 @@ def run_supervisor(
             if rc is not None:
                 returncode = rc
                 break
+            if producer_poll_interval > 0:
+                now = time.monotonic()
+                if now - last_producer_poll >= producer_poll_interval:
+                    last_producer_poll = now
+                    if not _queue_has_running_branch_task(universe):
+                        appended = _pump_branch_task_producers(universe)
+                        if appended > 0:
+                            logger.info(
+                                "cloud_worker: queued %d producer task(s); "
+                                "restarting subprocess to pick them up",
+                                appended,
+                            )
+                            try:
+                                proc.terminate()
+                                proc.wait(timeout=30)
+                            except subprocess.TimeoutExpired:
+                                logger.warning(
+                                    "cloud_worker: subprocess did not exit "
+                                    "after producer restart; killing",
+                                )
+                                try:
+                                    proc.kill()
+                                except OSError:
+                                    pass
+                                returncode = -1
+                                break
+                            except OSError:
+                                returncode = -1
+                                break
+                            producer_restart_requested = True
+                            returncode = 0
+                            break
             sleep_fn(poll_interval)
 
         state.record_exit(returncode if returncode is not None else -1)
         logger.info(
             "cloud_worker: subprocess exited rc=%s (%s); %s",
             returncode,
-            "clean" if returncode == 0 else "crash",
+            (
+                "producer-restart"
+                if producer_restart_requested
+                else "clean" if returncode == 0 else "crash"
+            ),
             state.summary(),
         )
 
@@ -401,6 +499,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Stop after this many supervisor iterations (testing only).",
     )
     parser.add_argument(
+        "--producer-poll-interval",
+        type=float,
+        default=DEFAULT_PRODUCER_POLL_INTERVAL_S,
+        help="Seconds between cloud-side producer scans while the "
+             f"subprocess is running (default: {DEFAULT_PRODUCER_POLL_INTERVAL_S}).",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="DEBUG-level logging.",
     )
@@ -423,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
         idle_backoff=args.idle_backoff,
         crash_backoff=args.crash_backoff,
         max_backoff=args.max_backoff,
+        producer_poll_interval=args.producer_poll_interval,
         max_iterations=args.max_iterations,
     )
     logger.info("cloud_worker: supervisor exited; %s", state.summary())
