@@ -73,9 +73,22 @@ If you don't check the **"Always allow"** / **"Don't ask again for this tool"** 
 
 If a mission stalls (no progress for >30s after an `ask` that should have triggered a tool call), check whether a hidden dialog is waiting — `claude_chat.py status` may not report dialog state.
 
-## When no Mission brief exists yet
+## When to run user-sim missions
 
-If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **do NOT self-initiate.** SendMessage the lead asking for a brief. Past work has shown self-initiated missions waste prompts and produce findings nobody wanted. Standing-by-without-brief is correct.
+Run anytime. user-sim is the strongest final-verification surface for the live state — stronger than local pytest, stronger than direct MCP probes, stronger than canaries. The rendered chatbot conversation through the installed connector is the only proof that a patch actually works for real users; everything else is supporting evidence.
+
+**Self-initiate when you see one of these:**
+
+- A patch was just merged that touches user-facing behavior — drive a sim to verify it landed in the running daemon AND produces the intended user experience.
+- Live MCP recovered after an outage — drive a sim to confirm the recovery is real, not just canary-green at the protocol level.
+- A new feature was wired (a goal binding, a new connector tool, a config env var) — drive a sim to test it via natural user phrasing, not by pre-arranged tool calls.
+- A periodic health check on the loop — pick a persona, run their natural flow, see what happens. Treat this as a recurring duty, not a one-off task.
+
+**Standing-by-without-brief is the wrong default when the live state is testable.** The skill's discipline rules (tab hygiene, persona authenticity, connector anchor, naive voice, stop-on-3-bugs, prompt economy, write-action authorization) keep self-initiated missions tight and on-purpose. They do not mean "wait for a brief" — they mean "when you run, run carefully."
+
+A brief from the lead is welcome when one exists (a specific scenario, persona, or surface to focus on). If you'd benefit from one and the live state is non-trivial to triage on its own, ask. But routine final-verification of recent patches should not wait.
+
+**History:** The earlier "do NOT self-initiate" rule was retired 2026-05-02 per host directive ("user-sim missions can be run anytime and are the best way to do final tests of the live state to see if patches landed and actually work as intended"). Self-initiated missions had previously been flagged as waste; the corrected framing recognises that the substrate now ships often enough that real-time verification produces more signal than waste.
 
 ## Claude Code driver
 
