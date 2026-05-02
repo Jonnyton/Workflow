@@ -30,7 +30,7 @@ def base_path(tmp_path, monkeypatch):
     base.mkdir()
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
-    # Ensure author_server DB is live before the backend touches it.
+    # Ensure the daemon DB is live before the backend touches it.
     from workflow.daemon_server import initialize_author_server
 
     initialize_author_server(base)
@@ -67,12 +67,12 @@ def _make_branch() -> BranchDefinition:
 # ─────────────────────────────────────────────────────────────────────
 
 
-def test_sqlite_only_backend_persists_branch_via_author_server(base_path):
+def test_sqlite_only_backend_persists_branch_via_daemon_server(base_path):
     backend = SqliteOnlyBackend(base_path)
     saved = backend.save_branch(_make_branch())
 
     assert saved["name"] == "Bulk-patch probe"
-    # Round-trip via author_server directly — no YAML side-effect.
+    # Round-trip via daemon_server directly — no YAML side-effect.
     from workflow.daemon_server import get_branch_definition
 
     row = get_branch_definition(
@@ -81,7 +81,7 @@ def test_sqlite_only_backend_persists_branch_via_author_server(base_path):
     assert row["name"] == saved["name"]
 
 
-def test_sqlite_only_backend_persists_goal_via_author_server(base_path):
+def test_sqlite_only_backend_persists_goal_via_daemon_server(base_path):
     backend = SqliteOnlyBackend(base_path)
     saved = backend.save_goal({
         "name": "Produce academic paper",
