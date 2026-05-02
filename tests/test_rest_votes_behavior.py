@@ -1,11 +1,11 @@
 """Behavioral pins for the REST vote surface after commit 589e1fb.
 
-The existing ``tests/test_author_server_api.py`` exercises the happy
+The existing API regression tests exercise the happy
 path end-to-end, but it does not pin two specific semantics from
 589e1fb that matter if the REST surface ever goes public:
 
 * ``POST /v1/votes/{vote_id}/resolve`` MUST always pass ``force=True``
-  to ``author_server.resolve_vote_if_due``. A future patch that
+  to ``daemon_server.resolve_vote_if_due``. A future patch that
   conditionalizes force (e.g., add an opt-in query flag but default
   to False) would silently regress the documented behavior.
 

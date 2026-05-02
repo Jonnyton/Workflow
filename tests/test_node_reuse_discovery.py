@@ -1,6 +1,6 @@
 """#62 Part B: cross-branch + cross-Goal node reuse discovery MCP surface.
 
-Pairs with #62 Part A (author_server helpers) and #66 (node_ref /
+Pairs with #62 Part A (daemon_server helpers) and #66 (node_ref /
 intent primitives). Part A gave us the query helpers; Part B wires
 them to MCP so Claude.ai can actually reach them.
 

@@ -213,7 +213,7 @@ def test_gate_claim_path_shape(tmp_path):
 
 def test_sqlite_only_save_gate_claim_returns_none_commit(tmp_path):
     """SqliteOnlyBackend.save_gate_claim_and_commit delegates to
-    author_server.claim_gate and returns ``(saved, None)``.
+    daemon_server.claim_gate and returns ``(saved, None)``.
     """
     from workflow.branches import BranchDefinition
     from workflow.catalog.backend import SqliteOnlyBackend
