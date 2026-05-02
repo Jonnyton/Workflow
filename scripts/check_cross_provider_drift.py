@@ -9,6 +9,9 @@ diff target:
 - newly edited provider-specific files must not introduce broad project rules
   that belong in AGENTS.md unless the section is explicitly harness-specific.
 
+Project-local skills are cross-provider by design, so they are mirror-checked
+but not treated as provider-specific semantic drift candidates.
+
 Exit 0 when clean and 2 when drift is found so hooks can block the edit.
 """
 
@@ -112,9 +115,7 @@ def is_watched_path(path: str) -> bool:
     if normalized in WATCHED_FILES:
         return True
     watched_prefixes = (
-        ".agents/skills/",
         ".claude/agents/",
-        ".claude/skills/",
         ".codex/",
         ".cursor/rules/",
     )
