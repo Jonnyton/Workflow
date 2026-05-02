@@ -27,6 +27,7 @@ import urllib.request
 from typing import Any
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
+MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # Set to True by --verbose at parse time; read by helpers.
 _VERBOSE = False
@@ -72,7 +73,7 @@ def _initialize(url: str) -> tuple[str | None, int]:
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "clientInfo": {"name": "lead-probe", "version": "1"},
                 "capabilities": {},
             },
