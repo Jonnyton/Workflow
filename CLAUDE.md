@@ -9,7 +9,7 @@ Everything about how to work lives in `AGENTS.md`. This file is only for things 
 
 Follow `LAUNCH_PROMPT.md`. It has the full startup sequence and team roster.
 
-### Agent Teams
+### Agent Teams [Claude Code only]
 
 This project uses Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). When acting as the Claude Code lead, you MUST use the Agent Teams system — say "Create an agent team" to activate it. Do not use the `Agent()` tool to spawn team roles in Claude Code; that creates disposable subagents, not persistent teammates. (Other providers like Cowork and Codex use `Agent()` subagents normally — this restriction is Claude Code lead only.) Teammate definitions live in `.claude/agents/`. The environment variable is set in `.claude/settings.json`.
 
