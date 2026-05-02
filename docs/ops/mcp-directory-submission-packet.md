@@ -207,6 +207,13 @@ Blockers:
   account with app write/read permissions and completed org verification.
 - 2026-05-02 browser check reached `https://platform.openai.com/login` and
   stopped at the OpenAI Platform login screen.
+- 2026-05-02 after host login, the authenticated dashboard reached
+  `https://platform.openai.com/apps-manage`, created a `Workflow` app draft,
+  and opened the app submission form. The visible form asks for
+  `chatgpt-app-submission.json`, logo assets, app metadata, developer/support
+  fields, website/privacy/TOS URLs, demo recording URL, commerce confirmation,
+  and later review submission. Browser work stopped before uploading files,
+  entering developer/support metadata, or pressing any final review submit.
 - OpenAI's submission requirements include a defined CSP for the app. This
   branch prepares the MCP tool surface and submission JSON; a widget/CSP slice
   must land before pressing Submit if the dashboard requires an embedded app

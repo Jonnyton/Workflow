@@ -87,6 +87,11 @@ verification complete.
 Known blockers:
 
 - 2026-05-02 in-app browser reached the OpenAI Platform login screen.
+- 2026-05-02 after host login, in-app browser reached
+  `https://platform.openai.com/apps-manage`, created a `Workflow` app draft,
+  and stopped at the submission form before uploading
+  `chatgpt-app-submission.json`, logo assets, or entering developer/support,
+  privacy/TOS, demo recording, commerce, and final review fields.
 - BUG-034 tracks the current ChatGPT connector approval/post-approval stall.
 - If the App Directory dashboard requires an embedded app resource, a widget/CSP
   slice must land before pressing Submit.
