@@ -24,8 +24,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | Directory submissions + first-use evidence - OpenAI public/full/global intent supplied; app packet blocked on `/mcp` vs `/mcp-directory` mismatch, data disclosure, demo URL, tested prompts. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | choose URL/data policy; action-time upload/final-submit approval | host-decision |
-| Community change loop - watch/canary green 2026-05-02 02:52Z; Claude Opus proof green; next blockers: goal_pool pickup + true child invoke. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
-| Goal-pool prod pickup flip - enable restart-time pool producer/shared pool path, then prove live pickup. | deploy/compose.yml, deploy/workflow-env.template, workflow/producers/goal_pool.py, workflow/cloud_worker.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/producers/goal_pool.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/cloud_worker.py | Community loop proof 2026-05-02 | claimed:codex-loop-uptime |
+| Community change loop - watch/canary green 2026-05-02 04:01Z; goal_pool public post->queue->run green; next blocker: true child invoke/P1a receipt validator. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Daemon soul followups - mini-brain pytest promotion and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, workflow/api/{branches,extensions,prompts}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/{branches,extensions,prompts}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
@@ -45,7 +44,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a attach + incentive pickup v0 + Claude rendered proof green; next is goal_pool pickup + true child invoke.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; goal_pool pickup is live-proven; next is true child invoke/P1a receipt validation plus incentive/requester-directed queueing.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
