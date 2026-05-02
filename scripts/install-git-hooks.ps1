@@ -1,20 +1,30 @@
-# Install Workflow's repo-level git hooks into .git/hooks/.
+# Install Workflow's repo-level git hooks into Git's hooks directory.
 #
 # Hooks live canonically at scripts/git-hooks/ and are copied into
-# .git/hooks/ on install. Re-run this script whenever the canonical
-# hooks change. Zero dependencies beyond git + PowerShell.
+# the path reported by `git rev-parse --git-path hooks`. Re-run this
+# script whenever the canonical hooks change. Zero dependencies beyond
+# git + PowerShell.
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $root "scripts\git-hooks"
-$target = Join-Path $root ".git\hooks"
+$gitHooksPath = (& git -C $root rev-parse --git-path hooks) 2>$null
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitHooksPath)) {
+    throw "Could not resolve git hooks path from: $root"
+}
+$gitHooksPath = $gitHooksPath.Trim()
+if ([System.IO.Path]::IsPathRooted($gitHooksPath)) {
+    $target = $gitHooksPath
+} else {
+    $target = Join-Path $root $gitHooksPath
+}
 
 if (!(Test-Path $source)) {
     throw "Canonical hooks dir not found: $source"
 }
 if (!(Test-Path $target)) {
-    throw "No .git/hooks dir found — is this a git worktree? $target"
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
 }
 
 $installed = 0
