@@ -88,10 +88,10 @@ and now returns redacted status with `directory_privacy_note`, without raw
 log/call arrays, host identifiers, local paths, session-boundary account data,
 or internal hashes.
 
-Follow-up branch `codex/openai-live-proof` removes the remaining
-review-noisy diagnostic count/caveat labels
-(`activity_log_tail_count`, `last_n_calls_count`, and
-`evidence_caveats.last_n_calls`) before final OpenAI submit proof.
+PR #184 / merge `30363c7` removed the remaining review-noisy diagnostic
+count/caveat labels (`activity_log_tail_count`, `last_n_calls_count`, and
+`evidence_caveats.last_n_calls`) before final OpenAI submit proof. Deploy prod
+run `25260784025` passed and deployed image tag `30363c709a28`.
 
 ## OpenAI Dashboard State
 
@@ -154,6 +154,17 @@ Suggested release notes:
 - `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
 - `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed from the updated worktree and invoked `get_workflow_status`.
 - `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool get_workflow_status --args "{}" --raw` returned `directory_privacy_note`, with raw `activity_log_tail`, raw `last_n_calls`, `policy_hash`, `session_boundary`, `host_id`, and storage subsystem `path` fields absent.
-- Follow-up not yet deployed at this snapshot: `codex/openai-live-proof`
-  removes `activity_log_tail_count`, `last_n_calls_count`, and
-  `evidence_caveats.last_n_calls`; rerun the final probe after that deploy.
+2026-05-02T13:13-07:00 from deployed `main` merge `30363c7`:
+
+- PR #184 merged and deploy prod run `25260784025` passed for image tag
+  `30363c709a28`.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed and invoked `get_workflow_status`.
+- Strict live redaction probe passed: `evidence` only contains
+  `activity_log_line_count` and `last_completed_request_llm_used`;
+  `evidence_caveats` only contains `last_completed_request_llm_used`; and
+  `activity_log_tail`, `last_n_calls`, `activity_log_tail_count`,
+  `last_n_calls_count`, `policy_hash`, `session_boundary`, `host_id`, and
+  storage subsystem `path` fields are absent.

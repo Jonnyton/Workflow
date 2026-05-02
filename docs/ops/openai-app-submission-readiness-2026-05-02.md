@@ -41,15 +41,12 @@ Sources:
 Verdict: not ready for final submit yet.
 
 Source packet is review-aligned and deployed, but final submission should wait
-for one final redaction-polish deploy, hosted ChatGPT proof, and action-time
-approval:
+for hosted ChatGPT proof and action-time approval:
 
-1. This follow-up branch must land/deploy to remove review-noisy diagnostic
-   count/caveat labels from the directory status payload.
-2. ChatGPT web must complete the golden prompts without `Unknown action`, hang,
+1. ChatGPT web must complete the golden prompts without `Unknown action`, hang,
    or 5xx.
-3. ChatGPT mobile must complete the main read/write flows.
-4. Host must approve legal/compliance checkboxes and final submit.
+2. ChatGPT mobile must complete the main read/write flows.
+3. Host must approve legal/compliance checkboxes and final submit.
 
 Closed 2026-05-02T12:56-07:00:
 
@@ -64,9 +61,25 @@ Closed 2026-05-02T12:56-07:00:
   `activity_log_tail`, raw `last_n_calls`, `policy_hash`,
   `session_boundary`, `host_id`, or storage subsystem `path` fields. It
   returns `directory_privacy_note`.
-- This follow-up branch removes remaining review-noisy
-  `activity_log_tail_count`, `last_n_calls_count`, and
-  `evidence_caveats.last_n_calls` labels before final OpenAI submit proof.
+- PR #184 later removed remaining review-noisy `activity_log_tail_count`,
+  `last_n_calls_count`, and `evidence_caveats.last_n_calls` labels before
+  final OpenAI submit proof.
+
+Closed 2026-05-02T13:13-07:00:
+
+- PR #184 merged to `main` at `30363c7`.
+- Deploy prod run `25260784025` passed and deployed image tag
+  `30363c709a28`.
+- Public canaries passed for both `https://tinyassets.io/mcp` and
+  `https://tinyassets.io/mcp-directory`.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose`
+  passed and invoked `get_workflow_status`.
+- Strict live redaction probe passed: `evidence` only contains
+  `activity_log_line_count` and `last_completed_request_llm_used`;
+  `evidence_caveats` only contains `last_completed_request_llm_used`; and
+  `activity_log_tail`, `last_n_calls`, `activity_log_tail_count`,
+  `last_n_calls_count`, `policy_hash`, `session_boundary`, `host_id`, and
+  storage subsystem `path` fields are absent.
 
 Historical ChatGPT Developer Mode proof and BUG-034 boundaries are preserved in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.

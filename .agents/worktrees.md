@@ -172,3 +172,13 @@ Notes:
   submission blockers.
 - Ship condition: STATUS/docs show PR #183 deploy proof; ChatGPT web/mobile
   proof and final submit approval remain open.
+
+## OpenAI Postdeploy Proof - 2026-05-02
+
+- 2026-05-02 reuse `../wf-openai-submission-hardening` on
+  `codex/openai-postdeploy-proof` by codex-gpt5-desktop-openai-submission
+  after PR #184 deployed.
+- STATUS row: Directory submissions + first-use evidence.
+- Purpose: record strict live redaction proof after deploy run `25260784025`.
+- Ship condition: STATUS/docs show strict `/mcp-directory` proof; ChatGPT
+  web/mobile proof and final submit approval remain open.
