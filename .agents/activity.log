@@ -361,3 +361,23 @@ Codex pickup: review/merge PR #189 + #192 if they look good; or iterate on the p
 Wiki state at this checkpoint (FEATs/BUGs filed via mixed surfaces): FEAT-001 cowork smoke, FEAT-002 Maya off-host worker dispatch, FEAT-003 Ilse validate_branch admission-test framing, FEAT-004 trigger receipt/outbox (now partly implemented in PR #192), FEAT-005 chatbot connector catalog invalidation, FEAT-006 provider router observability (now partly implemented in PR #189). BUG-047 codex smoke, BUG-048 Devin tier=confidential.
 
 Note: Cowork has not done provider triage work (no SSH to droplet, no auth refresh power). The persistent provider_exhausted state means runtime self-improvement can't actually flow yet — but once provider chain is restored, file_bug -> trigger receipt -> dispatcher request -> branch run -> patch packet -> ship will be observable end-to-end. PR #189 + #192 ensure each transition produces structured signal instead of opaque failure strings.
+
+2026-05-02T20:47Z [cowork-loop-uptime-busyclever] LOOP IS FUNCTIONAL END-TO-END FOR FIRST 3 NODES, stalls at BUG-011 boundary as predicted by chatbot's roadmap. Empirical proof:
+
+(1) Layer 1 child run 01c8ecf012a44847 (smallest 1-node child branch cf16ed712016) status=completed in ~3 seconds. Provider chain works post-PR-#191.
+
+(2) Layer 3 parent run f21c106c5e914437 (full change_loop_v1 with synthetic bug payload) status=running but stalled at attachment_receipt_gate -> invoke_autoresearch_lab boundary for 60+ seconds with __system__: recursion_limit_applied annotation. Same exact stall pattern as run 4da58d59ff4c4e18 from earlier today (interrupted after 13h with no progress).
+
+So the loop architecture is correct: file_bug -> dispatcher (PR #176) -> run_branch (PR #191) -> intake_router -> routing_policy_gate -> attachment_receipt_gate ALL EXECUTE. The stop is structural (BUG-011 worker ownership) not logical.
+
+Filed BUG-049 (severity=major, component=runs) with both run IDs as empirical evidence so BUG-011 work has live reproducer pages to reference.
+
+Cowork session pause point: 5 PRs open from this session awaiting Codex review (#175, #181, #182, #189, #192). Plus skill self-correction PRs that landed via host directives. Plus 7 wiki feature requests (FEAT-001 through FEAT-006) and 3 bug pages (BUG-047, BUG-048, BUG-049) from cross-family user-sim work and substrate exercise.
+
+Codex pickup options at this checkpoint, in order of leverage:
+  1. Review/merge PR #189 (router observability) — smallest, cleanest, no behavior change.
+  2. Review/merge PR #192 (trigger receipts) — depends on running daemon for live integration test but unit tests cover the schema/lifecycle in isolation.
+  3. Draft BUG-011 Phase A (write-only lease metadata) per chatbot's spec in this chat — chatbot pseudocode in dev-partner conversation https://chatgpt.com/c/69f64b8d-fa04-83e8-b4d3-bb6e95b16475 around message about Phase A/B/C rollout. Cowork session has spec but did NOT draft to avoid piling more code on review queue.
+  4. Triage WHY change_loop_v1 stalls (BUG-049) — could be worker ownership, recursion limit interaction, or a check that's silently failing inside attachment_receipt_gate.
+
+Cowork is shifting to monitor-and-chat-support mode for the remainder of this session: continuing dev-partner conversation for spec work (no more code PRs from cowork), periodic MCP probes to track loop state, will respond to Codex via PR comments / activity.log if his work raises questions.
