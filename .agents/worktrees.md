@@ -182,3 +182,15 @@ Notes:
 - Purpose: record strict live redaction proof after deploy run `25260784025`.
 - Ship condition: STATUS/docs show strict `/mcp-directory` proof; ChatGPT
   web/mobile proof and final submit approval remain open.
+
+## OpenAI ChatGPT Write Proof - 2026-05-02
+
+- 2026-05-02 reuse `../wf-openai-submission-hardening` on
+  `codex/openai-chatgpt-write-proof` by
+  codex-gpt5-desktop-openai-submission.
+- STATUS row: Directory submissions + first-use evidence.
+- Purpose: record clean ChatGPT web read/write proof after strict redaction
+  deploy.
+- Ship condition: STATUS/docs show ChatGPT web proof and direct MCP
+  verification for goal `20e2339c82e3`; mobile/final-submit approval remain
+  open.

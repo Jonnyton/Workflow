@@ -40,13 +40,11 @@ Sources:
 
 Verdict: not ready for final submit yet.
 
-Source packet is review-aligned and deployed, but final submission should wait
-for hosted ChatGPT proof and action-time approval:
+Source packet is review-aligned and deployed, and ChatGPT web proof is clean.
+Final submission should wait for mobile proof and action-time approval:
 
-1. ChatGPT web must complete the golden prompts without `Unknown action`, hang,
-   or 5xx.
-2. ChatGPT mobile must complete the main read/write flows.
-3. Host must approve legal/compliance checkboxes and final submit.
+1. ChatGPT mobile must complete the main read/write flows.
+2. Host must approve legal/compliance checkboxes and final submit.
 
 Closed 2026-05-02T12:56-07:00:
 
@@ -80,6 +78,19 @@ Closed 2026-05-02T13:13-07:00:
   `activity_log_tail`, `last_n_calls`, `activity_log_tail_count`,
   `last_n_calls_count`, `policy_hash`, `session_boundary`, `host_id`, and
   storage subsystem `path` fields are absent.
+
+Closed 2026-05-02T13:23-07:00:
+
+- ChatGPT web Developer Mode read prompt completed using Workflow status with
+  no `Unknown action`, hang, or 5xx.
+- ChatGPT web rendered the `Propose a public workflow goal?` approval card for
+  `propose_workflow_goal`.
+- Host approved the public write at action time.
+- ChatGPT completed and returned goal id `20e2339c82e3` with
+  `Called tool was propose_workflow_goal: yes`.
+- Direct `/mcp-directory` verification via `search_workflow_goals` and
+  `get_workflow_goal` confirmed goal `20e2339c82e3` exists, is public, and has
+  tags `submission, smoke`.
 
 Historical ChatGPT Developer Mode proof and BUG-034 boundaries are preserved in
 `docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
