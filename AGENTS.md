@@ -182,7 +182,7 @@ provider-specific files. Claude Code also wires
 - Each active worktree should have a local `_PURPOSE.md` with the lane source,
   claim boundary, branch, worktree path, review gate, expected publish route,
   memory refs, and implication refs. This file is local worktree metadata, not
-  product source.
+  product source, and is ignored by git.
 - Review-blocked work should still have a visible pending worktree lane, but
   must not advance beyond planning/scaffolding until the required
   opposite-provider review returns approve/adapt.
