@@ -194,3 +194,14 @@ Notes:
 - Ship condition: STATUS/docs show ChatGPT web proof and direct MCP
   verification for goal `20e2339c82e3`; mobile/final-submit approval remain
   open.
+
+## OpenAI Onboarding Readiness Consolidation - 2026-05-02
+
+- 2026-05-02 reuse `../wf-openai-submission-hardening` on
+  `codex/onboarding-readiness-consolidation` by
+  codex-gpt5-desktop-openai-submission.
+- STATUS row: Directory submissions/onboarding readiness.
+- Purpose: consolidate OpenAI/Claude onboarding gaps after ChatGPT web proof
+  and re-audit the ChatGPT Apps packet before submission.
+- Ship condition: docs/STATUS name only true remaining blockers; validation
+  gates are fresh; final OpenAI submit remains action-time host approval.
