@@ -10,13 +10,13 @@ corresponding role.
 
 ## Team
 
-| Role | Daemon | Fixed LLM | Soul file | Primary work |
-|------|--------|-----------|-----------|--------------|
-| Request intake | Ada Request Steward | `claude-haiku-4-5-20251001` | `ada-request-steward.md` | Preserve request records, classify kind/severity, keep wiki/GitHub labels coherent. |
+| Role | Daemon | Current flagship LLM | Soul file | Primary work |
+|------|--------|----------------------|-----------|--------------|
+| Request intake | Ada Request Steward | `claude-opus-4-7` | `ada-request-steward.md` | Preserve request records, classify kind/severity, keep wiki/GitHub labels coherent. |
 | Investigation packet | Mira Investigation Planner | `claude-opus-4-7` | `mira-investigation-planner.md` | Turn a request into a bounded patch packet, feature spec, migration plan, or refusal. |
-| Implementation writer | Noor Patch Writer | `claude-sonnet-4-6` | `noor-patch-writer.md` | Produce the implementation branch or PR as the fixed Claude writer. |
-| Cross-family check | Soren Cross Checker | `gpt-5.3-codex` | `soren-cross-checker.md` | Verify Noor's Claude-written code, policy labels, tests, and Codex checker requirements. |
-| Release observation | Vera Release Observer | `gpt-5.3-codex` | `vera-release-observer.md` | Watch CI, deploy, canaries, rendered user surfaces, and post-fix clean-use evidence. |
+| Implementation writer | Noor Patch Writer | `claude-opus-4-7` | `noor-patch-writer.md` | Produce the implementation branch or PR as the Claude flagship writer. |
+| Cross-family check | Soren Cross Checker | `gpt-5.5` | `soren-cross-checker.md` | Verify Noor's Claude-written code, policy labels, tests, and Codex checker requirements. |
+| Release observation | Vera Release Observer | `gpt-5.5` | `vera-release-observer.md` | Watch CI, deploy, canaries, rendered user surfaces, and post-fix clean-use evidence. |
 | Contract and claims | Elias Contract Arbiter | `claude-opus-4-7` | `elias-contract-arbiter.md` | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements. |
 
 ## Live Registration
@@ -24,27 +24,33 @@ corresponding role.
 Registered in the host-local daemon registry on 2026-05-02 under
 `C:\Users\Jonathan\AppData\Roaming\Workflow`.
 The live daemon wikis were calibrated with the Claude/Codex family policy on
-2026-05-02 without changing daemon IDs or copying souls. They were then pinned
-to fixed model IDs on 2026-05-02; the pin is an active soul-version amendment,
-not a new daemon identity.
+2026-05-02 without copying souls. Host correction on 2026-05-02 changed the
+model contract from role-tiered snapshots to flagship-track execution:
+currently `claude-opus-4-7` for Claude-lane work and `gpt-5.5` for
+Codex/OpenAI-lane work. The active soul version is
+`flagship-track-v1-2026-05-02`.
 
 | Daemon | daemon_id | Soul hash |
 |--------|-----------|-----------|
-| Ada Request Steward | `daemon::ada-request-steward::ef1e90335fa66274` | `ef1e90335fa66274179834ee4981cfc32bbc9b5ffa53e959fe273aba97550c20` |
-| Mira Investigation Planner | `daemon::mira-investigation-planner::76cc0f5d70e2b2b0` | `76cc0f5d70e2b2b064707700d133720ba094a353d07e5a829ad248c294b732b6` |
-| Noor Patch Writer | `daemon::noor-patch-writer::826a1bb7c26ea008` | `826a1bb7c26ea0084dcc6e8e192b5e4a6c9d36025b0e9cef20507f14596c81ee` |
-| Soren Cross Checker | `daemon::soren-cross-checker::5afe4175e2a906bc` | `5afe4175e2a906bccd0813402d761a1a8d520c9f75cda85ba814b8c1a575fb5f` |
-| Vera Release Observer | `daemon::vera-release-observer::cf176680e412aa36` | `cf176680e412aa3688197e583750922156a9ff2a41abe178982fcd7c2291dce2` |
-| Elias Contract Arbiter | `daemon::elias-contract-arbiter::bae8302ee53fe623` | `bae8302ee53fe62316e99c528f41ecbb8f7b65fb041e328427b0f31298bbff64` |
+| Ada Request Steward | `daemon::ada-request-steward::4ee64d21c1bb88b3` | `4ee64d21c1bb88b34942e54d5fe7f6dc71359b0cb8e651081d1bc310bd333607` |
+| Mira Investigation Planner | `daemon::mira-investigation-planner::f079c1dd957ec6da` | `f079c1dd957ec6da0cff36176c9d0c2c2d57bbdc465e0867310034f02d6bbd6c` |
+| Noor Patch Writer | `daemon::noor-patch-writer::1d503df9a8786bbe` | `1d503df9a8786bbe69561b28d71956ec6ae029e6eb80c7bf9da33caf1d9b7edc` |
+| Soren Cross Checker | `daemon::soren-cross-checker::a6bae080c3b6eaad` | `a6bae080c3b6eaad482cab03bd92f6c83b685e2712ffb853e1c064ab57fc18a4` |
+| Vera Release Observer | `daemon::vera-release-observer::f6da338219155508` | `f6da3382191555089d33a9262628db3d4e3f9bed43485642613fcf748ffc0d48` |
+| Elias Contract Arbiter | `daemon::elias-contract-arbiter::e839e9b0e3249bb6` | `e839e9b0e3249bb63fe8e63ad4ca44b3b836059ba877829217c713ac103b42ef` |
 
 ## Routing Policy
 
 Loop nodes should prefer the core daemon assigned to the node's role when there
 is pending work and no better qualified claimant has already won the request.
-More capacity attaches more runtime instances using that same daemon's fixed
-model. A different model is a different executor: either a renamed/forked daemon
-with lineage, or an external daemon borrowing the core role context. It does
-not become the core daemon and does not copy the soul.
+All LLM contributors to the loop, including paid/bounty claimants and
+user-directed private daemons, must use the current project flagship model set:
+`claude-opus-4-7` or `gpt-5.5` as of 2026-05-02. Incentives may affect pickup
+priority among eligible claimants, but they do not lower the model, gate,
+writer/checker, evidence, or merge requirements. More capacity attaches more
+runtime instances using the daemon's current flagship track. A lower-tier model
+or unapproved provider is a different executor and is not eligible for core
+loop work.
 
 Community or house daemons can run loop work in two ways:
 
@@ -56,11 +62,12 @@ Community or house daemons can run loop work in two ways:
 Borrowed-soul execution is not identity copying. The executor remains itself,
 the borrowed core soul is cited as role context, and any learning signal should
 be routed back to the corresponding core daemon wiki when the runtime supports
-that write path.
+that write path. Borrowing a soul does not override the flagship-only model
+floor.
 
-## Fixed LLM Calibration
+## Flagship Model Calibration
 
-Research pass: 2026-05-02. Primary sources checked:
+Research pass: 2026-05-02. Primary sources and host directive checked:
 
 - Anthropic's agent workflow guidance distinguishes predefined workflows from
   autonomous agents, recommends orchestrator-worker and evaluator-optimizer
@@ -68,20 +75,22 @@ Research pass: 2026-05-02. Primary sources checked:
   environment-grounded feedback plus stopping conditions.
   Source: https://www.anthropic.com/engineering/building-effective-agents
 - Claude Code GitHub Actions v1 runs from issue/PR context, follows repository
-  standards such as `CLAUDE.md`, supports prompt-driven automation, and defaults
-  to Sonnet unless a model is configured.
+  standards such as `CLAUDE.md`, supports prompt-driven automation, and can
+  otherwise inherit a default that is below this loop's flagship-only floor.
   Source: https://code.claude.com/docs/en/github-actions
-- Claude Code model configuration says production deployments should pin full
-  model names rather than aliases. Current relevant IDs include Claude Opus 4.7,
-  Claude Sonnet 4.6, and Claude Haiku 4.5.
+- Host correction on 2026-05-02: all core daemons and loop contributors must
+  use current flagship models only: `claude-opus-4-7` or `gpt-5.5`; the allowed
+  set auto-advances when Anthropic or OpenAI ships a newer flagship.
+- Claude Code model configuration says production deployments should use
+  explicit model names rather than silent defaults.
   Source: https://code.claude.com/docs/en/model-config
 - OpenAI Codex docs describe Codex as a coding agent that can read, edit, run
   code, work in background cloud environments, create PRs, and review PRs.
   Source: https://developers.openai.com/codex/cloud
-- OpenAI's model docs describe `gpt-5.3-codex` as optimized for agentic coding
-  tasks in Codex or similar environments, with a 400k context window and
-  high/xhigh reasoning options.
-  Source: https://developers.openai.com/api/docs/models/gpt-5.3-codex
+- OpenAI model docs identify the flagship GPT line and Codex-capable coding
+  lane; Workflow currently treats `gpt-5.5` as the OpenAI flagship allowed for
+  Codex-lane loop work.
+  Source: https://platform.openai.com/docs/models
 - OpenAI Codex review guidance emphasizes high-signal review for serious bugs,
   repository guidance through `AGENTS.md`, and human/owner responsibility for
   final merge decisions.
@@ -93,33 +102,36 @@ As-built Workflow loop alignment:
 - `.github/workflows/auto-fix-bug.yml` is the current reference free claimant.
   It picks Claude OAuth first, Codex subscription second, and never falls
   through to API-key billing lanes for default daemon writing. The v1 core team
-  makes that Claude-first path explicit: Noor is the fixed Claude writer and
-  Soren is the fixed Codex checker.
+  makes that Claude-first path explicit: Noor is the Claude flagship writer and
+  Soren is the Codex/OpenAI flagship checker.
 - `daemon-request-policy.yml` enforces `writer:claude -> checker:codex` and
   `writer:codex -> checker:claude`. The core team covers the first pair. A
   Codex-writer fallback must use a distinct Codex writer identity and a distinct
   Claude checker identity, not silently swap Noor or Soren's models.
 - `community_change_context` already presents PR/issue state with a review
-  standard that requires Claude-family checking for Codex-written PRs.
+  standard that requires Claude-flagship checking for Codex/OpenAI-written PRs.
 
-Model use is therefore fixed per daemon, not selected per run:
+Model use is therefore flagship-track per daemon, not selected per run:
 
-| Role | Fixed LLM | Why this model fits the soul |
-|------|-----------|------------------------------|
-| Ada Request Steward | `claude-haiku-4-5-20251001` | Fast Claude intake for short, truthful request envelopes and label hygiene. |
-| Mira Investigation Planner | `claude-opus-4-7` | Deep Claude reasoning for evidence synthesis, uncertainty, refusals, and change-packet design. |
-| Noor Patch Writer | `claude-sonnet-4-6` | Claude Code's daily coding lane for concise implementation branches that follow repo conventions. |
-| Soren Cross Checker | `gpt-5.3-codex` | Codex review lane for tracing Claude-written diffs, CI, and serious code risks. |
-| Vera Release Observer | `gpt-5.3-codex` | Codex evidence tracing across code, Actions, deploy outputs, canaries, and proof artifacts. |
-| Elias Contract Arbiter | `claude-opus-4-7` | Deep Claude policy interpretation for contracts, claims, forks, and payment/gate boundaries. |
+| Role | Current flagship LLM | Why this model fits the soul |
+|------|----------------------|------------------------------|
+| Ada Request Steward | `claude-opus-4-7` | Claude flagship intake for truthful request envelopes and label hygiene. |
+| Mira Investigation Planner | `claude-opus-4-7` | Claude flagship reasoning for evidence synthesis, uncertainty, refusals, and change-packet design. |
+| Noor Patch Writer | `claude-opus-4-7` | Claude flagship writer lane for concise implementation branches that follow repo conventions. |
+| Soren Cross Checker | `gpt-5.5` | OpenAI flagship review lane for tracing Claude-written diffs, CI, and serious code risks. |
+| Vera Release Observer | `gpt-5.5` | OpenAI flagship evidence tracing across code, Actions, deploy outputs, canaries, and proof artifacts. |
+| Elias Contract Arbiter | `claude-opus-4-7` | Claude flagship policy interpretation for contracts, claims, forks, and payment/gate boundaries. |
 
 Design consequence: the core team is a workflow with durable role identities,
 not six unconstrained autonomous agents. The loop should pass compact artifacts
 between roles: request envelope -> change packet -> branch/PR -> review
-verdict -> release observation. The fixed-model contract is part of identity:
-running another model in a role requires an external claimant, a borrowed-role
-context, or a renamed/forked daemon. This matches the dev's current loop, which
-is issue/label/workflow/PR driven rather than a private multi-agent chat.
+verdict -> release observation. The flagship-track contract is part of
+identity: a future flagship upgrade must update the active soul/version and
+registry record before use, while running a lower-tier or unapproved model in a
+role requires an external claimant outside the core path, a borrowed-role
+context where allowed, or a renamed/forked daemon. This matches the dev's
+current loop, which is issue/label/workflow/PR driven rather than a private
+multi-agent chat.
 
 ## Non-Goals
 
