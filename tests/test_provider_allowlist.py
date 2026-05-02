@@ -173,7 +173,37 @@ def test_judge_ensemble_empty_allowlist_returns_empty_list(
 
 
 # ---------------------------------------------------------------------------
-# 5. WORKFLOW_PIN_WRITER × allowlist: pin in allowlist -> works
+# 5. call_with_policy intersects policy attempt order with allowlist
+# ---------------------------------------------------------------------------
+
+
+def test_call_with_policy_filters_policy_attempt_order_by_allowlist(
+    isolated_universe_config,
+):
+    """Policy providers outside allowed_providers must not be attempted."""
+    runtime.universe_config = UniverseConfig(
+        allowed_providers=["ollama-local"],
+    )
+    router, providers = _router_with_all_providers()
+    policy = {
+        "preferred": {"provider": "gemini-free"},
+        "fallback_chain": [
+            {"provider": "groq-free"},
+            {"provider": "ollama-local"},
+        ],
+    }
+
+    text, provider = _run(router.call_with_policy("writer", "p", "s", policy))
+
+    assert text == "content"
+    assert provider == "ollama-local"
+    assert providers["ollama-local"].call_count == 1
+    for n in ("gemini-free", "groq-free"):
+        assert providers[n].call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# 6. WORKFLOW_PIN_WRITER × allowlist: pin in allowlist -> works
 # ---------------------------------------------------------------------------
 
 
@@ -192,7 +222,7 @@ def test_pin_writer_in_allowlist_succeeds(isolated_universe_config):
 
 
 # ---------------------------------------------------------------------------
-# 6. WORKFLOW_PIN_WRITER × allowlist: pin NOT in allowlist -> hard-fail
+# 7. WORKFLOW_PIN_WRITER × allowlist: pin NOT in allowlist -> hard-fail
 # ---------------------------------------------------------------------------
 
 

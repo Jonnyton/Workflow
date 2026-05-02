@@ -7,7 +7,6 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - **[P0 filed:2026-04-23]** Revert-loop daemon PAUSED; auto-recovery outran pruner. Trace: `docs/audits/2026-04-23-p0-auto-recovery-trace.md`.
 - [filed:2026-04-22 verified:2026-04-25] `/etc/workflow/env` mode flip: Fix A landed bc079a0; host installer review pending.
 - [filed:2026-04-20 verified:2026-04-27] `test_node_eval` roundtrip flake: Fix B landed 16d4823; watch ≥30d.
-- [filed:2026-04-17 verified:2026-04-28] Privacy Q6.3 still-platform: third-party provider fallback policy in `workflow/providers/router.py`.
 - [filed:2026-04-18 verified:2026-04-28] `add_canon_from_path` sensitivity: host Qs reframed by commons-first audit F3.
 - [filed:2026-04-24] Task #9 host Qs: GH Actions GROQ/GEMINI/XAI secrets + rotation e2e after deploy step.
 - **[P1 filed:2026-04-25 verified:2026-05-01]** BUG-034 ChatGPT approval stall; direct MCP needed to repair live branches.
