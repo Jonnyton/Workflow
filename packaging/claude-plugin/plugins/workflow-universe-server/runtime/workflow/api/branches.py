@@ -2,7 +2,7 @@
 ``workflow/universe_server.py`` (Task #15 — decomp Step 8).
 
 The largest single submodule extracted from the monolith: 17 ``_ext_branch_*``
-handlers, the ``_action_continue_branch`` / ``_action_fork_tree`` action
+handlers, the ``_action_fork_tree`` action
 handlers, the build/patch composite engine (``_ext_branch_build`` /
 ``_ext_branch_patch`` / ``_ext_branch_update_node`` / ``_ext_branch_patch_nodes``),
 the node-spec resolver + apply machinery (``_resolve_node_spec``,
@@ -33,7 +33,6 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     _RELATED_WIKI_CAP              : cap on related-wiki page list
     _dispatch_branch_action        : ledger-aware dispatcher
     _ext_branch_*                  : 15 individual handlers
-    _action_continue_branch        : workspace-memory continuity primitive
     _action_fork_tree              : ancestor + descendant lineage walk
     _resolve_branch_id             : branch-name → branch_def_id resolver
     _resolve_node_spec             : node-spec resolver (node_ref / inline)
@@ -80,7 +79,6 @@ from typing import Any
 from workflow.api.helpers import (
     _base_path,
     _find_all_pages,
-    _read_json,
     _read_text,
     _universe_dir,
     _wiki_drafts_dir,
@@ -2429,7 +2427,7 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# continue_branch — workspace-memory continuity primitive
+# Branch lineage helpers
 # ───────────────────────────────────────────────────────────────────────────
 
 
@@ -2448,206 +2446,6 @@ def _resolve_udir() -> Path:
     except Exception:  # noqa: BLE001
         pass
     return _base_path()
-
-
-def _action_continue_branch(kwargs: dict[str, Any]) -> str:
-    """Read-only composite that returns everything a chatbot needs to resume work.
-
-    Composes: branch metadata, last-5 run records, open notes (branch-scoped),
-    current daemon phase, session_boundary block.  Zero writes — safe to call
-    on every session open.
-
-    Spec: docs/vetted-specs.md §continue_branch
-    """
-    from workflow.daemon_server import get_branch_definition
-    from workflow.runs import initialize_runs_db, query_runs
-
-    bid = (kwargs.get("branch_def_id") or "").strip()
-    if not bid:
-        return json.dumps({"error": "branch_def_id is required."})
-
-    base = _base_path()
-
-    # ── 1. Branch metadata ───────────────────────────────────────────────────
-    try:
-        branch = get_branch_definition(base, branch_def_id=bid)
-    except KeyError:
-        return json.dumps({
-            "error": (
-                f"Branch '{bid}' not found. "
-                "Use extensions action=build_branch to create it first."
-            ),
-        })
-
-    branch_name: str = branch.get("name") or bid
-    description: str = branch.get("description") or ""
-    last_modified_at: str | None = branch.get("last_modified_at") or branch.get("updated_at")
-
-    # ── 2. Run history (last 5, most recent first) ───────────────────────────
-    initialize_runs_db(base)
-    run_result = query_runs(
-        base,
-        branch_def_id=bid,
-        filters={},
-        select=[],
-        limit=5,
-    )
-    run_rows: list[dict[str, Any]] = run_result.get("rows", [])
-    run_history = [
-        {
-            "run_id": r.get("run_id"),
-            "status": r.get("status"),
-            "actor": r.get("actor"),
-            "started_at": r.get("started_at"),
-            "finished_at": r.get("finished_at"),
-        }
-        for r in run_rows
-    ]
-
-    # ── 3. Open notes scoped to this branch (last 10) ───────────────────────
-    # notes.json lives in the active universe dir.  Scope = notes whose
-    # "target_id" or "branch_def_id" field matches bid, or that have no
-    # target (universe-global user/editor/structural notes are included).
-    udir = _resolve_udir()
-    raw_notes = _read_json(udir / "notes.json")
-    open_notes: list[dict[str, Any]] = []
-    if raw_notes and isinstance(raw_notes, list):
-        wanted_types = {"user", "editor", "structural"}
-        for n in raw_notes:
-            nt = n.get("note_type") or n.get("type") or ""
-            if nt not in wanted_types:
-                continue
-            # Branch-scoped notes or universe-global notes (no branch_def_id field).
-            note_bid = n.get("branch_def_id") or n.get("target_id") or ""
-            if note_bid and note_bid != bid:
-                continue
-            open_notes.append({
-                "note_id": n.get("note_id") or n.get("id"),
-                "note_type": nt,
-                "text": (n.get("text") or "")[:500],
-                "timestamp": n.get("timestamp"),
-            })
-        open_notes = open_notes[-10:]
-
-    # ── 4. Current daemon phase (best-effort, never raises) ─────────────────
-    # Check if any run for this branch is currently in "running" state.
-    current_phase: str | None = None
-    try:
-        active_result = query_runs(
-            base,
-            branch_def_id=bid,
-            filters={"status": "running"},
-            select=[],
-            limit=1,
-        )
-        active_rows = active_result.get("rows", [])
-        if active_rows:
-            current_phase = active_rows[0].get("status")
-    except Exception:  # noqa: BLE001
-        pass
-
-    # ── 5. session_boundary (same logic as get_status) ───────────────────────
-    account_user = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
-    prior_session_ts: str | None = None
-    try:
-        import re as _re
-        log_path = udir / "activity.log"
-        if log_path.exists():
-            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            for line in reversed(lines[-200:]):
-                if account_user in line:
-                    m = _re.match(r"\[(\d{4}-\d{2}-\d{2}[^\]]*)\]", line)
-                    if m:
-                        prior_session_ts = m.group(1)
-                        break
-    except Exception:  # noqa: BLE001
-        pass
-
-    prior_session_available: bool = prior_session_ts is not None
-    if prior_session_available:
-        session_boundary = {
-            "prior_session_context_available": True,
-            "account_user": account_user,
-            "last_session_ts": prior_session_ts,
-            "note": (
-                f"Activity log contains entries for '{account_user}'. "
-                "Prior session context may be available."
-            ),
-        }
-    else:
-        session_boundary = {
-            "prior_session_context_available": False,
-            "account_user": account_user,
-            "last_session_ts": None,
-            "note": (
-                f"No activity log entries found for '{account_user}'. "
-                "Chatbot has no prior session record — do not assert prior session context."
-            ),
-        }
-
-    # ── 6. chatbot_summary (pre-composed, anti-hallucination) ───────────────
-    run_count = len(run_history)
-    completed = sum(1 for r in run_history if r.get("status") == "completed")
-    note_count = len(open_notes)
-
-    if prior_session_available:
-        session_line = f"Last session recorded: {prior_session_ts}."
-    else:
-        session_line = (
-            "No prior session history is recorded — this may be your first time "
-            "running this branch, or context was not captured."
-        )
-
-    if run_count == 0:
-        progress_line = "No runs have been recorded for this branch yet."
-    else:
-        last_run = run_history[0]
-        progress_line = (
-            f"{run_count} run(s) on record; {completed} completed. "
-            f"Most recent run: status={last_run.get('status')}, "
-            f"started {last_run.get('started_at')}."
-        )
-
-    if current_phase:
-        phase_line = f"Current daemon phase: {current_phase}."
-    else:
-        phase_line = ""
-
-    if note_count == 0:
-        notes_line = "No open notes."
-    elif note_count <= 2:
-        quoted = "; ".join(
-            f'"{n["text"][:120]}"' for n in open_notes if n.get("text")
-        )
-        notes_line = f"{note_count} open note(s): {quoted}"
-    else:
-        notes_line = f"{note_count} open notes (use list_canon or inspect to see all)."
-
-    parts = [
-        f"Branch: {branch_name!r}.",
-        session_line,
-        progress_line,
-    ]
-    if phase_line:
-        parts.append(phase_line)
-    parts.append(notes_line)
-    chatbot_summary = " ".join(p for p in parts if p)
-
-    return json.dumps(
-        {
-            "branch_def_id": bid,
-            "branch_name": branch_name,
-            "description": description,
-            "last_modified_at": last_modified_at,
-            "run_history": run_history,
-            "open_notes": open_notes,
-            "current_phase": current_phase,
-            "session_boundary": session_boundary,
-            "prior_session_available": prior_session_available,
-            "chatbot_summary": chatbot_summary,
-        },
-        default=str,
-    )
 
 
 def _action_fork_tree(kwargs: dict[str, Any]) -> str:
@@ -2731,7 +2529,6 @@ _BRANCH_ACTIONS: dict[str, Any] = {
     "patch_nodes": _ext_branch_patch_nodes,
     "update_node": _ext_branch_update_node,
     "search_nodes": _ext_branch_search_nodes,
-    "continue_branch": _action_continue_branch,
     "fork_tree": _action_fork_tree,
 }
 

@@ -192,9 +192,8 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
    |                                | batch ALL ops in ONE call)              |
    | Create / remix / copy a skill  | Branch `skills` in build_branch or      |
    |                                | patch_branch add_skill/update_skill     |
-   | Pick up / continue / resume    | `extensions action=continue_branch`     |
-   |                                | with branch_def_id — call FIRST before  |
-   |                                | asking user what was done last session  |
+   | Pick up / continue / resume    | `extensions action=run_branch` with     |
+   |                                | branch_def_id + resume_from=<run_id>    |
    | Surgical single-item change    | `extensions` (add_node, connect_nodes,  |
    |                                | set_entry_point, add_state_field)       |
    | Run / execute a workflow       | `extensions` action="run_branch" (P3)   |
@@ -246,10 +245,10 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
   `body`; preserve `source_url` / `source_note` when the user found it on
   the internet.
 - "Pick up where we left off / continue / resume on my workflow" →
-  `extensions action=continue_branch branch_def_id=...`. Returns run
-  history, open notes, current phase, and a ready-made chatbot_summary
-  for you to quote. Call this BEFORE asking the user what was done last
-  session — the tool has the answer.
+  find the prior run first (`extensions action=list_runs` or
+  `extensions action=query_runs`), then call
+  `extensions action=run_branch branch_def_id=... resume_from=<run_id>`.
+  Do not use a standalone continue action.
 - "Save this note / definition / how-to / reference" → `wiki`.
 - "Run / execute my workflow" → `extensions action=run_branch`. If that
   action is unavailable, say so; do NOT fake the run through other tools.

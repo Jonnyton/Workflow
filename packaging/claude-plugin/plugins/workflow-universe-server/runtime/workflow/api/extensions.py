@@ -613,7 +613,7 @@ def _extensions_impl(
             "dry_inspect_node", "dry_inspect_patch",
             "messaging_send", "messaging_receive", "messaging_ack",
             "publish_version", "get_branch_version", "list_branch_versions",
-            "continue_branch", "fork_tree",
+            "fork_tree",
             "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
             "attest_gate_event", "verify_gate_event", "dispute_gate_event",
             "retract_gate_event", "get_gate_event", "list_gate_events",

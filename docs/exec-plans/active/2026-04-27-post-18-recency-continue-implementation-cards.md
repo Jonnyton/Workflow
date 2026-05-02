@@ -1,14 +1,19 @@
 # Post-#18 Implementation Cards: `run_branch resume_from`
 
 Date: 2026-04-27
-Updated: 2026-05-01
+Updated: 2026-05-02
 Author: codex-gpt5-desktop
-Status: ready to execute on `#18` lock release
+Status: Cards A-C code-shipped; live MCP verification remains
 
 Decision stamp: F2 accepted by host on 2026-04-28. Drop Recency as a platform
 primitive. Do not add standalone `my_recent*` or `continue_branch` action
 verbs. Add one optional `resume_from=<run_id>` parameter to existing
 `extensions action=run_branch`.
+
+Implementation stamp: Cards A-B are present in `workflow/api/runs.py`; Card C
+removed the standalone `continue_branch` dispatch route and prompt routing on
+2026-05-02. Keep Card D until live MCP proof covers both default `run_branch`
+and `run_branch resume_from=<run_id>`.
 
 ## Card A - Add Optional `resume_from`
 

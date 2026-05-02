@@ -828,7 +828,7 @@ class BranchDefinition:
     # Default is public; users opt into private explicitly. Private
     # Branches are hidden from non-owner callers in gate-claim listings
     # and leaderboards. Normalized to 'public'/'private' at the SQLite
-    # layer (see ``author_server.save_branch_definition``).
+    # layer (see ``daemon_server.save_branch_definition``).
     visibility: str = "public"
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
