@@ -217,6 +217,7 @@ Recommended event names:
 - `daemon.memory.supersede`
 - `daemon.memory.compact`
 - `daemon.memory.low_confidence_skip`
+- `daemon.memory.eval`
 
 Recommended metrics:
 
@@ -339,16 +340,19 @@ The first implementation adds:
    `daemon_memory_review`, `daemon_memory_promote`, and
    `daemon_memory_status`; `control_station` routes chatbots to those
    actions with `inputs_json` / `daemon_id` guidance.
-4. Add a host review/editor surface for richer memory inspection and
+4. Memory quality evals landed as an internal replay harness:
+   `evaluate_daemon_memory_quality` runs deterministic without-memory and
+   with-memory cases against selected entries, scores the outcome delta, and
+   records `daemon.memory.eval`.
+5. Add a host review/editor surface for richer memory inspection and
    correction beyond the action-level review primitive.
-5. Add memory quality evals that replay runs with and without selected memory
-   hits.
 
 ## Later
 
 - Relationship graph for claim, contradiction, and temporal fact edges.
 - Host dashboard/editor for reviewing daemon memories.
-- Memory quality evals that replay runs with and without selected memories.
+- Domain-specific memory quality eval suites that plug real run replayers into
+  the internal replay harness.
 - Cross-daemon published memories with explicit visibility, attribution, and
   borrow contracts.
 - Role-daemon review rituals for the community loop core team.

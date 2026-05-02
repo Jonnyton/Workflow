@@ -12,7 +12,7 @@ import json
 import re
 import sqlite3
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +55,7 @@ VALID_EVENT_TYPES = {
     "daemon.memory.supersede",
     "daemon.memory.compact",
     "daemon.memory.low_confidence_skip",
+    "daemon.memory.eval",
 }
 
 
@@ -964,6 +965,150 @@ def build_daemon_brain_packet(
         "truncated": truncated,
         "selected_count": results["count"],
         "entries": results["entries"],
+    }
+
+
+def _output_text(output: Any) -> str:
+    if isinstance(output, str):
+        return output
+    try:
+        return json.dumps(output, sort_keys=True)
+    except TypeError:
+        return str(output)
+
+
+def _score_from_signals(output: Any, expected_signals: Sequence[str]) -> dict[str, Any]:
+    clean_signals = [str(signal).strip() for signal in expected_signals if str(signal).strip()]
+    if not clean_signals:
+        raise ValueError("expected_signals must contain at least one non-empty signal")
+    haystack = _output_text(output).lower()
+    matched = [signal for signal in clean_signals if signal.lower() in haystack]
+    missing = [signal for signal in clean_signals if signal not in matched]
+    return {
+        "score": len(matched) / len(clean_signals),
+        "matched_signals": matched,
+        "missing_signals": missing,
+    }
+
+
+def _normalize_score(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        if "score" not in value:
+            raise ValueError("score_fn result dict must include score")
+        details = dict(value)
+        details["score"] = _clamp(details["score"], default=0.0)
+        return details
+    return {"score": _clamp(value, default=0.0)}
+
+
+def evaluate_daemon_memory_quality(
+    base_path: str | Path,
+    *,
+    daemon_id: str,
+    query: str,
+    replay_fn: Callable[[dict[str, Any]], Any],
+    expected_signals: Sequence[str] | None = None,
+    score_fn: Callable[[Any], Any] | None = None,
+    limit: int = 5,
+    min_score: float = 0.0,
+    max_chars: int = DEFAULT_BRAIN_PACKET_CHARS,
+    baseline_context: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Replay a task with and without selected daemon memory and score the delta.
+
+    The caller owns the actual replay mechanics so this harness stays
+    domain-neutral: pass a deterministic ``replay_fn`` that accepts a case dict
+    and returns either text or a structured result. Scoring is either a custom
+    ``score_fn`` or a simple expected-signal matcher.
+    """
+    _validate_daemon(base_path, daemon_id)
+    if score_fn is None and expected_signals is None:
+        raise ValueError("expected_signals or score_fn is required")
+    trace = _trace_id()
+    packet = build_daemon_brain_packet(
+        base_path,
+        daemon_id=daemon_id,
+        query=query,
+        max_chars=max_chars,
+        limit=limit,
+        min_score=min_score,
+        trace_id=trace,
+    )
+    entry_ids = [entry["entry_id"] for entry in packet["entries"]]
+
+    without_case = {
+        "daemon_id": daemon_id,
+        "trace_id": trace,
+        "query": str(query or ""),
+        "memory_enabled": False,
+        "context": str(baseline_context or ""),
+        "entry_ids": [],
+        "entries": [],
+    }
+    with_case = {
+        "daemon_id": daemon_id,
+        "trace_id": trace,
+        "query": packet["query"],
+        "memory_enabled": True,
+        "context": packet["context"],
+        "entry_ids": entry_ids,
+        "entries": packet["entries"],
+    }
+    without_output = replay_fn(without_case)
+    with_output = replay_fn(with_case)
+
+    if score_fn is not None:
+        without_score = _normalize_score(score_fn(without_output))
+        with_score = _normalize_score(score_fn(with_output))
+    else:
+        assert expected_signals is not None
+        without_score = _score_from_signals(without_output, expected_signals)
+        with_score = _score_from_signals(with_output, expected_signals)
+
+    delta = round(float(with_score["score"]) - float(without_score["score"]), 6)
+    if delta > 0:
+        outcome = "improved"
+    elif delta < 0:
+        outcome = "regressed"
+    else:
+        outcome = "unchanged"
+
+    with _connect(base_path) as conn:
+        _record_event_conn(
+            conn,
+            daemon_id=daemon_id,
+            event_type="daemon.memory.eval",
+            trace_id=trace,
+            query_text=packet["query"],
+            entry_ids=entry_ids,
+            metadata={
+                "without_memory_score": without_score["score"],
+                "with_memory_score": with_score["score"],
+                "delta": delta,
+                "outcome": outcome,
+                "selected_count": packet["selected_count"],
+                "replay_metadata": dict(metadata or {}),
+            },
+        )
+
+    return {
+        "daemon_id": daemon_id,
+        "host_local": True,
+        "trace_id": trace,
+        "query": packet["query"],
+        "entry_ids": entry_ids,
+        "selected_count": packet["selected_count"],
+        "without_memory": {
+            **without_score,
+            "output": without_output,
+        },
+        "with_memory": {
+            **with_score,
+            "output": with_output,
+        },
+        "delta": delta,
+        "outcome": outcome,
     }
 
 
