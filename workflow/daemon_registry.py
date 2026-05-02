@@ -8,6 +8,7 @@ move later without changing the caller contract.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,22 @@ def _domain_claims(row: dict[str, Any]) -> list[str]:
     if not isinstance(raw, list):
         return []
     return [str(item).strip() for item in raw if str(item).strip()]
+
+
+def _daemon_model_binding(daemon: dict[str, Any]) -> list[str]:
+    metadata = daemon.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+    bound: list[str] = []
+    for key in ("current_llm", "fixed_llm", "pinned_llm", "active_llm"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            bound.append(value)
+    allowed = metadata.get("allowed_llms")
+    if isinstance(allowed, list):
+        bound.extend(str(item).strip() for item in allowed if str(item).strip())
+    seen: set[str] = set()
+    return [item for item in bound if not (item in seen or seen.add(item))]
 
 
 def _daemon_from_author(row: dict[str, Any], *, include_soul: bool = False) -> dict[str, Any]:
@@ -127,6 +144,7 @@ def create_daemon(
     soul_mode: str | None = None,
     soul_text: str = "",
     domain_claims: list[str] | None = None,
+    lineage_parent_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create or return a named daemon identity.
@@ -145,12 +163,31 @@ def create_daemon(
         raise ValueError(f"soul_mode must be one of {sorted(VALID_SOUL_MODES)}")
     if mode == "soul" and not soul_text.strip():
         raise ValueError("soul_text is required when soul_mode='soul'")
+    clean_soul_text = soul_text.strip()
+    parent_author_id = (
+        _author_id_from_daemon_id(lineage_parent_id.strip())
+        if lineage_parent_id and lineage_parent_id.strip()
+        else None
+    )
 
     clean_claims = [
         str(item).strip()
         for item in (domain_claims or [])
         if str(item).strip()
     ]
+    if mode == "soul":
+        soul_hash = hashlib.sha256(clean_soul_text.encode("utf-8")).hexdigest()
+        for existing in daemon_server.list_authors(base_path):
+            if str(existing.get("soul_hash") or "") != soul_hash:
+                continue
+            if str(existing.get("display_name") or "").lower() == name.lower():
+                continue
+            if parent_author_id and str(existing.get("author_id") or "") == parent_author_id:
+                continue
+            raise ValueError(
+                "duplicate soul_hash requires lineage_parent_id; "
+                "a copied soul must be recorded as a fork or renamed descendant",
+            )
     merged_metadata = dict(metadata or {})
     merged_metadata.setdefault("owner_user_id", created_by)
     merged_metadata.setdefault("tenant_id", merged_metadata["owner_user_id"])
@@ -161,16 +198,21 @@ def create_daemon(
         "domain_claims": clean_claims,
     })
     if mode == "soul":
-        merged_metadata["daemon_wiki"] = {
-            "host_local": True,
-            "schema_version": 1,
-        }
+        wiki_metadata = (
+            dict(merged_metadata.get("daemon_wiki"))
+            if isinstance(merged_metadata.get("daemon_wiki"), dict)
+            else {}
+        )
+        wiki_metadata["host_local"] = True
+        wiki_metadata["schema_version"] = 1
+        merged_metadata["daemon_wiki"] = wiki_metadata
 
     author = daemon_server.register_author(
         base_path,
         display_name=name,
-        soul_text=soul_text.strip() if mode == "soul" else SOULLESS_SOUL_TEXT,
+        soul_text=clean_soul_text if mode == "soul" else SOULLESS_SOUL_TEXT,
         created_by=created_by,
+        lineage_parent_id=parent_author_id,
         metadata=merged_metadata,
     )
     daemon = _daemon_from_author(author, include_soul=False)
@@ -253,6 +295,13 @@ def summon_daemon(
 ) -> dict[str, Any]:
     daemon_server.initialize_author_server(base_path)
     daemon = get_daemon(base_path, daemon_id=daemon_id)
+    allowed_models = _daemon_model_binding(daemon)
+    if allowed_models and model_name not in allowed_models:
+        raise ValueError(
+            "daemon model identity mismatch: this daemon is bound to "
+            f"{', '.join(allowed_models)}; use a borrowed-role executor, "
+            "renamed fork, or update the active soul version before changing models",
+        )
     merged_metadata = dict(metadata or {})
     merged_metadata.setdefault("owner_user_id", daemon["owner_user_id"])
     merged_metadata.setdefault("tenant_id", daemon["tenant_id"])

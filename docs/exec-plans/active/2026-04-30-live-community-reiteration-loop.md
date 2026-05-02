@@ -44,7 +44,8 @@ GitHub API.
 - Host reframe on 2026-04-30: public loop requests are daemon requests, not
   one workflow's private queue. Paid or free daemons may claim them if they
   meet the declared gate and bounty requirements. Code-change writers are
-  restricted to Claude/Codex, with an opposite-family checker.
+  restricted to current flagship Claude/Codex lanes, with an opposite-family
+  checker.
 - Live MCP has Goal `f10caea2e437` ("Turn a Workflow bug into a patch packet")
   with user-made Branch `0731a3122bd4` (`bug_to_patch_packet_v1`) bound.
 - Live MCP has Goal `4ff5862cc26d` ("Route a patch request through
@@ -224,6 +225,43 @@ GitHub API.
   API-key billing lanes are diagnostics or deliberate host opt-in material, not
   default writer/checker auth.
 
+## V1 Core Soul Team
+
+The host-provided v1 core team for this loop is documented in
+`docs/souls/community-loop-core-team-v1.md` and registered as live
+soul-bearing daemons in the host-local daemon registry.
+
+| Role | Core daemon | Current flagship LLM | Loop responsibility |
+|------|-------------|----------------------|---------------------|
+| Request intake | Ada Request Steward | `claude-opus-4-7` | Preserve request records, classify request kind, maintain wiki/GitHub request labels, and backfill missed intake. |
+| Investigation packet | Mira Investigation Planner | `claude-opus-4-7` | Convert a durable request into a patch packet, feature spec, migration plan, docs/ops plan, branch-refinement plan, or refusal. |
+| Implementation writer | Noor Patch Writer | `claude-opus-4-7` | Produce the implementation branch or PR as the Claude flagship writer. |
+| Cross-family check | Soren Cross Checker | `gpt-5.5` | Verify Noor's Claude-written changes as the Codex/OpenAI flagship checker, with CI/policy labels and required evidence. |
+| Release observation | Vera Release Observer | `gpt-5.5` | Follow CI, deploy, canaries, rendered user proof, and post-fix clean-use evidence; route failures back into the loop. |
+| Contract and claims | Elias Contract Arbiter | `claude-opus-4-7` | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements before a claimant takes work. |
+
+Research calibration on 2026-05-02 against Anthropic agent-workflow/model-selection
+guidance, Claude Code GitHub Actions v1 docs, and OpenAI Codex/Codex-review
+docs keeps this as a structured workflow, not a loose chat team. The as-built
+reference claimant chooses Claude OAuth first, Codex subscription second,
+ignores API-key billing lanes by default, and labels PRs so `writer:claude`
+requires `checker:codex` while `writer:codex` requires `checker:claude`. The
+v1 core path uses current flagship models only: `claude-opus-4-7` for Claude
+lane work and `gpt-5.5` for Codex/OpenAI lane work as of 2026-05-02. If the
+Codex writer fallback is used, it is not Noor; it needs a distinct Codex writer
+identity and a distinct Claude checker identity. When Anthropic or OpenAI ships
+a newer project-approved flagship, the allowed model set advances and the
+active soul/version records must be refreshed before that model runs.
+
+Loop nodes should prefer the matching core daemon when pending work exists and
+no qualified external claimant has won the request. Other daemons can work a
+loop role only with confirmed role/domain claims, current flagship Claude or
+OpenAI/Codex execution, and either their own eligible soul or explicit borrowing
+of the corresponding core daemon soul and bounded wiki packet as temporary role
+context. Borrowed-soul execution does not copy the core daemon identity.
+Incentives and user-directed daemons may speed up pickup or iteration, but do
+not change the flagship-only model floor or acceptance gates.
+
 ## Implementation Slices
 
 ### Slice 1: Make the wiki bug lane enqueue investigation
@@ -311,7 +349,8 @@ Acceptance:
   observation plan.
 - Writer path is one claimant on the daemon request bus: subscription-backed
   Claude Code OAuth if configured, future subscription-backed Codex lane when
-  available, manual fallback otherwise. Claude failures do not fall through to
+  available, manual fallback otherwise. Claude/Codex loop work must use the
+  current flagship model set, and Claude failures do not fall through to
   API-key billing lanes.
 - No-auth blocks self-heal: issues marked `needs-human` before writer auth was
   visible are rediscovered by scheduled backfill once approved Claude/Codex
@@ -335,7 +374,7 @@ Acceptance:
 - Request issues carry labels that make the daemon request contract visible:
   `daemon-request`, `payment:free-ok`, `writer-pool:claude-codex`,
   `checker:cross-family`, and `gate-required`; the allowed writer lane is still
-  subscription-backed Claude/Codex only.
+  subscription-backed, current-flagship Claude/Codex only.
 - Machine-authored PRs cannot pass policy with same-family writer/checker
   labels.
 - Runtime `gates claim` validation is explicitly queued behind #18 rather than

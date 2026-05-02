@@ -53,6 +53,37 @@ def test_soul_daemon_requires_non_empty_soul_text(tmp_path):
         )
 
 
+def test_duplicate_soul_hash_requires_lineage(tmp_path):
+    first = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Original Steward",
+        created_by="host",
+        soul_mode="soul",
+        soul_text="Preserve request records and route carefully.",
+    )
+
+    with pytest.raises(ValueError, match="duplicate soul_hash requires lineage_parent_id"):
+        daemon_registry.create_daemon(
+            tmp_path,
+            display_name="Copied Steward",
+            created_by="host",
+            soul_mode="soul",
+            soul_text="Preserve request records and route carefully.",
+        )
+
+    fork = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Forked Steward",
+        created_by="host",
+        soul_mode="soul",
+        soul_text="Preserve request records and route carefully.",
+        lineage_parent_id=first["daemon_id"],
+    )
+
+    assert fork["soul_hash"] == first["soul_hash"]
+    assert fork["lineage_parent_id"] == first["daemon_id"]
+
+
 def test_list_daemons_maps_existing_default_author_to_default_daemon(tmp_path):
     daemons = daemon_registry.list_daemons(tmp_path)
 
@@ -91,6 +122,37 @@ def test_summon_and_banish_daemon_wrap_runtime_instance(tmp_path):
     )
     assert retired["runtime_instance_id"] == runtime["runtime_instance_id"]
     assert retired["status"] == "retired"
+
+
+def test_summon_rejects_model_mismatch_for_bound_daemon(tmp_path):
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Soren Cross Checker",
+        created_by="host",
+        soul_text="Check Claude-written loop patches.",
+        metadata={"current_llm": "gpt-5.5", "model_track": "openai_flagship"},
+    )
+
+    with pytest.raises(ValueError, match="daemon model identity mismatch"):
+        daemon_registry.summon_daemon(
+            tmp_path,
+            daemon_id=daemon["daemon_id"],
+            universe_id="default-universe",
+            provider_name="codex",
+            model_name="gpt-5.4",
+            created_by="host",
+        )
+
+    runtime = daemon_registry.summon_daemon(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        universe_id="default-universe",
+        provider_name="codex",
+        model_name="gpt-5.5",
+        created_by="host",
+    )
+
+    assert runtime["model_name"] == "gpt-5.5"
 
 
 def test_runtime_control_is_owner_scoped(tmp_path):

@@ -193,6 +193,7 @@ def _resolve_loop_daemon_context(
         "soul_hash": "",
         "domain_claims": [],
         "daemon_wiki_context": "",
+        "daemon_wiki_status": {},
     }
     env_name = "WORKFLOW_LOOP_DAEMON_ID"
     override = os.environ.get(env_name, "").strip()
@@ -223,12 +224,15 @@ def _resolve_loop_daemon_context(
             source = "project_loop_default"
 
         wiki_context = ""
+        wiki_status: dict[str, Any] = {}
         if daemon.get("has_soul"):
-            wiki_context = read_daemon_wiki_context(
+            wiki_packet = read_daemon_wiki_context(
                 base_path,
                 daemon_id=daemon["daemon_id"],
                 max_chars=6000,
-            ).get("context", "")
+            )
+            wiki_context = str(wiki_packet.get("context", ""))
+            wiki_status = dict(wiki_packet.get("memory_status") or {})
         return {
             "daemon_id": str(daemon["daemon_id"]),
             "source": source,
@@ -237,6 +241,7 @@ def _resolve_loop_daemon_context(
             "soul_hash": str(daemon.get("soul_hash") or ""),
             "domain_claims": list(daemon.get("domain_claims") or []),
             "daemon_wiki_context": wiki_context,
+            "daemon_wiki_status": wiki_status,
         }
     except KeyError as exc:
         if override:
@@ -1121,6 +1126,9 @@ class DaemonController:
                 ),
                 "daemon_wiki_context": loop_daemon_context.get(
                     "daemon_wiki_context", "",
+                ),
+                "daemon_wiki_status": loop_daemon_context.get(
+                    "daemon_wiki_status", {},
                 ),
             })
             logger.info(
