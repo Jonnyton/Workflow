@@ -219,6 +219,12 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
    |                                | `extensions action=search_nodes`        |
    | Submit collaborative input     | `universe` action="submit_request"      |
    | Give direct daemon guidance    | `universe` action="give_direction"      |
+   | Capture daemon memory          | `universe` action="daemon_memory_capture"|
+   | Search / list daemon memory    | `universe` action="daemon_memory_search"|
+   |                                | or action="daemon_memory_list"          |
+   | Review / promote daemon memory | `universe` action="daemon_memory_review"|
+   |                                | or action="daemon_memory_promote"       |
+   | Check daemon memory status     | `universe` action="daemon_memory_status"|
    | Query world state              | `universe` action="query_world"         |
    | Read produced output           | `universe` action="read_output"         |
    | Browse source / canon docs     | `universe` action="list_canon"          |
@@ -257,6 +263,14 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
 - "Save this note / definition / how-to / reference" → `wiki`.
 - "Run / execute my workflow" → `extensions action=run_branch`. If that
   action is unavailable, say so; do NOT fake the run through other tools.
+- "Remember this as daemon learning" / "what does this daemon remember?"
+  / "review this daemon memory" -> use the daemon mini-brain actions on
+  `universe`. Pass `daemon_id` and structured fields through
+  `inputs_json`; use `daemon_memory_capture` for new lessons,
+  `daemon_memory_search` / `daemon_memory_list` for lookup,
+  `daemon_memory_review` for accept/reject/supersede, and
+  `daemon_memory_promote` only when the user wants a curated daemon-wiki
+  review note.
 - `wiki` is strictly for knowledge and reference content. It is NOT the
   save-anything surface for workflow structure, workflow state, task
   lists, or artifacts that need to be queried as structured data.

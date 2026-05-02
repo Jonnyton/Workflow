@@ -337,7 +337,8 @@ The first implementation adds:
 3. Minimal daemon-owned `universe` action surface landed:
    `daemon_memory_capture`, `daemon_memory_search`, `daemon_memory_list`,
    `daemon_memory_review`, `daemon_memory_promote`, and
-   `daemon_memory_status`.
+   `daemon_memory_status`; `control_station` routes chatbots to those
+   actions with `inputs_json` / `daemon_id` guidance.
 4. Add a host review/editor surface for richer memory inspection and
    correction beyond the action-level review primitive.
 5. Add memory quality evals that replay runs with and without selected memory

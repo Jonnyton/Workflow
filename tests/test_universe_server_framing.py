@@ -168,6 +168,23 @@ def test_control_station_promotes_chatbot_builder_behaviors_page() -> None:
     assert "stale memory" in text
 
 
+def test_control_station_routes_daemon_memory_actions() -> None:
+    """Daemon mini-brain actions must be discoverable from control_station."""
+    from workflow.api.prompts import _CONTROL_STATION_PROMPT
+
+    text = _CONTROL_STATION_PROMPT
+    for action in [
+        "daemon_memory_capture",
+        "daemon_memory_search",
+        "daemon_memory_review",
+        "daemon_memory_promote",
+        "daemon_memory_status",
+    ]:
+        assert action in text
+    assert "inputs_json" in text
+    assert "daemon_id" in text
+
+
 def test_extension_guide_prompt_points_to_control_station() -> None:
     """#15 (post-c97feac): _EXTENSION_GUIDE_PROMPT no longer dup'd the
     NO SIMULATION block. It now points to control_station as the
