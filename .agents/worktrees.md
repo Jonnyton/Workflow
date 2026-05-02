@@ -232,3 +232,14 @@ Notes:
   `b1fb7456afee465292b0186b8a11d12b8123c6dc`; deploy-site run
   `25262123905` passed; STATUS now points only at host actions. Local
   worktree ready to remove after this foldback lands.
+
+## OpenAI Domain Verification - 2026-05-02
+
+- 2026-05-02 create `../wf-openai-domain-verification` on
+  `codex/openai-domain-verification` by
+  codex-gpt5-desktop-openai-domain.
+- STATUS row: OpenAI/Claude directory submission host actions.
+- Purpose: publish OpenAI Apps domain-verification challenge for
+  `tinyassets.io` and record the updated submission gate.
+- Ship condition: challenge file is live and dashboard Verify Domain succeeds
+  after action-time approval.

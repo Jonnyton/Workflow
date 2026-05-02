@@ -137,6 +137,10 @@ Recorded prior dashboard state from 2026-05-02:
 - Tool scan was green at that time.
 - Tool justifications and test cases were entered from
   `chatgpt-app-submission.json`.
+- 2026-05-02 in-app browser inspection found `tinyassets.io` domain
+  verification still pending. This branch publishes the required
+  `/.well-known/openai-apps-challenge` file; dashboard `Verify Domain` remains
+  an action-time host approval.
 - Final submit page was not completed.
 
 Not yet complete:
@@ -163,7 +167,9 @@ Not yet complete:
 5. Confirm the legal/connect site closeout has landed and deployed before using
    `https://tinyassets.io/legal#privacy` and `/connect` screenshots in final
    submit.
-6. Host approves logo/screenshots or demo asset choices, release notes,
+6. Confirm OpenAI domain verification for `tinyassets.io` is live in the
+   dashboard.
+7. Host approves logo/screenshots or demo asset choices, release notes,
    compliance answers, mature-content answer, publisher selector, verification
    assertion, and final submit.
 
