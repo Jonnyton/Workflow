@@ -25,6 +25,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
+| Arc C prep doc refresh — update active plan refs now Arc B landed and moved to completed. | STATUS.md, docs/exec-plans/active/2026-04-26-decomp-arc-c-prep.md | Arc B landed | claimed:codex-gpt5-desktop |
 | Scorched exact-original proof — mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | External directory acceptance — Open WebUI + LibreChat proofs green; needs MCP Registry/Claude/ChatGPT submissions, next local/IDE proof, first-user evidence. | packaging/registry/server.json, chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/open-webui-*.md, docs/ops/librechat-*.md, docs/design-notes/2026-05-01-mcp-host-customer-matrix.md, docs/exec-plans/active/2026-05-01-host-discoverability-and-onboarding-rollout.md | host/admin publisher | host-action |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |
