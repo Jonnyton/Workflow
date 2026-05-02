@@ -224,6 +224,27 @@ GitHub API.
   API-key billing lanes are diagnostics or deliberate host opt-in material, not
   default writer/checker auth.
 
+## V1 Core Soul Team
+
+The host-provided v1 core team for this loop is documented in
+`docs/souls/community-loop-core-team-v1.md` and registered as live
+soul-bearing daemons in the host-local daemon registry.
+
+| Role | Core daemon | Loop responsibility |
+|------|-------------|---------------------|
+| Request intake | Ada Request Steward | Preserve request records, classify request kind, maintain wiki/GitHub request labels, and backfill missed intake. |
+| Investigation packet | Mira Investigation Planner | Convert a durable request into a patch packet, feature spec, migration plan, docs/ops plan, branch-refinement plan, or refusal. |
+| Implementation writer | Noor Patch Writer | Produce the implementation branch or PR through approved subscription-backed Claude/Codex writer lanes. |
+| Cross-family check | Soren Cross Checker | Verify machine-authored changes with opposite-family review, CI/policy labels, and required evidence. |
+| Release observation | Vera Release Observer | Follow CI, deploy, canaries, rendered user proof, and post-fix clean-use evidence; route failures back into the loop. |
+| Contract and claims | Elias Contract Arbiter | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements before a claimant takes work. |
+
+Loop nodes should prefer the matching core daemon when pending work exists and
+no qualified external claimant has won the request. Other daemons can work a
+loop role only with confirmed role/domain claims, or by explicitly borrowing
+the corresponding core daemon soul and bounded wiki packet as temporary role
+context. Borrowed-soul execution does not copy the core daemon identity.
+
 ## Implementation Slices
 
 ### Slice 1: Make the wiki bug lane enqueue investigation
