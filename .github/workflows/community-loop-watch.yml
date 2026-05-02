@@ -129,6 +129,43 @@ jobs:
               'wiki-bug-sync.yml',
               'uptime-canary.yml',
             ]);
+            const retryDelaysMs = [1000, 3000, 7000];
+
+            function githubStatus(error) {
+              return Number(error?.status || error?.response?.status || 0);
+            }
+
+            function isRetryableGitHubError(error) {
+              const status = githubStatus(error);
+              return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+            }
+
+            async function githubCall(description, call, {required = false} = {}) {
+              for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+                try {
+                  return await call();
+                } catch (error) {
+                  const status = githubStatus(error);
+                  if (isRetryableGitHubError(error) && attempt < retryDelaysMs.length) {
+                    core.warning(
+                      `${description} failed with status ${status || 'unknown'}; retrying: ${error.message || error}`,
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+                    continue;
+                  }
+
+                  if (required) {
+                    throw error;
+                  }
+
+                  const suffix = status ? ` with status ${status}` : '';
+                  core.warning(`${description} failed${suffix}: ${error.message || error}`);
+                  return null;
+                }
+              }
+
+              return null;
+            }
 
             async function dispatchStaleDependencies() {
               let status;
@@ -202,32 +239,37 @@ jobs:
             await dispatchStaleDependencies();
 
             try {
-              await github.rest.issues.getLabel({
+              await githubCall('lookup alarm label', () => github.rest.issues.getLabel({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 name: label,
-              });
+              }), {required: true});
             } catch (e) {
               if (e.status === 404) {
-                await github.rest.issues.createLabel({
+                await githubCall('create alarm label', () => github.rest.issues.createLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   name: label,
                   color: 'd73a4a',
                   description: 'Auto-opened when the community change loop is not operating end-to-end.',
-                });
+                }));
               } else {
-                throw e;
+                core.warning(`Could not confirm alarm label ${label}: ${e.message || e}`);
+                return;
               }
             }
 
-            const openIssues = await github.rest.issues.listForRepo({
+            const openIssues = await githubCall('list open alarm issues', () => github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
               labels: label,
               per_page: 5,
-            });
+            }));
+            if (!openIssues) {
+              core.warning('Skipping alarm issue mutation because open issue lookup failed.');
+              return;
+            }
             const openIssue = openIssues.data[0] || null;
 
             function formatBody(kind) {
@@ -249,17 +291,19 @@ jobs:
 
             if (overall === 'red') {
               if (openIssue) {
-                await github.rest.issues.createComment({
+                const comment = await githubCall('append RED alarm comment', () => github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: openIssue.number,
                   body: formatBody('RED'),
-                });
-                console.log(`appended RED to #${openIssue.number}`);
+                }));
+                if (comment) {
+                  console.log(`appended RED to #${openIssue.number}`);
+                }
                 return;
               }
 
-              const result = await github.rest.issues.create({
+              const result = await githubCall('open RED alarm issue', () => github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: `Community loop red - ${now}`,
@@ -270,26 +314,30 @@ jobs:
                   '',
                   formatBody('RED'),
                 ].join('\n'),
-              });
-              console.log(`opened issue #${result.data.number}`);
+              }));
+              if (result) {
+                console.log(`opened issue #${result.data.number}`);
+              }
               return;
             }
 
             if (openIssue) {
-              await github.rest.issues.createComment({
+              await githubCall('append recovered alarm comment', () => github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: openIssue.number,
                 body: formatBody(`${overall.toUpperCase()} - RECOVERED`),
-              });
-              await github.rest.issues.update({
+              }));
+              const closed = await githubCall('close recovered alarm issue', () => github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: openIssue.number,
                 state: 'closed',
                 state_reason: 'completed',
-              });
-              console.log(`closed #${openIssue.number} as recovered`);
+              }));
+              if (closed) {
+                console.log(`closed #${openIssue.number} as recovered`);
+              }
             } else {
               console.log(`steady ${overall} - no community-loop-red issue open`);
             }
