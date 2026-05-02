@@ -629,7 +629,9 @@ Workflow MCP connector installed, on 2026-05-02. The Cowork session captured
 the chat and wrote the doc verbatim. Conversation: https://chatgpt.com/c/69f64b8d-fa04-83e8-b4d3-bb6e95b16475
 
 The dev-partner chatbot was invoked as a senior engineering peer to spec the
-first auto-ship canary milestone, after PR #196 (Codex's BUG-009 dispatcher
-pickup fix) made wiki-filed bug_investigation requests reliably become runs,
-which made the next blocker visible: every completed run still ends
+first auto-ship canary milestone, after the BUG-009 production sequence
+(PR #196 dispatcher pickup, PR #201 `request_text` input normalization, and
+PR #205 worker claim-grace) made wiki-filed `bug_investigation` requests
+reliably become durable runs. That made the next blocker visible: completed
+runs still stop short of autonomous release, commonly at
 `release_gate_result=HOLD`. The auto-ship canary lane closes that loop.
