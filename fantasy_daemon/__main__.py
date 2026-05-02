@@ -601,6 +601,18 @@ def _should_execute_claimed_branch_directly(claimed_task: Any) -> bool:
     return request_type in {"branch_run", "bug_investigation"}
 
 
+def _branch_task_inputs_for_execution(claimed_task: Any) -> dict[str, Any]:
+    inputs = dict(getattr(claimed_task, "inputs", {}) or {})
+    request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
+    if request_type == "bug_investigation" and not str(
+        inputs.get("request_text") or ""
+    ).strip():
+        from workflow.bug_investigation import build_run_payload
+
+        inputs = build_run_payload(inputs)
+    return inputs
+
+
 def _try_execute_claimed_branch_task(
     universe_path: Path, claimed_task: Any, daemon_id: str,
 ) -> tuple[bool, str, dict[str, Any]]:
@@ -651,7 +663,7 @@ def _try_execute_claimed_branch_task(
         outcome = execute_branch(
             base_path,
             branch=branch,
-            inputs=dict(getattr(claimed_task, "inputs", {}) or {}),
+            inputs=_branch_task_inputs_for_execution(claimed_task),
             run_name=f"branch-task-{claimed_task.branch_task_id}",
             actor=actor,
             provider_call=provider_call,

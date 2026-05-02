@@ -43,7 +43,30 @@ def is_auto_trigger_enabled() -> bool:
 
 def build_run_payload(bug_frontmatter: dict) -> dict:
     """Map BUG-NNN frontmatter → canonical investigation branch input shape."""
-    return {k: bug_frontmatter.get(k, "") for k in _PAYLOAD_KEYS}
+    payload = {k: bug_frontmatter.get(k, "") for k in _PAYLOAD_KEYS}
+    payload["request_text"] = str(
+        bug_frontmatter.get("request_text") or _format_request_text(payload)
+    )
+    return payload
+
+
+def _format_request_text(payload: dict) -> str:
+    kind = str(payload.get("kind") or "bug").strip() or "bug"
+    bug_id = str(payload.get("bug_id") or "untracked").strip() or "untracked"
+    title = str(payload.get("title") or "Untitled").strip() or "Untitled"
+    lines = [f"{kind} {bug_id}: {title}", ""]
+    for label, key in (
+        ("Component", "component"),
+        ("Severity", "severity"),
+        ("Observed", "observed"),
+        ("Expected", "expected"),
+        ("Repro", "repro"),
+        ("Workaround", "workaround"),
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            lines.append(f"{label}: {value}")
+    return "\n".join(lines).strip()
 
 
 def format_investigation_comment(
