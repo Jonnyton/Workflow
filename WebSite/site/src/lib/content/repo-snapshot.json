@@ -1003,7 +1003,7 @@
       "id": "route:/wiki",
       "path": "/wiki",
       "label": "Wiki cockpit",
-      "summary": "Live MCP commons browser."
+      "summary": "Live community wiki browser through MCP."
     },
     {
       "id": "route:/loop",
@@ -1033,7 +1033,7 @@
       "id": "route:/goals",
       "path": "/goals",
       "label": "Goals",
-      "summary": "Public goal lens backed by MCP goals, commons records, and branch signals."
+      "summary": "Public goal lens backed by MCP goals, community wiki records, and branch signals."
     },
     {
       "id": "route:/status",

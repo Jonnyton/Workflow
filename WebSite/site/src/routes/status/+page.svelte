@@ -11,7 +11,7 @@
       label: 'Public MCP',
       value: pulse.mcp.source,
       status: 'observable',
-      body: `${compactNumber(pulse.knowledgeCount)} commons pages, ${compactNumber(pulse.mcp.goals.length)} goals, ${compactNumber(pulse.mcp.universes.length)} universes in the current read.`,
+      body: `${compactNumber(pulse.knowledgeCount)} wiki pages, ${compactNumber(pulse.mcp.goals.length)} goals, ${compactNumber(pulse.mcp.universes.length)} universes in the current read.`,
       command: 'Connector setup: /connect',
       href: '/connect'
     },
@@ -38,7 +38,7 @@
       label: 'Public graph',
       value: `${compactNumber(pulse.knowledgeCount + pulse.branchCount)}`,
       status: 'live lens',
-      body: 'The graph page combines MCP commons, visible GitHub branches, workflow branches, route nodes, and project edges into one public proof surface.',
+      body: 'The graph page combines the MCP community wiki, visible GitHub branches, workflow branches, route nodes, and project edges into one public proof surface.',
       command: 'MCP + GitHub graph lens',
       href: '/graph'
     },

@@ -1,7 +1,7 @@
 {
   "landing": {
     "hero_title": "Summon the daemon.",
-    "hero_subtitle": "Design custom multi-step AI workflows. Real execution, not simulation.",
+    "hero_subtitle": "Design custom multi-step AI workflows from a live community wiki. Real execution, not simulation.",
     "hero_tagline": "Your chatbot becomes a workshop. Your daemon does the work.",
     "cta_connect": "Try in Claude.ai (zero-install)",
     "cta_host": "Host a daemon (one-click)",
@@ -15,14 +15,14 @@
     "why_section_title": "Why Workflow?",
     "why_points": [
       "Real execution. The daemon actually runs your workflow; it doesn't pretend.",
-      "Open commons. Every public workflow is CC0 \u2014 use it, remix it, build on it without permission.",
+      "Community wiki. Every public workflow is CC0 \u2014 use it, remix it, build on it without permission.",
       "Your data stays yours. Concept-layer public; instance-layer private; never training data.",
       "Pay for what you need. Free to use. Optional: pay daemons to run workflows faster (1% fee; crypto settlement lands in v1.1)."
     ]
   },
   "goals": {
     "title": "Workflow Goals",
-    "subtitle": "Browse public goals, related branches, and live commons context.",
+    "subtitle": "Browse public goals, related branches, and live wiki context.",
     "empty_state": "No goals yet \u2014 check back after launch.",
     "filter_domain": "Domain",
     "filter_quality": "Quality",
@@ -109,7 +109,7 @@
       },
       {
         "q": "What happens to my data?",
-        "a": "The workflow design (how the steps work, what they call) is public by default \u2014 that's the commons. Your actual data (the documents you process, values you fill in) stays on your own machine or in owner-only storage. Never training data."
+        "a": "The workflow design (how the steps work, what they call) is public by default \u2014 that's the community wiki commons. Your actual data (the documents you process, values you fill in) stays on your own machine or in owner-only storage. Never training data."
       },
       {
         "q": "What if a workflow does the wrong thing?",
@@ -158,7 +158,7 @@
     "visibility_modes": [
       {
         "mode": "Self only",
-        "plain_language": "Your daemon runs workflows ONLY for requests that come from your own account. No one else sees it. Good for when you want private use without participating in the commons. Default on first install."
+        "plain_language": "Your daemon runs workflows ONLY for requests that come from your own account. No one else sees it. Good for when you want private use without participating in the community wiki. Default on first install."
       },
       {
         "mode": "Network",
@@ -193,7 +193,7 @@
       },
       {
         "q": "Who sees the work my daemon runs?",
-        "a": "Only you (for self + your own work) or the requester (for network/paid work). The commons sees the concept layer of any workflow that gets published \u2014 not the specific data your daemon processed."
+        "a": "Only you (for self + your own work) or the requester (for network/paid work). The community wiki sees the concept layer of any workflow that gets published \u2014 not the specific data your daemon processed."
       },
       {
         "q": "What if someone tries to use my daemon for something I don't want?",
@@ -218,7 +218,7 @@
     "platform_code_title": "Platform code (the engine)",
     "platform_code_description": "The daemon engine, MCP gateway, web app, tray \u2014 all in the main Workflow repo. Standard fork-and-PR flow. MIT-licensed.",
     "goals_content_title": "Public goals (the content)",
-    "goals_content_description": "Public nodes, goals, branches. Lives at Workflow-catalog/ repo. Edits auto-export to Postgres on merge; you can also edit directly from a chatbot (wiki-open model for content). CC0-licensed.",
+    "goals_content_description": "Public wiki pages, nodes, goals, branches. Lives at Workflow-catalog/ repo. Edits auto-export to Postgres on merge; you can also edit directly from a chatbot (wiki-open model for content). CC0-licensed.",
     "step_by_step_title": "How to contribute",
     "step_by_step": [
       "Pick which repo matches your change: Workflow/ for engine, Workflow-catalog/ for workflows.",
@@ -341,7 +341,7 @@
     "my_exports_title": "My exports",
     "my_exports_empty": "You haven't published any public workflows yet. They'll appear here after you publish.",
     "delete_title": "Delete account",
-    "delete_warning": "This deletes your private data + anonymizes your public contributions. Public CC0 content remains (you can't unilaterally delete from the commons). You have 30 days to reverse. Sure?",
+    "delete_warning": "This deletes your private data + anonymizes your public contributions. Public CC0 wiki content remains (you can't unilaterally delete from the commons). You have 30 days to reverse. Sure?",
     "delete_confirm": "Type your GitHub handle to confirm deletion.",
     "export_data_title": "Export my data",
     "export_data_description": "We'll email you a ZIP with everything you've submitted \u2014 private + public. Takes ~10 minutes."

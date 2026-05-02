@@ -87,9 +87,9 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
   home: {
     eyebrow: 'Live command center',
     title: 'Use Workflow. Watch it work. Help build it.',
-    question: 'Workflow lets your chatbot design and run real multi-step work through MCP. Connect it, open the live graph, or join the loop; each path reads current MCP and GitHub state.',
-    watches: 'MCP commons + GitHub repo pulse',
-    proof: 'Refresh either side; the readout below changes from the same sources the rest of the site uses.',
+    question: 'Workflow gives your chatbot a community wiki to read from, file into, and route through. Connect it, open the live graph, or join the loop; each path reads current MCP wiki and GitHub state.',
+    watches: 'Community wiki + GitHub repo pulse',
+    proof: 'Refresh either side; the readout below changes from the same wiki, MCP, and repo sources the rest of the site uses.',
     primaryHref: '/graph',
     primaryLabel: 'Open whole-project graph'
   },
@@ -115,8 +115,8 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     eyebrow: 'Goal lens',
     title: 'Goals first; branches compete underneath.',
     question: 'Goals answers: what public work targets exist, and which ones can be remixed or routed into the loop?',
-    watches: 'Public goals, related commons, repo branches',
-    proof: 'The goal board is connector data first; related wiki records and branch signals are derived from current MCP/GitHub state.',
+    watches: 'Public goals, related wiki records, repo branches',
+    proof: 'The goal board is connector data first; related community wiki records and branch signals are derived from current MCP/GitHub state.',
     primaryHref: '/goals',
     primaryLabel: 'Browse goals'
   },
@@ -142,8 +142,8 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     eyebrow: 'Community intake',
     title: 'Intent enters the same live loop.',
     question: 'Alliance answers: where does a feature request, bug, or partnership enter public work?',
-    watches: 'Commons intake, goals, GitHub channels',
-    proof: 'Every written channel routes back into the same public loop: wiki, goal, branch, or repo thread.',
+    watches: 'Community wiki intake, goals, GitHub channels',
+    proof: 'Every written channel routes back into the same public loop: wiki page, goal, branch, or repo thread.',
     primaryHref: '/alliance',
     primaryLabel: 'Choose an intake path'
   }

@@ -22,7 +22,7 @@
     {
       label: 'Connector',
       title: 'The public MCP route is the product surface.',
-      fact: `${compactNumber(pulse.knowledgeCount)} commons records, ${compactNumber(pulse.mcp.goals.length)} goals, and ${compactNumber(pulse.mcp.universes.length)} universes are visible in the current snapshot.`,
+      fact: `${compactNumber(pulse.knowledgeCount)} community wiki records, ${compactNumber(pulse.mcp.goals.length)} goals, and ${compactNumber(pulse.mcp.universes.length)} universes are visible in the current snapshot.`,
       check: 'Open /connect, copy the canonical URL, then refresh MCP.',
       href: '/connect'
     },
@@ -44,7 +44,7 @@
       label: 'Goals',
       title: 'Goals are the public unit of work.',
       fact: `${compactNumber(pulse.mcp.goals.length)} goals are visible to the same MCP connector that chatbot users call.`,
-      check: 'Open /goals, filter a tag, and inspect related commons records.',
+      check: 'Open /goals, filter a tag, and inspect related wiki records.',
       href: '/goals'
     },
     {
@@ -93,7 +93,7 @@
     <RitualLabel color="var(--signal-live)">Proof packet</RitualLabel>
     <h1>Evaluate Workflow in five minutes.</h1>
     <p class="lead">
-      This page is for developers, contributors, recruiters, and skeptical evaluators. It does not ask you to trust a pitch. It points at the live connector, graph, loop, repo, and the known gaps.
+      This page is for developers, contributors, recruiters, and skeptical evaluators. It does not ask you to trust a pitch. It points at the live connector, community wiki, graph, loop, repo, and the known gaps.
     </p>
     <LiveSourceBar label="Proof packet sources" detail="Refresh MCP and GitHub before you judge the evidence below." />
   </div>
@@ -105,7 +105,7 @@
       <article>
         <span>MCP snapshot</span>
         <strong>{relativeStamp(pulse.mcp.fetched_at)}</strong>
-        <p>{compactNumber(pulse.knowledgeCount)} commons records and {compactNumber(pulse.mcp.goals.length)} goals.</p>
+        <p>{compactNumber(pulse.knowledgeCount)} wiki records and {compactNumber(pulse.mcp.goals.length)} goals.</p>
       </article>
       <article>
         <span>Repo snapshot</span>
