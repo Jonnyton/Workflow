@@ -1,4 +1,4 @@
-"""Phase D — WORKFLOW_UNIFIED_EXECUTION unified-execution tests.
+"""WORKFLOW_UNIFIED_EXECUTION unified-execution tests.
 
 Covers docs/specs/phase_d_preflight.md §4.4:
 - Compiler-extension tests (5): opaque-node resolution + error modes.
@@ -361,7 +361,7 @@ def test_pause_file_halts_outer_stream_loop_both_flags():
     # Static assertion: `_run_graph` source contains the pause-file
     # check, and neither branch of the flag gate short-circuits it.
     source = Path(
-        "fantasy_author/__main__.py",
+        "fantasy_daemon/__main__.py",
     ).read_text(encoding="utf-8")
     assert ".pause" in source
     # The check sits inside `_run_graph` after compile, before the

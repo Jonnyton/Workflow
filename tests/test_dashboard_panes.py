@@ -1,7 +1,7 @@
-"""Phase H — dashboard pane isolation + tray extension tests.
+"""Dashboard pane isolation and tray extension tests.
 
 Covers docs/specs/phase_h_preflight.md §4.3 invariant 2 (pane isolation)
-and §4.4 test strategy (pane-isolation, 5 tests) plus tray Phase H
+and §4.4 test strategy (pane-isolation, 5 tests) plus tray dashboard
 additions (invariant 9, emergency pause).
 
 Pane classes: DispatcherPane, QueuePane, EarningsPane.
@@ -245,7 +245,7 @@ class TestDashboardHandlerOverviewFanOut:
 
 
 # ---------------------------------------------------------------------------
-# TrayApp Phase H additions
+# TrayApp dashboard additions
 # ---------------------------------------------------------------------------
 
 
@@ -305,7 +305,7 @@ class TestTrayAppPhaseH:
         assert dashboard_log == [True]
 
     def test_no_crash_when_callbacks_absent(self):
-        """Tray without Phase H callbacks handles calls gracefully."""
+        """Tray without dashboard callbacks handles calls gracefully."""
         tray = TrayApp()
         tray._handle_tier_toggle("goal_pool", False)
         tray._handle_pause_all_tiers()

@@ -1,4 +1,4 @@
-"""Phase G — NodeBid executor + paid market priority weights.
+"""NodeBid executor and paid-market priority weights.
 
 Tests:
 - NodeBid dataclass + YAML I/O (6)
@@ -660,7 +660,7 @@ def test_load_dispatcher_config_flag_on_defaults_bid_coefficient(
 def test_load_dispatcher_config_flag_off_bid_coefficient_stays_zero(
     tmp_path, monkeypatch,
 ):
-    """Invariant: flag-off → bid_coefficient=0.0, Phase E/F scores unchanged."""
+    """Invariant: flag-off means bid_coefficient=0.0 and base scores stay unchanged."""
     monkeypatch.setenv("WORKFLOW_PAID_MARKET", "off")
     u = tmp_path / "u"
     u.mkdir()

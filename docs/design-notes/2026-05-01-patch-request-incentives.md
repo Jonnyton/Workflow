@@ -95,7 +95,7 @@ Implemented v0 keeps incentives deliberately small:
 - `tests/test_patch_request_incentives.py` covers incentivized request pickup
   score, authority-boundary fields, target materialization/ranking, and
   requester-directed daemon ownership checks.
-- Existing `tests/test_phase_e_dispatcher.py` still proves non-host
+- Existing `tests/test_dispatcher_queue.py` still proves non-host
   `priority_weight` is clamped.
 - Incentive/directed-daemon output still requires normal review/gate evidence;
   v0 only routes pickup and proposal work.

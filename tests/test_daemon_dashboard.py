@@ -1,4 +1,4 @@
-"""Phase H — host dashboard + MCP inspect surface tests.
+"""Host dashboard and MCP inspect surface tests.
 
 Covers docs/specs/phase_h_preflight.md §4.4:
 
@@ -343,24 +343,24 @@ def test_node_lookup_raise_fails_closed():
 # ───────────────────────────────────────────────────────────────────────
 
 
-def test_no_new_mcp_tools_added_by_phase_h():
-    """Phase H adds actions to the existing `universe` tool, NOT new
+def test_dashboard_actions_do_not_add_new_mcp_tools():
+    """Dashboard actions live on the existing `universe` tool, NOT new
     top-level tools. Enforced by the tool-registry introspection.
     """
     from workflow.api import universe as uni
-    # Phase H action handlers live in workflow.api.universe after
+    # Dashboard action handlers live in workflow.api.universe after
     # decomp Step 9. Assert they exist there as a regression guard
     # against accidental removal.
     assert hasattr(uni, "_action_daemon_overview")
     assert hasattr(uni, "_action_set_tier_config")
 
 
-def test_phase_h_adds_exactly_two_actions_to_universe():
+def test_dashboard_adds_exactly_two_actions_to_universe():
     """Introspective: daemon_overview + set_tier_config are the only
-    two new `universe` tool actions Phase H adds."""
+    two new `universe` tool actions."""
     from workflow.api import universe as uni
-    phase_h_actions = {"daemon_overview", "set_tier_config"}
-    for action in phase_h_actions:
+    dashboard_actions = {"daemon_overview", "set_tier_config"}
+    for action in dashboard_actions:
         if action == "set_tier_config":
             assert action in uni.WRITE_ACTIONS
         assert hasattr(uni, f"_action_{action}")

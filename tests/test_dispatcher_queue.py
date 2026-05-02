@@ -1,4 +1,4 @@
-"""Phase E — tier-aware DaemonController + BranchTask queue tests.
+"""Tier-aware DaemonController and BranchTask queue tests.
 
 Covers docs/specs/phase_e_preflight.md §4.4:
 
@@ -225,7 +225,7 @@ def test_user_boost_within_tier():
     )
 
 
-def test_deferred_coefficients_zero_in_phase_e():
+def test_deferred_coefficients_zero_until_paid_market_enabled():
     cfg = DispatcherConfig()
     now = datetime.now(timezone.utc).isoformat()
     t_lo = _make_task(trigger_source="user_request", queued_at=now)
@@ -360,11 +360,11 @@ def test_submit_negative_priority_weight_rejected(server_base, monkeypatch):
 # ───────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("phase_d,phase_e", [
+@pytest.mark.parametrize("unified_execution,dispatcher_enabled", [
     ("off", "off"), ("off", "on"), ("on", "off"), ("on", "on"),
 ])
 def test_dispatcher_flag_matrix_observational_safe(
-    universe_dir, monkeypatch, phase_d, phase_e,
+    universe_dir, monkeypatch, unified_execution, dispatcher_enabled,
 ):
     """Flag matrix: under ANY cell, _dispatcher_startup + _dispatcher_observe
     must not raise and must not alter the queue file.
@@ -375,10 +375,10 @@ def test_dispatcher_flag_matrix_observational_safe(
     from fantasy_daemon.__main__ import _dispatcher_observe, _dispatcher_startup
 
     monkeypatch.setenv(
-        "WORKFLOW_UNIFIED_EXECUTION", "1" if phase_d == "on" else "0",
+        "WORKFLOW_UNIFIED_EXECUTION", "1" if unified_execution == "on" else "0",
     )
     monkeypatch.setenv(
-        "WORKFLOW_DISPATCHER_ENABLED", "on" if phase_e == "on" else "off",
+        "WORKFLOW_DISPATCHER_ENABLED", "on" if dispatcher_enabled == "on" else "off",
     )
     # Seed the queue with a pending task; call the startup + observe
     # hooks. Queue should be unchanged (pending stays pending).
@@ -394,7 +394,7 @@ def test_dispatcher_flag_matrix_observational_safe(
 def test_dispatcher_flag_off_returns_no_observation_logs(
     universe_dir, monkeypatch, caplog,
 ):
-    """Phase E flag off → dispatcher_observe silently skips (no log)."""
+    """Dispatcher flag off means dispatcher_observe silently skips."""
     from fantasy_daemon.__main__ import _dispatcher_observe
 
     monkeypatch.setenv("WORKFLOW_DISPATCHER_ENABLED", "off")
@@ -617,7 +617,7 @@ def test_invariant_3_producer_boundary_each_called_exactly_once(
 
     Patch ``.produce`` at the registry boundary — iterate
     ``registered_producers()`` and wrap each instance's method. Same
-    care as Phase D invariant 4's ``id()``-based check: a
+    care as unified-execution invariant 4's ``id()``-based check: a
     registration reshuffle that replaces a producer with a different
     instance of the same name must show as a new id, and the counting
     wrapper must catch a double-call regardless.
@@ -805,7 +805,7 @@ def test_tier_status_map_reflects_stubbed_vs_live():
     assert tm["owner_queued"] == "live"
     assert tm["user_request"] == "live"  # default accept_external=True
     assert "stubbed" in tm["goal_pool"]
-    # Phase G: paid_bid moved from "stubbed (Phase G)" to "disabled"
+    # Paid bids moved from "stubbed" to "disabled"
     # (until accept_paid_bids is True).
     assert tm["paid_bid"] == "disabled"
     assert "stubbed" in tm["opportunistic"]

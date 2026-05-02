@@ -59,9 +59,9 @@ The original "multi-week structural arc" framing was based on the 122-file count
 
 | File | LOC | Role | Callers |
 |---|---|---|---|
-| `fantasy_daemon/__main__.py` | 2295 | Daemon CLI + orchestrator (DaemonController, tunnel helpers, signal handling, tray launch). The Phase 5 BRIDGE source — `workflow/__main__.py` re-imports `DaemonController` from here. | `workflow/__main__.py`, `workflow/cloud_worker.py`, `tests/test_cloud_worker.py`, `tests/test_phase_d_unified_execution.py`, `tests/test_integration.py` |
+| `fantasy_daemon/__main__.py` | 2295 | Daemon CLI + orchestrator (DaemonController, tunnel helpers, signal handling, tray launch). The Phase 5 BRIDGE source — `workflow/__main__.py` re-imports `DaemonController` from here. | `workflow/__main__.py`, `workflow/cloud_worker.py`, `tests/test_cloud_worker.py`, `tests/test_unified_execution.py`, `tests/test_integration.py` |
 | `fantasy_daemon/api.py` | 2625 | FastAPI HTTP layer — multi-universe file-based adapter, session/author/branch/runtime/ledger endpoints | `tests/test_api.py`, `tests/test_api_edge_cases.py`, `tests/test_author_server_api.py`, `tests/test_rest_votes_behavior.py`, `tests/test_work_targets.py`, `tests/test_workflow_runtime.py`, `workflow/api/__init__.py` |
-| `fantasy_daemon/branch_registrations.py` | 113 | Phase D node-registration helper — registers fantasy-author domain-trusted opaque nodes | `tests/test_phase_d_unified_execution.py` |
+| `fantasy_daemon/branch_registrations.py` | 113 | Phase D node-registration helper — registers fantasy-author domain-trusted opaque nodes | `tests/test_unified_execution.py` |
 | `fantasy_daemon/testing/__main__.py` | 3 | Error-stub: `raise SystemExit("GPT testing harness removed — use MCP client testing instead.")` | none — vestigial |
 
 **Key insight:** 4 files. The 122-count was misleading. The 118 shims are the no-shims-ever cleanup target; the 4 content files are relocation targets.
@@ -162,8 +162,8 @@ After unpack:
 
 **Steps:**
 1. `git mv fantasy_daemon/branch_registrations.py domains/fantasy_daemon/branch_registrations.py` (or merge into `domains/fantasy_daemon/skill.py`).
-2. Update 1 test caller: `tests/test_phase_d_unified_execution.py`.
-3. `pytest tests/test_phase_d_unified_execution.py -q` green.
+2. Update 1 test caller: `tests/test_unified_execution.py`.
+3. `pytest tests/test_unified_execution.py -q` green.
 
 **Effort:** ~30 min. **Risk:** LOW.
 

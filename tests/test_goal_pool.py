@@ -1,4 +1,4 @@
-"""Phase F — Goal subscription + pool producer tests.
+"""Goal subscription and pool producer tests.
 
 Covers docs/specs/phase_f_preflight.md §4.4:
 

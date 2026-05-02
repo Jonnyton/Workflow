@@ -3,8 +3,8 @@
 Tests the helper surface (``request_task_cancel`` /
 ``is_task_cancel_requested``) and the BranchTask dataclass field.
 The action-layer (_action_queue_cancel) and stream-loop integration
-are covered by ``tests/test_phase_e_dispatcher.py`` and
-``tests/test_phase_f_goal_pool.py`` in their respective suites; this
+are covered by ``tests/test_dispatcher_queue.py`` and
+``tests/test_goal_pool.py`` in their respective suites; this
 file pins the new primitive behavior directly.
 """
 

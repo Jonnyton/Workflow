@@ -1,8 +1,8 @@
-"""Phase H — activity.log byte-parity automation.
+"""Activity.log byte-parity automation.
 
 Covers docs/specs/phase_h_preflight.md §4.1 #7 (R6, invariant 7).
 
-Automates Phase D follow-up #4: verifies that the same daemon events
+Automates the unified-execution follow-up: verifies that the same daemon events
 produce equivalent activity.log output under both
 ``WORKFLOW_UNIFIED_EXECUTION=off`` (flag-off) and
 ``WORKFLOW_UNIFIED_EXECUTION=on`` (flag-on).

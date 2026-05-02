@@ -1,4 +1,4 @@
-"""Phase H — multi-daemon git-race claim stress tests.
+"""Multi-daemon git-race claim stress tests.
 
 Covers docs/specs/phase_h_preflight.md §4.1 #6 (R5, invariant 6).
 

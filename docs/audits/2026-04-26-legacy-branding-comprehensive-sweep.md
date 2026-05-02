@@ -261,14 +261,14 @@ Per STATUS, Phases D / E / F / G / H all shipped. Phase 7 close-pending (gate on
 | `tests/test_phase7.py` | `tests/test_storage_split.py` (or check what it actually tests) | Phase 7 |
 | `tests/test_phase7_h2_goals_cutover.py` | `tests/test_goals_cutover.py` | Phase 7 H2 |
 | `tests/test_phase7_h3_branch_cutover.py` | `tests/test_branch_cutover.py` | Phase 7 H3 |
-| `tests/test_phase_d_unified_execution.py` | `tests/test_unified_execution.py` | Phase D |
-| `tests/test_phase_e_dispatcher.py` | `tests/test_dispatcher.py` | Phase E |
-| `tests/test_phase_f_goal_pool.py` | `tests/test_goal_pool.py` | Phase F |
-| `tests/test_phase_g_node_bid.py` | `tests/test_node_bid.py` | Phase G |
-| `tests/test_phase_h_activity_log_parity.py` | `tests/test_activity_log_parity.py` | Phase H |
-| `tests/test_phase_h_claim_stress.py` | `tests/test_claim_stress.py` | Phase H |
-| `tests/test_phase_h_dashboard.py` | `tests/test_dashboard.py` | Phase H |
-| `tests/test_phase_h_panes.py` | `tests/test_panes.py` | Phase H |
+| `tests/test_unified_execution.py` | renamed 2026-05-02 from `test_phase_d_unified_execution.py` | Phase D |
+| `tests/test_dispatcher_queue.py` | renamed 2026-05-02 from `test_phase_e_dispatcher.py` | Phase E |
+| `tests/test_goal_pool.py` | renamed 2026-05-02 from `test_phase_f_goal_pool.py` | Phase F |
+| `tests/test_node_bid.py` | renamed 2026-05-02 from `test_phase_g_node_bid.py` | Phase G |
+| `tests/test_activity_log_parity.py` | renamed 2026-05-02 from `test_phase_h_activity_log_parity.py` | Phase H |
+| `tests/test_node_bid_claim_stress.py` | renamed 2026-05-02 from `test_phase_h_claim_stress.py` | Phase H |
+| `tests/test_daemon_dashboard.py` | renamed 2026-05-02 from `test_phase_h_dashboard.py` | Phase H |
+| `tests/test_dashboard_panes.py` | renamed 2026-05-02 from `test_phase_h_panes.py` | Phase H |
 
 **Note:** verify no name collision with existing test files before each rename. Mechanical sed; per-file targeted pytest after rename to confirm green. ~30-45 min.
 
