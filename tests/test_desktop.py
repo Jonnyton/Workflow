@@ -959,6 +959,14 @@ class TestLauncherReload(TestLauncherApp):
         app = self._make_app()
         mock_result = MagicMock()
         mock_result.returncode = 0
+        mock_result.stdout = " M fantasy_daemon/desktop/launcher.py\n"
+        with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
+            assert app._classify_changes() == "ui"
+
+    def test_classify_changes_legacy_ui_path(self):
+        app = self._make_app()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = " M fantasy_author/desktop/launcher.py\n"
         with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
             assert app._classify_changes() == "ui"
@@ -968,7 +976,7 @@ class TestLauncherReload(TestLauncherApp):
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = (
-            " M fantasy_author/desktop/launcher.py\n"
+            " M fantasy_daemon/desktop/launcher.py\n"
             " M fantasy_author/nodes/draft.py\n"
         )
         with patch("workflow.desktop.launcher.subprocess.run", return_value=mock_result):
@@ -1234,7 +1242,7 @@ class TestCreateShortcut:
         from workflow.desktop.create_shortcut import _project_root
 
         root = _project_root()
-        assert (root / "fantasy_author" / "__init__.py").exists()
+        assert (root / "fantasy_daemon" / "__init__.py").exists()
 
     def test_pyw_path(self):
         from workflow.desktop.create_shortcut import _pyw_path
