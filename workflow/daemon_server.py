@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -2655,6 +2656,23 @@ def list_goals(
     return results
 
 
+_GOAL_SEARCH_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _goal_search_tokens(value: str) -> list[str]:
+    """Return lowercase alphanumeric query tokens for goal search."""
+    return _GOAL_SEARCH_TOKEN_RE.findall(value.lower())
+
+
+def _goal_search_haystack(goal: dict[str, Any]) -> str:
+    fields = [
+        goal.get("name") or "",
+        goal.get("description") or "",
+        " ".join(goal.get("tags") or []),
+    ]
+    return " ".join(_goal_search_tokens(" ".join(fields)))
+
+
 def search_goals(
     base_path: str | Path,
     *,
@@ -2673,7 +2691,7 @@ def search_goals(
     Hidden Goals (visibility='deleted') are excluded.
     """
     initialize_author_server(base_path)
-    tokens = [t for t in (query or "").lower().split() if t]
+    tokens = _goal_search_tokens(query or "")
     if not tokens:
         return []
 
@@ -2687,11 +2705,7 @@ def search_goals(
         scored: list[tuple[int, dict[str, Any]]] = []
         for row in all_rows:
             g = _goal_from_row(row)
-            haystack = " ".join([
-                (g.get("name") or "").lower(),
-                (g.get("description") or "").lower(),
-                " ".join(g.get("tags") or []).lower(),
-            ])
+            haystack = _goal_search_haystack(g)
             hit_count = sum(1 for t in tokens if t in haystack)
             if hit_count > 0:
                 scored.append((hit_count, g))
