@@ -164,6 +164,10 @@ def test_directory_status_redacts_operator_diagnostics() -> None:
             "policy_hash": "abc123",
             "activity_log_line_count": 1,
         },
+        "evidence_caveats": {
+            "last_completed_request_llm_used": ["No recent provider tag."],
+            "last_n_calls": ["Internal recent-call diagnostic caveat."],
+        },
         "session_boundary": {"account_user": "alice@example.com"},
         "storage_utilization": {
             "pressure_level": "ok",
@@ -176,6 +180,7 @@ def test_directory_status_redacts_operator_diagnostics() -> None:
         },
         "actionable_next_steps": [
             "Inspect the full activity_log_tail.",
+            "Inspect last_n_calls for legacy entries.",
             "Check daemon status again.",
         ],
     })
@@ -185,8 +190,10 @@ def test_directory_status_redacts_operator_diagnostics() -> None:
     assert "activity_log_tail" not in redacted["evidence"]
     assert "last_n_calls" not in redacted["evidence"]
     assert "policy_hash" not in redacted["evidence"]
-    assert redacted["evidence"]["activity_log_tail_count"] == 1
-    assert redacted["evidence"]["last_n_calls_count"] == 1
+    assert "activity_log_tail_count" not in redacted["evidence"]
+    assert "last_n_calls_count" not in redacted["evidence"]
+    assert "last_n_calls" not in redacted["evidence_caveats"]
+    assert "last_completed_request_llm_used" in redacted["evidence_caveats"]
     assert "path" not in redacted["storage_utilization"]["per_subsystem"]["wiki"]
     assert redacted["actionable_next_steps"] == ["Check daemon status again."]
     assert "directory_privacy_note" in redacted

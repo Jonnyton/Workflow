@@ -161,3 +161,14 @@ Notes:
   source/tool hints, and refactor packet/docs before final submit approval.
 - Ship condition: submission packet is truthful and focused checks pass;
   final OpenAI submit remains action-time host approval.
+
+## OpenAI Live Proof - 2026-05-02
+
+- 2026-05-02 reuse `../wf-openai-submission-hardening` on
+  `codex/openai-live-proof` by codex-gpt5-desktop-openai-submission after
+  PR #183 merged.
+- STATUS row: Directory submissions + first-use evidence.
+- Purpose: record live deploy/redaction proof and narrow remaining OpenAI
+  submission blockers.
+- Ship condition: STATUS/docs show PR #183 deploy proof; ChatGPT web/mobile
+  proof and final submit approval remain open.
