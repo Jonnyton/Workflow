@@ -228,3 +228,7 @@ Notes:
   isolate unavoidable action-time host approvals.
 - Ship condition: submission assets/runbook/proofs are current; only external
   mobile/legal/publisher/final-submit actions remain.
+- 2026-05-02 foldback: PR #197 merged as
+  `b1fb7456afee465292b0186b8a11d12b8123c6dc`; deploy-site run
+  `25262123905` passed; STATUS now points only at host actions. Local
+  worktree ready to remove after this foldback lands.
