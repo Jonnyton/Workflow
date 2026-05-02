@@ -1,0 +1,279 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "provider_context_feed.py"
+SPEC = importlib.util.spec_from_file_location("provider_context_feed", SCRIPT)
+assert SPEC is not None
+provider_context_feed = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+sys.modules[SPEC.name] = provider_context_feed
+SPEC.loader.exec_module(provider_context_feed)
+
+HOOK = Path(__file__).resolve().parents[1] / ".claude" / "hooks" / "provider_context_feed_hook.py"
+HOOK_SPEC = importlib.util.spec_from_file_location("provider_context_feed_hook", HOOK)
+assert HOOK_SPEC is not None
+provider_context_feed_hook = importlib.util.module_from_spec(HOOK_SPEC)
+assert HOOK_SPEC.loader is not None
+sys.modules[HOOK_SPEC.name] = provider_context_feed_hook
+HOOK_SPEC.loader.exec_module(provider_context_feed_hook)
+
+
+def test_collects_claude_memory_and_shared_ideas(tmp_path: Path) -> None:
+    memory = tmp_path / ".claude" / "agent-memory" / "navigator" / "MEMORY.md"
+    memory.parent.mkdir(parents=True)
+    memory.write_text(
+        "Next action: carry provider memory refs into the lane.\n"
+        "Worktree lanes fold back through PR review.\n",
+        encoding="utf-8",
+    )
+    ideas = tmp_path / "ideas" / "INBOX.md"
+    ideas.parent.mkdir()
+    ideas.write_text("- Idea: keep loose ideas as feed refs, not build authority.\n")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="all",
+        phase="plan",
+        limit=None,
+    )
+
+    assert any(item.provider == "claude" for item in candidates)
+    assert any(item.source_type == "idea-feed" for item in candidates)
+    assert any(item.signal == "coordination" for item in candidates)
+
+
+def test_provider_filter_keeps_shared_context(tmp_path: Path) -> None:
+    cursor_rule = tmp_path / ".cursor" / "rules" / "workflow.mdc"
+    cursor_rule.parent.mkdir(parents=True)
+    cursor_rule.write_text("TODO: route Cursor memories into STATUS.md lanes.\n")
+    codex_config = tmp_path / ".codex" / "config.toml"
+    codex_config.parent.mkdir()
+    codex_config.write_text("# TODO: codex-only note\n", encoding="utf-8")
+    ideas = tmp_path / "ideas" / "PIPELINE.md"
+    ideas.parent.mkdir()
+    ideas.write_text("Pending promotion: review gate should fold into PR.\n")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="cursor",
+        phase="claim",
+        limit=None,
+    )
+
+    assert any(item.provider == "cursor" for item in candidates)
+    assert any(item.provider == "shared" for item in candidates)
+    assert not any(item.provider == "codex" for item in candidates)
+
+
+def test_provider_alias_maps_to_family(tmp_path: Path) -> None:
+    codex_config = tmp_path / ".codex" / "config.toml"
+    codex_config.parent.mkdir()
+    codex_config.write_text("# TODO: codex desktop claim context\n", encoding="utf-8")
+    claude_memory = tmp_path / ".claude" / "agent-memory" / "dev" / "MEMORY.md"
+    claude_memory.parent.mkdir(parents=True)
+    claude_memory.write_text("TODO: claude-only memory\n", encoding="utf-8")
+    ideas = tmp_path / "ideas" / "PIPELINE.md"
+    ideas.parent.mkdir()
+    ideas.write_text("Pending promotion: shared worktree review gate.\n", encoding="utf-8")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="codex-gpt5-desktop",
+        phase="claim",
+        limit=None,
+    )
+
+    assert any(item.provider == "codex" for item in candidates)
+    assert any(item.provider == "shared" for item in candidates)
+    assert not any(item.provider == "claude" for item in candidates)
+
+
+def test_active_pipeline_ranks_before_old_activity_log(tmp_path: Path) -> None:
+    activity = tmp_path / ".agents" / "activity.log"
+    activity.parent.mkdir()
+    activity.write_text("TODO: old shared activity item.\n", encoding="utf-8")
+    pipeline = tmp_path / "ideas" / "PIPELINE.md"
+    pipeline.parent.mkdir()
+    pipeline.write_text("Pending promotion: current PR review gate.\n", encoding="utf-8")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="all",
+        phase="claim",
+        limit=1,
+    )
+
+    assert candidates[0].source_type == "idea-pipeline"
+
+
+def test_short_feed_caps_each_file_so_other_sources_surface(tmp_path: Path) -> None:
+    first = tmp_path / "ideas" / "PIPELINE.md"
+    first.parent.mkdir()
+    first.write_text(
+        "\n".join(f"Pending promotion {index}: review gate." for index in range(8)),
+        encoding="utf-8",
+    )
+    second = tmp_path / "docs" / "audits" / "review.md"
+    second.parent.mkdir(parents=True)
+    second.write_text("Needs follow-up: compare implications before build.\n", encoding="utf-8")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="all",
+        phase="claim",
+        limit=5,
+    )
+
+    assert sum(item.path == "ideas/PIPELINE.md" for item in candidates) == 4
+    assert any(item.path == "docs/audits/review.md" for item in candidates)
+
+
+def test_short_feed_caps_each_source_type_so_exec_plans_do_not_saturate(tmp_path: Path) -> None:
+    exec_root = tmp_path / "docs" / "exec-plans" / "active"
+    exec_root.mkdir(parents=True)
+    for index in range(14):
+        (exec_root / f"plan-{index}.md").write_text(
+            "Pending task: fold branch memory into PR.\n",
+            encoding="utf-8",
+        )
+    memory = tmp_path / ".claude" / "agent-memory" / "navigator" / "MEMORY.md"
+    memory.parent.mkdir(parents=True)
+    memory.write_text("Remember: dirty checkout must not switch to main.\n", encoding="utf-8")
+
+    candidates = provider_context_feed.collect_candidates(
+        tmp_path,
+        provider="all",
+        phase="claim",
+        limit=15,
+    )
+
+    assert sum(item.source_type == "exec-plan" for item in candidates) == 10
+    assert any(item.source_type == "provider-memory" for item in candidates)
+
+
+def test_absolute_worktree_purpose_directory_is_safe(tmp_path: Path) -> None:
+    root = tmp_path / "Workflow"
+    root.mkdir()
+    worktree = tmp_path / "wf-demo"
+    worktree.mkdir()
+    purpose = worktree / "_PURPOSE.md"
+    purpose.write_text("Purpose: fold worktree implications into PR review.\n", encoding="utf-8")
+
+    paths = list(
+        provider_context_feed._iter_files(
+            root,
+            provider_context_feed.SourceSpec(
+                str(worktree),
+                "shared",
+                "worktree-purpose",
+            ),
+        )
+    )
+
+    assert purpose in paths
+
+
+def test_worktree_purpose_discovery_includes_non_wf_and_claude_nested_paths(tmp_path: Path) -> None:
+    root = tmp_path / "Workflow"
+    root.mkdir()
+    sibling = tmp_path / "Workflow-scorched-pwa-live"
+    sibling.mkdir()
+    (sibling / "_PURPOSE.md").write_text("Purpose: sibling branch memory.\n", encoding="utf-8")
+    nested = root / ".claude" / "worktrees" / "agent-a54683e4"
+    nested.mkdir(parents=True)
+    (nested / "_PURPOSE.md").write_text("Purpose: nested agent branch memory.\n", encoding="utf-8")
+
+    paths = provider_context_feed._worktree_purpose_paths(root)
+
+    assert (sibling / "_PURPOSE.md").resolve() in paths
+    assert (nested / "_PURPOSE.md").resolve() in paths
+
+
+def test_worktree_purpose_feed_surfaces_memory_related_and_idea_refs(tmp_path: Path) -> None:
+    root = tmp_path / "Workflow"
+    root.mkdir()
+    worktree = tmp_path / "wf-demo"
+    worktree.mkdir()
+    (worktree / "_PURPOSE.md").write_text(
+        "\n".join(
+            [
+                "Purpose: preserve branch memory.",
+                "Provider: codex-gpt5-desktop",
+                "Branch: codex/demo",
+                "STATUS/Issue/PR: STATUS.md demo row.",
+                "Ship condition: draft PR reviewed.",
+                "Abandon condition: superseded.",
+                "Memory refs:",
+                "- .claude/agent-memory/navigator/demo.md",
+                "Related implications:",
+                "- docs/audits/demo.md",
+                "Pickup hints:",
+                "- Do not switch dirty checkout to main.",
+                "Idea feed refs:",
+                "- ideas/INBOX.md loose idea only.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    candidates = provider_context_feed.collect_candidates(
+        root,
+        provider="all",
+        phase="claim",
+        limit=12,
+    )
+    texts = "\n".join(item.text for item in candidates)
+
+    assert "Memory refs" in texts
+    assert ".claude/agent-memory/navigator/demo.md" in texts
+    assert "Related implications" in texts
+    assert "Idea feed refs" in texts
+
+
+def test_render_text_names_lifecycle_checkpoints() -> None:
+    item = provider_context_feed.FeedCandidate(
+        provider="shared",
+        source_type="idea-feed",
+        path="ideas/INBOX.md",
+        line=12,
+        signal="idea",
+        text="Idea: use GitHub worktree lanes for provider memories.",
+    )
+
+    rendered = provider_context_feed.render_text(
+        [item],
+        phase="review",
+        provider="all",
+    )
+
+    assert "claim, plan, build, review" in rendered
+    assert "STATUS.md/worktree/PR" in rendered
+    assert "ideas/INBOX.md" in rendered
+
+
+def test_hook_maps_action_prompts_to_lifecycle_phases() -> None:
+    assert provider_context_feed_hook.phase_for_prompt("please review this PR") == "review"
+    assert provider_context_feed_hook.phase_for_prompt("push and open a pull request") == "foldback"
+    assert provider_context_feed_hook.phase_for_prompt("write a design plan") == "plan"
+    assert provider_context_feed_hook.phase_for_prompt("remember this idea") == "memory-write"
+    assert provider_context_feed_hook.phase_for_prompt("hello") is None
+
+
+def test_hook_render_context_is_compact_and_actionable() -> None:
+    rendered = provider_context_feed_hook.render_context(
+        [
+            {
+                "path": ".claude/agent-memory/dev/MEMORY.md",
+                "line": 4,
+                "signal": "memory",
+                "text": "Remember to fold provider memories into worktree lanes.",
+            }
+        ],
+        "build",
+    )
+
+    assert "Provider-context feed checkpoint: build" in rendered
+    assert "STATUS/worktree/PR" in rendered
