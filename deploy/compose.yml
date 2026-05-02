@@ -35,6 +35,9 @@ services:
     image: ${WORKFLOW_IMAGE:-ghcr.io/jonnyton/workflow-daemon:latest}
     container_name: workflow-daemon
     restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
     # Image CMD already runs `python -m workflow.universe_server`.
     # Expose loopback only; cloudflared reaches via Docker network.
     ports:
@@ -138,6 +141,9 @@ services:
     image: ${WORKFLOW_IMAGE:-ghcr.io/jonnyton/workflow-daemon:latest}
     container_name: workflow-worker
     restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
     command: ["python", "-m", "workflow.cloud_worker"]
     environment:
       WORKFLOW_DATA_DIR: /data
