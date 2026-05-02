@@ -150,3 +150,18 @@ Notes:
 - 2026-05-02 create `../wf-provider-identity-bridge` on
   `codex/provider-identity-bridge` by codex-gpt5-desktop-identity-rollout;
   STATUS row: Provider identity bridge; PR expected ready after docs checks.
+
+## 2026-05-02 01:24 - create wf-daemon-claim-law
+
+- Provider: codex-gpt5-desktop
+- Branch: codex/daemon-claim-law
+- Lane state: Active lane
+- Worktree: C:\Users\Jonathan\Projects\wf-daemon-claim-law
+- STATUS/Issue/PR: STATUS row "Daemon claim-time runtime law"; draft PR #164.
+- PLAN refs: User capability axis; daemon identity Design Decisions; Work Targets And Review Gates; Retrieval And Memory.
+- Purpose: Enforce BranchTask claim eligibility for daemon identity, domain expertise, claim proofs, and explicit borrowed-role context; includes runtime claim path and Claude plugin mirror files.
+- _PURPOSE.md: C:\Users\Jonathan\Projects\wf-daemon-claim-law\_PURPOSE.md
+- Memory refs: docs/souls/community-loop-core-team-v1.md; docs/design-notes/2026-05-02-daemon-mini-openbrain.md.
+- Related implications: STATUS community loop post-merge proof; Daemon soul followups row; AGENTS GitHub/worktree coordination spine.
+- Idea feed refs: none.
+- Ship/abandon: Ship via PR #164 after tests+review; abandon if a newer daemon soul followup branch lands equivalent enforcement first.
