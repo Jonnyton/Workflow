@@ -9,7 +9,7 @@ from pathlib import Path
 SCHEMA_URL = (
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 )
-REGISTRY_NAME = "io.github.jonnyton/workflow-universe-server"
+REGISTRY_NAME = "io.github.Jonnyton/workflow-universe-server"
 TITLE = "Workflow"
 DESCRIPTION = (
     "Create, browse, remix, collaborate on, and run durable AI workflow nodes from MCP hosts."

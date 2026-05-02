@@ -79,19 +79,19 @@
       anchor: '#proof-state'
     },
     {
-      title: 'Open WebUI / LibreChat / OpenClaw',
-      status: 'Self-hosted path',
+      title: 'Open WebUI / LibreChat',
+      status: 'Verified self-hosted path',
       account: 'Use this if you run your own chat UI, local model shell, or channel gateway and do not want a Claude or ChatGPT login.',
-      setup: `Add ${url} as a Streamable HTTP / remote MCP server. Use a bridge only when that host requires one.`,
-      proof: 'Open WebUI is the first no-login verification target. LibreChat, OpenClaw, and peers stay compatible-by-spec until smoke traces land.',
+      setup: `For Open WebUI or LibreChat, add ${directoryUrl} as a Streamable HTTP / remote MCP server. Use ${url} only when a host needs the full custom connector surface.`,
+      proof: 'Open WebUI local Docker 0.9.2 and LibreChat local Docker v0.8.5 are verified. LM Studio, Jan, OpenClaw/channel gateways, and IDE hosts stay planned until proof traces land.',
       anchor: '#proof-state'
     },
     {
       title: 'VS Code / Cursor / Codex',
       status: 'Builder path',
       account: 'Use this if you want Workflow available inside your coding agent or IDE while you work in a repo.',
-      setup: `Point the host MCP config or registry entry at ${url}, then enable Workflow for the workspace.`,
-      proof: 'Registry metadata validates. Each IDE host still needs a tool-list plus safe read smoke before verified copy.',
+      setup: `Use the MCP Registry listing or add ${directoryUrl} for the narrow directory surface. Use ${url} only when the host needs the full custom connector surface.`,
+      proof: 'MCP Registry metadata is live. Each IDE host still needs a tool-list plus safe read smoke before verified copy.',
       anchor: '#technical-proof'
     },
     {
@@ -123,14 +123,14 @@
       body: 'Claude custom connector setup is the clearest hosted-chat path today. Directory listing remains separate.'
     },
     {
-      label: 'Open WebUI and self-hosted chat',
-      status: 'Verification target',
-      body: 'No-login use starts with Open WebUI proof, then expands to LibreChat, LM Studio, Jan, OpenClaw, and compatible hosts.'
+      label: 'Open WebUI and LibreChat',
+      status: 'Verified self-hosted path',
+      body: `No-login local Docker proof exists for Open WebUI and LibreChat via ${directoryUrl}. LM Studio, Jan, OpenClaw, and IDE hosts stay planned until host-specific proof lands.`
     },
     {
       label: 'Directories and app stores',
-      status: 'Pending proof',
-      body: 'Claude directory, ChatGPT Apps, MCP Registry, and workspace-admin listings are only claimed after acceptance proof lands.'
+      status: 'Registry live; host directories pending',
+      body: 'The MCP Registry listing is live. Claude directory, ChatGPT Apps, and workspace-admin listings are only claimed after acceptance proof lands.'
     }
   ];
 

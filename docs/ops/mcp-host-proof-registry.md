@@ -29,9 +29,9 @@ spec" or "planned", not "works".
 |---|---|---|---|
 | Public MCP endpoint | live-green | 2026-05-01: prod deploy `25233226847` green; Worker deploy `25233386849` green; `mcp_public_canary.py --url https://tinyassets.io/mcp` OK | Legacy custom connector surface remains available |
 | Directory-safe MCP endpoint | live-green | 2026-05-01: `mcp_public_canary.py --url https://tinyassets.io/mcp-directory` OK; `mcp_probe.py --url https://tinyassets.io/mcp-directory tools` returned 11 narrow tools | Use this endpoint for host-directory review |
-| Official MCP Registry metadata | artifact-ready; publish-blocked | `packaging/registry/server.json` points at `https://tinyassets.io/mcp-directory` | Local PATH lacks `mcp-publisher`; needs CLI install, `mcp-publisher login github`, and publish by repo owner/admin |
-| AI-readable web docs | live | `WebSite/site/static/llms.txt` live from PR #122 | Needs periodic source freshness check |
-| `/connect` customer chooser | live | PR #122 deployed; Playwright desktop/mobile smoke on 2026-05-01 | Copy is truthful but directory acceptance is still pending |
+| Official MCP Registry metadata | published-live | 2026-05-01: `mcp-publisher` v1.7.6 published `io.github.Jonnyton/workflow-universe-server` 0.1.0; registry API search returned status `active` | Points clients at `https://tinyassets.io/mcp-directory` |
+| AI-readable web docs | live | `WebSite/site/static/llms.txt` live from PR #134; update in progress for registry publication | Needs periodic source freshness check |
+| `/connect` customer chooser | live | PR #134 deployed; Playwright desktop/mobile smoke on 2026-05-01 | Copy separates registry live from Claude/ChatGPT directory acceptance |
 
 ## 2026-05-01 Local Verification
 
@@ -43,9 +43,12 @@ spec" or "planned", not "works".
   initialized both `http://127.0.0.1:8017/mcp` and
   `http://127.0.0.1:8017/mcp-directory`; `scripts/mcp_probe.py` listed the
   11 directory tools from `/mcp-directory`.
-- `mcp-publisher --help` failed because the CLI is not installed in the
-  current Windows PATH; registry publish remains blocked on CLI install and
-  GitHub device authentication.
+- `mcp-publisher` v1.7.6 was installed to a temp tools dir, validated
+  `packaging/registry/server.json`, authenticated via the local GitHub session,
+  and published `io.github.Jonnyton/workflow-universe-server` version `0.1.0`.
+- Registry API verification passed:
+  `https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Jonnyton/workflow-universe-server`
+  returned one active latest server pointing at `https://tinyassets.io/mcp-directory`.
 - Public MCP diagnostics after one local HTTP 502: 5 consecutive
   `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose`
   probes passed; GitHub Actions uptime run `25231089323` passed; direct
@@ -71,6 +74,7 @@ spec" or "planned", not "works".
 
 | Host surface | Customer path | Status | Proof / blocker |
 |---|---|---|---|
+| Official MCP Registry | Registry-aware MCP hosts | published-live | 2026-05-01 proof: `mcp-publisher publish packaging/registry/server.json`; API search returned `io.github.Jonnyton/workflow-universe-server` active/latest |
 | Claude.ai custom connector | Logged-in Claude user | protocol-live; UI refresh needed | Full surface is `https://tinyassets.io/mcp`; protocol proof green 2026-05-01; live Claude.ai proof still needs refresh |
 | Claude Connectors Directory | Logged-in Claude users/admins | packet-ready; submission-needed | Use `https://tinyassets.io/mcp-directory` and `docs/ops/mcp-directory-submission-packet.md` |
 | ChatGPT custom MCP / developer mode | Logged-in eligible ChatGPT user/workspace | blocked | BUG-034/admin approval path blocks clean custom connector approval |
@@ -82,7 +86,7 @@ spec" or "planned", not "works".
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
 | VS Code / GitHub Copilot | Developer/IDE user | planned | Verify `.vscode/mcp.json` or user MCP config with Copilot Chat |
-| Cursor | Developer/IDE user | planned | Verify Cursor MCP config/add button path |
+| Cursor | Developer/IDE user | registration-path verified; tool-call pending | 2026-05-01 proof: `docs/ops/mcp-cursor-registration-proof-2026-05-01.md`; Cursor 3.2.16 CLI wrote isolated Streamable HTTP config for `https://tinyassets.io/mcp-directory`; needs UI/agent tool-list plus read call before public verified copy |
 | Gemini CLI | Developer/CLI user | planned | Verify `settings.json`/command path and a safe tool call |
 | Microsoft Copilot Studio | Enterprise maker/admin | planned | Build custom MCP connector/Power Platform package or OpenAPI fallback |
 | Custom MCP host | Builder | compatible-by-spec | Provide minimal integration contract and smoke command |
@@ -101,8 +105,8 @@ Use host-specific wording, but each host should prove at least one of these:
 
 Detailed execution queue: `docs/ops/mcp-directory-rollout-action-queue.md`.
 
-- Publish `packaging/registry/server.json` to the official MCP Registry after
-  the public directory endpoint is deployed and green.
+- Monitor the official MCP Registry listing and add registry-aware client proof
+  as clients consume `io.github.Jonnyton/workflow-universe-server`.
 - Submit the Claude directory packet through Anthropic's review flow.
 - Submit `chatgpt-app-submission.json` through OpenAI's app submission flow and resolve BUG-034 approval path for custom connectors.
 - Verify the next no-chatbot-login host after Open WebUI + LibreChat: LM

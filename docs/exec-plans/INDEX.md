@@ -15,9 +15,13 @@ row but should still be driven to a shipped outcome.
 - [active/2026-04-20-track-e-paid-market-wave-1.md](active/2026-04-20-track-e-paid-market-wave-1.md) — Track E Wave 1: first-draft paid-market flow on top of Track A schema (commit `98055aa`) + Track D Wave 1 host_pool client (commit `72e86a2`).
 - [active/2026-04-25-file-bug-wiring.md](active/2026-04-25-file-bug-wiring.md) — `file_bug` → `bug_investigation` 3-trigger contract (forward + startup-backfill + safety-net). Helper landed; forward call site UNWIRED (verifier-2 territory); backfill + safety-net unwired.
 - [active/2026-04-30-live-community-reiteration-loop.md](active/2026-04-30-live-community-reiteration-loop.md) — Wire wiki bugs -> community branches -> patch packets -> PRs -> CI/deploy -> live observation, without redesigning user-made branches.
-- [active/2026-04-26-decomp-arc-b-prep.md](active/2026-04-26-decomp-arc-b-prep.md) — Arc B prep: Author→Daemon rename infrastructure deletion (~366 LOC + caller migration). STATUS Work #23. Phase 1 LANDED (commit `0cbdea9`); Phase 2/3 blocked on #18 SHIP.
-- [active/2026-04-26-decomp-arc-c-prep.md](active/2026-04-26-decomp-arc-c-prep.md) — Arc C prep: env-var deprecation alias deletion (UNIVERSE_SERVER_BASE, WIKI_PATH). STATUS Work #24. Blocked on Arc B.
+- [active/2026-04-26-decomp-arc-c-prep.md](active/2026-04-26-decomp-arc-c-prep.md) — Arc C prep: env-var deprecation alias deletion (UNIVERSE_SERVER_BASE, WIKI_PATH). STATUS Work #24. Arc B complete; execution remains blocked on #18 shared-file locks.
 - [active/2026-04-26-engine-domain-coupling-inventory.md](active/2026-04-26-engine-domain-coupling-inventory.md) — Read-only inventory of every `workflow/` import that reaches into `domains.fantasy_*`. Input for Task #11/#28/#29 host-review queue.
+- [active/2026-04-27-autonomous-backlog-queue.md](active/2026-04-27-autonomous-backlog-queue.md) — Continuous docs/spec backlog burn-down queue for claim-safe work while core locks remain active.
+- [active/2026-04-27-hyperparameter-importance-implementation-cards.md](active/2026-04-27-hyperparameter-importance-implementation-cards.md) — Hyperparameter-importance implementation cards, ready when the science-domain lane opens.
+- [active/2026-04-27-memory-scope-stage-2c-flip-prep.md](active/2026-04-27-memory-scope-stage-2c-flip-prep.md) — Memory-scope Stage 2c flip checklist; date-gated until the 30-day clean watch ends on 2026-05-16.
+- [active/2026-04-27-post-18-recency-continue-implementation-cards.md](active/2026-04-27-post-18-recency-continue-implementation-cards.md) — Post-#18 cards for `run_branch resume_from=<run_id>`; Recency remains retired as a platform primitive.
+- [active/2026-04-27-runtime-fiction-memory-graph-restart-cards.md](active/2026-04-27-runtime-fiction-memory-graph-restart-cards.md) — Restart cards for the runtime fiction memory graph thin slice.
 - [active/2026-04-27-step-11plus-retarget-sweep-roi.md](active/2026-04-27-step-11plus-retarget-sweep-roi.md) — ROI analysis for the post-Step-11 retarget sweep (audit's "~100-LOC routing shell" target). Host decision pending.
 - [active/2026-05-01-host-discoverability-and-onboarding-rollout.md](active/2026-05-01-host-discoverability-and-onboarding-rollout.md) — Host discoverability and customer onboarding rollout across directories, MCP registry, no-chatbot-login users, IDE agents, and long-tail MCP hosts.
 
@@ -49,6 +53,9 @@ row but should still be driven to a shipped outcome.
 - [completed/2026-04-26-decomp-step-9-prep.md](completed/2026-04-26-decomp-step-9-prep.md) — Step 9 prep.
 - [completed/2026-04-26-decomp-step-10-prep.md](completed/2026-04-26-decomp-step-10-prep.md) — Step 10 prep.
 - [completed/2026-04-26-decomp-step-11-prep.md](completed/2026-04-26-decomp-step-11-prep.md) — Step 11 prep (universe_server.py 14012 → 1771 LOC).
+
+- [completed/2026-04-26-decomp-arc-b-prep.md](completed/2026-04-26-decomp-arc-b-prep.md) — Arc B prep: Author→Daemon rename infrastructure deletion. Completed via `0cbdea9`, `c967272`, `1ae48ef`, and `b049f0d`.
+- [completed/2026-04-27-arc-b-phase-3-dispatch-card.md](completed/2026-04-27-arc-b-phase-3-dispatch-card.md) — Arc B Phase 3 deletion card. Historical dispatch record; deletion landed in `1ae48ef`.
 
 ## Legacy Planning References
 
