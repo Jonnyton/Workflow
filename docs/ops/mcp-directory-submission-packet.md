@@ -1,7 +1,7 @@
 # MCP Directory Submission Packet
 
 Date: 2026-05-01
-Status: live endpoint packet, not yet externally submitted
+Status: MCP Registry published; Claude/ChatGPT directory submission packet
 Owner: lead + codex-gpt5-desktop
 
 This packet is for app-directory and registry reviewers. It separates the full
@@ -23,7 +23,8 @@ The rollout is not complete when the code or docs merge. It is complete only
 when the user can discover and use Workflow through normal host surfaces:
 
 - MCP Registry: `server.json` is published in the official registry and
-  Workflow is discoverable by registry clients.
+  Workflow is discoverable by registry clients. Completed 2026-05-01 as
+  `io.github.Jonnyton/workflow-universe-server`.
 - Claude: Workflow is accepted/listed in the Claude Connectors Directory, and
   a normal logged-in Claude user can add it from the directory without a custom
   MCP URL.
@@ -39,7 +40,7 @@ path today; route them to local/self-hosted or channel-host paths instead.
 
 Fresh source snapshot, checked 2026-05-01:
 
-- OpenAI app submission help: `https://help.openai.com/zh-hant-hk/articles/20001040-submitting-apps-to-the-chatgpt-app-directory`
+- OpenAI app submission guide: `https://developers.openai.com/apps-sdk/deploy/submission`
 - Anthropic Connector Directory FAQ: `https://support.claude.com/en/articles/11596036-anthropic-mcp-directory-faq`
 - Anthropic connector submission process: `https://claude.com/docs/connectors/building/submission`
 - Anthropic review criteria: `https://claude.com/docs/connectors/building/review-criteria`
@@ -125,17 +126,26 @@ Ready artifact:
 
 - `packaging/registry/server.json`
 
-Command sequence after authentication:
+Published command sequence:
 
 ```powershell
-mcp-publisher login github
-mcp-publisher publish packaging/registry/server.json
+$publisher = "$env:TEMP\mcp-publisher-v1.7.6\mcp-publisher.exe"
+# Authenticated with the existing local GitHub session; token was not logged.
+& $publisher publish packaging/registry/server.json
 ```
 
-Blocker: publication requires a registry publisher session and namespace rights
-for the GitHub-owned package name. In this environment `mcp-publisher --help`
-failed because the CLI is not installed in PATH. Do not mark complete until the
-registry listing can be fetched from the public registry.
+Publication proof, 2026-05-01:
+
+- `mcp-publisher` v1.7.6 validated `packaging/registry/server.json`.
+- First publish attempt failed because the registry namespace was case-sensitive:
+  local auth granted `io.github.Jonnyton/*`, while the draft used
+  `io.github.jonnyton/*`.
+- After updating the generator and artifact to
+  `io.github.Jonnyton/workflow-universe-server`, publish succeeded for version
+  `0.1.0`.
+- Registry API verification:
+  `https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Jonnyton/workflow-universe-server`
+  returned one active/latest listing.
 
 ### Claude Connectors Directory
 
@@ -216,6 +226,11 @@ Production evidence, 2026-05-01:
 - `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` returned OK.
 - `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` returned OK.
 - `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory tools` returned the 11 directory tools listed above.
+- `mcp-publisher publish packaging/registry/server.json` published
+  `io.github.Jonnyton/workflow-universe-server` 0.1.0.
+- `https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Jonnyton/workflow-universe-server`
+  returned the active/latest listing with remote URL
+  `https://tinyassets.io/mcp-directory`.
 
 For future deployment checks, run:
 
