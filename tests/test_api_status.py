@@ -1,9 +1,9 @@
 """Task #10 — direct tests for `workflow.api.status` after decomp Step 3.
 
 The legacy test files (test_get_status_primitive.py, test_sandbox_*, etc.)
-import via `workflow.universe_server` and continue to pass through the
-back-compat re-export shim. This file exercises `workflow.api.status`
-directly to lock in the new public surface.
+still cover the chatbot-facing `workflow.universe_server` MCP wrapper. This
+file exercises `workflow.api.status` directly to lock in the canonical
+implementation surface.
 """
 
 from __future__ import annotations
@@ -153,4 +153,4 @@ def test_get_status_caveats_warn_when_no_provider_bound(status_env, monkeypatch)
     # doesn't flip endpoint_hint away from "unset".
     monkeypatch.setattr(shutil, "which", lambda _name: None)
     parsed = json.loads(get_status())
-    assert any("No LLM provider detected" in c for c in parsed["caveats"])
+    assert any("No default LLM provider detected" in c for c in parsed["caveats"])
