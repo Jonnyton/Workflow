@@ -305,6 +305,23 @@ def test_submit_request_as_non_host_queues_user_request(
     assert q[0].trigger_source == "user_request"
 
 
+def test_submit_request_rejects_confidential_tier_on_legacy_surface(
+    server_base, monkeypatch,
+):
+    base, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    resp = _call_submit(
+        universe_id=uid,
+        text="please keep this confidential",
+        tier="confidential",
+    )
+    assert resp["status"] == "rejected"
+    assert resp["error"] == "unsupported_request_tier"
+    assert resp["requested_tier"] == "confidential"
+    assert not (base / uid / "requests.json").exists()
+    assert read_queue(base / uid) == []
+
+
 def test_submit_creates_both_request_and_branch_task(server_base, monkeypatch):
     _, uid = server_base
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")

@@ -1043,6 +1043,7 @@ def _action_submit_request(
     pickup_incentive: str = "",
     directed_daemon_id: str = "",
     directed_daemon_instruction: str = "",
+    tier: str = "",
     **_kwargs: Any,
 ) -> str:
     from workflow.api.market import (
@@ -1077,6 +1078,21 @@ def _action_submit_request(
     }
     if request_type not in valid_types:
         request_type = "general"
+
+    requested_tier = (tier or "").strip().lower()
+    if requested_tier and requested_tier not in {"public", "open", "normal"}:
+        return json.dumps({
+            "status": "rejected",
+            "error": "unsupported_request_tier",
+            "requested_tier": requested_tier,
+            "supported_tiers": ["public"],
+            "hint": (
+                "This legacy submit_request surface cannot enforce "
+                "request-level confidential routing. Use a universe-level "
+                "confidential routing surface with local-only enforcement "
+                "before submitting sensitive work."
+            ),
+        })
 
     # Invariant 9: priority_weight cap. Negative values reject for all
     # actors. Non-host clamped to 0 silently (preflight §4.3 #9).
