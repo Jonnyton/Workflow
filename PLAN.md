@@ -173,6 +173,7 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Memory interface is query semantics, not tier names.** Three tiers (core/episodic/archival) is conceptual; the public interface feels like faceted search, not tier addressing.
 - **Trust-critical tools are self-auditing.** Tools that touch privacy, cost, routing, scope, or moderation expose structured evidence + structured caveats; the chatbot composes the user-facing narrative on top of the evidence. The chatbot cannot rubber-stamp because the caveats are part of the tool's contract. (See `docs/design-notes/2026-04-19-self-auditing-tools.md` for the pattern + 5 instantiations: memory-scope, provider routing, privacy decisions, autoresearch fulfillment, moderation.)
 - **Classic-game exactness before remakes.** A branch answering "play the old game I remember" must try lawful original media in a browser runtime before offering remakes or compatibility ports. Browser-only users receive a hosted/PWA play surface; proprietary firmware is accepted only as a user-owned browser file import and is never bundled. Fallback ports are labeled as fallbacks, not exact-game success. (See `docs/design-notes/2026-04-30-exact-classic-game-browser-runtime.md`.)
+- **Provider compliance is a product boundary, not a launch checklist.** The shared MCP/app surface targets the strictest common denominator of the provider directories we want to keep open. If Claude, ChatGPT, or another approved host forbids delegated execution of a class of action, Workflow may prepare, explain, validate, simulate, or hand off, but it must not disguise that final action as daemon work.
 
 ---
 
@@ -361,6 +362,35 @@ runtime preferences may apply immediately, while soul changes are proposals
 unless the host explicitly authorizes adoption.
 
 **Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** `workflow/universe_server.py` (12.4k LOC as of 2026-04-26, down from 14k peak) is in-flight refactor scope per `docs/audits/2026-04-25-universe-server-decomposition.md` — 3 of 8 steps landed (helpers, wiki, status); 5 remain (runs, evaluation, runtime_ops, market, branches).
+
+---
+
+## Provider Compliance Envelope
+
+**Goal:** Keep Workflow useful across Claude, ChatGPT, local apps, IDE agents, and future MCP hosts without losing provider trust, directory eligibility, or user safety.
+
+**Principle:** Provider policy is an architectural input. The public/shared tool surface follows the strictest current rule among launch-critical providers unless a provider-specific surface is explicitly separated, labeled, tested, and hidden from providers that forbid it. Private user agreements can add obligations, but they do not relax the baseline public-surface rules.
+
+**Action taxonomy:** Every public tool and daemon node that can affect the outside world is classified before it ships:
+
+- `read`: retrieves or computes without changing state.
+- `prepare`: drafts, estimates, validates, simulates, or creates non-executable artifacts.
+- `internal_write`: mutates Workflow-owned state only.
+- `external_write`: changes an external/private system, sends data, or queues work outside Workflow.
+- `regulated_handoff`: prepares a high-risk or regulated user action but leaves the final execution to the user in the first-party venue.
+- `prohibited`: not exposed through provider-accessible MCP/app surfaces.
+
+**Handoff pattern:** When a provider disallows delegated execution, Workflow still does as much useful work as permitted: gather public or user-authorized context, explain risks, compute estimates, draft instructions, validate inputs, generate unsigned/non-submittable artifacts, open or link the relevant first-party UI, and record an audit trail. The final click/signature/submission/transfer stays with the user. The UI and tool result must say exactly what remains for the user to do; it must not imply Workflow completed the regulated action.
+
+**Financial and crypto boundary:** Public Claude/ChatGPT-facing Workflow tools do not initiate or execute money transfers, crypto transfers, investment trades, or other financial transactions on behalf of users. Allowed work is limited to education, planning, portfolio-independent calculations, transaction-readiness checks, non-executable drafts, testnet-only demonstrations clearly labeled as no-value testnet activity, and handoff to a user-controlled wallet/exchange/payment interface. Product-currency, paid-market, bounty, and settlement features are not directory-safe just because they use handoff; each must pass current provider policy and legal review before appearing in a public provider app. Any future real-currency or token feature must use `regulated_handoff` unless the target provider's current written policy explicitly permits delegated execution for that exact action class.
+
+**Destructive and irreversible boundary:** Deletes, revocations, irreversible publishes, destructive admin actions, credential storage, permission changes, and external messages require explicit side-effect metadata, provider-compatible confirmation behavior, and an audit/action id. If a provider requires the user to perform the final step, Workflow returns a handoff instead of executing.
+
+**Data minimization boundary:** Tools request only fields needed for the stated purpose. They do not request full chat history, raw transcripts, broad context, precise location, credentials, secrets, or unrelated personal data "just in case." User-related identifiers, logs, timestamps, telemetry, and debug fields are either removed from public responses or disclosed in the privacy policy with a concrete purpose.
+
+**Tool metadata contract:** Tool names, descriptions, schemas, annotations, and prompts must match actual behavior. Side effects are explicit, retry behavior is clear, and directory metadata includes all applicable read-only/destructive/open-world/title hints. Hidden instructions, obfuscated behavior, or tool descriptions that coerce one provider/tool into calling another are rejected.
+
+**Provider policy freshness:** Before submitting to or materially changing any public provider surface, re-check the current official provider rules and update the compliance envelope if they changed. Current policy synthesis was refreshed 2026-05-02 from OpenAI Apps SDK submission/security guidance and Anthropic Software Directory/custom connector guidance.
 
 ---
 
