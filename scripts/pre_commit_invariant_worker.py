@@ -18,8 +18,9 @@ Usage (called by pre-commit hook):
     python scripts/pre_commit_invariant_worker.py [path/to/worker.js]
 
 When called without arguments, reads the staged content of
-`deploy/cloudflare-worker/worker.js` via `git show :path`. Falls back to
-reading the file from disk if not staged (e.g. manual invocation).
+`deploy/cloudflare-worker/worker.js` via `git show :path`. If the path is
+staged but cannot be read from the index, the invariant fails because that
+usually means the Worker was staged for deletion or rename.
 """
 
 from __future__ import annotations
@@ -94,8 +95,25 @@ def main(argv: list[str] | None = None) -> int:
             return 0  # worker.js not touched in this commit — no-op
         content = _get_staged_content(WORKER_PATH)
         if content is None:
-            # Staged but can't read (e.g. deletion) — skip, not our concern.
-            return 0
+            print("pre-commit [worker]: INVARIANT VIOLATED", file=sys.stderr)
+            print("", file=sys.stderr)
+            print(
+                f"  {WORKER_PATH} is staged but has no readable staged content.",
+                file=sys.stderr,
+            )
+            print(
+                "  This usually means the Worker was staged for deletion or rename.",
+                file=sys.stderr,
+            )
+            print(
+                "  The Worker owns the tinyassets.io/mcp route and must not disappear",
+                file=sys.stderr,
+            )
+            print(
+                "  without an explicit replacement that preserves CF Access headers.",
+                file=sys.stderr,
+            )
+            return 2
 
     missing = check(content)
     if not missing:
