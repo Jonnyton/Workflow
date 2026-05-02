@@ -205,3 +205,15 @@ Notes:
   and re-audit the ChatGPT Apps packet before submission.
 - Ship condition: docs/STATUS name only true remaining blockers; validation
   gates are fresh; final OpenAI submit remains action-time host approval.
+- Landed: PR #193 merged on 2026-05-02 as `72b2e1d`.
+
+## OpenAI Host-Action Foldback - 2026-05-02
+
+- 2026-05-02 reuse `../wf-openai-submission-hardening` on
+  `codex/onboarding-host-action-cleanup` by
+  codex-gpt5-desktop-openai-submission after PR #193 merged.
+- STATUS row: OpenAI/Claude directory submission host actions.
+- Purpose: move remaining OpenAI submit blockers out of claimed provider work
+  and into explicit host-action state.
+- Ship condition: STATUS row no longer claims provider ownership for mobile,
+  legal/publisher/assets, or final-submit approval.
