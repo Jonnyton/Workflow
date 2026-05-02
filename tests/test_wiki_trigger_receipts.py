@@ -238,11 +238,11 @@ class TestReadAPI:
 
     def test_health_summary_counts_by_status(self, db_path: Path) -> None:
         # Mix: 2 pending, 1 queued, 1 failed.
-        a = tr.create_pending(
+        tr.create_pending(
             request_id="X-1", request_kind="bug",
             request_page="p1.md", db_path=db_path,
         )
-        b = tr.create_pending(
+        tr.create_pending(
             request_id="X-2", request_kind="bug",
             request_page="p2.md", db_path=db_path,
         )

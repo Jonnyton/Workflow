@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from workflow.branch_tasks import read_queue
 from workflow.bug_investigation import (
     REQUEST_TYPE_BUG_INVESTIGATION,
@@ -222,6 +220,9 @@ def test_wiki_file_bug_invokes_maybe_enqueue_investigation(tmp_path, monkeypatch
         "status": "queued",
         "dispatcher_request_id": "fake-request-id",
     }
+    assert result["trigger"]["status"] == "queued"
+    assert result["trigger"]["dispatcher_request_id"] == "fake-request-id"
+    assert result["trigger"]["branch_def_id"] == "branch-canonical-abc"
     assert helper.call_count == 1
     bug_id = result["bug_id"]
     call_kwargs = helper.call_args.kwargs or {}
@@ -233,3 +234,42 @@ def test_wiki_file_bug_invokes_maybe_enqueue_investigation(tmp_path, monkeypatch
     assert "## Investigation" in (wiki_root / result["path"]).read_text(
         encoding="utf-8"
     )
+
+
+def test_wiki_file_bug_returns_failed_trigger_receipt_on_enqueue_error(
+    tmp_path, monkeypatch,
+):
+    """A trigger helper failure must be visible in the file_bug response."""
+    from workflow.api import wiki as wiki_api
+
+    wiki_root = tmp_path / "wiki"
+    data_root = tmp_path / "data"
+    wiki_api._ensure_wiki_scaffold(wiki_root)
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    monkeypatch.setenv(
+        "WORKFLOW_BUG_INVESTIGATION_BRANCH_DEF_ID", "branch-canonical-abc",
+    )
+
+    with patch(
+        "workflow.bug_investigation._maybe_enqueue_investigation",
+        side_effect=RuntimeError("dispatcher rejected"),
+    ):
+        result_json = wiki_api._wiki_file_bug(
+            component="engine",
+            severity="minor",
+            title="enqueue error bug",
+            observed="boom",
+        )
+
+    import json as _json
+    result = _json.loads(result_json)
+    assert result["status"] == "filed"
+    assert result["investigation"]["status"] == "error"
+    assert "dispatcher rejected" in result["investigation"]["error"]
+    assert result["trigger"]["status"] == "failed"
+    assert result["trigger"]["branch_def_id"] == "branch-canonical-abc"
+    assert result["trigger"]["error"] == {
+        "class": "RuntimeError",
+        "message": "dispatcher rejected",
+    }

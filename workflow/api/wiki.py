@@ -1370,6 +1370,7 @@ def _wiki_file_bug(
     # new ``trigger`` block is additive.
     investigation: dict[str, Any] = {"status": "skipped"}
     trigger_block: dict[str, Any] | None = None
+    _receipt = None
     try:
         from workflow import bug_investigation
         from workflow.wiki import trigger_receipts as _tr
@@ -1421,7 +1422,8 @@ def _wiki_file_bug(
             # behavior is preserved.
             if _receipt is not None:
                 try:
-                    _tr.mark_failed(_receipt, error=_enq_exc)
+                    _receipt = _tr.mark_failed(_receipt, error=_enq_exc)
+                    trigger_block = _receipt.to_response()
                 except Exception:  # noqa: BLE001 - last-resort, don't break filing.
                     pass
             raise
@@ -1439,7 +1441,9 @@ def _wiki_file_bug(
             }
             if _receipt is not None:
                 try:
-                    _tr.mark_queued(_receipt, dispatcher_request_id=request_id)
+                    _receipt = _tr.mark_queued(
+                        _receipt, dispatcher_request_id=request_id,
+                    )
                 except Exception:  # noqa: BLE001
                     pass
         else:
@@ -1447,7 +1451,9 @@ def _wiki_file_bug(
             # or filing without bug_id). Record on the receipt for audit.
             if _receipt is not None:
                 try:
-                    _tr.mark_skipped(_receipt, reason="no_canonical_branch")
+                    _receipt = _tr.mark_skipped(
+                        _receipt, reason="no_canonical_branch",
+                    )
                 except Exception:  # noqa: BLE001
                     pass
 
