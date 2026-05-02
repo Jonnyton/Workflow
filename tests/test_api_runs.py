@@ -34,7 +34,8 @@ def test_module_exposes_expected_public_names():
         "_RUN_ACTIONS", "_RUN_WRITE_ACTIONS", "_dispatch_run_action",
         "_action_run_branch", "_action_get_run", "_action_list_runs",
         "_action_stream_run", "_action_wait_for_run", "_action_cancel_run",
-        "_action_get_run_output", "_action_resume_run",
+        "_action_get_run_output", "_action_attach_existing_child_run",
+        "_action_resume_run",
         "_action_estimate_run_cost", "_action_query_runs",
         "_action_run_routing_evidence", "_action_get_memory_scope_status",
         "_action_run_branch_version", "_action_rollback_merge",
@@ -53,15 +54,15 @@ def test_module_exposes_expected_public_names():
 # ── _RUN_ACTIONS dispatch table ─────────────────────────────────────────────
 
 
-def test_run_actions_table_has_15_handlers():
-    assert len(_RUN_ACTIONS) == 15
+def test_run_actions_table_has_16_handlers():
+    assert len(_RUN_ACTIONS) == 16
 
 
 def test_run_actions_table_keys_are_expected_set():
     expected = {
         "run_branch", "run_branch_version", "get_run", "list_runs",
         "stream_run", "wait_for_run", "cancel_run", "get_run_output",
-        "resume_run", "estimate_run_cost", "query_runs",
+        "attach_existing_child_run", "resume_run", "estimate_run_cost", "query_runs",
         "get_routing_evidence", "get_memory_scope_status",
         "rollback_merge", "get_rollback_history",
     }
@@ -84,6 +85,7 @@ def test_run_write_actions_includes_state_mutators():
     assert "resume_run" in _RUN_WRITE_ACTIONS
     assert "rollback_merge" in _RUN_WRITE_ACTIONS
     assert "run_branch_version" in _RUN_WRITE_ACTIONS
+    assert "attach_existing_child_run" in _RUN_WRITE_ACTIONS
 
 
 def test_run_write_actions_excludes_read_actions():

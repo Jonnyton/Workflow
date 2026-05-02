@@ -13,6 +13,9 @@ half-formed experiments.
 
 ## Inbox
 
+- [2026-05-01] (source: host, owner: unassigned, status: promoted, priority: uptime-loop, size: medium) **Patch-request incentives + requester-directed daemon work.** Users may attach optional incentives to patch/feature requests to make independent daemons more likely to pick them up earlier than other queued requests, but incentives must not influence whether a patch is accepted, released, or merged. Users may also direct their own daemons to work on a specific patch request to speed up their own iteration. This can produce faster proposals/evidence, not a landing guarantee. Promoted immediately to `PLAN.md` Multi-User Evolutionary Design and `STATUS.md` loop work because the live community patch loop is uptime-related.
+  Links: `PLAN.md` Section Multi-User Evolutionary Design; `STATUS.md` Work row "Patch-request incentives + requester-directed daemon routing".
+
 - [2026-04-27] (source: navigator-userim-review, owner: none, status: retired-community-composition, priority: post-uptime, size: medium) **`extensions action=my_recent_runs` + `goals action=my_recent` — user-scoped recency primitives.** Priya Session 2 (2026-04-20) signal #1: chatbot needs one tool call to answer "show me what I built recently" instead of fishing through `list_branches` + `query_runs` with author filter. Workspace-memory continuity gap — distinct from chatbot_assumes_workflow first-chat principle (this is N-th chat continuity).
   Resolution 2026-05-01: retired as platform primitives after freshness check. Use existing query-run plus optional goal/branch lookup composition; do not dispatch `_action_my_recent_*` code work.
   Triaged 2026-04-27; refreshed 2026-05-01: PIPELINE row "Recency primitives" records supersession by composition.
