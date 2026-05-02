@@ -31,6 +31,11 @@ from workflow.providers.quota import (
     COOLDOWN_UNAVAILABLE,
     QuotaTracker,
 )
+from workflow.providers.diagnostics import (
+    ProviderAttemptDiagnostic,
+    build_chain_state,
+    classify_unavailable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,32 +253,58 @@ class ProviderRouter:
             )
             chain = auth_filtered
 
+        # FEAT-006: collect per-provider skip/failure diagnostics so the
+        # final AllProvidersExhaustedError can carry structured detail.
+        attempts: list[ProviderAttemptDiagnostic] = []
+
         for provider_name in chain:
             provider = self._providers.get(provider_name)
             if provider is None:
                 logger.info("Provider %s not in registry, skipping", provider_name)
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="skipped",
+                    skip_class="not_in_registry",
+                    detail="provider name not registered with daemon",
+                ))
                 continue
             if not self._quota.available(provider_name):
                 logger.info("Skipping %s (quota/cooldown)", provider_name)
+                cd = self._quota.cooldown_remaining(provider_name)
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="skipped",
+                    skip_class="quota_or_cooldown",
+                    detail="quota or cooldown gate",
+                    cooldown_remaining_s=cd if cd > 0 else None,
+                ))
                 continue
 
             logger.info("Trying provider %s for role=%s", provider_name, role)
             try:
                 resp = await provider.complete(prompt, system, cfg)
                 self._quota.record_success(provider_name)
-            except ProviderUnavailableError:
+            except ProviderUnavailableError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
                 logger.warning(
                     "Provider %s unavailable, cooldown %ds",
                     provider_name, COOLDOWN_UNAVAILABLE,
                 )
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="failed",
+                    skip_class=classify_unavailable(exc),
+                    detail=str(exc)[:200],
+                ))
                 continue
-            except ProviderTimeoutError:
+            except ProviderTimeoutError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_TIMEOUT)
                 logger.warning(
                     "Provider %s timed out, cooldown %ds",
                     provider_name, COOLDOWN_TIMEOUT,
                 )
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="failed",
+                    skip_class="timed_out",
+                    detail=str(exc)[:200],
+                ))
                 continue
             except ProviderError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
@@ -281,10 +312,20 @@ class ProviderRouter:
                     "Provider %s error, cooldown %ds: %s",
                     provider_name, COOLDOWN_OTHER, exc,
                 )
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="failed",
+                    skip_class="provider_error",
+                    detail=str(exc)[:200],
+                ))
                 continue
-            except Exception:
+            except Exception as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
                 logger.exception("Unexpected error from %s", provider_name)
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name, status="failed",
+                    skip_class="unknown",
+                    detail=f"{type(exc).__name__}: {str(exc)[:160]}",
+                ))
                 continue
 
             # Successful call — apply BUG-029 Part B: track consecutive empty
@@ -340,9 +381,19 @@ class ProviderRouter:
             logger.warning("All judge providers exhausted -- returning degraded response")
             return DEGRADED_JUDGE_RESPONSE
 
+        # FEAT-006: attach structured diagnostics so get_run.error_detail
+        # can show *why* each provider was skipped without parsing logs.
+        chain_state = build_chain_state(
+            role=role,
+            chain=chain,
+            attempts=attempts,
+            pinned_writer=pin_writer if is_pinned_writer else None,
+        )
         raise AllProvidersExhaustedError(
             f"All providers exhausted for role={role}. "
-            "Daemon should retry with backoff."
+            "Daemon should retry with backoff.",
+            attempts=attempts,
+            chain_state=chain_state,
         )
 
     # ------------------------------------------------------------------
