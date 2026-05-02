@@ -89,6 +89,14 @@ def _initialize(url: str) -> tuple[str | None, int]:
     return sid, 0
 
 
+def _tool_response_exit_code(resp: dict | None) -> int:
+    if not resp or "error" in resp or "result" not in resp:
+        return 1
+    if resp["result"].get("isError"):
+        return 1
+    return 0
+
+
 def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bool) -> int:
     _vlog(f"tools/call {tool} args={tool_args}")
     resp, _ = _mcp_call(
@@ -103,7 +111,7 @@ def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bo
     )
     if raw:
         print(json.dumps(resp, indent=2))
-        return 0
+        return _tool_response_exit_code(resp)
     if resp and "result" in resp:
         for item in resp["result"].get("content", []):
             if item.get("type") == "text":
