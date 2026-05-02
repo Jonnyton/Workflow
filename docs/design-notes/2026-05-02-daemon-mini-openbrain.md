@@ -330,7 +330,8 @@ The first implementation adds:
 
 ## Remaining After #18
 
-1. Promote `scripts/proofs/daemon_brain_smoke.py` into focused pytest coverage.
+1. Focused pytest coverage landed in `tests/test_daemon_brain.py`; the smoke
+   script remains as an operator CLI proof.
 2. Mirror the new runtime module into the packaged Claude plugin after #18
    releases the mirror tree.
 3. Expose the minimal daemon-owned tool/API surface.

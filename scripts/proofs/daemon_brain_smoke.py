@@ -1,7 +1,7 @@
-"""Executable proof for the daemon mini-brain runtime slice.
+"""Executable smoke proof for the daemon mini-brain runtime slice.
 
-This lives outside ``tests/`` because STATUS currently assigns the test tree to
-#18. Promote these checks into pytest after that lock clears.
+Focused pytest coverage now lives in ``tests/test_daemon_brain.py``. Keep this
+script as a direct CLI proof for operators who want a no-pytest smoke check.
 """
 
 from __future__ import annotations
