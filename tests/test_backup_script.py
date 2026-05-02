@@ -13,6 +13,7 @@ Coverage:
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -40,9 +41,60 @@ pytestmark = pytest.mark.skipif(_BASH is None, reason="bash not available")
 # helpers
 # ---------------------------------------------------------------------------
 
+
+def _is_wsl_bash() -> bool:
+    return (
+        os.name == "nt"
+        and _BASH is not None
+        and Path(_BASH).name.lower() == "bash.exe"
+        and "system32" in str(Path(_BASH).parent).lower()
+    )
+
+
+def _bash_path(path: Path) -> str:
+    resolved = path.resolve()
+    if os.name != "nt":
+        return str(resolved)
+    if _is_wsl_bash():
+        drive = resolved.drive.rstrip(":").lower()
+        rest = resolved.as_posix()[2:]
+        return f"/mnt/{drive}{rest}"
+    return resolved.as_posix()
+
+
+def _bash_path_env(*leading_paths: Path) -> str:
+    leading = [_bash_path(path) for path in leading_paths]
+    if _is_wsl_bash():
+        return ":".join([
+            *leading,
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+        ])
+    return ":".join([*leading, os.environ.get("PATH", "")])
+
+
 def _run(script: Path, env: dict, args: list[str] | None = None) -> subprocess.CompletedProcess:
+    if _is_wsl_bash():
+        assignments = " ".join(
+            f"{name}={shlex.quote(str(value))}"
+            for name, value in env.items()
+        )
+        command = " ".join(
+            [
+                "/usr/bin/env",
+                assignments,
+                shlex.quote(_bash_path(script)),
+                *(shlex.quote(arg) for arg in (args or [])),
+            ]
+        )
+        return subprocess.run([_BASH, "-lc", command], capture_output=True, text=True)
+
     full_env = {**os.environ, **env}
-    cmd = [_BASH, str(script)] + (args or [])
+    cmd = [_BASH, _bash_path(script)] + (args or [])
     return subprocess.run(cmd, capture_output=True, text=True, env=full_env)
 
 
@@ -80,7 +132,7 @@ def test_backup_dry_run_exits_0_without_backup_dest():
         env = {
             "DRY_RUN": "1",
             "BACKUP_DEST": "",
-            "BACKUP_LOG": str(Path(tmpdir) / "backup.log"),
+            "BACKUP_LOG": _bash_path(Path(tmpdir) / "backup.log"),
         }
         result = _run(BACKUP_SH, env)
     assert result.returncode == 0, f"expected exit 0, got {result.returncode}\n{result.stderr}"
@@ -92,7 +144,7 @@ def test_backup_dry_run_prints_dry_run_indicator():
         env = {
             "DRY_RUN": "1",
             "BACKUP_DEST": "s3://test-bucket/backups",
-            "BACKUP_LOG": str(Path(tmpdir) / "backup.log"),
+            "BACKUP_LOG": _bash_path(Path(tmpdir) / "backup.log"),
         }
         result = _run(BACKUP_SH, env)
     combined = (result.stdout + result.stderr).lower()
@@ -108,16 +160,18 @@ def test_backup_dry_run_no_mutating_commands(tmp_path):
         fake_cmd = fake_bin / cmd
         fake_cmd.write_text(
             "#!/usr/bin/env bash\n"
-            f"echo \"{cmd} called: $*\" >> '{call_log}'\n"
-            "exit 0\n"
+            f"echo \"{cmd} called: $*\" >> '{_bash_path(call_log)}'\n"
+            "exit 0\n",
+            encoding="utf-8",
+            newline="\n",
         )
         fake_cmd.chmod(0o755)
 
     env = {
         "DRY_RUN": "1",
         "BACKUP_DEST": "s3://test-bucket/backups",
-        "BACKUP_LOG": str(tmp_path / "backup.log"),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "BACKUP_LOG": _bash_path(tmp_path / "backup.log"),
+        "PATH": _bash_path_env(fake_bin),
     }
     result = _run(BACKUP_SH, env)
     assert result.returncode == 0, f"exit {result.returncode}\n{result.stderr}"
@@ -137,7 +191,7 @@ def test_backup_exits_1_when_backup_dest_missing():
         env = {
             "DRY_RUN": "0",
             "BACKUP_DEST": "",
-            "BACKUP_LOG": str(Path(tmpdir) / "backup.log"),
+            "BACKUP_LOG": _bash_path(Path(tmpdir) / "backup.log"),
         }
         result = _run(BACKUP_SH, env)
     assert result.returncode == 1, (
@@ -162,20 +216,43 @@ def _fake_rclone_bin(tmp_path: Path) -> Path:
         "fi\n"
         'if [[ "$1" == "ls" ]]; then exit 0; fi\n'
         'if [[ "$1" == "obscure" ]]; then echo "obscured"; exit 0; fi\n'
-        "exit 0\n"
+        "exit 0\n",
+        encoding="utf-8",
+        newline="\n",
     )
     fake_rclone.chmod(0o755)
     return fake_bin
 
 
+def _fake_rclone_bash_env(tmp_path: Path) -> Path:
+    """Return a BASH_ENV file that defines fake rclone for mounted Windows paths."""
+    fake_env = tmp_path / "fake-rclone-env.sh"
+    fake_env.write_text(
+        "rclone() {\n"
+        '    if [[ "$1" == "lsf" ]]; then\n'
+        "        echo '2026-04-20T02-00-00Z;workflow-data-2026-04-20T02-00-00Z.tar.gz'\n"
+        "        return 0\n"
+        "    fi\n"
+        '    if [[ "$1" == "ls" ]]; then return 0; fi\n'
+        '    if [[ "$1" == "obscure" ]]; then echo "obscured"; return 0; fi\n'
+        "    return 0\n"
+        "}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return fake_env
+
+
 def test_restore_dry_run_exits_0(tmp_path):
     """DRY_RUN=1 on restore must exit 0 after identifying the archive."""
     fake_bin = _fake_rclone_bin(tmp_path)
+    fake_env = _fake_rclone_bash_env(tmp_path)
     env = {
         "DRY_RUN": "1",
         "BACKUP_DEST": "s3://test-bucket/workflow-backups",
-        "BACKUP_LOG": str(tmp_path / "backup.log"),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "BACKUP_LOG": _bash_path(tmp_path / "backup.log"),
+        "BASH_ENV": _bash_path(fake_env),
+        "PATH": _bash_path_env(fake_bin),
     }
     result = _run(RESTORE_SH, env)
     assert result.returncode == 0, f"exit {result.returncode}\n{result.stdout}\n{result.stderr}"
@@ -184,11 +261,13 @@ def test_restore_dry_run_exits_0(tmp_path):
 def test_restore_dry_run_prints_dry_run_indicator(tmp_path):
     """DRY_RUN=1 restore output must mention 'dry'."""
     fake_bin = _fake_rclone_bin(tmp_path)
+    fake_env = _fake_rclone_bash_env(tmp_path)
     env = {
         "DRY_RUN": "1",
         "BACKUP_DEST": "s3://test-bucket/workflow-backups",
-        "BACKUP_LOG": str(tmp_path / "backup.log"),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "BACKUP_LOG": _bash_path(tmp_path / "backup.log"),
+        "BASH_ENV": _bash_path(fake_env),
+        "PATH": _bash_path_env(fake_bin),
     }
     result = _run(RESTORE_SH, env)
     combined = (result.stdout + result.stderr).lower()
@@ -200,7 +279,7 @@ def test_restore_exits_1_when_backup_dest_missing():
     with tempfile.TemporaryDirectory() as tmpdir:
         env = {
             "BACKUP_DEST": "",
-            "BACKUP_LOG": str(Path(tmpdir) / "backup.log"),
+            "BACKUP_LOG": _bash_path(Path(tmpdir) / "backup.log"),
         }
         result = _run(RESTORE_SH, env)
     assert result.returncode == 1, (
