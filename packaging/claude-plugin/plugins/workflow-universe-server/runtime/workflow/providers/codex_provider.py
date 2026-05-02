@@ -7,6 +7,7 @@ Claude, making it ideal as a judge when Claude is the writer.
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import shutil
 import subprocess
@@ -48,6 +49,11 @@ def _resolve_codex_cmd() -> tuple[list[str], bool]:
     return ["codex"], False
 
 
+def _codex_model() -> str:
+    """Return the Codex CLI model to request for provider calls."""
+    return os.environ.get("WORKFLOW_CODEX_MODEL", "gpt-5.4").strip() or "gpt-5.4"
+
+
 class CodexProvider(BaseProvider):
     """Calls GPT via the ``codex exec`` CLI binary."""
 
@@ -67,7 +73,7 @@ class CodexProvider(BaseProvider):
         full_input = f"{system}\n\n{prompt}" if system else prompt
 
         base_cmd, use_shell = _resolve_codex_cmd()
-        model = "gpt-5.5"
+        model = _codex_model()
         sandbox_status = get_sandbox_status()
         sandbox_args = (
             ["--full-auto"]
