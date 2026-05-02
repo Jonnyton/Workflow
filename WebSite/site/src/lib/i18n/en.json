@@ -21,9 +21,9 @@
     ]
   },
   "goals": {
-    "title": "Workflow Goals",
-    "subtitle": "Browse public goals, related branches, and live wiki context.",
-    "empty_state": "No goals yet \u2014 check back after launch.",
+    "title": "Workflow Wiki",
+    "subtitle": "Browse public wiki records, work targets, related branches, and live context.",
+    "empty_state": "No public work records yet \u2014 check back after launch.",
     "filter_domain": "Domain",
     "filter_quality": "Quality",
     "filter_recency": "Recently updated",
@@ -212,13 +212,13 @@
   },
   "contribute": {
     "title": "Contribute",
-    "tagline": "The platform itself is open source. So are the public goals. Two paths for two kinds of contribution.",
+    "tagline": "The platform itself is open source. So is the public community wiki. Two paths for two kinds of contribution.",
     "instructions": "Clone the repo, read CONTRIBUTING.md, submit a PR.",
     "clone_cmd": "git clone https://github.com/Workflow/Workflow.git",
     "platform_code_title": "Platform code (the engine)",
     "platform_code_description": "The daemon engine, MCP gateway, web app, tray \u2014 all in the main Workflow repo. Standard fork-and-PR flow. MIT-licensed.",
-    "goals_content_title": "Public goals (the content)",
-    "goals_content_description": "Public wiki pages, nodes, goals, branches. Lives at Workflow-catalog/ repo. Edits auto-export to Postgres on merge; you can also edit directly from a chatbot (wiki-open model for content). CC0-licensed.",
+    "goals_content_title": "Community wiki (the content)",
+    "goals_content_description": "Public wiki pages, nodes, work targets, and branches. Lives at Workflow-catalog/ repo. Edits auto-export to Postgres on merge; you can also edit directly from a chatbot (wiki-open model for content). CC0-licensed.",
     "step_by_step_title": "How to contribute",
     "step_by_step": [
       "Pick which repo matches your change: Workflow/ for engine, Workflow-catalog/ for workflows.",
@@ -321,7 +321,7 @@
     "widgets": {
       "hosts_online": "Hosts online",
       "inbox_depth": "Pending requests",
-      "goals_freshness": "Goals last synced",
+      "goals_freshness": "Work targets last synced",
       "recent_activity": "Recent activity"
     },
     "realtime_paused": "Live updates paused \u2014 check back in a moment.",

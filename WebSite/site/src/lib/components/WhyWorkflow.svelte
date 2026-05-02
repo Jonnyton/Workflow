@@ -19,10 +19,10 @@
       href: '/graph'
     },
     {
-      title: 'Outcome-gated.',
+      title: 'Wiki-first.',
       body:
-        'Ranking is driven by real-world gates, not judge polish. Third-party verification where it counts.',
-      href: '/goals'
+        'Public work starts as community wiki state: bugs, plans, targets, and evidence a chatbot can read back.',
+      href: '/wiki'
     },
     {
       title: 'Your data stays yours.',

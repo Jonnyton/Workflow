@@ -11,7 +11,7 @@
       label: 'Public MCP',
       value: pulse.mcp.source,
       status: 'observable',
-      body: `${compactNumber(pulse.knowledgeCount)} wiki pages, ${compactNumber(pulse.mcp.goals.length)} goals, ${compactNumber(pulse.mcp.universes.length)} universes in the current read.`,
+      body: `${compactNumber(pulse.knowledgeCount)} wiki pages, ${compactNumber(pulse.mcp.goals.length)} work targets, ${compactNumber(pulse.mcp.universes.length)} universes in the current read.`,
       command: 'Connector setup: /connect',
       href: '/connect'
     },

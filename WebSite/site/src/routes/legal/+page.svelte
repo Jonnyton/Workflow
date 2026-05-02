@@ -42,7 +42,7 @@
     <h2 id="license">License</h2>
     <ul>
       <li><strong>Platform code</strong> (engine, MCP gateway, tray, connectors): <a href="https://github.com/Jonnyton/Workflow/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT</a>. Fork it, run it, sell services on it. Attribution required.</li>
-      <li><strong>Public goal content</strong> (goals, branches, nodes, prompt templates, gates, wiki pages): <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0-1.0</a>. Public domain. Use without permission.</li>
+      <li><strong>Public wiki content</strong> (work targets, branches, nodes, prompt templates, gates, wiki pages): <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0-1.0</a>. Public domain. Use without permission.</li>
       <li><strong>This site</strong>: same MIT for site code, CC0 for site content where original; fonts retain their respective licenses (IBM Plex Sans/Mono, Fraunces — all OFL).</li>
     </ul>
 
@@ -116,7 +116,7 @@
     </ul>
 
     <h2 id="dmca">DMCA</h2>
-    <p>If you believe content on the public goals surface or wiki infringes your copyright, send a DMCA takedown notice to <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a> including: identification of the work, identification of the infringing material with URL, your contact info, statement of good-faith belief, statement under penalty of perjury, and your physical or electronic signature.</p>
+    <p>If you believe content on the public community wiki infringes your copyright, send a DMCA takedown notice to <a href="mailto:{legal.contact.dmca_agent}">{legal.contact.dmca_agent}</a> including: identification of the work, identification of the infringing material with URL, your contact info, statement of good-faith belief, statement under penalty of perjury, and your physical or electronic signature.</p>
     <p>Counter-notices follow standard <a href="https://www.copyright.gov/dmca/" target="_blank" rel="noreferrer">17 U.S.C. § 512</a> procedure. Designated DMCA agent registration with the U.S. Copyright Office is in progress.</p>
 
     <h2 id="dispute">Disputes &amp; governing law</h2>

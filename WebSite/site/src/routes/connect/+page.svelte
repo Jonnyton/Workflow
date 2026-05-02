@@ -25,7 +25,7 @@
   );
   const protocolFacts = [
     { label: 'read wiki', href: '/wiki' },
-    { label: 'browse goals', href: '/goals' },
+    { label: 'map work', href: '/graph' },
     { label: 'watch the loop', href: '/loop' },
     { label: 'inspect graph', href: '/graph' },
     { label: 'proof registry', href: 'https://github.com/Jonnyton/Workflow/blob/main/docs/ops/mcp-host-proof-registry.md', external: true },
@@ -35,16 +35,16 @@
     {
       label: 'Community wiki',
       title: 'Ask it to read the public wiki.',
-      body: 'Goals, bugs, plans, notes, and drafts come back through the same MCP surface the site uses.',
+      body: 'Work targets, bugs, plans, notes, and drafts come back through the same MCP surface the site uses.',
       href: '/wiki',
       action: 'Open wiki'
     },
     {
-      label: 'Goals',
-      title: 'Ask what the project is trying to finish.',
-      body: 'The goals lens is the living catalog of work, not a hand-maintained marketing list.',
-      href: '/goals',
-      action: 'Browse goals'
+      label: 'Proof packet',
+      title: 'Ask what is actually proven.',
+      body: 'The proof page ties connector, wiki, graph, loop, repo, and known limits into one evidence path.',
+      href: '/proof',
+      action: 'Open proof'
     },
     {
       label: 'Loop',
@@ -56,7 +56,7 @@
     {
       label: 'Graph',
       title: 'Ask how the project hangs together.',
-      body: 'The graph shows live relationships across bugs, branches, goals, tags, and repo state.',
+      body: 'The graph shows live relationships across bugs, branches, work targets, tags, and repo state.',
       href: '/graph',
       action: 'Open graph'
     }
@@ -189,7 +189,7 @@
     <RitualLabel color="var(--signal-live)">· User entry · tinyassets.io/mcp ·</RitualLabel>
     <h1 class="title">Connect your MCP.</h1>
     <p class="lead">
-      Paste one URL into your MCP-capable chatbot or agent host. Your host can browse the community wiki, read goals, inspect universes, and route work into the same loop the site shows.
+      Paste one URL into your MCP-capable chatbot or agent host. Your host can browse the community wiki, inspect work targets and universes, and route work into the same loop the site shows.
     </p>
 
     <section class="primary-flow" aria-label="Primary connection actions">
@@ -202,7 +202,7 @@
       <a class="flow-card" href="/wiki">
         <span class="flow-card__num">2</span>
         <span class="flow-card__title">Talk.</span>
-        <span class="flow-card__body">Start a chat and ask Workflow to browse goals, read the community wiki, or route work into the loop.</span>
+        <span class="flow-card__body">Start a chat and ask Workflow to read the community wiki, inspect open work, or route a patch into the loop.</span>
         <span class="flow-card__action">Open live wiki</span>
       </a>
     </section>

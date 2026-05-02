@@ -20,7 +20,7 @@
     <p>The live loop page is the canonical place to watch real project friction move through intake, investigation, gates, branches, release, and observation.</p>
     <div class="counts" aria-label="Current contribution surface counts">
       <article>
-        <span>Goals</span>
+        <span>Work targets</span>
         <strong>{compactNumber(pulse.mcp.goals.length)}</strong>
       </article>
       <article>

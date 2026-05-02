@@ -65,7 +65,7 @@ export type LensKey =
   | 'home'
   | 'status'
   | 'connect'
-  | 'goals'
+  | 'wiki'
   | 'host'
   | 'economy'
   | 'alliance';
@@ -111,14 +111,14 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     primaryHref: '/connect',
     primaryLabel: 'Copy connector URL'
   },
-  goals: {
-    eyebrow: 'Goal lens',
-    title: 'Goals first; branches compete underneath.',
-    question: 'Goals answers: what public work targets exist, and which ones can be remixed or routed into the loop?',
-    watches: 'Public goals, related wiki records, repo branches',
-    proof: 'The goal board is connector data first; related community wiki records and branch signals are derived from current MCP/GitHub state.',
-    primaryHref: '/goals',
-    primaryLabel: 'Browse goals'
+  wiki: {
+    eyebrow: 'Community wiki',
+    title: 'The wiki is the public work surface.',
+    question: 'Wiki answers: what bugs, plans, work targets, and universes can a chatbot read and route through right now?',
+    watches: 'Community wiki records, work targets, repo branches',
+    proof: 'The wiki is connector data first; work targets, pages, and branch signals are derived from current MCP/GitHub state.',
+    primaryHref: '/wiki',
+    primaryLabel: 'Browse wiki'
   },
   host: {
     eyebrow: 'Daemon fleet',
@@ -133,7 +133,7 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     eyebrow: 'Settlement ledger',
     title: 'Work, gates, credit, and token rails.',
     question: 'Economy answers: what real work could eventually settle into value?',
-    watches: 'Goals, gates, work packets, test tiny boundary',
+    watches: 'Wiki records, gates, work packets, test tiny boundary',
     proof: 'Current reads stay on project state; real Destiny (tiny) contracts are reference-only until integration opens.',
     primaryHref: '/economy',
     primaryLabel: 'Read economy boundary'
@@ -142,8 +142,8 @@ export const LENS_DEFINITIONS: Record<LensKey, LensDefinition> = {
     eyebrow: 'Community intake',
     title: 'Intent enters the same live loop.',
     question: 'Alliance answers: where does a feature request, bug, or partnership enter public work?',
-    watches: 'Community wiki intake, goals, GitHub channels',
-    proof: 'Every written channel routes back into the same public loop: wiki page, goal, branch, or repo thread.',
+    watches: 'Community wiki intake, GitHub channels',
+    proof: 'Every written channel routes back into the same public loop: wiki page, branch, or repo thread.',
     primaryHref: '/alliance',
     primaryLabel: 'Choose an intake path'
   }

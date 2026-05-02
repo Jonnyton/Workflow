@@ -118,7 +118,7 @@ workflow-mcp</code></pre>
         <li>
           <span class="step__num">02</span>
           <div>
-            <strong>Pick a universe.</strong> Bind the daemon to one of your goals (or fork an existing public one) so it knows what canon to roam.
+            <strong>Pick a universe.</strong> Bind the daemon to one of your work targets (or fork an existing public one) so it knows what canon to roam.
           </div>
         </li>
         <li>

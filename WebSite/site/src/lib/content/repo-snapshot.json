@@ -1003,7 +1003,7 @@
       "id": "route:/wiki",
       "path": "/wiki",
       "label": "Wiki cockpit",
-      "summary": "Live community wiki browser through MCP."
+      "summary": "Canonical community wiki and public-work lens through MCP."
     },
     {
       "id": "route:/loop",
@@ -1028,12 +1028,6 @@
       "path": "/host",
       "label": "Host",
       "summary": "Daemon host entry point."
-    },
-    {
-      "id": "route:/goals",
-      "path": "/goals",
-      "label": "Goals",
-      "summary": "Public goal lens backed by MCP goals, community wiki records, and branch signals."
     },
     {
       "id": "route:/status",
@@ -1160,11 +1154,6 @@
     {
       "from": "area:website",
       "to": "route:/host",
-      "kind": "route"
-    },
-    {
-      "from": "area:website",
-      "to": "route:/goals",
       "kind": "route"
     },
     {
@@ -1316,11 +1305,6 @@
       "from": "route:/proof",
       "to": "repo:Workflow",
       "kind": "evidence"
-    },
-    {
-      "from": "route:/goals",
-      "to": "area:mcp-api",
-      "kind": "showcases"
     },
     {
       "from": "route:/status",

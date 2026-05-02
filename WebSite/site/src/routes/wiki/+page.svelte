@@ -11,7 +11,7 @@
   import StatusPill from '$lib/components/Primitives/StatusPill.svelte';
   import LiveBadge from '$lib/components/LiveBadge.svelte';
 
-  type Lens = 'explore' | 'bugs' | 'goals' | 'plans' | 'graph' | 'pulse';
+  type Lens = 'explore' | 'bugs' | 'work' | 'plans' | 'graph' | 'pulse';
   type SortMode = 'connected' | 'type' | 'title';
   type ItemType = 'goal' | 'universe' | 'bug' | 'concept' | 'note' | 'plan' | 'draft';
   type BodyStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -29,14 +29,14 @@
   const LENSES: Array<{ id: Lens; label: string }> = [
     { id: 'explore', label: 'Explore' },
     { id: 'bugs', label: 'Bugs' },
-    { id: 'goals', label: 'Goals' },
+    { id: 'work', label: 'Work' },
     { id: 'plans', label: 'Plans' },
     { id: 'graph', label: 'Graph' },
     { id: 'pulse', label: 'Pulse' }
   ];
 
   const TYPE_LABEL: Record<ItemType, string> = {
-    goal: 'goal',
+    goal: 'work target',
     universe: 'universe',
     bug: 'bug',
     concept: 'concept',
@@ -81,7 +81,7 @@
   function itemMatchesLens(item: WikiItem): boolean {
     if (lens === 'explore' || lens === 'graph' || lens === 'pulse') return true;
     if (lens === 'bugs') return item.type === 'bug';
-    if (lens === 'goals') return item.type === 'goal' || item.type === 'universe';
+    if (lens === 'work') return item.type === 'goal' || item.type === 'universe';
     return item.type === 'plan' || item.type === 'concept' || item.type === 'note' || item.type === 'draft';
   }
 
@@ -327,7 +327,7 @@
 
 <svelte:head>
   <title>Live wiki — Workflow</title>
-  <meta name="description" content="Browse the live Workflow community wiki through the same MCP-shaped data a chatbot sees." />
+  <meta name="description" content="Browse the live Workflow community wiki: bugs, plans, work targets, universes, graph links, and MCP proof in one public surface." />
 </svelte:head>
 
 <section class="hero">
@@ -341,7 +341,10 @@
         </button>
       </div>
     </div>
-    <h1>Browse the community wiki the way the chatbot does.</h1>
+    <h1>The community wiki is the public work surface.</h1>
+    <p class="lead">
+      Bugs, plans, work targets, universes, drafts, tags, and graph edges all resolve here through the same MCP-shaped records a connected chatbot can read.
+    </p>
     {#if liveError}
       <p class="error">Live browser fetch failed: <code>{liveError}</code> — showing the baked MCP snapshot.</p>
     {/if}
@@ -383,7 +386,7 @@
         <div class="pulse">
           <article>
             <RitualLabel color="var(--signal-live)">· Current pulse ·</RitualLabel>
-            <h2>{snapshot.universes.length} universes, {snapshot.goals.length} active goals.</h2>
+            <h2>{snapshot.universes.length} universes, {snapshot.goals.length} work targets.</h2>
             <p>The public feed is thin live state: identity, phase, counts, and artifact handles. The durable material stays in community wiki pages and graph references.</p>
           </article>
           <div class="pulse__facts">
@@ -503,7 +506,7 @@
       {:else}
         <RitualLabel>· Select a wiki item ·</RitualLabel>
         <h2>The detail pane shows the proof path.</h2>
-        <p>Choose a goal, bug, plan, note, draft, or universe to inspect tags, edges, wiki body, and the MCP request shape behind it.</p>
+        <p>Choose a wiki page, work target, draft, or universe to inspect tags, edges, body text, and the MCP request shape behind it.</p>
       {/if}
 
       <div class="trace">
@@ -534,6 +537,14 @@
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+  }
+
+  .lead {
+    color: var(--fg-2);
+    font-size: clamp(16px, 2vw, 19px);
+    line-height: 1.55;
+    margin: 14px 0 0;
+    max-width: 760px;
   }
 
   .refresh,

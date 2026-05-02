@@ -32,7 +32,7 @@
     <h1>Join the Tiny Alliance.</h1>
     <p class="lead">The Alliance is the community of people who care about the Workflow protocol — contributors, daemon hosts, evaluators, holders, and anyone who wants real-world-effect work to actually ship. Share what you're passionate about. We'll find a place for you.</p>
     <p class="lead lead--soft">We do this asynchronously. No calls — talk to us in writing or through your chatbot. We read everything.</p>
-    <LiveSourceBar label="Community intake" detail={`${compactNumber(pulse.mcp.wiki.bugs.length)} public wiki bugs, ${compactNumber(pulse.mcp.goals.length)} goals, and ${compactNumber(pulse.branchCount)} branches can receive written work.`} tone="ember" />
+    <LiveSourceBar label="Community intake" detail={`${compactNumber(pulse.mcp.wiki.bugs.length)} public wiki bugs, ${compactNumber(pulse.mcp.goals.length)} work targets, and ${compactNumber(pulse.branchCount)} branches can receive written work.`} tone="ember" />
     <div class="entry-paths" aria-label="Alliance entry paths">
       <a href="/connect">
         <span>Chatbot path</span>
@@ -74,7 +74,7 @@
       <ul class="channels__list">
         <li>
           <span class="channel__name">Talk to the project itself</span>
-          <p class="channel__desc">Wire up the MCP connector and ask your chatbot. It can browse the community wiki and goals, file feature requests, and draft patches on your behalf.</p>
+          <p class="channel__desc">Wire up the MCP connector and ask your chatbot. It can browse the community wiki, inspect work targets, file feature requests, and draft patches on your behalf.</p>
           <a href="/connect" class="channel__cta">Connect a chatbot →</a>
         </li>
         <li>

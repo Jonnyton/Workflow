@@ -1,5 +1,5 @@
 <!--
-  ThreeLayer — Goal · Branch · Daemon trinity.
+  ThreeLayer - Wiki / Branch / Daemon trinity.
   This is the platform's mental model. Ported from Landing.jsx.
 -->
 <script lang="ts">
@@ -7,17 +7,17 @@
 
   const layers = [
     {
-      name: 'Goal',
+      name: 'Wiki',
       body:
-        'A named shared pursuit. Anyone declares one. Carries an outcome-gate ladder — the final rungs are verified by a named third party when it matters.',
-      example: 'research-paper · fantasy-novel · investigative-piece',
+        'The shared public record. Bugs, plans, targets, gates, and evidence live here so chatbots and builders point at the same state.',
+      example: 'bug report / plan page / work target',
       color: 'var(--ember-600)',
-      href: '/goals'
+      href: '/wiki'
     },
     {
       name: 'Branch',
       body:
-        'A concrete DAG of LLM calls, goal-bound. Public, forkable, long-lived. 100 branches pursuing one goal is the point — diversity is the feature.',
+        'A concrete DAG of LLM calls, wiki-linked. Public, forkable, long-lived. Many branches pursuing one public work target is the point: diversity is the feature.',
       example: 'claim-first-iterative · adversarial-peer · deep-space-population-paper',
       color: 'var(--violet-200)',
       href: '/graph'
@@ -36,7 +36,7 @@
 <section class="three-layer">
   <div class="container">
     <RitualLabel>The shape</RitualLabel>
-    <h2 class="title">Goal. Branch. Daemon.</h2>
+    <h2 class="title">Wiki. Branch. Daemon.</h2>
     <div class="grid">
       {#each layers as l (l.name)}
         <a class="card" href={l.href} aria-label={`Open the ${l.name} live lens`}>

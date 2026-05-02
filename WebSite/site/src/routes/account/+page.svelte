@@ -19,7 +19,7 @@
       <a href="/connect">
         <span>User</span>
         <strong>Connect your MCP</strong>
-        <small>{compactNumber(pulse.mcp.goals.length)} goals · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
+        <small>{compactNumber(pulse.mcp.goals.length)} work targets · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
       </a>
       <a href="https://github.com/Jonnyton/Workflow" target="_blank" rel="noreferrer">
         <span>Contributor</span>

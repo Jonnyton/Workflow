@@ -76,7 +76,7 @@
     area: { color: '#67d2a1', label: 'Area', r: 13 },
     route: { color: '#e95d7b', label: 'Website', r: 10 },
     branch: { color: '#73a7ff', label: 'Workflow branch', r: 11 },
-    goal: { color: 'var(--ember-600)', label: 'Goal', r: 13 },
+    goal: { color: 'var(--ember-600)', label: 'Work target', r: 13 },
     universe: { color: 'var(--signal-live)', label: 'Universe', r: 12 },
     bug: { color: 'var(--ember-500)', label: 'Bug', r: 6 },
     concept: { color: 'var(--violet-200)', label: 'Concept', r: 8 },
@@ -275,10 +275,10 @@
     const gitBranches = byType('git');
     const areas = byType('area');
 
-    addHub(nodes, 'hub:mcp-commons', 'MCP community wiki', 'Live MCP collection: goals, universes, wiki pages, tags, and extracted references.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:mcp-commons', 'MCP community wiki', 'Live MCP collection: work targets, universes, wiki pages, tags, and extracted references.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:wiki-pages', 'Wiki pages', 'Promoted and draft wiki pages returned by the public MCP feed.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:public-bugs', 'Public bug tracker', 'Every public BUG page belongs to the same MCP-backed bug tracker before stronger edges route it into the loop or a subsystem.', ['mcp'], ['all', 'mcp', 'loop', 'coding']);
-    addHub(nodes, 'hub:public-goals', 'Public goals', 'Goal records related to the MCP community wiki.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:public-goals', 'Work targets', 'Work-target records folded into the MCP community wiki.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:universes', 'Live universes', 'Universe rows currently visible through MCP.', ['mcp'], ['all', 'mcp', 'fantasy']);
     addHub(nodes, 'hub:wiki-drafts', 'Wiki drafts', 'Draft wiki pages are not loose debris; they are draft-state wiki material.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:github-branches', 'GitHub branches', 'Branch refs returned by GitHub or the local repo snapshot.', ['repo'], ['all', 'repo', 'coding']);
@@ -549,7 +549,7 @@
 
 <svelte:head>
   <title>Graph - Workflow</title>
-  <meta name="description" content="Whole-project graph of Workflow: MCP wiki, goals, live universes, GitHub repo, branches, site pages, and project areas." />
+  <meta name="description" content="Whole-project graph of Workflow: MCP community wiki, work targets, live universes, GitHub repo, branches, site pages, and project areas." />
 </svelte:head>
 
 <section class="hero">
@@ -560,7 +560,7 @@
     </div>
     <h1>Everything, wired up.</h1>
     <p class="lead">
-      The graph now merges the live MCP community wiki with the real repo surface: GitHub branches, project areas, website pages, workflow branches, goals, universes, bugs, notes, plans, and the patch loop. Collection and tag layers keep real project objects connected without hiding which edges are explicit evidence.
+      The graph now merges the live MCP community wiki with the real repo surface: GitHub branches, project areas, website pages, workflow branches, work targets, universes, bugs, notes, plans, and the patch loop. Collection and tag layers keep real project objects connected without hiding which edges are explicit evidence.
     </p>
   </div>
 </section>

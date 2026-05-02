@@ -50,7 +50,7 @@
 
 <svelte:head>
   <title>The loop - Workflow</title>
-  <meta name="description" content="Watch live Workflow bugs, goals, branches, and gates move through the public contribution loop." />
+  <meta name="description" content="Watch live Workflow wiki bugs, work targets, branches, and gates move through the public contribution loop." />
 </svelte:head>
 
 <section class="join-loop join-loop--hero" aria-labelledby="join-loop-title">
@@ -71,7 +71,7 @@
           <span class="entry-step__number">2</span>
           <strong>Connect your MCP</strong>
           <p>Use it from your chatbot.</p>
-          <small>{pulse.mcp.source} · {compactNumber(pulse.mcp.goals.length)} goals · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
+          <small>{pulse.mcp.source} · {compactNumber(pulse.mcp.goals.length)} work targets · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
         </a>
         <a class="entry-step" href="/host">
           <span class="entry-step__number">3</span>
@@ -90,11 +90,11 @@
       <div>
         <RitualLabel color="var(--violet-400)">· Patch loop playground ·</RitualLabel>
         <h2>Click through the loop itself</h2>
-        <p>The 1-6 route is the showcase. Real wiki bug reports and goals from the MCP snapshot fill the route so the stage behavior is grounded instead of decorative.</p>
+        <p>The 1-6 route is the showcase. Real wiki bug reports and work targets from the MCP snapshot fill the route so the stage behavior is grounded instead of decorative.</p>
       </div>
       <div class="snapshot-meter" aria-label="MCP snapshot counts">
         <span><strong>{snapshot.stats.wiki_promoted}</strong> wiki pages</span>
-        <span><strong>{snapshot.stats.goals}</strong> goals</span>
+        <span><strong>{snapshot.stats.goals}</strong> work targets</span>
         <span><strong>{snapshot.stats.edges ?? snapshot.edges?.length ?? 0}</strong> edges</span>
       </div>
     </div>

@@ -14,6 +14,7 @@ import type { Snapshot } from '$lib/mcp/types';
 const MCP_PATH = import.meta.env.DEV ? '/mcp-live' : '/mcp';
 
 let initialized = false;
+let initPromise: Promise<void> | null = null;
 let sessionId: string | null = null;
 let nextId = 1;
 
@@ -80,6 +81,17 @@ async function rpc(method: string, params: any = {}): Promise<any> {
 
 async function ensureInit(): Promise<void> {
   if (initialized) return;
+  if (initPromise) return initPromise;
+
+  initPromise = initializeSession();
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
+}
+
+async function initializeSession(): Promise<void> {
   await rpc('initialize', {
     protocolVersion: '2025-06-18',
     clientInfo: { name: 'tinyassets-site-live', version: '0.1.0' },
@@ -87,7 +99,7 @@ async function ensureInit(): Promise<void> {
   });
   // Some servers require a notifications/initialized after — best effort.
   try {
-    await fetch(MCP_PATH, {
+    const res = await fetch(MCP_PATH, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -96,6 +108,7 @@ async function ensureInit(): Promise<void> {
       },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
     });
+    await res.text();
   } catch {}
   initialized = true;
 }
