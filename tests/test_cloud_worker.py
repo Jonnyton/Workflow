@@ -273,12 +273,122 @@ def test_subprocess_env_preserves_operator_unified_execution_setting(monkeypatch
     assert env["WORKFLOW_UNIFIED_EXECUTION"] == "0"
 
 
-def test_subprocess_env_inherits_openai_api_key(monkeypatch):
-    """The cloud worker delegates LLM routing to /etc/workflow/env's
-    OPENAI_API_KEY. Must survive env construction."""
+def test_subprocess_env_strips_openai_api_key_by_default(monkeypatch):
+    """Cloud worker is subscription-only unless API-key providers opt in."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-xyz")
+    env = cw._build_subprocess_env()
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_subprocess_env_preserves_openai_api_key_when_opted_in(monkeypatch):
+    monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-xyz")
     env = cw._build_subprocess_env()
     assert env["OPENAI_API_KEY"] == "sk-fake-test-key-xyz"
+
+
+# ---- queue pickup --------------------------------------------------------
+
+
+def test_has_pickable_branch_task_detects_pending_dispatcher_row(tmp_path):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="bt-pending",
+            branch_def_id="branch-1",
+            universe_id="u",
+            trigger_source="owner_queued",
+        ),
+    )
+
+    assert cw._has_pickable_branch_task(tmp_path) is True
+
+
+def test_has_pickable_branch_task_respects_unified_execution_opt_out(
+    tmp_path, monkeypatch,
+):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="bt-pending",
+            branch_def_id="branch-1",
+            universe_id="u",
+            trigger_source="owner_queued",
+        ),
+    )
+    monkeypatch.setenv("WORKFLOW_UNIFIED_EXECUTION", "0")
+
+    assert cw._has_pickable_branch_task(tmp_path) is False
+
+
+def test_supervisor_restarts_idle_subprocess_for_directly_queued_task(tmp_path):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="bt-pending",
+            branch_def_id="branch-1",
+            universe_id="u",
+            trigger_source="owner_queued",
+        ),
+    )
+    _sleep_calls, sleep_fn = _make_sleep_recorder()
+    spawned: list[FakeProc] = []
+
+    def spawn(universe):
+        proc = FakeProc(returncode=0, steps_until_exit=10)
+        spawned.append(proc)
+        return proc
+
+    state = cw.run_supervisor(
+        tmp_path,
+        producer_poll_interval=0.01,
+        poll_interval=0.01,
+        max_iterations=1,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+
+    assert state.total_clean_exits == 1
+    assert spawned[0].terminate_called is True
+
+
+def test_supervisor_does_not_restart_when_task_is_already_running(tmp_path):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="bt-running",
+            branch_def_id="branch-1",
+            universe_id="u",
+            trigger_source="owner_queued",
+            status="running",
+        ),
+    )
+    spawned: list[FakeProc] = []
+
+    def spawn(universe):
+        proc = FakeProc(returncode=0, steps_until_exit=1)
+        spawned.append(proc)
+        return proc
+
+    state = cw.run_supervisor(
+        tmp_path,
+        producer_poll_interval=0.01,
+        poll_interval=0.01,
+        max_iterations=1,
+        spawn_fn=spawn,
+        sleep_fn=lambda _: None,
+    )
+
+    assert state.total_clean_exits == 1
+    assert spawned[0].terminate_called is False
 
 
 # ---- _cloud_host_user ----------------------------------------------------
