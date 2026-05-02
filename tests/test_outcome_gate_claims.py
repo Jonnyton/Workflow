@@ -1,6 +1,6 @@
-"""Phase 6.2 — Outcome Gates retract + list_claims + leaderboard.
+"""Outcome Gates retract, list_claims, and leaderboard behavior.
 
-Covers docs/specs/outcome_gates_phase6.md §Rollout 6.2:
+Covers docs/specs/outcome_gates_phase6.md rollout details:
 - retract: soft-delete, owner/claimant/host authority, reason required.
 - list_claims: one-filter rule, include_retracted, orphan tagging.
 - leaderboard: highest-rung ordering, earliest-claim tiebreak, ignores

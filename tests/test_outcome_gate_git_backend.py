@@ -1,6 +1,6 @@
-"""Phase 6.3 — Outcome gates git-commit path + YAML emitters.
+"""Outcome gates git-commit path and YAML emitters.
 
-Covers docs/specs/outcome_gates_phase6.md §Rollout 6.3:
+Covers docs/specs/outcome_gates_phase6.md rollout details:
 - `save_gate_claim_and_commit` + `retract_gate_claim_and_commit`
   composites on `SqliteOnlyBackend` and `SqliteCachedBackend`.
 - YAML round-trip for `gate_ladder` (goals) and gate claims
