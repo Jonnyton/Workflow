@@ -28,8 +28,10 @@ from pathlib import Path
 from typing import Any
 
 from workflow.api.helpers import (
+    _default_universe,
     _find_all_pages,
     _read_text,
+    _universe_dir,
     _wiki_drafts_dir,
     _wiki_pages_dir,
     _wiki_root,
@@ -1361,6 +1363,45 @@ def _wiki_file_bug(
     _append_wiki_log(
         f"file_bug | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
+    investigation: dict[str, Any] = {"status": "skipped"}
+    try:
+        from workflow import bug_investigation
+
+        frontmatter = {
+            "bug_id": bug_id,
+            "title": title,
+            "type": effective_kind,
+            "kind": effective_kind,
+            "component": component,
+            "severity": severity,
+            "status": "open",
+            "observed": observed,
+            "expected": expected,
+            "repro": repro,
+            "workaround": workaround,
+        }
+        universe_id = _default_universe()
+        request_id = bug_investigation._maybe_enqueue_investigation(
+            bug_id=bug_id,
+            frontmatter=frontmatter,
+            base_path=_universe_dir(universe_id),
+            universe_id=universe_id,
+        )
+        if request_id:
+            investigation_section = bug_investigation.format_investigation_comment(
+                request_id=request_id,
+                status="queued",
+            )
+            with open(target, "a", encoding="utf-8") as fh:
+                fh.write(investigation_section)
+            investigation = {
+                "status": "queued",
+                "dispatcher_request_id": request_id,
+            }
+    except Exception as exc:  # noqa: BLE001 - bug filing itself must survive trigger failure.
+        _logger_wiki.warning("file_bug investigation trigger failed for %s: %s", bug_id, exc)
+        investigation = {"status": "error", "error": str(exc)}
+
     return json.dumps({
         "path": rel_path,
         "bug_id": bug_id,
@@ -1368,6 +1409,7 @@ def _wiki_file_bug(
         "kind": effective_kind,
         "severity": severity,
         "component": component,
+        "investigation": investigation,
         "note": "Filing sent to navigator triage pipeline. "
                 f"Use `wiki action=list category={category_dir}` to view.",
     })
