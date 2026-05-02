@@ -26,7 +26,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Directory submissions + first-use evidence - OpenAI public/full/global intent supplied; app packet blocked on `/mcp` vs `/mcp-directory` mismatch, data disclosure, demo URL, tested prompts. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | choose URL/data policy; action-time upload/final-submit approval | host-decision |
 | **#24 Arc C** - fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/{helpers,engine_helpers,wiki}.py, packaging/{mcpb,claude-plugin/plugins/workflow-universe-server/runtime}/, workflow_tray.py, fantasy_daemon/__main__.py, tests/, AGENTS.md, deploy/README.md | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
-| Community change loop - live watch/canary green 2026-05-02 02:43Z; P1a attach + incentive pickup v0 green; needs post-fix real-user evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
+| Community change loop - watch/canary green 2026-05-02 02:52Z; Claude Opus proof green; next blockers: goal_pool pickup + true child invoke. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Daemon soul followups - mini-brain pytest promotion and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | #24 Arc C | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
 | Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | nav-then-dev |
@@ -46,7 +46,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), #18 + incentive pickup v0 cleared; next is post-fix user evidence + remaining uptime rows.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a attach + incentive pickup v0 + Claude rendered proof green; next is goal_pool pickup + true child invoke.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
