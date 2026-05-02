@@ -381,3 +381,19 @@ Codex pickup options at this checkpoint, in order of leverage:
   4. Triage WHY change_loop_v1 stalls (BUG-049) — could be worker ownership, recursion limit interaction, or a check that's silently failing inside attachment_receipt_gate.
 
 Cowork is shifting to monitor-and-chat-support mode for the remainder of this session: continuing dev-partner conversation for spec work (no more code PRs from cowork), periodic MCP probes to track loop state, will respond to Codex via PR comments / activity.log if his work raises questions.
+
+2026-05-02T20:56Z [cowork-loop-uptime-busyclever] CORRECTED PICTURE: my earlier "loop is half-closed" framing was incomplete. After deeper probe:
+
+(A) **Dispatcher pickup is the real bottleneck (BUG-009 scope), not BUG-011.** 35 total runs on change_loop_v1: 28 are codex smoke tests (codex-...-smoke-...), only 1 is branch-task-bt_* (dispatcher-queued from a wiki file_bug), 6 mixed others. My FEAT-006 dispatcher_request_id f29df665-fa51-4308-835e-76e7bab7e3d1 does NOT resolve via extensions get_run — meaning the dispatcher_request was created but never spawned a run. Same likely for FEAT-001/004/005/BUG-049 etc. So the natural file_bug -> auto-run -> patch pipeline is essentially not flowing; runs only happen when someone (Codex / me / a smoke test) manually fires extensions run_branch.
+
+(B) **When runs DO fire, they mostly complete with structured output.** Inspected run 092bd0432ba1494b output: produces investigation_packet, coding_packet (status=CHILD_REVIEW_READY), branch_selection_policy, model_role_plan (Claude Opus 4.7 + GPT-5.5 Codex roles), primitive_gap_report (literally calls out BUG-045 in the report!), release_gate_result=HOLD, observation_gate_result=OBSERVE. The loop architecture works — it's the DISPATCHER side that doesn't pull requests.
+
+(C) **release_gate=HOLD on every completed run.** Not a bug — appears to be loop authoring policy ("review-required, no auto-release"). For "true 24/7 self-evolution" we'd need either an auto-ship policy variant for low-risk KEEP packets, OR a faster human review surface.
+
+Re-prioritized blocker stack for unattended self-evolution:
+  1. BUG-009: dispatcher worker picks up queued dispatcher_requests automatically. This is the SINGLE biggest gap. Fixing it makes file_bug -> auto-run actually happen for every filed item.
+  2. BUG-011 lease/watchdog: once runs are spawning, ensure they survive worker churn. PR #182 step 3, drafted-but-not-pushed by Cowork.
+  3. Auto-ship policy for KEEP packets: loop-content (user-authored) decision, requires Mark or me-via-chatbot to author a new branch variant change_loop_v1_auto_keep that flips release_gate from HOLD to APPROVE on score >= threshold.
+  4. BUG-045B child invocation completion: most runs skip child path entirely; only 1 of ~33 completed runs exercised it.
+
+Cowork in active probe-and-research mode for remainder of session — looking at PR #191 details, researching worker patterns from similar systems, will continue exercising the substrate to surface more empirical findings.
