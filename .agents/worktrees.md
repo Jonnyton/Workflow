@@ -247,3 +247,7 @@ Notes:
   `codex/onboarding-browser-proof-foldback` after PR #204 merged.
 - Purpose: fold back live challenge proof and Claude.ai rendered read proof.
 - Ship condition: STATUS/docs leave only true host action gates.
+- 2026-05-02 reuse same worktree on
+  `codex/openai-domain-verified-foldback` after host approved Verify Domain.
+- Purpose: fold back OpenAI dashboard `Domain verified` proof.
+- Ship condition: STATUS/docs remove Verify Domain from remaining host gates.

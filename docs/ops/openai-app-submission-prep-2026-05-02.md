@@ -140,8 +140,8 @@ Recorded prior dashboard state from 2026-05-02:
 - 2026-05-02 in-app browser inspection found `tinyassets.io` domain
   verification still pending. PR #204 published the required
   `/.well-known/openai-apps-challenge` file and deploy-site run
-  `25262547528` passed; dashboard `Verify Domain` remains an action-time host
-  approval.
+  `25262547528` passed. Host approved `Verify Domain` at action time on
+  2026-05-02T14:50-07:00, and the dashboard changed to `Domain verified`.
 - Final submit page was not completed.
 
 Not yet complete:
@@ -168,9 +168,7 @@ Not yet complete:
 5. Confirm the legal/connect site closeout has landed and deployed before using
    `https://tinyassets.io/legal#privacy` and `/connect` screenshots in final
    submit.
-6. Confirm OpenAI domain verification for `tinyassets.io` is live in the
-   dashboard.
-7. Host approves logo/screenshots or demo asset choices, release notes,
+6. Host approves logo/screenshots or demo asset choices, release notes,
    compliance answers, mature-content answer, publisher selector, verification
    assertion, and final submit.
 
@@ -277,3 +275,10 @@ Suggested release notes:
   connector from a naive read-only prompt and returned daemon status.
 - Screenshot:
   `output/openai-submission-assets/claude-ai-workflow-connector-status-2026-05-02.png`.
+
+2026-05-02T14:50-07:00 OpenAI domain verification:
+
+- Host approved clicking dashboard `Verify Domain`.
+- OpenAI dashboard changed to `Domain verified`.
+- Screenshot:
+  `output/openai-submission-assets/openai-dashboard-domain-verified-2026-05-02.png`.

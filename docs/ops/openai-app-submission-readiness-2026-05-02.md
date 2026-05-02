@@ -45,13 +45,11 @@ Source packet is review-aligned and deployed, ChatGPT web proof is clean, and
 the repo-side legal/asset closeout has landed. Final submission should wait for
 the OpenAI-specific blockers below:
 
-1. OpenAI dashboard `Verify Domain` must be clicked and show `tinyassets.io`
-   verified.
-2. ChatGPT mobile must complete the main read/write flows.
-3. Logo/screenshots or demo asset choices, release notes, mature-content
+1. ChatGPT mobile must complete the main read/write flows.
+2. Logo/screenshots or demo asset choices, release notes, mature-content
    answer, publisher selector, verification assertion, and compliance/legal
    checkboxes need host review.
-4. Host must approve final `Submit for Review` at action time.
+3. Host must approve final `Submit for Review` at action time.
 
 Parallel onboarding gaps that are not OpenAI-submit blockers:
 
@@ -155,6 +153,13 @@ Closed 2026-05-02T14:40-07:00:
 - In-app browser inspection confirmed the Submit section still needs release
   notes, publisher selector, compliance checkboxes, mature-content answer, and
   final `Submit for Review`.
+
+Closed 2026-05-02T14:50-07:00:
+
+- Host approved clicking OpenAI dashboard `Verify Domain`.
+- OpenAI dashboard changed to `Domain verified` for `tinyassets.io`.
+- Screenshot:
+  `output/openai-submission-assets/openai-dashboard-domain-verified-2026-05-02.png`.
 
 Parallel Claude gap narrowed 2026-05-02T14:44-07:00:
 
