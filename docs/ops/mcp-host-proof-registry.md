@@ -76,9 +76,9 @@ spec" or "planned", not "works".
 |---|---|---|---|
 | Official MCP Registry | Registry-aware MCP hosts | published-live | 2026-05-01 proof: `mcp-publisher publish packaging/registry/server.json`; API search returned `io.github.Jonnyton/workflow-universe-server` active/latest |
 | Claude.ai custom connector | Logged-in Claude user | protocol-live; UI refresh needed | Full surface is `https://tinyassets.io/mcp`; protocol proof green 2026-05-01; live Claude.ai proof still needs refresh |
-| Claude Connectors Directory | Logged-in Claude users/admins | packet-ready; submission-needed | Use `https://tinyassets.io/mcp-directory` and `docs/ops/mcp-directory-submission-packet.md` |
+| Claude Connectors Directory | Logged-in Claude users/admins | form-reached; submit blocked on contact/final-submit approval | 2026-05-02: in-app browser reached Google Form page 2 from official Claude submission docs; stopped before entering required contact/org fields because submission records Google identity and transmits contact data |
 | ChatGPT custom MCP / developer mode | Logged-in eligible ChatGPT user/workspace | blocked | BUG-034/admin approval path blocks clean custom connector approval |
-| ChatGPT App Directory | Logged-in ChatGPT users/admins | packet-ready; submission-needed | `chatgpt-app-submission.json` covers the 11 directory tools; actual submission requires OpenAI workspace/admin flow |
+| ChatGPT App Directory | Logged-in ChatGPT users/admins | dashboard-login blocked | `chatgpt-app-submission.json` covers the 11 directory tools; 2026-05-02 in-app browser reached OpenAI Platform login; actual submission requires OpenAI workspace/admin flow |
 | ChatGPT guest | No logged-in chatbot account | unsupported by ChatGPT path | Route to local/self-hosted/no-chatbot-login options |
 | Mistral Le Chat MCP connector | Logged-in Mistral user/admin | planned | Need connector config proof and directory/submission research |
 | Open WebUI | No hosted chatbot login if self-hosted | verified: local Docker 0.9.2 | 2026-05-01 proof: `docs/ops/open-webui-runtime-proof-2026-05-01.md`; Streamable HTTP MCP to `https://tinyassets.io/mcp-directory`, auth `None`, chat invoked `workflow_get_workflow_status` |
@@ -86,6 +86,7 @@ spec" or "planned", not "works".
 | LM Studio / Jan | Local model user | planned | Verify native MCP support or document bridge/fallback truthfully |
 | OpenClaw / channel gateway | Channel user | planned | Need direct support proof before claiming |
 | VS Code / GitHub Copilot | Developer/IDE user | planned | Verify `.vscode/mcp.json` or user MCP config with Copilot Chat |
+| Codex CLI/IDE | Developer/IDE user | registration-path verified; tool-call pending | 2026-05-02 proof: `docs/ops/mcp-codex-registration-proof-2026-05-02.md`; Codex CLI 0.104.0 wrote isolated Streamable HTTP config for `https://tinyassets.io/mcp-directory`; needs Codex tool-list plus read call before public verified copy |
 | Cursor | Developer/IDE user | registration-path verified; tool-call pending | 2026-05-01 proof: `docs/ops/mcp-cursor-registration-proof-2026-05-01.md`; Cursor 3.2.16 CLI wrote isolated Streamable HTTP config for `https://tinyassets.io/mcp-directory`; needs UI/agent tool-list plus read call before public verified copy |
 | Gemini CLI | Developer/CLI user | planned | Verify `settings.json`/command path and a safe tool call |
 | Microsoft Copilot Studio | Enterprise maker/admin | planned | Build custom MCP connector/Power Platform package or OpenAPI fallback |

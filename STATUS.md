@@ -26,7 +26,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof — mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence — drive Claude/OpenAI forms to login/final-submit boundary. ACTIVE 2026-05-02 | chatgpt-app-submission.json, docs/ops/mcp-host-proof-registry.md, docs/ops/mcp-directory-submission-packet.md, docs/ops/mcp-directory-rollout-action-queue.md | registry live 2026-05-01; host can log in when prompted | claimed:codex-gpt5-desktop |
+| Directory submissions + first-use evidence — Claude form p2 + OpenAI login reached; Codex CLI registration proof landed. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/design-notes/2026-05-01-mcp-host-customer-matrix.md | contact/final-submit approval + OpenAI login | host-action |
 | **#18 retarget sweep + Arc A/E shim deletion** — IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |
 | **#24 Arc C** — fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | #18 | dev-ready |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
@@ -53,7 +53,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Today 2026-05-01:** `/mcp-directory` green; completion = registry/directory acceptance + no-dev-mode proof + first-user evidence.
+1. **Current 2026-05-02:** `/mcp-directory` green; completion = registry/directory acceptance + no-dev-mode proof + first-user evidence.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.

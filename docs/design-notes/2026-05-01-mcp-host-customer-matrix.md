@@ -40,7 +40,7 @@ surface and "client" only for protocol behavior.
 | ChatGPT guest | Logged-out browser user | None through ChatGPT apps/MCP | Not available | unsupported by ChatGPT path | Route to no-login local/self-hosted path |
 | ChatGPT custom MCP/developer mode | Eligible logged-in user/workspace | `https://tinyassets.io/mcp-directory` or full `/mcp` for dev testing | Developer Mode/workspace approval | blocked by BUG-034 | Approval plus read-only tool call |
 | OpenAI API/Agents | Developer/API agent | Remote MCP tool | API configuration | planned | Responses/Agents smoke list + read call |
-| Codex CLI/IDE | Local developer agent | MCP config | Codex config | planned | Codex tool list + read call |
+| Codex CLI/IDE | Local developer agent | MCP config | Codex config | registration-path verified; tool-call pending | 2026-05-02 isolated `codex mcp add --url` wrote Streamable HTTP config; Codex tool-list/read call still required |
 | Gemini CLI | Local developer agent | MCP server config | Gemini CLI settings | planned | Gemini CLI tool list + read call |
 | VS Code/GitHub Copilot | Local IDE user | `.vscode/mcp.json` or user MCP config | MCP gallery/config/command palette | planned | Copilot Agent mode calls Workflow |
 | Cursor | Local IDE user | Cursor MCP config | Cursor settings/add path | registration-path verified; tool-call pending | 2026-05-01 CLI added isolated Streamable HTTP config; Cursor tool-list/read call still required |
