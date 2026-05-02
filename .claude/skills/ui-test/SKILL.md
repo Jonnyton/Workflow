@@ -309,7 +309,7 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never restate the obvious ("so my workflow is called X") — just act.
 - Don't re-validate already-green behaviors in the same mission.
 - If a prompt returns what you expected, log one line and move on. Don't follow up with "can you confirm?"
-- Stop on first bug in a probe area. Don't keep pushing after a known-broken path.
+- Don't bang on the same broken path with the same prompt. Log the bug, then probe adjacent ground (related edge cases, root-cause clues, what's next in the dependency chain) while context is warm.
 
 **Log discipline:**
 - USER ACTION entries: 1–3 lines max. Command + result summary. Full response lives in the trace; don't re-quote it in the log.
@@ -318,13 +318,21 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never write prose summaries of trace content in the log. The trace IS the detail.
 - MISSION SUMMARY: ≤15 lines total, bullet form.
 
-**Stop-early triggers:**
-- 3 bugs → stop (existing rule).
-- Mission's primary question answered (green or red) → stop, write FINDINGS, don't keep exploring.
-- Bot repeats a behavior you've already logged → stop.
-- Out of authorized writes → stop, ask lead before escalating.
+**Hard stops (chat ends here):**
+- 3 bugs → stop, log, wait. Beyond this risks masking root cause with noise.
+- Out of authorized writes → stop, ask lead before escalating to more writes.
+- Lead writes `LEAD STOP` or sends a stop message → stop immediately. No "relaxed pace."
+- Hit Claude.ai's rate limit or tool-call cap that pauses progress → stop, report up.
+- Bot literally loops (same tool calls + same verbatim answer twice) → stop and triage.
 
-**When in doubt about whether to ask:** don't. Write a `NOTE` entry with the question and let the lead decide. Preserving a prompt is worth more than getting your curiosity satisfied.
+**Soft non-stops — DO NOT end the chat here:**
+- The immediate question got answered. The chat is a working surface, not a single-question lookup. As long as it's producing value toward the larger project goal (loop running 24/7, substrate gaps closing, observability tightening), keep iterating with the next-most-leveraged question.
+- You spec'd a piece. Drive to "what's the smallest thing I can ship from here", "what would block this from working tomorrow", "what does this depend on we haven't tested yet."
+- A bug was found in a probe area. Log it, then keep exploring adjacent ground while context is warm — the cost to ramp another chat to the same depth is high.
+
+The pattern: each chat is a multi-objective working session. Treat it like pairing with a coworker for an hour, not asking a librarian a single question. The lead's direction (in chat or via session log) always wins; in absence of direction, drive forward toward the larger objective.
+
+**When in doubt about whether to ask:** ask, if it serves the larger goal. The chatbot's context is warm; restarting is expensive. The earlier "preserve prompts at all costs" framing was retired 2026-05-02 per host directive ("why oberterraially stop after finding what your looking for?"). The new framing: keep iterating as long as it's substantive.
 
 ## Budget and boundaries
 
