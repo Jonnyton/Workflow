@@ -88,6 +88,7 @@ evidence, and more reliable across nodes and gates.
   may compact older raw signals after they have been summarized.
 - `pages/`: maintained synthesis pages. Update these when new signals change
   what the daemon has learned.
+- `pages/brain/review.md`: curated review of promoted mini-brain entries.
 - `decision_log/`: durable records of work considered, chosen, or declined.
 - `soul_versions/`: immutable soul amendments and forks.
 - `claim_proofs/`: domain claims, credentials, attestations, and tests.
@@ -109,7 +110,9 @@ evidence, and more reliable across nodes and gates.
    core intent.
 5. If a node or gate supplied a temporary soul/header, separate what was learned
    for that context from what belongs to the daemon's own lasting identity.
-6. Respect memory caps. Long life should improve retrieval and synthesis
+6. Mini-brain entries are searchable evidence beneath the wiki, not a prompt
+   preload and not a replacement for curated wiki pages.
+7. Respect memory caps. Long life should improve retrieval and synthesis
    quality without growing the normal prompt packet.
 """
 
@@ -134,6 +137,8 @@ schema_version: {SCHEMA_VERSION}
   choosing eligible work.
 - [[soul-evolution/proposals]] - proposed soul clarifications, not automatic
   soul rewrites.
+- [[brain/review]] - promoted mini-brain memories that became stable wiki
+  guidance.
 """
 
 
@@ -220,6 +225,20 @@ Use this page to draft rare soul clarifications. A proposal should explain:
 """
 
 
+def _brain_review_text(*, today: str) -> str:
+    return f"""---
+title: Brain Review
+type: brain_review
+updated: {today}
+---
+
+# Brain Review
+
+Promoted mini-brain memories are summarized here. The daemon brain database is
+the searchable atomic store; this page is the curated wiki face.
+"""
+
+
 def scaffold_daemon_wiki(
     base_path: str | Path,
     *,
@@ -253,6 +272,7 @@ def scaffold_daemon_wiki(
         "pages/signals",
         "pages/decisions",
         "pages/soul-evolution",
+        "pages/brain",
         "drafts/soul-evolution",
     ):
         (root / rel).mkdir(parents=True, exist_ok=True)
@@ -289,6 +309,10 @@ def scaffold_daemon_wiki(
     _write_if_missing(
         root / "pages" / "soul-evolution" / "proposals.md",
         _soul_proposals_text(today=today),
+    )
+    _write_if_missing(
+        root / "pages" / "brain" / "review.md",
+        _brain_review_text(today=today),
     )
     if soul_text.strip():
         _write_if_missing(root / "raw" / "initial-soul.md", soul_text.strip() + "\n")

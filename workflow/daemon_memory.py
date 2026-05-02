@@ -18,6 +18,7 @@ DEFAULT_PROJECT_PLATEAU_BYTES = 128 * MIB
 DEFAULT_FIRST_MONTH_DAYS = 30
 DEFAULT_PLATEAU_DAYS = 365
 DEFAULT_MEMORY_PACKET_CHARS = 8000
+DEFAULT_BRAIN_PACKET_CHARS = 1600
 
 VALID_CAP_POLICIES = {"fixed", "age_scaled", "custom"}
 
@@ -430,12 +431,30 @@ def _read_section(
     return section, False
 
 
+def _default_brain_query(daemon: dict[str, Any]) -> str:
+    claims = daemon.get("domain_claims") or []
+    metadata = _metadata_dict(daemon.get("metadata"))
+    role_terms = [
+        str(metadata.get("loop_core_role") or ""),
+        str(metadata.get("fixed_llm") or metadata.get("pinned_llm") or ""),
+    ]
+    return " ".join(
+        item.strip()
+        for item in [*role_terms, *[str(claim) for claim in claims]]
+        if item and item.strip()
+    )
+
+
 def build_daemon_memory_packet(
     base_path: str | Path,
     *,
     daemon_id: str,
     max_chars: int = DEFAULT_MEMORY_PACKET_CHARS,
     enforce_cap: bool = True,
+    include_brain: bool = True,
+    brain_query: str | None = None,
+    brain_max_chars: int = DEFAULT_BRAIN_PACKET_CHARS,
+    brain_limit: int = 5,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build the bounded soul/wiki context packet for one daemon run."""
@@ -486,25 +505,60 @@ def build_daemon_memory_packet(
     )
     context = header[:budget]
     truncated = len(header) > budget
+    reserved_brain_chars = 0
+    if include_brain and brain_query is not None and not truncated:
+        reserved_brain_chars = min(
+            max(0, int(brain_max_chars)),
+            max(0, budget - len(context)),
+        )
 
     for rel_path in (
         "WIKI.md",
         "index.md",
         "pages/decisions/decision-policy.md",
         "pages/self-model/current-self.md",
+        "pages/brain/review.md",
         "pages/signals/compaction-summary.md",
         "pages/signals/learning-signals.md",
         "pages/soul-evolution/proposals.md",
     ):
         if truncated:
             break
+        wiki_remaining = budget - len(context) - reserved_brain_chars
+        if wiki_remaining <= 0:
+            break
         section, section_truncated = _read_section(
             root,
             rel_path,
-            remaining=budget - len(context),
+            remaining=wiki_remaining,
         )
         context += section
         truncated = section_truncated
+
+    brain = None
+    if include_brain and (not truncated or reserved_brain_chars > 0):
+        remaining = budget - len(context)
+        if remaining > 0:
+            from workflow.daemon_brain import build_daemon_brain_packet
+
+            brain = build_daemon_brain_packet(
+                base_path,
+                daemon_id=daemon_id,
+                query=brain_query if brain_query is not None else _default_brain_query(daemon),
+                max_chars=min(max(0, int(brain_max_chars)), remaining),
+                limit=brain_limit,
+            )
+            brain_section = "\n\n" + str(brain.get("context") or "")
+            if len(brain_section) > remaining:
+                marker = "\n[truncated]\n"
+                if remaining <= len(marker):
+                    brain_section = brain_section[:remaining]
+                else:
+                    brain_section = (
+                        brain_section[: remaining - len(marker)].rstrip() + marker
+                    )
+                truncated = True
+            context += brain_section
 
     return {
         "daemon_id": daemon_id,
@@ -516,4 +570,5 @@ def build_daemon_memory_packet(
         "truncated": truncated,
         "memory_status": status,
         "compaction": compaction,
+        "brain": brain,
     }

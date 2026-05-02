@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed architecture direction. This extends the current daemon wiki memory
-governor; it does not copy OB1/Open Brain code and does not add a new hosted
-dependency. Implementation remains blocked behind the current #18 runtime/test
-lock unless a narrower non-overlapping slice opens.
+Accepted direction with an additive runtime slice landed on
+`codex/daemon-memory-governor` in May 2026. This extends the current daemon
+wiki memory governor; it does not copy OB1/Open Brain code and does not add a
+new hosted dependency. Formal pytest coverage, plugin mirror sync, and public
+tool/API exposure remain blocked behind the current #18 runtime/test lock.
 
 ## Decision
 
@@ -312,27 +313,30 @@ Future `workflow/daemon_brain.py` should expose a small internal/tool surface:
 Avoid one tool per table. Tools should operate at the daemon memory concept
 level, not database mechanics.
 
-## MVP After #18
+## Landed Runtime Slice
 
-1. Add SQLite tables:
-   - `daemon_brain_entries`
-   - `daemon_memory_events`
-   - `daemon_memory_promotions`
-2. Add `workflow/daemon_brain.py`:
-   - CRUD for daemon-scoped entries;
-   - content fingerprint dedupe;
-   - FTS search;
-   - LanceDB indexing through the existing singleton;
-   - top-k retrieval packet builder.
-3. Extend daemon wiki scaffold with:
-   - `pages/brain/review.md`
-   - `status/memory-observability.json`
-4. Extend `build_daemon_memory_packet()`:
-   - include top-k mini-brain hits after soul/wiki sections;
-   - keep the existing hard packet cap;
-   - emit memory trace metadata.
-5. Add observability events for query/retrieve/inject/write/promote/compact.
-6. Add focused tests once #18 releases `tests/`.
+The first implementation adds:
+
+- `workflow/daemon_brain.py` with daemon-scoped SQLite entries, FTS search,
+  content fingerprint dedupe, observable memory events, promotion records, and
+  optional LanceDB indexing when an embedding is supplied.
+- bounded mini-brain hit injection in `workflow/daemon_memory.py`, preserving
+  the existing packet cap and reserving brain budget when a task-specific query
+  is supplied.
+- non-destructive daemon wiki scaffolding for `pages/brain/review.md` using
+  write-if-missing semantics, so existing daemon wiki files are not rewritten.
+- `scripts/proofs/daemon_brain_smoke.py`, an executable proof kept outside
+  `tests/` until #18 releases that tree.
+
+## Remaining After #18
+
+1. Promote `scripts/proofs/daemon_brain_smoke.py` into focused pytest coverage.
+2. Mirror the new runtime module into the packaged Claude plugin after #18
+   releases the mirror tree.
+3. Expose the minimal daemon-owned tool/API surface.
+4. Add a host review/editor surface for memory inspection and correction.
+5. Add memory quality evals that replay runs with and without selected memory
+   hits.
 
 ## Later
 
