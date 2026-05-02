@@ -251,3 +251,16 @@ Notes:
   `codex/openai-domain-verified-foldback` after host approved Verify Domain.
 - Purpose: fold back OpenAI dashboard `Domain verified` proof.
 - Ship condition: STATUS/docs remove Verify Domain from remaining host gates.
+
+## OpenAI Submission Closeout - 2026-05-02
+
+- 2026-05-02 create `../wf-openai-submission-closeout` on
+  `codex/openai-submission-closeout` by codex-gpt5-desktop-onboarding.
+- STATUS row: OpenAI/Claude directory submission host actions.
+- Purpose: fold back the latest OpenAI Apps dashboard audit and local
+  onboarding worktree cleanup.
+- Ship condition: STATUS/docs name exact remaining host approvals and the
+  dashboard field values ready for action-time approval.
+- Cleanup performed before this lane: swept local clean merged onboarding
+  worktrees for PRs #133, #135, #137, #139, #141, #143, #145, #154, and #159;
+  remote GitHub branches were intentionally left untouched.
