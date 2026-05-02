@@ -12,7 +12,7 @@ Surface guarded:
 - `WRITE_ACTIONS` table contract — every action mapped to (extractor, daemon-gate)
 - `_dispatch_with_ledger`, `_scope_universe_response`, `_ledger_target_dir`
   ledger trio — universe-tool internal pipeline
-- 38 `_action_*` handler set — present, callable, owned by this module
+- `_action_*` handler set — present, callable, owned by this module
 - Daemon-liveness telemetry helpers — present, owned by this module
 - Pattern A2 wrapper: `workflow.universe_server.universe` delegates to
   `workflow.api.universe._universe_impl` (verified via simple round-trip)
@@ -44,6 +44,8 @@ def test_module_exposes_expected_public_names() -> None:
         "_extract_daemon_create", "_extract_daemon_summon",
         "_extract_daemon_banish", "_extract_daemon_control",
         "_extract_daemon_update_behavior",
+        "_extract_daemon_memory_capture", "_extract_daemon_memory_review",
+        "_extract_daemon_memory_promote",
         # Ledger dispatcher trio
         "_ledger_target_dir", "_scope_universe_response",
         "_dispatch_with_ledger",
@@ -53,7 +55,7 @@ def test_module_exposes_expected_public_names() -> None:
         "_last_activity_at", "_staleness_bucket", "_phase_human",
         "_compute_accept_rate_from_db", "_compute_word_count_from_files",
         "_daemon_liveness", "_parse_activity_line",
-        # 33 universe-tool action handlers
+        # universe-tool action handlers
         "_action_list_universes", "_action_inspect_universe",
         "_action_read_output", "_action_submit_request",
         "_action_queue_list", "_action_daemon_overview",
@@ -62,6 +64,9 @@ def test_module_exposes_expected_public_names() -> None:
         "_action_daemon_banish", "_action_daemon_pause",
         "_action_daemon_resume", "_action_daemon_restart",
         "_action_daemon_update_behavior", "_action_daemon_control_status",
+        "_action_daemon_memory_capture", "_action_daemon_memory_search",
+        "_action_daemon_memory_list", "_action_daemon_memory_review",
+        "_action_daemon_memory_promote", "_action_daemon_memory_status",
         "_action_set_tier_config", "_action_queue_cancel",
         "_action_subscribe_goal", "_action_unsubscribe_goal",
         "_action_list_subscriptions", "_action_post_to_goal_pool",
@@ -82,9 +87,9 @@ def test_module_exposes_expected_public_names() -> None:
     )
 
 
-def test_write_actions_table_has_21_entries() -> None:
+def test_write_actions_table_has_24_entries() -> None:
     """WRITE_ACTIONS dict literal includes daemon create/summon/banish writes."""
-    assert len(univ_mod.WRITE_ACTIONS) == 21
+    assert len(univ_mod.WRITE_ACTIONS) == 24
 
 
 def test_write_actions_entries_are_extractor_gate_tuples() -> None:
@@ -196,8 +201,8 @@ def test_daemon_liveness_returns_dict_with_required_keys(tmp_path) -> None:
 # ── 33-handler dispatch table sanity ─────────────────────────────────────────
 
 
-def test_universe_impl_dispatch_table_has_33_actions() -> None:
-    """The `dispatch` table inside `_universe_impl` includes daemon roster actions."""
+def test_universe_impl_dispatch_table_has_known_actions() -> None:
+    """The `dispatch` table inside `_universe_impl` includes roster actions."""
     # Round-trip "list" through _universe_impl to confirm the dispatch
     # table is wired and covers at least one read action.
     out = univ_mod._universe_impl(action="list")
@@ -210,6 +215,8 @@ def test_universe_impl_dispatch_table_has_33_actions() -> None:
     "daemon_overview", "daemon_list", "daemon_get", "daemon_create",
     "daemon_summon", "daemon_pause", "daemon_resume", "daemon_restart",
     "daemon_banish", "daemon_update_behavior", "daemon_control_status",
+    "daemon_memory_capture", "daemon_memory_search", "daemon_memory_list",
+    "daemon_memory_review", "daemon_memory_promote", "daemon_memory_status",
     "set_tier_config", "queue_cancel",
     "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
     "post_to_goal_pool", "submit_node_bid", "community_change_context",

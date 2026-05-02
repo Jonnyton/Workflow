@@ -365,6 +365,61 @@ def _extract_daemon_update_behavior(
     )
 
 
+def _extract_daemon_memory_capture(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    entry = result.get("entry", {}) if isinstance(result.get("entry"), dict) else {}
+    entry_id = str(entry.get("entry_id") or "")
+    daemon_id = str(result.get("daemon_id") or entry.get("daemon_id") or "")
+    return (
+        entry_id,
+        _truncate(f"capture daemon memory {daemon_id}"),
+        {
+            "daemon_id": daemon_id,
+            "entry_id": entry_id,
+            "memory_kind": entry.get("memory_kind"),
+            "promotion_state": entry.get("promotion_state"),
+        },
+    )
+
+
+def _extract_daemon_memory_review(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    entry_id = str(result.get("entry_id") or "")
+    daemon_id = str(result.get("daemon_id") or "")
+    decision = str(result.get("decision") or "")
+    return (
+        entry_id,
+        _truncate(f"{decision} daemon memory {entry_id}"),
+        {
+            "daemon_id": daemon_id,
+            "entry_id": entry_id,
+            "decision": decision,
+        },
+    )
+
+
+def _extract_daemon_memory_promote(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    promotion_id = str(result.get("promotion_id") or "")
+    daemon_id = str(result.get("daemon_id") or "")
+    return (
+        promotion_id,
+        _truncate(f"promote daemon memory {daemon_id}"),
+        {
+            "daemon_id": daemon_id,
+            "promotion_id": promotion_id,
+            "entry_ids": result.get("entry_ids", []),
+            "promoted_count": result.get("promoted_count", 0),
+        },
+    )
+
+
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -387,6 +442,9 @@ WRITE_ACTIONS: dict[str, Any] = {
     "daemon_resume": (_extract_daemon_control, None),
     "daemon_restart": (_extract_daemon_control, None),
     "daemon_update_behavior": (_extract_daemon_update_behavior, None),
+    "daemon_memory_capture": (_extract_daemon_memory_capture, None),
+    "daemon_memory_review": (_extract_daemon_memory_review, None),
+    "daemon_memory_promote": (_extract_daemon_memory_promote, None),
 }
 
 
@@ -1508,6 +1566,244 @@ def _action_daemon_control_status(
         universe_id=universe_id or str(data.get("universe_id") or "").strip() or None,
     )
     result["universe_id"] = universe_id or _default_universe()
+    return json.dumps(result, default=str)
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _as_string_list(value: Any) -> list[str] | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, list):
+        out = [str(item).strip() for item in value if str(item).strip()]
+        return out or None
+    if isinstance(value, str):
+        out = [part.strip() for part in value.split(",") if part.strip()]
+        return out or None
+    return None
+
+
+def _daemon_memory_inputs(
+    inputs_json: str,
+    *,
+    node_def_id: str = "",
+) -> tuple[dict[str, Any], str, str | None]:
+    data, err = _parse_inputs_object(inputs_json)
+    if err:
+        return {}, "", err
+    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
+    if not daemon_id:
+        return data, "", "daemon_id is required."
+    return data, daemon_id, None
+
+
+def _action_daemon_memory_capture(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_brain import capture_daemon_memory
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    content = str(data.get("content") or text or "").strip()
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
+    temporal_bounds = (
+        data.get("temporal_bounds") if isinstance(data.get("temporal_bounds"), dict)
+        else None
+    )
+    try:
+        entry = capture_daemon_memory(
+            _base_path(),
+            daemon_id=daemon_id,
+            content=content,
+            memory_kind=str(data.get("memory_kind") or "semantic"),
+            source_type=str(data.get("source_type") or "manual"),
+            source_id=str(data.get("source_id") or _current_actor() or "manual"),
+            source_path=str(data.get("source_path") or ""),
+            source_hash=str(data.get("source_hash") or ""),
+            reliability=str(data.get("reliability") or ""),
+            temporal_bounds=temporal_bounds,
+            language_type=str(data.get("language_type") or ""),
+            confidence=float(data.get("confidence", 0.5)),
+            importance=float(data.get("importance", 0.5)),
+            sensitivity_tier=str(data.get("sensitivity_tier") or "normal"),
+            visibility=str(data.get("visibility") or "host_private"),
+            promotion_state=str(data.get("promotion_state") or "candidate"),
+            supersedes_entry_id=(
+                str(data.get("supersedes_entry_id")).strip()
+                if data.get("supersedes_entry_id") else None
+            ),
+            metadata=metadata,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    return json.dumps({"universe_id": uid, "daemon_id": daemon_id, "entry": entry}, default=str)
+
+
+def _action_daemon_memory_search(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    filter_text: str = "",
+    limit: Any = 5,
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_brain import search_daemon_memory
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    query = str(data.get("query") or text or filter_text or "").strip()
+    try:
+        result = search_daemon_memory(
+            _base_path(),
+            daemon_id=daemon_id,
+            query=query,
+            limit=int(data.get("limit", limit)),
+            min_score=float(data.get("min_score", 0.0)),
+            include_superseded=_as_bool(data.get("include_superseded", False)),
+            memory_kinds=_as_string_list(data.get("memory_kinds")),
+            visibility=(
+                str(data.get("visibility")).strip()
+                if data.get("visibility") else None
+            ),
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    result["universe_id"] = uid
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_memory_list(
+    universe_id: str = "",
+    inputs_json: str = "",
+    limit: Any = 50,
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_brain import list_daemon_memory
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    try:
+        result = list_daemon_memory(
+            _base_path(),
+            daemon_id=daemon_id,
+            limit=int(data.get("limit", limit)),
+            include_superseded=_as_bool(data.get("include_superseded", False)),
+            memory_kinds=_as_string_list(data.get("memory_kinds")),
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    result["universe_id"] = uid
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_memory_review(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    branch_task_id: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.daemon_brain import review_daemon_memory
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    entry_id = str(data.get("entry_id") or branch_task_id or "").strip()
+    if not entry_id:
+        return json.dumps({"universe_id": uid, "error": "entry_id is required."})
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
+    try:
+        result = review_daemon_memory(
+            _base_path(),
+            daemon_id=daemon_id,
+            entry_id=entry_id,
+            decision=str(data.get("decision") or text or ""),
+            reviewer_id=str(data.get("reviewer_id") or _current_actor() or "host"),
+            note=str(data.get("note") or ""),
+            superseded_by_entry_id=(
+                str(data.get("superseded_by_entry_id")).strip()
+                if data.get("superseded_by_entry_id") else None
+            ),
+            metadata=metadata,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    result["universe_id"] = uid
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_memory_promote(
+    universe_id: str = "",
+    inputs_json: str = "",
+    text: str = "",
+    branch_task_id: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_brain import promote_daemon_memory_to_wiki
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    entry_ids = _as_string_list(data.get("entry_ids")) or _as_string_list(branch_task_id)
+    summary = str(data.get("summary") or text or "").strip()
+    target_rel_path = str(data.get("target_rel_path") or "pages/brain/review.md")
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
+    try:
+        result = promote_daemon_memory_to_wiki(
+            _base_path(),
+            daemon_id=daemon_id,
+            entry_ids=entry_ids or [],
+            summary=summary,
+            target_rel_path=target_rel_path,
+            metadata=metadata,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    result["universe_id"] = uid
+    return json.dumps(result, default=str)
+
+
+def _action_daemon_memory_status(
+    universe_id: str = "",
+    inputs_json: str = "",
+    node_def_id: str = "",
+    **_kwargs: Any,
+) -> str:
+    from workflow.daemon_brain import memory_observability_status
+
+    uid = universe_id or _default_universe()
+    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
+    if err:
+        return json.dumps({"universe_id": uid, "error": err})
+    try:
+        result = memory_observability_status(_base_path(), daemon_id=daemon_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        return json.dumps({"universe_id": uid, "error": str(exc)})
+    result["universe_id"] = uid
     return json.dumps(result, default=str)
 
 
@@ -3712,6 +4008,12 @@ def _universe_impl(
         "daemon_banish": _action_daemon_banish,
         "daemon_update_behavior": _action_daemon_update_behavior,
         "daemon_control_status": _action_daemon_control_status,
+        "daemon_memory_capture": _action_daemon_memory_capture,
+        "daemon_memory_search": _action_daemon_memory_search,
+        "daemon_memory_list": _action_daemon_memory_list,
+        "daemon_memory_review": _action_daemon_memory_review,
+        "daemon_memory_promote": _action_daemon_memory_promote,
+        "daemon_memory_status": _action_daemon_memory_status,
         "set_tier_config": _action_set_tier_config,
     }
 

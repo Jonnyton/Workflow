@@ -118,6 +118,9 @@ def _universe_dispatch_keys() -> set[str]:
         "daemon_create", "daemon_summon", "daemon_pause",
         "daemon_resume", "daemon_restart", "daemon_banish",
         "daemon_update_behavior", "daemon_control_status",
+        "daemon_memory_capture", "daemon_memory_search",
+        "daemon_memory_list", "daemon_memory_review",
+        "daemon_memory_promote", "daemon_memory_status",
         "set_tier_config",
     }
 

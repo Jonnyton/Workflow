@@ -97,6 +97,8 @@ def test_write_actions_table_is_exhaustive() -> None:
         "daemon_create", "daemon_summon", "daemon_banish",
         "daemon_pause", "daemon_resume", "daemon_restart",
         "daemon_update_behavior",
+        "daemon_memory_capture", "daemon_memory_review",
+        "daemon_memory_promote",
     }
     assert set(us.WRITE_ACTIONS.keys()) == expected
 

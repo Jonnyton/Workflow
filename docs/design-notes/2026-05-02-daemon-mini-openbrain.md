@@ -334,8 +334,12 @@ The first implementation adds:
    script remains as an operator CLI proof.
 2. Plugin mirror parity is green; `workflow/daemon_brain.py` is present in the
    packaged Claude plugin runtime.
-3. Expose the minimal daemon-owned tool/API surface.
-4. Add a host review/editor surface for memory inspection and correction.
+3. Minimal daemon-owned `universe` action surface landed:
+   `daemon_memory_capture`, `daemon_memory_search`, `daemon_memory_list`,
+   `daemon_memory_review`, `daemon_memory_promote`, and
+   `daemon_memory_status`.
+4. Add a host review/editor surface for richer memory inspection and
+   correction beyond the action-level review primitive.
 5. Add memory quality evals that replay runs with and without selected memory
    hits.
 

@@ -1148,6 +1148,111 @@ def supersede_daemon_memory(
     }
 
 
+def review_daemon_memory(
+    base_path: str | Path,
+    *,
+    daemon_id: str,
+    entry_id: str,
+    decision: str,
+    reviewer_id: str = "host",
+    note: str = "",
+    superseded_by_entry_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Accept, reject, or supersede one daemon memory entry."""
+    _validate_daemon(base_path, daemon_id)
+    normalized = str(decision or "").strip().lower()
+    decision_to_state = {
+        "accept": "accepted",
+        "accepted": "accepted",
+        "reject": "rejected",
+        "rejected": "rejected",
+        "supersede": "superseded",
+        "superseded": "superseded",
+    }
+    state = decision_to_state.get(normalized)
+    if state is None:
+        raise ValueError("decision must be accept, reject, or supersede")
+    if state == "superseded" and not str(superseded_by_entry_id or "").strip():
+        raise ValueError("superseded_by_entry_id is required for supersede")
+
+    trace = _trace_id()
+    stamp = _stamp()
+    with _connect(base_path) as conn:
+        entry = _fetch_entry(conn, entry_id)
+        if entry is None or entry["daemon_id"] != daemon_id:
+            raise ValueError("entry_id not found for daemon")
+        if state == "superseded":
+            replacement_id = str(superseded_by_entry_id or "").strip()
+            replacement = _fetch_entry(conn, replacement_id)
+            if replacement is None or replacement["daemon_id"] != daemon_id:
+                raise ValueError("superseded_by_entry_id not found for daemon")
+        else:
+            replacement_id = None
+
+        entry_metadata = dict(entry.get("metadata") or {})
+        review_record = {
+            "decision": state,
+            "reviewer_id": str(reviewer_id or "host"),
+            "note": str(note or ""),
+            "reviewed_at": stamp,
+        }
+        if replacement_id:
+            review_record["superseded_by_entry_id"] = replacement_id
+        if metadata:
+            review_record["metadata"] = dict(metadata)
+        history = list(entry_metadata.get("review_history") or [])
+        history.append(review_record)
+        entry_metadata["last_review"] = review_record
+        entry_metadata["review_history"] = history
+
+        conn.execute(
+            """
+            UPDATE daemon_brain_entries
+            SET promotion_state = ?,
+                superseded_by_entry_id = ?,
+                metadata_json = ?,
+                updated_at = ?
+            WHERE daemon_id = ? AND entry_id = ?
+            """,
+            (
+                state,
+                replacement_id,
+                _json_dumps(entry_metadata),
+                stamp,
+                daemon_id,
+                entry_id,
+            ),
+        )
+        event_type = {
+            "accepted": "daemon.memory.accept",
+            "rejected": "daemon.memory.reject",
+            "superseded": "daemon.memory.supersede",
+        }[state]
+        event_entry_ids = [entry_id]
+        if replacement_id:
+            event_entry_ids.append(replacement_id)
+        _record_event_conn(
+            conn,
+            daemon_id=daemon_id,
+            event_type=event_type,
+            trace_id=trace,
+            entry_ids=event_entry_ids,
+            metadata=review_record,
+        )
+        reviewed = _fetch_entry(conn, entry_id)
+        assert reviewed is not None
+
+    return {
+        "daemon_id": daemon_id,
+        "host_local": True,
+        "entry_id": entry_id,
+        "decision": state,
+        "entry": reviewed,
+        "trace_id": trace,
+    }
+
+
 def memory_observability_status(
     base_path: str | Path,
     *,
