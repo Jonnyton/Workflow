@@ -396,7 +396,12 @@ def run_supervisor(
         # Poll until subprocess exits, while respecting stop signal.
         returncode: int | None = None
         queue_restart_reason = ""
-        last_producer_poll = 0.0
+        # The subprocess attempts its dispatcher claim during startup. If
+        # BranchTasks are already pending, polling immediately would terminate
+        # the child before it gets a chance to claim them, creating a restart
+        # loop. Start the producer clock now and only restart if the task is
+        # still pickable after one poll interval.
+        last_producer_poll = time.monotonic()
         while True:
             if stopping["flag"]:
                 logger.info("cloud_worker: terminating subprocess on stop signal")

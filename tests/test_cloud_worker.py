@@ -325,7 +325,10 @@ def test_has_pickable_branch_task_respects_unified_execution_opt_out(
     assert cw._has_pickable_branch_task(tmp_path) is False
 
 
-def test_supervisor_restarts_idle_subprocess_for_directly_queued_task(tmp_path):
+def test_supervisor_does_not_restart_pending_task_before_claim_grace(
+    tmp_path,
+    monkeypatch,
+):
     from workflow.branch_tasks import BranchTask, append_task
 
     append_task(
@@ -337,6 +340,45 @@ def test_supervisor_restarts_idle_subprocess_for_directly_queued_task(tmp_path):
             trigger_source="owner_queued",
         ),
     )
+    monkeypatch.setattr(cw.time, "monotonic", lambda: 100.0)
+    _sleep_calls, sleep_fn = _make_sleep_recorder()
+    spawned: list[FakeProc] = []
+
+    def spawn(universe):
+        proc = FakeProc(returncode=0, steps_until_exit=1)
+        spawned.append(proc)
+        return proc
+
+    state = cw.run_supervisor(
+        tmp_path,
+        producer_poll_interval=30.0,
+        poll_interval=0.01,
+        max_iterations=1,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+
+    assert state.total_clean_exits == 1
+    assert spawned[0].terminate_called is False
+
+
+def test_supervisor_restarts_idle_subprocess_for_still_pending_task_after_grace(
+    tmp_path,
+    monkeypatch,
+):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="bt-pending",
+            branch_def_id="branch-1",
+            universe_id="u",
+            trigger_source="owner_queued",
+        ),
+    )
+    times = iter([100.0, 131.0])
+    monkeypatch.setattr(cw.time, "monotonic", lambda: next(times))
     _sleep_calls, sleep_fn = _make_sleep_recorder()
     spawned: list[FakeProc] = []
 
@@ -347,7 +389,7 @@ def test_supervisor_restarts_idle_subprocess_for_directly_queued_task(tmp_path):
 
     state = cw.run_supervisor(
         tmp_path,
-        producer_poll_interval=0.01,
+        producer_poll_interval=30.0,
         poll_interval=0.01,
         max_iterations=1,
         spawn_fn=spawn,
