@@ -1658,6 +1658,7 @@ def _invoke_graph(
     provider_call: Callable[..., str] | None,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     concurrency_budget_override: int | None = None,
+    _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Compile + invoke the graph for an already-prepared run_id.
 
@@ -1773,6 +1774,7 @@ def _invoke_graph(
             event_sink=_on_node,
             concurrency_budget_override=concurrency_budget_override,
             base_path=base_path,
+            invocation_depth=_invocation_depth,
         )
     except (UnapprovedNodeError, CompilerError) as exc:
         update_run_status(
@@ -2074,6 +2076,7 @@ def execute_branch(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Synchronous end-to-end execution.
 
@@ -2101,6 +2104,7 @@ def execute_branch(
         provider_call=provider_call,
         recursion_limit=recursion_limit_override or DEFAULT_RECURSION_LIMIT,
         concurrency_budget_override=concurrency_budget_override,
+        _invocation_depth=_invocation_depth,
     )
 
 
@@ -2278,6 +2282,7 @@ def _execute_branch_core(
                 provider_call=provider_call,
                 recursion_limit=effective_limit,
                 concurrency_budget_override=concurrency_budget_override,
+                _invocation_depth=_invocation_depth,
             )
         except Exception:
             # Belt-and-suspenders: _invoke_graph already catches and

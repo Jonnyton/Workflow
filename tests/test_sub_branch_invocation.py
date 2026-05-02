@@ -1034,6 +1034,42 @@ class TestChildActorHonoring:
         assert kwargs["actor"] == "bob"
         assert kwargs["_invocation_depth"] == 3  # depth=2 + 1
 
+    def test_invoke_branch_blocking_threads_invocation_depth(self, tmp_path):
+        """Blocking invoke_branch must advance depth just like async/versioned paths."""
+        from workflow.runs import RUN_STATUS_COMPLETED, RunOutcome
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {"result": "answer"},
+                "wait_mode": "blocking",
+                "child_actor": "bob",
+            },
+        )
+        child_branch_mock = MagicMock()
+        child_branch_mock.validate.return_value = []
+        _raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
+        child_outcome = RunOutcome(
+            run_id="r1", status=RUN_STATUS_COMPLETED,
+            output={"answer": "ok"}, error="",
+        )
+
+        with (
+            patch("workflow.daemon_server.get_branch_definition", return_value=_raw),
+            patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
+            patch("workflow.runs.execute_branch", return_value=child_outcome) as mock_exec,
+        ):
+            fn = _build_invoke_branch_node(
+                nd, base_path=tmp_path, event_sink=None, depth=2,
+            )
+            fn({})
+
+        kwargs = mock_exec.call_args.kwargs
+        assert kwargs["actor"] == "bob"
+        assert kwargs["_invocation_depth"] == 3  # depth=2 + 1
+
     def test_invoke_branch_version_threads_child_actor_and_depth(self, tmp_path):
         """invoke_branch_version_spec passes child_actor + _invocation_depth."""
         from workflow.graph_compiler import _build_invoke_branch_version_node
@@ -1071,6 +1107,33 @@ class TestTwoPoolIsolation:
     sub-branch runs (depth>=1) route to separate ThreadPoolExecutors so
     deep chains can't starve the parent pool.
     """
+
+    def test_compile_branch_threads_current_invocation_depth(self, tmp_path):
+        from workflow.graph_compiler import compile_branch
+
+        nd = NodeDefinition(
+            node_id="n1", display_name="N1",
+            invoke_branch_spec={
+                "branch_def_id": "child",
+                "inputs_mapping": {},
+                "output_mapping": {},
+                "wait_mode": "blocking",
+            },
+        )
+        branch = BranchDefinition(
+            branch_def_id="parent",
+            name="parent",
+            entry_point="n1",
+            node_defs=[nd],
+            graph_nodes=[GraphNodeRef(id="n1", node_def_id="n1")],
+            edges=[EdgeDefinition(from_node="n1", to_node="END")],
+        )
+
+        with patch("workflow.graph_compiler._build_invoke_branch_node") as mock_build:
+            mock_build.return_value = lambda state: {}
+            compile_branch(branch, base_path=tmp_path, invocation_depth=2)
+
+        assert mock_build.call_args.kwargs["depth"] == 2
 
     def test_get_executor_returns_distinct_pools_per_depth(self):
         from workflow.runs import _get_executor, shutdown_executor
