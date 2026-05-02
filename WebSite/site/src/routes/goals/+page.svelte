@@ -194,7 +194,7 @@
   }
 
   function promptFor(goal: Goal): string {
-    return `Using Workflow, browse the live goal "${goal.name}" (${goal.id}), show related commons context and the safest next action I can take through MCP.`;
+    return `Using Workflow, browse the live goal "${goal.name}" (${goal.id}), show related community wiki context and the safest next action I can take through MCP.`;
   }
 
   function slugId(path: string): string {
@@ -368,7 +368,7 @@
   <title>Goals — Workflow</title>
   <meta
     name="description"
-    content="Browse live Workflow goals, related MCP commons records, and branch signals from the same data a chatbot can read."
+    content="Browse live Workflow goals, related community wiki records, and branch signals from the same data a chatbot can read."
   />
   <link rel="canonical" href="https://tinyassets.io/goals" />
 </svelte:head>
@@ -382,7 +382,7 @@
       </div>
       <div class="intro">
         <p>
-          Your chatbot can browse these goals directly through the MCP connector. Pick a goal to see the live commons records and branch signals currently attached to it.
+          Your chatbot can browse these goals directly through the MCP connector. Pick a goal to see the live wiki records and branch signals currently attached to it.
         </p>
         <div class="refresh-box" aria-label="Live data controls">
           <button type="button" onclick={refreshMcp} disabled={mcpLoading} aria-busy={mcpLoading}>
@@ -413,7 +413,7 @@
       <article>
         <span>Selected goal</span>
         <strong>{selectedGoal?.id ?? 'none'}</strong>
-        <small>{compactNumber(wikiEvidence.length)} commons records · {compactNumber(branchEvidence.length)} branch signals</small>
+        <small>{compactNumber(wikiEvidence.length)} wiki records · {compactNumber(branchEvidence.length)} branch signals</small>
       </article>
       <article>
         <span>GitHub source</span>
@@ -495,7 +495,7 @@
 
         <div class="detail-stats" aria-label="Selected goal live evidence">
           <article>
-            <span>Commons</span>
+            <span>Wiki</span>
             <strong>{compactNumber(wikiEvidence.length)} related</strong>
             <small>from live tags, titles, and explicit edges</small>
           </article>
@@ -515,7 +515,7 @@
           <div class="evidence-grid">
             <section class="evidence-card" aria-labelledby="commons-title">
               <div class="evidence-card__head">
-                <h3 id="commons-title">Related commons</h3>
+                <h3 id="commons-title">Related wiki records</h3>
                 <small>{wikiEvidence.length ? 'live match reasons' : 'empty state is explicit'}</small>
               </div>
               <div class="evidence-list">
@@ -570,7 +570,7 @@
               <RitualLabel>· Evidence detail · {selectedEvidence.kind} ·</RitualLabel>
               <h3>{selectedEvidence.title}</h3>
               <p>{selectedEvidence.subtitle}</p>
-              <div class="detail-grid" aria-label="Selected commons fields">
+              <div class="detail-grid" aria-label="Selected wiki fields">
                 <article>
                   <span>Node ID</span>
                   <strong>{selectedEvidence.nodeId}</strong>
@@ -632,7 +632,7 @@
             <div>
               <RitualLabel>· Click detail ·</RitualLabel>
               <h3>No related item selected.</h3>
-              <p>Click a goal, commons record, or branch signal to inspect the live detail behind it.</p>
+              <p>Click a goal, wiki record, or branch signal to inspect the live detail behind it.</p>
             </div>
             <div class="detail-side">
               <a href="/wiki">Open live wiki</a>

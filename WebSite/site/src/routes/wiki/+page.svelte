@@ -1,5 +1,5 @@
 <!--
-  /wiki — live commons cockpit.
+  /wiki — live community wiki cockpit.
   Renders the baked MCP snapshot immediately. Browser-side live MCP reads are
   explicit actions because Cloudflare Access currently gates the public route.
 -->
@@ -327,13 +327,13 @@
 
 <svelte:head>
   <title>Live wiki — Workflow</title>
-  <meta name="description" content="Browse the live Workflow commons through the same MCP-shaped data a chatbot sees." />
+  <meta name="description" content="Browse the live Workflow community wiki through the same MCP-shaped data a chatbot sees." />
 </svelte:head>
 
 <section class="hero">
   <div class="container">
     <div class="head__row">
-      <RitualLabel color="var(--ember-500)">· {snapshot.source} · commons cockpit ·</RitualLabel>
+      <RitualLabel color="var(--ember-500)">· {snapshot.source} · community wiki ·</RitualLabel>
       <div class="head__actions">
         <LiveBadge fetchedAt={snapshot.fetched_at} source={snapshot.source} {loading} />
         <button type="button" class="refresh" disabled={loading} aria-busy={loading} onclick={refreshLive}>
@@ -341,7 +341,7 @@
         </button>
       </div>
     </div>
-    <h1>Browse the commons the way the chatbot does.</h1>
+    <h1>Browse the community wiki the way the chatbot does.</h1>
     {#if liveError}
       <p class="error">Live browser fetch failed: <code>{liveError}</code> — showing the baked MCP snapshot.</p>
     {/if}
@@ -353,7 +353,7 @@
     <div class="surface">
       <div class="toolbar" aria-label="Wiki controls">
         <label class="search">
-          <span>Search commons</span>
+          <span>Search wiki</span>
           <input bind:value={query} type="search" placeholder="BUG-034, patch loop, agent teams..." />
         </label>
         <div class="segments" role="tablist" aria-label="Wiki lenses">
@@ -384,7 +384,7 @@
           <article>
             <RitualLabel color="var(--signal-live)">· Current pulse ·</RitualLabel>
             <h2>{snapshot.universes.length} universes, {snapshot.goals.length} active goals.</h2>
-            <p>The public feed is thin live state: identity, phase, counts, and artifact handles. The durable material stays in the wiki pages and graph references.</p>
+            <p>The public feed is thin live state: identity, phase, counts, and artifact handles. The durable material stays in community wiki pages and graph references.</p>
           </article>
           <div class="pulse__facts">
             {#each snapshot.universes as universe}
@@ -401,7 +401,7 @@
           <article>
             <RitualLabel color="var(--violet-400)">· Relationship lens ·</RitualLabel>
             <h2>The graph is already in the snapshot.</h2>
-            <p>Edges come from page bodies: wiki links, bare bug tokens, and frontmatter references. The list below is ordered by how much each node ties the commons together.</p>
+            <p>Edges come from page bodies: wiki links, bare bug tokens, and frontmatter references. The list below is ordered by how much each node ties the community wiki together.</p>
           </article>
           <ol class="connected">
             {#each topConnected as item}
@@ -450,7 +450,7 @@
       </ul>
     </div>
 
-    <aside class="detail" aria-label="Selected commons item">
+    <aside class="detail" aria-label="Selected wiki item">
       {#if selectedItem}
         <div class="detail__head">
           <RitualLabel color={TYPE_TONE[selectedItem.type]}>· {TYPE_LABEL[selectedItem.type]} ·</RitualLabel>
@@ -501,9 +501,9 @@
           {/if}
         </div>
       {:else}
-        <RitualLabel>· Select a commons item ·</RitualLabel>
+        <RitualLabel>· Select a wiki item ·</RitualLabel>
         <h2>The detail pane shows the proof path.</h2>
-        <p>Choose a goal, bug, plan, note, draft, or universe to inspect tags, edges, page body, and the MCP request shape behind it.</p>
+        <p>Choose a goal, bug, plan, note, draft, or universe to inspect tags, edges, wiki body, and the MCP request shape behind it.</p>
       {/if}
 
       <div class="trace">

@@ -275,12 +275,12 @@
     const gitBranches = byType('git');
     const areas = byType('area');
 
-    addHub(nodes, 'hub:mcp-commons', 'MCP commons', 'Live MCP collection: goals, universes, wiki pages, tags, and extracted references.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:mcp-commons', 'MCP community wiki', 'Live MCP collection: goals, universes, wiki pages, tags, and extracted references.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:wiki-pages', 'Wiki pages', 'Promoted and draft wiki pages returned by the public MCP feed.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:public-bugs', 'Public bug tracker', 'Every public BUG page belongs to the same MCP-backed bug tracker before stronger edges route it into the loop or a subsystem.', ['mcp'], ['all', 'mcp', 'loop', 'coding']);
-    addHub(nodes, 'hub:public-goals', 'Public goals', 'Goal records from the MCP commons.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:public-goals', 'Public goals', 'Goal records related to the MCP community wiki.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:universes', 'Live universes', 'Universe rows currently visible through MCP.', ['mcp'], ['all', 'mcp', 'fantasy']);
-    addHub(nodes, 'hub:wiki-drafts', 'Wiki drafts', 'Draft wiki pages are not loose debris; they are draft-state commons material.', ['mcp'], ['all', 'mcp']);
+    addHub(nodes, 'hub:wiki-drafts', 'Wiki drafts', 'Draft wiki pages are not loose debris; they are draft-state wiki material.', ['mcp'], ['all', 'mcp']);
     addHub(nodes, 'hub:github-branches', 'GitHub branches', 'Branch refs returned by GitHub or the local repo snapshot.', ['repo'], ['all', 'repo', 'coding']);
 
     addEdge(edges, { from: 'hub:mcp-commons', to: 'hub:wiki-pages', kind: 'collection', source: 'mcp', derived: true }, nodes);
@@ -560,7 +560,7 @@
     </div>
     <h1>Everything, wired up.</h1>
     <p class="lead">
-      The graph now merges the live MCP commons with the real repo surface: GitHub branches, project areas, website pages, workflow branches, goals, universes, bugs, notes, plans, and the patch loop. Collection and tag layers keep real project objects connected without hiding which edges are explicit evidence.
+      The graph now merges the live MCP community wiki with the real repo surface: GitHub branches, project areas, website pages, workflow branches, goals, universes, bugs, notes, plans, and the patch loop. Collection and tag layers keep real project objects connected without hiding which edges are explicit evidence.
     </p>
   </div>
 </section>

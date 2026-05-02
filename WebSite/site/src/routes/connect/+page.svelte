@@ -24,7 +24,7 @@
     2
   );
   const protocolFacts = [
-    { label: 'read commons', href: '/wiki' },
+    { label: 'read wiki', href: '/wiki' },
     { label: 'browse goals', href: '/goals' },
     { label: 'watch the loop', href: '/loop' },
     { label: 'inspect graph', href: '/graph' },
@@ -33,7 +33,7 @@
   ];
   const unlockCards = [
     {
-      label: 'Commons',
+      label: 'Community wiki',
       title: 'Ask it to read the public wiki.',
       body: 'Goals, bugs, plans, notes, and drafts come back through the same MCP surface the site uses.',
       href: '/wiki',
@@ -189,7 +189,7 @@
     <RitualLabel color="var(--signal-live)">· User entry · tinyassets.io/mcp ·</RitualLabel>
     <h1 class="title">Connect your MCP.</h1>
     <p class="lead">
-      Paste one URL into your MCP-capable chatbot or agent host. Your host can browse the commons, read goals, inspect universes, and route work into the same loop the site shows.
+      Paste one URL into your MCP-capable chatbot or agent host. Your host can browse the community wiki, read goals, inspect universes, and route work into the same loop the site shows.
     </p>
 
     <section class="primary-flow" aria-label="Primary connection actions">
@@ -202,7 +202,7 @@
       <a class="flow-card" href="/wiki">
         <span class="flow-card__num">2</span>
         <span class="flow-card__title">Talk.</span>
-        <span class="flow-card__body">Start a chat and ask Workflow to browse goals, read the wiki, or route work into the loop.</span>
+        <span class="flow-card__body">Start a chat and ask Workflow to browse goals, read the community wiki, or route work into the loop.</span>
         <span class="flow-card__action">Open live wiki</span>
       </a>
     </section>
