@@ -169,6 +169,64 @@ def _cmd_tools(url: str, raw: bool) -> int:
     return 0
 
 
+def _coerce_relaxed_value(value: str) -> Any:
+    value = value.strip().strip("'\"")
+    lower = value.lower()
+    if lower == "true":
+        return True
+    if lower == "false":
+        return False
+    if lower == "null":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _parse_relaxed_object(raw: str) -> dict[str, Any] | None:
+    """Parse simple PowerShell-stripped JSON like {action:list,limit:5}.
+
+    This is deliberately shallow. Nested JSON still needs valid JSON quoting.
+    """
+    text = raw.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    body = text[1:-1].strip()
+    if not body:
+        return {}
+
+    result: dict[str, Any] = {}
+    for part in body.split(","):
+        key, sep, value = part.partition(":")
+        if not sep:
+            return None
+        key = key.strip().strip("'\"")
+        if not key:
+            return None
+        result[key] = _coerce_relaxed_value(value)
+    return result
+
+
+def _parse_tool_args(raw: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        parsed = _parse_relaxed_object(raw)
+        if parsed is None:
+            raise ValueError(
+                "--args must be a JSON object; simple PowerShell-stripped "
+                "{action:list} objects are also accepted"
+            ) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("--args must decode to an object")
+    return parsed
+
+
 def _add_subcommand_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--url", default=argparse.SUPPRESS, help="MCP endpoint URL")
     parser.add_argument(
@@ -243,10 +301,14 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    try:
+        tool_args = _parse_tool_args(args.args)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     sid, rc = _initialize(url)
     if rc:
         return rc
-    tool_args = json.loads(args.args)
     return _call_tool(url, sid, args.tool, tool_args, raw=raw)
 
 

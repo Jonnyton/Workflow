@@ -192,6 +192,25 @@ class TestListOutput:
 # (d) --tool with --args
 # ---------------------------------------------------------------------------
 
+class TestToolArgsParsing:
+    def test_json_object_args_still_parse(self):
+        assert mcp_probe._parse_tool_args('{"action":"list","limit":5}') == {
+            "action": "list",
+            "limit": 5,
+        }
+
+    def test_powershell_stripped_simple_object_parses(self):
+        assert mcp_probe._parse_tool_args("{action:search,query:research-paper,limit:5}") == {
+            "action": "search",
+            "query": "research-paper",
+            "limit": 5,
+        }
+
+    def test_args_must_be_object(self):
+        with pytest.raises(ValueError):
+            mcp_probe._parse_tool_args('["not", "an", "object"]')
+
+
 class TestToolCall:
     def _urlopen_sequence(self, tool_resp=None):
         return iter([
