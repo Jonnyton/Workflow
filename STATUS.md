@@ -42,7 +42,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; active blocker is canonical invoke smoke parent `4da58d59ff4c4e18`/child `c788bb7380484196` stuck before REVIEW_READY.
+1. **Current uptime priority 2026-05-02:** live community patch loop; #157 is CI-green draft pending Claude review, then merge/deploy/canary/rendered proof; P1a `attach_existing_child_run` is next runtime patch.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.
