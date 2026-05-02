@@ -1283,6 +1283,22 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
     out_keys, err = _coerce_node_keys(raw.get("output_keys"), "output_keys")
     if err:
         return err
+    # BUG-045: thread the three sub-branch / sibling-run spec fields. The
+    # compiler reads them (workflow/graph_compiler.py:_build_invoke_branch /
+    # invoke_branch_version / await_run callables) and NodeDefinition
+    # declares them (workflow/branches.py:267/285/294), but this authoring
+    # plumbing was silently dropping the keys — callers got a node that
+    # validated fine but ran as a no-op prompt-template. Mutual exclusivity
+    # is enforced in BranchDefinition.validate(); we accept whatever the
+    # caller provided and let validate() catch invalid combinations.
+    invoke_branch = raw.get("invoke_branch_spec")
+    invoke_branch_version = raw.get("invoke_branch_version_spec")
+    await_run = raw.get("await_run_spec")
+    invoke_branch_arg = invoke_branch if isinstance(invoke_branch, dict) else None
+    invoke_branch_version_arg = (
+        invoke_branch_version if isinstance(invoke_branch_version, dict) else None
+    )
+    await_run_arg = await_run if isinstance(await_run, dict) else None
     try:
         node = NodeDefinition(
             node_id=nid,
@@ -1295,6 +1311,9 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             prompt_template=prompt_template,
             author=raw.get("author") or _current_actor(),
             approved=bool(raw.get("approved", False)),
+            invoke_branch_spec=invoke_branch_arg,
+            invoke_branch_version_spec=invoke_branch_version_arg,
+            await_run_spec=await_run_arg,
         )
     except ValueError as exc:
         return str(exc)
@@ -2005,6 +2024,36 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             updates["input_keys"] = kwargs["input_keys"]
         if kwargs.get("output_keys"):
             updates["output_keys"] = kwargs["output_keys"]
+        # BUG-045: same plumbing fix as _apply_node_spec for the
+        # update_node write path. update_node has its own kwargs-merge
+        # logic and writes through save_branch_definition without
+        # routing through _apply_node_spec. Each spec-bearing field can
+        # arrive as a JSON-encoded string (kwargs-only callers can't
+        # send raw dicts) or as a dict (changes_json path).
+        for field in (
+            "invoke_branch_spec",
+            "invoke_branch_version_spec",
+            "await_run_spec",
+        ):
+            raw_val = kwargs.get(field)
+            if not raw_val:
+                continue
+            if isinstance(raw_val, dict):
+                updates[field] = raw_val
+            elif isinstance(raw_val, str):
+                try:
+                    decoded = json.loads(raw_val)
+                except json.JSONDecodeError as exc:
+                    return json.dumps({
+                        "status": "rejected",
+                        "error": f"{field} is not valid JSON: {exc}",
+                    })
+                if not isinstance(decoded, dict):
+                    return json.dumps({
+                        "status": "rejected",
+                        "error": f"{field} must decode to an object.",
+                    })
+                updates[field] = decoded
 
     if not updates:
         return json.dumps({
@@ -2088,6 +2137,22 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             if err:
                 return json.dumps({"status": "rejected", "error": err})
             target_node.output_keys = keys
+        # BUG-045: thread the three spec fields onto target_node. Mutual
+        # exclusivity vs prompt_template / source_code is enforced by
+        # BranchDefinition.validate() at compile time; we accept what
+        # the caller asked for and let validate() catch invalid combos.
+        for spec_field in (
+            "invoke_branch_spec",
+            "invoke_branch_version_spec",
+            "await_run_spec",
+        ):
+            if spec_field in updates:
+                val = updates[spec_field]
+                setattr(
+                    target_node,
+                    spec_field,
+                    val if isinstance(val, dict) else None,
+                )
     except Exception as exc:
         return json.dumps({
             "status": "rejected",
