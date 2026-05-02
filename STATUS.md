@@ -16,7 +16,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 ## Work
 
-Path: #18 cleared 2026-05-02 -> Arc C cleared -> Phase 6 db rename. universe_server.py: 14012 -> 972 LOC live in main.
+Path: #18 cleared 2026-05-02 -> Arc C cleared -> Phase 6 db rename cleared. universe_server.py: 14012 -> 972 LOC live in main.
 
 Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by setting Status to `claimed:<name>`.
 
@@ -24,12 +24,11 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
 | Directory submissions + first-use evidence - OpenAI public/full/global intent supplied; app packet blocked on `/mcp` vs `/mcp-directory` mismatch, data disclosure, demo URL, tested prompts. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | choose URL/data policy; action-time upload/final-submit approval | host-decision |
-| **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
 | Community change loop - watch/canary green 2026-05-02 02:52Z; Claude Opus proof green; next blockers: goal_pool pickup + true child invoke. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
 | Goal-pool prod pickup flip - enable restart-time pool producer/shared pool path, then prove live pickup. | deploy/compose.yml, deploy/workflow-env.template, workflow/producers/goal_pool.py, workflow/cloud_worker.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/producers/goal_pool.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/cloud_worker.py | Community loop proof 2026-05-02 | claimed:codex-loop-uptime |
 | Daemon soul followups - mini-brain pytest promotion and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | - | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
-| Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | nav-then-dev |
+| Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, workflow/api/{branches,extensions,prompts}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/{branches,extensions,prompts}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | claimed:codex-gpt5-desktop ACTIVE 2026-05-02 |
 | R7 closure pass — items 6+7 obviated; 1-5 cover Arc B/C; 8 by #25. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
 | #28 domain extraction host questions — #29 decomposition is done; remaining Qs are tool shape, upload-policy placement, registration hook. | `docs/audits/2026-04-25-engine-domain-api-separation.md` | rename locks | host-review |
 | Wiki #32 — loop-owned cleanup: lowercase BUG-003/023 rm + BUG-018 old-canonical cleanup. | wiki droplet + MCP | loop dev | claimed:loop-dev |

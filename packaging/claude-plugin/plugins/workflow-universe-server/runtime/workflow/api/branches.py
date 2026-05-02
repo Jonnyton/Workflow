@@ -100,7 +100,7 @@ logger = logging.getLogger("universe_server.branches")
 # ───────────────────────────────────────────────────────────────────────────
 # Branches are domain-agnostic graph topologies that live in the same SQLite
 # backing store as the rest of the multiplayer substrate (base_path /
-# .author_server.db, table branch_definitions). Each write action appends to
+# .workflow.db, table branch_definitions). Each write action appends to
 # the global ledger at base_path / "ledger.json" for public attribution —
 # branches are not scoped to a universe, so the ledger target is the global
 # base_path rather than a per-universe directory.
@@ -188,7 +188,7 @@ def _append_global_ledger(
 def _ensure_author_server_db() -> None:
     """Ensure the shared SQLite schema exists before any branch action runs.
 
-    Branch handlers read/write ``base_path/.author_server.db``. Calling this
+    Branch handlers read/write ``base_path/.workflow.db``. Calling this
     lazily keeps tests and first-use paths from needing a separate init step.
     """
     from workflow.daemon_server import initialize_author_server
