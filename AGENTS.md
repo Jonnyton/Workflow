@@ -170,6 +170,23 @@ provider-specific files. Claude Code also wires
 - If two sessions may converge on the same idea, narrow the file boundary and record the split in `STATUS.md` or `ideas/PIPELINE.md`.
 - A useful idea left only in chat is lost work.
 
+### GitHub/Worktree Coordination Spine
+
+- Treat GitHub branches plus local `../wf-<slug>` worktrees as the execution
+  spine for buildable work. `STATUS.md` still owns cross-provider file claims;
+  `scripts/worktree_status.py` owns persistent local worktree visibility.
+- Before building from any `STATUS.md` row, idea, spec, exec plan, audit, or
+  memory, refactor it into current project state: exact `STATUS.md` Files and
+  Depends, branch name, worktree path, PR or draft-PR/live-push expectation,
+  prior-provider memory refs, and related implication refs.
+- Each active worktree should have a local `_PURPOSE.md` with the lane source,
+  claim boundary, branch, worktree path, review gate, expected publish route,
+  memory refs, and implication refs. This file is local worktree metadata, not
+  product source.
+- Review-blocked work should still have a visible pending worktree lane, but
+  must not advance beyond planning/scaffolding until the required
+  opposite-provider review returns approve/adapt.
+
 ---
 
 ## Team Norms
