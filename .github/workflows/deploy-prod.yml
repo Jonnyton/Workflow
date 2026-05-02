@@ -71,19 +71,41 @@ jobs:
 
       # Derive the image tag to deploy. workflow_dispatch override wins;
       # otherwise use the build-image run's head SHA.
+      #
+      # Fallback: if the resolved SHA tag does not exist in GHCR, fall back
+      # to :latest. Doc-only commits can skip build-image.yml, leaving no
+      # image for that commit SHA; :latest is the last successful built tag.
       - name: Resolve image tag
         id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "${{ inputs.image_tag }}" ]; then
-            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            tag="${{ inputs.image_tag }}"
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
             full_sha="${{ github.event.workflow_run.head_sha }}"
-            echo "tag=${full_sha:0:12}" >> "$GITHUB_OUTPUT"
+            tag="${full_sha:0:12}"
           else
-            echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+            tag="$(git rev-parse --short=12 HEAD)"
           fi
           owner_lower="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "image=ghcr.io/${owner_lower}/workflow-daemon" >> "$GITHUB_OUTPUT"
+          image="ghcr.io/${owner_lower}/workflow-daemon"
+
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null 2>&1 || true
+          if docker manifest inspect "${image}:${tag}" >/dev/null 2>&1; then
+            echo "::notice::image ${image}:${tag} exists in GHCR; deploying it"
+          else
+            echo "::warning::${image}:${tag} not found in GHCR; falling back to :latest"
+            tag="latest"
+          fi
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Image resolution"
+            echo ""
+            echo "- effective tag: \`${image}:${tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify secrets present
         run: |
