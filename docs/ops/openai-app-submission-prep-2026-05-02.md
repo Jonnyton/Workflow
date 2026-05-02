@@ -63,6 +63,11 @@ Description:
 - `propose_workflow_goal`
 - `submit_workflow_request`
 
+The packet contains 10 positive test cases and 4 negative test cases. The
+positive set covers direct Workflow prompts plus two outcome-oriented prompts
+for durable workflow goal discovery/creation, matching OpenAI's metadata
+testing guidance to exercise direct, indirect, and negative prompts.
+
 The full custom connector at `/mcp` exposes broader legacy tools (`universe`,
 `community_change_context`, `extensions`, `goals`, `gates`, `wiki`,
 `get_status`). Do not switch the OpenAI app to `/mcp` without regenerating and
@@ -113,6 +118,7 @@ Not yet complete:
 - Individual/business publisher selector and verification assertion.
 - Compliance/legal checkboxes.
 - Mature/adult-content radio.
+- ChatGPT mobile iOS/Android prompt proof.
 - Final `Submit for Review`.
 
 ## Required Before Submit
@@ -127,8 +133,9 @@ Not yet complete:
    action-time before approving public/state-changing writes.
 5. Confirm privacy policy coverage for the categories listed in the readiness
    doc.
-6. Host approves release notes, compliance answers, mature-content answer,
-   publisher selector, and final submit.
+6. Host approves logo/screenshots or demo asset choices, release notes,
+   compliance answers, mature-content answer, publisher selector, verification
+   assertion, and final submit.
 
 Suggested release notes:
 
@@ -179,3 +186,18 @@ Suggested release notes:
 - Direct `/mcp-directory` `search_workflow_goals` and `get_workflow_goal`
   probes confirmed goal `20e2339c82e3` exists, is public, and has tags
   `submission, smoke`.
+
+2026-05-02T13:37-07:00 from
+`codex/onboarding-readiness-consolidation`:
+
+- `python -m json.tool chatgpt-app-submission.json` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed: 7 tests.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed and listed the 11 directory tools.
+- Strict live `/mcp-directory` status probe passed: `directory_privacy_note`
+  present; raw log/call diagnostics, count labels, `policy_hash`,
+  `session_boundary`, `host_id`, and storage `path` keys absent.
+- `python scripts/check_cross_provider_drift.py` and `git diff --check`
+  passed.
