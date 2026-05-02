@@ -2,7 +2,7 @@
 title: Agent-memory cross-drift sweep — contradictions, gaps, duplicates, stale refs
 date: 2026-04-28
 author: dev-2
-status: original read-only audit; refreshed 2026-04-28 to mark lead-memory stale-branding item as lead-environment-only
+status: original read-only audit; refreshed 2026-05-01T17:17-07:00 against current Claude team memory
 companion:
   - feedback_audits_can_be_already_done (memory) — verify before scoping
   - feedback_status_cites_means_active (memory) — consumption pattern trumps internal status
@@ -14,7 +14,22 @@ audience: lead, host (selectively)
 
 ## TL;DR
 
-5 lead-reviewable findings across 12 agent dirs (~250 memory files total). One real contradiction (verifier vs dev/navigator/lead on `git stash` for diagnostics). One stale-branding gap is lead-environment-only: the referenced lead `MEMORY.md` is not present in this checkout. Two coverage gaps remain (dev-2 missing destructive-git rule; SendMessage rule absent from navigator memory). One pattern: triplicate audit-staleness rule across dev/navigator/dev-2 + lead — same lesson, four files.
+Original 2026-04-28 sweep found 5 lead-reviewable findings across 12 agent dirs
+(~250 memory files total). Current 2026-05-01 refresh found that the three
+actionable team-memory gaps are already closed:
+
+- Finding #1 is closed: verifier no longer has `feedback_stash_diagnostic.md`,
+  and `verifier/feedback_isolate_preexisting_failures.md` now says stash is
+  destructive and must not be used for diagnostics.
+- Finding #3 is closed: dev-2 now has `feedback_no_destructive_git.md` and
+  indexes it in `dev-2/MEMORY.md`.
+- Finding #4 is closed: navigator now has
+  `feedback_send_message_required_for_team_chat.md` and indexes it in
+  `navigator/MEMORY.md`.
+
+Finding #2 remains lead-environment-only. Finding #5 remains informational:
+the audit-staleness rule is duplicated by role, but the role-specific examples
+are useful.
 
 ## Per-agent file count
 
@@ -36,13 +51,13 @@ audience: lead, host (selectively)
 
 ## Findings
 
-| # | Severity | Title | Affected agents | Recommended action |
-|---|---|---|---|---|
-| 1 | **DRIFT (contradiction)** | `git stash` for diagnostics — verifier ALLOWS, dev/navigator/lead all FORBID | verifier (allow) vs dev + navigator + lead + dev-2-via-no-rule (forbid) | Resolve: either retire verifier's `feedback_stash_diagnostic.md` OR carve an exception clause into the no-stash rules. Recommend: retire verifier's. The forbid-stash rule is host-explicit (`feedback_git_destructive`); verifier's "diagnostic stash" workaround is the same exception navigator slipped on 2026-04-18 + apologized for. Use `git show HEAD:path` or `git diff HEAD` instead. |
-| 2 | **LEAD-ENV ONLY** | Lead MEMORY.md cites "Universe Server" in 2 index entries (L28, L35) | Lead | The referenced Lead `MEMORY.md` is not present in this checkout as of 2026-04-28 (`.claude/**/MEMORY.md` has no matches). If that memory exists in the lead runtime environment, replace "MCP Universe Server" / "Restart daemon/Universe Server" with "Workflow MCP server" / "the daemon"; no repo-local edit remains. |
-| 3 | **MISSING-MIRROR** | dev-2 has NO destructive-git rule | dev-2 | dev (`feedback_no_git_stash_for_diagnostics`), navigator (`feedback_no_diagnostic_stash`), lead (`feedback_git_destructive`) all carry it. dev-2 is the floater that swaps into dev tasks — same risk profile, same rule needed. Recommend: add the rule to dev-2 memory (1-line MEMORY.md entry + small file). |
-| 4 | **MISSING-MIRROR** | SendMessage rule missing from navigator memory | navigator | dev (`feedback_sendmessage_not_text`) + verifier (`feedback_sendmessage_required`) both carry "plain text doesn't reach lead; always SendMessage." Navigator messages lead constantly during sessions; same rule applies but isn't in navigator memory. Recommend: navigator adds. |
-| 5 | **DUPLICATE / NEAR-DUPLICATE (4 copies of audit-staleness rule)** | Audit-staleness pattern lives in 4 agent memories with different framings | dev (`feedback_audits_often_stale.md`), navigator (`feedback_audit_freshness_check.md`), lead (`feedback_audit_freshness_check.md`), dev-2 (`feedback_audits_can_be_already_done.md`) | Same load-bearing rule across 4 files, 4 framings, 4 examples. Could be: (a) accepted as fine — different agents need different framings of the same rule. (b) consolidated to one canonical file in lead memory with cross-refs. **My take:** keep as-is. Each memory captures the example most relevant to that role (dev hit it on extractions, navigator on prescriptions, dev-2 on classify-from-scratch tasks, lead on dispatch). Consolidating would lose the role-specific examples. Just flag for awareness. |
+| # | Severity | Title | Affected agents | Recommended action | Current disposition |
+|---|---|---|---|---|---|
+| 1 | **DRIFT (contradiction)** | Original finding: verifier allowed diagnostic stash while dev/navigator/lead forbade it | verifier vs dev + navigator + lead + dev-2 | Original recommendation: retire verifier's `feedback_stash_diagnostic.md` or carve an exception clause into the no-stash rules. Preferred fix was to retire verifier's exception and use `git show HEAD:path` or `git diff HEAD` instead. | **Closed 2026-05-01.** `verifier/feedback_stash_diagnostic.md` is absent; `verifier/feedback_isolate_preexisting_failures.md` says not to stash. |
+| 2 | **LEAD-ENV ONLY** | Lead MEMORY.md cites "Universe Server" in 2 index entries (L28, L35) | Lead | The referenced Lead `MEMORY.md` is not present in this checkout as of 2026-04-28 (`.claude/**/MEMORY.md` has no matches). If that memory exists in the lead runtime environment, replace "MCP Universe Server" / "Restart daemon/Universe Server" with "Workflow MCP server" / "the daemon"; no repo-local edit remains. | **Still lead-env only.** No side-worktree edit available. |
+| 3 | **MISSING-MIRROR** | Original finding: dev-2 had no destructive-git rule | dev-2 | Original recommendation: add the same no-destructive-git rule carried by dev, navigator, and lead to dev-2 memory. | **Closed 2026-05-01.** `dev-2/feedback_no_destructive_git.md` exists and is indexed. |
+| 4 | **MISSING-MIRROR** | Original finding: SendMessage rule was missing from navigator memory | navigator | Original recommendation: add the teammate-channel rule already carried by dev and verifier to navigator memory. | **Closed 2026-05-01.** `navigator/feedback_send_message_required_for_team_chat.md` exists and is indexed. |
+| 5 | **DUPLICATE / NEAR-DUPLICATE (4 copies of audit-staleness rule)** | Audit-staleness pattern lives in 4 agent memories with different framings | dev (`feedback_audits_often_stale.md`), navigator (`feedback_audit_freshness_check.md`), lead (`feedback_audit_freshness_check.md`), dev-2 (`feedback_audits_can_be_already_done.md`) | Same load-bearing rule across 4 files, 4 framings, 4 examples. Could be: (a) accepted as fine — different agents need different framings of the same rule. (b) consolidated to one canonical file in lead memory with cross-refs. **My take:** keep as-is. Each memory captures the example most relevant to that role (dev hit it on extractions, navigator on prescriptions, dev-2 on classify-from-scratch tasks, lead on dispatch). Consolidating would lose the role-specific examples. Just flag for awareness. | **No action.** Keep role-specific examples. |
 
 ## Other observations (informational, not action items)
 
@@ -61,8 +76,8 @@ Sampled 6 cross-cutting rules:
 | Run `build_plugin.py` after canonical edits | (project_plugin_mirror_collision via nav) | yes | no | yes | no | dev-2 + verifier could use it |
 | Audit freshness / spot-check before classify | yes | yes | yes | yes | no | verifier could use it; dev-2 + nav + lead converge here |
 | Daemon default behavior (1 always-on, normal state) | yes | no | no | yes | no | dev/dev-2 don't need it (orthogonal to code work); lead+nav have product axis covered |
-| `git stash` is destructive — don't use for diagnostics | yes | yes | **NO** (gap) | yes | **YES BUT INVERTED** (uses for diagnostics) | finding #1 + finding #3 |
-| SendMessage required for teammate-channel reply | (implicit) | yes | (implicit; not flagged) | **NO** (gap) | yes | finding #4 |
+| `git stash` is destructive — don't use for diagnostics | yes | yes | yes | yes | yes | 2026-05-01 refresh: gaps from findings #1 + #3 are closed. |
+| SendMessage required for teammate-channel reply | (implicit) | yes | (implicit; not flagged) | yes | yes | 2026-05-01 refresh: finding #4 is closed. |
 | Commit only on verifier SHIP | yes | yes | (implicit) | yes | yes | well-mirrored |
 
 ### C. Personas under user/ memory — not a content issue, structural note
@@ -75,15 +90,15 @@ Sampled 6 cross-cutting rules:
 
 ### E. `dev-2/MEMORY.md` is small (10 entries) — could absorb more cross-cutting rules
 
-dev-2 is the floater role per `feedback_floating_fifth_teammate` (lead memory). It swaps onto dev tasks regularly. Likely candidates to absorb: `feedback_run_build_plugin_after_canonical_edits`, `feedback_no_git_stash_for_diagnostics` (finding #3), `feedback_three_mirrors_dist_may_diverge`, `feedback_silence_after_ack`. The first two are high-value; others are situational.
+dev-2 is the floater role per `feedback_floating_fifth_teammate` (lead memory). It swaps onto dev tasks regularly. 2026-05-01 refresh: the two highest-value candidates from the original sweep are now present (`feedback_no_destructive_git.md` and `feedback_run_build_plugin_after_canonical_edits.md`). Other possible additions, such as `feedback_three_mirrors_dist_may_diverge` and `feedback_silence_after_ack`, remain situational.
 
 ## Suggested fix sequence (lead-driven)
 
-1. **Finding #1 — verifier stash conflict.** Highest priority. Resolve the dev/navigator/lead-vs-verifier divergence on `git stash`. Verifier's diagnostic-stash workflow is the failure mode the no-stash rule was created to prevent.
+1. **Finding #1 — verifier stash conflict.** Closed as of 2026-05-01 refresh.
 
 2. **Finding #2 — lead MEMORY.md "Universe Server" stale refs.** Lead-environment-only: no `MEMORY.md` file exists in this checkout. If present in the lead runtime environment, apply the 2-line branding edit there.
 
-3. **Findings #3 + #4 — coverage gaps.** Add the missing rule entries to dev-2 + navigator memories. ~5 min each.
+3. **Findings #3 + #4 — coverage gaps.** Closed as of 2026-05-01 refresh.
 
 4. **Observation A — lead memory budget overflow.** Decide how to split or trim lead's MEMORY.md. Could be 30-min cleanup. Important because the truncation means lead currently isn't loading its full memory at session start.
 
@@ -91,6 +106,6 @@ dev-2 is the floater role per `feedback_floating_fifth_teammate` (lead memory). 
 
 ## Verifier handoff
 
-This is a recommendation document, not an applied edit. Lead reviews + applies. No agent memory has been edited by this audit pass.
+This is now a refreshed recommendation document. No agent memory was edited by this refresh; it only records that current memory state has closed the stale open items.
 
 No code touched. No test files touched. No dev #18 lock-set touched.
