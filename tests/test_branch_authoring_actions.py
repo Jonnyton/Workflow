@@ -1,9 +1,8 @@
-"""Community Branches Phase 2 — tests for the `extensions` tool's branch
-authoring actions.
+"""Branch authoring actions for the `extensions` tool.
 
 Covers the 10 ship-list actions, the ledger-wrapper guarantee, the
 recipe-tracker end-to-end vignette, and the hard-rule UX flag that
-`describe_branch` now points users at `run_branch` (Phase 3).
+`describe_branch` now points users at `run_branch`.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ import pytest
 
 @pytest.fixture
 def branch_env(tmp_path, monkeypatch):
-    """Point the Universe Server at a temp base path for the test.
+    """Point the Workflow data root at a temp base path for the test.
 
     The Community Branches storage layer uses ``_base_path()`` which
     reads ``WORKFLOW_DATA_DIR`` — pointing it at a temp dir keeps

@@ -94,7 +94,7 @@ logger = logging.getLogger("universe_server.branches")
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# Phase 2: Community Branches — author/edit BranchDefinition over MCP
+# Community Branches: author/edit BranchDefinition over MCP
 # ───────────────────────────────────────────────────────────────────────────
 # Branches are domain-agnostic graph topologies that live in the same SQLite
 # backing store as the rest of the multiplayer substrate (base_path /

@@ -1,4 +1,4 @@
-"""Community Branches Phase 4 — eval + iteration hooks.
+"""Branch evaluation and iteration hooks.
 
 Covers judge_run / list_judgments / compare_runs / suggest_node_edit /
 get_node_output against the acceptance criteria in
@@ -40,7 +40,7 @@ def _wait(run_id: str, timeout: float = 20.0) -> None:
 def _build_trivial_branch(us) -> str:
     """A single-node branch that always completes cleanly via mock provider.
 
-    Keeps Phase 4 tests focused on eval surfaces rather than graph shape.
+    Keeps evaluation tests focused on eval surfaces rather than graph shape.
     """
     spec = {
         "name": "Trivial",

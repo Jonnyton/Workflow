@@ -322,7 +322,7 @@ Roughly the scale of Phase 2 (build_branch surfaces):
 - `list_branches goal_id` filter: small (~30 lines, same PR as above).
 - Prompts (`goal_discovery_guide`, `control_station` routing): 1 PR
   (~100 lines prompts + tests).
-- Tests: `tests/test_community_branches_phase5.py`, ~30 tests mirroring
+- Tests: `tests/test_goals_surface.py`, ~30 tests mirroring
   Phase 2 coverage style.
 
 Total: ~900 lines of code + tests. About 2 sessions of work if the open

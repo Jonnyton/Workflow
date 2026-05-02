@@ -1,11 +1,11 @@
-"""Community Branches Phase 5 — Goals as first-class shared primitive.
+"""Goals as a first-class shared primitive.
 
 Covers AC from ``docs/specs/community_branches_phase5.md`` §Executable
 Addendum:
 
 1. Storage: goals table + branch_definitions.goal_id column.
 2. 8 MCP actions on the `goals` tool with tool_return_shapes.md patterns.
-3. Leaderboard metrics: run_count + forks today; outcome stub for Phase 6.
+3. Leaderboard metrics: run_count + forks today; outcome stub.
 4. common_nodes compares on node_id equality.
 5. Soft-delete via visibility='deleted'.
 6. Ledger write-through on propose/update/bind.

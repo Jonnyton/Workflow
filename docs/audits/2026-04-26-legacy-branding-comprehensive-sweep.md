@@ -183,8 +183,8 @@ For `Universe Server` rewrite (the real bug class per §2.2):
 | `tests/test_claude_chat_inline_dismiss.py` | 3 | Test fixture | Inspect — may be intentional |
 | `tests/test_universe_server_telemetry.py` | 1 | Test naming (covered by B.1) | RENAME with phase test pass |
 | `tests/test_universe_server_framing.py` | 1 | Test naming | RENAME |
-| `tests/test_community_branches_phase3.py` | 1 | Test fixture | Inspect |
-| `tests/test_community_branches_phase2.py` | 1 | Test fixture | Inspect |
+| `tests/test_branch_runner.py` | renamed 2026-05-02 from `test_community_branches_phase3.py` | Test fixture | Clean |
+| `tests/test_branch_authoring_actions.py` | renamed 2026-05-02 from `test_community_branches_phase2.py` | Test fixture | Clean |
 | `scripts/claude_chat.py` | 1 | User-sim script | REWRITE |
 | `scripts/always_allow_watch.py` | 3 | Test/ops script | Inspect — may be intentional UI text |
 | `docs/audits/user-chat-intelligence/2026-04-19-devin-session1.md` | 4 | Historical session intelligence | LEAVE (HISTORICAL CONTEXT) |
@@ -451,7 +451,7 @@ Caller migration sites scheduled for in-flight rename arcs. **No action by this 
 
 Mostly handled by the rename arcs themselves, but flagging the docstring + comment refs that survive the mechanical sed:
 
-- `workflow/api/branches.py:103, 191` — comments about `.author_server.db` routing through `_connect()`. Update with Phase 6.
+- `workflow/api/branches.py` — DB filename comments now reference `.workflow.db`; helper symbol still waits on the evaluation API lane.
 - `workflow/payments/escrow.py` — docstring: "SQLite table escrow_locks lives in the same .author_server.db as ...". Update with Phase 6.
 - `workflow/api/engine_helpers.py` — docstring mentions "Tests using `UNIVERSE_SERVER_BASE=<tmp_path>/output`". Update with Arc C Phase 3.
 - `workflow/api/helpers.py` — docstring mentions legacy alias. Update with Arc C Phase 3.

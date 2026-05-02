@@ -1,4 +1,4 @@
-"""Community Branches Phase 3 — graph runner tests.
+"""Branch graph runner tests.
 
 Covers the compiler, the runs persistence layer, the 6 MCP actions on the
 ``extensions`` tool, and the acceptance criteria from the spec.
@@ -38,7 +38,7 @@ def _call(us, action, **kwargs):
 
 
 def _run_and_wait(us, *, timeout: float = 30.0, **kwargs):
-    """Kick off `run_branch` (Phase 3.5: async) and block on the worker.
+    """Kick off `run_branch` and block on the worker.
 
     Returns the initial response dict with ``status`` and ``output``
     populated from the terminal state after the worker completes. Tests
