@@ -264,3 +264,37 @@ Notes:
 - Cleanup performed before this lane: swept local clean merged onboarding
   worktrees for PRs #133, #135, #137, #139, #141, #143, #145, #154, and #159;
   remote GitHub branches were intentionally left untouched.
+
+## 2026-05-02 15:12 - sweep merged local worktrees
+
+- Provider: codex-gpt5-desktop
+- Branch: `codex/status-loop-ownership`
+- Lane state: Abandoned/swept
+- Worktree: `C:\Users\Jonathan\Projects\wf-f2-spec-retire`
+- STATUS/Issue/PR: STATUS row "Worktree backlog sweep"
+- PLAN refs: Harness And Coordination
+- Purpose: remove clean local worktrees whose branches had zero commits not
+  reachable from `origin/main`, plus clean detached review worktrees.
+- _PURPOSE.md: local ignored purpose file updated for this sweep.
+- Memory refs: `.claude/agents/navigator.md`
+- Related implications: GitHub/worktree discipline in `AGENTS.md`
+- Idea feed refs: none
+- Ship/abandon: removed 11 clean merged local branch worktrees and deleted
+  their local branches: `codex/bug037-publish-version-topology`,
+  `codex/arc-b-phase3`, `codex/bug-011-run-lease-phase-a`,
+  `codex/chatgpt-goals-action-alias`, `codex/codex-runtime-proof`,
+  `codex/daemon-soul-summon-live-main`,
+  `codex/host-discoverability-live`, `codex/daemon-memory-governor`,
+  `codex/old-session-consolidation`,
+  `codex/provider-context-main-push`, and
+  `codex/provider-identity-bridge`. Removed 8 clean detached review worktrees:
+  `wf-ci-smoke-8e9de0c`, `wf-review-100`, `wf-review-104`,
+  `wf-review-105`, `wf-review-106`, `wf-review-107`, `wf-review-108`,
+  and `wf-review-96`. Left dirty, active, live-main, loop-owned, and unique
+  clean branches intact.
+- Additional local sweep: removed five clean stale worktrees with useful
+  payload already folded back or extracted: `wf-cohit-prevention`,
+  `wf-bug045`, `wf-provider-compliance-conventions`, and
+  `wf-reversible-approval-conventions` were `git cherry` patch-equivalent to
+  `origin/main`; `wf-agents-envvars` was extracted into `ff66420`. Deleted
+  only local branches/worktrees; remote refs were left intact.
