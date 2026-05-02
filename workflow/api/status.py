@@ -6,17 +6,14 @@ tool decoration stays in `workflow/universe_server.py` (Pattern A2 from
 #9 wiki extraction). The decorated tool there delegates to the plain
 ``get_status(...)`` function below.
 
-Public surface (test imports continue to land via ``workflow.universe_server``
-back-compat re-exports):
+Public implementation surface:
     get_status(universe_id="")  → str: full daemon status JSON
     _policy_hash(payload)       → str: deterministic sha256 of policy payload
 
-Cross-module note: ``_parse_activity_line`` lives in ``workflow.universe_server``
-(L~3346) and is lazy-imported inside ``get_status`` to avoid a circular import
-at module load time (universe_server imports this module's ``get_status`` for
-the back-compat re-export shim). All other lazy imports (dispatcher, storage,
-providers.router, providers.base, storage.rotation) follow the pattern that
-was already in place pre-extraction.
+Cross-module note: ``_parse_activity_line`` lives in ``workflow.api.universe``
+and is lazy-imported inside ``get_status`` to keep status startup cheap. Other
+lazy imports (dispatcher, storage, providers.router, providers.base,
+storage.rotation) follow the pattern that was already in place pre-extraction.
 """
 
 from __future__ import annotations
@@ -123,9 +120,7 @@ def get_status(universe_id: str = "") -> str:
         try:
             content = log_path.read_text(encoding="utf-8").strip()
             if content:
-                # Lazy-import _parse_activity_line — defined in universe_server
-                # which back-compat-imports get_status from this module. Lazy
-                # avoids the load-time cycle.
+                # Lazy-import _parse_activity_line so status startup stays cheap.
                 from workflow.api.universe import _parse_activity_line
                 lines = content.splitlines()
                 total_log_lines = len(lines)

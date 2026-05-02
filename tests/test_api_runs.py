@@ -2,9 +2,9 @@
 
 The legacy test files (test_run_branch_failure_taxonomy.py,
 test_query_runs.py, test_run_branch_version.py, test_canonical_branch_mcp.py)
-import via `workflow.universe_server` and continue to pass through the
-back-compat re-export shim. This file exercises `workflow.api.runs`
-directly to lock in the new public surface.
+still cover the chatbot-facing `workflow.universe_server` MCP wrappers. This
+file exercises `workflow.api.runs` directly to lock in the canonical
+implementation surface.
 """
 
 from __future__ import annotations

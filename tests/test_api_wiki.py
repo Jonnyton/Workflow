@@ -1,8 +1,8 @@
 """Task #9 — direct tests for `workflow.api.wiki` after decomp Step 2.
 
 The legacy test files (`test_wiki_*.py`) import from `workflow.universe_server`
-and continue to pass via the back-compat re-export shim. This file exercises
-`workflow.api.wiki` directly to lock in the new public surface.
+to cover chatbot-facing MCP wrappers. This file exercises `workflow.api.wiki`
+directly to lock in the canonical implementation surface.
 """
 
 from __future__ import annotations
