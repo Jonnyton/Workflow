@@ -71,10 +71,17 @@ reuse:
     move actually lands.
 
 13. **Continue autonomous burn-down (discover and land next slices)**
-    Status: waiting for new non-overlapping slice (2026-05-01 pass complete)
-    Scope: latest pass landed STATUS trim, reference no-op, and recency inbox
-    cleanup. Remaining concrete work is #18-blocked, Mission-10-blocked,
-    loop-owned, host/admin-owned, or date-gated.
+    Status: landed 2026-05-02
+    Scope: current pass used Claude navigator memory guardrails, found a
+    non-overlapping docs-only slice, moved landed Arc B plans to completed,
+    refreshed Arc C prep now that Arc B is complete, and removed the temporary
+    STATUS claim rows.
+
+14. **Continue autonomous burn-down (next safe slice)**
+    Status: waiting for new non-overlapping slice after 2026-05-02 pass
+    Scope: remaining concrete work found in this pass is #18-blocked,
+    Mission-10-blocked, loop-owned, host/admin-owned, date-gated, or historical
+    audit context that should not be rewritten.
 
 ## Stop conditions
 
