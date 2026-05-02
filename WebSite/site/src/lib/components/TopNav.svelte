@@ -5,7 +5,7 @@
 
   const items = [
     { href: '/connect', label: 'Connect' },
-    { href: '/goals', label: 'Goals' },
+    { href: '/wiki', label: 'Wiki' },
     { href: '/graph', label: 'Graph' },
     { href: '/loop', label: 'Loop' },
     { href: '/proof', label: 'Proof' },

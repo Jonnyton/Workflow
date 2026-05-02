@@ -2,9 +2,9 @@
 
 The legacy test files (test_dry_inspect_node.py, test_project_memory.py,
 test_teammate_message.py, test_scheduler*.py) import via
-`workflow.universe_server` and continue to pass through the back-compat
-re-export shim. This file exercises `workflow.api.runtime_ops` directly to
-lock in the new public surface.
+`workflow.universe_server` to cover chatbot-facing MCP wrappers. This file
+exercises `workflow.api.runtime_ops` directly to lock in the canonical
+implementation surface.
 """
 
 from __future__ import annotations

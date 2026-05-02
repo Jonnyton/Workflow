@@ -1,9 +1,8 @@
 """Task #14 — direct tests for `workflow.api.market` after decomp Step 7.
 
-Legacy test files for goals/gates/escrow/outcome/attribution import via
-`workflow.universe_server` and continue to pass through the back-compat
-re-export shim. This file exercises `workflow.api.market` directly to
-lock in the new public surface.
+Legacy goals/gates/escrow/outcome/attribution tests still cover the
+chatbot-facing `workflow.universe_server` MCP wrappers. This file exercises
+`workflow.api.market` directly to lock in the canonical implementation surface.
 """
 
 from __future__ import annotations

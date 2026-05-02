@@ -49,9 +49,9 @@ on:
         type: boolean
         default: false
       canary_url:
-        description: Public MCP canary URL to verify after applied changes.
+        description: Canonical public MCP canary URL to verify after applied changes.
         required: false
-        default: https://mcp.tinyassets.io/mcp
+        default: https://tinyassets.io/mcp
 
 permissions:
   contents: read

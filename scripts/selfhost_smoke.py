@@ -1,14 +1,15 @@
 """Self-host migration smoke test — Row F.
 
-Probes both the user-facing canonical URL and the direct tunnel URL, runs
-get_status + tools/list on each, and asserts parity on the tool set and
-get_status structure.
+Default mode probes the user-facing canonical URL, confirms the direct tunnel
+URL is blocked by Cloudflare Access, and verifies the canonical daemon has an
+LLM bound. Use ``--internal-parity`` only when ``--tunnel`` points at an
+internal/service-token path that is expected to speak MCP.
 
 Exit codes:
-  0  Both URLs healthy and in parity.
-  1  One or both URLs returned unexpected MCP content (protocol-level fail).
-  2  One or both URLs unreachable (network-level fail).
-  3  URLs reachable and individually healthy but NOT in parity.
+  0  Canonical URL healthy, direct tunnel gate healthy, and LLM bound.
+  1  Canonical URL returned unexpected MCP content (protocol-level fail).
+  2  Canonical URL or tunnel gate unreachable (network-level fail).
+  3  Direct tunnel unexpectedly reachable, or internal parity mismatch.
   4  Invalid arguments.
 
 Usage:
@@ -17,6 +18,7 @@ Usage:
       --canonical https://tinyassets.io/mcp \\
       --tunnel    https://mcp.tinyassets.io/mcp \\
       --timeout   20
+  python scripts/selfhost_smoke.py --internal-parity --tunnel http://127.0.0.1:8001/mcp
 
 Designed to run at hour 1, hour 24, and hour 47 of the 48-hour offline
 acceptance trial per the Row F spec.
@@ -42,6 +44,7 @@ from verify_llm_binding import VerifyError, check_llm_binding  # noqa: E402
 CANONICAL_URL = "https://tinyassets.io/mcp"
 TUNNEL_URL = "https://mcp.tinyassets.io/mcp"
 DEFAULT_TIMEOUT = 20.0
+ACCESS_GATE_STATUS_CODES = {401, 403}
 
 _INIT_PAYLOAD = {
     "jsonrpc": "2.0",
@@ -152,6 +155,42 @@ def probe_url(url: str, timeout: float, label: str) -> tuple[set[str], dict[str,
     return tools, status
 
 
+def assert_tunnel_access_blocked(url: str, timeout: float) -> int:
+    print(f"[smoke] probing tunnel Access gate: {url}")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "User-Agent": "workflow-selfhost-smoke/1.0",
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(_INIT_PAYLOAD).encode(),
+        method="POST",
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.status
+            body = resp.read(200).decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code in ACCESS_GATE_STATUS_CODES:
+            print(f"[smoke] tunnel Access gate PASS — HTTP {exc.code}")
+            return exc.code
+        raise SmokeError(
+            3,
+            f"tunnel Access gate returned HTTP {exc.code}; expected 401/403",
+        ) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise SmokeError(2, f"tunnel Access gate network error on {url}: {exc}") from exc
+
+    snippet = body.replace("\n", " ")[:120]
+    raise SmokeError(
+        3,
+        f"tunnel direct access unexpectedly returned HTTP {status}; "
+        f"expected 401/403. Body: {snippet!r}",
+    )
+
+
 def assert_parity(
     canonical_tools: set[str],
     tunnel_tools: set[str],
@@ -182,20 +221,27 @@ def run(
     tunnel: str,
     timeout: float,
     *,
+    internal_parity: bool = False,
     llm_check_fn=None,  # injection seam: (url, timeout) -> dict; raises VerifyError on fail
 ) -> int:
     try:
         canonical_tools, canonical_status = probe_url(canonical, timeout, "canonical")
-        tunnel_tools, tunnel_status = probe_url(tunnel, timeout, "tunnel")
-        assert_parity(canonical_tools, tunnel_tools, canonical_status, tunnel_status)
+        if internal_parity:
+            tunnel_tools, tunnel_status = probe_url(tunnel, timeout, "tunnel")
+            assert_parity(canonical_tools, tunnel_tools, canonical_status, tunnel_status)
+            print(
+                f"[smoke] PASS — {len(canonical_tools)} tools in parity, "
+                f"get_status structure matches"
+            )
+        else:
+            assert_tunnel_access_blocked(tunnel, timeout)
+            print(
+                f"[smoke] PASS — canonical has {len(canonical_tools)} tools; "
+                "direct tunnel is Access-gated"
+            )
     except SmokeError as exc:
         print(f"[smoke] FAIL (exit {exc.code}): {exc.msg}", file=sys.stderr)
         return exc.code
-
-    print(
-        f"[smoke] PASS — {len(canonical_tools)} tools in parity, "
-        f"get_status structure matches"
-    )
 
     # LLM-binding gate (HD-3): smoke fails if canonical daemon has no LLM bound.
     _llm_check = llm_check_fn or check_llm_binding
@@ -217,8 +263,22 @@ def main(argv: list[str] | None = None) -> int:
         "--timeout", type=float, default=DEFAULT_TIMEOUT,
         help=f"Per-request timeout seconds (default {DEFAULT_TIMEOUT})"
     )
+    ap.add_argument(
+        "--internal-parity",
+        action="store_true",
+        help=(
+            "Probe --tunnel as an MCP endpoint and compare it with --canonical. "
+            "Use only for an internal/service-token tunnel path; default expects "
+            "the public direct tunnel URL to be Access-gated."
+        ),
+    )
     args = ap.parse_args(argv)
-    return run(args.canonical, args.tunnel, args.timeout)
+    return run(
+        args.canonical,
+        args.tunnel,
+        args.timeout,
+        internal_parity=args.internal_parity,
+    )
 
 
 if __name__ == "__main__":

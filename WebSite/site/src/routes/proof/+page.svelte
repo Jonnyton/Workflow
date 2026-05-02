@@ -22,7 +22,7 @@
     {
       label: 'Connector',
       title: 'The public MCP route is the product surface.',
-      fact: `${compactNumber(pulse.knowledgeCount)} commons records, ${compactNumber(pulse.mcp.goals.length)} goals, and ${compactNumber(pulse.mcp.universes.length)} universes are visible in the current snapshot.`,
+      fact: `${compactNumber(pulse.knowledgeCount)} community wiki records, ${compactNumber(pulse.mcp.goals.length)} work targets, and ${compactNumber(pulse.mcp.universes.length)} universes are visible in the current snapshot.`,
       check: 'Open /connect, copy the canonical URL, then refresh MCP.',
       href: '/connect'
     },
@@ -41,11 +41,11 @@
       href: '/loop'
     },
     {
-      label: 'Goals',
-      title: 'Goals are the public unit of work.',
-      fact: `${compactNumber(pulse.mcp.goals.length)} goals are visible to the same MCP connector that chatbot users call.`,
-      check: 'Open /goals, filter a tag, and inspect related commons records.',
-      href: '/goals'
+      label: 'Wiki',
+      title: 'The community wiki is the public unit of work.',
+      fact: `${compactNumber(pulse.knowledgeCount)} wiki records and ${compactNumber(pulse.mcp.goals.length)} work targets are visible to the same MCP connector that chatbot users call.`,
+      check: 'Open /wiki, filter records, and inspect the MCP trace behind a selected item.',
+      href: '/wiki'
     },
     {
       label: 'Repository',
@@ -72,7 +72,7 @@
   ];
 
   const checks = [
-    { step: 'Use it', body: 'Copy the MCP URL from /connect and ask a capable host to browse goals or wiki records.', href: '/connect' },
+    { step: 'Use it', body: 'Copy the MCP URL from /connect and ask a capable host to browse the community wiki.', href: '/connect' },
     { step: 'Watch it', body: 'Open /graph and /loop to see the same public state as an atlas and as a patch route.', href: '/graph' },
     { step: 'Build it', body: 'Open GitHub, clone the repo, and compare current branch state with the live site.', href: repoUrl, external: true },
     { step: 'Challenge it', body: 'Look at the limits section and file the first mismatch you can prove.', href: `${repoUrl}/issues/new`, external: true }
@@ -93,7 +93,7 @@
     <RitualLabel color="var(--signal-live)">Proof packet</RitualLabel>
     <h1>Evaluate Workflow in five minutes.</h1>
     <p class="lead">
-      This page is for developers, contributors, recruiters, and skeptical evaluators. It does not ask you to trust a pitch. It points at the live connector, graph, loop, repo, and the known gaps.
+      This page is for developers, contributors, recruiters, and skeptical evaluators. It does not ask you to trust a pitch. It points at the live connector, community wiki, graph, loop, repo, and the known gaps.
     </p>
     <LiveSourceBar label="Proof packet sources" detail="Refresh MCP and GitHub before you judge the evidence below." />
   </div>
@@ -105,7 +105,7 @@
       <article>
         <span>MCP snapshot</span>
         <strong>{relativeStamp(pulse.mcp.fetched_at)}</strong>
-        <p>{compactNumber(pulse.knowledgeCount)} commons records and {compactNumber(pulse.mcp.goals.length)} goals.</p>
+        <p>{compactNumber(pulse.knowledgeCount)} wiki records and {compactNumber(pulse.mcp.goals.length)} work targets.</p>
       </article>
       <article>
         <span>Repo snapshot</span>

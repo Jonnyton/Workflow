@@ -59,4 +59,4 @@ jobs:
           curl -sI https://tinyassets.io/mcp | head -10 || true
           echo
           echo "--- mcp_public_canary ---"
-          python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose || true
+          python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose

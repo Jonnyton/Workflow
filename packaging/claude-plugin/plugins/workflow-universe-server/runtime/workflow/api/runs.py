@@ -373,9 +373,18 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
-    from workflow.runs import execute_branch_async
+    from workflow.runs import (
+        RUN_STATUS_CANCELLED,
+        RUN_STATUS_COMPLETED,
+        RUN_STATUS_FAILED,
+        RUN_STATUS_INTERRUPTED,
+        execute_branch_async,
+        get_run,
+        record_lineage,
+    )
 
     _ensure_runs_recovery()
+    actor = _current_actor()
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -409,6 +418,57 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
                 "error": f"inputs_json is not valid JSON: {exc}",
             })
 
+    resume_from = (kwargs.get("resume_from") or "").strip()
+    source_run: dict[str, Any] | None = None
+    if resume_from:
+        if any(ch.isspace() for ch in resume_from):
+            return json.dumps({
+                "error": "resume_from must be a single run_id with no whitespace.",
+                "failure_class": "resume_from_invalid",
+                "actionable_by": "chatbot",
+            })
+        source_run = get_run(_base_path(), resume_from)
+        if source_run is None:
+            return json.dumps({
+                "error": "resume_from source run was not found.",
+                "failure_class": "resume_from_not_found",
+                "actionable_by": "chatbot",
+            })
+        if source_run.get("actor") != actor:
+            return json.dumps({
+                "error": "resume_from source run is not visible to the current actor.",
+                "failure_class": "resume_from_forbidden",
+                "actionable_by": "user",
+            })
+        if source_run.get("branch_def_id") != bid:
+            return json.dumps({
+                "error": (
+                    "resume_from source run belongs to a different workflow "
+                    "than the requested target branch."
+                ),
+                "failure_class": "resume_from_branch_mismatch",
+                "actionable_by": "chatbot",
+            })
+        terminal_statuses = {
+            RUN_STATUS_COMPLETED,
+            RUN_STATUS_FAILED,
+            RUN_STATUS_CANCELLED,
+            RUN_STATUS_INTERRUPTED,
+        }
+        if source_run.get("status") not in terminal_statuses:
+            return json.dumps({
+                "error": (
+                    "resume_from source run must be terminal before it can "
+                    "seed a new run."
+                ),
+                "failure_class": "resume_from_invalid_state",
+                "source_status": source_run.get("status"),
+                "actionable_by": "chatbot",
+            })
+        source_inputs = source_run.get("inputs")
+        if isinstance(source_inputs, dict):
+            inputs = {**source_inputs, **inputs}
+
     # Real provider — lazy import so test envs without providers work.
     provider_call: Any = None
     try:
@@ -441,7 +501,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
             branch=branch,
             inputs=inputs,
             run_name=kwargs.get("run_name", ""),
-            actor=_current_actor(),
+            actor=actor,
             provider_call=provider_call,
             recursion_limit_override=recursion_limit_override,
         )
@@ -477,6 +537,18 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
         "output": outcome.output,
         "error": outcome.error,
     }
+    if source_run is not None:
+        branch_version = int(getattr(branch, "version", 1) or 1)
+        record_lineage(
+            _base_path(),
+            run_id=outcome.run_id,
+            parent_run_id=resume_from,
+            branch_def_id=bid,
+            branch_version=branch_version,
+            edits_since_parent=[],
+        )
+        result["resume_from"] = resume_from
+        result["source_run_id"] = resume_from
     if error_annotation:
         result["failure_class"] = error_annotation[0]
         result["suggested_action"] = error_annotation[1]

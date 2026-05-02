@@ -50,7 +50,11 @@ STATUS_PATH = REPO_ROOT / "STATUS.md"
 PROPOSALS_PATH = REPO_ROOT / "output" / "concerns_trim_proposals.md"
 ACTIVITY_LOG = REPO_ROOT / ".agents" / "activity.log"
 
-CONCERN_LINE = re.compile(r"^- \[(?P<date>\d{4}-\d{2}-\d{2})\]\s*(?P<text>.+)$")
+CONCERN_LINE = re.compile(
+    r"^-\s+(?:\*\*)?\[(?P<meta>[^\]]+)\](?:\*\*)?\s*(?P<text>.+)$"
+)
+FILED_DATE = re.compile(r"(?:^|\s)filed:(?P<date>\d{4}-\d{2}-\d{2})\b")
+LEGACY_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 COMMIT_HASH = re.compile(r"\b([0-9a-f]{7,40})\b")
 DESIGN_NOTE_PATH = re.compile(r"`(docs/design-notes/[^`]+\.md)`")
 TASK_REF = re.compile(r"task #(\d+)")
@@ -76,7 +80,9 @@ def _read_concerns_section(status_text: str) -> list[Concern]:
     """Extract concern records from STATUS.md text.
 
     Concerns live between `## Concerns` and the next `##` or `---`.
-    Only `- [DATE] text` lines count; intervening prose is ignored.
+    Current rows use `- [filed:DATE verified:DATE] text`, optionally
+    bolded with a severity prefix inside the brackets. Legacy
+    `- [DATE] text` rows are still accepted; intervening prose is ignored.
     """
     lines = status_text.splitlines()
     try:
@@ -92,9 +98,17 @@ def _read_concerns_section(status_text: str) -> list[Concern]:
             break
         match = CONCERN_LINE.match(line.rstrip())
         if match:
+            meta = match.group("meta").strip()
+            filed = FILED_DATE.search(meta)
+            if filed:
+                concern_date = filed.group("date")
+            elif LEGACY_DATE.match(meta):
+                concern_date = meta
+            else:
+                continue
             concerns.append(
                 Concern(
-                    date=match.group("date"),
+                    date=concern_date,
                     text=match.group("text"),
                     raw_line=line,
                 )

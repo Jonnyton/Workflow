@@ -302,6 +302,9 @@ def universe(
     provenance_tag: str = "",
     limit: int = 30,
     priority_weight: float = 0.0,
+    pickup_incentive: str = "",
+    directed_daemon_id: str = "",
+    directed_daemon_instruction: str = "",
     branch_task_id: str = "",
     goal_id: str = "",
     branch_def_id: str = "",
@@ -361,6 +364,13 @@ def universe(
             "issue:NUMBER" for the request thread.
         request_type: submit_request type.
         branch_id: Target branch for submit_request.
+        pickup_incentive: Optional public pickup signal for a patch request.
+            It can affect daemon pickup priority only; it never affects
+            acceptance, release, or merge odds.
+        directed_daemon_id: Optional daemon_id the requester owns or controls
+            and wants to focus on this request.
+        directed_daemon_instruction: Optional proposal-only instruction for the
+            requester-directed daemon.
         filename: Filename for add_canon / add_canon_from_path /
             read_canon.
         provenance_tag: Source tag for add_canon / add_canon_from_path.
@@ -382,6 +392,9 @@ def universe(
         provenance_tag=provenance_tag,
         limit=limit,
         priority_weight=priority_weight,
+        pickup_incentive=pickup_incentive,
+        directed_daemon_id=directed_daemon_id,
+        directed_daemon_instruction=directed_daemon_instruction,
         branch_task_id=branch_task_id,
         goal_id=goal_id,
         branch_def_id=branch_def_id,
@@ -480,6 +493,7 @@ def extensions(
     run_id: str = "",
     inputs_json: str = "",
     run_name: str = "",
+    resume_from: str = "",
     status: str = "",
     since_step: int = -1,
     max_wait_s: int = 60,
@@ -628,6 +642,7 @@ def extensions(
         run_id=run_id,
         inputs_json=inputs_json,
         run_name=run_name,
+        resume_from=resume_from,
         status=status,
         since_step=since_step,
         max_wait_s=max_wait_s,

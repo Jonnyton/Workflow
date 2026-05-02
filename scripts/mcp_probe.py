@@ -27,6 +27,7 @@ import urllib.request
 from typing import Any
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
+MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # Set to True by --verbose at parse time; read by helpers.
 _VERBOSE = False
@@ -72,7 +73,7 @@ def _initialize(url: str) -> tuple[str | None, int]:
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "clientInfo": {"name": "lead-probe", "version": "1"},
                 "capabilities": {},
             },
@@ -86,6 +87,14 @@ def _initialize(url: str) -> tuple[str | None, int]:
     _mcp_call(url, sid, {"jsonrpc": "2.0", "method": "notifications/initialized"})
     _vlog("notifications/initialized sent")
     return sid, 0
+
+
+def _tool_response_exit_code(resp: dict | None) -> int:
+    if not resp or "error" in resp or "result" not in resp:
+        return 1
+    if resp["result"].get("isError"):
+        return 1
+    return 0
 
 
 def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bool) -> int:
@@ -102,7 +111,7 @@ def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bo
     )
     if raw:
         print(json.dumps(resp, indent=2))
-        return 0
+        return _tool_response_exit_code(resp)
     if resp and "result" in resp:
         for item in resp["result"].get("content", []):
             if item.get("type") == "text":
@@ -144,7 +153,7 @@ def _cmd_wiki(url: str, raw: bool) -> int:
     return _call_tool(url, sid, "wiki", {"action": "list"}, raw=raw)
 
 
-def _cmd_tools(url: str) -> int:
+def _cmd_tools(url: str, raw: bool) -> int:
     sid, rc = _initialize(url)
     if rc:
         return rc
@@ -152,9 +161,22 @@ def _cmd_tools(url: str) -> int:
     if not resp or "result" not in resp:
         print(json.dumps(resp, indent=2))
         return 1
+    if raw:
+        print(json.dumps(resp, indent=2))
+        return 0
     for t in resp["result"]["tools"]:
         print(f"{t['name']:<20} {t.get('description', '').splitlines()[0][:80]}")
     return 0
+
+
+def _add_subcommand_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--url", default=argparse.SUPPRESS, help="MCP endpoint URL")
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="print full JSON response",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -169,14 +191,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="subcommand")
 
-    sub.add_parser("status", help="call get_status")
-    sub.add_parser("universes", help="list all universes")
+    status = sub.add_parser("status", help="call get_status")
+    _add_subcommand_flags(status)
+
+    universes = sub.add_parser("universes", help="list all universes")
+    _add_subcommand_flags(universes)
 
     uni = sub.add_parser("universe", help="inspect a specific universe")
     uni.add_argument("universe_id", help="universe ID to inspect")
+    _add_subcommand_flags(uni)
 
-    sub.add_parser("wiki", help="list wiki pages")
-    sub.add_parser("tools", help="list available MCP tools")
+    wiki = sub.add_parser("wiki", help="list wiki pages")
+    _add_subcommand_flags(wiki)
+
+    tools = sub.add_parser("tools", help="list available MCP tools")
+    _add_subcommand_flags(tools)
 
     # Raw / legacy flags (no subcommand path)
     p.add_argument("--tool", help="tool name for raw call")
@@ -203,11 +232,11 @@ def main() -> int:
     if args.subcommand == "wiki":
         return _cmd_wiki(url, raw)
     if args.subcommand == "tools":
-        return _cmd_tools(url)
+        return _cmd_tools(url, raw)
 
     # Legacy / raw path
     if args.list:
-        return _cmd_tools(url)
+        return _cmd_tools(url, raw)
 
     if not args.tool:
         print("use a subcommand (status/universes/universe/wiki/tools) or --tool <name>",

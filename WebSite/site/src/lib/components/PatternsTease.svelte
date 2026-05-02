@@ -14,7 +14,7 @@
     { n: '02', label: 'Friction',      blurb: "Almost. One thing's missing — a feature, a fix, a finer evaluator. You say so naturally." },
     { n: '03', label: 'Patch filed',   blurb: "Your chatbot files a patch_request to the wiki. No git, no GitHub, no command. Stays in chat." },
     { n: '04', label: 'Daemon ships',  blurb: "A daemon picks the patch up, drafts a candidate fix, and routes it through gates. The fix does not merge until evidence says it worked." },
-    { n: '05', label: 'Loop evolves',  blurb: "The same public record can tune goals, gates, branches, and routing. The substrate changes through visible evidence, not hidden planning." }
+    { n: '05', label: 'Loop evolves',  blurb: "The same public record can tune work targets, gates, branches, and routing. The substrate changes through visible evidence, not hidden planning." }
   ];
 </script>
 
@@ -24,7 +24,7 @@
       <RitualLabel color="var(--violet-400)">· How the project evolves itself ·</RitualLabel>
       <h2 class="title">The loop.</h2>
       <p class="lead">
-        Your chatbot doesn't just <em>use</em> Workflow — it helps build it. A user has a real-world thing they want done. A daemon does the work. The user notices what's missing. The chatbot files a patch. A different daemon picks it up. The fix ships when evidence clears. The next user benefits, and the goals themselves get forked and re-tuned by the people running the loop.
+        Your chatbot doesn't just <em>use</em> Workflow — it helps build it. A user has a real-world thing they want done. A daemon does the work. The user notices what's missing. The chatbot files a patch. A different daemon picks it up. The fix ships when evidence clears. The next user benefits, and the public work records get forked and re-tuned by the people running the loop.
       </p>
       <p class="origin">
         <strong>Even this loop — the very first version of it — was built by users.</strong> Drawn out of <code>user-sim</code> sessions where chatbot-personas filed the first patches, named what was missing, forked what didn't fit. The protocol's first patches are the protocol. There has never been a separate design committee.

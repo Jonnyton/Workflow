@@ -29,13 +29,13 @@
         <li><a href="/connect">Connect</a></li>
         <li><a href="/loop">Join the loop</a></li>
         <li><a href="/host">Host a daemon</a></li>
-        <li><a href="/goals">Goals</a></li>
+        <li><a href="/wiki">Community wiki</a></li>
       </ul>
     </div>
     <div class="col">
       <RitualLabel>Browse</RitualLabel>
       <ul>
-        <li><a href="/wiki">Live wiki</a></li>
+        <li><a href="/alliance">Alliance</a></li>
         <li><a href="/graph">Graph</a></li>
         <li><a href="/status">Status</a></li>
         <li><a href="/economy">Economy</a></li>

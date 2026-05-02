@@ -79,16 +79,16 @@
     const repoHead = project.repo.repo.head || project.repo.branches[0]?.commit || '';
     const shared = {
       wiki: {
-        label: 'Commons',
+        label: 'Wiki pages',
         value: compactNumber(project.knowledgeCount),
         note: `${project.mcp.wiki.bugs.length} bugs, ${project.mcp.wiki.drafts.length} drafts`,
         href: '/wiki'
       },
       goals: {
-        label: 'Goals',
+        label: 'Work targets',
         value: compactNumber(project.mcp.goals.length),
-        note: 'live MCP goal targets',
-        href: '/goals'
+        note: 'MCP goal records inside the wiki story',
+        href: '/wiki'
       },
       branches: {
         label: 'Branches',
@@ -113,9 +113,9 @@
 
     if (activeLens === 'status') return [shared.wiki, shared.goals, shared.universes, shared.head];
     if (activeLens === 'connect') return [shared.wiki, shared.goals, shared.universes, { label: 'Endpoint', value: '200?', note: 'probe with MCP refresh', href: '/connect' }];
-    if (activeLens === 'goals') return [shared.goals, shared.branches, { label: 'Matches', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'goal/wiki relationships', href: '/graph' }, shared.wiki];
+    if (activeLens === 'wiki') return [shared.wiki, shared.goals, shared.branches, { label: 'Matches', value: compactNumber(project.mcp.edges?.length ?? 0), note: 'wiki relationships', href: '/graph' }];
     if (activeLens === 'host') return [shared.universes, shared.branches, { label: 'Routes', value: compactNumber(project.routeCount), note: 'website host surfaces', href: '/graph' }, shared.head];
-    if (activeLens === 'economy') return [shared.goals, { label: 'Gate work', value: compactNumber(project.mcp.wiki.plans.length), note: 'plans feeding settlement', href: '/loop' }, shared.branches, shared.wiki];
+    if (activeLens === 'economy') return [shared.goals, { label: 'Wiki plans', value: compactNumber(project.mcp.wiki.plans.length), note: 'plans feeding settlement', href: '/wiki' }, shared.branches, shared.wiki];
     if (activeLens === 'alliance') return [shared.wiki, shared.goals, { label: 'Entry paths', value: '4', note: 'chatbot, GitHub, email, wiki', href: '/alliance' }, shared.branches];
     return [shared.wiki, shared.goals, shared.branches, shared.universes];
   }
@@ -123,19 +123,19 @@
   function itemsFor(activeLens: LensKey, project: ProjectPulse): LensItem[] {
     if (activeLens === 'connect') {
       return [
-        { kicker: 'MCP call', title: 'wiki action=list', body: `${project.mcp.stats.wiki_promoted} promoted pages and ${project.mcp.stats.wiki_drafts} drafts are visible to the browser path.`, meta: project.mcp.source, href: '/wiki' },
-        { kicker: 'MCP call', title: 'goals action=list', body: `${project.mcp.goals.length} public goals can be browsed by the same connector URL.`, meta: project.currentGoal?.id, href: '/goals' },
+        { kicker: 'MCP call', title: 'wiki action=list', body: `${project.mcp.stats.wiki_promoted} promoted community wiki pages and ${project.mcp.stats.wiki_drafts} drafts are visible to the browser path.`, meta: project.mcp.source, href: '/wiki' },
+        { kicker: 'MCP call', title: 'goals action=list', body: `${project.mcp.goals.length} work target records feed the community wiki view through the same connector URL.`, meta: project.currentGoal?.id, href: '/wiki' },
         { kicker: 'MCP call', title: 'universe action=list', body: `${project.mcp.universes.length} universes are in the current snapshot.`, meta: project.activeUniverse?.phase, href: '/host' }
       ];
     }
 
-    if (activeLens === 'goals') {
+    if (activeLens === 'wiki') {
       return project.mcp.goals.slice(0, 4).map((goal) => ({
-        kicker: 'Goal',
+        kicker: 'Work target',
         title: goal.name,
         body: goal.summary || 'No summary in snapshot.',
         meta: goal.id,
-        href: '/goals'
+        href: '/wiki'
       }));
     }
 
@@ -152,16 +152,16 @@
 
     if (activeLens === 'economy') {
       return [
-        { kicker: 'Work target', title: project.currentGoal?.name ?? 'No public goal', body: project.currentGoal?.summary ?? 'Refresh MCP to inspect current goals.', meta: project.currentGoal?.id, href: '/goals' },
-        { kicker: 'Gate source', title: 'Outcome evidence', body: `${project.mcp.wiki.plans.length} plans and ${project.mcp.wiki.bugs.length} bugs can become claim, gate, or settlement inputs.`, meta: 'MCP commons', href: '/wiki' },
+        { kicker: 'Wiki work target', title: project.currentGoal?.name ?? 'No public work target', body: project.currentGoal?.summary ?? 'Refresh MCP to inspect current work targets.', meta: project.currentGoal?.id, href: '/wiki' },
+        { kicker: 'Wiki evidence', title: 'Outcome evidence', body: `${project.mcp.wiki.plans.length} plans and ${project.mcp.wiki.bugs.length} bugs can become claim, gate, or settlement inputs.`, meta: 'MCP community wiki', href: '/wiki' },
         { kicker: 'Repo rail', title: project.repo.repo.name, body: `Settlement code and disclosure copy live with the repo state at ${shortHash(project.repo.repo.head)}.`, meta: project.repo.source, href: '/graph' }
       ];
     }
 
     if (activeLens === 'alliance') {
       return [
-        { kicker: 'Feature want', title: project.currentBug?.id ?? 'No bug selected', body: project.currentBug?.title ?? 'The commons has no current bug in this snapshot.', meta: 'enters the loop through wiki', href: '/wiki' },
-        { kicker: 'Public forum', title: 'GitHub Issues', body: 'Long-form ideas, bugs, and RFCs start in the open, then route back into wiki, goals, or branches.', meta: project.repo.repo.remote_url, href: 'https://github.com/Jonnyton/Workflow/issues', external: true },
+        { kicker: 'Wiki intake', title: project.currentBug?.id ?? 'No bug selected', body: project.currentBug?.title ?? 'The community wiki has no current bug in this snapshot.', meta: 'enters the loop through wiki', href: '/wiki' },
+        { kicker: 'Public forum', title: 'GitHub Issues', body: 'Long-form ideas, bugs, and RFCs start in the open, then route back into wiki pages or branches.', meta: project.repo.repo.remote_url, href: 'https://github.com/Jonnyton/Workflow/issues', external: true },
         { kicker: 'Chatbot path', title: 'Connector-mediated filing', body: 'A real user can ask their chatbot to file the bug or feature request directly.', meta: 'tinyassets.io/mcp', href: '/connect' }
       ];
     }
@@ -175,7 +175,7 @@
     }
 
     return [
-      { kicker: 'Now changing', title: project.currentGoal?.name ?? 'No goal', body: project.currentGoal?.summary ?? 'Refresh MCP to fetch current goals.', meta: project.currentGoal?.id, href: '/loop' },
+      { kicker: 'Now changing', title: project.currentGoal?.name ?? 'No work target', body: project.currentGoal?.summary ?? 'Refresh MCP to fetch current work targets.', meta: project.currentGoal?.id, href: '/loop' },
       { kicker: 'Open friction', title: project.currentBug?.id ?? 'No bug', body: project.currentBug?.title ?? 'No bug selected in this snapshot.', meta: 'fills the loop', href: '/wiki' },
       { kicker: 'Repo pulse', title: project.repo.repo.current_branch, body: `${project.repo.branches.length} branches visible. Current head ${shortHash(project.repo.repo.head)}.`, meta: project.repo.source, href: '/graph' }
     ];
@@ -184,7 +184,7 @@
   function graphPreviewFor(project: ProjectPulse, activeLens: LensKey): MiniGraph {
     const activeId =
       activeLens === 'home' ? 'site' :
-      activeLens === 'goals' ? 'goals' :
+      activeLens === 'wiki' ? 'wiki' :
       activeLens;
     const nodes: MiniGraphNode[] = [
       { id: 'repo', x: 20, y: 48, r: 7, kind: 'repo', label: project.repo.repo.name || 'repo' },
@@ -195,7 +195,7 @@
       { id: 'site', x: 31, y: 78, r: 6, kind: 'site', label: 'site' },
       { id: 'connect', x: 18, y: 82, r: 4, kind: 'site', label: 'connect' },
       { id: 'status', x: 24, y: 68, r: 4, kind: 'site', label: 'status' },
-      { id: 'goals', x: 39, y: 86, r: 4, kind: 'goal', label: 'goals' },
+      { id: 'work', x: 39, y: 86, r: 4, kind: 'goal', label: 'work' },
       { id: 'economy', x: 42, y: 92, r: 4, kind: 'goal', label: 'economy' },
       { id: 'alliance', x: 12, y: 72, r: 4, kind: 'wiki', label: 'alliance' }
     ];
@@ -226,7 +226,7 @@
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const edgePairs = [
       ['graph', 'repo'], ['graph', 'wiki'], ['graph', 'loop'], ['graph', 'host'], ['repo', 'loop'], ['wiki', 'loop'], ['host', 'loop'], ['site', 'graph'],
-      ['site', 'connect'], ['site', 'status'], ['site', 'goals'], ['site', 'loop'], ['site', 'economy'], ['site', 'alliance'],
+      ['site', 'connect'], ['site', 'status'], ['site', 'wiki'], ['site', 'work'], ['site', 'loop'], ['site', 'economy'], ['site', 'alliance'],
       ...satellites.map((satellite) => [satellite.anchor, satellite.id])
     ];
     const edges = edgePairs.flatMap(([from, to], index) => {
@@ -264,7 +264,7 @@
         <button type="button" onclick={refreshGithub} disabled={githubLoading} aria-busy={githubLoading}>
           Refresh GitHub
         </button>
-        <span>MCP {relativeStamp(mcp.fetched_at)} · {compactNumber(pulse.knowledgeCount)} commons</span>
+        <span>MCP {relativeStamp(mcp.fetched_at)} · {compactNumber(pulse.knowledgeCount)} wiki records</span>
         <span>GitHub {relativeStamp(repo.fetched_at)} · {compactNumber(pulse.branchCount)} branches</span>
       </div>
     </div>
@@ -279,14 +279,14 @@
     {#if activeLens === 'home'}
       <div class="demo-prompt" aria-label="Concrete Workflow demo">
         <span>Demo prompt</span>
-        <p>"Using Workflow, show open project work and file a patch request for the issue I describe."</p>
-        <strong>Result: the chatbot reads the MCP commons, routes the request into the loop, and the graph/status pages show the same live state changing.</strong>
+        <p>"Using Workflow, read the community wiki, show open project work, and file a patch request for the issue I describe."</p>
+        <strong>Result: the chatbot reads wiki records through MCP, routes the request into the loop, and the graph/status pages show the same live state changing.</strong>
       </div>
       <div class="home-actions" aria-label="Primary Workflow actions">
         <a class="home-action" href="/connect">
           <span>1 · Use it</span>
           <strong>Connect your chatbot.</strong>
-          <p>Paste one MCP URL. Your chatbot can browse goals, file bugs, and summon work.</p>
+          <p>Paste one MCP URL. Your chatbot can browse the community wiki, file bugs, and summon work.</p>
           <small>{mcp.source} · {relativeStamp(mcp.fetched_at)}</small>
         </a>
 

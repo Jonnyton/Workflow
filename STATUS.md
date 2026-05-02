@@ -16,32 +16,29 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 
 ## Work
 
-Path: #18 retarget sweep (live) → Arc C → Phase 6 db rename. universe_server.py: 14012 → 972 LOC live in main.
+Path: #18 cleared 2026-05-02 -> Arc C -> Phase 6 db rename. universe_server.py: 14012 -> 972 LOC live in main.
 
 Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by setting Status to `claimed:<name>`.
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
 | Scorched exact-original proof - mount guard green; needs rights-cleared Kickstart + input/sound/tank-hit acceptance. | WebSite/site/static/play/scorched-tanks/licensed/kickstart-a500-1.3.rom (deployment-only; do not commit ROM) | rights-cleared Kickstart | host-action |
-| Directory submissions + first-use evidence - Claude form p2; OpenAI `Workflow` app draft form reached; Codex CLI verified. | chatgpt-app-submission.json, docs/ops/mcp-*.md | contact/upload/final-submit approval | host-action |
-| **#18 retarget sweep + Arc A/E shim deletion** - IN FLIGHT. | workflow/universe_server.py, workflow/api/{evaluation,market,runs,status,helpers}.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, workflow/storage/__init__.py | - | claimed:dev |
-| Patch-request incentives + requester-directed daemon routing - optional incentives affect daemon pickup order only, never acceptance/merge odds; parent `00e5e52661c240d2` now has live attached child receipt. | PLAN.md, docs/design-notes/2026-05-01-patch-request-incentives.md, workflow/api/market.py, workflow/work_targets.py, workflow/daemon_registry.py, tests/test_patch_request_incentives.py | #18 lock overlaps market/tests | dev-ready |
-| **#24 Arc C** - fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | #18 | dev-ready |
+| Directory submissions + first-use evidence - OpenAI public/full/global intent supplied; app packet blocked on `/mcp` vs `/mcp-directory` mismatch, data disclosure, demo URL, tested prompts. | chatgpt-app-submission.json, docs/ops/mcp-*.md, docs/ops/openai-app-submission-prep-2026-05-02.md | choose URL/data policy; action-time upload/final-submit approval | host-decision |
+| **#24 Arc C** - fixture migration + resolver deletion. | workflow/storage/__init__.py, workflow/api/helpers.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/, tests/, AGENTS.md, deploy/README.md | - | dev-ready |
 | **Phase 6** (nav 2026-04-28): `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump. ~2-3h dev + 1h host. | workflow/storage/__init__.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/storage/__init__.py, tests/ | #24 | dev-ready |
-| `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28). Single param add. | workflow/api/runs.py, tests/ | #18 | dev-ready |
-| Claude.ai injection mitigation - Section 5/5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | #18 | dev-ready |
-| Community change loop - controls live + chatbot proof green; P1a deployed/live attach proof green 2026-05-02; needs post-fix real-user clean-use evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | #18 lock overlaps tests/docstrings | monitoring |
-| Daemon soul followups - mirror sync, mini-brain pytest promotion, duplicate-soul guard, and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | #18 | dev-ready |
+| Claude.ai injection mitigation - Section 5/5.5 prompt-discipline edits. | workflow/universe_server.py, workflow/prompts/ | - | dev-ready |
+| Community change loop - controls live + ChatGPT proof refreshed 2026-05-01 19:00-07; P1a attach + incentive pickup v0 green; needs post-fix real-user evidence. | docs/exec-plans/active/2026-04-30-live-community-reiteration-loop.md, docs/ops/auto-fix-runbook.md | - | monitoring |
+| Daemon soul followups - mirror sync, mini-brain pytest promotion, duplicate-soul guard, and flagship core routing. | workflow/daemon_{registry,wiki,memory,brain}.py, workflow/dispatcher.py, workflow/api/universe.py, fantasy_daemon/api.py, tests/ | PR #140 | dev-ready |
 | Enable Actions PR creation for auto-fix - repo has read-only workflow perms; permission flip needs action-time confirmation. | GitHub repo settings | PR #100/#104 show branch push works | host-action |
-| Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | #18 | nav-then-dev |
-| Windows full-suite backup.sh path fix — clean HEAD: `bash.exe` receives raw `C:\...` path and cannot find script. | tests/test_backup_script.py | #18 | dev-ready |
-| Clean-clone MCP config test mismatch — test expects ignored local `.mcp.json`; retarget to safe example config. | tests/test_mcp_server.py, .mcp.example.json, .gitignore | #18 | dev-ready |
+| Legacy-branding + architecture-edges cleanup arcs - remaining batches after #18; A.1 unpack is multi-week. | tests/, workflow/{branches,runs}.py, docs/{specs,design-notes,exec-plans,audits}/ | - | nav-then-dev |
+| Windows full-suite backup.sh path fix — clean HEAD: `bash.exe` receives raw `C:\...` path and cannot find script. | tests/test_backup_script.py | - | dev-ready |
+| Clean-clone MCP config test mismatch — test expects ignored local `.mcp.json`; retarget to safe example config. | tests/test_mcp_server.py, .mcp.example.json, .gitignore | - | dev-ready |
 | R7 closure pass — items 6+7 obviated; 1-5 cover Arc B/C; 8 by #25. | docs/exec-plans/active/2026-04-19-rename-end-state.md | #25 | nav-then-dev |
-| #28 domain extraction host questions — #29 decomposition is done; remaining Qs are tool shape, upload-policy placement, registration hook. | `docs/audits/2026-04-25-engine-domain-api-separation.md` | #18 / rename locks | host-review |
+| #28 domain extraction host questions — #29 decomposition is done; remaining Qs are tool shape, upload-policy placement, registration hook. | `docs/audits/2026-04-25-engine-domain-api-separation.md` | rename locks | host-review |
 | Wiki #32 — loop-owned cleanup: lowercase BUG-003/023 rm + BUG-018 old-canonical cleanup. | wiki droplet + MCP | loop dev | claimed:loop-dev |
 | Loop action: `rm pages/bugs/bug-003-...md` + `rm pages/bugs/bug-023-...md` (lowercase duplicates) | wiki droplet | Wiki #32 | claimed:loop-dev |
 | Loop action: BUG-018 cleanup — fix old canonical before promoting/merging cleaned slug. | wiki droplet + MCP | Wiki #32 | claimed:loop-dev |
-| Arch audit residual — R7 `daemon_server.py` storage split + `catalog/backend.py` service-layer inversion remain. | `docs/design-notes/2026-04-{24-architecture-audit,25-arch-audit-5-r7-split-scoping}.md` | #18 / Arc B | host-review |
+| Arch audit residual — R7 `daemon_server.py` storage split + `catalog/backend.py` service-layer inversion remain. | `docs/design-notes/2026-04-{24-architecture-audit,25-arch-audit-5-r7-split-scoping}.md` | Arc B | host-review |
 | Layer-3 design session | `docs/design-notes/2026-04-23-layer-3-design-session-*.md` | host schedules | half-day |
 | Fire DR drill #3 via workflow_dispatch | `.github/workflows/dr-drill.yml` | - | host or lead-with-PAT |
 | Mission 10 retest | user-sim | host watches browser | claimed:user |
@@ -52,7 +49,7 @@ Run `python scripts/claim_check.py --provider <name>` before claiming. Claim by 
 
 ## Next
 
-1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), next is clean chatbot/user evidence and #18 unblock for incentive routing.
+1. **Current uptime priority 2026-05-02:** live community patch loop stays top lane; P1a live attach proof green (`run-attachment:00e5e52661c240d2:16726e558a8f47ec:203c0aa2250ac535`), #18 + incentive pickup v0 cleared; next is post-fix user evidence + remaining uptime rows.
 
 2. **Five Scoping Rules now in PLAN.md** (2026-04-28): minimal-primitives / community-build-over-platform / privacy-via-community-composition / commons-first-architecture / user-capability-axis. Cross-provider source. Depth in lead memory.
 3. **Decision pile awaiting host:** primitive-set §7 + engine substrate §7 + Tomas + A.1 unpack §7 + Phase 6 db rename + parked Q D.

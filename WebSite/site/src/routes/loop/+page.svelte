@@ -50,7 +50,7 @@
 
 <svelte:head>
   <title>The loop - Workflow</title>
-  <meta name="description" content="Watch live Workflow bugs, goals, branches, and gates move through the public contribution loop." />
+  <meta name="description" content="Watch live Workflow wiki bugs, work targets, branches, and gates move through the public contribution loop." />
 </svelte:head>
 
 <section class="join-loop join-loop--hero" aria-labelledby="join-loop-title">
@@ -58,20 +58,20 @@
     <div class="join-copy">
       <RitualLabel color="var(--signal-live)">· Choose your entry ·</RitualLabel>
       <h1 id="join-loop-title">Move the loop from the side that fits you.</h1>
-      <p class="lead">The loop is the proof. These are the three things a visitor should do after seeing it: contribute through GitHub, connect the MCP as a user, or host daemon capacity.</p>
+      <p class="lead">The loop is the proof. Community wiki bugs are the public intake; after seeing them move, contribute through GitHub, connect the MCP as a user, or host daemon capacity.</p>
 
       <div class="entry-steps" aria-label="Loop action choices">
         <a class="entry-step" href={`${repoUrl}/blob/main/CONTRIBUTING.md`} target="_blank" rel="noreferrer">
           <span class="entry-step__number">1</span>
           <strong>Contribute through GitHub</strong>
           <p>Open the repo path.</p>
-          <small>{compactNumber(pulse.mcp.wiki.bugs.length)} public bugs · {compactNumber(pulse.branchCount)} branches · head {shortHash(pulse.repo.repo.head)}</small>
+          <small>{compactNumber(pulse.mcp.wiki.bugs.length)} wiki bugs · {compactNumber(pulse.branchCount)} branches · head {shortHash(pulse.repo.repo.head)}</small>
         </a>
         <a class="entry-step" href="/connect">
           <span class="entry-step__number">2</span>
           <strong>Connect your MCP</strong>
           <p>Use it from your chatbot.</p>
-          <small>{pulse.mcp.source} · {compactNumber(pulse.mcp.goals.length)} goals · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
+          <small>{pulse.mcp.source} · {compactNumber(pulse.mcp.goals.length)} work targets · {compactNumber(pulse.mcp.wiki.bugs.length)} bugs</small>
         </a>
         <a class="entry-step" href="/host">
           <span class="entry-step__number">3</span>
@@ -90,11 +90,11 @@
       <div>
         <RitualLabel color="var(--violet-400)">· Patch loop playground ·</RitualLabel>
         <h2>Click through the loop itself</h2>
-        <p>The 1-6 route is the showcase. Real bugs and goals from the MCP snapshot fill the route so the stage behavior is grounded instead of decorative.</p>
+        <p>The 1-6 route is the showcase. Real wiki bug reports and work targets from the MCP snapshot fill the route so the stage behavior is grounded instead of decorative.</p>
       </div>
       <div class="snapshot-meter" aria-label="MCP snapshot counts">
         <span><strong>{snapshot.stats.wiki_promoted}</strong> wiki pages</span>
-        <span><strong>{snapshot.stats.goals}</strong> goals</span>
+        <span><strong>{snapshot.stats.goals}</strong> work targets</span>
         <span><strong>{snapshot.stats.edges ?? snapshot.edges?.length ?? 0}</strong> edges</span>
       </div>
     </div>

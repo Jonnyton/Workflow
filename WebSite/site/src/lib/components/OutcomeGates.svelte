@@ -23,17 +23,17 @@
       <RitualLabel color="var(--violet-400)">· Outcome gates ·</RitualLabel>
       <h2 class="title">Real-world truth, not polish.</h2>
       <p>
-        Each goal declares a ladder. Early rungs are personal — draft committed, beta-read accepted, submitted. Final rungs, when they exist, are verified by a named third party: a DOI on doi.org, a byline in a named outlet, an ISBN in a store, citations on Semantic Scholar.
+        Each public work target in the wiki can declare a ladder. Early rungs are personal: draft committed, beta-read accepted, submitted. Final rungs, when they exist, are verified by a named third party: a DOI on doi.org, a byline in a named outlet, an ISBN in a store, citations on Semantic Scholar.
       </p>
       <p>
-        Leaderboards rank branches by the <em>highest gate reached</em>, not by judge scores. Personal goals stop wherever you want. Public ones go as far as the real world agrees.
+        Leaderboards rank branches by the <em>highest gate reached</em>, not by judge scores. Personal targets stop wherever you want. Public wiki records go as far as the real world agrees.
       </p>
-      <Button variant="ghost" href="/goals">Browse goals</Button>
+      <Button variant="ghost" href="/wiki">Browse wiki</Button>
     </div>
-    <a class="gates__panel" href="/goals" aria-label="Open live goals and outcome gates">
+    <a class="gates__panel" href="/wiki" aria-label="Open community wiki work records and outcome gates">
       <div class="panel__head">
         <span class="panel__name">research-paper</span>
-        <RitualLabel>Goal · 6 gates</RitualLabel>
+        <RitualLabel>Wiki work · 6 gates</RitualLabel>
       </div>
       <ol class="ladder">
         {#each rungs as r, i (r.key)}

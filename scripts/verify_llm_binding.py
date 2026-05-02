@@ -1,18 +1,17 @@
 """LLM binding verifier — post-deploy smoke for HD-3.
 
 Confirms the running daemon has at least one LLM provider bound (i.e.
-``llm_endpoint_bound`` in get_status is not ``"unset"``).  Also issues a
-minimal ``add_canon`` call to exercise the provider chain end-to-end and
-checks the daemon's ``get_status`` ``phase`` field advances to something
-other than ``idle``.
+``llm_endpoint_bound`` in get_status is not ``"unset"``). This is a
+binding canary only: it does not mutate the live universe or claim a full
+provider-chain run succeeded.
 
 Exit codes
 ----------
-0   llm_endpoint_bound is set + provider chain exercised.
+0   llm_endpoint_bound is set (and sandbox is available when requested).
 1   MCP protocol error or unexpected response shape.
 2   Network / connectivity error.
 3   llm_endpoint_bound is "unset" — daemon has no LLM.
-4   Provider chain exercise failed (canon write or status regression).
+4   get_status tool returned an MCP error.
 5   Required sandbox runtime is unavailable on the daemon host.
 
 Usage
@@ -171,32 +170,6 @@ def check_llm_binding(
                 "can execute without silently stalling node work.",
             )
         print("[verify-llm] sandbox_status.bwrap_available=true")
-
-    # Step 3: exercise provider chain with a minimal add_canon call.
-    # add_canon writes a short throwaway entry — cheapest tool call that
-    # touches the provider dispatch path without starting a full run.
-    print("[verify-llm] exercising provider chain via add_canon...")
-    try:
-        _call_tool_with(
-            url,
-            sid,
-            "add_canon",
-            {
-                "content": "[verify-llm-binding smoke] throwaway entry — safe to delete",
-                "tags": ["verify-llm-smoke"],
-            },
-            timeout,
-            _post_fn,
-        )
-        print("[verify-llm] add_canon OK — provider chain reachable")
-    except VerifyError as exc:
-        # add_canon failure is non-fatal for the binding check itself;
-        # the LLM may be bound but the universe not initialised yet.
-        # Downgrade to a warning so the check still passes on binding.
-        print(
-            f"[verify-llm] WARN: add_canon returned error (non-fatal): {exc.msg}",
-            file=sys.stderr,
-        )
 
     return status
 

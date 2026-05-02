@@ -360,6 +360,104 @@ def test_run_branch_records_lineage(p4_env):
     assert lin2["branch_version"] == 1
 
 
+def test_run_branch_resume_from_records_explicit_source_run(p4_env):
+    """resume_from chooses the source run even when it is not the latest run."""
+    us, base = p4_env
+    bid = _build_trivial_branch(us)
+    source_run_id = _run(us, bid, {"x": "source"})
+    latest_run_id = _run(us, bid, {"x": "latest"})
+
+    resumed = _call(
+        us,
+        "run_branch",
+        branch_def_id=bid,
+        inputs_json=json.dumps({"x": "override"}),
+        resume_from=source_run_id,
+    )
+    _wait(resumed["run_id"])
+
+    from workflow.runs import get_lineage
+
+    lineage = get_lineage(base, resumed["run_id"])
+    assert lineage is not None
+    assert lineage["parent_run_id"] == source_run_id
+    assert lineage["parent_run_id"] != latest_run_id
+    assert resumed["resume_from"] == source_run_id
+
+
+def test_run_branch_resume_from_missing_source_returns_error(p4_env):
+    us, _ = p4_env
+    bid = _build_trivial_branch(us)
+
+    result = _call(
+        us,
+        "run_branch",
+        branch_def_id=bid,
+        resume_from="missing-run-id",
+    )
+
+    assert "error" in result
+    assert "resume_from" in result["error"]
+    assert result["failure_class"] == "resume_from_not_found"
+
+
+def test_run_branch_resume_from_carries_source_inputs_when_absent(p4_env):
+    us, base = p4_env
+    bid = _build_trivial_branch(us)
+    source_run_id = _run(us, bid, {"x": "source-input"})
+
+    resumed = _call(
+        us,
+        "run_branch",
+        branch_def_id=bid,
+        resume_from=source_run_id,
+    )
+    _wait(resumed["run_id"])
+
+    from workflow.runs import get_run
+
+    run_record = get_run(base, resumed["run_id"])
+    assert run_record is not None
+    assert run_record["inputs"] == {"x": "source-input"}
+
+
+def test_run_branch_resume_from_cross_actor_returns_error(p4_env, monkeypatch):
+    us, _ = p4_env
+    bid = _build_trivial_branch(us)
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
+    bob_run_id = _run(us, bid, {"x": "bob"})
+
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    result = _call(
+        us,
+        "run_branch",
+        branch_def_id=bid,
+        resume_from=bob_run_id,
+    )
+
+    assert "error" in result
+    assert "not visible" in result["error"]
+    assert result["failure_class"] == "resume_from_forbidden"
+
+
+def test_run_branch_resume_from_branch_mismatch_returns_error(p4_env):
+    us, _ = p4_env
+    source_bid = _build_trivial_branch(us)
+    target_bid = _build_trivial_branch(us)
+    source_run_id = _run(us, source_bid, {"x": "source"})
+
+    result = _call(
+        us,
+        "run_branch",
+        branch_def_id=target_bid,
+        resume_from=source_run_id,
+    )
+
+    assert "error" in result
+    assert "different workflow" in result["error"]
+    assert result["failure_class"] == "resume_from_branch_mismatch"
+
+
 def test_update_node_records_edit_audit(p4_env):
     """Every update_node emits a node_edit_audit row."""
     us, base = p4_env
