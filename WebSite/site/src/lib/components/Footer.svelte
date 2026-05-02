@@ -45,6 +45,7 @@
       <RitualLabel>Build</RitualLabel>
       <ul>
         <li><a href="/connect">Connect MCP</a></li>
+        <li><a href="/proof">Proof packet</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow" target="_blank" rel="noreferrer">GitHub ↗</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow/blob/main/PLAN.md" target="_blank" rel="noreferrer">PLAN.md ↗</a></li>
         <li><a href="https://github.com/Jonnyton/Workflow/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">CONTRIBUTING.md ↗</a></li>
