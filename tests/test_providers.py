@@ -673,6 +673,35 @@ class TestCodexProvider:
         assert "--ephemeral" in captured_cmd
         assert "-C" in captured_cmd
         assert "-m" in captured_cmd
+        assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.4"
+
+    @pytest.mark.asyncio
+    async def test_model_can_be_overridden_by_env(self, monkeypatch):
+        """Operators can move the provider forward after the deployed CLI supports it."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        captured_cmd = []
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"hello", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _fake_exec(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        monkeypatch.setenv("WORKFLOW_CODEX_MODEL", "gpt-5.5")
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("workflow.providers.codex_provider.get_sandbox_status",
+                  return_value={"bwrap_available": True, "reason": None}),
+            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        ):
+            provider = CodexProvider()
+            await provider.complete("prompt", "system", ModelConfig())
+
         assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.5"
 
     @pytest.mark.asyncio
