@@ -23,6 +23,8 @@ corresponding role.
 
 Registered in the host-local daemon registry on 2026-05-02 under
 `C:\Users\Jonathan\AppData\Roaming\Workflow`.
+The live daemon wikis were calibrated with the Claude/Codex family policy on
+2026-05-02 without changing daemon IDs or copying souls.
 
 | Daemon | daemon_id | Soul hash |
 |--------|-----------|-----------|
@@ -51,6 +53,56 @@ Borrowed-soul execution is not identity copying. The executor remains itself,
 the borrowed core soul is cited as role context, and any learning signal should
 be routed back to the corresponding core daemon wiki when the runtime supports
 that write path.
+
+## Claude/Codex Calibration
+
+Research pass: 2026-05-02. Primary sources checked:
+
+- Anthropic's agent workflow guidance distinguishes predefined workflows from
+  autonomous agents, recommends orchestrator-worker and evaluator-optimizer
+  patterns where task boundaries and evaluation criteria are clear, and stresses
+  environment-grounded feedback plus stopping conditions.
+  Source: https://www.anthropic.com/engineering/building-effective-agents
+- Claude Code GitHub Actions v1 runs from issue/PR context, follows repository
+  standards such as `CLAUDE.md`, supports prompt-driven automation, and defaults
+  to Sonnet unless a model is configured.
+  Source: https://code.claude.com/docs/en/github-actions
+- OpenAI Codex docs describe Codex as a coding agent that can read, edit, run
+  code, work in background cloud environments, create PRs, and review PRs.
+  Source: https://developers.openai.com/codex/cloud
+- OpenAI Codex review guidance emphasizes high-signal review for serious bugs,
+  repository guidance through `AGENTS.md`, and human/owner responsibility for
+  final merge decisions.
+  Sources: https://developers.openai.com/codex/integrations/github and
+  https://developers.openai.com/codex/guides/build-ai-native-engineering-team
+
+As-built Workflow loop alignment:
+
+- `.github/workflows/auto-fix-bug.yml` is the current reference free claimant.
+  It picks Claude OAuth first, Codex subscription second, and never falls
+  through to API-key billing lanes for default daemon writing.
+- `daemon-request-policy.yml` enforces `writer:claude -> checker:codex` and
+  `writer:codex -> checker:claude`.
+- `community_change_context` already presents PR/issue state with a review
+  standard that requires Claude-family checking for Codex-written PRs.
+
+Family use is therefore role-specific, not a fixed "all-Claude" or
+"all-Codex" team:
+
+| Role | Family policy |
+|------|---------------|
+| Ada Request Steward | Family-neutral; can run on either family. Prefer lower-cost/classifier-capable runtime because output is a durable request envelope, not code. |
+| Mira Investigation Planner | Claude-family preferred for narrative synthesis and refusal quality; Codex-family acceptable when the packet needs deeper repository/file impact analysis. |
+| Noor Patch Writer | Uses the workflow-selected writer family: Claude primary when `CLAUDE_CODE_OAUTH_TOKEN` is visible, Codex fallback when `WORKFLOW_CODEX_AUTH_JSON_B64` is visible. Must emit the matching `writer:*` label. |
+| Soren Cross Checker | Must run opposite the actual writer family. If writer is Claude, Soren's checker runtime is Codex; if writer is Codex, Soren's checker runtime is Claude. |
+| Vera Release Observer | Family-neutral; can run on either family. It must use concrete run IDs, canary output, rendered-chat proof, and clean-use evidence rather than model confidence. |
+| Elias Contract Arbiter | Claude-family preferred for policy interpretation; Codex-family acceptable for mechanical label/contract checks. Eligibility decisions must cite concrete claim proof. |
+
+Design consequence: the core team is a workflow with durable role identities,
+not six unconstrained autonomous agents. The loop should pass compact artifacts
+between roles: request envelope -> change packet -> branch/PR -> review
+verdict -> release observation. This matches the dev's current loop, which is
+issue/label/workflow/PR driven rather than a private multi-agent chat.
 
 ## Non-Goals
 

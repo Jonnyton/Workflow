@@ -239,6 +239,13 @@ soul-bearing daemons in the host-local daemon registry.
 | Release observation | Vera Release Observer | Follow CI, deploy, canaries, rendered user proof, and post-fix clean-use evidence; route failures back into the loop. |
 | Contract and claims | Elias Contract Arbiter | Interpret gate, bounty, writer/checker, payment, and domain-claim requirements before a claimant takes work. |
 
+Research calibration on 2026-05-02 against Anthropic agent-workflow guidance,
+Claude Code GitHub Actions v1 docs, and OpenAI Codex/Codex-review docs keeps
+this as a structured workflow, not a loose chat team. The as-built reference
+claimant chooses Claude OAuth first, Codex subscription second, ignores API-key
+billing lanes by default, and labels PRs so `writer:claude` requires
+`checker:codex` while `writer:codex` requires `checker:claude`.
+
 Loop nodes should prefer the matching core daemon when pending work exists and
 no qualified external claimant has won the request. Other daemons can work a
 loop role only with confirmed role/domain claims, or by explicitly borrowing
