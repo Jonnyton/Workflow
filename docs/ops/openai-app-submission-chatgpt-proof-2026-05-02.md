@@ -104,11 +104,47 @@ while the public endpoint was temporarily unhealthy.
 - `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
 - `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed.
 
+## Clean ChatGPT Web Proof After PR #184
+
+2026-05-02T13:23-07:00, ChatGPT web Developer Mode conversation:
+`https://chatgpt.com/c/69f59b6c-45b0-83e8-93e2-6b3800852202`.
+
+Read-only prompt:
+
+`Use Workflow to check the current daemon status and tell me any caveats before I start.`
+
+Observed result:
+
+- ChatGPT invoked Workflow and completed normally.
+- No `Unknown action`, hang, or 5xx occurred.
+- Response summarized daemon status and caveats.
+
+Approved public write prompt:
+
+`Use Workflow to propose a public workflow goal named "Workflow directory post-redaction approval 2026-05-02T13-18" with tags "submission,smoke". After the tool result, reply with the exact goal id and whether the called tool was propose_workflow_goal. Do not call any other tool.`
+
+Observed result:
+
+- ChatGPT rendered a `Propose a public workflow goal?` approval card.
+- Host approved the public write at action time.
+- ChatGPT completed normally and returned goal id `20e2339c82e3`.
+- ChatGPT response stated: `Called tool was propose_workflow_goal: yes`.
+- No `Unknown action`, hang, or 5xx occurred.
+
+Direct public MCP verification:
+
+- `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool search_workflow_goals --args '{"query":"Workflow directory post-redaction approval 2026-05-02T13-18","limit":5}' --raw`
+  returned `20e2339c82e3` as a public goal with tags `submission, smoke`.
+- `python scripts/mcp_probe.py --url https://tinyassets.io/mcp-directory --tool get_workflow_goal --args '{"goal_id":"20e2339c82e3"}' --raw`
+  returned goal `20e2339c82e3`, visibility `public`, tags
+  `submission, smoke`, and `is_deleted=false`.
+
 Current proof boundary:
 
 - BUG-034 `Unknown action` is fixed at the direct legacy-wrapper layer.
-- Public MCP endpoints are reachable as of 2026-05-02T12:34-07:00.
-- Clean rendered ChatGPT approval/write proof is still pending.
-- This branch must deploy directory status redaction before final OpenAI
-  submission proof, because live production still returned raw status
-  diagnostics during the 2026-05-02T12:34-07:00 probe.
+- Public MCP endpoints are reachable as of 2026-05-02T13:13-07:00.
+- Clean rendered ChatGPT web read and public-write proof is complete for the
+  tested Developer Mode path.
+- Remaining OpenAI submission proof gaps are ChatGPT mobile, final submission
+  form/legal/publisher approval, and post-fix first-user evidence beyond this
+  controlled proof.

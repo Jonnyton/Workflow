@@ -121,14 +121,13 @@ Not yet complete:
    `/mcp-directory`.
 2. Verify live `/mcp-directory` `get_workflow_status` no longer returns raw
    logs, local paths, host account identifiers, or internal hashes.
-3. Run the ChatGPT web golden prompt set with the app draft.
-4. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
+3. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
    call out testing iOS or Android.
-5. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
+4. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
    action-time before approving public/state-changing writes.
-6. Confirm privacy policy coverage for the categories listed in the readiness
+5. Confirm privacy policy coverage for the categories listed in the readiness
    doc.
-7. Host approves release notes, compliance answers, mature-content answer,
+6. Host approves release notes, compliance answers, mature-content answer,
    publisher selector, and final submit.
 
 Suggested release notes:
@@ -168,3 +167,15 @@ Suggested release notes:
   `activity_log_tail`, `last_n_calls`, `activity_log_tail_count`,
   `last_n_calls_count`, `policy_hash`, `session_boundary`, `host_id`, and
   storage subsystem `path` fields are absent.
+
+2026-05-02T13:23-07:00 from ChatGPT web Developer Mode:
+
+- Read-only Workflow status prompt completed with no `Unknown action`, hang, or
+  5xx.
+- Approved public write prompt completed after the `Propose a public workflow
+  goal?` card.
+- ChatGPT returned goal id `20e2339c82e3` and stated
+  `Called tool was propose_workflow_goal: yes`.
+- Direct `/mcp-directory` `search_workflow_goals` and `get_workflow_goal`
+  probes confirmed goal `20e2339c82e3` exists, is public, and has tags
+  `submission, smoke`.
