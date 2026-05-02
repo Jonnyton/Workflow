@@ -79,6 +79,11 @@ class TestCheckBwrapFailure:
             with pytest.raises(SandboxUnavailableError):
                 check_bwrap_failure("bwrap: No permissions to create a new namespace\n")
 
+    def test_raises_on_bwrap_no_permissions_without_article(self):
+        with patch.object(sys, "platform", "linux"):
+            with pytest.raises(SandboxUnavailableError):
+                check_bwrap_failure("bwrap: No permissions to create new namespace\n")
+
     def test_raises_on_sandbox_init_failed(self):
         with patch.object(sys, "platform", "linux"):
             with pytest.raises(SandboxUnavailableError):

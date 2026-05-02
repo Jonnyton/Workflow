@@ -641,7 +641,7 @@ class TestCodexProvider:
 
     @pytest.mark.asyncio
     async def test_skip_git_repo_check_in_command(self):
-        """codex exec must include --skip-git-repo-check."""
+        """codex exec must use the hosted subscription command shape."""
         from workflow.providers.codex_provider import CodexProvider
 
         captured_cmd = []
@@ -666,6 +666,12 @@ class TestCodexProvider:
         assert "--skip-git-repo-check" in captured_cmd, (
             f"Expected --skip-git-repo-check in command: {captured_cmd}"
         )
+        assert "--dangerously-bypass-approvals-and-sandbox" in captured_cmd
+        assert "--full-auto" not in captured_cmd
+        assert "--ephemeral" in captured_cmd
+        assert "-C" in captured_cmd
+        assert "-m" in captured_cmd
+        assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.5"
 
 
 # =====================================================================

@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 from workflow.exceptions import (
@@ -65,42 +66,58 @@ class CodexProvider(BaseProvider):
         full_input = f"{system}\n\n{prompt}" if system else prompt
 
         base_cmd, use_shell = _resolve_codex_cmd()
-        cmd = [*base_cmd, "exec", "--full-auto", "--skip-git-repo-check"]
+        # Prompt-node calls need Codex as a subscription-backed text model,
+        # not as a repo-editing agent. Run from an empty ephemeral directory
+        # and use the externally-sandboxed mode already used by the hosted
+        # auto-fix lane; Codex's sandboxed auto mode requires bwrap on Linux
+        # and caused live prompt output to be polluted by startup failures.
+        model = "gpt-5.5"
+        cmd = [
+            *base_cmd,
+            "exec",
+            "-m",
+            model,
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "--ephemeral",
+        ]
         proc_env = subprocess_env_without_api_keys()
 
         win_kw = _no_window_kwargs()
-        if use_shell:
-            proc = await asyncio.create_subprocess_shell(
-                shlex.join(cmd),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=proc_env,
-                **win_kw,
-            )
-        else:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=proc_env,
-                **win_kw,
-            )
+        with tempfile.TemporaryDirectory(prefix="workflow-codex-provider-") as workdir:
+            cmd_with_cwd = [*cmd, "-C", workdir]
+            if use_shell:
+                proc = await asyncio.create_subprocess_shell(
+                    shlex.join(cmd_with_cwd),
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=proc_env,
+                    **win_kw,
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_with_cwd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=proc_env,
+                    **win_kw,
+                )
 
-        start = time.monotonic()
+            start = time.monotonic()
 
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=full_input.encode("utf-8")),
-                timeout=config.timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            raise ProviderTimeoutError(
-                f"codex exec exceeded {config.timeout}s timeout"
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(input=full_input.encode("utf-8")),
+                    timeout=config.timeout,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                raise ProviderTimeoutError(
+                    f"codex exec exceeded {config.timeout}s timeout"
+                )
 
         elapsed_ms = (time.monotonic() - start) * 1000
 
@@ -141,7 +158,7 @@ class CodexProvider(BaseProvider):
         return ProviderResponse(
             text=text,
             provider=self.name,
-            model="gpt",
+            model=model,
             family=self.family,
             latency_ms=elapsed_ms,
         )

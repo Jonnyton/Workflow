@@ -95,6 +95,7 @@ def subprocess_env_without_api_keys() -> dict[str, str] | None:
 # and raise rather than let the garbage propagate.
 _BWRAP_FAILURE_PATTERNS: tuple[str, ...] = (
     "bwrap: No permissions to create a new namespace",
+    "bwrap: No permissions to create new namespace",
     "bwrap: No such file or directory",
     "sandbox initialization failed",
 )
