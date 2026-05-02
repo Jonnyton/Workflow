@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 from workflow.directory_server import (
+    _redact_directory_status,
     directory_mcp,
     propose_workflow_goal,
     search_workflow_goals,
@@ -105,6 +107,24 @@ def test_directory_tools_have_explicit_submission_annotations() -> None:
             )
 
 
+def test_chatgpt_submission_packet_matches_directory_surface() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    packet = json.loads(
+        (repo_root / "chatgpt-app-submission.json").read_text(encoding="utf-8")
+    )
+    tools = {tool.name: tool for tool in _list_tools()}
+
+    assert set(packet["tools"]) == set(tools)
+    for tool_name, tool in tools.items():
+        annotations = tool.annotations
+        assert annotations is not None
+        assert packet["tools"][tool_name]["annotations"] == {
+            "readOnlyHint": annotations.readOnlyHint,
+            "openWorldHint": annotations.openWorldHint,
+            "destructiveHint": annotations.destructiveHint,
+        }
+
+
 def test_directory_tools_do_not_use_catch_all_action_inputs() -> None:
     for tool in _list_tools():
         properties = tool.parameters.get("properties", {})
@@ -130,6 +150,46 @@ def test_directory_tool_inputs_avoid_sensitive_credentials() -> None:
         assert names.isdisjoint(sensitive_terms), (
             f"{tool.name} requests a sensitive credential-like field"
         )
+
+
+def test_directory_status_redacts_operator_diagnostics() -> None:
+    redacted = _redact_directory_status({
+        "active_host": {
+            "host_id": "alice@example.com",
+            "served_llm_type": "any",
+        },
+        "evidence": {
+            "activity_log_tail": ["[2026-05-02] raw internal log"],
+            "last_n_calls": [{"ts": "2026-05-02", "raw": "internal"}],
+            "policy_hash": "abc123",
+            "activity_log_line_count": 1,
+        },
+        "session_boundary": {"account_user": "alice@example.com"},
+        "storage_utilization": {
+            "pressure_level": "ok",
+            "per_subsystem": {
+                "wiki": {
+                    "bytes": 10,
+                    "path": "C:/Users/Jonathan/AppData/Roaming/Workflow/wiki",
+                },
+            },
+        },
+        "actionable_next_steps": [
+            "Inspect the full activity_log_tail.",
+            "Check daemon status again.",
+        ],
+    })
+
+    assert "host_id" not in redacted["active_host"]
+    assert "session_boundary" not in redacted
+    assert "activity_log_tail" not in redacted["evidence"]
+    assert "last_n_calls" not in redacted["evidence"]
+    assert "policy_hash" not in redacted["evidence"]
+    assert redacted["evidence"]["activity_log_tail_count"] == 1
+    assert redacted["evidence"]["last_n_calls_count"] == 1
+    assert "path" not in redacted["storage_utilization"]["per_subsystem"]["wiki"]
+    assert redacted["actionable_next_steps"] == ["Check daemon status again."]
+    assert "directory_privacy_note" in redacted
 
 
 def test_directory_goal_write_and_search_round_trip(monkeypatch, tmp_path) -> None:

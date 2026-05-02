@@ -1,43 +1,55 @@
 # OpenAI App Submission Prep - 2026-05-02
 
-## Current form state
+## Current Decision Boundary
 
-OpenAI Apps dashboard is logged in and the `Workflow` app draft exists.
-The form is stopped on the Submit page. Do not check legal/compliance boxes
-or submit for review without action-time host approval.
+OpenAI app draft: `Workflow`.
 
-OpenAI submission docs checked 2026-05-02:
-https://developers.openai.com/apps-sdk/deploy/submission
-OpenAI testing docs checked 2026-05-02:
-https://developers.openai.com/apps-sdk/deploy/testing
+Submission target: ChatGPT Apps Directory public/global review using
+`https://tinyassets.io/mcp-directory`, not the full custom connector surface at
+`https://tinyassets.io/mcp`.
 
-## User-supplied launch intent
+Final submit remains blocked on action-time host approval. Do not check
+legal/compliance boxes, assert business/individual verification, or click
+`Submit for Review` without that approval.
 
-- Public app, even though Workflow is still alpha and evolving.
-- Full-system launch direction.
-- Global distribution intent.
-- App name: `Workflow`.
-- Developer/publisher: `TinyAssets`.
-- Category: `PRODUCTIVITY`.
-- User wants the app to show useful/cool flows, but only after real testing.
+## Official OpenAI Docs Checked
 
-## Recommended App Info fields
+Checked on 2026-05-02:
 
-- App name: `Workflow`.
-- Subtitle: `Build durable workflows` (23 chars; fits the 30-char limit).
-- Description: `Workflow connects ChatGPT to a durable open-source work graph. Users can check daemon status, browse shared goals and project wiki knowledge, and submit bounded requests that continue through the Workflow loop beyond a single chat.`
-- Category: `PRODUCTIVITY`.
-- Developer: `TinyAssets`.
+- `https://developers.openai.com/apps-sdk/deploy/submission`
+- `https://developers.openai.com/apps-sdk/app-submission-guidelines`
+- `https://developers.openai.com/apps-sdk/guides/security-privacy`
+- `https://developers.openai.com/apps-sdk/plan/tools`
+- `https://developers.openai.com/apps-sdk/guides/optimize-metadata`
+- `https://developers.openai.com/apps-sdk/deploy/testing`
+- `https://developers.openai.com/apps-sdk/deploy`
+
+Review implications captured in
+`docs/ops/openai-app-submission-readiness-2026-05-02.md`.
+Historical ChatGPT Developer Mode proof is preserved in
+`docs/ops/openai-app-submission-chatgpt-proof-2026-05-02.md`.
+
+## App Info
+
+- App name: `Workflow`
+- Subtitle: `Build durable workflows` (23 chars; under OpenAI's 30-char
+  guidance from the submission skill)
+- Category: `PRODUCTIVITY`
+- Developer/publisher: `TinyAssets`
 - Website URL: `https://tinyassets.io`
-- Support: `https://tinyassets.io/legal#contact` or `ops@tinyassets.io`.
+- Support: `https://tinyassets.io/legal#contact` or `ops@tinyassets.io`
 - Privacy Policy URL: `https://tinyassets.io/legal#privacy`
 - Terms of Service URL: `https://tinyassets.io/legal#terms`
-- Logo candidate: `assets/brand/workflow-logo-icon.png` (1024x1024 PNG).
+- Logo candidate: `assets/brand/workflow-logo-icon.png` (1024x1024 PNG)
 
-## URL boundary
+Description:
 
-The current `chatgpt-app-submission.json` describes the directory-safe tool
-surface exposed by `workflow/directory_server.py`, whose tool names include:
+`Workflow connects ChatGPT to a durable open-source work graph. Users can check daemon status, browse shared goals and project wiki knowledge, and submit bounded requests that continue through the Workflow loop beyond a single chat.`
+
+## Tool Surface
+
+`chatgpt-app-submission.json` covers the directory-safe source in
+`workflow/directory_server.py`:
 
 - `get_workflow_status`
 - `list_workflow_universes`
@@ -51,206 +63,81 @@ surface exposed by `workflow/directory_server.py`, whose tool names include:
 - `propose_workflow_goal`
 - `submit_workflow_request`
 
-That matches `https://tinyassets.io/mcp-directory`.
+The full custom connector at `/mcp` exposes broader legacy tools (`universe`,
+`community_change_context`, `extensions`, `goals`, `gates`, `wiki`,
+`get_status`). Do not switch the OpenAI app to `/mcp` without regenerating and
+re-auditing the packet for that full surface.
 
-The full custom connector URL, `https://tinyassets.io/mcp`, exposes the
-legacy tool surface in `workflow/universe_server.py`:
+## Source Hardening In This Branch
 
-- `universe`
-- `community_change_context`
-- `extensions`
-- `goals`
-- `gates`
-- `wiki`
-- `get_status`
+Branch `codex/openai-submission-hardening` makes the packet safer for review:
 
-2026-05-02 update: host said "proceed" after this boundary was surfaced.
-The OpenAI form was configured with `https://tinyassets.io/mcp-directory`,
-matching the current JSON/tool packet. Tool scan returned green in the OpenAI
-dashboard.
+- `get_workflow_status` now redacts raw activity logs, local paths, host
+  account identifiers, and internal hashes from the directory-safe response.
+- Directory tool docstrings now start with `Use this when...` phrasing to
+  improve discovery precision.
+- `tests/test_directory_server.py` now asserts that
+  `chatgpt-app-submission.json` exactly matches the directory tool set and
+  source annotations.
+- Positive tests now cover all read/write tool families, including goal
+  list/get and run listing.
 
-Do not switch the OpenAI app to `/mcp` without regenerating the submission
-packet from the full surface and re-auditing hints, privacy, tests, and demo
-flows.
+This branch must land and deploy before final OpenAI submission, then live
+`https://tinyassets.io/mcp-directory` must be re-probed to prove the production
+status response is redacted.
 
-## Form progress - 2026-05-02
+## OpenAI Dashboard State
 
-Filled in OpenAI dashboard:
+Recorded prior dashboard state from 2026-05-02:
 
-- App Info text fields, legal/support URLs, category `PRODUCTIVITY`.
-- MCP Server URL: `https://tinyassets.io/mcp-directory`.
-- Authentication: `No Auth`.
-- Tool scan: green.
-- Tool justifications: filled from `chatgpt-app-submission.json`.
-- Testing: five positive test cases and three negative test cases entered.
-- Testing correction: Test Case 2 expected output now accepts matching goals
-  when present or a clear no-match result with a safe next step.
-- Global: default `Allow all`.
+- App draft exists and reached the Submit page.
+- MCP Server URL was configured as `https://tinyassets.io/mcp-directory`.
+- Authentication was set to `No Auth`.
+- Tool scan was green at that time.
+- Tool justifications and test cases were entered from
+  `chatgpt-app-submission.json`.
+- Final submit page was not completed.
 
-Not filled/uploaded:
+Not yet complete:
 
-- Logo image.
-- Screenshots.
-- Demo recording URL.
-- Submit page release notes.
-- Submit page individual/business selector.
-- Submit page compliance/legal checkboxes.
+- Logo upload.
+- Screenshots and/or demo recording URL if we choose to provide them.
+- Release notes.
+- Individual/business publisher selector and verification assertion.
+- Compliance/legal checkboxes.
 - Mature/adult-content radio.
 - Final `Submit for Review`.
 
-Local proof artifact captured:
+## Required Before Submit
 
-- `output/openai-app-submission/openai-submit-page-corrected-2026-05-02.png`
-  shows the Submit page after the Test Case 2 correction saved.
-
-## Commerce boundary
-
-Current public site/legal state says Workflow uses `test tiny` on Base Sepolia
-today and real Destiny (tiny) integration is deferred. Recommended current form
-answer: do not check "App Commerce & Purchasing" unless the app currently links
-users out of ChatGPT to make purchases.
-
-## Known user-related or internal fields to audit
-
-OpenAI review guidance calls out undisclosed user-related data, telemetry,
-internal identifiers, logs, timestamps, and request IDs as rejection risks.
-
-Known fields from the directory surface:
-
-- `get_workflow_status`: `active_host.host_id`, routing policy, provider
-  evidence, `activity_log_tail`, `last_n_calls`, policy hash, cooldown fields,
-  sandbox status, missing file names, `universe_id`, timestamps/log content.
-- `list_workflow_runs`: `run_id`, `branch_def_id`, `run_name`, `status`,
-  `actor`, `started_at`, `finished_at`, `last_node_id`.
-- `propose_workflow_goal`: public or private goal name, description, tags,
-  visibility, generated goal identifier, author/source metadata.
-- `submit_workflow_request`: submitted request text is stored in Workflow;
-  response returns `request_id`, `branch_task_id`, queue position, and universe.
-- Wiki/goal read tools can return public project content and author/source
-  metadata from the public knowledge/goal stores.
-
-Decision needed: either disclose these categories in the privacy policy for the
-OpenAI app path, or reduce/sanitize the returned fields before submitting.
-
-## Demo and test blockers
-
-Required before final submit:
-
-- Optional proof uploads if we choose to provide them: logo, screenshots, and
-  demo recording URL. The dashboard says screenshots are optional for non-UI
-  apps, but submission docs still list screenshots among form information.
-- Resolve the ChatGPT approval-card stall for `propose_workflow_goal`.
-  Direct `/mcp-directory` and `/mcp` goal writes are fixed and deployed, and
-  ChatGPT can read goals and submit requests, but goal-proposal approval cards
-  still stall after approval (BUG-034).
-- Mobile evidence for the main flows, because the OpenAI testing docs say to
-  invoke the connector in ChatGPT iOS or Android apps.
-- Keep expected outputs clear and free of personal identifiers or irrelevant
-  debug data.
-- Host approval of release notes and compliance/legal checkbox assertions.
+1. Land and deploy this branch.
+2. Run public canaries and tool canaries against both `/mcp` and
+   `/mcp-directory`.
+3. Verify live `/mcp-directory` `get_workflow_status` no longer returns raw
+   logs, local paths, host account identifiers, or internal hashes.
+4. Run the ChatGPT web golden prompt set with the app draft.
+5. Run the ChatGPT mobile golden prompt set. OpenAI testing docs explicitly
+   call out testing iOS or Android.
+6. For `propose_workflow_goal` and `submit_workflow_request`, confirm at
+   action-time before approving public/state-changing writes.
+7. Confirm privacy policy coverage for the categories listed in the readiness
+   doc.
+8. Host approves release notes, compliance answers, mature-content answer,
+   publisher selector, and final submit.
 
 Suggested release notes:
 
-`Initial public alpha of Workflow. This app connects ChatGPT to the directory-safe Workflow MCP surface for daemon status, shared goals, project wiki lookup, and bounded request submission.`
+`Initial public alpha of Workflow. This app connects ChatGPT to the directory-safe Workflow MCP surface for daemon status, shared goals, project wiki lookup, run browsing, and bounded request submission.`
 
-Candidate tested prompts:
+## Current Verification Snapshot
 
-1. `Use Workflow to check the current daemon status and tell me any caveats before I start.`
-2. `Use Workflow to search for goals related to onboarding and show the best matches.`
-3. `Use Workflow to list available universes, then inspect the active one.`
-4. `Use Workflow to search the wiki for current launch risks, then read the most relevant page.`
-5. `Use Workflow to propose a public goal named "Onboard new MCP hosts" with tags discovery,onboarding.`
-6. `Use Workflow to submit a request asking the daemon to summarize today's discoverability blockers.`
+2026-05-02T12:34-07:00 from `../wf-openai-submission-hardening`:
 
-Negative prompts:
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp-directory --timeout 15 --verbose` passed.
+- `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp --timeout 15 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory --timeout 20 --verbose` passed.
+- `python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp --timeout 20 --verbose` passed.
+- `python -m pytest tests/test_directory_server.py -q` passed locally for this branch.
 
-1. `What is the weather in San Francisco tomorrow?`
-2. `Use Workflow to send an email to my team about the launch.`
-3. `Use Workflow to delete every universe and wipe all stored data.`
-4. `Use Workflow to save my API key and password for later.`
-
-## Live ChatGPT Developer Mode proof - 2026-05-02
-
-Environment: ChatGPT web Developer Mode, app shown as `Workflow Dev`, connected
-to `https://tinyassets.io/mcp-directory`.
-
-Read-only positive prompts tested:
-
-1. `Use Workflow to check the current daemon status and tell me any caveats before I start.`
-   Result: Workflow tool invoked; ChatGPT returned daemon status plus caveats.
-2. `Use Workflow to search for goals related to onboarding and show the best matches.`
-   Result: `search_workflow_goals` invoked; no onboarding matches were returned.
-   Form and JSON expected output were corrected to accept this valid empty state.
-3. `Use Workflow to list available universes, then inspect the active one.`
-   Result: universe list and active-universe inspection returned successfully.
-4. `Use Workflow to search the wiki for current launch risks, then read the most relevant page.`
-   Result: wiki search/read tools invoked; response summarized launch risks and
-   preserved the truncation caveat.
-
-Negative prompt tested:
-
-- `What is the weather in San Francisco tomorrow?`
-  Result: ChatGPT used the native weather surface; no new Workflow tool call was
-  observed between the prompt and response.
-
-Write-path attempt:
-
-- Prompt: `Use Workflow to propose a public goal named "Onboard new MCP hosts" with tags discovery,onboarding, then submit a request asking the daemon to summarize today's discoverability blockers.`
-  Result: ChatGPT rendered the `Propose new public workflow goal?` approval card,
-  but the tool call did not complete after approval. A direct public
-  `/mcp-directory` probe reproduced `cannot import name '_ensure_author_server_db'
-  from 'workflow.api.branches'`; final write-path proof is blocked until the
-  directory goal-tool fix is deployed and retested.
-- Follow-up after PR #149 deployment (`2a1651f`, deploy run 25245035290):
-  - Direct `/mcp-directory` `propose_workflow_goal` succeeded and created goal
-    `35f70887461e` (`Onboard new MCP hosts`).
-  - Direct `/mcp` `goals action=propose` also succeeded, creating
-    `975e8fbdead0` (`Workflow legacy propose probe 2026-05-02`).
-  - ChatGPT Developer Mode read proof succeeded: `Workflow Dev` found
-    `35f70887461e` by exact title.
-  - ChatGPT Developer Mode request write succeeded:
-    `submit_workflow_request` returned `req_1777701087_d215c1fa` in
-    `echoes-of-the-cosmos`.
-  - ChatGPT Developer Mode goal-propose approval still stalled after clicking
-    `Propose Goal`. A fresh chat with `Workflow Dev` attached reproduced the
-    stall; the opened tool-call payload still showed the legacy
-    `Goals`/`action: "propose"` router shape. The platform MCP Server section
-    lists the narrow `/mcp-directory` tool set, including
-    `propose_workflow_goal`, so this looks like a stale ChatGPT dev-attachment
-    or BUG-034 approval-routing issue rather than the old
-    `_ensure_author_server_db` backend failure.
-- Follow-up after Platform MCP Server `Scan Tools` and `Continue` on
-  2026-05-02:
-  - Platform draft remained configured to `https://tinyassets.io/mcp-directory`
-    with the narrow tool set, including `propose_workflow_goal` and
-    `submit_workflow_request`; no legacy `Goals` tool appeared in the Platform
-    MCP Server section.
-  - Fresh ChatGPT Developer Mode before clicking Platform `Continue` rendered a
-    `propose_workflow_goal` approval card, but the opened call detail showed
-    Workflow -> `Goals` with request `{ action: "propose_workflow_goal", ... }`.
-    Response returned `Unknown action 'propose_workflow_goal'` with available
-    legacy actions `bind`, `common_nodes`, `get`, `leaderboard`, `list`,
-    `propose`, `search`, `set_canonical`, and `update`.
-  - After clicking Platform `Continue` into the Testing section, a second fresh
-    ChatGPT Developer Mode chat again rendered the `propose_workflow_goal`
-    approval card. After approval, the tool detail still showed Workflow ->
-    `Goals` with `action: "propose_workflow_goal"` and remained stuck at
-    `Access granted for Workflow` / `Thinking`; no response body appeared
-    before the browser automation timeout.
-  - Direct public canaries stayed green for both `https://tinyassets.io/mcp`
-    and `https://tinyassets.io/mcp-directory` after the hung ChatGPT attempt.
-    Direct `/mcp-directory` search did not show either post-rescan proof goal
-    title, so the ChatGPT attempts did not produce confirmed new goals.
-  - Current boundary: the app draft scan is fresh, but the ChatGPT Developer
-    Mode attachment still routes the goal approval through the legacy `Goals`
-    action wrapper. Treat this as BUG-034 / ChatGPT app-attachment routing until
-    a no-legacy tool-call proof succeeds.
-
-Not yet tested:
-
-- Positive Test Case 5 is only partially proven: direct goal proposal works and
-  ChatGPT request submission works, but ChatGPT goal-proposal approval still
-  stalls after approval.
-- Negative cases 2 and 3, because the submitted prompts ask ChatGPT not to route
-  unrelated email/credential/destructive work through Workflow; run them in
-  Developer Mode before final submit and verify no Workflow write tool is called.
+Live production still served the pre-hardening status payload at this time.
+Treat this branch's redaction as source-ready, not deployed proof.

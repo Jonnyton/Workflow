@@ -10,6 +10,9 @@ annotations for host review.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -32,6 +35,76 @@ directory_mcp = FastMCP(
 )
 
 
+def _redact_directory_status(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the public-directory-safe subset of the daemon status payload."""
+    redacted = dict(payload)
+
+    active_host = redacted.get("active_host")
+    if isinstance(active_host, dict):
+        public_host = dict(active_host)
+        public_host.pop("host_id", None)
+        redacted["active_host"] = public_host
+
+    evidence = redacted.get("evidence")
+    if isinstance(evidence, dict):
+        public_evidence = dict(evidence)
+        activity_tail = public_evidence.pop("activity_log_tail", None)
+        last_calls = public_evidence.pop("last_n_calls", None)
+        public_evidence.pop("policy_hash", None)
+        if isinstance(activity_tail, list):
+            public_evidence["activity_log_tail_count"] = len(activity_tail)
+        if isinstance(last_calls, list):
+            public_evidence["last_n_calls_count"] = len(last_calls)
+        redacted["evidence"] = public_evidence
+
+    if "error" in redacted and "detail" in redacted:
+        redacted["detail"] = "Internal diagnostic detail redacted from directory status."
+
+    storage = redacted.get("storage_utilization")
+    if isinstance(storage, dict):
+        public_storage = dict(storage)
+        per_subsystem = public_storage.get("per_subsystem")
+        if isinstance(per_subsystem, dict):
+            public_storage["per_subsystem"] = {
+                name: {
+                    key: value
+                    for key, value in subsystem.items()
+                    if key != "path"
+                }
+                if isinstance(subsystem, dict)
+                else subsystem
+                for name, subsystem in per_subsystem.items()
+            }
+        redacted["storage_utilization"] = public_storage
+
+    next_steps = redacted.get("actionable_next_steps")
+    if isinstance(next_steps, list):
+        redacted["actionable_next_steps"] = [
+            step
+            for step in next_steps
+            if "activity_log_tail" not in str(step)
+        ]
+
+    redacted.pop("session_boundary", None)
+    redacted["directory_privacy_note"] = (
+        "Directory status redacts raw activity logs, local paths, host account "
+        "identifiers, and internal hashes. Use the full custom MCP surface for "
+        "operator diagnostics."
+    )
+    return redacted
+
+
+def _directory_safe_status(universe_id: str = "") -> str:
+    raw = _get_status_impl(universe_id=universe_id)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if not isinstance(payload, dict):
+        return raw
+    return json.dumps(_redact_directory_status(payload), default=str)
+
+
 @directory_mcp.tool(
     title="Get Workflow Status",
     tags={"status", "workflow", "diagnostics"},
@@ -44,12 +117,12 @@ directory_mcp = FastMCP(
     ),
 )
 def get_workflow_status(universe_id: str = "") -> str:
-    """Return daemon status, routing evidence, and safety caveats.
+    """Use this when the user asks whether Workflow is reachable or safe to use.
 
     Args:
         universe_id: Optional universe scope. Empty uses the active universe.
     """
-    return _get_status_impl(universe_id=universe_id)
+    return _directory_safe_status(universe_id=universe_id)
 
 
 @directory_mcp.tool(
@@ -64,7 +137,7 @@ def get_workflow_status(universe_id: str = "") -> str:
     ),
 )
 def list_workflow_universes(limit: int = 30) -> str:
-    """List available Workflow universes without changing state.
+    """Use this when the user wants to browse available Workflow universes.
 
     Args:
         limit: Maximum number of universes to return.
@@ -84,7 +157,7 @@ def list_workflow_universes(limit: int = 30) -> str:
     ),
 )
 def inspect_workflow_universe(universe_id: str = "") -> str:
-    """Inspect one Workflow universe and summarize durable state.
+    """Use this when the user wants a summary of one Workflow universe.
 
     Args:
         universe_id: Optional universe scope. Empty uses the active universe.
@@ -104,7 +177,7 @@ def inspect_workflow_universe(universe_id: str = "") -> str:
     ),
 )
 def list_workflow_goals(tags: str = "", author: str = "", limit: int = 50) -> str:
-    """List shared Workflow goals.
+    """Use this when the user wants to browse existing shared Workflow goals.
 
     Args:
         tags: Optional comma-separated tag filter.
@@ -126,7 +199,7 @@ def list_workflow_goals(tags: str = "", author: str = "", limit: int = 50) -> st
     ),
 )
 def search_workflow_goals(query: str, limit: int = 20) -> str:
-    """Search Workflow goals by name, description, or tag.
+    """Use this when the user wants to find Workflow goals by text or tag.
 
     Args:
         query: Search text.
@@ -147,7 +220,7 @@ def search_workflow_goals(query: str, limit: int = 20) -> str:
     ),
 )
 def get_workflow_goal(goal_id: str) -> str:
-    """Return one Workflow goal and its bound branches.
+    """Use this when the user wants details for a specific Workflow goal.
 
     Args:
         goal_id: Goal identifier to inspect.
@@ -167,7 +240,7 @@ def get_workflow_goal(goal_id: str) -> str:
     ),
 )
 def search_workflow_wiki(query: str, category: str = "", max_results: int = 10) -> str:
-    """Search the Workflow public knowledge wiki.
+    """Use this when the user wants to search Workflow project knowledge.
 
     Args:
         query: Search text.
@@ -193,7 +266,7 @@ def search_workflow_wiki(query: str, category: str = "", max_results: int = 10) 
     ),
 )
 def read_workflow_wiki_page(page: str) -> str:
-    """Read one Workflow wiki page.
+    """Use this when the user wants to read one Workflow wiki page.
 
     Args:
         page: Wiki page slug or path.
@@ -213,7 +286,7 @@ def read_workflow_wiki_page(page: str) -> str:
     ),
 )
 def list_workflow_runs(status: str = "", limit: int = 20) -> str:
-    """List recent Workflow branch runs without starting or stopping work.
+    """Use this when the user wants recent Workflow run history.
 
     Args:
         status: Optional run status filter.
@@ -239,7 +312,7 @@ def propose_workflow_goal(
     tags: str = "",
     visibility: str = "public",
 ) -> str:
-    """Create a shared Workflow goal proposal.
+    """Use this when the user asks to create a shared Workflow goal proposal.
 
     Args:
         name: Human-readable goal name.
@@ -273,7 +346,7 @@ def submit_workflow_request(
     request_type: str = "scene_direction",
     branch_id: str = "",
 ) -> str:
-    """Queue a bounded request for the Workflow daemon.
+    """Use this when the user wants the Workflow daemon to handle a bounded request.
 
     Args:
         text: Request text to queue.
