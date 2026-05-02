@@ -397,3 +397,19 @@ Re-prioritized blocker stack for unattended self-evolution:
   4. BUG-045B child invocation completion: most runs skip child path entirely; only 1 of ~33 completed runs exercised it.
 
 Cowork in active probe-and-research mode for remainder of session — looking at PR #191 details, researching worker patterns from similar systems, will continue exercising the substrate to surface more empirical findings.
+
+2026-05-02T21:00Z [cowork-loop-uptime-busyclever] BUG-009 root cause traced in code. Three-layer analysis:
+
+(1) workflow/dispatcher.py is STATELESS reactive only. Module docstring: "Called exactly twice per _run_graph invocation - once at daemon startup and once at each cycle boundary. NO INTERNAL TIMER, NO CONTINUOUS POLLING LOOP." So dispatcher_requests sit in queue until something else triggers a _run_graph cycle.
+
+(2) workflow/cloud_worker.py IS the autonomous loop (~80 lines docstring explains: "supervises fantasy_daemon subprocess against the active universe; subprocess's claim->execute->finalize loop picks up queued tasks via dispatcher.select_next_task + branch_tasks.claim_task. The claim is file-locked"). Designed to run as sibling container on droplet alongside MCP daemon. Identifies as cloud-droplet (vs host laptop's host identity). Restart-on-exit + exponential backoff supervisor.
+
+(3) deploy/compose.yml line 135 wires it: `workflow-worker` container with `command: ["python", "-m", "workflow.cloud_worker"]`. So architecturally the autonomous loop EXISTS and should be running on the droplet. Empirical evidence (1 of 9+ recent dispatcher_requests becoming a real run) means it's failing in one of three ways:
+
+  Scenario A: workflow-worker container not actually running on droplet (started but crashed, or in restart loop). Triage: ssh root@<droplet> + docker compose ps + docker logs workflow-worker.
+  Scenario B: container running but fantasy_daemon subprocess crashes on spawn (config issue, missing universe state, provider auth). cloud_worker.py supervisor would log spawn-then-exit pattern.
+  Scenario C: subprocess running cycles but select_next_task rejects bug_investigation request_type. Check WORKFLOW_REQUEST_TYPE_PRIORITIES env var on droplet — if bug_investigation is missing from priority list, prefers_request_type returns False and bug_investigation.py:enqueue_investigation_request raises RuntimeError silently. Most likely scenario after PR #173 added kind/tags but env var wasn't updated.
+
+Suggested triage order for Codex (cheapest to most expensive): Scenario C first (single env var grep on droplet), then A (docker ps), then B (docker logs).
+
+Cowork has push perms but cannot SSH. Filing this finding here so Codex can act on droplet side. Will add a code patch later if a clean fix shape emerges - probably needs to add an explicit "drain_queue" method to dispatcher.py that cloud_worker can call independently of fantasy_daemon subprocess cycles, so the loop closes even if subprocess is in a degraded state.
