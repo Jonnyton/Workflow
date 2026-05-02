@@ -1,5 +1,9 @@
 # Design Notes Index
 
+## 2026-05-02
+
+- [Validate Branch Collision-Class Admission Test](2026-05-02-validate-branch-collision-admission-test.md) - **status: proposed.** Project-design response for WIKI-DESIGN / Issue #188. Defines when a `validate_branch` collision-class probe is eligible for implementation/catalog admission, without adding a new MCP primitive or touching community-authored branches.
+
 ## 2026-04-18
 
 - [Full Platform Architecture — No Phases, Single-Build Target](2026-04-18-full-platform-architecture.md) - **status: integrated-into-PLAN (2026-04-28).** Architectural commitments are canonical via `PLAN.md §"Full-Platform Architecture (Canonical)"`; this design note is the integrated detail surface (full reasoning + scale-audit + host-decision lineage). Host directive 2026-04-18: thousands-concurrent users, full node CRUD with zero daemons hosted, multi-user near-real-time collaboration, opt-in daemon hosting. Recommends Supabase (Postgres + Realtime + Auth + RLS + Storage), GitHub demoted to export sink, versioned rows + broadcast + presence (not CRDT), GitHub OAuth at launch. ~7-9 dev-days with two devs. 8 host Qs §11, most importantly Q1 Postgres-canonical commit.
