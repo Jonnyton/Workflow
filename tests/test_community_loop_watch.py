@@ -1,8 +1,58 @@
 from __future__ import annotations
 
+import argparse
 import datetime as dt
+import subprocess
 
 from scripts import community_loop_watch as watch
+
+
+def test_github_token_prefers_explicit_argument(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("gh CLI should not be used when --token is set")
+
+    monkeypatch.setattr(watch.subprocess, "run", fail_run)
+
+    assert watch._github_token(argparse.Namespace(token="arg-token")) == "arg-token"
+
+
+def test_github_token_uses_environment_before_gh_cli(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("gh CLI should not be used when GITHUB_TOKEN is set")
+
+    monkeypatch.setattr(watch.subprocess, "run", fail_run)
+
+    assert watch._github_token(argparse.Namespace(token=None)) == "env-token"
+
+
+def test_github_token_falls_back_to_gh_cli(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="cli-token\n", stderr="")
+
+    monkeypatch.setattr(watch.subprocess, "run", fake_run)
+
+    assert watch._github_token(argparse.Namespace(token=None)) == "cli-token"
+    assert calls[0][0] == ["gh", "auth", "token"]
+    assert calls[0][1]["capture_output"] is True
+
+
+def test_github_token_returns_none_when_gh_cli_unavailable(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(watch.subprocess, "run", fake_run)
+
+    assert watch._github_token(argparse.Namespace(token=None)) is None
 
 
 def test_workflow_stage_ignores_neutral_skipped_runs(monkeypatch):

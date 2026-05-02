@@ -6,8 +6,9 @@ writer/release/observation, or is it blocked behind a successful-looking
 workflow?
 
 The script is read-only. It queries public GitHub state (optionally with
-GITHUB_TOKEN for higher rate limits) and exits non-zero only when the loop is
-red. Yellow states are surfaced in output but do not fail the workflow.
+GITHUB_TOKEN or the local gh CLI for higher rate limits) and exits non-zero
+only when the loop is red. Yellow states are surfaced in output but do not
+fail the workflow.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -71,6 +73,27 @@ class WatchError(Exception):
 
 def _utc_now() -> dt.datetime:
     return dt.datetime.now(tz=dt.timezone.utc)
+
+
+def _gh_cli_token(timeout: float = 5.0) -> str | None:
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    token = result.stdout.strip()
+    return token or None
+
+
+def _github_token(args: argparse.Namespace) -> str | None:
+    return args.token or os.environ.get("GITHUB_TOKEN") or _gh_cli_token()
 
 
 def _parse_time(value: str | None) -> dt.datetime | None:
@@ -478,7 +501,7 @@ def classify(stages: list[dict[str, Any]]) -> str:
 
 def build_status(args: argparse.Namespace, now: dt.datetime | None = None) -> dict[str, Any]:
     current_now = now or _utc_now()
-    token = args.token or os.environ.get("GITHUB_TOKEN")
+    token = _github_token(args)
     repo = args.repo
     api = args.api
     timeout = args.timeout
@@ -596,7 +619,11 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--api", default=DEFAULT_API)
-    parser.add_argument("--token", default=None, help="GitHub token; defaults to GITHUB_TOKEN")
+    parser.add_argument(
+        "--token",
+        default=None,
+        help="GitHub token; defaults to GITHUB_TOKEN or `gh auth token`.",
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument(
         "--max-sync-age-min",
