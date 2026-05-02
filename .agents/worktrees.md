@@ -311,4 +311,25 @@ Notes:
 - Purpose: preserve terminal failed node events when provider calls raise.
 - Ship condition: regression + adjacent run-event tests pass, plugin mirror
   rebuilt, row removed in the landing commit.
-- Remote branch: left for post-push PR/ref check before deleting any GitHub ref.
+- Remote branch deleted after post-push PR/ref check found no PR:
+  `origin/fix/graph-compiler-event-sink`.
+
+## 2026-05-02 - merged deploy worktree sweep
+
+- Provider: codex-gpt5-desktop
+- Branch: `codex/status-loop-ownership`
+- Lane state: Swept after merge confirmation
+- Worktrees removed: `C:\Users\Jonathan\Projects\wf-deploy-prod-fallback`,
+  `C:\Users\Jonathan\Projects\wf-bwrap-compose-security`
+- Local branches deleted: `fix/deploy-prod-latest-fallback`,
+  `fix/compose-bwrap-security`
+- Remote branches deleted: `origin/fix/deploy-prod-latest-fallback`,
+  `origin/fix/compose-bwrap-security`
+- STATUS/Issue/PR: STATUS row "Sweep merged deploy/bwrap worktrees"; PR #172
+  and PR #180 were already merged.
+- Evidence: `git cherry -v origin/main` marked both branch commits with `-`,
+  and `gh pr list --head ... --state all` showed merged PRs.
+- Purpose: remove stale branch/worktree clutter after useful deploy hardening
+  was already on `main`.
+- Ship condition: local worktrees gone, local + remote refs deleted, row
+  removed in closeout commit.
