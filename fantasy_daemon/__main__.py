@@ -23,7 +23,7 @@ import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # Suppress langchain-core Pydantic V1 deprecation warning on Python 3.14+
 warnings.filterwarnings(
@@ -67,6 +67,8 @@ _UNIVERSE_CYCLE_BRANCH_IDS = frozenset({
     "fantasy_author/universe-cycle",
     "fantasy_author:universe_cycle_wrapper",
 })
+
+_DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S = 30.0
 
 
 def _first_trace(output: dict[str, Any]) -> dict[str, Any]:
@@ -381,6 +383,82 @@ def _try_dispatcher_pick(
         return None, {}
 
 
+def _branch_task_owner_id(claimed_task: Any) -> str:
+    return str(
+        getattr(claimed_task, "worker_owner_id", "")
+        or getattr(claimed_task, "claimed_by", "")
+        or ""
+    )
+
+
+def _branch_task_heartbeat_interval_seconds() -> float:
+    raw = (
+        os.environ.get("WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_S")
+        or os.environ.get("WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_SECONDS")
+        or str(_DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S)
+    )
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        logger.warning(
+            "Invalid WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_S=%r; using %.1fs",
+            raw,
+            _DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S,
+        )
+        return _DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S
+
+
+def _build_branch_task_observers(
+    universe_path: Path, claimed_task: Any,
+) -> tuple[Callable[..., None], Callable[[str, str], None]]:
+    task_id = str(getattr(claimed_task, "branch_task_id", "") or "")
+    owner_id = _branch_task_owner_id(claimed_task)
+    interval = _branch_task_heartbeat_interval_seconds()
+    last_heartbeat = 0.0
+
+    def refresh_heartbeat(*, force: bool = False) -> None:
+        nonlocal last_heartbeat
+        if not task_id:
+            return
+        now_mono = time.monotonic()
+        if not force and (now_mono - last_heartbeat) < interval:
+            return
+        try:
+            from workflow.branch_tasks import refresh_task_heartbeat
+
+            refreshed = refresh_task_heartbeat(
+                universe_path,
+                task_id,
+                worker_owner_id=owner_id,
+            )
+            if refreshed is not None:
+                last_heartbeat = now_mono
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "branch_task heartbeat refresh failed for %s owner=%s",
+                task_id,
+                owner_id,
+            )
+
+    def mark_node_status(node_id: str, status: str) -> None:
+        if not task_id:
+            return
+        try:
+            from workflow.branch_tasks import mark_task_progress
+
+            mark_task_progress(universe_path, task_id)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "branch_task progress stamp failed for %s node=%s status=%s",
+                task_id,
+                node_id,
+                status,
+            )
+        refresh_heartbeat()
+
+    return refresh_heartbeat, mark_node_status
+
+
 def _finalize_claimed_task(
     universe_path: Path,
     claimed: Any,
@@ -614,7 +692,10 @@ def _branch_task_inputs_for_execution(claimed_task: Any) -> dict[str, Any]:
 
 
 def _try_execute_claimed_branch_task(
-    universe_path: Path, claimed_task: Any, daemon_id: str,
+    universe_path: Path,
+    claimed_task: Any,
+    daemon_id: str,
+    on_node_status: Callable[[str, str], None] | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """Execute a claimed BranchTask's requested branch.
 
@@ -667,6 +748,7 @@ def _try_execute_claimed_branch_task(
             run_name=f"branch-task-{claimed_task.branch_task_id}",
             actor=actor,
             provider_call=provider_call,
+            on_node_status=on_node_status,
         )
         metadata = {
             "branch_def_id": branch_def_id,
@@ -1248,6 +1330,18 @@ class DaemonController:
             )
             claimed_failed_reason = ""
             cancel_requested_during_run = False
+
+            def branch_task_heartbeat(*, force: bool = False) -> None:
+                return None
+
+            def branch_task_node_status(node_id: str, status: str) -> None:
+                return None
+
+            if claimed_task is not None:
+                branch_task_heartbeat, branch_task_node_status = (
+                    _build_branch_task_observers(output_dir, claimed_task)
+                )
+                branch_task_heartbeat(force=True)
             if claimed_task is not None and claimed_inputs:
                 # inputs win on overlap; unknown keys tolerated by
                 # LangGraph initial_state.
@@ -1266,9 +1360,11 @@ class DaemonController:
                 claimed_task is not None
                 and claimed_task.branch_def_id.startswith(NODE_BID_SENTINEL_PREFIX)
             ):
+                branch_task_heartbeat()
                 nb_success, nb_error = _try_execute_claimed_node_bid(
                     output_dir, claimed_task, daemon_id,
                 )
+                branch_task_heartbeat(force=True)
                 _record_loop_daemon_signal(
                     loop_daemon_context,
                     universe_path=output_dir,
@@ -1298,9 +1394,13 @@ class DaemonController:
             ):
                 branch_success, branch_error, branch_metadata = (
                     _try_execute_claimed_branch_task(
-                        output_dir, claimed_task, daemon_id,
+                        output_dir,
+                        claimed_task,
+                        daemon_id,
+                        on_node_status=branch_task_node_status,
                     )
                 )
+                branch_task_heartbeat(force=True)
                 _record_loop_daemon_signal(
                     loop_daemon_context,
                     universe_path=output_dir,
@@ -1328,6 +1428,7 @@ class DaemonController:
 
             try:
                 for event in compiled.stream(initial_state, config=config):
+                    branch_task_heartbeat()
                     if self._stop_event.is_set():
                         logger.info("Stop signal received, shutting down")
                         break
@@ -1358,6 +1459,7 @@ class DaemonController:
                         (self._paused.is_set() or pause_file.exists())
                         and not self._stop_event.is_set()
                     ):
+                        branch_task_heartbeat()
                         self._paused.wait(timeout=1.0)
 
                     # Activity/status handling must run even in --no-tray
@@ -1366,6 +1468,8 @@ class DaemonController:
                     if isinstance(event, dict):
                         for node_name, node_output in event.items():
                             self._handle_node_output(node_name, node_output)
+                            if claimed_task is not None:
+                                branch_task_node_status(node_name, "ran")
 
                     # Phase E: at each cycle boundary (marked by the
                     # `universe_cycle` node in the direct graph, or
