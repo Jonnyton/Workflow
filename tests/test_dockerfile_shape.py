@@ -186,13 +186,14 @@ def test_codex_provider_has_skip_git_repo_check():
 def test_codex_provider_flag_is_on_exec_command():
     """--skip-git-repo-check must be on the exec invocation, not a separate call."""
     text = CODEX_PROVIDER.read_text(encoding="utf-8")
-    assert "--full-auto" not in text
     start = text.index("cmd = [")
     end = text.index("]", start)
     cmd_block = text[start:end]
     assert '"exec"' in cmd_block
     assert "--skip-git-repo-check" in cmd_block
-    assert "--dangerously-bypass-approvals-and-sandbox" in cmd_block
+    assert "*sandbox_args" in cmd_block
+    assert "--full-auto" in text
+    assert "--dangerously-bypass-approvals-and-sandbox" in text
 
 
 # ---------------------------------------------------------------------------

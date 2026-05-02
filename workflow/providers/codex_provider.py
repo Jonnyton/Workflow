@@ -24,6 +24,7 @@ from workflow.providers.base import (
     ModelConfig,
     ProviderResponse,
     check_bwrap_failure,
+    get_sandbox_status,
     subprocess_env_without_api_keys,
 )
 
@@ -66,18 +67,24 @@ class CodexProvider(BaseProvider):
         full_input = f"{system}\n\n{prompt}" if system else prompt
 
         base_cmd, use_shell = _resolve_codex_cmd()
-        # Prompt-node calls need Codex as a subscription-backed text model,
-        # not as a repo-editing agent. Run from an empty ephemeral directory
-        # and use the externally-sandboxed mode already used by the hosted
-        # auto-fix lane; Codex's sandboxed auto mode requires bwrap on Linux
-        # and caused live prompt output to be polluted by startup failures.
         model = "gpt-5.5"
+        sandbox_status = get_sandbox_status()
+        sandbox_args = (
+            ["--full-auto"]
+            if sandbox_status.get("bwrap_available")
+            else ["--dangerously-bypass-approvals-and-sandbox"]
+        )
+        # Prompt-node calls need Codex as a subscription-backed text model,
+        # not as a repo-editing agent. Run from an empty ephemeral directory.
+        # Prefer Codex's sandboxed auto mode when bwrap is actually usable;
+        # bwrap-less hosts fall back to the hosted subscription mode already
+        # used by auto-fix, with API keys stripped and an empty working dir.
         cmd = [
             *base_cmd,
             "exec",
             "-m",
             model,
-            "--dangerously-bypass-approvals-and-sandbox",
+            *sandbox_args,
             "--skip-git-repo-check",
             "--ephemeral",
         ]

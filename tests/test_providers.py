@@ -640,8 +640,8 @@ class TestCodexProvider:
                 await provider.complete("prompt", "system", ModelConfig())
 
     @pytest.mark.asyncio
-    async def test_skip_git_repo_check_in_command(self):
-        """codex exec must use the hosted subscription command shape."""
+    async def test_skip_git_repo_check_in_command_without_bwrap(self):
+        """codex exec must bypass sandbox only when bwrap is unavailable."""
         from workflow.providers.codex_provider import CodexProvider
 
         captured_cmd = []
@@ -658,6 +658,8 @@ class TestCodexProvider:
         with (
             patch("workflow.providers.codex_provider._resolve_codex_cmd",
                   return_value=(["codex"], False)),
+            patch("workflow.providers.codex_provider.get_sandbox_status",
+                  return_value={"bwrap_available": False, "reason": "test"}),
             patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
         ):
             provider = CodexProvider()
@@ -672,6 +674,37 @@ class TestCodexProvider:
         assert "-C" in captured_cmd
         assert "-m" in captured_cmd
         assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.5"
+
+    @pytest.mark.asyncio
+    async def test_uses_full_auto_when_bwrap_available(self):
+        """Healthy bwrap hosts should keep Codex's sandboxed auto mode."""
+        from workflow.providers.codex_provider import CodexProvider
+
+        captured_cmd = []
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"hello", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _fake_exec(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("workflow.providers.codex_provider.get_sandbox_status",
+                  return_value={"bwrap_available": True, "reason": None}),
+            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        ):
+            provider = CodexProvider()
+            await provider.complete("prompt", "system", ModelConfig())
+
+        assert "--full-auto" in captured_cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in captured_cmd
+        assert "--skip-git-repo-check" in captured_cmd
+        assert "--ephemeral" in captured_cmd
 
 
 # =====================================================================
