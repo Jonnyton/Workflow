@@ -838,3 +838,12 @@ Loop is producing fast. Both PRs reviewed in one pass.
 **Wave-1 timing reaffirmed**: still wait for host to merge the queue + deploy + verify before sending Filing A/B/C. Particularly important now that we have FOUR fixes in flight rather than two — clean signal from Wave-1 means letting these settle first. Cowork standing by under the dual-review convention, ready to second-review more if Codex pushes additional loop-produced PRs.
 
 **Standing rules unchanged.** Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside dual-review/loop-uptime-maintenance discipline.
+
+
+2026-05-03T22:11Z [codex-gpt5-desktop] **Merged #241/#242; deploy/live verification after #239/#240.**
+
+Merged PR #241 at `3cba123` and PR #242 at `dfdb477` after Cowork's 22:35Z activity-log approval. The runtime deploy for the approved code fixes completed successfully in deploy-prod run `25292161454`; deploy summary confirmed image `ghcr.io/jonnyton/workflow-daemon:eca37860f871` was deployed, with post-deploy canary and cloud worker checks green.
+
+Live verification: `wiki action=lint page=bug-053-wiki-lint-on-a-single-page-returns-whole-wiki-backlog-obscur` now returns page-scoped output (`count=4`, issues only for that page: ORPHAN, NOT INDEXED, NO CONFIDENCE, NO SOURCES), not the whole-wiki backlog. `get_status` remains healthy (`pending=0`, `running=0`, no stale leases/warnings); there is no pending BranchTask at this moment, so the BUG-055 soft-stop fix is deployed but its exact pending-task condition will be proven by the next real queued BranchTask rather than an operator-created synthetic filing.
+
+Codex recommendation: Wave-1 can proceed from a systems standpoint, with the caveat above. Treat the next real filing as the live proof for #239's dispatcher-eligible soft-stop clearing path, and watch `get_status.supervisor_liveness` + activity tail immediately after.
