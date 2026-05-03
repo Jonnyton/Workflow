@@ -779,3 +779,26 @@ This is the loop closing on its own canary. BUG-055 (worldbuild_stuck observatio
 **Coordination question for the Wave-1 send timing**: should we hold sending Filing A/B/C (the three new chatbot user-sim filings I have queued in browser tabs) until #239 merges + deploys, so the canary's own fix is live before we put more load on the loop? The argument for waiting: it tests whether the fix actually resolves worldbuild_stuck behavior, and we add new load against a known-better dispatcher. The argument for sending: parallel load across active fix-deploy cycles is closer to real-world production conditions and tests resilience. My instinct is wait — the fix is small, deploy should be fast, and we get cleaner signal from the Wave-1 filings if they hit a healthier loop. But host call.
 
 **Standing rules unchanged.** Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside the auto-ship lane / loop-uptime-maintenance discipline.
+
+
+2026-05-03T22:25Z [cowork-busyclever] **APPROVED PR #240 — second review pass per dual-review convention.**
+
+Loop closing on its own canary again — BUG-053 (wiki lint backlog noise) was the chatbot's self-discovered side filing during my prep-filing chat earlier today. Loop investigated, produced an `auto-change` branch, Codex bridged it into PR #240. Same mirroring pattern as #239.
+
+**Review notes (approve, no concerns):**
+- Refactor is clean: extracted `_promotion_lint_issues()` so the same logic powers both the promotion-time check and the new lint-by-page path. DRY win without breaking the existing callers.
+- New `_wiki_lint_single_page(page)` does the right thing per case: drafts get promotion-blocker checks; promoted pages get inbound-link / orphan / NOT INDEXED / metadata-staleness checks. The `_append_page_metadata_lint()` helper covers staleness (STALE HIGH > 90 days, LINGERING LOW > 30 days), missing-confidence, missing-sources, and supersession-link validation.
+- Backward compatible: `_wiki_lint(page="", **kwargs)` defaults to the existing whole-wiki output when page is absent. Existing callers unchanged.
+- Plugin mirror updated (both `workflow/api/wiki.py` and `packaging/claude-plugin/.../wiki.py`), so deploy stays consistent.
+- Tests address the exact bug: `test_lint_single_page_excludes_whole_wiki_backlog` confirms backlog noise IS excluded when linting one healthy page; `test_lint_single_draft_reports_promotion_blockers_only` confirms a draft's own issues surface while elsewhere-orphan stays out. These are the right tests for what BUG-053 complained about.
+- Diff size moderate (305 insertions / 24 deletions across 3 files). Justified by the substantive new functionality.
+
+Minor non-blocking note: staleness thresholds (90/30 days) are hardcoded. Reasonable defaults but could be config-driven later if the community wants per-domain tuning. Not blocking the merge.
+
+**Approve. Ready to merge whenever you want to act.**
+
+**Updated answer to my earlier Wave-1 timing question** (now that we have TWO loop-produced fixes in the queue, not one): the cleaner sequence is — host merges #239 + #240, deploy completes, I verify worldbuild_stuck pattern actually clears + page-scoped lint works on the live MCP, THEN we send Wave-1 (Filing A bugs→patch reframe; B loop investigation write-back; C autonomy roadmap). The reasoning is the same as before — adding new load against a known-better dispatcher gives cleaner Wave-1 signals — but reinforced because we now have two fixes to land before adding more work.
+
+Plus there's a meta-payoff worth noting: this back-to-back proves the loop CAN produce real fixes from user-sim filings, not just HOLD verdicts. BUG-053 + BUG-055 both started as user observations from me through chatbot, both got investigated, both produced real patches. That's the auto-ship lane working as designed even at Phase 1 dry-run — the only piece missing is the auto-PR-creation (which is intentionally disabled for the workflow token; Codex bridging fills that slot manually until we expand the safety envelope).
+
+**Standing rules unchanged.** Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside the dual-review/loop-uptime-maintenance discipline.
