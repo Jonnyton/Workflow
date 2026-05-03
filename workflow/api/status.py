@@ -49,6 +49,11 @@ _HEARTBEAT_STALE_THRESHOLD_S = _HEARTBEAT_REFRESH_INTERVAL_S * 2
 # BUG-009 class).
 _STUCK_PENDING_THRESHOLD_S = 120
 
+# Auto-ship observation window surfaced in get_status.auto_ship_health.
+_AUTO_SHIP_OBSERVATION_WINDOW_S = 24 * 60 * 60
+_AUTO_SHIP_RECENT_ATTEMPT_LIMIT = 10
+_AUTO_SHIP_TEXT_FIELD_LIMIT = 500
+
 
 def _parse_iso_to_epoch(value: str) -> float | None:
     """Best-effort ISO-8601 parser; returns None on empty/unparseable input.
@@ -66,6 +71,206 @@ def _parse_iso_to_epoch(value: str) -> float | None:
         return datetime.fromisoformat(cleaned).timestamp()
     except Exception:  # noqa: BLE001
         return None
+
+
+def _auto_ship_window_seconds() -> tuple[int, list[str]]:
+    """Return configured auto-ship observation window with warnings.
+
+    Invalid config is surfaced in status warnings and falls back to the
+    conservative 24h default instead of breaking the public status probe.
+    """
+    raw = os.environ.get("WORKFLOW_AUTO_SHIP_OBSERVATION_WINDOW_SECONDS", "")
+    raw = raw.strip()
+    if not raw:
+        return _AUTO_SHIP_OBSERVATION_WINDOW_S, []
+    try:
+        value = int(raw)
+    except ValueError:
+        return _AUTO_SHIP_OBSERVATION_WINDOW_S, [
+            "invalid_window_seconds: "
+            f"WORKFLOW_AUTO_SHIP_OBSERVATION_WINDOW_SECONDS={raw!r}; "
+            f"using {_AUTO_SHIP_OBSERVATION_WINDOW_S}"
+        ]
+    if value <= 0:
+        return _AUTO_SHIP_OBSERVATION_WINDOW_S, [
+            "invalid_window_seconds: "
+            f"WORKFLOW_AUTO_SHIP_OBSERVATION_WINDOW_SECONDS must be > 0; "
+            f"using {_AUTO_SHIP_OBSERVATION_WINDOW_S}"
+        ]
+    return value, []
+
+
+def _compact_status_text(value: str) -> str:
+    if len(value) <= _AUTO_SHIP_TEXT_FIELD_LIMIT:
+        return value
+    return value[:_AUTO_SHIP_TEXT_FIELD_LIMIT] + "...[truncated]"
+
+
+def _compact_ship_attempt(attempt: Any) -> dict[str, Any]:
+    """Compact chatbot-facing summary of an auto-ship ledger row.
+
+    Omits empty optional fields and potentially bulky fields such as
+    changed_paths_json. The full structured ledger remains the source of
+    truth on disk.
+    """
+    summary = {
+        "ship_attempt_id": attempt.ship_attempt_id,
+        "request_id": attempt.request_id,
+        "release_gate_result": attempt.release_gate_result,
+        "ship_class": attempt.ship_class,
+        "ship_status": attempt.ship_status,
+        "would_open_pr": attempt.would_open_pr,
+        "updated_at": attempt.updated_at,
+    }
+    for field in (
+        "parent_run_id",
+        "child_run_id",
+        "branch_def_id",
+        "pr_url",
+        "commit_sha",
+        "ci_status",
+        "rollback_handle",
+        "stable_evidence_handle",
+        "observation_status",
+        "observation_status_at",
+        "error_class",
+        "error_message",
+    ):
+        value = getattr(attempt, field)
+        if not value:
+            continue
+        if field == "error_message":
+            value = _compact_status_text(value)
+        summary[field] = value
+    return summary
+
+
+def _observation_window_remaining_s(
+    attempt: Any,
+    *,
+    now_ts: float,
+    window_seconds: int,
+) -> int | None:
+    anchor = (
+        attempt.observation_status_at
+        or attempt.updated_at
+        or attempt.created_at
+        or ""
+    )
+    anchor_ts = _parse_iso_to_epoch(anchor)
+    if anchor_ts is None:
+        return None
+    elapsed = max(0, int(now_ts - anchor_ts))
+    return max(0, window_seconds - elapsed)
+
+
+def _opened_pr_summary(
+    attempt: Any,
+    *,
+    now_ts: float,
+    window_seconds: int,
+) -> dict[str, Any]:
+    summary = {
+        "ship_attempt_id": attempt.ship_attempt_id,
+        "request_id": attempt.request_id,
+        "pr_url": attempt.pr_url,
+        "ship_status": attempt.ship_status,
+        "ci_status": attempt.ci_status,
+        "observation_status": attempt.observation_status or "observing",
+        "observation_status_at": attempt.observation_status_at,
+        "observation_window_remaining_s": _observation_window_remaining_s(
+            attempt,
+            now_ts=now_ts,
+            window_seconds=window_seconds,
+        ),
+        "rollback_handle": attempt.rollback_handle,
+        "updated_at": attempt.updated_at,
+    }
+    return summary
+
+
+def _rollback_recommendation_summary(attempt: Any) -> dict[str, Any]:
+    return {
+        "ship_attempt_id": attempt.ship_attempt_id,
+        "request_id": attempt.request_id,
+        "ship_status": attempt.ship_status,
+        "pr_url": attempt.pr_url,
+        "commit_sha": attempt.commit_sha,
+        "rollback_handle": attempt.rollback_handle,
+        "observation_status": attempt.observation_status,
+        "observation_status_at": attempt.observation_status_at,
+        "reason": (
+            _compact_status_text(attempt.error_message)
+            if attempt.error_message
+            else "observation_status=regressed"
+        ),
+        "updated_at": attempt.updated_at,
+    }
+
+
+def _compute_auto_ship_health(
+    udir: Any,
+    *,
+    now_ts: float | None = None,
+) -> dict[str, Any]:
+    """Summarize the auto-ship attempt ledger for public get_status.
+
+    Slice B is read-only observability: no polling, no rollback, no
+    state mutation. The helper returns compact rows so chatbots can see
+    the loop's recent ship/audit state without loading the full ledger.
+    """
+    import time as _time
+    if now_ts is None:
+        now_ts = _time.time()
+
+    window_seconds, warnings = _auto_ship_window_seconds()
+    out: dict[str, Any] = {
+        "recent_attempts": [],
+        "opened_prs": [],
+        "rollback_recommendations": [],
+        "window_seconds": window_seconds,
+        "ledger_available": True,
+        "warnings": warnings,
+    }
+
+    try:
+        from workflow.auto_ship_ledger import read_attempts
+        attempts = read_attempts(Path(udir))
+    except Exception as exc:  # noqa: BLE001 — surfaced, not silent
+        out["ledger_available"] = False
+        out["warnings"].append(f"ledger_read_failed: {exc}")
+        return out
+
+    if not attempts:
+        return out
+
+    recent_attempts = list(reversed(attempts[-_AUTO_SHIP_RECENT_ATTEMPT_LIMIT:]))
+    opened_attempts = [
+        attempt for attempt in reversed(attempts)
+        if attempt.ship_status == "opened"
+    ]
+    regressed_attempts = [
+        attempt for attempt in reversed(attempts)
+        if attempt.ship_status in {"opened", "merged"}
+        and attempt.observation_status == "regressed"
+    ]
+
+    out["recent_attempts"] = [
+        _compact_ship_attempt(attempt) for attempt in recent_attempts
+    ]
+    out["opened_prs"] = [
+        _opened_pr_summary(
+            attempt,
+            now_ts=now_ts,
+            window_seconds=window_seconds,
+        )
+        for attempt in opened_attempts
+    ]
+    out["rollback_recommendations"] = [
+        _rollback_recommendation_summary(attempt)
+        for attempt in regressed_attempts
+    ]
+    return out
 
 
 def _compute_supervisor_liveness(
@@ -576,6 +781,20 @@ def get_status(universe_id: str = "") -> str:
             "lease_data_available": False,
         }
 
+    # auto_ship_health — PR #198 option-2 Slice B. Read-only summary of
+    # the append-only auto_ship_attempts ledger so the loop can observe
+    # recent ship attempts, open PR observation windows, and regressed
+    # attempts that need rollback consideration without SSH or ad hoc
+    # file reads.
+    try:
+        auto_ship_health = _compute_auto_ship_health(udir)
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        auto_ship_health = {
+            "error": "compute_failed",
+            "detail": str(exc),
+            "ledger_available": False,
+        }
+
     response = {
         "schema_version": 1,
         "active_host": policy_payload["active_host"],
@@ -596,6 +815,7 @@ def get_status(universe_id: str = "") -> str:
         "sandbox_status": sandbox_status,
         "missing_data_files": missing_data_files,
         "supervisor_liveness": supervisor_liveness,
+        "auto_ship_health": auto_ship_health,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }
