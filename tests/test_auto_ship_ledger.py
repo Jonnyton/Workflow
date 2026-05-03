@@ -37,7 +37,6 @@ from workflow.auto_ship_ledger import (
     update_attempt,
 )
 
-
 # ── ID generation ─────────────────────────────────────────────────────────
 
 
@@ -200,6 +199,17 @@ def test_read_attempts_limit_returns_tail(tmp_path: Path):
         ))
     last3 = read_attempts(tmp_path, limit=3)
     assert [r.ship_attempt_id for r in last3] == ["ship_07", "ship_08", "ship_09"]
+
+
+def test_read_attempts_limit_zero_returns_empty(tmp_path: Path):
+    for i in range(3):
+        record_attempt(tmp_path, ShipAttempt(
+            ship_attempt_id=f"ship_{i:02d}",
+            created_at="",
+            updated_at="",
+            ship_status="skipped",
+        ))
+    assert read_attempts(tmp_path, limit=0) == []
 
 
 def test_read_attempts_filter_then_limit(tmp_path: Path):
