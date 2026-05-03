@@ -1249,6 +1249,7 @@ def _wiki_file_bug(
     kind: str = "bug",
     tags: str = "",
     force_new: bool = False,
+    verbose: bool = False,
     **_kwargs: Any,
 ) -> str:
     """File a bug / feature request / design proposal to pages/bugs/.
@@ -1440,24 +1441,33 @@ def _wiki_file_bug(
                 "status": "queued",
                 "dispatcher_request_id": request_id,
             }
-            try:
-                from workflow.branch_tasks import read_queue
+            # Default response shape is compact — callers needing the
+            # full BranchTask mirror pass verbose=True. Cuts the typical
+            # file_bug response from ~3.7 KB to ~600 bytes (no 23-field
+            # BranchTask dump that mirrors inputs.request_text). The
+            # trigger_attempt_id + dispatcher_request_id below are already
+            # enough for chatbots/canaries to join request -> run; the full
+            # mirror is operator-only and can be fetched on-demand via
+            # ``universe action=queue_list`` with the branch_task_id.
+            if verbose:
+                try:
+                    from workflow.branch_tasks import read_queue
 
-                task = next(
-                    (
-                        t for t in read_queue(universe_path)
-                        if t.branch_task_id == request_id
-                    ),
-                    None,
-                )
-                if task is not None:
-                    investigation["branch_task"] = task.to_dict()
-            except Exception as _queue_exc:  # noqa: BLE001
-                _logger_wiki.warning(
-                    "file_bug investigation task read failed for %s: %s",
-                    bug_id,
-                    _queue_exc,
-                )
+                    task = next(
+                        (
+                            t for t in read_queue(universe_path)
+                            if t.branch_task_id == request_id
+                        ),
+                        None,
+                    )
+                    if task is not None:
+                        investigation["branch_task"] = task.to_dict()
+                except Exception as _queue_exc:  # noqa: BLE001
+                    _logger_wiki.warning(
+                        "file_bug investigation task read failed for %s: %s",
+                        bug_id,
+                        _queue_exc,
+                    )
             if _receipt is not None:
                 try:
                     _receipt = _tr.mark_queued(
@@ -1535,6 +1545,7 @@ def wiki(
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
+    verbose: bool = False,
 ) -> str:
     """Dispatch entry for the wiki MCP tool. See universe_server.py for the
     chatbot-facing docstring; this function is the implementation invoked by
@@ -1624,6 +1635,7 @@ def wiki(
         "force_new": force_new,
         "bug_id": bug_id,
         "reporter_context": reporter_context,
+        "verbose": verbose,
     }
 
     return handler(**kwargs)
