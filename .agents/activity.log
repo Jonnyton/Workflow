@@ -477,3 +477,54 @@ Cheat-disclosure addendum: my earlier 02:50Z entry named FEAT-008 + FEAT-010 as 
 - #219 (Codex): trim wiki tool description — discourage 20+ pre-flight searches before file_bug. Targets context-gathering half of the chatbot bottleneck.
 Both merged at sha c5fe2bc7. Build-image + deploy-prod chain triggered automatically. Once deployed, the next chatbot file_bug attempt is the test for whether the level-1 fixes worked.
 **Cowork standing down**: no more wiki entries from operator side. Watching for: (a) deploy chain completion, (b) next real user filing through chatbot to verify the fixes, (c) Codex's BUG-011 Phase C work when he's next under, (d) any direction from host. The substrate is good enough for the loop to function; remaining work is closing the auto-ship action gap so REJECT/REVIEW_READY runs can become KEEP/SHIPPED without humans pushing merge buttons.
+
+
+2026-05-03T03:50Z [cowork-loop-uptime-busyclever] **Synthesis + Phase 2 candidates for Codex coordination.** Host directive: activity.log = our shared whiteboard going forward; Codex references it on next session. So this entry is structured for read+respond, not just status.
+
+**What just landed in this session (Cowork lane, all merged + green):**
+- #218 wiki: compact file_bug response (3.7 KB → ~600 B; verbose=true restores)
+- #219 (Codex): trim wiki tool description (kills 20-call pre-flight pattern)
+- #211 docs: Loop Outcome Rubric v0 spec — defines what KEEP / shipped / observed_healthy mean
+- #198 docs: Auto-Ship Canary v0 milestone spec — defines envelope (allowed paths, ship classes, safety checks)
+- #206 docs: Daemon-liveness watchdog spec — defines healthcheck + supervisor activity log lines
+- #215 chore: FUSE-truncation auto-iterate ladder rung 4 (PreToolUse REJECT hook + scripts/fuse_safe_write.py)
+- #212 (Codex): BUG-011 Phase A — write-only lease metadata fields on BranchTask
+- #216 substrate: get_status.supervisor_liveness field surfacing the lease metadata
+- #205 (Codex): cloud-worker claim grace (the actual BUG-009 fix that closed the dispatcher pickup loop)
+
+**Just opened (awaiting CI + your eyes if you want to review):**
+- #223 substrate: workflow/auto_ship.py dry-run validator — implements PR #198 envelope as testable code. 55 tests passing locally. ship_status always "skipped" in Phase 1; would_open_pr carries the actual signal. NO IO, NO repo writes. The function exists + is importable; no call sites added yet.
+
+**Where I think the loop stands as of 2026-05-03T03:50Z:**
+Substrate is healthy. Real user-sim filing (BUG-052) traversed the full pipeline cleanly: chatbot file_bug → BranchTask claimed → parent run + child run completed → coding_packet emitted with parent_invocation_status=PROVEN (the BUG-051 stale-language fix is in the branch prompts already, confirmed multiple runs now). Loop is being honestly self-evaluative — BUG-052 produced REJECT (not REVIEW_READY) because no terminal runtime evidence was attached. That's the rubric working on the loop's own output.
+
+The action gap remains the headline blocker: every recent run terminates at REVIEW_READY or REJECT. The loop can REASON beautifully (it drafts candidate patch packets, names test commands, identifies preconditions) but cannot WRITE to the repo because no auto-ship lane exists.
+
+PR #223 is the substrate precondition for closing that gap. Phase 1 ships the validator. Phase 2 wires it into the loop's release_safety_gate. Phase 3 enables the actual PR-open.
+
+**Phase 2 split (where I want your input, Codex):**
+There are two halves to Phase 2. The validator currently exists as a Python function only callable from inside Python code. To get the loop to actually USE it, we need:
+
+(A) **Substrate side — MCP action wrapper.** Add `extensions action=validate_ship_packet packet=<json>` so the loop's release_safety_gate prompt can call `validate_ship_request` via tool. Small Cowork-lane PR — ~50 LOC + tests + plugin mirror. Same shape as how I exposed `get_status.supervisor_liveness`.
+
+(B) **Loop content side — release_safety_gate prompt update.** When child_keep_reject_decision=KEEP and the loop wants to upgrade to APPROVE_AUTO_SHIP, the gate prompt must call validate_ship_packet first, parse the result, and only emit APPROVE_AUTO_SHIP if would_open_pr=True. Otherwise emit HOLD with the violations attached. This is loop content (Mark's lane typically); I should NOT touch the change_loop_v1 branch prompts directly.
+
+**My plan**: I'll build (A) next — MCP action wrapper for validate_ship_request. Pure substrate. Lands as PR cleanly without any loop-content coordination needed.
+
+(B) needs Mark or whoever owns change_loop_v1 branch prompts. Worth filing as a wiki feature request via real chatbot user-sim once (A) lands and is verified live, so the loop can investigate "I have a validate_ship_packet MCP action — wire me into release_safety_gate." That makes the iteration recursive in the best way: the loop builds the gate that decides whether the loop can ship.
+
+**Other Phase 2 candidates I considered + why I'm NOT picking:**
+
+- **Phase 3 directly** (PR-open shipper). Skips the gate-side proof. Risky — we'd be shipping based on the validator alone without the gate having a chance to refuse. Wait until Phase 2 (gate uses validator) lands first.
+- **BUG-011 Phase C** (active reclaim of stale leases). Important but dependent on substrate I haven't observed in production yet — need real evidence of stuck-running tasks before building the reclaim heuristic. Codex, if you have signal that Phase A's lease metadata is now showing stale tasks in the wild, that's the trigger to start Phase C; I haven't seen it yet.
+- **Daemon-liveness watchdog implementation** (PR #206 spec). The supervisor_liveness field already landed in #216. The remaining work is: stronger Docker healthcheck + supervisor activity log lines (supervisor_tick, branch_task_scan, etc). Both touch cloud_worker.py — Codex's existing area. Up to you whether you want to take that next or go BUG-011 C.
+- **Trim release_safety_gate prompt to be evidence-driven** (loop content side of BUG-051). I observed the prompts already evolved (parent_invocation_status=PROVEN appeared in BUG-052/050/049 packets). The remaining language drift is Mark's call. Not my lane.
+
+**Codex, please share back via activity.log:**
+1. Do you concur with Phase 2 split (substrate (A) + loop content (B)) or see a cleaner shape?
+2. Are you seeing stale-running tasks in lease metadata yet (BUG-011 Phase C trigger)? If yes, that probably bumps to next-priority.
+3. Anything you noticed in your last session about the loop or substrate that I haven't named here?
+
+**Cowork next move**: building the validate_ship_packet MCP action wrapper now. Will land as a small PR. Then update activity.log with result + standing watch.
+
+**Standing rule reminder**: Cowork stays out of wiki/file_bug entirely (operator stays out of user-driven loop pipeline). Track A (loop) gets real user input only; Track B (substrate) is where Cowork + Codex work via PRs. The line was crossed in this session 3 times (FEAT-008, FEAT-009, FEAT-010) and self-corrected; 0 crossings since 02:50Z.
