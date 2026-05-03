@@ -39,6 +39,217 @@ def _policy_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+# Heartbeat refresh interval observed in fantasy_daemon's BUG-011 Phase A
+# implementation (PR #212). 2x interval is the threshold for "stale heartbeat".
+_HEARTBEAT_REFRESH_INTERVAL_S = 60
+_HEARTBEAT_STALE_THRESHOLD_S = _HEARTBEAT_REFRESH_INTERVAL_S * 2
+
+# Threshold for "stuck pending" — a pending task older than this without
+# claim implies dispatcher pickup or worker liveness issue (today's
+# BUG-009 class).
+_STUCK_PENDING_THRESHOLD_S = 120
+
+
+def _parse_iso_to_epoch(value: str) -> float | None:
+    """Best-effort ISO-8601 parser; returns None on empty/unparseable input.
+
+    Defensive — never raises so a malformed lease timestamp can't break
+    the status probe. Pre-#212 BranchTasks have empty strings for the new
+    fields; this returns None for those.
+    """
+    if not value:
+        return None
+    try:
+        from datetime import datetime
+        # fromisoformat handles "+00:00" but not "Z" suffix on older Pythons.
+        cleaned = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(cleaned).timestamp()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _compute_supervisor_liveness(
+    udir: Any,
+    *,
+    now_ts: float | None = None,
+) -> dict[str, Any]:
+    """Aggregate BranchTask queue + BUG-011 Phase A lease fields into a
+    structured liveness snapshot.
+
+    Pairs with PR #212 (write-only lease metadata fields). Uses
+    ``getattr`` with defaults so this works both pre- and post-PR-#212
+    deployment: pre-#212 BranchTasks lack the lease fields and surface
+    as ``"lease_data_unavailable"`` rather than crashing the probe.
+
+    Surfaces the diagnostic the BUG-009 incident (2026-05-02) cost an
+    hour of triage to find: container alive but daemon subprocess
+    wedged. With this field, the same diagnosis becomes
+    ``stuck_pending_max_age_s`` + ``stale_running_tasks`` readable from
+    ``get_status``.
+    """
+    import time as _time
+    if now_ts is None:
+        now_ts = _time.time()
+
+    out: dict[str, Any] = {
+        "queue_state": {
+            "depth": 0,
+            "pending": 0,
+            "running": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "stuck_pending_max_age_s": 0,
+            "stuck_running_max_age_s": 0,
+        },
+        "running_tasks_lease": [],
+        "stale_running_tasks": [],
+        "warnings": [],
+        "lease_data_available": True,
+    }
+
+    try:
+        from workflow.branch_tasks import read_queue
+        queue = read_queue(udir)
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        out["warnings"].append(f"queue_read_failed: {exc}")
+        return out
+
+    out["queue_state"]["depth"] = len(queue)
+    if not queue:
+        return out
+
+    any_lease_field_seen = False
+    pending_ages: list[float] = []
+    running_ages: list[float] = []
+
+    for task in queue:
+        status = getattr(task, "status", "") or ""
+        if status in out["queue_state"]:
+            out["queue_state"][status] = out["queue_state"].get(status, 0) + 1
+
+        # Pending-task age (queued_at -> now). Detects dispatcher pickup
+        # gaps even before a task gets claimed (today's BUG-009 pattern).
+        queued_at = getattr(task, "queued_at", "") or ""
+        queued_ts = _parse_iso_to_epoch(queued_at) if queued_at else None
+        if status == "pending" and queued_ts is not None:
+            age = max(0.0, now_ts - queued_ts)
+            pending_ages.append(age)
+
+        if status != "running":
+            continue
+
+        # Lease metadata (PR #212). Defensive getattr so pre-#212 tasks
+        # surface as empty strings rather than AttributeError.
+        worker_owner_id = getattr(task, "worker_owner_id", "") or ""
+        lease_expires_at = getattr(task, "lease_expires_at", "") or ""
+        heartbeat_at = getattr(task, "heartbeat_at", "") or ""
+        last_progress_at = getattr(task, "last_progress_at", "") or ""
+
+        if worker_owner_id or lease_expires_at or heartbeat_at:
+            any_lease_field_seen = True
+
+        lease_expires_ts = _parse_iso_to_epoch(lease_expires_at)
+        heartbeat_ts = _parse_iso_to_epoch(heartbeat_at)
+        progress_ts = _parse_iso_to_epoch(last_progress_at)
+
+        lease_remaining_s: int | None = None
+        if lease_expires_ts is not None:
+            lease_remaining_s = int(lease_expires_ts - now_ts)
+
+        heartbeat_age_s: int | None = None
+        if heartbeat_ts is not None:
+            heartbeat_age_s = max(0, int(now_ts - heartbeat_ts))
+
+        progress_age_s: int | None = None
+        if progress_ts is not None:
+            progress_age_s = max(0, int(now_ts - progress_ts))
+
+        # Running-task age tracked for the queue summary even if no lease
+        # data exists (pre-#212 fallback).
+        if heartbeat_ts is not None:
+            running_ages.append(now_ts - heartbeat_ts)
+        elif queued_ts is not None:
+            running_ages.append(max(0.0, now_ts - queued_ts))
+
+        record = {
+            "branch_task_id": getattr(task, "branch_task_id", ""),
+            "worker_owner_id": worker_owner_id,
+            "lease_expires_at": lease_expires_at,
+            "lease_remaining_s": lease_remaining_s,
+            "heartbeat_at": heartbeat_at,
+            "heartbeat_age_s": heartbeat_age_s,
+            "last_progress_at": last_progress_at,
+            "progress_age_s": progress_age_s,
+        }
+        out["running_tasks_lease"].append(record)
+
+        # Stale detection: heartbeat older than 2x refresh OR lease
+        # expired. Both signal the daemon owning this task is dead/wedged.
+        # Phase C (Codex) will use the same predicate to actively
+        # reclaim; this field lets operators see the condition before
+        # that ships.
+        is_stale = False
+        stale_reasons: list[str] = []
+        if (
+            heartbeat_age_s is not None
+            and heartbeat_age_s > _HEARTBEAT_STALE_THRESHOLD_S
+        ):
+            is_stale = True
+            stale_reasons.append(
+                f"heartbeat_age_s={heartbeat_age_s} > "
+                f"threshold={_HEARTBEAT_STALE_THRESHOLD_S}"
+            )
+        if lease_remaining_s is not None and lease_remaining_s <= 0:
+            is_stale = True
+            stale_reasons.append(
+                f"lease_expired ({lease_remaining_s}s ago)"
+            )
+
+        if is_stale:
+            stale = dict(record)
+            stale["stale_reasons"] = stale_reasons
+            out["stale_running_tasks"].append(stale)
+
+    if pending_ages:
+        out["queue_state"]["stuck_pending_max_age_s"] = int(max(pending_ages))
+    if running_ages:
+        out["queue_state"]["stuck_running_max_age_s"] = int(max(running_ages))
+
+    # If any pending task is past the stuck threshold, surface a
+    # warning. Today's BUG-009 RCA: a pending task that sits >2min
+    # without claim means the supervisor restart logic isn't reaching
+    # the queue (the exact pattern PR #205 fixed).
+    if (
+        out["queue_state"]["stuck_pending_max_age_s"]
+        > _STUCK_PENDING_THRESHOLD_S
+    ):
+        out["warnings"].append(
+            f"stuck_pending: oldest pending task is "
+            f"{out['queue_state']['stuck_pending_max_age_s']}s old "
+            f"(threshold {_STUCK_PENDING_THRESHOLD_S}s). Likely "
+            "supervisor restart loop, dispatcher disabled, or daemon "
+            "subprocess wedged. See PR #206 spec for incident pattern."
+        )
+
+    if out["queue_state"]["running"] > 0 and not any_lease_field_seen:
+        out["lease_data_available"] = False
+        out["warnings"].append(
+            "lease_data_unavailable: running tasks present but no lease "
+            "fields populated. Either pre-PR-#212 deploy, or daemon is "
+            "not stamping heartbeats. Reclaim heuristics cannot run."
+        )
+
+    if out["stale_running_tasks"]:
+        out["warnings"].append(
+            f"{len(out['stale_running_tasks'])} stale running task(s) "
+            "(heartbeat past threshold or lease expired). BUG-011 "
+            "Phase C reclaim would reclaim these once shipped."
+        )
+
+    return out
+
+
 def get_status(universe_id: str = "") -> str:
     """Factual snapshot of the daemon's identity + routing config.
 
@@ -349,6 +560,22 @@ def get_status(universe_id: str = "") -> str:
     except Exception:  # noqa: BLE001 — best-effort observability
         missing_data_files = []
 
+    # supervisor_liveness — BUG-009 incident (2026-05-02) cost ~1hr of
+    # triage finding "container alive but daemon subprocess wedged"
+    # without SSH. This block surfaces the diagnosis from the public MCP
+    # probe: queue counts + per-running-task lease/heartbeat ages +
+    # stale-detection. Pairs with PR #212 (BUG-011 Phase A lease metadata
+    # writes); the helper is defensive so a missing branch_tasks file or
+    # pre-#212 task shape cannot break the status probe.
+    try:
+        supervisor_liveness = _compute_supervisor_liveness(udir)
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        supervisor_liveness = {
+            "error": "compute_failed",
+            "detail": str(exc),
+            "lease_data_available": False,
+        }
+
     response = {
         "schema_version": 1,
         "active_host": policy_payload["active_host"],
@@ -368,6 +595,7 @@ def get_status(universe_id: str = "") -> str:
         "per_provider_cooldown_remaining": per_provider_cooldown_remaining,
         "sandbox_status": sandbox_status,
         "missing_data_files": missing_data_files,
+        "supervisor_liveness": supervisor_liveness,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }
