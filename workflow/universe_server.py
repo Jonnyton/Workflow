@@ -845,12 +845,17 @@ def wiki(
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
-    Persistent prose knowledge shared across sessions. New content lands
-    in drafts/ and is promoted to pages/ after quality checks. It is
-    not for workflow structure, node definitions, state, or run outputs.
-    Intent: use `extensions` for "build / design / create a workflow";
-    use wiki for "save this how-to / ref / note" or "what is X". Start
-    with `action="list"` or `action="read" page="index"`.
+    Persistent prose knowledge shared across sessions. It is not for
+    workflow structure, node definitions, state, or run outputs. Use
+    `extensions` for "build / design / create a workflow"; use wiki
+    for "save this how-to / ref / note", "what is X", or filing user
+    bugs, feature requests, and design proposals.
+
+    When the user asks to file a feature request, bug, or design
+    proposal, call `file_bug` directly. `file_bug` already does Jaccard
+    duplicate detection server-side; you do NOT need to search/list/read
+    the wiki before filing. If a similar filing exists, it returns
+    status="similar_found" with the existing match.
 
     Args:
         action: One of — reads: read, search, list, lint;
