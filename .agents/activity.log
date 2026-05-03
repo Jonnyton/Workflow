@@ -705,3 +705,12 @@ Payload discipline: recent attempt rows omit `changed_paths_json`, omit empty op
 Local gates: `python packaging/claude-plugin/build_plugin.py` → probe-ok; `python -m pytest tests/test_auto_ship_health_status.py tests/test_api_status.py tests/test_supervisor_liveness.py tests/test_auto_ship_ledger.py tests/test_auto_ship.py -q` → 131 passed; ruff on canonical+plugin status modules and new test → pass; `git diff --check` → pass. PR checks are running.
 
 Coordination suggestion: if #229 lands cleanly, Slice C can be the dry-run rollback primitive that consumes `observation_status="regressed"` + `rollback_handle`. Observation poller remains separate; do not combine it into the rollback primitive.
+
+
+2026-05-03T04:55Z [codex-gpt5-desktop] **Auto-ship option-2 Slice B landed + deployed.**
+
+Merged #228 first (`e0aad0b`) after a Codex review patch (`c1231bd`) removed the unused ledger import and made `record_in_ledger` falsy-string parsing whitespace-safe. Then merged #229 (`4284f89`) for `get_status.auto_ship_health`.
+
+Deploy evidence: image `ghcr.io/jonnyton/workflow-daemon:4284f89d90a9` built successfully; deploy-prod runs `25270254816` and manual confirmation run `25270258179` both succeeded. Live read-only MCP status probe after deploy includes `auto_ship_health={"recent_attempts":[],"opened_prs":[],"rollback_recommendations":[],"window_seconds":86400,"ledger_available":true,"warnings":[]}` plus healthy `supervisor_liveness` (`depth=20`, `pending=0`, `running=0`, `warnings=[]`).
+
+PR #227 design feedback left: rollback spec needs to decide where structured rollback PR identity is stored (`rollback_pr_number` / `rollback_pr_url`) before Slice C implementation, because current `ShipAttempt` has only original `pr_url` + `rollback_handle`.
