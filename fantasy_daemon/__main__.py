@@ -691,6 +691,48 @@ def _branch_task_inputs_for_execution(claimed_task: Any) -> dict[str, Any]:
     return inputs
 
 
+def _bug_investigation_patch_packet(output: dict[str, Any]) -> dict[str, Any]:
+    """Return the completed investigation packet from known output shapes."""
+    for key in ("patch_packet", "candidate_patch_packet"):
+        packet = output.get(key)
+        if isinstance(packet, dict) and packet:
+            return packet
+    child_output = output.get("attached_child_output")
+    if isinstance(child_output, dict):
+        return _bug_investigation_patch_packet(child_output)
+    return {}
+
+
+def _maybe_attach_bug_investigation_patch_packet(
+    claimed_task: Any,
+    run_status: str,
+    run_output: dict[str, Any],
+) -> dict[str, Any]:
+    """Attach completed bug-investigation output to the source wiki page."""
+    request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
+    if request_type != "bug_investigation":
+        return {"status": "skipped", "reason": "not_bug_investigation"}
+    if run_status != "completed":
+        return {"status": "skipped", "reason": f"run_status:{run_status}"}
+
+    inputs = dict(getattr(claimed_task, "inputs", {}) or {})
+    bug_id = str(inputs.get("bug_id") or run_output.get("bug_id") or "").strip()
+    if not bug_id:
+        return {"status": "skipped", "reason": "missing_bug_id"}
+
+    patch_packet = _bug_investigation_patch_packet(run_output)
+    if not patch_packet:
+        return {"status": "skipped", "reason": "missing_patch_packet"}
+
+    try:
+        from workflow.bug_investigation import attach_patch_packet_comment
+
+        return attach_patch_packet_comment(bug_id, patch_packet)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("bug_investigation patch-packet attach failed")
+        return {"status": "error", "bug_id": bug_id, "error": str(exc)}
+
+
 def _try_execute_claimed_branch_task(
     universe_path: Path,
     claimed_task: Any,
@@ -756,6 +798,13 @@ def _try_execute_claimed_branch_task(
             "run_status": outcome.status,
             "actor": actor,
         }
+        attach_result = _maybe_attach_bug_investigation_patch_packet(
+            claimed_task,
+            outcome.status,
+            outcome.output if isinstance(outcome.output, dict) else {},
+        )
+        if attach_result.get("status") != "skipped":
+            metadata["wiki_patch_packet"] = attach_result
         success = outcome.status == RUN_STATUS_COMPLETED
         error = outcome.error if outcome.error else (
             "" if success else f"run_status:{outcome.status}"

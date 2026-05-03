@@ -322,3 +322,107 @@ class TestBugInvestigationDirectRunRouting:
         inputs = _branch_task_inputs_for_execution(task)
 
         assert inputs == {"bug_id": "BUG-009"}
+
+
+class TestBugInvestigationPatchPacketWriteBack:
+    def _make_bug_page(self, tmp_path):
+        bugs_dir = tmp_path / "pages" / "bugs"
+        bugs_dir.mkdir(parents=True)
+        page = bugs_dir / "bug-057-write-completed-loop-investigation.md"
+        page.write_text(
+            "---\nbug_id: BUG-057\ntitle: Write back investigation\n---\n\n"
+            "## Description\n\nInvestigation output should be visible on the request page.\n",
+            encoding="utf-8",
+        )
+        return page
+
+    def test_completed_bug_investigation_attaches_patch_packet_to_wiki(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import (
+            _maybe_attach_bug_investigation_patch_packet,
+        )
+
+        page = self._make_bug_page(tmp_path)
+        monkeypatch.setattr("workflow.storage.wiki_path", lambda: tmp_path)
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        result = _maybe_attach_bug_investigation_patch_packet(
+            task,
+            "completed",
+            {
+                "patch_packet": {
+                    "root_cause": "completed run output was never attached",
+                    "test_plan": "assert wiki page contains patch packet",
+                }
+            },
+        )
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "## Patch Packet" in written
+        assert "completed run output was never attached" in written
+
+    def test_non_completed_bug_investigation_does_not_attach_false_packet(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import (
+            _maybe_attach_bug_investigation_patch_packet,
+        )
+
+        page = self._make_bug_page(tmp_path)
+        monkeypatch.setattr("workflow.storage.wiki_path", lambda: tmp_path)
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        result = _maybe_attach_bug_investigation_patch_packet(
+            task,
+            "failed",
+            {"patch_packet": {"root_cause": "not proven"}},
+        )
+
+        assert result == {"status": "skipped", "reason": "run_status:failed"}
+        assert "## Patch Packet" not in page.read_text(encoding="utf-8")
+
+    def test_attaches_candidate_packet_from_attached_child_output(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import (
+            _maybe_attach_bug_investigation_patch_packet,
+        )
+
+        page = self._make_bug_page(tmp_path)
+        monkeypatch.setattr("workflow.storage.wiki_path", lambda: tmp_path)
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        result = _maybe_attach_bug_investigation_patch_packet(
+            task,
+            "completed",
+            {
+                "attached_child_output": {
+                    "candidate_patch_packet": {
+                        "implementation_sketch": "attach child packet output",
+                    }
+                }
+            },
+        )
+
+        assert result["status"] == "attached"
+        assert "attach child packet output" in page.read_text(encoding="utf-8")
