@@ -311,8 +311,19 @@ def universe(
     without `text` returns an error.
 
     Args:
-        action: Universe read/write, queue, subscription, goal-pool,
-            community review, daemon roster/control, or config action name.
+        action: One of — reads: list, inspect, read_output, query_world,
+            get_activity, get_recent_events, get_ledger, read_premise,
+            list_canon, read_canon, queue_list, list_subscriptions,
+            community_change_context, daemon_overview, daemon_list,
+            daemon_get, daemon_memory_search, daemon_memory_list,
+            daemon_memory_review, daemon_memory_status;
+            writes: submit_request, give_direction, set_premise, add_canon,
+            add_canon_from_path, control_daemon, switch_universe,
+            create_universe, queue_cancel, subscribe_goal, unsubscribe_goal,
+            post_to_goal_pool, submit_node_bid, daemon_create, daemon_summon,
+            daemon_pause, daemon_resume, daemon_restart, daemon_banish,
+            daemon_update_behavior, daemon_control_status,
+            daemon_memory_capture, daemon_memory_promote, set_tier_config.
         universe_id: Target universe. Defaults to the active universe.
         text/path/filter_text: Action-specific content, file path, or filter.
         branch_id/request_type: Request routing fields.
@@ -526,6 +537,25 @@ def extensions(
     list_branches, run_branch, get_run, list_runs, stream_run, cancel_run,
     get_run_output, attach_existing_child_run, wait_for_run, resume_run,
     judge_run, compare_runs, schedule_branch, and publish_version.
+
+    Action groups:
+    - Registry: register, list, inspect, approve, disable, enable, remove.
+    - Branch design: build_branch, patch_branch, describe_branch, create_branch,
+      get_branch, list_branches, validate_branch, delete_branch, add_node,
+      update_node, connect_nodes, set_entry_point, add_state_field,
+      suggest_node_edit, search_nodes, get_node_output, patch_nodes,
+      rollback_node, get_rollback_history.
+    - Runs: run_branch, run_branch_version, get_run, list_runs, stream_run,
+      cancel_run, get_run_output, wait_for_run, resume_run, query_runs,
+      compare_runs, estimate_run_cost, get_routing_evidence,
+      attach_existing_child_run.
+    - Judgments: judge_run, list_judgments.
+    - Versions: publish_version, get_branch_version, list_branch_versions,
+      list_node_versions, rollback_merge, fork_tree.
+    - Project memory: project_memory_set, project_memory_get,
+      project_memory_list, get_memory_scope_status.
+    - Scheduler: schedule_branch, unschedule_branch, list_schedules,
+      subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
 
     Args: pass `action` plus the matching ids or JSON payload fields.
     """
@@ -860,7 +890,7 @@ def wiki(
     Args:
         action: One of — reads: read, search, list, lint;
             writes: write, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug, cosign_bug.
+            sync_projects, cleanup_bug_pages, file_bug, cosign_bug.
     """
     return _wiki_impl(
         action=action,

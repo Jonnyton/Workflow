@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from wiki_bug_sync import (  # noqa: E402
     SyncError,
     _bug_number,
+    cleanup_bug_pages,
     create_gh_issue,
     fetch_bug_detail,
     list_new_bugs,
@@ -27,6 +28,15 @@ from wiki_bug_sync import (  # noqa: E402
 
 _INIT_OK = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
 _NOTIF_NONE = None
+_CLEANUP_OK = {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+        "content": [
+            {"type": "text", "text": json.dumps({"mode": "executed", "removed": []})}
+        ]
+    },
+}
 
 
 def _wiki_list_resp(bugs: list[dict]) -> dict:
@@ -154,6 +164,26 @@ def test_list_new_bugs_sorted_ascending():
     assert [e["bug_number"] for e in result] == [3, 4, 5]
 
 
+def test_list_new_bugs_deduplicates_same_bug_number():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": "bugs/bug-052-stale-duplicate",
+                "type": "bug",
+                "title": "Stale duplicate",
+            },
+            {
+                "path": "bugs/BUG-052-canonical",
+                "type": "bug",
+                "title": "Canonical",
+            },
+        ]
+    }
+    result = list_new_bugs(wiki_list, cursor=51)
+    assert len(result) == 1
+    assert result[0]["path"] == "bugs/BUG-052-canonical"
+
+
 # ---------------------------------------------------------------------------
 # cursor read/write
 # ---------------------------------------------------------------------------
@@ -231,6 +261,39 @@ def test_fetch_bug_detail_reads_with_page_not_path():
     assert detail["title"] == "Bug"
 
 
+def test_cleanup_bug_pages_calls_wiki_cleanup_action():
+    post = CapturingPost([
+        (
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps({
+                                "mode": "executed",
+                                "removed": ["pages/bugs/bug-052-stale.md"],
+                            }),
+                        }
+                    ]
+                },
+            },
+            "sid1",
+        ),
+    ])
+    result = cleanup_bug_pages(
+        "http://fake/mcp",
+        "sid1",
+        5.0,
+        post_fn=post,
+    )
+
+    assert result["removed"] == ["pages/bugs/bug-052-stale.md"]
+    args = post.calls[0]["params"]["arguments"]
+    assert args == {"action": "cleanup_bug_pages", "dry_run": False}
+
+
 # ---------------------------------------------------------------------------
 # sync() — happy path: no new bugs
 # ---------------------------------------------------------------------------
@@ -244,6 +307,7 @@ def test_sync_no_new_bugs(tmp_path):
     post_fn = _make_post_fn(
         (_INIT_OK, "sid1"),
         (_NOTIF_NONE, "sid1"),
+        (_CLEANUP_OK, "sid1"),
         (_wiki_list_resp([
             {"path": "bugs/BUG-001-a"},
             {"path": "bugs/BUG-005-e"},
@@ -266,6 +330,7 @@ def test_sync_one_new_bug(tmp_path):
     post_fn = _make_post_fn(
         (_INIT_OK, "sid1"),
         (_NOTIF_NONE, "sid1"),
+        (_CLEANUP_OK, "sid1"),
         (_wiki_list_resp([
             {"path": "bugs/BUG-001-old"},
             {"path": "bugs/BUG-002-old"},
@@ -299,6 +364,8 @@ def test_sync_one_new_bug_updates_cursor(tmp_path):
         tool = payload.get("params", {}).get("name")
         if tool == "wiki":
             args = payload.get("params", {}).get("arguments", {})
+            if args.get("action") == "cleanup_bug_pages":
+                return _CLEANUP_OK, "sid1"
             if args.get("action") == "list":
                 return _wiki_list_resp([{"path": "bugs/BUG-003-new", "title": "New Bug"}]), "sid1"
             if args.get("action") == "read":
@@ -337,6 +404,7 @@ def test_sync_many_new_bugs(tmp_path):
     responses = [
         (_INIT_OK, "sid1"),
         (_NOTIF_NONE, "sid1"),
+        (_CLEANUP_OK, "sid1"),
         (_wiki_list_resp(bugs), "sid1"),
     ] + [
         (_wiki_read_resp({"title": f"Bug {i}", "severity": "low", "component": "x"}), "sid1")

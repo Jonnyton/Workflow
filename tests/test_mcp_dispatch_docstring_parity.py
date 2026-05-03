@@ -34,6 +34,7 @@ handlers are parameterless single-action tools (`get_status`, `pause`,
 
 from __future__ import annotations
 
+import inspect
 import re
 
 import pytest
@@ -130,7 +131,7 @@ def _wiki_dispatch_keys() -> set[str]:
     return {
         "read", "search", "list", "lint",
         "write", "consolidate", "promote", "ingest", "supersede",
-        "sync_projects",
+        "sync_projects", "cleanup_bug_pages",
         "file_bug", "cosign_bug",
     }
 
@@ -263,7 +264,7 @@ def _block_actions(slab: str, indent: int = 2) -> set[str]:
 
 
 def _docstring_actions_universe() -> set[str]:
-    doc = us.universe.__doc__ or ""
+    doc = inspect.getdoc(us.universe) or ""
     slab = _extract_slab(
         doc,
         r"action:\s*One of\s*[—\-]",
@@ -273,7 +274,7 @@ def _docstring_actions_universe() -> set[str]:
 
 
 def _docstring_actions_wiki() -> set[str]:
-    doc = us.wiki.__doc__ or ""
+    doc = inspect.getdoc(us.wiki) or ""
     slab = _extract_slab(
         doc,
         r"action:\s*One of\s*[—\-]",
@@ -283,20 +284,20 @@ def _docstring_actions_wiki() -> set[str]:
 
 
 def _docstring_actions_gates() -> set[str]:
-    doc = us.gates.__doc__ or ""
+    doc = inspect.getdoc(us.gates) or ""
     primary = _extract_slab(doc, r"\nActions \([^)]*\):\s*\n", r"\n\n")
     bonus = _extract_slab(doc, r"\nBonus actions \([^)]*\):\s*\n", r"\n\n")
     return _block_actions(primary) | _block_actions(bonus)
 
 
 def _docstring_actions_goals() -> set[str]:
-    doc = us.goals.__doc__ or ""
+    doc = inspect.getdoc(us.goals) or ""
     slab = _extract_slab(doc, r"\nActions:\s*\n", r"\n\n")
     return _block_actions(slab)
 
 
 def _docstring_actions_extensions() -> set[str]:
-    doc = us.extensions.__doc__ or ""
+    doc = inspect.getdoc(us.extensions) or ""
     slab = _extract_slab(doc, r"\nAction groups:\s*\n", r"\n\n")
     return _bullet_group_actions(slab)
 
@@ -377,7 +378,7 @@ def test_no_orphaned_documented_actions(
 
 def test_wiki_docstring_tells_clients_to_file_bug_directly() -> None:
     """The wiki tool description must not trigger costly filing pre-flight."""
-    doc = us.wiki.__doc__ or ""
+    doc = inspect.getdoc(us.wiki) or ""
 
     assert "call `file_bug` directly" in doc
     assert "duplicate detection server-side" in doc

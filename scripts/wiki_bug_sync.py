@@ -266,21 +266,71 @@ def _bug_number(path: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _bug_entry_rank(entry: dict[str, Any]) -> tuple[int, int, str]:
+    """Rank duplicate wiki-list entries for the same BUG-NNN; lower wins."""
+    path = str(entry.get("path", ""))
+    name = Path(path).name
+    title = str(entry.get("title", "")).lower()
+    stale_hint = 1 if any(t in title for t in ("duplicate", "stale", "superseded")) else 0
+    upper_canonical = 0 if name.startswith("BUG-") else 1
+    return (stale_hint, upper_canonical, path)
+
+
 def list_new_bugs(
     wiki_list: dict[str, Any],
     cursor: int,
 ) -> list[dict[str, Any]]:
-    """Return promoted bug entries with bug_number > cursor, sorted ascending."""
-    bugs = []
+    """Return promoted bug entries with bug_number > cursor, sorted ascending.
+
+    The wiki may temporarily contain duplicate promoted pages for the same
+    BUG-NNN during cleanup migrations. Process each bug number once so the
+    sync loop cannot open duplicate GitHub issues while housekeeping catches up.
+    """
+    bugs_by_number: dict[int, dict[str, Any]] = {}
     for entry in wiki_list.get("promoted", []):
         if entry.get("type") != "bug":
             continue
         num = _bug_number(entry.get("path", ""))
         if num is None or num <= cursor:
             continue
-        bugs.append({**entry, "bug_number": num})
+        candidate = {**entry, "bug_number": num}
+        current = bugs_by_number.get(num)
+        if current is None or _bug_entry_rank(candidate) < _bug_entry_rank(current):
+            bugs_by_number[num] = candidate
+    bugs = list(bugs_by_number.values())
     bugs.sort(key=lambda e: e["bug_number"])
     return bugs
+
+
+def cleanup_bug_pages(
+    url: str,
+    sid: str | None,
+    timeout: float,
+    dry_run: bool = False,
+    post_fn=None,
+) -> dict[str, Any]:
+    """Ask the wiki server to prune duplicate promoted BUG-NNN pages.
+
+    Older servers may not expose the action yet. Treat that as a no-op so the
+    sync loop remains backward compatible; `list_new_bugs` still deduplicates
+    the issue creation pass locally.
+    """
+    result = _mcp_call_tool(
+        url,
+        sid,
+        "wiki",
+        {"action": "cleanup_bug_pages", "dry_run": dry_run},
+        timeout,
+        post_fn,
+    )
+    text = _parse_text_result(result)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return {"status": "unavailable", "error": "cleanup returned non-JSON response"}
+    if "error" in data and "Unknown action" in str(data.get("error")):
+        return {"status": "unavailable", "error": data["error"]}
+    return data
 
 
 def _change_kind(entry: dict[str, Any]) -> str | None:
@@ -583,6 +633,22 @@ def sync(
 
     try:
         sid = _mcp_initialize(url, timeout, post_fn)
+
+        # Best-effort server-side housekeeping before computing work from the
+        # list. This removes duplicate promoted BUG-NNN pages so the sync loop
+        # sees the same clean surface users see.
+        try:
+            cleanup = cleanup_bug_pages(url, sid, timeout, dry_run=False, post_fn=post_fn)
+            removed = cleanup.get("removed", [])
+            if removed:
+                print(
+                    "[wiki-bug-sync] cleanup_bug_pages removed "
+                    + ", ".join(str(p) for p in removed)
+                )
+        except SyncError:
+            # Keep syncing bugs even if housekeeping fails; local dedup below
+            # still prevents duplicate GitHub issues for the same BUG-NNN.
+            pass
 
         # Fetch wiki list
         list_result = _mcp_call_tool(url, sid, "wiki", {"action": "list"}, timeout, post_fn)

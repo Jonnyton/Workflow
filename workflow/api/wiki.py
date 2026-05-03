@@ -430,6 +430,90 @@ def _wiki_list(**_kwargs: Any) -> str:
     })
 
 
+def _bug_id_from_page(path: Path) -> str | None:
+    m = _BUG_ID_RE.match(path.stem)
+    if not m:
+        return None
+    return f"BUG-{int(m.group(1)):03d}"
+
+
+def _bug_page_cleanup_rank(path: Path) -> tuple[int, int, int, str]:
+    """Rank duplicate BUG pages; lower rank is the file to keep.
+
+    Prefer explicit non-stale pages, then the legacy uppercase canonical
+    filename when present. That preserves the current alias-resolution
+    convention while allowing stale/duplicate marker pages to be pruned.
+    """
+    raw = _read_text(path)
+    meta, _body = _parse_frontmatter(raw)
+    status = str(meta.get("status", "")).lower()
+    stale_status = 1 if status in {"duplicate", "stale", "superseded"} else 0
+    upper_canonical = 0 if path.name.startswith("BUG-") else 1
+    # Prefer richer pages if all explicit signals tie.
+    content_size = -len(raw)
+    return (stale_status, upper_canonical, content_size, path.name)
+
+
+def _wiki_cleanup_bug_pages(
+    dry_run: bool = True,
+    **_kwargs: Any,
+) -> str:
+    """Remove duplicate promoted bug pages that share the same BUG-NNN id."""
+    bugs_dir = _wiki_pages_dir() / _BUGS_CATEGORY
+    if not bugs_dir.is_dir():
+        return json.dumps({
+            "mode": "dry_run" if dry_run else "executed",
+            "duplicate_groups": [],
+            "removed": [],
+            "note": "No promoted bugs directory found.",
+        })
+
+    by_bug_id: dict[str, list[Path]] = {}
+    for path in bugs_dir.glob("*.md"):
+        bug_id = _bug_id_from_page(path)
+        if bug_id is None:
+            continue
+        by_bug_id.setdefault(bug_id, []).append(path)
+
+    duplicate_groups: list[dict[str, Any]] = []
+    removed: list[str] = []
+    for bug_id, paths in sorted(by_bug_id.items()):
+        if len(paths) < 2:
+            continue
+        ranked = sorted(paths, key=_bug_page_cleanup_rank)
+        keep = ranked[0]
+        duplicates = ranked[1:]
+        duplicate_groups.append({
+            "bug_id": bug_id,
+            "keep": _page_rel_path(keep),
+            "duplicates": [_page_rel_path(p) for p in duplicates],
+        })
+        if dry_run:
+            continue
+        for duplicate in duplicates:
+            try:
+                duplicate.unlink()
+                removed.append(_page_rel_path(duplicate))
+            except OSError as exc:
+                duplicate_groups[-1].setdefault("errors", []).append({
+                    "path": _page_rel_path(duplicate),
+                    "error": str(exc),
+                })
+
+    if removed:
+        _append_wiki_log(
+            "cleanup_bug_pages | removed duplicate promoted bug pages | "
+            + ", ".join(removed)
+        )
+
+    return json.dumps({
+        "mode": "dry_run" if dry_run else "executed",
+        "duplicate_groups": duplicate_groups,
+        "removed": removed,
+        "removed_count": len(removed),
+    })
+
+
 def _wiki_write(
     category: str = "",
     filename: str = "",
@@ -1597,6 +1681,7 @@ def wiki(
         "ingest": _wiki_ingest,
         "supersede": _wiki_supersede,
         "sync_projects": _wiki_sync_projects,
+        "cleanup_bug_pages": _wiki_cleanup_bug_pages,
         "file_bug": _wiki_file_bug,
         "cosign_bug": _wiki_cosign_bug,
     }
