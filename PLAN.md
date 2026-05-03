@@ -70,27 +70,7 @@ Depth: lead memory `project_commons_first_architecture.md`.
 
 **How to apply:** Every feature design names its target capability tier and host coverage. Local-app: daemon hosting, file system I/O, local program invocation, autoresearch overnight, multi-tenant tray, OSS-clone-and-extend. Browser-only: cloud-mediated equivalents for everything actionable. Launch parity: test on both Claude and ChatGPT before claiming a public chatbot feature ships. Matrix parity: for any other host, say exactly which host was verified and what caveat remains. A primitive earns its keep MORE if it works equivalently across both capability tiers and many MCP hosts; a primitive that only helps local-app users or one provider is a much higher bar to ship. Hopeful future: the gap collapses (Claude.ai gaining computer-use, ChatGPT gaining MCP local-file capabilities, browser sandboxing improving) — primitives should compose the same way regardless of capability tier; tier just determines leverage paths, not feature existence.
 
-**Daemon controls apply this rule directly.** A host should be able to create,
-summon, inspect, pause, resume, banish, restart, and adjust daemon behavior from
-the same chatbot surface they already use for Workflow. The chat surface may be
-Claude.ai on a phone, ChatGPT in a browser, Claude/Codex on the host computer,
-or a cloud-hosted control session; the feature is the same, but the execution
-path changes. Browser/phone sessions issue authenticated control intents to a
-cloud host or home host relay. Local-app sessions can additionally perform
-immediate local process, file, provider, and tray controls. If the current chat
-does not have authority or live reachability, the tool returns an explicit
-`queued` / `needs_host_connection` / `forbidden` state with the smallest next
-step, not a suggestion to switch clients.
-
-**Client surfaces are not users.** Workflow treats MCP/chat clients as
-surfaces, not user identities. The same human may operate through Claude,
-ChatGPT, local tray, CLI, IDE agents, and future MCP hosts. Cross-client
-continuity is allowed only through explicit Workflow account and authority
-binding; daemon identity and daemon memory remain stable across clients, and
-client-specific capability/security limits are enforced per action. Public UX
-should explain this as "same Workflow account, different connected apps."
-
-Depth: lead memory `project_user_capability_axis.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
+Depth: lead memory `project_user_capability_axis.md`; host matrix `docs/design-notes/2026-05-01-mcp-host-customer-matrix.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
 
 ---
 
@@ -161,15 +141,16 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Two coexisting executors, one file-locked claim.** Node execution runs on the cloud-side `cloud_worker` supervisor (distinct identity `cloud-droplet`) *and* on any host-side tray (identity `host`). Both call `branch_tasks.claim_task`; the file-lock sidecar guarantees no double-claim. The cloud worker closes the "MCP reachable but nothing executes" gap — `last_activity_canary` is the proof signal. Host-tray remains valid for users who want local-model runs with their own keys. (Cloud-worker shipped in 4d1265c; supervises `fantasy_daemon` subprocess, inherits `/etc/workflow/env`.) Per-universe dashboards are orthogonal to executor identity.
 - **Private chats, public actions.** Conversations stay private; any universe-affecting action is publicly attributable.
 - **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting. ("Author" → "daemon" rename in flight; agent-runtime concept is `daemon_id`, content-authorship concept stays `author_id` + `author_kind` discriminator. See `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` §1.5.)
-- **Soul is identity; wiki is learning; runtime is execution.** A daemon's `soul.md` is its durable identity contract and decision spirit. Its daemon wiki is the lived notebook that accumulates examples, failures, tactics, self-model updates, and soul-evolution proposals. Runtime activations are temporary leased executions. Do not let failures casually rewrite the soul; failed work first updates tactics, decision policy, and known failure modes. If the daemon's spirit changes, fork the soul.
-- **Daemon wiki memory is bounded by default.** A soul-bearing daemon's wiki is a managed learning store, not an ever-growing biography and not a prompt preload. Default daemons get an age-scaled storage cap that grows during early life, reaches a plateau, and then stays fixed; for example, a one-month daemon may have less retained memory than a one-year daemon, but a one-year daemon and a fifty-year daemon should have the same default footprint. Hosts may explicitly raise caps, choose time-scaling policies, or pay the storage/context cost, but platform defaults preserve bounded storage and bounded prompt context.
+- **Daemon identity is platform-wide, not domain-specific authoring.** The current `author_definitions` / soul-hash / runtime-instance substrate is transitional: preserve the useful soul, fork, fingerprint, and runtime concepts, but migrate or rename it into the general daemon registry rather than entrenching a fantasy-author-specific author model. Content provenance still uses `author_id` + `author_kind`; daemon soul identity is runtime identity, eligibility identity, and personality/policy.
 - **Branch-first collaboration.** Branches are first-class, long-lived, public-forkable. Reconciliation optional, no fixed mainline.
 - **Swarm runtime.** No universe-wide single active daemon. Runtime capacity and daemon identity are separate resources.
+- **Host daemon fleets are capacity-bounded, not product-capped.** The one-daemon host posture was a development/testing throttle, not product design. A host may summon as many daemons as they can afford and operate, including multiple daemons on the same provider. Second-and-later same-provider summons show warning-only subscription/rate-limit guidance with an estimated required provider plan; they do not enforce a platform subscription gate. Target scale is many hosts, potentially thousands, each running as many soul-bearing or soulless daemons as their provider capacity supports.
 - **GitHub is an export sink, not the canonical store.** Canonical state lives in Postgres (Supabase-hosted at launch). GitHub receives a periodic flat-YAML export of public goals/branches/nodes; contributions via GitHub PR are accepted via a round-trip YAML → webhook → Postgres import path. One-way-door decision (host-approved 2026-04-18, `docs/design-notes/2026-04-18-full-platform-architecture.md §4`) — reverting after realtime collaboration is active requires data migration.
 - **Local-first execution, git-native sync (bridge state).** The DO Droplet self-host migration (2026-04-20) is the current bridge. Postgres-canonical replaces local-first when the control-plane backend ships.
 - **User-controllable state architecture.** Users should eventually inspect, steer, and redesign workflow/state structure conversationally.
 - **Multi-host is the destination.** Local-host is important, but end-state is a network of hosts contributing model capacity to shared projects.
 - **The system must evolve itself.** Stagnation is the worst failure mode. Workflow, memory policy, retrieval, evaluation, naming should all learn from research and outcomes over time.
+- **Native optimization, not an ASI-Evolve clone.** Workflow adopts the ASI-Evolve/AlphaEvolve lesson as an engine-native pattern: users ask through any MCP-connected chatbot, the platform runs bounded evaluator-driven optimization over nodes, branches, evaluators, prompts, policies, and topology, and accepted changes land through normal versioned/provenance-aware branch history. Do not vendor or parallel-run a separate ASI pipeline that bypasses MCP, branch lineage, host-pool claiming, evaluator chains, privacy gates, or real-world outcome gates. Canonical rationale: `docs/audits/2026-05-02-asi-evolve-architecture-implications.md`; integration design: `docs/design-notes/2026-05-02-community-evolvable-optimization-integration.md`.
 - **Work targets are the unit of intentional work.** Any locus the daemon may work on next — uploads, canon repair, world notes, plans, scenes.
 - **Tags stay loose; role and lifecycle stay guarded.** Publishable-vs-notes role, publish stage, and true discard are explicit state transitions.
 - **Context is tools, not pre-assembly.** The writer should query through tools. Pre-assembly is a transitional compromise.
@@ -177,12 +158,9 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Scene commits emit structured packets.** Every accepted scene writes a validated JSON packet (facts, promises, entities, POV, deltas) beside the prose. Packets are the backbone for timelines, promise tracking, continuity, typed retrieval.
 - **Durable artifacts outlive context windows.** Plans, notes, checkpoints, logs, learned heuristics, subagent outputs belong in external storage.
 - **Human control belongs at irreversible boundaries.** Bounded loops for autonomy; pause/stop/takeover/confirmation at the edge.
-- **Reversibility earns batched autonomy.** Prefer staged, reversible, idempotent, or lease-based actions over one-way actions. A checkpoint approval can cover a bounded plan of genuinely reversible steps; it cannot cover unknown future scope, regulated execution, or an irreversible final step disguised as a batch.
 - **Engine is infrastructure, not topology.** `workflow/` is a shared library plus optional profiles. Each domain owns its own graph. The engine is judged by whether a *second* domain can adopt it without engine changes — fantasy is the benchmark, not the trunk.
 - **Memory interface is query semantics, not tier names.** Three tiers (core/episodic/archival) is conceptual; the public interface feels like faceted search, not tier addressing.
 - **Trust-critical tools are self-auditing.** Tools that touch privacy, cost, routing, scope, or moderation expose structured evidence + structured caveats; the chatbot composes the user-facing narrative on top of the evidence. The chatbot cannot rubber-stamp because the caveats are part of the tool's contract. (See `docs/design-notes/2026-04-19-self-auditing-tools.md` for the pattern + 5 instantiations: memory-scope, provider routing, privacy decisions, autoresearch fulfillment, moderation.)
-- **Classic-game exactness before remakes.** A branch answering "play the old game I remember" must try lawful original media in a browser runtime before offering remakes or compatibility ports. Browser-only users receive a hosted/PWA play surface; proprietary firmware is accepted only as a user-owned browser file import and is never bundled. Fallback ports are labeled as fallbacks, not exact-game success. (See `docs/design-notes/2026-04-30-exact-classic-game-browser-runtime.md`.)
-- **Provider compliance is a product boundary, not a launch checklist.** The shared MCP/app surface targets the strictest common denominator of the provider directories we want to keep open. If Claude, ChatGPT, or another approved host forbids delegated execution of a class of action, Workflow may prepare, explain, validate, simulate, or hand off, but it must not disguise that final action as daemon work.
 
 ---
 
@@ -208,15 +186,7 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Backend stack (target):** Supabase — Postgres (catalog + ledger + inbox), Realtime broadcast (presence + change broadcast), Auth (GitHub OAuth + sessions), Row-Level Security (visibility + sensitivity at DB layer), Storage (S3-compatible canon uploads). One stack covers five concerns otherwise requiring separate glue. Postgres exit path is self-hostable without application rewrite. Rejected: Convex (TypeScript lock-in), Firebase (pay-per-read unpredictable, no Postgres), custom realtime on small VPS (negative ROI at current scale). (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §3.2`.)
 
-**Auth + identity:** GitHub OAuth as the single person-identity primitive at
-launch, covering all three tiers. OAuth 2.1 + PKCE at the MCP edge (MCP spec
-2025-11-25 mandate). Session tokens are scoped to the Workflow user, not to the
-chat thread. Claude.ai, ChatGPT, Claude Code, Codex desktop, local tray, CLI,
-and future MCP hosts are client surfaces that must bind to the Workflow account
-before they can act for that person. Native accounts (email/passkey) are added
-when >~15% of sign-up attempts bounce at the GitHub wall. (Decision rationale:
-`docs/design-notes/2026-04-18-full-platform-architecture.md §7`; client-surface
-binding rationale: `docs/design-notes/2026-05-02-provider-identity-bridge.md`.)
+**Auth + identity:** GitHub OAuth as the single identity primitive at launch, covering all three tiers without account stitching. OAuth 2.1 + PKCE at the MCP edge (MCP spec 2025-11-25 mandate). Session tokens scoped per user; RLS enforces per-user visibility at the DB layer. Native accounts (email/passkey) added when >~15% of sign-up attempts bounce at the GitHub wall. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §7`.)
 
 **Real-time strategy — versioned rows + broadcast, NOT CRDT.** User collaboration is coarse-grained: users edit different nodes concurrently, or edit the same node with last-write-wins + update-since-you-viewed conflicts. Comments are append-only. Versioned Postgres rows + Supabase Realtime + presence channels covers this at a fraction of CRDT's complexity. CRDT is an escalation path for any specific artifact needing it later, not a baseline requirement. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §2.2`.)
 
@@ -240,62 +210,19 @@ binding rationale: `docs/design-notes/2026-05-02-provider-identity-bridge.md`.)
 
 **Goal:** A multi-tenant workflow platform where many users and daemons collaborate without collapsing into one shared chat or one hidden runtime.
 
-**Principle:** Separate identity, learning, and runtime. Daemons are public, forkable, summonable agent identities defined by soul files. Daemon wikis are host-local learning artifacts that help a daemon improve without mutating its identity every run. Runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape. Host fleet size is an operating-cost decision, not a platform cap: hosts can run many daemons, including many on one provider, with warning-only provider-plan/rate-limit estimates for additional same-provider daemons.
-
-**Person, client, daemon, runtime, authority.** A Workflow user/account is the
-real owner. Claude.ai, ChatGPT, Claude Code, Codex desktop, local tray, CLI, and
-future MCP hosts are client identities/surfaces. A soul-bearing daemon is a
-separate durable identity. A runtime is a temporary execution instance bound to
-a provider/model/executor. An authority binding records what a given client may
-do for a given Workflow user. A request started in Claude can be inspectable or
-continuable from ChatGPT only when both clients are bound to the same Workflow
-user; a daemon summoned from ChatGPT must resolve to the existing user-owned
-daemon instead of silently creating a duplicate Claude-side daemon.
+**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape. Host fleet size is an operating-cost decision, not a platform cap: hosts can run many daemons, including many on one provider, with warning-only provider-plan/rate-limit estimates for additional same-provider daemons.
 
 **Always ready for the next user and daemon fleet.** A host-only or private-alpha rollout is an exposure gate, not a single-user architecture. Storage, authorization, queues, budgets, audits, daemon bindings, and runtime activations carry tenant/owner boundaries from the first build so more users and more daemons can join by changing exposure and capacity limits, not by redesigning the substrate.
 
-**Soul identity uniqueness.** A soul-bearing daemon is a durable unique person-like identity, not a worker template. The system may create many runtime instances bound to one daemon identity, but it must not silently copy a soul-bearing daemon to satisfy demand. Extra capacity attaches more runtimes or hosts to the same daemon identity. A new soul-bearing daemon with substantially the same soul is allowed only as an explicit fork/copy action with lineage recorded, a distinct display name, and a new soul hash or approved soul-version record; accidental duplicate souls are rejected.
-
 **Soul eligibility.** Nodes and gates may declare whether daemon souls are allowed, forbidden, required, replaced by a node/gate-provided soul, or combined with a temporary node/gate header. They may also declare domain requirements for eligible souls, such as scientific, legal, artistic, local-model-only, or other community-defined qualifications. Claim-time verification checks the daemon soul fingerprint and required claims/proofs before execution; prompt composition then applies the accepted host soul, provided soul, or temporary header according to the node/gate policy.
 
-**Soul verification.** A soul claim is not true just because the markdown says it is true. Domain requirements attach to structured claim records: credentials, host-approved labels, attestors, prior accepted work, tests passed, publications, reputation, or other community-defined proofs. V1 may display many claims as advisory, but money, security, legal, medical, and gate-bonus paths require hard verification before eligibility.
-
 **Soul-guided dispatch.** After a daemon finishes a node or gate, a soul-bearing daemon returns to a decision step that lists all work it is eligible to claim, including node/gate soul policy, domain requirements, required provider/capability, and any offer. The daemon may choose highest money, specific interests, reputation, public-good impact, or refusal to work on soul-incompatible nodes according to its soul. Soulless daemons use the default platform dispatcher policy.
-
-**Decision records.** A soul-bearing daemon's post-run choice is part of its identity trail. Record candidate work considered, eligibility filters, offers, soul-policy conflicts, chosen work, declined work, and the reason the daemon gave. This is not only debugging; it is training data for the daemon wiki and audit evidence for hosts and markets.
-
-**Daemon learning wiki.** Every soul-bearing daemon owns a host-local markdown wiki under the host's Workflow data directory. The wiki follows the raw-sources -> maintained wiki -> schema pattern: immutable raw node/gate signals are recorded first, maintained synthesis pages evolve from those signals, and `WIKI.md` tells future daemon runs how to update and use the wiki. The minimum layout is `soul.md` (identity), `wiki/raw/signals/` (immutable pass/fail/blocked/cancelled signals), `wiki/pages/` (maintained self-model, decision policy, interests, failure modes, and skills), `wiki/decision_log/` (why work was chosen or refused), `wiki/soul_versions/` (immutable soul amendments and forks), and `wiki/claim_proofs/` (domain claims and attestations). The wiki is private host memory by default, not platform-published content. It helps the daemon recursively learn how to become a better version of itself as defined by its soul. Soul edits are rare proposals: the wiki may draft clarifications that preserve the soul's spirit, but failed nodes/gates should first update tactics, self-model, and decision policy rather than automatically rewriting the soul.
-
-Daemon memory attaches to the daemon and the user-owned universe, not the
-chatbot surface that triggered the run. Provider/client metadata is audit and
-routing context; it is not the durable memory owner.
-
-**Bounded daemon memory.** Wiki maintenance includes compaction and pruning. Raw signals are compact records with pointers to large artifacts, not copied transcripts; synthesis pages are rewritten in place; decision logs roll up into periodic summaries; stale or low-value memories are discarded unless protected by host policy, audit requirements, claim proofs, or soul version history. Default prompt composition loads a small memory packet, not the full wiki: soul capsule, relevant learned rules, prior attempts, recent pass/fail signals, and decision constraints. Long life improves retrieval and synthesis quality without expanding the daemon's normal context budget.
-
-**Chatbot-first host control.** The notification tray is a convenience surface,
-not the primary control plane. Hosts control daemons through conversation:
-create/summon daemons, bind them to providers and models, inspect runtime state,
-pause/resume/restart/banish runtimes, change provider/capacity settings, and
-modify behavior through soul proposals, decision-policy/wiki edits,
-domain-interest preferences, allow/deny work domains, and node/gate eligibility
-preferences. All control actions are scoped to daemon identities and runtime
-instances owned by, delegated to, or explicitly hosted by the authenticated
-Workflow user and the client's authority binding. Approvals and ownership bind
-to the Workflow user/account and audited authority grant, not only to a chat
-thread. Phone/browser control of a home-hosted daemon is a relayed command: it
-can be accepted and queued by the control plane, then applied only by the
-connected host agent that proves authority over that daemon. Security-sensitive
-actions may still require per-client re-authentication or stronger evidence.
 
 Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
 **Zero daemons required for authoring.** Node/branch/goal creation, editing, forking, and collaboration work with no daemon running anywhere. Daemon hosting is opt-in for execution work. This is a load-bearing requirement — any architecture where authoring depends on a running daemon violates it. (The phased plan was rejected on this basis; see `docs/design-notes/2026-04-18-full-platform-architecture.md §1`.)
 
 **Host pool registry.** Every daemon host declares capabilities (node types, LLM models, price), visibility (`self` / `network` / `paid`), and heartbeat state to the control plane. Daemons are execution-tier, not control-plane. The control plane dispatches paid work to hosts and settles via the ledger; daemons poll outbound. (Decision rationale: `docs/design-notes/2026-04-18-full-platform-architecture.md §5`.)
-
-**Daemon requests are provider-agnostic public work orders.** A wiki page, GitHub issue, goal-pool post, or paid-market bid is one request envelope, not a GitHub Actions implementation detail. The envelope advertises request kind, Goal/Branch binding when known, gate requirements, bounty/settlement terms when present, and whether free daemon claims are allowed. The reference GitHub auto-fix workflow is only one free claimant on that bus; other callable daemons may compete for or volunteer on the same request if they satisfy the declared requirements.
-
-**Community loop core team.** The host may provide role-specialized soul-bearing daemons as the default workers for the community change loop: intake, investigation packet, implementation writer, cross-family checker, release observation, and contract/claim arbitration. These daemons prefer their loop role when matching work is pending. The core team and all LLM loop contributors use the current flagship model set, not role-tiered cheaper models: as of 2026-05-02, Claude-lane work runs `claude-opus-4-7` and Codex/OpenAI-lane work runs `gpt-5.5`; when Anthropic or OpenAI ships a newer project-approved flagship, the active soul/version and registry records advance before that model is used. Other house or community daemons may claim those nodes only when their domain claims satisfy the node contract and they run an eligible flagship model, or when the node explicitly lends the corresponding core daemon's soul and bounded wiki packet as temporary role context. Paid incentives and user-directed daemons may affect pickup priority or iteration speed among eligible claimants, but they do not change implementation odds, model floor, gate requirements, opposite-family writer/checker rules, or final acceptance. Borrowing a role soul is not identity copying; the executor remains itself, and learning signals route back to the role daemon wiki when supported. Running a lower-tier or unapproved LLM in a role is not the same daemon and is not eligible for core loop work; if such execution is recorded for diagnostics, it must be a separate claimant, borrowed-role execution where allowed, or a renamed/forked daemon with lineage outside the core path.
 
 ---
 
@@ -329,8 +256,6 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** One unified work-target registry. Foundation review hard-blocks on unsynthesized uploads only; authorial review may choose any justified move once hard blockers are clear. Targets carry role (notes | publishable), publish stage, lifecycle, tags, and artifact refs. notes → publishable must pass through provisional first. `marked_for_discard` is not the same as `discarded` — true discard is a later review decision, recoverable.
 
-**Principle (gate requirements travel with the gate).** A Goal owner or gate designer may declare per-rung Branch requirements (`branch_requirements`) and settlement rules (`bounty_requirements`) inside the gate ladder. A Branch may claim a rung only when its definition and evidence satisfy that rung's requirements. Paid bounty release and free-daemon acceptance both reference the same gate metadata, so the project does not grow separate "review rules", "branch plug-in rules", and "bounty rules" for the same outcome.
-
 ---
 
 ## Retrieval And Memory
@@ -339,10 +264,6 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** Retrieval and memory are one system with multiple backends (KG, vector, hierarchical summaries, world-state DB, notes, direct tool calls). The routing policy matters more than any individual backend.
 
-Daemon learning wikis are one host-local memory backend for soul-bearing daemons. They should be read before soul-guided dispatch, reflection, and post-run learning; they should not replace the soul file or the platform wiki. Pasted, passed, failed, blocked, and cancelled node/gate outcomes enter as immutable raw signals, then get summarized into maintained self-model, decision-policy, interests, failure modes, skills, and soul-evolution pages. Decision logs and claim proofs are memory inputs too: the daemon learns not only from outputs, but from what it chose, declined, could not claim, and was trusted to do. Retrieval must respect daemon memory caps: long-lived daemons query and compact older learning rather than loading or preserving every historical detail forever.
-
-Daemon memory is a governed write/manage/read/observe loop. A soul-bearing daemon's wiki is the curated self, while a daemon-scoped atomic brain can store searchable facts, failures, procedures, claims, preferences, contradictions, and open loops beneath it. Runtime prompts receive only a bounded packet: soul capsule, curated wiki, top-k task-relevant brain hits, and memory pressure/status. Every memory query, retrieval, injection, write, promotion, supersession, rejection, and compaction should be traceable with source IDs and redaction-aware telemetry so bad memory can be debugged and edited instead of silently steering future work. See `docs/design-notes/2026-05-02-daemon-mini-openbrain.md`.
-
 ---
 
 ## Evaluation
@@ -350,6 +271,24 @@ Daemon memory is a governed write/manage/read/observe loop. A soul-bearing daemo
 **Goal:** Improve quality through feedback, not brittle gates.
 
 **Principle:** Layered — deterministic checks for provable failures, an editorial reader for natural-language critique, environment-grounded artifacts and traces for verification. One strong independent reader beats a committee of shallow scorers. **Evaluation is platform-wide, not fantasy-specific** — the §33 unifying frame (`docs/design-notes/2026-04-15-evaluation-layers.md` if landed; otherwise the §33 framing in the full-platform note) treats fantasy judges, autoresearch metrics, moderation rubrics, real-world outcomes, and discovery ranking as instantiations of one `Evaluator` primitive.
+
+**Accepted direction: Acceptance Scenario Packs.** Host approved the AgencyBench-derived direction on 2026-05-02: Workflow should grow reusable long-horizon scenario packs that combine user simulation, rubric checks, MCP/API or browser evidence, and artifact capture into `EvalResult` evidence. Do not vendor AgencyBench or its harness; define Workflow-native scenario contracts after the required opposite-provider research review. Canonical rationale: `docs/audits/2026-05-02-frontier-repo-radar-2.md`.
+
+---
+
+## Community Evolvable Optimization
+
+**Goal:** Make every useful piece of the platform improvable by users and daemons without requiring the project maintainers to be online.
+
+**Principle:** Optimization is a native run type, not a sidecar research script. A user with any MCP-connected chatbot should be able to say "improve this branch overnight under this budget and ask before merging"; Workflow then creates versioned candidates, runs locked evaluators, records typed lessons, preserves lineage, and proposes or applies changes according to the user's merge policy.
+
+**User model:** The primary user is not a Python researcher running a local experiment. The primary user is a person steering through Claude.ai, ChatGPT, Open WebUI, LibreChat, a local IDE, or any future MCP client. Chat remains the control station. The daemon and host network do the work. Users can redesign branches, evaluators, and optimization policy conversationally; the platform translates that into bounded specs, not hidden prompt magic.
+
+**Community model:** Branches, nodes, evaluators, and lessons are remixable public commons when privacy policy permits. The platform should preserve many competing solution families rather than collapse to one global "best" workflow. Quality-diversity search, lineage, attribution, and real-world outcome gates are core to keeping the project alive and community-evolvable.
+
+**Safety model:** Candidate generators cannot edit the evaluator or the locked harness they are being judged by. Optimization runs declare editable surface, evaluator chain, budget, stop conditions, merge policy, provenance, and visibility up front. Private instance data must not be promoted into reusable cognition unless the privacy layer explicitly permits it.
+
+**Implementation stance:** First ship contracts: `EvaluatorResult`, `OptimizationRun`, typed analyzer lessons, and MCP-facing actions that compose existing `runs`, `branches`, `evaluation`, `host_pool`, and provenance primitives. Runtime refactors must strengthen those primitives instead of adding a parallel ASI-Evolve-style control plane.
 
 ---
 
@@ -367,8 +306,6 @@ Daemon memory is a governed write/manage/read/observe loop. A soul-bearing daemo
 
 **Principle:** Pick the best provider per role, then use fallback chains and parallel diversity where they improve resilience. Error loudly when the remaining provider can't produce acceptable work. Fake success is worse than failure.
 
-**Principle (subscription-first provider auth):** The daemon request bus is provider-agnostic, but default provider auth is not. Project-wide default, including self-hosted daemons, is subscription-only: API-key provider env vars are ignored unless the host deliberately opts that daemon into API-key providers with `WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`. Machine writers for project patches, fixes, and features are Claude-family or Codex/OpenAI-family only, using the current project-approved flagship subscription-backed Claude or Codex path. API-key billing lanes are not approved default daemon writer auth; default daemons run through host subscriptions only. Containerized daemons must scrub API-key provider env vars before LLM execution unless the explicit opt-in is set, and install only subscription-backed CLI auth material by default. A checker, verifier, or acceptance judge for a machine-authored code change must be from the opposite model family: Claude-written work needs Codex/OpenAI-family checking, and Codex/OpenAI-written work needs Claude-family checking. Other providers may support diagnostics, observation, non-code work, or future non-acceptance tasks, but they do not author or accept project code changes unless this policy is deliberately changed.
-
 **Principle (fallback chain correctness is a first-class invariant):** Every provider named in a fallback chain must be either registered AND reachable at startup, or explicitly excluded at startup with a logged reason. Phantom chain entries are a bug. A chain that reads `[claude-code, codex, gemini-free, ...]` but whose first entry's CLI binary is absent from the container silently degrades the whole chain — operators reading config see one chain; the runtime iterates a different one. Register-and-probe at startup; emit structured evidence of the effective chain via `get_status`; refuse to advertise unreachable providers as available. (Corroborated by BUG-025 + 2026-04-21 prod-LLM-binding incident; Gemini/Groq unregistered in prod fallback plus claude-code phantom registration together produced the 2026-04-23 revert-loop P0.)
 
 **Principle (required files must be probed at startup and fail loud if missing):** When code declares a required on-disk artifact (ASP rule files, schema definitions, seeded fixtures, vendored configs), startup must probe for it and refuse to start if absent — not log a WARNING and continue with an empty fallback. Silent substrate-degradation from missing artifacts produces runs that report success while behaving as no-ops; that violates Hard Rule #8 (fail loudly, never silently) at an earlier lifecycle phase. Deploy-pipeline discipline extends to runtime file probes, not just image-layer contents. (Corroborated by BUG-026: `data/world_rules.lp` absent from container image silently reduced the ASP constraint engine to a no-op; BUG-027 proposes the general startup-probe invariant.)
@@ -383,50 +320,7 @@ Daemon memory is a governed write/manage/read/observe loop. A soul-bearing daemo
 
 **Shipping rule:** MCP tools and prompts publish explicit titles, tags, and behavior hints through the registered FastMCP surface — the daemon exposes a small number of coarse-grained tools, so discoverability metadata is part of the interface contract.
 
-**Daemon-control contract.** Chatbot tools expose daemon control as
-ownership-scoped operations, not tray-only commands. The public contract should
-cover at least: `daemon_list`, `daemon_get`, `daemon_create`,
-`daemon_summon`, `daemon_pause`, `daemon_resume`, `daemon_restart`,
-`daemon_banish`, `daemon_update_behavior`, and `daemon_control_status`.
-Responses name the target `daemon_id` / `runtime_instance_id`, the authority
-scope used (`owner`, `delegated_host`, `cloud_host`, `local_host`, or
-`none`), the effect (`applied`, `queued`, `refused`, or `needs_connection`),
-and an audit/action id. Behavior updates are versioned and reviewable: direct
-runtime preferences may apply immediately, while soul changes are proposals
-unless the host explicitly authorizes adoption.
-
 **Module shape rule:** API surfaces live in `workflow/api/` as mounted submodules per capability cluster (FastMCP `mount()` pattern). Server shells in `workflow/servers/` route to them. **No god-modules.** `workflow/universe_server.py` (12.4k LOC as of 2026-04-26, down from 14k peak) is in-flight refactor scope per `docs/audits/2026-04-25-universe-server-decomposition.md` — 3 of 8 steps landed (helpers, wiki, status); 5 remain (runs, evaluation, runtime_ops, market, branches).
-
----
-
-## Provider Compliance Envelope
-
-**Goal:** Keep Workflow useful across Claude, ChatGPT, local apps, IDE agents, and future MCP hosts without losing provider trust, directory eligibility, or user safety.
-
-**Principle:** Provider policy is an architectural input. The public/shared tool surface follows the strictest current rule among launch-critical providers unless a provider-specific surface is explicitly separated, labeled, tested, and hidden from providers that forbid it. Private user agreements can add obligations, but they do not relax the baseline public-surface rules.
-
-**Action taxonomy:** Every public tool and daemon node that can affect the outside world is classified before it ships:
-
-- `read`: retrieves or computes without changing state.
-- `prepare`: drafts, estimates, validates, simulates, or creates non-executable artifacts.
-- `internal_write`: mutates Workflow-owned state only.
-- `external_write`: changes an external/private system, sends data, or queues work outside Workflow.
-- `regulated_handoff`: prepares a high-risk or regulated user action but leaves the final execution to the user in the first-party venue.
-- `prohibited`: not exposed through provider-accessible MCP/app surfaces.
-
-**Handoff pattern:** When a provider disallows delegated execution, Workflow still does as much useful work as permitted: gather public or user-authorized context, explain risks, compute estimates, draft instructions, validate inputs, generate unsigned/non-submittable artifacts, open or link the relevant first-party UI, and record an audit trail. The final click/signature/submission/transfer stays with the user. The UI and tool result must say exactly what remains for the user to do; it must not imply Workflow completed the regulated action.
-
-**Reversibility and checkpoint batching:** Confirmation friction should be reduced by changing action shape, not by weakening consent. Prefer drafts, proposals, pending queues, soft-deletes, revocable grants, leases, idempotent writes, dry-runs, and tested rollback tools. Each non-read action declares a reversibility class: `fully_reversible`, `soft_reversible`, `compensating_only`, or `irreversible`, plus `undo_tool` / `undo_until` where applicable. A provider-compatible checkpoint may authorize a specific bounded batch of reversible actions with limits, preview, audit id, and stop conditions. Scope expansion, external publication, credential storage, irreversible deletion, financial/crypto execution, and other regulated handoffs must break the batch and return to explicit user action.
-
-**Financial and crypto boundary:** Public Claude/ChatGPT-facing Workflow tools do not initiate or execute money transfers, crypto transfers, investment trades, or other financial transactions on behalf of users. Allowed work is limited to education, planning, portfolio-independent calculations, transaction-readiness checks, non-executable drafts, testnet-only demonstrations clearly labeled as no-value testnet activity, and handoff to a user-controlled wallet/exchange/payment interface. Product-currency, paid-market, bounty, and settlement features are not directory-safe just because they use handoff; each must pass current provider policy and legal review before appearing in a public provider app. Any future real-currency or token feature must use `regulated_handoff` unless the target provider's current written policy explicitly permits delegated execution for that exact action class.
-
-**Destructive and irreversible boundary:** Deletes, revocations, irreversible publishes, destructive admin actions, credential storage, permission changes, and external messages require explicit side-effect metadata, provider-compatible confirmation behavior, and an audit/action id. If a provider requires the user to perform the final step, Workflow returns a handoff instead of executing.
-
-**Data minimization boundary:** Tools request only fields needed for the stated purpose. They do not request full chat history, raw transcripts, broad context, precise location, credentials, secrets, or unrelated personal data "just in case." User-related identifiers, logs, timestamps, telemetry, and debug fields are either removed from public responses or disclosed in the privacy policy with a concrete purpose.
-
-**Tool metadata contract:** Tool names, descriptions, schemas, annotations, and prompts must match actual behavior. Side effects are explicit, retry behavior is clear, and directory metadata includes all applicable read-only/destructive/open-world/title hints. Hidden instructions, obfuscated behavior, or tool descriptions that coerce one provider/tool into calling another are rejected.
-
-**Provider policy freshness:** Before submitting to or materially changing any public provider surface, re-check the current official provider rules and update the compliance envelope if they changed. Current policy synthesis was refreshed 2026-05-02 from OpenAI Apps SDK submission/security guidance and Anthropic Software Directory/custom connector guidance.
 
 ---
 
@@ -436,7 +330,7 @@ unless the host explicitly authorizes adoption.
 
 **Principle:** Keep the core portable; add platform wrappers around it. MCPB packages, Claude Code / Cowork plugins, registry metadata, and future `.cnw.zip` packaging are distribution layers over the same daemon and tool surface, not replacement architectures.
 
-**Principle (MCP host coverage):** Discoverability work is matrix-driven. Claude and ChatGPT are P0 launch gates, but every MCP-capable host is a possible customer surface. The live `/connect` page names the host families and the acceptance proof expected for each tier.
+**Principle (MCP host coverage):** Discoverability work is matrix-driven. Claude and ChatGPT are P0 launch gates, but every MCP-capable host is a possible customer surface. The current host support list, caveats, and acceptance proofs live in `docs/design-notes/2026-05-01-mcp-host-customer-matrix.md`.
 
 **Principle (install-readiness is continuous):** Main is a downloadable release at all times. Every change preserves flawless first-install — packaging auto-builds via CI (import probe + plugin drift check), user-facing copy is branded and unambiguous, broken install is a production bug (not a latent issue). Viral spread can happen any day; optimize throughout, not as a pre-release phase.
 
@@ -451,6 +345,10 @@ unless the host explicitly authorizes adoption.
 **Goal:** Make the system operable, testable, replayable, and improvable across both product runtime and AI-to-AI development.
 
 **Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — the **Three Living Files** (AGENTS.md / PLAN.md / STATUS.md, see `AGENTS.md`) and the verifier/navigator/dev/user-sim roles separate process truth, design truth, live state, quality, direction, and live-mission validation. These roles are architectural capabilities; each provider implements them through its available harness rather than one universal team mechanism. That's not just process; it's part of the theory of durable agentic work.
+
+**GitHub/worktree coordination spine:** Buildable work flows through GitHub-shaped lanes: a current `STATUS.md` Work row, a purpose-named branch, a sibling `../wf-<slug>` worktree, and a PR or draft PR as the fold-back object. Relevant `PLAN.md` modules are the project/module understanding that each lane must review during planning, build, review, and fold-back. `ideas/INBOX.md` is a loose idea feed; its entries can be parked at the bottom of a lane as "Idea feed refs" so they are not forgotten, but they are not design truth or build authority. `ideas/PIPELINE.md`, provider memories, audits, specs, and exec plans are context feeds that must be refactored into current STATUS/worktree/PR state before build. This keeps community ideas and external-research implications alive without turning old docs into parallel build queues.
+
+**Provider-context feed:** Provider-specific memory and automation systems are inputs to the GitHub/worktree spine, not separate planning authorities. `scripts/provider_context_feed.py` scans Claude/Codex/Cursor/shared memory, idea, research, automation, and worktree handoff surfaces at claim, plan, build, review, fold-back, and memory-write checkpoints. Relevant findings are promoted into STATUS/worktree/PR lanes; irrelevant or stale findings are noted or ignored. This keeps hidden provider context from bypassing the community-visible project state.
 
 ---
 
@@ -478,45 +376,7 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 
 **Vision:** The world simultaneously pursues shared broad Goals — "research papers", "fantasy writing", "investigative journalism", "scientific meta-analysis", "screenplay production", and more. Each Goal is a first-class shared pursuit; the internet contributes Branches toward it in parallel. The result is not one correct workflow per Goal but a legion of diverse evolving public workflows, all chasing the same ultimate outcome, all improving each other.
 
-**Workflow itself evolves the same way.** Bugs, patch requests, feature
-requests, docs/ops improvements, moderation proposals, branch refinements, and
-project-design changes all enter one community change loop. A BUG page is one
-request artifact inside that loop, not the loop's scope. The platform supplies
-durable public request artifacts, Goal/Branch binding, claim/assignment
-surfaces, GitHub issue/PR bridges, CI/deploy gates, and observation evidence;
-the community supplies and evolves the triage, planning, implementation, and
-review branches that move requests through it. The request artifact is also
-where gate eligibility, branch requirements, and optional bounty terms become
-visible to external daemon claimants.
-
-**Patch-request incentives are pickup signals, not acceptance signals.** A user
-may attach an optional incentive to a patch or feature request so independent
-daemons have a reason to pick it up before other queued requests. That incentive
-must never raise the probability that an unfit patch is accepted, released, or
-merged; outcome gates, review gates, moderation, tests, and live observation
-remain authoritative. A user may also direct their own daemons to work on a
-specific patch request to speed up their private/community iteration loop. That
-owner-directed work can produce faster proposals, branches, and evidence, but it
-still does not guarantee that the patch lands.
-
-V0 implementation keeps this boundary explicit: non-host `priority_weight`
-remains clamped, optional incentives use a separate capped
-`pickup_signal_weight`, requester-directed daemon routing is
-`scope=proposal_only`, and every request records that pickup priority may change
-while acceptance, release, and merge do not.
-
 **Goal is first-class above Branch.** A Goal is a named pursuit (`research-paper`, `fantasy-novel`). A Branch is one user's concrete take. Many Branches bind to one Goal. "Simultaneously pursue the same Goal via different Branches" is the default collaboration pattern, not forking one canonical Branch. Goals are extensible — any user can propose one; popular Goals accrete Branches, unpopular ones fade.
-
-**Skills are branch-carried remix material.** A Skill is reusable branch context
-or know-how: instructions, rubrics, source references, or implementation notes
-that help a Branch execute or evolve. Users can create a Skill from scratch,
-remix an existing Skill, or copy a Skill they found elsewhere by telling their
-chatbot about it. The Branch stores a reviewable snapshot plus optional source
-metadata so the skill travels with forks, gates, and bounty eligibility instead
-of depending on an operator's local repo files. The platform primitive is the
-smallest durable carrier: store, inspect, attach, update, and remove skill
-snapshots. Skill quality, taxonomies, and import policies remain
-community-evolved.
 
 **Diverse-by-default.** 100 different research-paper workflows from 100 users is a feature, not duplication. Consolidation into "the best" workflow is an anti-pattern; the value is the ecology.
 
@@ -531,12 +391,12 @@ community-evolved.
 - Aggregated social judgment signals per node/branch/Goal.
 - Authorship + attribution lineage chains.
 - Cross-Branch node library per Goal — patterns that work become shared primitives.
-- Cross-Branch skill library per Goal — copied/remixed Skill snapshots can be
-  discovered, compared, and reused across Branches.
 
 **Privacy default:** Per-piece, chatbot-judged. Concept-public by default; instance-private when user data is involved. Chatbot makes per-piece visibility decisions dynamically. (See `docs/design-notes/2026-04-18-full-platform-architecture.md` §17 + memory `project_privacy_per_piece_chatbot_judged.md`.) The earlier "public-by-default; users can mark a branch private for drafting" framing has been refined to per-piece granularity.
 
 **Non-goals for now:** account system MVP scope under Q1; monetization scoped to 1% crypto fee on paid-market bids only; moderation = community-flagged with volunteer-mod review (Q10-host RESOLVED).
+
+**Currency naming + test rail:** The real currency reference is `Destiny (tiny)` with symbol `tiny`. Current Workflow monetization and paid-market tests use `test tiny` on Base Sepolia only. Mainnet Destiny/tiny settlement, staking, DAO voting, and treasury flows are deferred until a later real-currency integration phase; current contract references are naming anchors, not active Workflow rails. See `docs/design-notes/2026-04-29-token-naming-and-test-currency.md`.
 
 ---
 
@@ -555,6 +415,8 @@ community-evolved.
 **Alarm ladder, host-phone-independent:** Pushover paging from the GHA `alarm-sink` step at threshold-cross (2 consecutive reds = ~10 min outage), `priority=2` + vibrate-tier for the initial page, escalating re-page at 1h / 4h / 24h if the `p0-outage` issue remains open with no human comment (19c2261). The probe (uptime-canary at 5-min GHA cron) is the signal source; Pushover is the delivery. Neither runs on a host. The 2026-04-21 P0 (~18h dark) exposed that probe-without-paging is not an alarm path — the canary had fired every tick for 18 hours; nothing paged.
 
 **DR validated end-to-end 2026-04-22.** The drill provisions a fresh Debian VM, bootstraps via `hetzner-bootstrap.sh`, restores `/etc/workflow/env` from offsite (GH release backup assets), restores the data volume from offsite, starts the daemon, and asserts canonical canary-green within SLA. Decoupling of restore + start steps (a8fdb97) + owner-path sweep (9ef6c3d) + exit-code propagation (4f936fe) + SSH-tunnel probe (c50b6e8) together make the drill honest — no host keystrokes bridge any step. Weekly recurrence is the always-on regression check.
+
+**Loop uptime maintenance skill (2026-05-03 add).** A fourth path lives at .agents/skills/loop-uptime-maintenance/SKILL.md — the discipline for handling failure classes not yet graduated to layers 1-3. Entry condition: the loop is too broken to self-heal via its own loop (dispatcher wedged, supervisor in restart loop, daemon subprocess wedged, MCP surface 502, filesystem-bricked state). Every application produces an incident log + substrate improvement + (usually) a PLAN.md update. Success metric is usage trending to zero — every incident graduates a failure class out of the skill into one of the three layers above. The skill is the authorized escape from the user-sim discipline when (and only when) the user-sim path is itself the broken thing.
 
 **What is explicitly *not* in this layer:**
 - On-box pagers (share host-fate with the daemon).
