@@ -280,9 +280,7 @@ def read_attempts(
     if ship_status is not None:
         attempts = [a for a in attempts if a.ship_status == ship_status]
     if limit is not None:
-        if limit <= 0:
-            return []
-        attempts = attempts[-limit:]
+        attempts = attempts[-limit:] if limit > 0 else []
     return attempts
 
 

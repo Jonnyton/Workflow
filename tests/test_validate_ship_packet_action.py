@@ -138,3 +138,229 @@ class TestResilience:
         assert "error" in result
         assert "validate_ship_request raised" in result["error"]
         assert result.get("exception_class") == "RuntimeError"
+
+
+# ── Ledger recording (PR #198 §8 wire-up — Slice A consumer) ──────────────
+
+
+class TestLedgerRecording:
+    """The wire-up surface added on top of PR #224. ``record_in_ledger``
+    is opt-in: when omitted (or falsy) the response is byte-identical
+    to the pre-wire-up behavior (no extra keys, no IO).
+
+    When opt-in, every validator outcome — passed OR blocked — produces
+    one row in the ledger keyed by ``ship_attempt_id``, and the response
+    is augmented with that id. Failure to write the row surfaces as
+    ``ledger_error`` so callers see the problem without losing the
+    decision payload.
+    """
+
+    @staticmethod
+    def _packet(**overrides):
+        base = {
+            "release_gate_result": "APPROVE_AUTO_SHIP",
+            "ship_class": "docs_canary",
+            "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
+            "child_score": 9.5,
+            "risk_level": "low",
+            "blocked_execution_record": {},
+            "stable_evidence_handle": "h:1",
+            "automation_claim_status": "child_attached_with_handle",
+            "rollback_plan": "r",
+            "changed_paths": ["docs/autoship-canaries/x.md"],
+            "diff": "+x\n",
+        }
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _setup_universe(tmp_path, monkeypatch, name="test-uni"):
+        from pathlib import Path
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", name)
+        (Path(tmp_path) / name).mkdir(parents=True, exist_ok=True)
+        return Path(tmp_path) / name
+
+    def test_record_off_response_is_byte_identical_to_pr224(self, tmp_path, monkeypatch):
+        self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+        }))
+        assert "ship_attempt_id" not in result
+        assert "ledger_error" not in result
+        # And nothing was written
+        from pathlib import Path
+        assert read_attempts(Path(tmp_path) / "test-uni") == []
+
+    def test_record_on_passed_writes_skipped_row(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": True,
+            "request_id": "REQ-1",
+            "parent_run_id": "run_1",
+            "branch_def_id": "branch-1",
+            "child_run_id": "child_1",
+        }))
+        assert result.get("ledger_error") is None
+        attempt_id = result["ship_attempt_id"]
+        assert attempt_id and attempt_id.startswith("ship_")
+        rows = read_attempts(u)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.ship_attempt_id == attempt_id
+        assert row.ship_status == "skipped"  # validator passed, dry-run
+        assert row.would_open_pr is True
+        assert row.request_id == "REQ-1"
+        assert row.parent_run_id == "run_1"
+        assert row.branch_def_id == "branch-1"
+        assert row.child_run_id == "child_1"
+        # Pulled from packet by default
+        assert row.release_gate_result == "APPROVE_AUTO_SHIP"
+        assert row.ship_class == "docs_canary"
+        # Rollback handle carried from validator's rollback_handle
+        assert row.rollback_handle.startswith("revert:")
+
+    def test_record_on_blocked_writes_blocked_row_with_violations(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet(release_gate_result="HOLD")),
+            "record_in_ledger": True,
+            "request_id": "REQ-2",
+        }))
+        assert result.get("ledger_error") is None
+        rows = read_attempts(u)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.ship_status == "blocked"
+        assert row.would_open_pr is False
+        assert "release_gate_not_approved" in row.error_class
+        # error_message is the violations payload as JSON
+        violations = json.loads(row.error_message)
+        assert any(v["rule_id"] == "release_gate_not_approved" for v in violations)
+
+    def test_explicit_universe_id_overrides_default(self, tmp_path, monkeypatch):
+        from pathlib import Path
+
+        from workflow.auto_ship_ledger import read_attempts
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-uni")
+        (Path(tmp_path) / "default-uni").mkdir(parents=True, exist_ok=True)
+        (Path(tmp_path) / "other-uni").mkdir(parents=True, exist_ok=True)
+
+        json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": True,
+            "universe_id": "other-uni",
+            "request_id": "REQ-X",
+        }))
+        assert read_attempts(Path(tmp_path) / "default-uni") == []
+        rows_other = read_attempts(Path(tmp_path) / "other-uni")
+        assert len(rows_other) == 1
+        assert rows_other[0].request_id == "REQ-X"
+
+    def test_string_truthy_record_flag_enables_recording(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": "true",
+            "request_id": "REQ-S",
+        }))
+        assert "ship_attempt_id" in result
+        assert len(read_attempts(u)) == 1
+
+    def test_string_falsy_record_flag_skips_recording(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        for falsy in ("false", " False ", "0", "no", "off", ""):
+            result = json.loads(_action_validate_ship_packet({
+                "body_json": json.dumps(self._packet()),
+                "record_in_ledger": falsy,
+            }))
+            assert "ship_attempt_id" not in result, falsy
+        assert read_attempts(u) == []
+
+    def test_changed_paths_json_kwarg_overrides_packet_paths(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet(
+                changed_paths=["docs/autoship-canaries/from-packet.md"],
+            )),
+            "record_in_ledger": True,
+            "request_id": "REQ-CP",
+            "changed_paths_json": json.dumps([
+                "docs/autoship-canaries/override-a.md",
+                "docs/autoship-canaries/override-b.md",
+            ]),
+        }))
+        rows = read_attempts(u)
+        assert len(rows) == 1
+        paths = json.loads(rows[0].changed_paths_json)
+        assert paths == [
+            "docs/autoship-canaries/override-a.md",
+            "docs/autoship-canaries/override-b.md",
+        ]
+
+    def test_malformed_changed_paths_json_falls_back_to_packet(self, tmp_path, monkeypatch):
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet(changed_paths=["docs/autoship-canaries/x.md"])),
+            "record_in_ledger": True,
+            "request_id": "REQ-FB",
+            "changed_paths_json": "not-json",
+        }))
+        rows = read_attempts(u)
+        paths = json.loads(rows[0].changed_paths_json)
+        assert paths == ["docs/autoship-canaries/x.md"]
+
+    def test_ledger_write_failure_surfaces_in_response(self, tmp_path, monkeypatch):
+        """If record_attempt raises (e.g. invalid universe), the wrapper
+        keeps the validator's decision and surfaces ledger_error."""
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
+        # No universe directories exist; helper falls back to "default-universe"
+        # which doesn't exist as a dir. record_attempt creates it via mkdir —
+        # so we instead force a path-traversal validation error.
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": True,
+            "universe_id": "../escape-attempt",
+            "request_id": "REQ-ERR",
+        }))
+        # Decision still in response
+        assert result["validation_result"] == "passed"
+        # Plus a clear ledger_error explaining what went wrong
+        assert "ledger_error" in result
+        assert (
+            "Invalid universe_id" in result["ledger_error"]
+            or "invalid universe_id" in result["ledger_error"]
+        )
+        # And no ship_attempt_id — the write didn't happen
+        assert result.get("ship_attempt_id") is None
+
+    def test_two_recorded_calls_produce_distinct_ledger_rows(self, tmp_path, monkeypatch):
+        """The validator is pure but the wrapper must produce a fresh
+        ship_attempt_id on each call so the ledger gives a per-call audit
+        trail rather than collapsing identical packets."""
+        u = self._setup_universe(tmp_path, monkeypatch)
+        from workflow.auto_ship_ledger import read_attempts
+        result_a = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": True,
+            "request_id": "REQ-A",
+        }))
+        result_b = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(self._packet()),
+            "record_in_ledger": True,
+            "request_id": "REQ-A",  # same request_id intentionally
+        }))
+        assert result_a["ship_attempt_id"] != result_b["ship_attempt_id"]
+        rows = read_attempts(u)
+        assert len(rows) == 2
