@@ -62,7 +62,7 @@ commits increments back. This makes reruns idempotent.
 | `pages/plans/patch-*` | `request:patch` |
 | `pages/workflows/*` | `request:branch-refinement` |
 | builder notes under `pages/notes/*` | `request:branch-refinement` |
-| strategic/roadmap/design/architecture plans | `request:project-design` |
+| strategic/roadmap/design/architecture/refactoring/attribution plans | `request:project-design` |
 | other promoted plans/concepts | `request:docs-ops` |
 
 ## Manual trigger

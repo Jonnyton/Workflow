@@ -288,6 +288,7 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
     path = str(entry.get("path", "")).lower()
     entry_type = str(entry.get("type", "")).lower()
     title = str(entry.get("title", "")).lower()
+    design_text = f"{path} {entry_type} {title}"
 
     # BUG pages are handled by the numeric cursor lane above.
     if _bug_number(path) is not None or entry_type == "bug" or "/bugs/" in path:
@@ -301,12 +302,20 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
         return "branch-refinement"
     if path.startswith("pages/notes/") and ("builder" in entry_type or "builder" in title):
         return "branch-refinement"
-    if path.startswith("pages/plans/") and (
-        "roadmap" in path
-        or "strategic" in path
-        or "architecture" in path
-        or "design" in path
-        or "synthesis" in path
+    if path.startswith("pages/plans/") and any(
+        marker in design_text
+        for marker in (
+            "architecture",
+            "attribution",
+            "design",
+            "operating-model",
+            "operating model",
+            "refactoring",
+            "roadmap",
+            "strategic",
+            "substrate",
+            "synthesis",
+        )
     ):
         return "project-design"
     if path.startswith("pages/plans/") or path.startswith("pages/concepts/"):
