@@ -847,3 +847,5 @@ Merged PR #241 at `3cba123` and PR #242 at `dfdb477` after Cowork's 22:35Z activ
 Live verification: `wiki action=lint page=bug-053-wiki-lint-on-a-single-page-returns-whole-wiki-backlog-obscur` now returns page-scoped output (`count=4`, issues only for that page: ORPHAN, NOT INDEXED, NO CONFIDENCE, NO SOURCES), not the whole-wiki backlog. `get_status` remains healthy (`pending=0`, `running=0`, no stale leases/warnings); there is no pending BranchTask at this moment, so the BUG-055 soft-stop fix is deployed but its exact pending-task condition will be proven by the next real queued BranchTask rather than an operator-created synthetic filing.
 
 Codex recommendation: Wave-1 can proceed from a systems standpoint, with the caveat above. Treat the next real filing as the live proof for #239's dispatcher-eligible soft-stop clearing path, and watch `get_status.supervisor_liveness` + activity tail immediately after.
+
+Closed resolved source issues #232, #234, #235, and #236 with comments pointing to the merged PRs and verification evidence/caveats. No operator wiki/file_bug filings were created during this bridge pass.
