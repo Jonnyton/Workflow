@@ -15,7 +15,6 @@ from __future__ import annotations
 import pytest
 
 from workflow.auto_ship import (
-    ALLOWED_PATH_PREFIXES,
     ALLOWED_SHIP_CLASSES,
     DIFF_SIZE_BYTES_MAX,
     FORBIDDEN_PATH_PREFIXES,
@@ -31,6 +30,7 @@ def _valid_packet(**overrides) -> dict:
         "release_gate_result": "APPROVE_AUTO_SHIP",
         "ship_class": "docs_canary",
         "child_keep_reject_decision": "KEEP",
+        "coding_packet": {"status": "KEEP_READY"},
         "child_score": 9.5,
         "risk_level": "low",
         "blocked_execution_record": {},
@@ -98,6 +98,9 @@ class TestRequiredFields:
         "release_gate_result",
         "ship_class",
         "child_keep_reject_decision",
+        "child_score",
+        "risk_level",
+        "blocked_execution_record",
         "stable_evidence_handle",
         "automation_claim_status",
         "rollback_plan",
@@ -125,6 +128,41 @@ class TestRequiredFields:
 
 
 class TestValueGates:
+    def test_missing_coding_packet_status_blocked(self):
+        packet = _valid_packet()
+        del packet["coding_packet"]
+        d = validate_ship_request(packet)
+        assert d["validation_result"] == "blocked"
+        assert any(
+            v["rule_id"] == "coding_packet_status_missing"
+            for v in d["violations"]
+        )
+
+    @pytest.mark.parametrize("status", ["KEEP_READY", "AUTO_SHIP_READY"])
+    def test_allowed_coding_packet_status_passes(self, status):
+        d = validate_ship_request(_valid_packet(coding_packet={"status": status}))
+        assert d["validation_result"] == "passed"
+
+    def test_top_level_coding_packet_status_passes(self):
+        packet = _valid_packet(coding_packet_status="KEEP_READY")
+        del packet["coding_packet"]
+        d = validate_ship_request(packet)
+        assert d["validation_result"] == "passed"
+
+    def test_source_packet_coding_packet_status_passes(self):
+        packet = _valid_packet(source_packet={"coding_packet": {"status": "KEEP_READY"}})
+        del packet["coding_packet"]
+        d = validate_ship_request(packet)
+        assert d["validation_result"] == "passed"
+
+    def test_bad_coding_packet_status_blocked(self):
+        d = validate_ship_request(_valid_packet(coding_packet={"status": "REVIEW_READY"}))
+        assert d["validation_result"] == "blocked"
+        assert any(
+            v["rule_id"] == "coding_packet_status_not_allowed"
+            for v in d["violations"]
+        )
+
     def test_release_gate_must_be_approve_auto_ship(self):
         for verdict in ("HOLD", "REVIEW_READY", "REJECT", "APPROVE", "OBSERVE"):
             d = validate_ship_request(_valid_packet(release_gate_result=verdict))
@@ -184,7 +222,8 @@ class TestValueGates:
             d = validate_ship_request(_valid_packet(automation_claim_status=bad))
             if bad == "child_invoked_with_handle":
                 # child_invoked_with_handle is NOT in v0 allowlist
-                # (allowlist: child_attached_with_handle, parent_completed_with_handle, direct_packet_with_handle)
+                # (allowlist: child_attached_with_handle,
+                # parent_completed_with_handle, direct_packet_with_handle)
                 assert d["validation_result"] == "blocked"
             else:
                 assert d["validation_result"] == "blocked"

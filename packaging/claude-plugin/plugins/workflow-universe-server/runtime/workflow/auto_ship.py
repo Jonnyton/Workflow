@@ -71,6 +71,9 @@ REQUIRED_FIELDS_NONEMPTY: tuple[str, ...] = (
     "release_gate_result",
     "ship_class",
     "child_keep_reject_decision",
+    "child_score",
+    "risk_level",
+    "blocked_execution_record",
     "stable_evidence_handle",
     "automation_claim_status",
     "rollback_plan",
@@ -81,6 +84,12 @@ ALLOWED_AUTOMATION_CLAIM_STATUS: frozenset[str] = frozenset({
     "child_attached_with_handle",
     "parent_completed_with_handle",
     "direct_packet_with_handle",
+})
+
+#: Allowed coding_packet.status values for auto-ship (§6.1).
+ALLOWED_CODING_PACKET_STATUSES: frozenset[str] = frozenset({
+    "KEEP_READY",
+    "AUTO_SHIP_READY",
 })
 
 #: Minimum child_score for KEEP (§6.1 + rubric §5).
@@ -236,6 +245,29 @@ def _diff_violations(diff: str) -> list[dict[str, Any]]:
     return out
 
 
+def _coding_packet_status(packet: dict[str, Any]) -> Any:
+    """Extract coding_packet.status from supported packet shapes."""
+    coding_packet = packet.get("coding_packet")
+    if isinstance(coding_packet, dict):
+        status = coding_packet.get("status")
+        if status not in (None, ""):
+            return status
+
+    status = packet.get("coding_packet_status")
+    if status not in (None, ""):
+        return status
+
+    source_packet = packet.get("source_packet")
+    if isinstance(source_packet, dict):
+        source_coding_packet = source_packet.get("coding_packet")
+        if isinstance(source_coding_packet, dict):
+            status = source_coding_packet.get("status")
+            if status not in (None, ""):
+                return status
+
+    return None
+
+
 def validate_ship_request(packet: dict[str, Any]) -> dict[str, Any]:
     """Run the auto-ship safety envelope on ``packet``. Returns a ship_decision dict.
 
@@ -295,7 +327,29 @@ def validate_ship_request(packet: dict[str, Any]) -> dict[str, Any]:
                 "message": f"packet is missing required field {field!r}",
             })
 
-    # §6.1 — field-value gates (only checked when field is present)
+    # §6.1 — field-value gates
+    coding_packet_status = _coding_packet_status(packet)
+    if coding_packet_status in (None, ""):
+        violations.append({
+            "rule_id": "coding_packet_status_missing",
+            "field": "coding_packet.status",
+            "severity": "block",
+            "message": (
+                "coding_packet.status is required and must prove KEEP_READY "
+                "or AUTO_SHIP_READY before auto-ship"
+            ),
+        })
+    elif coding_packet_status not in ALLOWED_CODING_PACKET_STATUSES:
+        violations.append({
+            "rule_id": "coding_packet_status_not_allowed",
+            "field": "coding_packet.status",
+            "severity": "block",
+            "message": (
+                f"coding_packet.status {coding_packet_status!r} not in allowlist "
+                f"({', '.join(sorted(ALLOWED_CODING_PACKET_STATUSES))})"
+            ),
+        })
+
     if packet.get("release_gate_result") not in (None, ""):
         if packet["release_gate_result"] != "APPROVE_AUTO_SHIP":
             violations.append({
