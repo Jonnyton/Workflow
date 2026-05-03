@@ -51,6 +51,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from workflow.api.auto_ship_actions import _AUTO_SHIP_ACTIONS
+
 # Top-of-module imports of all 12 dispatch tables from Steps 4-8.
 # These are the routing surface — extensions.py is a hot-path dispatcher,
 # so lazy-imports would burn one import resolution per call. Verified
@@ -544,6 +546,17 @@ def _extensions_impl(
             "changes_json": changes_json,
         }
         return inspect_dry_handler(di_kwargs)
+
+    # ── Auto-ship validator (PR #198 Phase 2A) ─────────────────────────────
+    # Wraps workflow.auto_ship.validate_ship_request as an MCP action so the
+    # loop's release_safety_gate prompt (and chatbots / canaries) can call it
+    # via tool. Pure validator — no IO, no repo writes.
+    auto_ship_handler = _AUTO_SHIP_ACTIONS.get(action)
+    if auto_ship_handler is not None:
+        as_kwargs: dict[str, Any] = {
+            "body_json": body_json,
+        }
+        return auto_ship_handler(as_kwargs)
 
     # ── Scheduler ──────────────────────────────────────────────────────────
     scheduler_handler = _SCHEDULER_ACTIONS.get(action)
