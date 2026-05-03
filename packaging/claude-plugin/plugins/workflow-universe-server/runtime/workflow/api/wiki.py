@@ -624,17 +624,7 @@ def _wiki_promote(
     meta, body = _parse_frontmatter(content)
 
     if not skip_lint:
-        issues: list[str] = []
-        if not meta.get("title"):
-            issues.append("Missing title in frontmatter")
-        if not meta.get("type"):
-            issues.append("Missing type in frontmatter")
-        if not meta.get("sources") and not meta.get("path"):
-            issues.append("Missing sources in frontmatter")
-        if len(body.strip()) < 50:
-            issues.append("Body too short (< 50 chars)")
-        if not re.search(r"\[\[.+?\]\]", body) and found_category != "projects":
-            issues.append("No wikilinks found -- pages should cross-reference")
+        issues = _promotion_lint_issues(meta, body, found_category)
         if issues:
             return json.dumps({
                 "error": "Promotion blocked.",
@@ -765,7 +755,131 @@ def _wiki_supersede(
         return json.dumps({"error": f"Failed to supersede: {exc}"})
 
 
-def _wiki_lint(**_kwargs: Any) -> str:
+def _promotion_lint_issues(
+    meta: dict[str, str],
+    body: str,
+    category: str,
+) -> list[str]:
+    issues: list[str] = []
+    if not meta.get("title"):
+        issues.append("Missing title in frontmatter")
+    if not meta.get("type"):
+        issues.append("Missing type in frontmatter")
+    if not meta.get("sources") and not meta.get("path"):
+        issues.append("Missing sources in frontmatter")
+    if len(body.strip()) < 50:
+        issues.append("Body too short (< 50 chars)")
+    if not re.search(r"\[\[.+?\]\]", body) and category != "projects":
+        issues.append("No wikilinks found -- pages should cross-reference")
+    return issues
+
+
+def _wiki_lint_single_page(page: str) -> str:
+    resolved = _resolve_page(page)
+    if resolved is None:
+        return json.dumps({"error": f"Page not found: {page}"})
+
+    rel = _page_rel_path(resolved)
+    is_draft = _wiki_drafts_dir() in resolved.parents
+    category = resolved.parent.name
+    raw = _read_text(resolved)
+    meta, body = _parse_frontmatter(raw)
+    page_name = resolved.stem
+    page_names = {p.stem for p in _find_all_pages(_wiki_pages_dir())}
+    issues: list[str] = []
+
+    for m in re.findall(r"\[\[([^\]]+)\]\]", raw):
+        link = m.lower().replace(" ", "-")
+        if link not in page_names:
+            issues.append(f"MISSING: [[{link}]]")
+
+    if is_draft:
+        issues.extend(_promotion_lint_issues(meta, body, category))
+    else:
+        idx_content = _read_text(_wiki_index_path())
+        indexed = {
+            m.lower().replace(" ", "-")
+            for m in re.findall(r"\[\[([^\]]+)\]\]", idx_content)
+        }
+        inbound = 0
+        for p in _find_all_pages(_wiki_pages_dir()):
+            if p == resolved:
+                continue
+            for m in re.findall(r"\[\[([^\]]+)\]\]", _read_text(p)):
+                link = m.lower().replace(" ", "-")
+                if link == page_name:
+                    inbound += 1
+
+        if inbound == 0 and page_name not in indexed:
+            issues.append(f"ORPHAN: {page_name}")
+        if page_name not in indexed:
+            issues.append(f"NOT INDEXED: {page_name}")
+
+        _append_page_metadata_lint(issues, page_name, meta)
+
+    if not issues:
+        return json.dumps({"status": "healthy", "page": rel, "issues": []})
+    return json.dumps({
+        "status": "issues_found",
+        "page": rel,
+        "count": len(issues),
+        "issues": issues,
+    })
+
+
+def _append_page_metadata_lint(
+    issues: list[str],
+    page_name: str,
+    meta: dict[str, str],
+) -> None:
+    now = datetime.now(timezone.utc)
+    confidence = (meta.get("confidence") or "").strip().lower()
+    updated_str = meta.get("updated")
+    days_since: int | None = None
+    if updated_str:
+        try:
+            updated_date = datetime.fromisoformat(updated_str).replace(
+                tzinfo=timezone.utc
+            )
+            days_since = (now - updated_date).days
+        except ValueError:
+            pass
+
+    if confidence == "superseded":
+        successor = (meta.get("superseded_by") or "").strip()
+        if successor and successor not in {
+            p.stem for p in _find_all_pages(_wiki_pages_dir())
+        }:
+            issues.append(
+                f"BROKEN SUPERSESSION: {page_name} points to "
+                f"[[{successor}]] which does not exist"
+            )
+        return
+
+    if (
+        (not confidence or confidence == "high")
+        and days_since is not None
+        and days_since > 90
+    ):
+        issues.append(f"STALE HIGH: {page_name} (last updated {days_since} days ago)")
+    if confidence == "low" and days_since is not None and days_since > 30:
+        issues.append(
+            f"LINGERING LOW: {page_name} (confidence: low for {days_since} days)"
+        )
+    if not confidence and meta.get("title"):
+        issues.append(f"NO CONFIDENCE: {page_name}")
+    if (
+        not meta.get("sources")
+        and not meta.get("path")
+        and meta.get("type") != "project"
+    ):
+        issues.append(f"NO SOURCES: {page_name}")
+
+
+def _wiki_lint(page: str = "", **_kwargs: Any) -> str:
+    if page:
+        return _wiki_lint_single_page(page)
+
     all_pages = _find_all_pages(_wiki_pages_dir())
     all_drafts = _find_all_pages(_wiki_drafts_dir())
     page_names: set[str] = set()
