@@ -34,6 +34,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_FALSEY_RECORD_FLAGS = {"", "false", "0", "no", "off"}
+
+
+def _record_in_ledger_enabled(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSEY_RECORD_FLAGS
+    return bool(value)
+
 
 def _maybe_record_attempt(
     *,
@@ -161,8 +169,7 @@ def _action_validate_ship_packet(kwargs: dict[str, Any]) -> str:
     # Phase 2A behavior preserved: when ledger recording is not requested,
     # the response is exactly the validator's decision dict, byte-for-byte
     # identical to PR #224.
-    record_flag = kwargs.get("record_in_ledger")
-    if not record_flag or (isinstance(record_flag, str) and record_flag.lower() in ("", "false", "0", "no")):
+    if not _record_in_ledger_enabled(kwargs.get("record_in_ledger")):
         return json.dumps(decision)
 
     # Resolve call-site context for the ledger row. All optional with

@@ -245,6 +245,7 @@ class TestLedgerRecording:
 
     def test_explicit_universe_id_overrides_default(self, tmp_path, monkeypatch):
         from pathlib import Path
+
         from workflow.auto_ship_ledger import read_attempts
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-uni")
@@ -276,7 +277,7 @@ class TestLedgerRecording:
     def test_string_falsy_record_flag_skips_recording(self, tmp_path, monkeypatch):
         u = self._setup_universe(tmp_path, monkeypatch)
         from workflow.auto_ship_ledger import read_attempts
-        for falsy in ("false", "0", "no", ""):
+        for falsy in ("false", " False ", "0", "no", "off", ""):
             result = json.loads(_action_validate_ship_packet({
                 "body_json": json.dumps(self._packet()),
                 "record_in_ledger": falsy,
@@ -288,7 +289,9 @@ class TestLedgerRecording:
         u = self._setup_universe(tmp_path, monkeypatch)
         from workflow.auto_ship_ledger import read_attempts
         json.loads(_action_validate_ship_packet({
-            "body_json": json.dumps(self._packet(changed_paths=["docs/autoship-canaries/from-packet.md"])),
+            "body_json": json.dumps(self._packet(
+                changed_paths=["docs/autoship-canaries/from-packet.md"],
+            )),
             "record_in_ledger": True,
             "request_id": "REQ-CP",
             "changed_paths_json": json.dumps([
@@ -320,7 +323,6 @@ class TestLedgerRecording:
     def test_ledger_write_failure_surfaces_in_response(self, tmp_path, monkeypatch):
         """If record_attempt raises (e.g. invalid universe), the wrapper
         keeps the validator's decision and surfaces ledger_error."""
-        from pathlib import Path
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
         # No universe directories exist; helper falls back to "default-universe"
@@ -336,7 +338,10 @@ class TestLedgerRecording:
         assert result["validation_result"] == "passed"
         # Plus a clear ledger_error explaining what went wrong
         assert "ledger_error" in result
-        assert "Invalid universe_id" in result["ledger_error"] or "invalid universe_id" in result["ledger_error"]
+        assert (
+            "Invalid universe_id" in result["ledger_error"]
+            or "invalid universe_id" in result["ledger_error"]
+        )
         # And no ship_attempt_id — the write didn't happen
         assert result.get("ship_attempt_id") is None
 
