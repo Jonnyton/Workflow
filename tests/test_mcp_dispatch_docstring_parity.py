@@ -375,6 +375,18 @@ def test_no_orphaned_documented_actions(
     )
 
 
+def test_wiki_docstring_tells_clients_to_file_bug_directly() -> None:
+    """The wiki tool description must not trigger costly filing pre-flight."""
+    doc = us.wiki.__doc__ or ""
+
+    assert "call `file_bug` directly" in doc
+    assert "duplicate detection server-side" in doc
+    assert "do NOT need to search/list/read" in doc
+    assert "status=\"similar_found\"" in doc
+    assert "Start with `action=\"list\"`" not in doc
+    assert "Start with `action=\"read\"`" not in doc
+
+
 @pytest.mark.parametrize("name,handler,dispatch,documented", _PARITY_CASES)
 def test_known_debt_does_not_name_missing_keys(
     name: str, handler, dispatch: set[str], documented: set[str],
