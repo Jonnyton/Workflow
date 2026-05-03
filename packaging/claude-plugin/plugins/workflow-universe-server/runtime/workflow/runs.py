@@ -1658,6 +1658,7 @@ def _invoke_graph(
     provider_call: Callable[..., str] | None,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     concurrency_budget_override: int | None = None,
+    on_node_status: Callable[[str, str], None] | None = None,
 ) -> RunOutcome:
     """Compile + invoke the graph for an already-prepared run_id.
 
@@ -1667,6 +1668,17 @@ def _invoke_graph(
     thread_id = run_id
     execution_cursor = {"step": 0}
     provider_tracker: dict[str, str | None] = {"last": None}
+
+    def _emit_node_status(node_id: str, status: str) -> None:
+        if on_node_status is None:
+            return
+        try:
+            on_node_status(node_id, status)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Run %s node-status callback failed for %s status=%s",
+                run_id, node_id, status,
+            )
 
     # Phase 2 design_used emit (Task #75) — pre-build a graph_node_id ->
     # NodeDefinition lookup so each "ran" event can credit the artifact
@@ -1706,6 +1718,7 @@ def _invoke_graph(
                 started_at=_now(),
                 detail=detail,
             ))
+            _emit_node_status(node_id, NODE_STATUS_RUNNING)
             return
 
         if phase == "failed":
@@ -1734,6 +1747,7 @@ def _invoke_graph(
             finished_at=_now(),
             detail=detail,
         ))
+        _emit_node_status(node_id, NODE_STATUS_RAN)
 
         # Phase 2 design_used emit (Task #75) — credit the NodeDefinition's
         # author for a successful step execution. Fires only at "ran" phase
@@ -1932,6 +1946,10 @@ def _invoke_graph(
                 finished_at=_now(),
                 detail={"reason": "timeout", "message": str(timeout_exc)},
             ))
+            _emit_node_status(
+                _node_id_from_timeout_exc(timeout_exc),
+                NODE_STATUS_FAILED,
+            )
             update_run_status(
                 base_path, run_id,
                 status=RUN_STATUS_FAILED,
@@ -1956,6 +1974,10 @@ def _invoke_graph(
                 finished_at=_now(),
                 detail={"reason": "empty_response", "message": str(empty_exc)},
             ))
+            _emit_node_status(
+                empty_exc.node_id or "(unknown)",
+                NODE_STATUS_FAILED,
+            )
             update_run_status(
                 base_path, run_id,
                 status=RUN_STATUS_FAILED,
@@ -2086,6 +2108,7 @@ def execute_branch(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    on_node_status: Callable[[str, str], None] | None = None,
 ) -> RunOutcome:
     """Synchronous end-to-end execution.
 
@@ -2113,6 +2136,7 @@ def execute_branch(
         provider_call=provider_call,
         recursion_limit=recursion_limit_override or DEFAULT_RECURSION_LIMIT,
         concurrency_budget_override=concurrency_budget_override,
+        on_node_status=on_node_status,
     )
 
 
@@ -2252,6 +2276,7 @@ def _execute_branch_core(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    on_node_status: Callable[[str, str], None] | None = None,
     branch_version_id: str | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
@@ -2290,6 +2315,7 @@ def _execute_branch_core(
                 provider_call=provider_call,
                 recursion_limit=effective_limit,
                 concurrency_budget_override=concurrency_budget_override,
+                on_node_status=on_node_status,
             )
         except Exception:
             # Belt-and-suspenders: _invoke_graph already catches and
@@ -2326,6 +2352,7 @@ def execute_branch_async(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
+    on_node_status: Callable[[str, str], None] | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Prepare a def-based run synchronously and kick off graph execution
@@ -2359,6 +2386,7 @@ def execute_branch_async(
         provider_call=provider_call,
         recursion_limit_override=recursion_limit_override,
         concurrency_budget_override=concurrency_budget_override,
+        on_node_status=on_node_status,
         branch_version_id=None,
         _invocation_depth=_invocation_depth,
     )
@@ -2390,6 +2418,7 @@ def execute_branch_version_async(
     actor: str = "anonymous",
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
+    on_node_status: Callable[[str, str], None] | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Execute a published branch_version snapshot (immutable).
@@ -2446,6 +2475,7 @@ def execute_branch_version_async(
         actor=actor,
         provider_call=provider_call,
         recursion_limit_override=recursion_limit_override,
+        on_node_status=on_node_status,
         branch_version_id=branch_version_id,
         _invocation_depth=_invocation_depth,
     )

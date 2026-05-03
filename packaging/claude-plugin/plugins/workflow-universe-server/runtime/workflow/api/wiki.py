@@ -1389,6 +1389,7 @@ def _wiki_file_bug(
             "workaround": workaround,
         }
         universe_id = _default_universe()
+        universe_path = _universe_dir(universe_id)
         # Pre-write trigger receipt (status=pending). Read canonical branch_def_id
         # from env so the receipt records what we *expected* to invoke even if the
         # enqueue helper rejects.
@@ -1413,7 +1414,7 @@ def _wiki_file_bug(
             request_id = bug_investigation._maybe_enqueue_investigation(
                 bug_id=bug_id,
                 frontmatter=frontmatter,
-                base_path=_universe_dir(universe_id),
+                base_path=universe_path,
                 universe_id=universe_id,
             )
         except Exception as _enq_exc:
@@ -1439,6 +1440,24 @@ def _wiki_file_bug(
                 "status": "queued",
                 "dispatcher_request_id": request_id,
             }
+            try:
+                from workflow.branch_tasks import read_queue
+
+                task = next(
+                    (
+                        t for t in read_queue(universe_path)
+                        if t.branch_task_id == request_id
+                    ),
+                    None,
+                )
+                if task is not None:
+                    investigation["branch_task"] = task.to_dict()
+            except Exception as _queue_exc:  # noqa: BLE001
+                _logger_wiki.warning(
+                    "file_bug investigation task read failed for %s: %s",
+                    bug_id,
+                    _queue_exc,
+                )
             if _receipt is not None:
                 try:
                     _receipt = _tr.mark_queued(
