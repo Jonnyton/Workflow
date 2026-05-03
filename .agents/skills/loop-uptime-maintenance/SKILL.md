@@ -52,7 +52,10 @@ Order matters. Do not skip steps.
 1. **Confirm entry condition.** Run mcp_probe (or equivalent diagnostic). Confirm you're in a real-broken state, not a slow-but-working one.
 2. **Capture incident state.** Take a snapshot of the relevant signals (supervisor_liveness, queue counts, recent activity_log_tail, last successful run). This is the evidence pack the incident log will reference.
 3. **Apply the immediate fix.** This may be host-side (restart supervisor, clear lock, restart daemon) or code-side (ship a patch to main). Whatever's needed to unwedge.
-4. **Verify recovery.** Re-run the diagnostic. Confirm the loop is processing again.
+4. **Verify recovery via canary, not via warning-cleared.** Re-run mcp_probe. Cleared warnings + pending=0 are NECESSARY but NOT SUFFICIENT — that just means the wedge symptom went away, not that the loop can actually process new work. To declare recovery, you must observe a NEW request advance to terminal status (succeeded / failed / cancelled) AFTER the break. Two cases:
+   - **Existing backlog**: watch the queue. If pending tasks were stranded by the wedge, they should advance now. Confirm at least one advances to a terminal status post-break.
+   - **Empty queue**: file a minimal canary patch request through the user-sim path (chatbot → file_bug). The canary should be safe, small, and likely to clear quickly — a wiki-cleanup observation, a docs typo, anything that exercises the dispatcher → daemon → terminal-status pipeline without risk. Do NOT skip the canary step because the queue is empty — empty queue is the ONLY case where you definitely don't have a natural verifier, and that's exactly when you need a synthetic one.
+   Recovery is "we watched a request go through end-to-end after the break" — not "the warning cleared and we crossed our fingers."
 5. **Write the incident log** at `.agents/skills/loop-uptime-maintenance/incidents/<YYYY-MM-DD>-<short-name>.md`. Use the four questions as section headers. Include the evidence snapshot from step 2.
 6. **Identify the substrate improvement** the incident log asks for. File it appropriately:
    - Small + clearly substrate? Push as PR via the standard substrate path.
@@ -70,11 +73,12 @@ The arrow points from this skill toward the self-heal layers. Success is when a 
 
 **Usage count of this skill should trend toward zero over time.** If we apply it twice this month and once next month and zero the month after, we're winning. If we apply it five times this week, the substrate isn't learning fast enough — the gap is in the reflection questions or in our discipline of actually shipping the substrate improvements they identify.
 
-Track usage by counting incident log files. The count is the metric. When it stops growing, the loop has truly become self-healing and this skill has eliminated itself.
+Track usage by counting incident log files. The count is the metric. Each incident log entry must reference its canary advance (request id + final status); incidents without a canary record are not counted as recovered, only as paused. When it stops growing, the loop has truly become self-healing and this skill has eliminated itself.
 
 ## Anti-patterns to avoid
 
 - **Using this skill for slow-but-working failures.** If the user-sim path can still file the bug (even painfully), use that path. This skill is not a shortcut for impatience.
+- **Declaring recovery without a canary advance.** "Warning cleared" is not "loop is processing." A wedged-then-quiet dispatcher can quietly stay quiet under no load, then fail again the moment the next request arrives. The canary step exists because outside-in observability cannot distinguish "healthy and idle" from "broken and idle." Skip it once and you ship the next stress test into a phantom-recovered loop.
 - **Skipping the four questions.** Even when the immediate fix is obvious, the questions are what make the next break less likely. Without them, the skill is just substrate hacking with extra ceremony.
 - **Not shipping the substrate improvement.** The incident log is necessary but not sufficient. If the substrate change identified by question 4 sits in the incident log forever, the skill doesn't compound.
 - **Treating this skill as a permanent feature.** The whole point is that it makes itself obsolete. Don't get attached to it. Celebrate when its incident folder stops growing.

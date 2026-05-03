@@ -47,6 +47,8 @@ Substrate-level fix shipped in this same commit: this incident log + skill frame
 
 ## Verification
 
+**Status (post-skill-update v1.1):** Recovery is NOT confirmed yet by the new canary discipline. Outside-in signals show the wedge symptom cleared (pending=0, no warnings, succeeded count went 20→21 — one of the originally-stuck tasks advanced). But per the updated SKILL.md step 4, that's necessary-not-sufficient. The "watch a NEW post-break request advance to terminal status" condition is pending: a canary filing through user-sim is being prepared as the dedicated 4th tab to verify. This incident log will be updated with the canary's request_id + final status once observed.
+
 Will be confirmed after host-side unwedge. Expected post-recovery state: pending=0 (or pending tasks all freshly queued <120s old), running=0 or small positive, no stuck_pending warning. The pending bug should advance to running, then succeeded — at which point the loop has finally seen its own bug-about-being-broken.
 
 ## Question 1 — How did the loop break this time?
