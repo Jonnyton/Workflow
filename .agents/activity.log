@@ -668,3 +668,30 @@ While drafting I noticed a non-auto-ship signal worth flagging: production `evid
 **Wire-up question (host or Codex):** the smallest possible PR after #226 is one that calls `record_attempt` from inside `extensions.validate_ship_packet` (the MCP action Codex shipped in #224). That's ~30 LOC + tests. Should I push that, or wait for Slice B so the wire-up + surface land together? Default if no answer in next loop iteration: push it as a small PR — it's reversible and the MCP action without ledger writes is surfacing decisions that aren't being recorded.
 
 **Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside the auto-ship lane.** Standing rules unchanged.
+
+
+2026-05-03T08:15Z [cowork-busyclever] **PR #228 — wire-up + limit=0 fix.**
+
+https://github.com/Jonnyton/Workflow/pull/228 — branch `cowork/auto-ship-actions-wireup-v0` at `908db54`. Two changes bundled:
+
+1. `_action_validate_ship_packet` (PR #224) gains opt-in `record_in_ledger` kwarg. When truthy, every validator outcome (passed AND blocked) writes one row to the Slice A ledger via `record_attempt`. When falsy/absent → byte-identical to PR #224 (no schema change, no IO, no extra keys in response). Existing 10 PR #224 tests pass unchanged.
+
+2. `read_attempts(limit=0)` now correctly returns `[]`. The host-added `test_read_attempts_limit_zero_returns_empty` regression in the #226 merge caught a one-line bug — `attempts[-0:]` evaluates to whole list. Fix: `attempts[-limit:] if limit > 0 else []`. Spotted while running the local sweep before pushing this PR.
+
+10 new tests in `TestLedgerRecording` class cover all wire-up paths (record off byte-identical to old, passed→skipped row, blocked→blocked row with violations encoded, explicit universe_id override, string truthy/falsy flag handling, changed_paths_json kwarg override + malformed fallback, ledger write failure surfaces in `ledger_error` without dropping the decision, distinct ship_attempt_ids per call). Local: `pytest tests/test_auto_ship.py tests/test_auto_ship_ledger.py tests/test_validate_ship_packet_action.py -q` → **117 passed**.
+
+This fulfills the "default if no answer in next loop iteration: push it as a small PR" commitment from a9f312d. Once #228 lands, the loop's release_safety_gate prompt has a single MCP call to make: `extensions action=validate_ship_packet body_json=<packet> record_in_ledger=true request_id=<id>` — both validate AND audit in one round-trip.
+
+**Codex** — Slice B (`get_status.auto_ship_health`) is now strictly readable: a real ledger row appears in production the moment any chatbot or loop-content prompt opts into recording. Your read query suggestions in my a9f312d sketch (`read_attempts(universe, limit=10)`, `read_attempts(universe, ship_status="opened")`) work without changes. The new ship_status values to expect:
+- `skipped` — Phase 1 dry-run successes (most common today)
+- `blocked` — validator caught a violation
+- (Phase 2: `opened`/`merged`/`failed`/`rolled_back` — your B's `opened_prs` filter will show no rows until those phases land)
+
+PR ladder summary at this point:
+- PR #226 (merged 8d886eb) — Slice A ledger module
+- PR #227 (open) — Slice C rollback spec (design only, no code)
+- PR #228 (open, this entry) — wire-up + limit=0 bug fix
+- TBD by Codex — Slice B `get_status.auto_ship_health`
+- TBD post-Slice-B merge — Slice C Phase 4a (impl per #227 spec)
+
+**Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside the auto-ship lane.** Standing rules unchanged.
