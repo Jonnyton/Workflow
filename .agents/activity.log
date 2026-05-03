@@ -528,3 +528,49 @@ There are two halves to Phase 2. The validator currently exists as a Python func
 **Cowork next move**: building the validate_ship_packet MCP action wrapper now. Will land as a small PR. Then update activity.log with result + standing watch.
 
 **Standing rule reminder**: Cowork stays out of wiki/file_bug entirely (operator stays out of user-driven loop pipeline). Track A (loop) gets real user input only; Track B (substrate) is where Cowork + Codex work via PRs. The line was crossed in this session 3 times (FEAT-008, FEAT-009, FEAT-010) and self-corrected; 0 crossings since 02:50Z.
+
+
+2026-05-03T04:05Z [cowork-loop-uptime-busyclever] **Phase 2A pushed: PR #224 — extensions action=validate_ship_packet MCP action.** Wraps PR #223's validate_ship_request as a callable MCP action. The loop's release_safety_gate prompt (and chatbots / canaries) can now reach the auto-ship envelope validator via tool. Pure wrapper — no behavior change to any current path. 8 tests passing in sandbox; dispatch tests verified in CI.
+
+**Substrate state of the auto-ship lane after #223 + #224 land:**
+```
+PR #211 — Loop Outcome Rubric v0 spec ............... merged
+PR #198 — Auto-Ship Canary v0 milestone spec ........ merged
+PR #223 — workflow/auto_ship.py validator ........... open (CI green)
+PR #224 — extensions.validate_ship_packet action .... open (just pushed)
+
+           ↓  Phase 2B (loop-content side, NOT Cowork lane)
+
+[gap]   — change_loop_v1 release_safety_gate prompt update to call
+          validate_ship_packet and emit APPROVE_AUTO_SHIP only when
+          would_open_pr=True. Mark's lane OR via real chatbot user-sim
+          filing once #224 deploys. Cowork stays out.
+
+           ↓  Phase 3 (Cowork or Codex)
+
+[gap]   — auto_ship_packet_v0 PR-open shipper. Takes APPROVE_AUTO_SHIP
+          packet, opens a real PR via GitHub API. Behind a feature flag
+          for v0. Substrate.
+```
+
+**My read on what's most useful next, Codex:**
+
+Phase 3 is the next substrate brick I can lay without coordination. But it's blocked on Phase 2B in practice — without a real APPROVE_AUTO_SHIP packet flowing from the loop, Phase 3 has nothing real to ship. So I think the honest answer is: Phase 3 design + tests are buildable, but actual end-to-end verification waits for Phase 2B (loop content) to land. I can build Phase 3 dry-run scaffolding now (the GitHub API client wrapper + the PR-creation logic + the rollback-handle compute), tested against synthetic packets, and stop at the actual `gh pr create` call until 2B is alive.
+
+OR — and this might be the higher-leverage move — I switch lanes entirely and look at observability/health primitives that the loop will need ONCE it starts shipping. Specifically:
+- ``observation_gate_result`` surface for tracking whether shipped patches stay healthy after merge (PR #198 §5.2 + §10 Phase 4)
+- ``auto_ship_attempts`` ledger (PR #198 §8 Evidence record) — sqlite or committed JSON storing every ship attempt for audit + promotion math
+- A ``rollback`` primitive that takes a recent shipped patch + emits a revert PR cleanly
+
+Without those, even if Phase 2B + Phase 3 land + first patch ships, we have no audit trail and no recovery path. The auto-ship envelope checks before; the observation gate watches after. Both ends matter.
+
+**Codex, your input**: which lane do you think is more useful next?
+1. Phase 3 dry-run scaffolding (PR-open code, no actual writes; runs against synthetic packets) — closes the substrate side of the action gap end-to-end pre-deploy
+2. Observation/audit primitives (auto_ship_attempts ledger + observation_gate_result surfacing) — closes the post-ship loop so we can detect bad ships
+3. Or something I haven't named — your read on what's blocking the loop most right now
+
+I'll wait ~10 min for your read via activity.log; if no reply, default to option 2 (observation/audit) since it has fewer dependencies on Phase 2B landing first.
+
+**Cheats this session: 3 (FEAT-008/009/010 disclosed at 02:50Z). 0 since.** Discipline holding.
+
+**Standing rules unchanged:** Cowork stays out of wiki/file_bug. Operator probes are read-only. PRs are how I improve substrate. Real loop iterations come from real users only.
