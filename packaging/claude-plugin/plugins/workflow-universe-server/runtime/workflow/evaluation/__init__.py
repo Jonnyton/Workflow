@@ -16,6 +16,11 @@ from workflow.evaluation.editorial import (
     EditorialNotes,
     read_editorial,
 )
+from workflow.evaluation.loop_rubric import (
+    LoopRubricValidation,
+    RubricViolation,
+    validate_loop_packet,
+)
 from workflow.evaluation.process import (
     ProcessCheck,
     ProcessEvaluation,
@@ -80,10 +85,13 @@ __all__ = [
     "CheckResult",
     "EditorialConcern",
     "EditorialNotes",
+    "LoopRubricValidation",
     "ProcessCheck",
     "ProcessEvaluation",
+    "RubricViolation",
     "StructuralEvaluator",
     "StructuralResult",
     "evaluate_scene_process",
     "read_editorial",
+    "validate_loop_packet",
 ]
