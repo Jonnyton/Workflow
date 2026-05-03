@@ -11,14 +11,11 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from workflow.api.auto_ship_actions import (
     _AUTO_SHIP_ACTIONS,
     _action_validate_ship_packet,
 )
 from workflow.api.extensions import _extensions_impl
-
 
 # ── Wrapper layer (handler-level) ──────────────────────────────────────────
 
@@ -51,6 +48,7 @@ class TestHandlerLayer:
             "release_gate_result": "APPROVE_AUTO_SHIP",
             "ship_class": "docs_canary",
             "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
             "child_score": 9.5,
             "risk_level": "low",
             "blocked_execution_record": {},
@@ -96,6 +94,7 @@ class TestDispatchIntegration:
             "release_gate_result": "APPROVE_AUTO_SHIP",
             "ship_class": "docs_canary",
             "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
             "child_score": 9.5,
             "risk_level": "low",
             "blocked_execution_record": {},
@@ -127,8 +126,6 @@ class TestResilience:
         """Even if validate_ship_request unexpectedly raises, the wrapper
         returns a JSON error dict rather than letting MCP get a 500.
         """
-        from workflow.api import auto_ship_actions as mod
-
         def boom(packet):
             raise RuntimeError("simulated validator failure")
 

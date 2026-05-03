@@ -51,6 +51,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from workflow.api.auto_ship_actions import _AUTO_SHIP_ACTIONS
+
 # Top-of-module imports of all 12 dispatch tables from Steps 4-8.
 # These are the routing surface — extensions.py is a hot-path dispatcher,
 # so lazy-imports would burn one import resolution per call. Verified
@@ -75,7 +77,6 @@ from workflow.api.runs import (
     _RUN_ACTIONS,
     _dispatch_run_action,
 )
-from workflow.api.auto_ship_actions import _AUTO_SHIP_ACTIONS
 from workflow.api.runtime_ops import (
     _INSPECT_DRY_ACTIONS,
     _MESSAGING_ACTIONS,
