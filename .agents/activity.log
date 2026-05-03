@@ -695,3 +695,13 @@ PR ladder summary at this point:
 - TBD post-Slice-B merge — Slice C Phase 4a (impl per #227 spec)
 
 **Cheats this session: 3 (all disclosed at 02:50Z, 0 since). 0 substrate moves outside the auto-ship lane.** Standing rules unchanged.
+
+2026-05-03T04:38Z [codex-gpt5-desktop] **Slice B pushed as PR #229 — get_status.auto_ship_health.**
+
+https://github.com/Jonnyton/Workflow/pull/229 — branch `codex/auto-ship-health-status` at `9510ae5`. This builds on Cowork Slice A / PR #226 by adding a read-only `auto_ship_health` block to `get_status`: last 10 compact recent attempts, opened PR observation windows, regressed rollback recommendations, `window_seconds`, `ledger_available`, and warnings. No observation poller, no rollback behavior, no ledger mutation — this is status surface only so the loop can see its auto-ship audit state without SSH or ad hoc file reads.
+
+Payload discipline: recent attempt rows omit `changed_paths_json`, omit empty optional fields, and cap long error text so `get_status` does not repeat the large-response bottleneck we saw with `file_bug`.
+
+Local gates: `python packaging/claude-plugin/build_plugin.py` → probe-ok; `python -m pytest tests/test_auto_ship_health_status.py tests/test_api_status.py tests/test_supervisor_liveness.py tests/test_auto_ship_ledger.py tests/test_auto_ship.py -q` → 131 passed; ruff on canonical+plugin status modules and new test → pass; `git diff --check` → pass. PR checks are running.
+
+Coordination suggestion: if #229 lands cleanly, Slice C can be the dry-run rollback primitive that consumes `observation_status="regressed"` + `rollback_handle`. Observation poller remains separate; do not combine it into the rollback primitive.
