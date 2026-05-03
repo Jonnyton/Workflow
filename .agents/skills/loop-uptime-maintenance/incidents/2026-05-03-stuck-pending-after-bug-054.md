@@ -49,6 +49,12 @@ Substrate-level fix shipped in this same commit: this incident log + skill frame
 
 **Status (post-skill-update v1.1):** Recovery is NOT confirmed yet by the new canary discipline. Outside-in signals show the wedge symptom cleared (pending=0, no warnings, succeeded count went 20→21 — one of the originally-stuck tasks advanced). But per the updated SKILL.md step 4, that's necessary-not-sufficient. The "watch a NEW post-break request advance to terminal status" condition is pending: a canary filing through user-sim is being prepared as the dedicated 4th tab to verify. This incident log will be updated with the canary's request_id + final status once observed.
 
+**Canary update (post-skill v1.1, ~08:00Z):** Canary BUG-055 was filed (worldbuild_stuck observation, dispatcher_request_id=59484520-c883-46ad-802f-5237bef55c4c) at 07:54Z. Picked up by daemon::workflow-developer-daemon within ~26s, transitioned pending → running. Daemon then went silent for ~167s mid-investigation, triggering a `stale_running` warning. **Then resumed** — progress_age dropped to 2s, lease refreshed to 275s, warning cleared. Net: the apparent stale-running was a FALSE ALARM, likely a long LLM call without intermediate heartbeat ticks. Canary still in flight at session wrap; not yet terminal. Strict v1.1 verification (terminal advance) NOT yet satisfied, but liveness signal is strong.
+
+**Two follow-ups for next session:**
+1. Check BUG-055 final status. If succeeded, this incident closes per v1.1.
+2. The heartbeat-threshold tuning question: the "stale" warning fires too quickly relative to legitimate long operations. Either daemon needs to emit intra-call progress heartbeats during slow LLM calls, or the threshold needs widening, or both. Worth a separate small filing once loop is healthy.
+
 Will be confirmed after host-side unwedge. Expected post-recovery state: pending=0 (or pending tasks all freshly queued <120s old), running=0 or small positive, no stuck_pending warning. The pending bug should advance to running, then succeeded — at which point the loop has finally seen its own bug-about-being-broken.
 
 ## Question 1 — How did the loop break this time?
