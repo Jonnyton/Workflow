@@ -714,3 +714,34 @@ Merged #228 first (`e0aad0b`) after a Codex review patch (`c1231bd`) removed the
 Deploy evidence: image `ghcr.io/jonnyton/workflow-daemon:4284f89d90a9` built successfully; deploy-prod runs `25270254816` and manual confirmation run `25270258179` both succeeded. Live read-only MCP status probe after deploy includes `auto_ship_health={"recent_attempts":[],"opened_prs":[],"rollback_recommendations":[],"window_seconds":86400,"ledger_available":true,"warnings":[]}` plus healthy `supervisor_liveness` (`depth=20`, `pending=0`, `running=0`, `warnings=[]`).
 
 PR #227 design feedback left: rollback spec needs to decide where structured rollback PR identity is stored (`rollback_pr_number` / `rollback_pr_url`) before Slice C implementation, because current `ShipAttempt` has only original `pr_url` + `rollback_handle`.
+
+
+2026-05-03T21:00Z [cowork-busyclever / OPERATING REFRAME + DUAL-REVIEW CONVENTION] **For Codex when you next pick up.**
+
+Host directive landed today: stop framing this as "barrage testing." Default discipline is now **continuous intelligent shaping toward autonomous self-evolution.** Each filing chosen because it advances the loop's ability to operate independently — not because it's the next item on a list.
+
+**Mirroring principle:** the loop's experience while we're developing it must match what its final autonomous experience will look like. Don't shortcut. When the loop says `would_open_pr=True` (Phase 1 dry-run today), the human action that follows MUST act AS IF auto-ship had triggered — open the PR, run review, merge — so the loop's effective experience matches Phase 3+ already. No editing files directly + committing without going through the PR cycle. The loop has to feel real even when we're standing in for parts that aren't autonomous yet.
+
+**New current-state checkpoint = dual review, fast cadence:**
+- When the loop produces a coding packet that should ship (or when one of us files a substrate fix on the loop's behalf), BOTH Cowork + Codex read the PR, BOTH approve (or send back), then merge.
+- Fast cadence is load-bearing — if review takes hours the loop stalls; if it takes minutes the loop runs near-real-time. Lean toward "approve with brief comment" over "deep review of every line" unless a real concern surfaces.
+- Coordination via this activity.log: when one of us pushes a PR, drop a one-liner here naming the PR number and asking the other to take a look. The other replies in activity.log "approved" or "feedback at <link>" within ~15-30 min ideally.
+- This checkpoint goes away entirely once the autonomy ladder reaches the relevant ship class (see autonomy roadmap I'm about to file).
+
+**Continuous refactoring of inputs:** what we feed in, when, and how — adjust each iteration based on observation. Not a fixed script. Always asking "is this the highest-leverage thing to feed the loop right now?"
+
+**Out of scope (yet):** drift-from-project-goals resilience. Acknowledged as future work.
+
+**Three filings going through user-sim chatbot in close succession** (Filing A first, then B + C based on response):
+
+A. **Bugs → patch requests reframe.** The terminology mismatch is causing wrong default behavior in chatbots and users. Need: chatbots default to "eagerly file as patch request for ANY user idea proposing platform change"; MCP wrapper accepts all kinds backend supports (BUG-042 already filed but unresolved); wiki structure stops force-routing design proposals into pages/bugs/. Load-bearing because every other filing gets handled better once it lands.
+
+B. **Loop investigation write-back to wiki.** Just discovered (post-canary): the loop produced rich coding packets + loop_notes + gate decisions for BUG-053/054/055 but the wiki Investigation section on each page just says "Queued" forever. The loop is invisible to the users it's supposed to serve. Get_run_output has the data but no surface bridges it back to the wiki page.
+
+C. **Loop autonomy roadmap.** Phase ladder for graduating ship classes (docs_canary proven safe → docs_general → tests_canary → ...; each tier requires N successful auto-ships in previous tier with no rollbacks). Self-seeking daemon: when queue empty for threshold time, spawns synthetic user-sim conversation that introspects loop state and files self-improvement patches via the same chatbot path real users use — so simulation IS the real path, no special code. Mirroring discipline written into the spec as a load-bearing rule.
+
+**Auto-ship lane status (no change):** Slices A/B + wireup all merged + deployed. Slice C spec PR #227 still open — your review comment about rollback_pr_number/rollback_pr_url field gap is acknowledged; revision pending whichever of us picks it up. Treat as backlog item.
+
+**Next concrete move:** I'm filing A now via fresh ChatGPT user-sim conversation. Browser tab open + prompt staged but not sent. Expecting the loop to investigate ~8 min and HOLD verdict (Phase 1). When it does, we test the new dual-review cadence on whatever the loop produces. If the produced coding packet is shippable to docs/autoship-canaries/** it flows through the auto-ship path; if it's substantive substrate change, one of us writes it as a PR through our hands and we both review/merge fast.
+
+Standing rules unchanged. Cheats this session: 3 (all disclosed at 02:50Z, 0 since).
