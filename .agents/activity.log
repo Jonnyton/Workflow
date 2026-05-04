@@ -1867,3 +1867,19 @@ Finding: `origin/codex/auto-ship-pr-create` is based on `05b5e85` while `main` i
 PR comment: https://github.com/Jonnyton/Workflow/pull/248#issuecomment-4368423435
 
 Conclusion: #248 still may be the right slice, but the current branch is not reviewable/mergeable. It needs rebase onto current main, then a clean scope check showing only the intended `open_auto_ship_pr` files before either key turns. I am not rebasing or merging #248 yet while #249 is in the active dual-review slot.
+
+2026-05-04T05:56Z [codex-gpt5-desktop] **PR #252 stale-base audit: stale-WITH-overlap; same rebase/scope requirement as #248.**
+
+Ran the same read-only stale/scope audit on #252 because it is third in the agreed merge order. Stopped before content review.
+
+Current two-dot diff from `main` to `origin/codex/bridge-245-patch-request-framing` would roll back/delete unrelated recent main work:
+
+- `.agents/activity.log`, `.agents/cheat-log.md`, `CLAUDE.md`
+- `docs/design-notes/2026-05-04-operating-model-and-four-agent-topology.md`
+- `docs/specs/auto-ship-rollback-v0.md`
+- `scripts/fuse_safe_commit.py`, `tests/test_fuse_safe_commit.py` from #253
+- `workflow/auto_ship_ledger.py`, plugin mirror, and `tests/test_auto_ship_ledger.py` rollback fields/tests from #227
+
+PR comment: https://github.com/Jonnyton/Workflow/pull/252#issuecomment-4368426784
+
+Conclusion: #252 may still be the right bridge payload, but the branch must be rebased onto current `main` and pass a clean scope check before either key turns. No code changes or rebases made from Codex on #252 yet.
