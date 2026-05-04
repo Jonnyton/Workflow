@@ -38,8 +38,8 @@ def _call_patch(branch_before, branch_after, changes_json):
     save_mock = MagicMock(return_value=branch_after)
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_before),
-        patch("workflow.daemon_server.save_branch_definition", save_mock),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_before),
+        patch("workflow.author_server.save_branch_definition", save_mock),
         patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):

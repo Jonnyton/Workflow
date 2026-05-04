@@ -2,7 +2,7 @@
 ``workflow/universe_server.py`` (Task #15 — decomp Step 8).
 
 The largest single submodule extracted from the monolith: 17 ``_ext_branch_*``
-handlers, the ``_action_fork_tree`` action
+handlers, the ``_action_continue_branch`` / ``_action_fork_tree`` action
 handlers, the build/patch composite engine (``_ext_branch_build`` /
 ``_ext_branch_patch`` / ``_ext_branch_update_node`` / ``_ext_branch_patch_nodes``),
 the node-spec resolver + apply machinery (``_resolve_node_spec``,
@@ -33,6 +33,7 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     _RELATED_WIKI_CAP              : cap on related-wiki page list
     _dispatch_branch_action        : ledger-aware dispatcher
     _ext_branch_*                  : 15 individual handlers
+    _action_continue_branch        : workspace-memory continuity primitive
     _action_fork_tree              : ancestor + descendant lineage walk
     _resolve_branch_id             : branch-name → branch_def_id resolver
     _resolve_node_spec             : node-spec resolver (node_ref / inline)
@@ -53,7 +54,7 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     _PATCH_NODES_FIELDS            : whitelisted bulk-patch field map
     _split_csv, _coerce_node_keys  : input shape helpers
     _append_global_ledger          : branch-attribution ledger writer
-    _ensure_workflow_db            : lazy SQLite schema bootstrap
+    _ensure_author_server_db       : lazy SQLite schema bootstrap
     _BRANCH_DESIGN_GUIDE           : prompt body markdown
     _branch_design_guide_prompt    : prompt-body accessor for the
                                       universe_server.py @mcp.prompt wrapper
@@ -79,6 +80,7 @@ from typing import Any
 from workflow.api.helpers import (
     _base_path,
     _find_all_pages,
+    _read_json,
     _read_text,
     _universe_dir,
     _wiki_drafts_dir,
@@ -90,15 +92,15 @@ from workflow.api.wiki import (
 )
 from workflow.catalog import CommitFailedError, DirtyFileError
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("universe_server.branches")
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# Community Branches: author/edit BranchDefinition over MCP
+# Phase 2: Community Branches — author/edit BranchDefinition over MCP
 # ───────────────────────────────────────────────────────────────────────────
 # Branches are domain-agnostic graph topologies that live in the same SQLite
 # backing store as the rest of the multiplayer substrate (base_path /
-# .workflow.db, table branch_definitions). Each write action appends to
+# .author_server.db, table branch_definitions). Each write action appends to
 # the global ledger at base_path / "ledger.json" for public attribution —
 # branches are not scoped to a universe, so the ledger target is the global
 # base_path rather than a per-universe directory.
@@ -183,10 +185,10 @@ def _append_global_ledger(
     )
 
 
-def _ensure_workflow_db() -> None:
+def _ensure_author_server_db() -> None:
     """Ensure the shared SQLite schema exists before any branch action runs.
 
-    Branch handlers read/write ``base_path/.workflow.db``. Calling this
+    Branch handlers read/write ``base_path/.author_server.db``. Calling this
     lazily keeps tests and first-use paths from needing a separate init step.
     """
     from workflow.daemon_server import initialize_author_server
@@ -207,7 +209,7 @@ def _dispatch_branch_action(
     """
     from workflow.api.engine_helpers import _format_dirty_file_conflict, _truncate
 
-    _ensure_workflow_db()
+    _ensure_author_server_db()
     try:
         result_str = handler(kwargs)
     except DirtyFileError as exc:
@@ -412,7 +414,6 @@ def _ext_branch_list(kwargs: dict[str, Any]) -> str:
             "domain_id": r.get("domain_id"),
             "goal_id": r.get("goal_id"),
             "node_count": node_count,
-            "skill_count": len(r.get("skills", []) or []),
             "published": r.get("published", False),
             "visibility": r.get("visibility", "public"),
             "has_sandbox_nodes": has_sandbox_nodes,
@@ -1180,8 +1181,6 @@ def _resolve_node_spec(
                 "on this spec if you intentionally want the existing "
                 "body, or rename this node to avoid collision."
             )
-    raw = dict(raw)
-    raw.pop("approved", None)
     return raw, ""
 
 
@@ -1219,7 +1218,6 @@ def _lookup_node_body(
             "source_code": hit.get("source_code", ""),
             "prompt_template": hit.get("prompt_template", ""),
             "author": hit.get("author", ""),
-            "approved": bool(hit.get("approved", False)),
         }, ""
 
     # Otherwise treat `source` as a branch_def_id.
@@ -1246,7 +1244,6 @@ def _lookup_node_body(
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
                 "author": nd.get("author", ""),
-                "approved": bool(nd.get("approved", False)),
             }, ""
     return {}, (
         f"node '{node_id}' not found on branch '{source}'. "
@@ -1283,22 +1280,6 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
     out_keys, err = _coerce_node_keys(raw.get("output_keys"), "output_keys")
     if err:
         return err
-    # BUG-045: thread the three sub-branch / sibling-run spec fields. The
-    # compiler reads them (workflow/graph_compiler.py:_build_invoke_branch /
-    # invoke_branch_version / await_run callables) and NodeDefinition
-    # declares them (workflow/branches.py:267/285/294), but this authoring
-    # plumbing was silently dropping the keys — callers got a node that
-    # validated fine but ran as a no-op prompt-template. Mutual exclusivity
-    # is enforced in BranchDefinition.validate(); we accept whatever the
-    # caller provided and let validate() catch invalid combinations.
-    invoke_branch = raw.get("invoke_branch_spec")
-    invoke_branch_version = raw.get("invoke_branch_version_spec")
-    await_run = raw.get("await_run_spec")
-    invoke_branch_arg = invoke_branch if isinstance(invoke_branch, dict) else None
-    invoke_branch_version_arg = (
-        invoke_branch_version if isinstance(invoke_branch_version, dict) else None
-    )
-    await_run_arg = await_run if isinstance(await_run, dict) else None
     try:
         node = NodeDefinition(
             node_id=nid,
@@ -1310,10 +1291,6 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             source_code=source_code,
             prompt_template=prompt_template,
             author=raw.get("author") or _current_actor(),
-            approved=bool(raw.get("approved", False)),
-            invoke_branch_spec=invoke_branch_arg,
-            invoke_branch_version_spec=invoke_branch_version_arg,
-            await_run_spec=await_run_arg,
         )
     except ValueError as exc:
         return str(exc)
@@ -1403,7 +1380,7 @@ def _staged_branch_from_spec(
     spec: dict[str, Any],
 ) -> tuple[Any, list[str]]:
     from workflow.api.engine_helpers import _current_actor
-    from workflow.branches import BranchDefinition, normalize_branch_skill_snapshots
+    from workflow.branches import BranchDefinition
 
     errors: list[str] = []
     branch = BranchDefinition(
@@ -1413,14 +1390,8 @@ def _staged_branch_from_spec(
         goal_id=(spec.get("goal_id") or "").strip(),
         author=(spec.get("author") or _current_actor()),
         tags=list(spec.get("tags") or []),
-        skills=[],
         fork_from=spec.get("fork_from") or None,
     )
-
-    try:
-        branch.skills = normalize_branch_skill_snapshots(spec.get("skills") or [])
-    except ValueError as exc:
-        errors.append(str(exc))
 
     for idx, raw in enumerate(spec.get("node_defs") or spec.get("nodes") or []):
         err = _apply_node_spec(branch, raw)
@@ -1455,7 +1426,6 @@ def _build_branch_text(branch: Any, *, truncated: bool) -> str:
     head = (
         f"**Built branch '{branch.name or 'unnamed'}'**: "
         f"{node_count} nodes, {edge_count} edges, "
-        f"{len(getattr(branch, 'skills', []) or [])} skills, "
         f"entry=`{branch.entry_point}`."
     )
     if truncated:
@@ -1562,7 +1532,6 @@ def _ext_branch_build(kwargs: dict[str, Any]) -> str:
         "name": persisted.name,
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
-        "skill_count": len(persisted.skills),
         "entry_point": persisted.entry_point,
         "validation_summary": "ok",
     }
@@ -1687,63 +1656,6 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.output_keys = keys
                 return ""
         return f"update_node: node '{nid}' not found"
-    if name == "add_skill":
-        from workflow.branches import normalize_branch_skill_snapshot
-
-        raw_skill = op.get("skill") if isinstance(op.get("skill"), dict) else op
-        try:
-            skill = normalize_branch_skill_snapshot(raw_skill)
-        except ValueError as exc:
-            return str(exc)
-        if any(s.get("skill_id") == skill["skill_id"] for s in branch.skills):
-            return f"skill '{skill['skill_id']}' already exists"
-        branch.skills.append(skill)
-        return ""
-    if name == "update_skill":
-        from workflow.branches import normalize_branch_skill_snapshot
-
-        skill_id = (op.get("skill_id") or op.get("id") or "").strip()
-        if not skill_id:
-            return "update_skill requires skill_id"
-        for idx, existing in enumerate(branch.skills):
-            if existing.get("skill_id") != skill_id:
-                continue
-            merged = dict(existing)
-            update_payload = (
-                op.get("skill") if isinstance(op.get("skill"), dict) else op
-            )
-            for key, value in update_payload.items():
-                if key != "op":
-                    merged[key] = value
-            merged["skill_id"] = skill_id
-            try:
-                branch.skills[idx] = normalize_branch_skill_snapshot(merged)
-            except ValueError as exc:
-                return str(exc)
-            return ""
-        return f"update_skill: skill '{skill_id}' not found"
-    if name == "remove_skill":
-        skill_id = (op.get("skill_id") or op.get("id") or "").strip()
-        if not skill_id:
-            return "remove_skill requires skill_id"
-        before = len(branch.skills)
-        branch.skills = [
-            skill for skill in branch.skills
-            if skill.get("skill_id") != skill_id
-        ]
-        if len(branch.skills) == before:
-            return f"remove_skill: skill '{skill_id}' not found"
-        return ""
-    if name == "set_skills":
-        from workflow.branches import normalize_branch_skill_snapshots
-
-        if "skills" not in op:
-            return "set_skills requires a skills list"
-        try:
-            branch.skills = normalize_branch_skill_snapshots(op.get("skills"))
-        except ValueError as exc:
-            return str(exc)
-        return ""
     # Branch-level metadata ops (#67). These let patch_branch rename /
     # retag / redescribe / publish a branch atomically, without the
     # previous delete-and-rebuild workaround that lost run history and
@@ -1929,7 +1841,6 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "entry_point": persisted.entry_point,
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
-        "skill_count": len(persisted.skills),
         "visibility": persisted.visibility,
     }
 
@@ -1937,7 +1848,7 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
     text_lines = [
         f"**Patched branch '{persisted.name}'**: applied {len(changes)} op(s). "
         f"{len(persisted.node_defs)} nodes, {len(persisted.edges)} edges, "
-        f"{len(persisted.skills)} skills, entry=`{persisted.entry_point}`.",
+        f"entry=`{persisted.entry_point}`.",
     ]
     if patched_fields:
         text_lines += ["", f"Changed fields: {', '.join(patched_fields)}."]
@@ -1956,7 +1867,6 @@ def _ext_branch_patch(kwargs: dict[str, Any]) -> str:
         "ops_applied": len(changes),
         "node_count": len(persisted.node_defs),
         "edge_count": len(persisted.edges),
-        "skill_count": len(persisted.skills),
         "patched_fields": patched_fields,
         "name_updated": name_updated,
         "new_name": persisted.name,
@@ -2024,36 +1934,6 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             updates["input_keys"] = kwargs["input_keys"]
         if kwargs.get("output_keys"):
             updates["output_keys"] = kwargs["output_keys"]
-        # BUG-045: same plumbing fix as _apply_node_spec for the
-        # update_node write path. update_node has its own kwargs-merge
-        # logic and writes through save_branch_definition without
-        # routing through _apply_node_spec. Each spec-bearing field can
-        # arrive as a JSON-encoded string (kwargs-only callers can't
-        # send raw dicts) or as a dict (changes_json path).
-        for field in (
-            "invoke_branch_spec",
-            "invoke_branch_version_spec",
-            "await_run_spec",
-        ):
-            raw_val = kwargs.get(field)
-            if not raw_val:
-                continue
-            if isinstance(raw_val, dict):
-                updates[field] = raw_val
-            elif isinstance(raw_val, str):
-                try:
-                    decoded = json.loads(raw_val)
-                except json.JSONDecodeError as exc:
-                    return json.dumps({
-                        "status": "rejected",
-                        "error": f"{field} is not valid JSON: {exc}",
-                    })
-                if not isinstance(decoded, dict):
-                    return json.dumps({
-                        "status": "rejected",
-                        "error": f"{field} must decode to an object.",
-                    })
-                updates[field] = decoded
 
     if not updates:
         return json.dumps({
@@ -2137,22 +2017,6 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             if err:
                 return json.dumps({"status": "rejected", "error": err})
             target_node.output_keys = keys
-        # BUG-045: thread the three spec fields onto target_node. Mutual
-        # exclusivity vs prompt_template / source_code is enforced by
-        # BranchDefinition.validate() at compile time; we accept what
-        # the caller asked for and let validate() catch invalid combos.
-        for spec_field in (
-            "invoke_branch_spec",
-            "invoke_branch_version_spec",
-            "await_run_spec",
-        ):
-            if spec_field in updates:
-                val = updates[spec_field]
-                setattr(
-                    target_node,
-                    spec_field,
-                    val if isinstance(val, dict) else None,
-                )
     except Exception as exc:
         return json.dumps({
             "status": "rejected",
@@ -2413,7 +2277,7 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
             ),
         })
 
-    _ensure_workflow_db()
+    _ensure_author_server_db()
     try:
         source = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -2492,7 +2356,7 @@ def _ext_branch_patch_nodes(kwargs: dict[str, Any]) -> str:
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# Branch lineage helpers
+# continue_branch — workspace-memory continuity primitive
 # ───────────────────────────────────────────────────────────────────────────
 
 
@@ -2511,6 +2375,206 @@ def _resolve_udir() -> Path:
     except Exception:  # noqa: BLE001
         pass
     return _base_path()
+
+
+def _action_continue_branch(kwargs: dict[str, Any]) -> str:
+    """Read-only composite that returns everything a chatbot needs to resume work.
+
+    Composes: branch metadata, last-5 run records, open notes (branch-scoped),
+    current daemon phase, session_boundary block.  Zero writes — safe to call
+    on every session open.
+
+    Spec: docs/vetted-specs.md §continue_branch
+    """
+    from workflow.daemon_server import get_branch_definition
+    from workflow.runs import initialize_runs_db, query_runs
+
+    bid = (kwargs.get("branch_def_id") or "").strip()
+    if not bid:
+        return json.dumps({"error": "branch_def_id is required."})
+
+    base = _base_path()
+
+    # ── 1. Branch metadata ───────────────────────────────────────────────────
+    try:
+        branch = get_branch_definition(base, branch_def_id=bid)
+    except KeyError:
+        return json.dumps({
+            "error": (
+                f"Branch '{bid}' not found. "
+                "Use extensions action=build_branch to create it first."
+            ),
+        })
+
+    branch_name: str = branch.get("name") or bid
+    description: str = branch.get("description") or ""
+    last_modified_at: str | None = branch.get("last_modified_at") or branch.get("updated_at")
+
+    # ── 2. Run history (last 5, most recent first) ───────────────────────────
+    initialize_runs_db(base)
+    run_result = query_runs(
+        base,
+        branch_def_id=bid,
+        filters={},
+        select=[],
+        limit=5,
+    )
+    run_rows: list[dict[str, Any]] = run_result.get("rows", [])
+    run_history = [
+        {
+            "run_id": r.get("run_id"),
+            "status": r.get("status"),
+            "actor": r.get("actor"),
+            "started_at": r.get("started_at"),
+            "finished_at": r.get("finished_at"),
+        }
+        for r in run_rows
+    ]
+
+    # ── 3. Open notes scoped to this branch (last 10) ───────────────────────
+    # notes.json lives in the active universe dir.  Scope = notes whose
+    # "target_id" or "branch_def_id" field matches bid, or that have no
+    # target (universe-global user/editor/structural notes are included).
+    udir = _resolve_udir()
+    raw_notes = _read_json(udir / "notes.json")
+    open_notes: list[dict[str, Any]] = []
+    if raw_notes and isinstance(raw_notes, list):
+        wanted_types = {"user", "editor", "structural"}
+        for n in raw_notes:
+            nt = n.get("note_type") or n.get("type") or ""
+            if nt not in wanted_types:
+                continue
+            # Branch-scoped notes or universe-global notes (no branch_def_id field).
+            note_bid = n.get("branch_def_id") or n.get("target_id") or ""
+            if note_bid and note_bid != bid:
+                continue
+            open_notes.append({
+                "note_id": n.get("note_id") or n.get("id"),
+                "note_type": nt,
+                "text": (n.get("text") or "")[:500],
+                "timestamp": n.get("timestamp"),
+            })
+        open_notes = open_notes[-10:]
+
+    # ── 4. Current daemon phase (best-effort, never raises) ─────────────────
+    # Check if any run for this branch is currently in "running" state.
+    current_phase: str | None = None
+    try:
+        active_result = query_runs(
+            base,
+            branch_def_id=bid,
+            filters={"status": "running"},
+            select=[],
+            limit=1,
+        )
+        active_rows = active_result.get("rows", [])
+        if active_rows:
+            current_phase = active_rows[0].get("status")
+    except Exception:  # noqa: BLE001
+        pass
+
+    # ── 5. session_boundary (same logic as get_status) ───────────────────────
+    account_user = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    prior_session_ts: str | None = None
+    try:
+        import re as _re
+        log_path = udir / "activity.log"
+        if log_path.exists():
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for line in reversed(lines[-200:]):
+                if account_user in line:
+                    m = _re.match(r"\[(\d{4}-\d{2}-\d{2}[^\]]*)\]", line)
+                    if m:
+                        prior_session_ts = m.group(1)
+                        break
+    except Exception:  # noqa: BLE001
+        pass
+
+    prior_session_available: bool = prior_session_ts is not None
+    if prior_session_available:
+        session_boundary = {
+            "prior_session_context_available": True,
+            "account_user": account_user,
+            "last_session_ts": prior_session_ts,
+            "note": (
+                f"Activity log contains entries for '{account_user}'. "
+                "Prior session context may be available."
+            ),
+        }
+    else:
+        session_boundary = {
+            "prior_session_context_available": False,
+            "account_user": account_user,
+            "last_session_ts": None,
+            "note": (
+                f"No activity log entries found for '{account_user}'. "
+                "Chatbot has no prior session record — do not assert prior session context."
+            ),
+        }
+
+    # ── 6. chatbot_summary (pre-composed, anti-hallucination) ───────────────
+    run_count = len(run_history)
+    completed = sum(1 for r in run_history if r.get("status") == "completed")
+    note_count = len(open_notes)
+
+    if prior_session_available:
+        session_line = f"Last session recorded: {prior_session_ts}."
+    else:
+        session_line = (
+            "No prior session history is recorded — this may be your first time "
+            "running this branch, or context was not captured."
+        )
+
+    if run_count == 0:
+        progress_line = "No runs have been recorded for this branch yet."
+    else:
+        last_run = run_history[0]
+        progress_line = (
+            f"{run_count} run(s) on record; {completed} completed. "
+            f"Most recent run: status={last_run.get('status')}, "
+            f"started {last_run.get('started_at')}."
+        )
+
+    if current_phase:
+        phase_line = f"Current daemon phase: {current_phase}."
+    else:
+        phase_line = ""
+
+    if note_count == 0:
+        notes_line = "No open notes."
+    elif note_count <= 2:
+        quoted = "; ".join(
+            f'"{n["text"][:120]}"' for n in open_notes if n.get("text")
+        )
+        notes_line = f"{note_count} open note(s): {quoted}"
+    else:
+        notes_line = f"{note_count} open notes (use list_canon or inspect to see all)."
+
+    parts = [
+        f"Branch: {branch_name!r}.",
+        session_line,
+        progress_line,
+    ]
+    if phase_line:
+        parts.append(phase_line)
+    parts.append(notes_line)
+    chatbot_summary = " ".join(p for p in parts if p)
+
+    return json.dumps(
+        {
+            "branch_def_id": bid,
+            "branch_name": branch_name,
+            "description": description,
+            "last_modified_at": last_modified_at,
+            "run_history": run_history,
+            "open_notes": open_notes,
+            "current_phase": current_phase,
+            "session_boundary": session_boundary,
+            "prior_session_available": prior_session_available,
+            "chatbot_summary": chatbot_summary,
+        },
+        default=str,
+    )
 
 
 def _action_fork_tree(kwargs: dict[str, Any]) -> str:
@@ -2594,6 +2658,7 @@ _BRANCH_ACTIONS: dict[str, Any] = {
     "patch_nodes": _ext_branch_patch_nodes,
     "update_node": _ext_branch_update_node,
     "search_nodes": _ext_branch_search_nodes,
+    "continue_branch": _action_continue_branch,
     "fork_tree": _action_fork_tree,
 }
 
@@ -2673,14 +2738,6 @@ extensions action=build_branch spec_json='{
   "name": "Recipe tracker",
   "description": "Capture, categorize, archive recipes",
   "entry_point": "capture",
-  "skills": [
-    {
-      "name": "Kitchen-note style",
-      "body": "Keep notes terse, ingredient-focused, and reversible.",
-      "source_url": "https://example.com/skill.md",
-      "source_note": "User asked to copy this from a public post."
-    }
-  ],
   "node_defs": [
     {"node_id": "capture", "display_name": "Capture raw recipe",
      "prompt_template": "Read the user's message and extract recipe name."},
@@ -2706,16 +2763,6 @@ extensions action=build_branch spec_json='{
 If validation fails, `build_branch` returns concrete `suggestions` with
 proposed fixes — apply them and retry. No partial branch is ever visible.
 
-## Branch skills
-
-When the user wants to create a skill, remix one, or copy one they found
-elsewhere, attach it to the Branch as a `skills` snapshot. A skill is
-Branch context, not executable code. It must include `name` and `body`;
-include `source_url`, `source_note`, `parent_skill_id`, `license`,
-`version`, `tags`, or `metadata` when the user gives that provenance.
-Do not write skill text to the wiki as a workaround when the user wants
-the Branch to carry it.
-
 ## Editing an existing workflow (PREFERRED)
 
 Use `patch_branch` with a batch of ops. Transactional — all land or none:
@@ -2728,10 +2775,7 @@ extensions action=patch_branch branch_def_id=... changes_json='[
   {"op": "add_edge", "from": "categorize", "to": "novelty_check"},
   {"op": "add_edge", "from": "novelty_check", "to": "archive"},
   {"op": "remove_edge", "from": "categorize", "to": "archive"},
-  {"op": "add_state_field", "name": "novelty_score", "type": "float"},
-  {"op": "add_skill",
-   "skill": {"name": "Review checklist",
-             "body": "Check tests, code shape, and live proof."}}
+  {"op": "add_state_field", "name": "novelty_score", "type": "float"}
 ]'
 ```
 

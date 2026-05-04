@@ -85,7 +85,7 @@ jobs:
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>&1; \
                echo '---'; \
-               docker compose -f /opt/workflow/compose.yml ps 2>&1 | head -20; \
+               docker compose -f /opt/workflow/deploy/compose.yml ps 2>&1 | head -20; \
                echo '--- journalctl workflow-daemon ---'; \
                journalctl -u workflow-daemon --no-pager -n 80 2>&1 || true; \
                echo '--- df -h ---'; \
@@ -126,12 +126,9 @@ jobs:
       #   unknown              — generic compose restart (legacy behavior)
       - name: Classify outage
         id: classify
-        env:
-          DIAG: ${{ steps.prediag.outputs.diag }}
         run: |
-          diag_file="$(mktemp)"
-          printf '%s' "$DIAG" > "$diag_file"
-          result=$(python scripts/triage_classify.py --input-file "$diag_file")
+          result=$(printf '%s' "${{ steps.prediag.outputs.diag }}" \
+              | python scripts/triage_classify.py)
           echo "classifier output: ${result}"
           klass=$(printf '%s' "${result}" | python -c "import json,sys; print(json.load(sys.stdin)['class'])")
           auto=$(printf '%s' "${result}" | python -c "import json,sys; print(str(json.load(sys.stdin)['auto_repairable']).lower())")
@@ -174,7 +171,7 @@ jobs:
           echo "::notice::OOM detected — compose restart (no memory ratchet)"
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "docker compose -f /opt/workflow/compose.yml \
+              "docker compose -f /opt/workflow/deploy/compose.yml \
                  --env-file /etc/workflow/env \
                  restart daemon" 2>&1
 
@@ -372,7 +369,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "docker compose -f /opt/workflow/compose.yml \
+              "docker compose -f /opt/workflow/deploy/compose.yml \
                  --env-file /etc/workflow/env \
                  up -d --force-recreate daemon" 2>&1
           echo "restart_attempted=true" >> "$GITHUB_OUTPUT"

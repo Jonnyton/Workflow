@@ -132,12 +132,6 @@ def test_restart_uses_env_file():
     assert "--env-file /etc/workflow/env" in _text()
 
 
-def test_triage_uses_live_systemd_compose_file():
-    text = _text()
-    assert "/opt/workflow/compose.yml" in text
-    assert "/opt/workflow/deploy/compose.yml" not in text
-
-
 # ---------------------------------------------------------------------------
 # (f) Re-probe uses canonical URL
 # ---------------------------------------------------------------------------
@@ -153,20 +147,6 @@ def test_reprobe_step_present():
     reprobe_steps = [s for s in steps if "probe" in (s.get("name") or "").lower()
                      and "pre" not in (s.get("name") or "").lower()]
     assert reprobe_steps, "must have a re-probe step after restart"
-
-
-def test_classifier_step_does_not_inline_multiline_diag_in_bash():
-    steps = _steps(_load())
-    step = next(s for s in steps if s.get("id") == "classify")
-    run = step.get("run", "")
-    env = step.get("env", {})
-
-    assert "steps.prediag.outputs.diag" not in run, (
-        "raw diagnostics must not be interpolated into bash; multiline log "
-        "content can contain shell syntax and break auto-triage"
-    )
-    assert env.get("DIAG") == "${{ steps.prediag.outputs.diag }}"
-    assert "--input-file" in run
 
 
 # ---------------------------------------------------------------------------

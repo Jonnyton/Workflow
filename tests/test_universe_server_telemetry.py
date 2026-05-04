@@ -33,7 +33,7 @@ import workflow.api.universe as us
 def universe_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     return base
 
 
@@ -171,26 +171,6 @@ def test_last_activity_falls_back_to_status_last_updated(
     udir = _make_universe(universe_base, "u", status=status)
     got = us._last_activity_at(udir, status)
     assert got == "2026-04-05T12:00:00+00:00"
-
-
-def test_last_activity_uses_runtime_status_heartbeat(
-    universe_base: Path,
-) -> None:
-    udir = _make_universe(
-        universe_base, "u",
-        status={"current_phase": "x", "last_updated": "2026-04-01T00:00:00+00:00"},
-        activity_age_hours=2,
-    )
-    runtime_status = udir / ".runtime_status.json"
-    runtime_status.write_text("{}", encoding="utf-8")
-
-    got = us._last_activity_at(
-        udir, json.loads((udir / "status.json").read_text()),
-    )
-    assert got is not None
-    ts = datetime.fromisoformat(got)
-    age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
-    assert age_seconds < 60
 
 
 def test_last_activity_returns_none_for_untouched_universe(

@@ -1,6 +1,6 @@
 """#62 Part B: cross-branch + cross-Goal node reuse discovery MCP surface.
 
-Pairs with #62 Part A (daemon_server helpers) and #66 (node_ref /
+Pairs with #62 Part A (author_server helpers) and #66 (node_ref /
 intent primitives). Part A gave us the query helpers; Part B wires
 them to MCP so Claude.ai can actually reach them.
 
@@ -28,7 +28,7 @@ import pytest
 def ext_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     from workflow import universe_server as us
 

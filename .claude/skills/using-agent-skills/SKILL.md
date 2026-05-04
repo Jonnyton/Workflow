@@ -26,13 +26,13 @@ Task arrives
     |-- Vague idea / need refinement? ---------------> idea-refine
     |-- Domain terms drifting / overloaded? ---------> ubiquitous-language
     |-- Need to challenge plan vs domain model? -----> domain-model
-    |-- Old/classic game design or proof? -----------> classic-game-design-test
     |-- Architecture or modularity audit? -----------> improve-codebase-architecture
     |-- New feature / change with no spec? ----------> spec-driven-development
     |-- Have a spec, need tasks? --------------------> planning-and-task-breakdown
     |-- Implementing code? --------------------------> incremental-implementation
-    |   |-- Website edit / preview loop? -----------> website-editing
     |   |-- UI work? --------------------------------> frontend-ui-engineering
+    |   |-- Game or interactive prototype? ----------> game-prototyping
+    |   |-- Workflow website edit? ------------------> website-editing
     |   |-- API / interface work? -------------------> api-and-interface-design
     |   |-- Mostly simplification / clarity? --------> code-simplification
     |   `-- Need better context loaded? -------------> context-engineering
@@ -51,7 +51,8 @@ Task arrives
     |-- GoDaddy domain / DNS / site ops? ------------> godaddy-ops
     |-- Writing docs or rationale? ------------------> documentation-and-adrs
     |-- Deploying or launching? ---------------------> shipping-and-launch
-    `-- Agent-team behavior needs tuning? -----------> team-iterate
+    |-- Agent-team behavior needs tuning? -----------> team-iterate
+    `-- Recurring agent behavior failure? ----------> auto-iterate
 ```
 
 ## Rules
@@ -142,13 +143,13 @@ Not every task needs every step. Bug triage might be:
 | Define | idea-refine | Refine ideas through structured divergence and convergence |
 | Define | ubiquitous-language | Harden domain terms and remove naming drift |
 | Define | domain-model | Stress-test a plan against concepts, invariants, and boundaries |
-| Define | classic-game-design-test | Design and prove old-game experiences without silently substituting remakes |
 | Define | spec-driven-development | Write requirements and acceptance criteria before code |
 | Plan | planning-and-task-breakdown | Decompose work into small verifiable tasks |
 | Build | incremental-implementation | Ship thin vertical slices |
-| Build | website-editing | Edit the Workflow website with its preview and ship loop |
 | Build | context-engineering | Load the right context at the right time |
 | Build | frontend-ui-engineering | Build production-quality user interfaces |
+| Build | game-prototyping | Build playable games and game-like prototypes with asset and archetype discipline |
+| Build | website-editing | Apply Workflow site preview, live-feed, affordance, and ship-loop conventions |
 | Build | api-and-interface-design | Design stable interfaces and contracts |
 | Build | code-simplification | Simplify working code without changing behavior |
 | Build | improve-codebase-architecture | Find and fix weak module boundaries |
@@ -169,3 +170,4 @@ Not every task needs every step. Bug triage might be:
 | Ops | godaddy-ops | Operate GoDaddy domain and site surfaces |
 | Meta | skill-authoring | Create or update project-local skills correctly |
 | Meta | team-iterate | Improve agent-team definitions and launch prompts |
+| Meta | auto-iterate | Ratchet recurring agent behavior failures into stronger prevention |

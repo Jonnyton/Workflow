@@ -9,7 +9,6 @@ Covers:
 """
 from __future__ import annotations
 
-from scripts import disk_autoprune
 from scripts.disk_autoprune import check
 
 
@@ -59,31 +58,6 @@ class TestAboveThreshold:
         )
         assert rc == 0
         assert prune_calls == [True]
-
-    def test_default_reclaim_runs_system_prune_builder_prune_and_journal(self, monkeypatch):
-        calls: list[list[str]] = []
-
-        class Proc:
-            returncode = 0
-            stdout = "ok"
-            stderr = ""
-
-        def fake_run(args, **_kwargs):
-            calls.append(args)
-            return Proc()
-
-        monkeypatch.setattr(disk_autoprune.subprocess, "run", fake_run)
-
-        rc, stdout, stderr = disk_autoprune._host_disk_reclaim()
-
-        assert rc == 0
-        assert stderr == ""
-        assert "docker system prune -af" in stdout
-        assert calls == [
-            ["docker", "system", "prune", "-af"],
-            ["docker", "builder", "prune", "-af"],
-            ["journalctl", "--vacuum-time=3d"],
-        ]
 
     def test_prune_invoked_well_above(self):
         prune_calls: list[bool] = []

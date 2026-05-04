@@ -68,7 +68,7 @@ def universe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     base = tmp_path / "output"
     uid = "test-uni"
     (base / uid).mkdir(parents=True)
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", uid)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "test-user")
     return uid
@@ -94,11 +94,6 @@ def test_write_actions_table_is_exhaustive() -> None:
         "subscribe_goal", "unsubscribe_goal", "post_to_goal_pool",
         "submit_node_bid",  # Phase G
         "set_tier_config",  # Phase H
-        "daemon_create", "daemon_summon", "daemon_banish",
-        "daemon_pause", "daemon_resume", "daemon_restart",
-        "daemon_update_behavior",
-        "daemon_memory_capture", "daemon_memory_review",
-        "daemon_memory_promote",
     }
     assert set(us.WRITE_ACTIONS.keys()) == expected
 
@@ -232,7 +227,7 @@ def test_actor_defaults_to_anonymous_without_env(
 ) -> None:
     base = tmp_path / "output"
     (base / "u").mkdir(parents=True)
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "u")
     monkeypatch.delenv("UNIVERSE_SERVER_USER", raising=False)
 

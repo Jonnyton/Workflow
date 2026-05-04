@@ -1,66 +1,57 @@
 ---
 status: active
-updated_on: 2026-05-01
 ---
 
-# Run-Branch Resume-From Fixture Pack (Post-#18)
+# Recency + Continue Primitives Fixture Pack (Post-#18)
 
 **Date:** 2026-04-27
-**Updated:** 2026-05-01
 **Author:** codex-gpt5-desktop
-**Purpose:** eliminate test-data design time once the `workflow/api/runs.py`
-lock clears for the accepted `extensions action=run_branch
-resume_from=<run_id>` implementation.
+**Purpose:** eliminate test-data design time once `workflow/api/runs.py` lock clears.
 
-## 1. Canonical Fixture Datasets
+## 1. Canonical fixture datasets
 
 Create reusable fixtures in `tests/fixtures/`:
 
-1. `runs_resume_from_source_catalog.json`
-   - valid source run id owned by actor `alice`
+1. `runs_recent_mixed_authors.json`
+   - 12 runs total
+   - 7 for actor `alice`
+   - 5 for actor `bob`
+   - interleaved timestamps
+
+2. `goals_recent_mixed_authors.json`
+   - 9 goals total
+   - mixed ownership + creation times
+
+3. `runs_continue_source_catalog.json`
+   - valid source run ids
    - missing run id case
-   - cross-user run id owned by actor `bob`
-   - invalid-state source run case
+   - cross-user run id case
 
-2. `runs_resume_from_context.json`
-   - source branch id
-   - target branch id
-   - frozen source inputs
-   - minimal checkpoint/artifact references supported by the current run model
-
-3. `runs_resume_from_branch_mismatch.json`
-   - source run whose continuation context cannot apply to the requested target
-     branch
-   - expected validation reason
-
-## 2. Golden Response Snapshots
+## 2. Golden response snapshots
 
 Expected payloads for stable assertions:
 
-- `expected_run_branch_resume_from_success.json`
-- `expected_run_branch_resume_from_not_found.json`
-- `expected_run_branch_resume_from_forbidden.json`
-- `expected_run_branch_resume_from_invalid_state.json`
-- `expected_run_branch_resume_from_branch_mismatch.json`
+- `expected_my_recent_runs_limit_5_alice.json`
+- `expected_my_recent_goals_limit_5_alice.json`
+- `expected_continue_branch_success.json`
+- `expected_continue_branch_not_found.json`
+- `expected_continue_branch_forbidden.json`
 
-## 3. Determinism Rules
+## 3. Determinism rules
 
 - Freeze timestamps to fixed ISO values.
-- Freeze source and target ids.
-- Keep copied input ordering stable.
-- Keep validation messages stable enough for exact substring assertions.
+- Name-sort tiebreaker for equal timestamps.
+- Stable ordering required in all expected snapshots.
 
-## 4. Test Mapping
+## 4. Test mapping
 
-- `test_run_branch_resume_from_preserves_default_run_branch_behavior`
-- `test_run_branch_resume_from_carries_source_context`
-- `test_run_branch_resume_from_not_found`
-- `test_run_branch_resume_from_cross_user_forbidden`
-- `test_run_branch_resume_from_invalid_state`
-- `test_run_branch_resume_from_branch_mismatch`
+- `test_my_recent_runs_filters_by_actor`
+- `test_my_recent_runs_limit_bounds`
+- `test_my_recent_goals_filters_by_actor`
+- `test_continue_branch_success_envelope`
+- `test_continue_branch_not_found`
+- `test_continue_branch_cross_user_forbidden`
 
 ## 5. Acceptance
 
-Fixture pack is complete when a dev can implement the `resume_from` parameter
-and plug in these fixtures/snapshots without inventing extra action verbs or
-recency-only data models.
+Fixture pack is complete when a dev can implement action handlers and plug in these fixtures/snapshots without inventing additional data models.

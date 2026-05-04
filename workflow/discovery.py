@@ -37,6 +37,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from workflow._rename_compat import rename_compat_enabled
+
 logger = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "workflow.domains"
@@ -105,10 +107,25 @@ def discover_domains() -> list[str]:
     filesystem scan stays as fallback for editable checkouts that
     haven't run ``pip install -e .``. Results are sorted and
     deduplicated.
+
+    During the Author→Daemon rename (``_rename_compat``), ``fantasy_author``
+    is added alongside ``fantasy_daemon`` so legacy registry reads still
+    resolve. This compat injection is the subject of a follow-up cleanup
+    (Task #22 Atom B); leave as-is here.
+
+    Returns
+    -------
+    list[str]
+        Sorted, deduplicated list of domain names.
     """
     ep_domains = set(_discover_entry_point_domains().keys())
     fs_domains = set(_discover_filesystem_domains())
-    return sorted(ep_domains | fs_domains)
+    domain_names = ep_domains | fs_domains
+
+    if rename_compat_enabled() and "fantasy_daemon" in domain_names:
+        domain_names.add("fantasy_author")
+
+    return sorted(domain_names)
 
 
 def _load_domain_class(

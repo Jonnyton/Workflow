@@ -42,7 +42,8 @@ def _base_path() -> Path:
     """Resolve the base directory containing all universe directories.
 
     Delegates to ``workflow.storage.data_dir`` — canonical env var
-    ``WORKFLOW_DATA_DIR``. This replaces the earlier CWD-relative
+    ``WORKFLOW_DATA_DIR`` (legacy ``UNIVERSE_SERVER_BASE`` still honored
+    with deprecation warning). This replaces the earlier CWD-relative
     ``"output"`` default which wrote to ``/app/output`` in containers
     instead of the bind-mounted ``/data`` volume — the 2026-04-19
     containerization bug class.
@@ -62,16 +63,10 @@ def _universe_dir(universe_id: str) -> Path:
 
 def _default_universe() -> str:
     """Return the default universe ID, or first available."""
-    base = _base_path()
-    from workflow.storage import active_universe_id
-    active = active_universe_id(base)
-    if active:
-        return active
-
     default = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
     if default:
         return default
-
+    base = _base_path()
     if base.is_dir():
         for child in sorted(base.iterdir()):
             if child.is_dir() and not child.name.startswith("."):
@@ -108,7 +103,8 @@ def _wiki_root() -> Path:
     """Resolve the wiki root directory.
 
     Delegates to ``workflow.storage.wiki_path`` — canonical env var
-    ``WORKFLOW_WIKI_PATH``. Platform default is ``data_dir() / "wiki"``.
+    ``WORKFLOW_WIKI_PATH`` (legacy ``WIKI_PATH`` still honored with
+    deprecation warning). Platform default is ``data_dir() / "wiki"``.
 
     Pre-2026-04-20 this hardcoded ``r"C:\\Users\\Jonathan\\Projects\\Wiki"``
     as the fallback, which broke every non-host deploy. See

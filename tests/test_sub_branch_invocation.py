@@ -198,7 +198,7 @@ class TestInvokeBranchBlocking:
 
         _child_raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
         with (
-            patch("workflow.daemon_server.get_branch_definition", return_value=_child_raw),
+            patch("workflow.author_server.get_branch_definition", return_value=_child_raw),
             patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
             patch("workflow.runs.execute_branch", return_value=child_outcome) as mock_exec,
         ):
@@ -237,7 +237,7 @@ class TestInvokeBranchAsync:
 
         _child_raw = {"branch_def_id": "child", "name": "c", "node_defs": [], "edges": []}
         with (
-            patch("workflow.daemon_server.get_branch_definition", return_value=_child_raw),
+            patch("workflow.author_server.get_branch_definition", return_value=_child_raw),
             patch("workflow.branches.BranchDefinition.from_dict", return_value=child_branch_mock),
             patch("workflow.runs.execute_branch_async", return_value=queued_outcome),
         ):

@@ -28,7 +28,7 @@ import pytest
 def ext_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     from workflow import universe_server as us
 
@@ -257,75 +257,6 @@ class TestExplicitNodeRefCopiesCanonicalBody:
         )
         assert nd["prompt_template"] == "audit: {x}"
         assert nd["description"] == "canonical audit node"
-
-    def test_build_branch_node_ref_preserves_standalone_approval(self, ext_env):
-        us, base = ext_env
-        _register_standalone(
-            us, "approved_recipe", "Approved Recipe",
-            source="def run(state): return {'manifest': 'ok'}\n",
-        )
-        approved = _call(
-            us, "extensions", "approve", node_id="approved_recipe",
-        )
-        assert approved["approved"] is True
-
-        spec = {
-            "name": "approved-node-ref",
-            "entry_point": "approved_recipe",
-            "node_defs": [{
-                "node_id": "approved_recipe",
-                "display_name": "",
-                "node_ref": {
-                    "source": "standalone",
-                    "node_id": "approved_recipe",
-                },
-            }],
-            "edges": [
-                {"from": "START", "to": "approved_recipe"},
-                {"from": "approved_recipe", "to": "END"},
-            ],
-            "state_schema": [{"name": "manifest", "type": "str"}],
-        }
-        built = _call(us, "extensions", "build_branch",
-                      spec_json=json.dumps(spec))
-        assert built["status"] == "built", built
-
-        from workflow.daemon_server import get_branch_definition
-        branch = get_branch_definition(base, branch_def_id=built["branch_def_id"])
-        nd = next(
-            n for n in branch["node_defs"]
-            if n["node_id"] == "approved_recipe"
-        )
-        assert nd["approved"] is True
-
-    def test_build_branch_raw_approved_field_cannot_bypass_approval(self, ext_env):
-        us, base = ext_env
-        spec = {
-            "name": "approval-bypass-attempt",
-            "entry_point": "unsafe_recipe",
-            "node_defs": [{
-                "node_id": "unsafe_recipe",
-                "display_name": "Unsafe Recipe",
-                "source_code": "def run(state): return {'manifest': 'ok'}\n",
-                "approved": True,
-            }],
-            "edges": [
-                {"from": "START", "to": "unsafe_recipe"},
-                {"from": "unsafe_recipe", "to": "END"},
-            ],
-            "state_schema": [{"name": "manifest", "type": "str"}],
-        }
-        built = _call(us, "extensions", "build_branch",
-                      spec_json=json.dumps(spec))
-        assert built["status"] == "built", built
-
-        from workflow.daemon_server import get_branch_definition
-        branch = get_branch_definition(base, branch_def_id=built["branch_def_id"])
-        nd = next(
-            n for n in branch["node_defs"]
-            if n["node_id"] == "unsafe_recipe"
-        )
-        assert nd["approved"] is False
 
     def test_node_ref_to_unknown_source_errors(self, ext_env):
         us, _ = ext_env

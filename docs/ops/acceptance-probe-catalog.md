@@ -20,10 +20,6 @@ checks, and new-connector verification.
 **Source audit:** `docs/audits/user-chat-intelligence/2026-04-20-do-cutover-acceptance.md`
 **Persona:** bare-curious-user (no persona framing; minimal context)
 **Connector URL under test:** `https://tinyassets.io/mcp`
-**Apex URL under test:** `https://tinyassets.io/` (Layer-1 wrapper requires HTTP 200)
-**Rendered chatbot client:** Claude.ai, ChatGPT Developer Mode, or another
-browser chatbot with the Workflow connector visibly installed. Record which
-client produced the evidence.
 
 ### Prompt (paste verbatim)
 
@@ -36,8 +32,7 @@ paper on deep space population — can you walk me through it?
 
 | Layer | What's tested |
 |---|---|
-| System | MCP endpoint reachable via browser chatbot → Cloudflare Worker → tunnel → daemon |
-| System | Apex site `/` returns HTTP 200 alongside the `/mcp` endpoint |
+| System | MCP endpoint reachable via Claude.ai → Cloudflare Worker → tunnel → daemon |
 | Chatbot | `control_station` Hard Rule 10 (anti-fabrication): assume → tool-call → correct-if-wrong |
 | Chatbot | Chatbot-assumes-Workflow directive (rule 7): no disambiguation picker |
 | Chatbot | User-vocabulary discipline (rule 9): no engine-vocab in first response |
@@ -47,7 +42,6 @@ paper on deep space population — can you walk me through it?
 
 - Chatbot invokes at least one Workflow MCP tool (visible in thinking-block or response).
 - Response references real daemon state (e.g., empty workspace, named primitives from actual tool output).
-- Layer-1 wrapper confirms `https://tinyassets.io/` returns HTTP 200 while `/mcp` is green.
 - No fabricated workflow JSON, no fabricated prior-session history.
 - Settle time under 150s. (>150s with tool invocation = soft-yellow; >150s without tool invocation = suspected fabrication-mode.)
 - Zero "Session terminated" errors.
@@ -58,7 +52,6 @@ paper on deep space population — can you walk me through it?
 - Chatbot produces a workflow spec without invoking a tool.
 - Chatbot claims prior-session context that was never established in this chat.
 - No tool call at all (chatbot responded from memory only).
-- Layer-1 wrapper reports apex `/` non-200 or unreachable while `/mcp` is otherwise green.
 - Settle time >180s with no tool call confirmed.
 
 ### Baseline evidence
@@ -90,7 +83,7 @@ paper on deep space population — can you walk me through it?
 
 ## PROBE-002 — Layer-2 liveness (minimal)
 
-**Validated:** code-fix landed 2026-04-28 (`_real_browser_probe` reimplemented as `claude_chat ask` subprocess + trace-block parser); still awaits host `--once` smoke + Task Scheduler `Workflow-Canary-L2` activation for live status. Freshness check 2026-05-01: `Get-ScheduledTask -TaskName Workflow-Canary-L2` returned no task. Original implementation (`lead_browser.navigate` + `claude_chat.send_and_wait`) referenced symbols that never existed — see `docs/design-notes/2026-04-19-layer2-canary-scope.md §Wiring runbook` for the recovery + API contract.
+**Validated:** code-fix landed 2026-04-28 (`_real_browser_probe` reimplemented as `claude_chat ask` subprocess + trace-block parser); awaits host `--once` smoke + Task Scheduler `Workflow-Canary-L2` activation for live status. Original implementation (`lead_browser.navigate` + `claude_chat.send_and_wait`) referenced symbols that never existed — see `docs/design-notes/2026-04-19-layer2-canary-scope.md §Wiring runbook` for the recovery + API contract.
 **Source script:** `scripts/uptime_canary_layer2.py` (canary) + `scripts/claude_chat.py` (subprocess driver — `cmd_ask` is the canonical entry point).
 **Persona:** `uptime_canary` (dedicated automated persona; CDP profile at `C:\Users\Jonathan\.claude-ai-profile`).
 **Connector URL under test:** `https://tinyassets.io/mcp`
@@ -122,7 +115,7 @@ Are you there? Call get_status and tell me the llm_endpoint_bound value.
 
 ### When to use
 
-- Automated hourly Layer-2 canary (Windows Task Scheduler entry `Workflow-Canary-L2` invokes `python scripts/uptime_canary_layer2.py`). Currently UNWIRED on host as of 2026-05-01; host activates after `--once` GREEN smoke.
+- Automated hourly Layer-2 canary (Windows Task Scheduler entry `Workflow-Canary-L2` invokes `python scripts/uptime_canary_layer2.py`). Currently UNWIRED on host as of 2026-04-28; host activates after `--once` GREEN smoke.
 - Quick manual liveness check when Layer-1 is green but something feels wrong.
 
 ### Cross-host caveat
@@ -185,13 +178,12 @@ BUG-028 demonstrated that a slug-normalization bug could silently break bug fili
 **Validated:** mcp_tool_canary script live since 2026-04-22; closes the gap flagged in canary task #6.
 **Source script:** `scripts/mcp_tool_canary.py`
 **Persona:** `mcp-tool-canary` (automated; client name `mcp-tool-canary/1.0`)
-**Connector URLs under test:** `https://tinyassets.io/mcp` and `https://tinyassets.io/mcp-directory`
+**Connector URL under test:** `https://tinyassets.io/mcp`
 
 ### Invocation
 
 ```
 python scripts/mcp_tool_canary.py
-python scripts/mcp_tool_canary.py --url https://tinyassets.io/mcp-directory
 python scripts/mcp_tool_canary.py --url http://127.0.0.1:8001/mcp
 python scripts/mcp_tool_canary.py --verbose --timeout 20
 ```
@@ -203,7 +195,7 @@ python scripts/mcp_tool_canary.py --verbose --timeout 20
 | System | `initialize` handshake (same as PROBE-002). |
 | System | `notifications/initialized` (MCP-protocol mandatory before tool calls). |
 | System | `tools/list` returns a non-empty tools array. |
-| System | `tools/call` for the strongest advertised read-only probe returns valid JSON: legacy `universe action=inspect` requires `universe_id`; directory `get_workflow_status` requires `schema_version`. |
+| System | `tools/call` for `universe action=inspect` returns valid JSON carrying a `universe_id` field. |
 
 ### Green criteria
 
@@ -214,7 +206,7 @@ python scripts/mcp_tool_canary.py --verbose --timeout 20
 - Exit 2 — handshake failed (initialize error, network, TLS, non-200).
 - Exit 3 — session establishment failed (no `mcp-session-id` header, or `notifications/initialized` POST errored).
 - Exit 4 — `tools/list` failed or returned an empty tools array.
-- Exit 5 — the selected probe `tools/call` failed or returned an invalid response (missing expected fields, `isError` set, etc.).
+- Exit 5 — `tools/call universe action=inspect` failed or returned an invalid response (no `universe_id`, `isError` set, etc.).
 
 ### Why this probe earns a catalog slot
 
@@ -223,7 +215,7 @@ python scripts/mcp_tool_canary.py --verbose --timeout 20
 ### When to use
 
 - After any code change to `universe_server.py` tool registration or handler bodies.
-- After any deploy that adds/renames/removes MCP tools on either `/mcp` or `/mcp-directory`.
+- After any deploy that adds/renames/removes MCP tools.
 - As a continuous Layer-1.5 canary between handshake-only and full chatbot probes.
 
 ---
@@ -464,9 +456,9 @@ These canary-adjacent scripts exist in the repo but do NOT earn standalone catal
 
 | Script | Why no slot |
 |---|---|
-| `scripts/uptime_canary.py` | Thin wrapper around `mcp_public_canary.probe_result` that adds local-log persistence and production apex `/` HTTP-200 coverage. Same surface as PROBE-001 — duplicating it as a slot would double-count. The wrapper is the Task-Scheduler-invoked form; PROBE-001 is the user-invocable form. |
+| `scripts/uptime_canary.py` | Thin wrapper around `mcp_public_canary.probe_result` that adds local-log persistence. Same surface as PROBE-001 — duplicating it as a slot would double-count. The wrapper is the Task-Scheduler-invoked form; PROBE-001 is the user-invocable form. |
 | `scripts/uptime_alarm.py` | Escalation **action**, not a probe. Tails `.agents/uptime.log` and emits alarm lines. Note: per task #20, prod alarm log moved to `/var/log/workflow/uptime_alarms.log` (env-overridable). |
-| `scripts/selfhost_smoke.py` | Time-bounded Row-F acceptance script (48h offline trial — hour 1, 24, 47). Default mode targets the canonical endpoint and confirms the public direct tunnel origin is Access-gated (401/403). `--internal-parity` preserves the old parity comparison only for internal/service-token tunnel paths. Not a steady-state public probe; once Row F closes, this script is archived. |
+| `scripts/selfhost_smoke.py` | Time-bounded Row-F acceptance script (48h offline trial — hour 1, 24, 47). Targets the canonical endpoint plus the Access-gated tunnel origin through internal/service-token plumbing for parity comparison; not a steady-state public probe. Once Row F closes, this script is archived. |
 | `.github/workflows/p0-outage-triage.yml` | Escalation **action**, not a probe. Auto-fired by `uptime-canary.yml` on CRITICAL alarm; runs forensics + opens triage issue. Same shape as `uptime_alarm.py` (action, not green/red signal). |
 | `.github/workflows/dr-drill.yml` | Quarterly disaster-recovery rehearsal triggered by `workflow_dispatch` only. Acceptance-test-as-CI rather than steady-state probe; same family as `selfhost_smoke.py`. STATUS Work table tracks drill cadence. |
 

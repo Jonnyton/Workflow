@@ -6,8 +6,8 @@ being introduced — it checks only ADDED lines in the staged diff, not the full
 file content, so existing sites don't trigger false positives.
 
 Patterns blocked (module-level or deferred):
-- `from workflow.author_server import ...`
-- `import workflow.author_server`
+  from workflow.author_server import ...
+  import workflow.author_server
 
 Exit codes:
   0 — no new forbidden imports in staged diff (or no Python files staged)

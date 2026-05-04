@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -45,10 +44,10 @@ from workflow.storage import (  # noqa: F401  (re-exports for in-flight R7 split
     _now,
     _slugify,
     actor_has_capability,
+    author_server_db_path,
     base_path_from_universe,
     create_or_update_account,
     create_session,
-    db_path,
     ensure_host_account,
     get_account,
     grant_capabilities,
@@ -277,7 +276,6 @@ def initialize_author_server(base_path: str | Path) -> Path:
         domain_id TEXT NOT NULL DEFAULT 'workflow',
         tags_json TEXT NOT NULL DEFAULT '[]',
         version INTEGER NOT NULL DEFAULT 1,
-        skills_json TEXT NOT NULL DEFAULT '[]',
         parent_def_id TEXT,
         entry_point TEXT NOT NULL DEFAULT '',  -- also in graph_json for export/fork
         graph_json TEXT NOT NULL DEFAULT '{}',
@@ -424,13 +422,6 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "CREATE INDEX IF NOT EXISTS idx_branch_defs_visibility "
             "ON branch_definitions(visibility)"
         )
-        # Branch-carried skill snapshots. These are user-authored or
-        # copied instruction/rubric artifacts that travel with forks.
-        if "skills_json" not in existing_cols:
-            conn.execute(
-                "ALTER TABLE branch_definitions ADD COLUMN skills_json "
-                "TEXT NOT NULL DEFAULT '[]'"
-            )
         # Phase 6 migration: goals.gate_ladder_json inline ladder column.
         goal_cols = {
             row["name"]
@@ -476,7 +467,7 @@ def initialize_author_server(base_path: str | Path) -> Path:
             "WHERE canonical_branch_version_id IS NOT NULL"
         )
     ensure_default_author(base_path)
-    return db_path(base_path)
+    return author_server_db_path(base_path)
 
 
 def _author_id_for(display_name: str, soul_text: str) -> tuple[str, str]:
@@ -970,29 +961,6 @@ def get_author(base_path: str | Path, *, author_id: str) -> dict[str, Any]:
     return result
 
 
-def update_author_metadata(
-    base_path: str | Path,
-    *,
-    author_id: str,
-    metadata_patch: dict[str, Any],
-) -> dict[str, Any]:
-    """Merge metadata onto a daemon/author identity and return the row."""
-    with _connect(base_path) as conn:
-        row = conn.execute(
-            "SELECT metadata_json FROM author_definitions WHERE author_id = ?",
-            (author_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(author_id)
-        metadata = _json_loads(row["metadata_json"], {})
-        metadata.update(metadata_patch)
-        conn.execute(
-            "UPDATE author_definitions SET metadata_json = ? WHERE author_id = ?",
-            (_json_dumps(metadata), author_id),
-        )
-    return get_author(base_path, author_id=author_id)
-
-
 def spawn_runtime_instance(
     base_path: str | Path,
     *,
@@ -1042,34 +1010,6 @@ def retire_runtime_instance(
             WHERE instance_id = ?
             """,
             (_now(), instance_id),
-        )
-    return get_runtime_instance(base_path, instance_id=instance_id)
-
-
-def update_runtime_instance_status(
-    base_path: str | Path,
-    *,
-    instance_id: str,
-    status: str,
-    metadata_patch: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Update runtime status and merge control metadata."""
-    with _connect(base_path) as conn:
-        row = conn.execute(
-            "SELECT metadata_json FROM author_runtime_instances WHERE instance_id = ?",
-            (instance_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(instance_id)
-        metadata = _json_loads(row["metadata_json"], {})
-        metadata.update(metadata_patch or {})
-        conn.execute(
-            """
-            UPDATE author_runtime_instances
-            SET status = ?, updated_at = ?, metadata_json = ?
-            WHERE instance_id = ?
-            """,
-            (status, _now(), _json_dumps(metadata), instance_id),
         )
     return get_runtime_instance(base_path, instance_id=instance_id)
 
@@ -2000,7 +1940,6 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         row["visibility"] if "visibility" in row_keys else "public"
     ) or "public"
     fork_from = row["fork_from"] if "fork_from" in row_keys else None
-    skills = _json_loads(row["skills_json"], []) if "skills_json" in row_keys else []
     return {
         "branch_def_id": row["branch_def_id"],
         "name": row["name"],
@@ -2009,7 +1948,6 @@ def _branch_def_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "domain_id": row["domain_id"],
         "tags": _json_loads(row["tags_json"], []),
         "version": row["version"],
-        "skills": skills,
         "parent_def_id": row["parent_def_id"],
         "entry_point": row["entry_point"],
         "graph": _json_loads(row["graph_json"], {}),
@@ -2063,9 +2001,6 @@ def save_branch_definition(
 
     # Node definitions — separate from graph topology
     node_defs = branch_def.get("node_defs", [])
-    from workflow.branches import normalize_branch_skill_snapshots
-
-    skills = normalize_branch_skill_snapshots(branch_def.get("skills", []))
 
     # Phase 6.2.2: visibility defaults to 'public' when absent or
     # falsy. Anything other than 'private' normalizes to 'public' so
@@ -2078,11 +2013,11 @@ def save_branch_definition(
             """
             INSERT OR REPLACE INTO branch_definitions (
                 branch_def_id, name, description, author, domain_id,
-                tags_json, version, skills_json, parent_def_id, entry_point,
+                tags_json, version, parent_def_id, entry_point,
                 graph_json, node_defs_json, state_schema_json,
                 published, stats_json, created_at, updated_at, goal_id,
                 visibility, fork_from
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 branch_def_id,
@@ -2092,7 +2027,6 @@ def save_branch_definition(
                 branch_def.get("domain_id", "workflow"),
                 _json_dumps(branch_def.get("tags", [])),
                 branch_def.get("version", 1),
-                _json_dumps(skills),
                 branch_def.get("parent_def_id"),
                 branch_def.get("entry_point", ""),
                 _json_dumps(graph),
@@ -2253,16 +2187,11 @@ def update_branch_definition(
 
     json_fields = {
         "tags": "tags_json",
-        "skills": "skills_json",
         "stats": "stats_json",
         "state_schema": "state_schema_json",
     }
     for key, col in json_fields.items():
         if key in updates:
-            if key == "skills":
-                from workflow.branches import normalize_branch_skill_snapshots
-
-                updates[key] = normalize_branch_skill_snapshots(updates[key])
             sets.append(f"{col} = ?")
             params.append(_json_dumps(updates[key]))
 
@@ -2656,23 +2585,6 @@ def list_goals(
     return results
 
 
-_GOAL_SEARCH_TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-
-def _goal_search_tokens(value: str) -> list[str]:
-    """Return lowercase alphanumeric query tokens for goal search."""
-    return _GOAL_SEARCH_TOKEN_RE.findall(value.lower())
-
-
-def _goal_search_haystack(goal: dict[str, Any]) -> str:
-    fields = [
-        goal.get("name") or "",
-        goal.get("description") or "",
-        " ".join(goal.get("tags") or []),
-    ]
-    return " ".join(_goal_search_tokens(" ".join(fields)))
-
-
 def search_goals(
     base_path: str | Path,
     *,
@@ -2691,7 +2603,7 @@ def search_goals(
     Hidden Goals (visibility='deleted') are excluded.
     """
     initialize_author_server(base_path)
-    tokens = _goal_search_tokens(query or "")
+    tokens = [t for t in (query or "").lower().split() if t]
     if not tokens:
         return []
 
@@ -2705,7 +2617,11 @@ def search_goals(
         scored: list[tuple[int, dict[str, Any]]] = []
         for row in all_rows:
             g = _goal_from_row(row)
-            haystack = _goal_search_haystack(g)
+            haystack = " ".join([
+                (g.get("name") or "").lower(),
+                (g.get("description") or "").lower(),
+                " ".join(g.get("tags") or []).lower(),
+            ])
             hit_count = sum(1 for t in tokens if t in haystack)
             if hit_count > 0:
                 scored.append((hit_count, g))

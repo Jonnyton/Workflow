@@ -21,10 +21,10 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     _split_tag_csv             : eval-only CSV-tag parser
 
 Cross-module note: ``_append_global_ledger``, ``_truncate``, ``_current_actor``,
-``_node_body_summary``, ``_ensure_workflow_db``, ``logger`` all live in
-their owning API/helper modules and are lazy-imported inside the functions that
-use them. This avoids the load-time cycle (universe_server back-compat-imports
-symbols from this module).
+``_node_body_summary``, ``_ensure_author_server_db``, ``logger`` all live in
+``workflow.universe_server`` (universe-engine territory) and are
+lazy-imported inside the functions that use them. This avoids the load-time
+cycle (universe_server back-compat-imports symbols from this module).
 Same pattern as Task #11 (workflow/api/runs.py) used for its 7 cross-module
 symbols.
 
@@ -270,7 +270,7 @@ def _action_suggest_node_edit(kwargs: dict[str, Any]) -> str:
     Per spec: this does NOT call an LLM. It assembles context. The
     calling client proposes the edit.
     """
-    from workflow.api.branches import _ensure_workflow_db
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import (
@@ -291,7 +291,7 @@ def _action_suggest_node_edit(kwargs: dict[str, Any]) -> str:
             "error": "branch_def_id and node_id are both required.",
         })
 
-    _ensure_workflow_db()
+    _ensure_author_server_db()
     try:
         source = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -480,7 +480,7 @@ def _node_body_summary(node_def: dict[str, Any]) -> str:
 
 def _action_list_node_versions(kwargs: dict[str, Any]) -> str:
     """Return the version history for a single node on a branch."""
-    from workflow.api.branches import _ensure_workflow_db
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
     from workflow.runs import list_node_edit_audits
@@ -492,7 +492,7 @@ def _action_list_node_versions(kwargs: dict[str, Any]) -> str:
             "error": "branch_def_id and node_id are both required.",
         })
 
-    _ensure_workflow_db()
+    _ensure_author_server_db()
     try:
         source = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -596,7 +596,7 @@ def _action_rollback_node(kwargs: dict[str, Any]) -> str:
     audit row with ``edit_kind="rollback"``. Forward history is never
     destroyed — the old body stays retrievable via list_node_versions.
     """
-    from workflow.api.branches import _ensure_workflow_db
+    from workflow.api.branches import _ensure_author_server_db
     from workflow.branches import BranchDefinition, NodeDefinition
     from workflow.daemon_server import (
         get_branch_definition,
@@ -616,7 +616,7 @@ def _action_rollback_node(kwargs: dict[str, Any]) -> str:
             "error": "branch_def_id and node_id are both required.",
         })
 
-    _ensure_workflow_db()
+    _ensure_author_server_db()
     try:
         source = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:

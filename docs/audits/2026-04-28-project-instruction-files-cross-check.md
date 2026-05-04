@@ -2,7 +2,7 @@
 title: Project-instruction-files cross-check — AGENTS / CLAUDE / LAUNCH_PROMPT / CLAUDE_LEAD_OPS
 date: 2026-04-28
 author: dev-2
-status: read-only audit; refreshed 2026-05-01T17:21-07:00 against current AGENTS/CLAUDE files
+status: read-only audit — lead reviews + applies; per-finding action recommended but not executed
 companion:
   - docs/audits/2026-04-28-agent-memory-cross-drift-sweep.md (sibling — same day; reuses some findings)
   - docs/conventions.md "Frontmatter status: field" section (this session's reverse-engineered convention)
@@ -12,23 +12,7 @@ audience: lead, host (selectively)
 
 # Project-instruction-files cross-check
 
-## Current refresh - 2026-05-01
-
-All repo-local action items from this audit are now closed:
-
-- Finding #3 is closed: AGENTS now uses stable concrete Files examples
-  (`workflow/api/wiki.py, workflow/storage/__init__.py`), not
-  `author_server.py`.
-- Findings #4/#5/#6 are closed in AGENTS: no-destructive-git is Hard Rule
-  13, plugin mirror rebuild is in Testing, and audit-decay is in Truth And
-  Freshness.
-- Finding #7 is informational: AGENTS now says "60-line canonical (~4 KB
-  guidance)", and current STATUS.md is 50 lines / 7,344 chars.
-
-Finding #2 remains lead-environment-only and cannot be edited from this
-checkout. The original findings below are retained as history.
-
-## Original TL;DR
+## TL;DR
 
 Read 4 files (~750 lines total). Found:
 - **0 open STALE-BRANDING hits** after 2026-04-28 cleanup. Original AGENTS.md + CLAUDE_LEAD_OPS.md hits are resolved; see finding rows #1-2.
@@ -37,7 +21,7 @@ Read 4 files (~750 lines total). Found:
 - **1 INTERNAL CONTRADICTION** (low severity): AGENTS.md "Three Living Files" table at L49-53 says STATUS.md ≤4 KB / 60 lines. STATUS.md current (2026-04-28) is at 60 lines but ~5.2 KB — exceeds the byte budget. Unclear which is canonical.
 - **0 cross-file contradictions** between AGENTS / CLAUDE / LAUNCH_PROMPT / CLAUDE_LEAD_OPS — the 4 files are mutually consistent (CLAUDE/LAUNCH_PROMPT are thin pointers to AGENTS, CLAUDE_LEAD_OPS adds situational content without contradicting).
 
-## Original Findings
+## Findings
 
 | # | Severity | File:line | Finding | Recommended action |
 |---|---|---|---|---|
@@ -104,13 +88,7 @@ These are NOT contradictory but they're nuanced. AGENTS.md says "every reader is
 
 **Soft suggestion (not a finding):** the evidence-based-retire refinement is in lead memory only. Worth surfacing to AGENTS.md so other agents/providers see it. Not a hard contradiction; just a clearer place to put it.
 
-## Current action queue - 2026-05-01
-
-No repo-local action remains from this audit. Findings #3/#4/#5/#6 are closed
-in AGENTS. Finding #7 is informational under the current "60-line canonical
-(~4 KB guidance)" wording. Finding #2 remains lead-environment-only.
-
-## Original summary action queue
+## Summary action queue
 
 | Priority | Finding | Effort | Who |
 |---|---|---|---|
@@ -122,6 +100,6 @@ in AGENTS. Finding #7 is informational under the current "60-line canonical
 
 ## Verifier handoff
 
-Refreshed recommendation document. No instruction file was edited by this refresh; it only records that the repo-local AGENTS changes this audit requested are already present.
+Recommendation document, not applied edit. Per AGENTS.md "PLAN.md changes require user approval" (L76) — and project-instruction files (AGENTS.md, CLAUDE.md, LAUNCH_PROMPT.md, CLAUDE_LEAD_OPS.md) are in the same approval class. Lead reviews + applies.
 
 No code touched. No test files touched. No dev #18 lock-set touched.

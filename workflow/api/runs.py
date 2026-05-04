@@ -1,16 +1,16 @@
 """Run-execution subsystem — extracted from workflow/universe_server.py
 (Task #11 — decomp Step 4).
 
-Contains the run dispatcher (_RUN_ACTIONS), 16 action handlers, and the
+Contains the run dispatcher (_RUN_ACTIONS), 15 action handlers, and the
 failure-classification taxonomy. The MCP tool registration stays in
 ``workflow/universe_server.py`` (Pattern A2 from the decomp plan); this
 module is plain functions consumed via the ``extensions()`` MCP tool.
 
 Public surface (back-compat re-exported via ``workflow.universe_server``):
-    _RUN_ACTIONS               : action dispatch table (16 entries)
+    _RUN_ACTIONS               : action dispatch table (15 entries)
     _RUN_WRITE_ACTIONS         : frozenset of write actions for ledger gating
     _dispatch_run_action       : ledger-aware action dispatcher
-    _action_*                  : 16 individual handlers
+    _action_*                  : 15 individual handlers
     _classify_run_error        : failure-class router (also test-imported)
     _classify_run_outcome_error: outcome-error parser (also test-imported)
     _ensure_runs_recovery      : startup-recovery idempotent gate
@@ -212,12 +212,6 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
         )
-    if "all providers exhausted" in msg or "providers exhausted" in msg:
-        return _failure_payload(
-            exc, "provider_exhausted",
-            "Provider chain exhausted; check provider credentials/config or"
-            " rerun after cooldown.",
-        )
     if "auth expir" in msg or "token expir" in msg or "credential" in msg:
         return _failure_payload(
             exc, "permission_denied:auth_expired",
@@ -240,12 +234,6 @@ def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
             exc, "state_mutation_conflict",
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
-        )
-    if "compile failed" in msg or "already being used as a state key" in msg:
-        return _failure_payload(
-            exc, "compile_error",
-            "Inspect the branch definition, node ids, state_schema, and graph"
-            " edges; patch the branch and rerun.",
         )
     if "provider" in msg or "api key" in msg or "api_key" in msg or "auth" in msg:
         return _failure_payload(
@@ -282,12 +270,6 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "quota_exhausted",
             "Provider quota or rate limit hit; wait before retrying OR"
             " switch providers via the llm_type param.",
-        )
-    if "all providers exhausted" in msg or "providers exhausted" in msg:
-        return (
-            "provider_exhausted",
-            "Provider chain exhausted; check provider credentials/config or"
-            " rerun after cooldown.",
         )
     if "overload" in msg or "503" in msg or "service unavailable" in msg or "server error" in msg:
         return (
@@ -335,12 +317,6 @@ def _classify_run_outcome_error(error_str: str) -> tuple[str, str] | None:
             "Concurrent modification detected; re-fetch the branch state"
             " with get_branch then reapply your edit.",
         )
-    if "compile failed" in msg or "already being used as a state key" in msg:
-        return (
-            "compile_error",
-            "Inspect the branch definition, node ids, state_schema, and graph"
-            " edges; patch the branch and rerun.",
-        )
     if "provider" in msg or "api key" in msg or "api_key" in msg:
         return (
             "provider_unavailable",
@@ -373,18 +349,9 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition
     from workflow.daemon_server import get_branch_definition
-    from workflow.runs import (
-        RUN_STATUS_CANCELLED,
-        RUN_STATUS_COMPLETED,
-        RUN_STATUS_FAILED,
-        RUN_STATUS_INTERRUPTED,
-        execute_branch_async,
-        get_run,
-        record_lineage,
-    )
+    from workflow.runs import execute_branch_async
 
     _ensure_runs_recovery()
-    actor = _current_actor()
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -418,57 +385,6 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
                 "error": f"inputs_json is not valid JSON: {exc}",
             })
 
-    resume_from = (kwargs.get("resume_from") or "").strip()
-    source_run: dict[str, Any] | None = None
-    if resume_from:
-        if any(ch.isspace() for ch in resume_from):
-            return json.dumps({
-                "error": "resume_from must be a single run_id with no whitespace.",
-                "failure_class": "resume_from_invalid",
-                "actionable_by": "chatbot",
-            })
-        source_run = get_run(_base_path(), resume_from)
-        if source_run is None:
-            return json.dumps({
-                "error": "resume_from source run was not found.",
-                "failure_class": "resume_from_not_found",
-                "actionable_by": "chatbot",
-            })
-        if source_run.get("actor") != actor:
-            return json.dumps({
-                "error": "resume_from source run is not visible to the current actor.",
-                "failure_class": "resume_from_forbidden",
-                "actionable_by": "user",
-            })
-        if source_run.get("branch_def_id") != bid:
-            return json.dumps({
-                "error": (
-                    "resume_from source run belongs to a different workflow "
-                    "than the requested target branch."
-                ),
-                "failure_class": "resume_from_branch_mismatch",
-                "actionable_by": "chatbot",
-            })
-        terminal_statuses = {
-            RUN_STATUS_COMPLETED,
-            RUN_STATUS_FAILED,
-            RUN_STATUS_CANCELLED,
-            RUN_STATUS_INTERRUPTED,
-        }
-        if source_run.get("status") not in terminal_statuses:
-            return json.dumps({
-                "error": (
-                    "resume_from source run must be terminal before it can "
-                    "seed a new run."
-                ),
-                "failure_class": "resume_from_invalid_state",
-                "source_status": source_run.get("status"),
-                "actionable_by": "chatbot",
-            })
-        source_inputs = source_run.get("inputs")
-        if isinstance(source_inputs, dict):
-            inputs = {**source_inputs, **inputs}
-
     # Real provider — lazy import so test envs without providers work.
     provider_call: Any = None
     try:
@@ -501,7 +417,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
             branch=branch,
             inputs=inputs,
             run_name=kwargs.get("run_name", ""),
-            actor=actor,
+            actor=_current_actor(),
             provider_call=provider_call,
             recursion_limit_override=recursion_limit_override,
         )
@@ -537,18 +453,6 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
         "output": outcome.output,
         "error": outcome.error,
     }
-    if source_run is not None:
-        branch_version = int(getattr(branch, "version", 1) or 1)
-        record_lineage(
-            _base_path(),
-            run_id=outcome.run_id,
-            parent_run_id=resume_from,
-            branch_def_id=bid,
-            branch_version=branch_version,
-            edits_since_parent=[],
-        )
-        result["resume_from"] = resume_from
-        result["source_run_id"] = resume_from
     if error_annotation:
         result["failure_class"] = error_annotation[0]
         result["suggested_action"] = error_annotation[1]
@@ -950,46 +854,6 @@ def _action_get_run_output(kwargs: dict[str, Any]) -> str:
         "run_id": rid,
         "status": record.get("status"),
         "output": output,
-    }, default=str)
-
-
-def _action_attach_existing_child_run(kwargs: dict[str, Any]) -> str:
-    """Attach a completed child run receipt to a waiting parent run."""
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.runs import ChildRunAttachmentError, attach_existing_child_run
-
-    parent_run_id = kwargs.get("run_id", "").strip()
-    child_run_id = kwargs.get("child_run_id", "").strip()
-    child_branch_def_id = kwargs.get("child_branch_def_id", "").strip()
-    output_digest = kwargs.get("output_digest", "").strip()
-
-    try:
-        result = attach_existing_child_run(
-            _base_path(),
-            parent_run_id=parent_run_id,
-            child_run_id=child_run_id,
-            child_branch_def_id=child_branch_def_id,
-            output_digest=output_digest,
-            actor=_current_actor(),
-        )
-    except ChildRunAttachmentError as exc:
-        payload: dict[str, Any] = {
-            "error": str(exc),
-            "error_code": exc.code,
-        }
-        payload.update(exc.details)
-        return json.dumps(payload, default=str)
-
-    text = (
-        "**Child receipt attached.** "
-        f"Parent run `{result['parent_run_id']}` now references child run "
-        f"`{result['child_run_id']}` via `{result['stable_evidence_handle']}`. "
-        "This is a receipt validation path only."
-    )
-    return json.dumps({
-        "text": text,
-        "run_id": result["parent_run_id"],
-        **result,
     }, default=str)
 
 
@@ -1560,7 +1424,6 @@ _RUN_ACTIONS: dict[str, Any] = {
     "wait_for_run": _action_wait_for_run,
     "cancel_run": _action_cancel_run,
     "get_run_output": _action_get_run_output,
-    "attach_existing_child_run": _action_attach_existing_child_run,
     "resume_run": _action_resume_run,
     "estimate_run_cost": _action_estimate_run_cost,
     "query_runs": _action_query_runs,
@@ -1572,7 +1435,7 @@ _RUN_ACTIONS: dict[str, Any] = {
 
 _RUN_WRITE_ACTIONS: frozenset[str] = frozenset(
     {"run_branch", "run_branch_version", "cancel_run", "resume_run",
-     "rollback_merge", "attach_existing_child_run"}
+     "rollback_merge"}
 )
 
 

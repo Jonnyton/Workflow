@@ -9,7 +9,6 @@ Covers:
   (f) Post-deploy canary step probes ONLY canonical URL (not direct)
   (g) Rollback step present and conditioned on failure
   (h) CF Access gate step blocks deploy on 200 (Access broken); advisory on tunnel-down
-  (i) Optional Codex subscription auth bundle is synced without API-key fallback
 """
 
 from __future__ import annotations
@@ -109,10 +108,6 @@ def test_do_ssh_user_secret_referenced():
 
 def test_do_ssh_key_secret_referenced():
     assert "DO_SSH_KEY" in _text()
-
-
-def test_codex_subscription_bundle_secret_referenced():
-    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in _text()
 
 
 def test_no_legacy_hetzner_secrets():
@@ -218,114 +213,3 @@ def test_rollback_conditioned_on_failure():
             assert "failure" in cond, "rollback step must be conditioned on failure()"
             return
     pytest.fail("'Rollback on failure' step not found")
-
-
-# ---------------------------------------------------------------------------
-# (i) Codex subscription auth sync
-# ---------------------------------------------------------------------------
-
-
-def test_deploy_syncs_codex_subscription_bundle_with_helper():
-    wf = _load()
-    deploy_step = next(
-        (s for s in _steps(wf) if s.get("id") == "deploy"),
-        None,
-    )
-    assert deploy_step is not None, "deploy job must have a deploy step"
-    run_script = deploy_step.get("run", "") or ""
-    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in run_script
-    assert "install-workflow-env.sh set WORKFLOW_CODEX_AUTH_JSON_B64" in run_script
-    assert "install-workflow-env.sh set WORKFLOW_ALLOW_API_KEY_PROVIDERS" in run_script
-    assert "OPENAI_API_KEY" not in run_script, (
-        "deploy must not recover the public daemon by syncing API-key writer auth"
-    )
-
-
-def test_deploy_syncs_runtime_compose_and_systemd_files():
-    wf = _load()
-    sync_step = next(
-        (s for s in _steps(wf) if s.get("name") == "Sync runtime deploy files"),
-        None,
-    )
-    assert sync_step is not None, "deploy must sync runtime compose files"
-    run_script = sync_step.get("run", "") or ""
-    assert "deploy/compose.yml" in run_script
-    assert "/opt/workflow/compose.yml" in run_script
-    assert "/opt/workflow/deploy/compose.yml" in run_script
-    assert "deploy/workflow-daemon.service" in run_script
-    assert "/etc/systemd/system/workflow-daemon.service" in run_script
-    assert "systemctl daemon-reload" in run_script
-    assert "vector-entrypoint.sh" in run_script
-
-
-def test_deploy_scrubs_stdio_only_workflow_universe_from_cloud_env():
-    wf = _load()
-    scrub_step = next(
-        (s for s in _steps(wf) if s.get("name") == "Scrub stale cloud env overrides"),
-        None,
-    )
-    assert scrub_step is not None
-    run_script = scrub_step.get("run", "") or ""
-    assert "delete WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE" in run_script
-
-
-def test_deploy_verifies_cloud_worker_running():
-    wf = _load()
-    worker_step = next(
-        (s for s in _steps(wf) if s.get("name") == "Verify cloud worker is running"),
-        None,
-    )
-    assert worker_step is not None, "deploy must verify workflow-worker is running"
-    run_script = worker_step.get("run", "") or ""
-    assert "workflow-worker" in run_script
-    assert "docker inspect" in run_script
-    assert "State.Running" in run_script
-    assert "for i in $(seq 1 30)" in run_script
-    assert "sleep 2" in run_script
-    assert "exit 1" in run_script
-
-
-def test_deploy_rejects_cloud_worker_workflow_universe_override():
-    wf = _load()
-    worker_step = next(
-        (s for s in _steps(wf) if s.get("name") == "Verify cloud worker is running"),
-        None,
-    )
-    assert worker_step is not None
-    run_script = worker_step.get("run", "") or ""
-    assert "grep -q '^WORKFLOW_UNIVERSE='" in run_script
-    assert "stdio-only override" in run_script
-    assert "_resolve_universe_path" in run_script
-
-
-def test_deploy_verifies_llm_binding_when_codex_auth_is_synced():
-    wf = _load()
-    for step in _steps(wf):
-        if "Verify subscription LLM binding" in (step.get("name") or ""):
-            assert "HAS_CODEX_AUTH_BUNDLE" in str(step.get("if", ""))
-            run_script = step.get("run", "") or ""
-            assert "verify_llm_binding.py" in run_script
-            assert "--require-sandbox" in run_script
-            assert "--retries 12" in run_script
-            assert "--retry-delay 10" in run_script
-            return
-    pytest.fail("deploy must verify LLM binding when it syncs Codex subscription auth")
-
-
-def test_deploy_requires_llm_binding_even_without_visible_deploy_secret():
-    wf = _load()
-    step_name = "Report subscription LLM binding when no deploy auth bundle is configured"
-    step = next(
-        (
-            s for s in _steps(wf)
-            if s.get("name") == step_name
-        ),
-        None,
-    )
-    assert step is not None
-    run_script = step.get("run", "") or ""
-    assert "verify_llm_binding.py" in run_script
-    assert "--require-sandbox" in run_script
-    assert "--retries 12" in run_script
-    assert "--retry-delay 10" in run_script
-    assert "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64" not in run_script

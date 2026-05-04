@@ -54,7 +54,7 @@
 | `workflow/storage/__init__.py:26,36,37` | self-relative re-exports | mechanical retarget |
 | `workflow/universe_server.py:44,8298,8417,8536` | `from workflow.storage import (…)` and `from workflow.storage.layout import slugify` | `from workflow.catalog import (…)` / `from workflow.catalog.layout import slugify` |
 | `tests/test_backend_factory.py:19` | `from workflow.storage import (…)` | `from workflow.catalog import (…)` |
-| `tests/test_outcome_gate_git_backend.py:74,118,141,150,173,199,225` | mixed `workflow.storage.*` imports | mechanical retarget |
+| `tests/test_outcome_gates_phase6_3.py:74,118,141,150,173,199,225` | mixed `workflow.storage.*` imports | mechanical retarget |
 | `tests/test_phase7_h2_goals_cutover.py:60,80,233` | `from workflow.storage import invalidate_backend_cache` | `from workflow.catalog import invalidate_backend_cache` |
 | `tests/test_phase7_h3_branch_cutover.py:72,93,115` | same | mechanical retarget |
 | (any other call sites surfaced by full grep at commit time) | sweep | mechanical |

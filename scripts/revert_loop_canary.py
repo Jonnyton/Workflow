@@ -23,9 +23,8 @@ Exit codes (per spec Q4):
   3  CRITICAL (trigger auto-repair via p0-outage-triage).
   4  Handshake / connectivity failure (distinct from stale/dark for
      diagnostics).
-  5  Daemon responded but activity_log_tail absent / unparseable / read
-     failed. Code bumped from spec-inferred 3 to 5 to avoid collision with
-     CRITICAL.
+  5  Daemon responded but activity_log_tail absent / unparseable. Code
+     bumped from spec-inferred 3 to 5 to avoid collision with CRITICAL.
 
 Env overrides (per spec Q3):
   WORKFLOW_REVERT_CANARY_N          WARN threshold (default 3)
@@ -168,11 +167,10 @@ def classify_loop(
     """Classify an activity_log_tail against both WARN + CRITICAL thresholds.
 
     Returns (exit_code, human_message). CRITICAL takes precedence when
-    both fire in the same pass. Empty tail is OK: this canary detects
-    busy-broken work, and an empty well-formed tail has 0 REVERTs.
+    both fire in the same pass. Empty tail → exit 5 (evidence absent).
     """
     if not activity_tail:
-        return 0, "OK: activity_log_tail empty; 0 REVERTs to classify"
+        return 5, "activity_log_tail empty — no evidence to classify"
 
     warn_count = _count_reverts_in_window(
         activity_tail, now=now, window_min=warn_window_min,
@@ -258,21 +256,6 @@ def fetch_status_activity_tail(
         raise RevertLoopError(
             5, f"get_status text not JSON: {exc}; preview={text[:200]!r}",
         ) from exc
-
-    caveats = payload.get("evidence_caveats")
-    if isinstance(caveats, dict):
-        tail_caveats = caveats.get("activity_log_tail", [])
-        if isinstance(tail_caveats, list):
-            read_failed = any(
-                isinstance(caveat, str) and "read failed" in caveat.lower()
-                for caveat in tail_caveats
-            )
-            if read_failed:
-                raise RevertLoopError(
-                    5,
-                    "get_status reports activity_log_tail read failure: "
-                    f"{tail_caveats!r}",
-                )
 
     evidence = payload.get("evidence")
     if not isinstance(evidence, dict):

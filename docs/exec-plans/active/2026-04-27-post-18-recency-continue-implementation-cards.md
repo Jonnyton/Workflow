@@ -1,56 +1,42 @@
-# Post-#18 Implementation Cards: `run_branch resume_from`
+# Post-#18 Implementation Cards: Recency + Continue Primitives
 
 Date: 2026-04-27
-Updated: 2026-05-02
 Author: codex-gpt5-desktop
-Status: Cards A-C code-shipped; live MCP verification remains
+Status: ready to execute on lock release
 
-Decision stamp: F2 accepted by host on 2026-04-28. Drop Recency as a platform
-primitive. Do not add standalone `my_recent*` or `continue_branch` action
-verbs. Add one optional `resume_from=<run_id>` parameter to existing
-`extensions action=run_branch`.
-
-Implementation stamp: Cards A-B are present in `workflow/api/runs.py`; Card C
-removed the standalone `continue_branch` dispatch route and prompt routing on
-2026-05-02. Keep Card D until live MCP proof covers both default `run_branch`
-and `run_branch resume_from=<run_id>`.
-
-## Card A - Add Optional `resume_from`
+## Card A — `extensions action=my_recent_runs`
 
 - **Files:** `workflow/api/runs.py`, `tests/`
-- **Goal:** teach the existing `run_branch` handler to accept
-  `resume_from=<run_id>` while preserving exact behavior when the parameter is
-  absent.
-- **Input contract:** `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`
-  section 2.
-- **Tests:** use fixture pack
-  `docs/specs/2026-04-27-recency-continue-fixture-pack.md`.
-- **Done when:** default `run_branch` tests still pass and resume requests
-  produce a new normal run/request envelope with source-run context attached.
+- **Goal:** add `_action_my_recent_runs` with actor-scoped recent run summaries
+- **Input contract:** from `docs/specs/2026-04-27-recency-and-continue-branch-primitives.md`
+- **Tests:** use fixture pack `docs/specs/2026-04-27-recency-continue-fixture-pack.md`
+- **Done when:** actor filter + limit behavior + envelope shape pass
 
-## Card B - Source-Run Visibility And Carryover
+## Card B — `goals action=my_recent`
+
+- **Files:** `workflow/api/market.py`, `tests/`
+- **Goal:** add `_action_my_recent` for actor-scoped goal recency
+- **Dependency:** Card A conventions for ordering + bounds
+- **Done when:** parity with runs recency behavior and deterministic output
+
+## Card C — `extensions action=continue_branch`
 
 - **Files:** `workflow/api/runs.py`, `tests/`
-- **Goal:** resolve the source run under caller scope and carry only supported
-  continuation context into the new run.
-- **Done when:** success, not-found, forbidden, invalid-state, and branch
-  mismatch cases are deterministic.
+- **Goal:** add `_action_continue_branch` with `from_run_id` + `instructions`
+- **Mode:** v1 `sibling-branch` only
+- **Done when:** success + not-found + forbidden paths pass with stable envelopes
 
-## Card C - Retire Stale Action Paths
+## Card D — Dispatch and fail-loud guarantees
 
-- **Files:** `workflow/api/runs.py`, `workflow/api/market.py`, tests touching
-  action routing
-- **Goal:** avoid adding `_action_my_recent_runs`, `_action_my_recent`, or
-  `_action_continue_branch` from the superseded 2026-04-27 plan.
-- **Done when:** unknown-action fail-loud behavior is unchanged and no new
-  Recency/standalone-continue action appears in dispatch tables.
+- **Files:** `workflow/api/runs.py`, `workflow/api/market.py`, tests touching action routing
+- **Goal:** ensure unknown actions remain explicit fail-loud errors
+- **Done when:** no silent fallback behavior introduced
 
-## Card D - Verification Runbook
+## Card E — Verification runbook
 
-- focused tests for cards A-C
-- full relevant suite slice for runs dispatch
-- live MCP probe after merge using `extensions action=run_branch` both with and
-  without `resume_from`
+- focused tests for cards A-D
+- full relevant suite slice for runs/market dispatch
+- one live MCP probe sequence post-merge
 
 ## Sequencing
 
@@ -58,6 +44,6 @@ and `run_branch resume_from=<run_id>`.
 2. B
 3. C
 4. D
+5. E
 
-No further product re-scope is needed unless `#18` changes the run dispatch
-architecture.
+No re-scoping required unless `#18` changes dispatch architecture.

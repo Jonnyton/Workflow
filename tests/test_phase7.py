@@ -270,6 +270,7 @@ class TestCommitVersionStoreWiring:
 
     def test_save_to_version_store_called(self):
         from domains.fantasy_daemon.phases.commit import _save_to_version_store
+
         from workflow import runtime_singletons as runtime
 
         store = OutputVersionStore(":memory:", "test")
@@ -293,6 +294,7 @@ class TestCommitVersionStoreWiring:
     def test_save_to_version_store_absent(self):
         """No crash when version_store is not set."""
         from domains.fantasy_daemon.phases.commit import _save_to_version_store
+
         from workflow import runtime_singletons as runtime
 
         runtime.version_store = None
@@ -301,6 +303,7 @@ class TestCommitVersionStoreWiring:
     def test_save_to_version_store_error_handled(self):
         """Errors in version store are caught gracefully."""
         from domains.fantasy_daemon.phases.commit import _save_to_version_store
+
         from workflow import runtime_singletons as runtime
 
         broken_store = MagicMock()
@@ -317,6 +320,7 @@ class TestBookClosePromiseWiring:
 
     def test_promote_promises_on_close(self):
         from domains.fantasy_daemon.phases.book_close import book_close
+
         from workflow import runtime_singletons as runtime
 
         tracker = SeriesPromiseTracker(":memory:", "test")
@@ -341,6 +345,7 @@ class TestBookClosePromiseWiring:
     def test_book_close_no_tracker(self):
         """No crash when promise_tracker is not set."""
         from domains.fantasy_daemon.phases.book_close import book_close
+
         from workflow import runtime_singletons as runtime
 
         runtime.promise_tracker = None
@@ -353,6 +358,7 @@ class TestBookClosePromiseWiring:
     def test_book_close_empty_promises(self):
         """Graceful handling when no promises to promote."""
         from domains.fantasy_daemon.phases.book_close import book_close
+
         from workflow import runtime_singletons as runtime
 
         tracker = SeriesPromiseTracker(":memory:", "test")

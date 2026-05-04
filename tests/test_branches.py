@@ -518,12 +518,6 @@ class TestBranchDefinition:
         errors = b.validate()
         assert any("Duplicate state field" in e for e in errors)
 
-    def test_validate_state_field_cannot_collide_with_graph_node_id(self):
-        b = _make_sample_branch()
-        b.state_schema.append({"name": "orient", "type": "str"})
-        errors = b.validate()
-        assert any("collides with a graph node ID" in e for e in errors)
-
     def test_fork(self):
         b = _make_sample_branch()
         b.stats["run_count"] = 42

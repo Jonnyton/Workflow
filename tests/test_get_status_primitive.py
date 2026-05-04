@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 
 from workflow.universe_server import (
     get_status,
@@ -61,7 +60,6 @@ def test_get_status_returns_required_shape() -> None:
     assert "host_id" in ah
     assert "served_llm_type" in ah
     assert "llm_endpoint_bound" in ah
-    assert "api_key_providers_enabled" in ah
 
     # tier_routing_policy shape.
     trp = payload["tier_routing_policy"]
@@ -140,7 +138,7 @@ def test_get_status_never_errors_on_missing_activity_log() -> None:
 def _write_activity_log(tmp_path, lines):
     """Write `lines` to a universe's activity.log. Returns universe_id."""
     import os
-    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
     udir = tmp_path / "track_q_universe"
     udir.mkdir(parents=True, exist_ok=True)
     (udir / "activity.log").write_text(
@@ -197,7 +195,7 @@ def test_get_status_evidence_caveats_flag_empty_log(tmp_path) -> None:
     """Track Q — when activity.log is empty, per-field caveats must flag
     BOTH activity_log_tail AND last_n_calls as unreliable."""
     import os
-    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
     udir = tmp_path / "empty_universe"
     udir.mkdir(parents=True, exist_ok=True)
     payload = json.loads(get_status(universe_id="empty_universe"))
@@ -230,37 +228,23 @@ def test_get_status_activity_log_line_count_reflects_total(tmp_path) -> None:
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _get_endpoint_hint(
-    monkeypatch,
-    env: dict,
-    which_map: dict,
-    *,
-    api_key_opt_in: bool = False,
-    home: Path | None = None,
-) -> str:
+def _get_endpoint_hint(monkeypatch, env: dict, which_map: dict) -> str:
     """Helper: patch env + shutil.which, call get_status, return endpoint hint."""
     import shutil as _shutil
 
     for key in (
         "OLLAMA_HOST", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY",
         "XAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY",
-        "WORKFLOW_ALLOW_API_KEY_PROVIDERS",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, val in env.items():
         monkeypatch.setenv(key, val)
-    if api_key_opt_in:
-        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
 
     def _which(cmd, *args, **kwargs):
         return which_map.get(cmd)
 
     monkeypatch.setattr("shutil.which", _which)
     monkeypatch.setattr(_shutil, "which", _which)
-    monkeypatch.setattr(
-        "workflow.api.status.Path.home",
-        lambda: home or (Path.cwd() / ".workflow-test-empty-home"),
-    )
 
     payload = json.loads(get_status())
     return payload["active_host"]["llm_endpoint_bound"]
@@ -280,7 +264,6 @@ def test_llm_endpoint_bound_anthropic(monkeypatch) -> None:
         monkeypatch,
         env={"ANTHROPIC_BASE_URL": "http://relay.internal"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "anthropic"
 
@@ -304,20 +287,6 @@ def test_llm_endpoint_bound_codex(monkeypatch) -> None:
         monkeypatch,
         env={"OPENAI_API_KEY": "sk-test"},
         which_map={"codex": "/usr/local/bin/codex"},
-        api_key_opt_in=True,
-    )
-    assert hint == "codex"
-
-
-def test_llm_endpoint_bound_codex_subscription_auth(monkeypatch, tmp_path) -> None:
-    auth_dir = tmp_path / ".codex"
-    auth_dir.mkdir()
-    (auth_dir / "auth.json").write_text("{}", encoding="utf-8")
-    hint = _get_endpoint_hint(
-        monkeypatch,
-        env={},
-        which_map={"codex": "/usr/local/bin/codex"},
-        home=tmp_path,
     )
     assert hint == "codex"
 
@@ -352,19 +321,15 @@ def test_llm_endpoint_bound_unset_when_nothing_available(monkeypatch) -> None:
 
 
 def test_llm_endpoint_bound_codex_takes_priority_over_claude(
-    monkeypatch, tmp_path,
+    monkeypatch,
 ) -> None:
-    auth_dir = tmp_path / ".codex"
-    auth_dir.mkdir()
-    (auth_dir / "auth.json").write_text("{}", encoding="utf-8")
     hint = _get_endpoint_hint(
         monkeypatch,
-        env={},
+        env={"OPENAI_API_KEY": "sk-test"},
         which_map={
             "codex": "/usr/local/bin/codex",
             "claude": "/usr/local/bin/claude",
         },
-        home=tmp_path,
     )
     assert hint == "codex"
 
@@ -375,26 +340,11 @@ def test_llm_endpoint_bound_codex_takes_priority_over_claude(
 # ─────────────────────────────────────────────────────────────────────
 
 
-def test_api_key_endpoint_hints_ignored_without_opt_in(monkeypatch) -> None:
-    hint = _get_endpoint_hint(
-        monkeypatch,
-        env={
-            "OPENAI_API_KEY": "sk-test",
-            "XAI_API_KEY": "xai-test",
-            "GEMINI_API_KEY": "gemini-test",
-            "GROQ_API_KEY": "groq-test",
-        },
-        which_map={"codex": "/usr/local/bin/codex"},
-    )
-    assert hint == "unset"
-
-
 def test_llm_endpoint_bound_xai(monkeypatch) -> None:
     hint = _get_endpoint_hint(
         monkeypatch,
         env={"XAI_API_KEY": "xai-test"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "xai"
 
@@ -404,7 +354,6 @@ def test_llm_endpoint_bound_gemini(monkeypatch) -> None:
         monkeypatch,
         env={"GEMINI_API_KEY": "gemini-test"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "gemini"
 
@@ -414,7 +363,6 @@ def test_llm_endpoint_bound_groq(monkeypatch) -> None:
         monkeypatch,
         env={"GROQ_API_KEY": "groq-test"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "groq"
 
@@ -426,7 +374,6 @@ def test_llm_endpoint_bound_xai_takes_priority_over_gemini(
         monkeypatch,
         env={"XAI_API_KEY": "xai-test", "GEMINI_API_KEY": "gemini-test"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "xai"
 
@@ -438,7 +385,6 @@ def test_llm_endpoint_bound_gemini_takes_priority_over_groq(
         monkeypatch,
         env={"GEMINI_API_KEY": "gemini-test", "GROQ_API_KEY": "groq-test"},
         which_map={},
-        api_key_opt_in=True,
     )
     assert hint == "gemini"
 
@@ -539,7 +485,7 @@ def test_get_status_schema_contract() -> None:
 def test_get_status_session_boundary_no_prior_when_empty_log(tmp_path) -> None:
     """Universe with no activity returns prior_session_context_available=false."""
     import os
-    os.environ["WORKFLOW_DATA_DIR"] = str(tmp_path)
+    os.environ["UNIVERSE_SERVER_BASE"] = str(tmp_path)
     udir = tmp_path / "empty_sb_universe"
     udir.mkdir(parents=True, exist_ok=True)
     payload = json.loads(get_status(universe_id="empty_sb_universe"))
@@ -553,7 +499,7 @@ def test_get_status_session_boundary_prior_when_log_has_user(tmp_path, monkeypat
     """Universe with activity for current user returns prior_session_context_available=true."""
     user = "test_session_user"
     monkeypatch.setenv("UNIVERSE_SERVER_USER", user)
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(tmp_path))
     udir = tmp_path / "active_sb_universe"
     udir.mkdir(parents=True, exist_ok=True)
     (udir / "activity.log").write_text(

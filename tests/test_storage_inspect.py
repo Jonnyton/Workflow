@@ -32,6 +32,7 @@ _FakeUsage = namedtuple("_FakeUsage", ["total", "used", "free"])
 def isolated_data_dir(tmp_path: Path, monkeypatch) -> Path:
     """Point WORKFLOW_DATA_DIR at a tmp directory for deterministic walks."""
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
     return tmp_path
 
 

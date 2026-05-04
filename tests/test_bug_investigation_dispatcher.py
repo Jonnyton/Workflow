@@ -62,8 +62,6 @@ class TestEnqueueInvestigationRequest:
         assert inputs["bug_id"] == "BUG-003"
         assert inputs["title"] == "null pointer"
         assert inputs["severity"] == "critical"
-        assert inputs["request_text"].startswith("bug BUG-003: null pointer")
-        assert "Severity: critical" in inputs["request_text"]
 
     def test_raises_if_no_branch_def_id(self, tmp_path, monkeypatch):
         monkeypatch.delenv("WORKFLOW_REQUEST_TYPE_PRIORITIES", raising=False)
@@ -251,74 +249,3 @@ class TestBranchTaskRequestTypeField:
         queue_path(tmp_path).write_text(json.dumps([task_dict]), encoding="utf-8")
         queue = read_queue(tmp_path)
         assert queue[0].request_type == "branch_run"
-
-
-class TestBugInvestigationDirectRunRouting:
-    def test_bug_investigation_tasks_execute_through_direct_run_path(self):
-        from fantasy_daemon.__main__ import _should_execute_claimed_branch_directly
-
-        task = BranchTask(
-            branch_task_id="bt-bug",
-            branch_def_id="change-loop",
-            universe_id="u",
-            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
-        )
-
-        assert _should_execute_claimed_branch_directly(task) is True
-
-    def test_universe_cycle_wrapper_still_uses_wrapper_path(self):
-        from fantasy_daemon.__main__ import _should_execute_claimed_branch_directly
-
-        task = BranchTask(
-            branch_task_id="bt-wrapper",
-            branch_def_id="fantasy_author:universe_cycle_wrapper",
-            universe_id="u",
-            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
-        )
-
-        assert _should_execute_claimed_branch_directly(task) is False
-
-    def test_bug_investigation_direct_run_synthesizes_request_text_for_legacy_tasks(self):
-        from fantasy_daemon.__main__ import _branch_task_inputs_for_execution
-
-        task = BranchTask(
-            branch_task_id="bt-bug",
-            branch_def_id="change-loop",
-            universe_id="u",
-            inputs={"bug_id": "BUG-009", "title": "dispatcher pickup stalls"},
-            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
-        )
-
-        inputs = _branch_task_inputs_for_execution(task)
-
-        assert inputs["request_text"].startswith("bug BUG-009: dispatcher pickup stalls")
-
-    def test_bug_investigation_direct_run_preserves_existing_request_text(self):
-        from fantasy_daemon.__main__ import _branch_task_inputs_for_execution
-
-        task = BranchTask(
-            branch_task_id="bt-bug",
-            branch_def_id="change-loop",
-            universe_id="u",
-            inputs={"bug_id": "BUG-009", "request_text": "already normalized"},
-            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
-        )
-
-        inputs = _branch_task_inputs_for_execution(task)
-
-        assert inputs["request_text"] == "already normalized"
-
-    def test_branch_run_inputs_are_not_rewritten(self):
-        from fantasy_daemon.__main__ import _branch_task_inputs_for_execution
-
-        task = BranchTask(
-            branch_task_id="bt-branch",
-            branch_def_id="change-loop",
-            universe_id="u",
-            inputs={"bug_id": "BUG-009"},
-            request_type="branch_run",
-        )
-
-        inputs = _branch_task_inputs_for_execution(task)
-
-        assert inputs == {"bug_id": "BUG-009"}

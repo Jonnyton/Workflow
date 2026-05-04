@@ -37,8 +37,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Install actionlint
         id: install
@@ -63,9 +61,10 @@ jobs:
       - name: Resolve changed workflow files
         id: changed
         run: |
-          # For pull_request and push events, diff against the event range so
-          # we only lint workflow files this change touched.
-          # Manual dispatch remains an explicit all-workflows audit.
+          # For pull_request events, diff against the merge base so we
+          # only lint the files this PR actually touched.
+          # For push-to-main and manual dispatch, lint all workflow files
+          # (small set — ~15 files).
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base="${{ github.event.pull_request.base.sha }}"
@@ -73,16 +72,6 @@ jobs:
             changed=$(git diff --name-only --diff-filter=ACMR \
                 "${base}" "${head}" \
                 | grep -E '^\.github/workflows/.+\.ya?ml$' || true)
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            base="${{ github.event.before }}"
-            head="${{ github.sha }}"
-            if [ "${base}" = "0000000000000000000000000000000000000000" ]; then
-              changed=$(ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null || true)
-            else
-              changed=$(git diff --name-only --diff-filter=ACMR \
-                  "${base}" "${head}" \
-                  | grep -E '^\.github/workflows/.+\.ya?ml$' || true)
-            fi
           else
             changed=$(ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null || true)
           fi
@@ -101,8 +90,7 @@ jobs:
         if: steps.changed.outputs.paths != ''
         run: |
           set -euo pipefail
-          # Intentional word-splitting on paths.
-          # shellcheck disable=SC2086
+          # shellcheck disable=SC2086 — intentional word-splitting on paths.
           actionlint ${{ steps.changed.outputs.paths }}
 
       - name: Summary

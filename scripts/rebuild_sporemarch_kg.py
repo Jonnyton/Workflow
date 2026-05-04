@@ -89,7 +89,7 @@ def discover_scenes(universe_dir: Path) -> list[SceneFile]:
 
 def _load_provider_call():
     """Import the production provider stub. Fails loudly on import error."""
-    from domains.fantasy_daemon.phases._provider_stub import call_provider
+    from domains.fantasy_author.phases._provider_stub import call_provider
 
     return call_provider
 

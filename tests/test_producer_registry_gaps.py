@@ -50,7 +50,7 @@ def universe_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def _clean_both_registries():
-    """Save-and-restore pattern (precedent: tests/test_goal_pool.py
+    """Save-and-restore pattern (precedent: tests/test_phase_f_goal_pool.py
     _clean_branch_task_registry). A plain reset+reset across yield leaks
     empty registries to downstream test files — many production suites
     depend on import-time registrations (goal_pool, node_bid, domain

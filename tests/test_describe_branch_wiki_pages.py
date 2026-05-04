@@ -243,7 +243,7 @@ def test_describe_branch_response_contains_related_wiki_pages_key(tmp_path, monk
         "edges": [],
         "state_schema": [],
     }
-    # Patch the real daemon_server module, not a compatibility alias.
+    # author_server is a back-compat alias for daemon_server — patch the real module.
     # Also patch list_branch_definitions + list_branch_versions called for lineage.
     with (
         patch("workflow.daemon_server.get_branch_definition", return_value=branch_data),

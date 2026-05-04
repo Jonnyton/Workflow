@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "workflow": {
-      "command": "python",
-      "args": ["-m", "workflow.mcp_server"]
-    }
-  }
-}

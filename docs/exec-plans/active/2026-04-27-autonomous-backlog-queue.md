@@ -65,23 +65,13 @@ reuse:
     trust observability, and agent-team scoping after `claimed:user` clears.
 
 12. **Reference integrity pass for completed-note moves**
-    Status: no-op verified 2026-05-01
-    Scope: `docs/notes/completed/` does not exist yet; current references still
-    point at live `docs/notes/` artifacts. Re-open only after a completed-note
-    move actually lands.
+    Status: next
+    Scope: update only queue/user-sim/index links when note artifacts are moved
+    from `docs/notes/` to `docs/notes/completed/`; do not commit someone
+    else's staged renames.
 
 13. **Continue autonomous burn-down (discover and land next slices)**
-    Status: landed 2026-05-02
-    Scope: current pass used Claude navigator memory guardrails, found a
-    non-overlapping docs-only slice, moved landed Arc B plans to completed,
-    refreshed Arc C prep now that Arc B is complete, and removed the temporary
-    STATUS claim rows.
-
-14. **Continue autonomous burn-down (next safe slice)**
-    Status: waiting for new non-overlapping slice after 2026-05-02 pass
-    Scope: remaining concrete work found in this pass is #18-blocked,
-    Mission-10-blocked, loop-owned, host/admin-owned, date-gated, or historical
-    audit context that should not be rewritten.
+    Status: next
 
 ## Stop conditions
 

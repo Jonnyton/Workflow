@@ -1,8 +1,8 @@
 """Task #9 — direct tests for `workflow.api.wiki` after decomp Step 2.
 
 The legacy test files (`test_wiki_*.py`) import from `workflow.universe_server`
-to cover chatbot-facing MCP wrappers. This file exercises `workflow.api.wiki`
-directly to lock in the canonical implementation surface.
+and continue to pass via the back-compat re-export shim. This file exercises
+`workflow.api.wiki` directly to lock in the new public surface.
 """
 
 from __future__ import annotations
@@ -313,38 +313,6 @@ def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
     )
     assert res["status"] == "filed"
     assert res["bug_id"].startswith("BUG-")
-
-
-def test_wiki_file_bug_queued_investigation_returns_branch_task_lease_shape(
-    wiki_env, tmp_path, monkeypatch,
-):
-    universe_dir = tmp_path / "default-universe"
-    universe_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-universe")
-    monkeypatch.setenv(
-        "WORKFLOW_BUG_INVESTIGATION_BRANCH_DEF_ID",
-        "bug-investigation-branch",
-    )
-    monkeypatch.delenv("WORKFLOW_REQUEST_TYPE_PRIORITIES", raising=False)
-
-    res = json.loads(
-        wiki(
-            action="file_bug",
-            component="loop",
-            severity="major",
-            title="Lease metadata response shape",
-            observed="queued task lacks visible lease metadata",
-            force_new=True,
-        )
-    )
-
-    task = res["investigation"]["branch_task"]
-    assert task["branch_task_id"] == res["investigation"]["dispatcher_request_id"]
-    assert task["status"] == "pending"
-    assert task["worker_owner_id"] == ""
-    assert task["lease_expires_at"] == ""
-    assert task["heartbeat_at"] == ""
-    assert task["last_progress_at"] == ""
 
 
 def test_wiki_file_bug_dedup_returns_similar_found(wiki_env):

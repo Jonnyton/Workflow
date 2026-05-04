@@ -25,7 +25,7 @@ def _patch_lookup(exists_ids=("uuid-abc-123",), all_branches=(_BRANCH_A, _BRANCH
         raise KeyError(branch_def_id)
 
     return (
-        patch("workflow.daemon_server.get_branch_definition", side_effect=get_branch_def),
+        patch("workflow.author_server.get_branch_definition", side_effect=get_branch_def),
         patch("workflow.daemon_server.list_branch_definitions", return_value=list(all_branches)),
         patch("workflow.api.engine_helpers._current_actor", return_value="user"),
         patch("workflow.api.engine_helpers._current_actor", return_value="user"),
@@ -95,7 +95,7 @@ class TestDescribeBranchAcceptsName:
         from workflow.api.branches import _ext_branch_describe
 
         with (
-            patch("workflow.daemon_server.get_branch_definition", side_effect=get_def),
+            patch("workflow.author_server.get_branch_definition", side_effect=get_def),
             patch("workflow.daemon_server.list_branch_definitions", return_value=[_BRANCH_A]),
             patch("workflow.api.engine_helpers._current_actor", return_value="user"),
             patch("workflow.api.engine_helpers._current_actor", return_value="user"),

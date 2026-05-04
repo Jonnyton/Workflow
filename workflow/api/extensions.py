@@ -51,8 +51,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.api.auto_ship_actions import _AUTO_SHIP_ACTIONS
-
 # Top-of-module imports of all 12 dispatch tables from Steps 4-8.
 # These are the routing surface — extensions.py is a hot-path dispatcher,
 # so lazy-imports would burn one import resolution per call. Verified
@@ -85,7 +83,7 @@ from workflow.api.runtime_ops import (
     _SCHEDULER_ACTIONS,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("universe_server.extensions")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -254,7 +252,6 @@ def _extensions_impl(
     run_id: str = "",
     inputs_json: str = "",
     run_name: str = "",
-    resume_from: str = "",
     status: str = "",
     since_step: int = -1,
     max_wait_s: int = 60,
@@ -296,7 +293,6 @@ def _extensions_impl(
     since: str = "",
     branch_version_id: str = "",
     parent_version_id: str = "",
-    child_run_id: str = "",
     notes: str = "",
     lock_id: str = "",
     escrow_amount: int = 0,
@@ -327,7 +323,6 @@ def _extensions_impl(
     outcome_note: str = "",
     parent_branch_def_id: str = "",
     child_branch_def_id: str = "",
-    output_digest: str = "",
     contribution_kind: str = "remix",
     credit_share: float = 0.0,
     max_depth: int = 10,
@@ -400,12 +395,8 @@ def _extensions_impl(
         "branch_def_id": branch_def_id,
         "branch_version_id": branch_version_id,
         "run_id": run_id,
-        "child_run_id": child_run_id,
-        "child_branch_def_id": child_branch_def_id,
-        "output_digest": output_digest,
         "inputs_json": inputs_json,
         "run_name": run_name,
-        "resume_from": resume_from,
         "status": status,
         "since_step": since_step,
         "max_wait_s": max_wait_s,
@@ -547,17 +538,6 @@ def _extensions_impl(
         }
         return inspect_dry_handler(di_kwargs)
 
-    # ── Auto-ship validator (PR #198 Phase 2A) ─────────────────────────────
-    # Wraps workflow.auto_ship.validate_ship_request as an MCP action so the
-    # loop's release_safety_gate prompt (and chatbots / canaries) can call it
-    # via tool. Pure validator — no IO, no repo writes.
-    auto_ship_handler = _AUTO_SHIP_ACTIONS.get(action)
-    if auto_ship_handler is not None:
-        as_kwargs: dict[str, Any] = {
-            "body_json": body_json,
-        }
-        return auto_ship_handler(as_kwargs)
-
     # ── Scheduler ──────────────────────────────────────────────────────────
     scheduler_handler = _SCHEDULER_ACTIONS.get(action)
     if scheduler_handler is not None:
@@ -617,7 +597,6 @@ def _extensions_impl(
             "get_branch", "list_branches", "delete_branch",
             "run_branch", "get_run", "list_runs",
             "stream_run", "cancel_run", "get_run_output",
-            "attach_existing_child_run",
             "resume_run", "estimate_run_cost", "query_runs",
             "judge_run", "list_judgments", "compare_runs",
             "suggest_node_edit", "get_node_output",
@@ -626,7 +605,7 @@ def _extensions_impl(
             "dry_inspect_node", "dry_inspect_patch",
             "messaging_send", "messaging_receive", "messaging_ack",
             "publish_version", "get_branch_version", "list_branch_versions",
-            "fork_tree",
+            "continue_branch", "fork_tree",
             "escrow_lock", "escrow_release", "escrow_refund", "escrow_inspect",
             "attest_gate_event", "verify_gate_event", "dispute_gate_event",
             "retract_gate_event", "get_gate_event", "list_gate_events",

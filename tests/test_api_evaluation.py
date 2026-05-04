@@ -1,15 +1,17 @@
 """Task #12 — direct tests for `workflow.api.evaluation` after decomp Step 5.
 
 The legacy test files (test_publish_version.py, test_rollback.py,
-test_branch_evaluation_iteration.py, test_branch_versions_rollback_columns.py)
-reach the evaluation handlers via the `extensions` MCP tool. This file
-exercises `workflow.api.evaluation` directly to lock in the canonical
-implementation surface.
+test_community_branches_phase4.py, test_branch_versions_rollback_columns.py)
+reach the evaluation handlers via the `extensions` MCP tool — those tests
+continue to pass through the back-compat re-export shim. This file
+exercises `workflow.api.evaluation` directly to lock in the new public surface.
 """
 
 from __future__ import annotations
 
 import json
+
+import pytest
 
 from workflow.api import evaluation as eval_mod
 from workflow.api.evaluation import (

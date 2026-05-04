@@ -12,7 +12,6 @@ Steps:
   1. GET  /accounts/{acct}/access/apps             → find by domain
   2. DELETE /accounts/{acct}/access/apps/{uuid}    → removes app + policies
   3. (if --rotate-token) GET + DELETE service token by name
-  4. Post-rollback verification. Exit 3 if post-apply verification fails.
 
 Usage:
     python scripts/cf_access_rollback.py [--apply] [--rotate-token]
@@ -41,7 +40,6 @@ from emergency_dns_flip import (  # noqa: E402
 
 SERVICE_TOKEN_NAME = "workflow-mcp-worker"
 APP_DOMAIN = "mcp.tinyassets.io"
-MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
 def _resolve_account_id(client: CloudflareClient, zone_id: str) -> str:
@@ -89,30 +87,25 @@ def _delete_service_token(
     return True
 
 
-def rollback_check(canonical: str, internal: str) -> bool:
+def rollback_check(canonical: str, internal: str) -> None:
     """Post-rollback probe — inverse of the cutover three-check.
 
     Canonical should still be green (200 + serverInfo).
     Internal should now be reachable (200), proving the Access gate was removed.
     """
     print("\n=== rollback-check ===")
-    ok = True
     # (a) canonical — still green
     req = urllib.request.Request(
         canonical,
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "User-Agent": "workflow-cf-access-rollback/1.0",
-        },
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
         data=json.dumps(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "protocolVersion": "2025-06-18",
                     "clientInfo": {"name": "rollback-probe", "version": "1"},
                     "capabilities": {},
                 },
@@ -122,36 +115,28 @@ def rollback_check(canonical: str, internal: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             body = resp.read().decode()
-            green = resp.status == 200 and "serverInfo" in body
-            ok = ok and green
             print(
                 f"(a) canonical {canonical}: "
-                f"{resp.status} {'GREEN' if green else 'UNEXPECTED'}"
+                f"{resp.status} {'GREEN' if 'serverInfo' in body else 'UNEXPECTED'}"
             )
     except Exception as e:
-        ok = False
         print(f"(a) canonical {canonical}: FAILED {e}")
 
     # (b) internal — should now be ungated (200)
     try:
         req2 = urllib.request.Request(internal, method="HEAD")
         with urllib.request.urlopen(req2, timeout=10) as resp:
-            reachable = resp.status < 400
-            ok = ok and reachable
             print(
                 f"(b) internal {internal}: status={resp.status} "
-                f"({'GREEN: ungated' if reachable else 'UNEXPECTED: still blocked'})"
+                f"({'GREEN: ungated' if resp.status < 400 else 'UNEXPECTED: still blocked'})"
             )
     except urllib.error.HTTPError as e:
-        ok = False
         print(
             f"(b) internal {internal}: {e.code} "
             f"({'UNEXPECTED: still gated' if e.code in (401, 403) else 'UNEXPECTED'})"
         )
     except Exception as e:
-        ok = False
         print(f"(b) internal {internal}: {e}")
-    return ok
 
 
 def main() -> int:
@@ -195,10 +180,9 @@ def main() -> int:
         return 1
 
     if args.apply and not args.skip_verify:
-        if not rollback_check(
+        rollback_check(
             "https://tinyassets.io/mcp", f"https://{APP_DOMAIN}/mcp"
-        ):
-            return 3
+        )
 
     return 0
 

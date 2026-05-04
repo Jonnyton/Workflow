@@ -2,14 +2,16 @@
 
 The legacy test files (test_run_branch_failure_taxonomy.py,
 test_query_runs.py, test_run_branch_version.py, test_canonical_branch_mcp.py)
-still cover the chatbot-facing `workflow.universe_server` MCP wrappers. This
-file exercises `workflow.api.runs` directly to lock in the canonical
-implementation surface.
+import via `workflow.universe_server` and continue to pass through the
+back-compat re-export shim. This file exercises `workflow.api.runs`
+directly to lock in the new public surface.
 """
 
 from __future__ import annotations
 
 import json
+
+import pytest
 
 from workflow.api import runs as runs_mod
 from workflow.api.runs import (
@@ -34,8 +36,7 @@ def test_module_exposes_expected_public_names():
         "_RUN_ACTIONS", "_RUN_WRITE_ACTIONS", "_dispatch_run_action",
         "_action_run_branch", "_action_get_run", "_action_list_runs",
         "_action_stream_run", "_action_wait_for_run", "_action_cancel_run",
-        "_action_get_run_output", "_action_attach_existing_child_run",
-        "_action_resume_run",
+        "_action_get_run_output", "_action_resume_run",
         "_action_estimate_run_cost", "_action_query_runs",
         "_action_run_routing_evidence", "_action_get_memory_scope_status",
         "_action_run_branch_version", "_action_rollback_merge",
@@ -54,15 +55,15 @@ def test_module_exposes_expected_public_names():
 # ── _RUN_ACTIONS dispatch table ─────────────────────────────────────────────
 
 
-def test_run_actions_table_has_16_handlers():
-    assert len(_RUN_ACTIONS) == 16
+def test_run_actions_table_has_15_handlers():
+    assert len(_RUN_ACTIONS) == 15
 
 
 def test_run_actions_table_keys_are_expected_set():
     expected = {
         "run_branch", "run_branch_version", "get_run", "list_runs",
         "stream_run", "wait_for_run", "cancel_run", "get_run_output",
-        "attach_existing_child_run", "resume_run", "estimate_run_cost", "query_runs",
+        "resume_run", "estimate_run_cost", "query_runs",
         "get_routing_evidence", "get_memory_scope_status",
         "rollback_merge", "get_rollback_history",
     }
@@ -85,7 +86,6 @@ def test_run_write_actions_includes_state_mutators():
     assert "resume_run" in _RUN_WRITE_ACTIONS
     assert "rollback_merge" in _RUN_WRITE_ACTIONS
     assert "run_branch_version" in _RUN_WRITE_ACTIONS
-    assert "attach_existing_child_run" in _RUN_WRITE_ACTIONS
 
 
 def test_run_write_actions_excludes_read_actions():
@@ -198,72 +198,3 @@ def test_action_run_branch_returns_str():
 # Arc A re-export shims removed in Task #18 retarget sweep — the
 # `test_universe_server_reexports_run_actions` + parametrized identity tests
 # are gone alongside the shim block.
-
-
-def test_compile_failure_records_actionable_run_error(tmp_path, monkeypatch):
-    """Compile-time failures must not collapse into background-worker crash."""
-    from workflow.branches import (
-        BranchDefinition,
-        EdgeDefinition,
-        GraphNodeRef,
-        NodeDefinition,
-    )
-    from workflow.runs import (
-        execute_branch_async,
-        get_run,
-        shutdown_executor,
-        wait_for,
-    )
-
-    def boom(*_args, **_kwargs):
-        raise ValueError("'source_manifest' is already being used as a state key")
-
-    monkeypatch.setattr("workflow.runs.compile_branch", boom)
-
-    branch = BranchDefinition(name="Compile failure", entry_point="node_a")
-    branch.node_defs = [
-        NodeDefinition(
-            node_id="node_a",
-            display_name="Node A",
-            prompt_template="hello",
-            output_keys=["source_manifest"],
-        )
-    ]
-    branch.graph_nodes = [
-        GraphNodeRef(id="node_a", node_def_id="node_a", position=0)
-    ]
-    branch.edges = [
-        EdgeDefinition(from_node="START", to_node="node_a"),
-        EdgeDefinition(from_node="node_a", to_node="END"),
-    ]
-    branch.state_schema = [{"name": "source_manifest", "type": "str"}]
-
-    outcome = execute_branch_async(tmp_path, branch=branch, inputs={})
-    try:
-        wait_for(outcome.run_id, timeout=10.0)
-        run = get_run(tmp_path, outcome.run_id)
-    finally:
-        shutdown_executor()
-
-    assert run is not None
-    assert run["status"] == "failed"
-    assert run["error"].startswith("Compile failed: ValueError:")
-    assert "already being used as a state key" in run["error"]
-    assert "Background worker crashed" not in run["error"]
-
-
-def test_compile_failed_outcome_is_classified():
-    out = _classify_run_outcome_error(
-        "Compile failed: ValueError: 'x' is already being used as a state key"
-    )
-    assert out is not None
-    assert out[0] == "compile_error"
-
-
-def test_provider_exhausted_outcome_is_classified():
-    out = _classify_run_outcome_error(
-        "Provider call failed in node 'make_source_manifest': "
-        "All providers exhausted for role=writer. Daemon should retry with backoff."
-    )
-    assert out is not None
-    assert out[0] == "provider_exhausted"

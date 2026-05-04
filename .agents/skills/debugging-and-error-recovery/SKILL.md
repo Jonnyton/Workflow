@@ -27,7 +27,7 @@ When anything unexpected happens:
 2. PRESERVE evidence (error output, logs, repro steps)
 3. DIAGNOSE using the triage checklist
 4. FIX the root cause
-5. GUARD against recurrence
+5. GUARD against recurrence (see also: `auto-iterate` skill for behavioral failures that span multiple agent sessions, where the guard belongs in a hook/check rather than just a code fix)
 6. RESUME only after verification passes
 ```
 
@@ -150,6 +150,32 @@ it('finds tasks with special characters in title', async () => {
 ```
 
 This test will prevent the same bug from recurring. It should fail without the fix and pass with it.
+
+### Living Failure Protocol
+
+For failures that are likely to recur across projects or sessions, record the
+pattern in the nearest durable protocol, runbook, or skill reference. The
+record should be small and structured:
+
+```yaml
+signature:
+  stage: build | test | runtime | browser | production
+  error_code: string-or-null
+  message_pattern: exact text or short regex
+  file_context: path/glob if useful
+root_cause: one sentence
+verified_fix: what changed and how it was verified
+proactive_check: optional future test, script, hook, or checklist item
+first_seen: YYYY-MM-DD
+last_seen: YYYY-MM-DD
+occurrences: 1
+```
+
+Promote repeated signatures into proactive checks. Good promotion targets are
+unit tests, integration tests, browser probes, lint/pre-commit scripts,
+`scripts/` validators, or specialist skill checklists. If the repeated failure
+is agent behavior rather than product code, hand off to `auto-iterate` so the
+ratchet can move from doc to script to hook to gate.
 
 ### Step 6: Verify End-to-End
 

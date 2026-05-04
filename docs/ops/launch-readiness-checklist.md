@@ -13,7 +13,7 @@ Single authoritative gate. **Every box below MUST be checked before any public l
 - [ ] **Domain `tinyassets.io` pre-paid ≥2 years** (per `SUCCESSION.md` §4.1).
 - [ ] **Domain expiry monitor cron live + verified** (fires >60 days before expiry to `ops@tinyassets.io`).
 - [ ] **GoDaddy account login + GoDaddy billing card documented in vault** (ref `SUCCESSION.md §3.2 Workflow-Prod/godaddy/account`).
-- [ ] **Cloudflare DNS + Worker configured:** `tinyassets.io` → GH Pages (landing), `tinyassets.io/mcp*` routes through the `tinyassets-mcp-proxy` Worker to the tunnel origin at `mcp.tinyassets.io` → Fly (or whatever provider hosts the daemon), `host-<slug>` reserved pattern for per-host tunnels.
+- [ ] **Cloudflare DNS + Worker configured:** `tinyassets.io` → GoDaddy Website Builder (landing), `tinyassets.io/mcp*` routes through the `tinyassets-mcp-proxy` Worker to the Access-gated tunnel origin at `mcp.tinyassets.io` → the Workflow daemon host, `host-<slug>` reserved pattern for per-host tunnels.
 - [ ] **Cloudflare Origin CA certs installed** (Full-strict TLS on all subdomains, 15-yr validity).
 - [ ] **Fly.io Machines deployed** at `min=2, max=8`, regions `ord` primary + `fra` secondary.
 - [ ] **Supabase Pro project provisioned** with daily backups enabled.
@@ -34,7 +34,7 @@ Single authoritative gate. **Every box below MUST be checked before any public l
 
 ## C. Auth + gateway
 
-- [ ] **OAuth 2.1 + PKCE flow works end-to-end** from a real browser chatbot client with the Workflow connector installed (Claude.ai, ChatGPT Developer Mode, or equivalent; per spec #27 §5.1).
+- [ ] **OAuth 2.1 + PKCE flow works end-to-end** from a real Claude.ai client (per spec #27 §5.1).
 - [ ] **`.well-known/oauth-authorization-server` returns valid metadata**.
 - [ ] **`/mcp/health` responds 200** under load (p95 < 200ms in #26 S8 mixed test).
 - [ ] **JWT secret in vault + rotation schedule set** (per `SUCCESSION.md §3.2`, 180d).

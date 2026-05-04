@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workflow pre-commit invariants.
 #
-# Enforces project invariants at commit time so no session has to
+# Enforces five invariants at commit time so no session has to
 # re-check them by hand:
 #
 #   1. Skill-mirror parity. If any file in `.agents/skills/` is
@@ -15,7 +15,7 @@
 #
 #   3. Mojibake detection. Staged `.md` / `.py` / `.json` / `.toml` /
 #      `.txt` files are scanned for CP-1252-as-UTF-8 garbled sequences
-#      (garbled dash sequences and similar). Any match fails the commit
+#      (â€" in place of — and similar). Any match fails the commit
 #      with a file:line report + autofix hint.
 #
 #   4. Import-graph smoke. When any `workflow/**/*.py` is staged, run
@@ -24,24 +24,11 @@
 #      that don't resolve at runtime). Only runs on workflow/ touches
 #      so non-python commits don't pay the import cost.
 #
-#   5. Path-resolver bypass lint. Staged workflow Python must use
-#      workflow.storage data_dir()/wiki_path() instead of direct env reads.
-#
-#   6. Worker CF Access header invariant. When `deploy/cloudflare-worker/worker.js`
+#   5. Worker CF Access header invariant. When `deploy/cloudflare-worker/worker.js`
 #      is staged, verify it still contains both `env.CF_ACCESS_CLIENT_ID` and
 #      `env.CF_ACCESS_CLIENT_SECRET` reads. Prevents accidentally removing
 #      the Access header injection (root cause of the 2026-04-20 incident where
 #      the Worker was committed without the Access headers deployed).
-#
-#   7. actionlint on staged GitHub Actions workflow files.
-#
-#   8. Block new imports of the deprecated workflow.author_server shim.
-#
-#   9. Cross-provider drift check. Provider-specific rules must not drift
-#      away from AGENTS.md, and referenced guard artifacts must exist.
-#
-#   10. Project skill validation. Skill metadata, router coverage, and
-#       `.agents` -> `.claude` mirror hygiene must remain valid.
 #
 # Override with `git commit --no-verify` for exceptional cases
 # (e.g. intentional mirror-only edit during a sync commit).
@@ -72,7 +59,7 @@ if git diff --cached --name-only | grep -q '^\.agents/skills/'; then
 fi
 
 if [ "${SKILL_SOURCE_CHANGED}" -eq 1 ]; then
-  echo "${YELLOW}pre-commit: .agents/skills/ staged - resyncing .claude/skills/${RESET}"
+  echo "${YELLOW}pre-commit: .agents/skills/ staged — resyncing .claude/skills/${RESET}"
   if command -v powershell.exe >/dev/null 2>&1; then
     powershell.exe -ExecutionPolicy Bypass -File scripts/sync-skills.ps1 >/dev/null 2>&1
     sync_status=$?
@@ -96,7 +83,7 @@ fi
 MIRROR_PREFIX="packaging/claude-plugin/plugins/workflow-universe-server/runtime"
 
 # List staged canonical paths under workflow/ (excluding subpackaged-only
-# paths that don't have a mirror - currently none, but defensive against
+# paths that don't have a mirror — currently none, but defensive against
 # future additions).
 STAGED_CANONICAL=$(
   git diff --cached --name-only --diff-filter=ACMR \
@@ -104,13 +91,13 @@ STAGED_CANONICAL=$(
 )
 
 if [ -z "${STAGED_CANONICAL}" ]; then
-  echo "${GREEN}pre-commit: no canonical workflow/ changes - mirror parity N/A${RESET}"
+  echo "${GREEN}pre-commit: no canonical workflow/ changes — mirror parity N/A${RESET}"
 else
   MIRROR_MISMATCHES=()
   for canon in ${STAGED_CANONICAL}; do
     mirror="${MIRROR_PREFIX}/${canon}"
     if [ ! -f "${mirror}" ]; then
-      # Canonical file has no mirror counterpart - acceptable, skip.
+      # Canonical file has no mirror counterpart — acceptable, skip.
       # (E.g. new workflow/ modules before the plugin build picks them up.)
       continue
     fi
@@ -218,7 +205,7 @@ if [ -n "${STAGED_WORKFLOW_PY}" ]; then
       echo "" >&2
       echo "${RED}pre-commit: import-graph regression detected.${RESET}" >&2
       echo "A staged workflow/ change breaks at-import-time symbol" >&2
-      echo "resolution - this is the 2026-04-19 P0 class of bug." >&2
+      echo "resolution — this is the 2026-04-19 P0 class of bug." >&2
       echo "" >&2
       echo "Fix: check __all__ lists in the staged module(s) and make" >&2
       echo "sure every declared name actually resolves. Re-run:" >&2
@@ -240,7 +227,7 @@ fi
 # (ephemeral, lost on restart). Fixed in commit ${ROW_B_CLEANUP}.
 #
 # Prevent the regression: any staged python file under workflow/ that
-# reads UNIVERSE_SERVER_BASE via os.environ.get is suspect - it should
+# reads UNIVERSE_SERVER_BASE via os.environ.get is suspect — it should
 # route through data_dir() instead. Grep the staged diff; fail on hit.
 #
 # Exempt: ``workflow/storage/__init__.py`` itself defines the resolver
@@ -331,11 +318,11 @@ fi
 # --- 7. actionlint on staged workflow files -------------------------
 #
 # Dev flagged "actionlint not available locally" 3 consecutive tasks
-# before this invariant landed - workflow-file bugs were only caught by
+# before this invariant landed — workflow-file bugs were only caught by
 # verifier/CI or by production breaking. Run actionlint against staged
 # `.github/workflows/*.yml` changes. Delegates to
 # scripts/pre_commit_invariant_actionlint.py so the logic is Python-
-# testable. No-ops when actionlint binary is missing locally - CI
+# testable. No-ops when actionlint binary is missing locally — CI
 # (.github/workflows/actionlint.yml) is the authoritative gate.
 
 if git diff --cached --name-only | grep -qE '^\.github/workflows/.+\.ya?ml$'; then
@@ -389,42 +376,6 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.py$'; then
       echo "${RED}pre-commit: workflow.author_server import gate failed.${RESET}" >&2
       echo "Use workflow.daemon_server in new code." >&2
       echo "Override with --no-verify for the bulk-rename commit itself." >&2
-      exit 1
-    fi
-  fi
-fi
-
-# --- 9. Repo-wide invariant runner checks ----------------------------
-#
-# The unified invariant runner holds repo-wide checks that are cheap enough
-# to run on every commit and not tied to one staged path. Keep this near the
-# end so path-specific fast checks above can still emit targeted diagnostics.
-
-if command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-elif command -v py >/dev/null 2>&1; then
-  PYTHON_BIN="py -3"
-else
-  echo "${YELLOW}pre-commit: python not available; skipping repo-wide invariant runner checks${RESET}" >&2
-  PYTHON_BIN=""
-fi
-
-if [ -n "${PYTHON_BIN}" ]; then
-  if [ ! -f scripts/invariants_run.py ]; then
-    echo "${YELLOW}pre-commit: scripts/invariants_run.py missing; skipping repo-wide checks${RESET}" >&2
-  else
-    if ! ${PYTHON_BIN} scripts/invariants_run.py --check cross-provider-drift; then
-      echo "" >&2
-      echo "${RED}pre-commit: cross-provider drift invariant failed.${RESET}" >&2
-      echo "Fix the drift or use --no-verify only for an intentional exception." >&2
-      exit 1
-    fi
-    if ! ${PYTHON_BIN} scripts/invariants_run.py --check skills-valid; then
-      echo "" >&2
-      echo "${RED}pre-commit: project skill validation failed.${RESET}" >&2
-      echo "Run scripts/validate_skills.py for the detailed skill hygiene report." >&2
       exit 1
     fi
   fi

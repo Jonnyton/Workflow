@@ -18,13 +18,13 @@ import pytest
 
 
 def test_discover_domains() -> None:
-    """Test that domain discovery finds fantasy_daemon and research_probe."""
+    """Test that domain discovery finds fantasy_author and research_probe."""
     from workflow.discovery import discover_domains
 
     domains = discover_domains()
 
     assert isinstance(domains, list)
-    assert "fantasy_daemon" in domains
+    assert "fantasy_author" in domains
     assert "research_probe" in domains
     # Verify deterministic order
     assert domains == sorted(domains)
@@ -86,8 +86,6 @@ def test_auto_register_populates_registry() -> None:
     auto_register(registry)
 
     domains = registry.list_domains()
-    # Phase 2 migrates import paths only; the domain config name remains legacy
-    # until the registry contract is deliberately flipped.
     assert "fantasy_author" in domains
     assert "research_probe" in domains
     assert len(domains) == 2

@@ -224,6 +224,7 @@ class TestCommitKGIntegration:
     def test_kg_none_skips_extraction(self, tmp_story_db):
         """When runtime.knowledge_graph is None, entity indexing is skipped."""
         from domains.fantasy_daemon.phases.commit import commit
+
         from workflow import runtime_singletons as runtime
 
         assert runtime.knowledge_graph is None

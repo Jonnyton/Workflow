@@ -208,17 +208,14 @@ def initialize_branch_versions_db(base_path: str | Path) -> None:
 
 def _canonical_snapshot(branch_dict: dict[str, Any]) -> dict[str, Any]:
     """Extract only the topology fields that define version identity."""
-    from workflow.branches import BranchDefinition
-
-    normalized = BranchDefinition.from_dict(branch_dict).to_dict()
     return {
-        "branch_def_id": normalized.get("branch_def_id", ""),
-        "entry_point": normalized.get("entry_point", ""),
-        "graph_nodes": normalized.get("graph_nodes", []),
-        "edges": normalized.get("edges", []),
-        "conditional_edges": normalized.get("conditional_edges", []),
-        "node_defs": normalized.get("node_defs", []),
-        "state_schema": normalized.get("state_schema", []),
+        "branch_def_id": branch_dict.get("branch_def_id", ""),
+        "entry_point": branch_dict.get("entry_point", ""),
+        "graph_nodes": branch_dict.get("graph_nodes", []),
+        "edges": branch_dict.get("edges", []),
+        "conditional_edges": branch_dict.get("conditional_edges", []),
+        "node_defs": branch_dict.get("node_defs", []),
+        "state_schema": branch_dict.get("state_schema", []),
     }
 
 

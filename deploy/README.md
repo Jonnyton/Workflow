@@ -111,7 +111,9 @@ for any provider-agnostic test you want to run.
 root. Resolution order (see `workflow.storage.data_dir`):
 
 1. `$WORKFLOW_DATA_DIR` if set + non-empty.
-2. Platform default: `%APPDATA%\Workflow` on Windows, `~/.workflow`
+2. Legacy `$UNIVERSE_SERVER_BASE` (deprecation warning under
+   `WORKFLOW_DEPRECATIONS=1`).
+3. Platform default: `%APPDATA%\Workflow` on Windows, `~/.workflow`
    elsewhere.
 
 All three paths resolve to absolute paths — no CWD-relative drift.

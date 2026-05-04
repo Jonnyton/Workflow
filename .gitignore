@@ -17,7 +17,6 @@ lancedb/
 
 # Agent tooling (local config)
 .codex/
-_PURPOSE.md
 .claude/projects/
 .claude/settings.json
 .claude/settings.local.json
@@ -36,7 +35,6 @@ deploy/cloudflare-worker/.wrangler/
 # Secrets
 .secrets/
 .provider_keys.json
-# Local MCP client config is machine-specific. Keep the tracked example instead.
 .mcp.json
 .env
 *.key
@@ -79,4 +77,3 @@ env/
 BettaFish_Deep_Dive_Research.docx
 Community_Branches_Plan.docx
 .hetzner-credentials
-.cowork-bootstrap/

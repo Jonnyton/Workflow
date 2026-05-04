@@ -1,6 +1,6 @@
 """Tests for .github/workflows/auto-fix-bug.yml structure.
 
-Static YAML-parse tests - no GHA runner needed. Validates the key
+Static YAML-parse tests — no GHA runner needed. Validates the key
 invariants: auth paths, disable toggle, graceful-skip, branch naming,
 permissions, concurrency group, trigger condition.
 """
@@ -35,23 +35,6 @@ def test_triggers_on_issues_labeled(wf):
     )
 
 
-def test_deploy_completion_retries_auth_blocked_queue(wf):
-    triggers = wf.get(True, wf.get("on", {}))
-    workflows = triggers["workflow_run"].get("workflows", [])
-    assert "Deploy prod" in workflows, (
-        "Auto-fix must retry stale auth-blocked requests when deploy makes "
-        "subscription auth visible."
-    )
-
-
-def test_auto_fix_does_not_self_trigger_on_workflow_push(wf):
-    triggers = wf.get(True, wf.get("on", {}))
-    assert "push" not in triggers, (
-        "Self-triggering from workflow edits can make GITHUB_TOKEN branch pushes "
-        "fail with workflow-permission errors."
-    )
-
-
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
@@ -77,16 +60,10 @@ def test_has_pull_requests_write(wf):
 # ---------------------------------------------------------------------------
 
 
-def test_workflow_concurrency_serializes_subscription_writer_lane(wf):
-    conc = wf.get("concurrency", {})
-    assert conc.get("group") == "auto-fix-subscription-writer"
-    assert conc.get("cancel-in-progress") is False
-
-
 def test_concurrency_scoped_to_issue(wf):
-    conc = wf["jobs"]["fix"].get("concurrency", {})
+    conc = wf.get("concurrency", {})
     group = conc.get("group", "")
-    assert "matrix.issue.issue_number" in group, (
+    assert "issue.number" in group, (
         "Concurrency group must be scoped per-issue to prevent parallel fix attempts"
     )
 
@@ -97,19 +74,11 @@ def test_concurrency_scoped_to_issue(wf):
 
 
 def test_job_filters_on_auto_bug_label(wf):
-    discover_step = wf["jobs"]["discover"]["steps"][0]
-    script = str(discover_step.get("with", {}).get("script", ""))
-    assert "auto-bug" in script, (
-        "Discover step must include the legacy 'auto-bug' label for compatibility"
+    job = wf["jobs"]["fix"]
+    condition = str(job.get("if", ""))
+    assert "auto-bug" in condition, (
+        "Job must be conditional on the 'auto-bug' label being applied"
     )
-
-
-def test_discover_retries_unreviewed_attempted_needs_human_with_auth(wf):
-    discover_step = wf["jobs"]["discover"]["steps"][0]
-    script = str(discover_step.get("with", {}).get("script", ""))
-    assert "auto-fix-reviewed" in script
-    assert "needsHuman && hasWriterAuth && !autoFixDisabled && !reviewed" in script
-    assert "retryAttempted" in script
 
 
 # ---------------------------------------------------------------------------
@@ -161,25 +130,12 @@ def test_auth_step_checks_oauth_token(wf):
     )
 
 
-def test_auth_step_checks_codex_subscription_bundle(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    auth_step = next(s for s in steps if s.get("id") == "auth")
-    run_script = auth_step.get("run", "")
-    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in str(auth_step.get("env", {}))
-    assert "codex_subscription" in run_script, (
-        "Auth step must route to the Codex subscription writer when its bundle is visible"
-    )
-
-
-def test_auth_step_reports_api_keys_as_diagnostics_only(wf):
+def test_auth_step_checks_api_key_fallback(wf):
     steps = wf["jobs"]["fix"]["steps"]
     auth_step = next(s for s in steps if s.get("id") == "auth")
     run_script = auth_step.get("run", "")
     assert "ANTHROPIC_API_KEY" in run_script, (
-        "Auth step should still report API-key secrets as ignored diagnostics"
-    )
-    assert "api_key" not in str(auth_step.get("if", "")), (
-        "API-key secrets must not select a writer mode"
+        "Auth step must check ANTHROPIC_API_KEY as fallback"
     )
 
 
@@ -231,102 +187,25 @@ def test_oauth_step_uses_claude_code_action(wf):
     )
 
 
-def test_no_api_key_step_uses_claude_code_action(wf):
+def test_api_key_step_uses_claude_code_action(wf):
     steps = wf["jobs"]["fix"]["steps"]
     api_step = next(
         (s for s in steps if "api_key" in str(s.get("if", "")) and "uses" in s),
         None,
     )
-    assert api_step is None, (
-        "Default daemon writers must not use API-key-authenticated Claude action steps"
+    assert api_step is not None, "Must have an API-key-authenticated Claude action step"
+    assert "claude-code-action" in api_step.get("uses", ""), (
+        "API key step must use anthropics/claude-code-action"
     )
-
-
-def test_codex_subscription_step_uses_codex_cli(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert codex_step is not None, "Must have a Codex subscription writer step"
-    run_script = codex_step.get("run", "")
-    assert "npm install -g @openai/codex" in run_script
-    assert "codex exec --dangerously-bypass-approvals-and-sandbox" in run_script
-    assert "--full-auto" not in run_script
-    assert "WORKFLOW_CODEX_AUTH_JSON_B64" in str(codex_step.get("env", {}))
-    assert "OPENAI_API_KEY" in run_script and "unset OPENAI_API_KEY" in run_script
-
-
-def test_codex_branch_push_permission_failure_is_classified(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert codex_step is not None, "Must have a Codex subscription writer step"
-    run_script = codex_step.get("run", "")
-    assert "refusing to allow a GitHub App to create or update workflow" in run_script
-    assert "push_blocked=true" in run_script
-    assert "github_actions_workflow_permission_missing" in run_script
-
-
-def test_codex_no_change_is_classified_from_final_message(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert codex_step is not None
-    run_script = codex_step.get("run", "")
-    assert "no_change_reason=${reason}" in run_script
-    assert "last_message<<" in run_script
-    assert "already_fixed" in run_script
-    assert "stale bug report" in run_script
-
-
-def test_already_fixed_no_change_closes_issue(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    close_step = next(
-        (
-            s
-            for s in steps
-            if s.get("name")
-            == "Close already-fixed issue when no repo change is needed"
-        ),
-        None,
-    )
-    assert close_step is not None, "Must close stale/already-fixed requests"
-    condition = str(close_step.get("if", ""))
-    script = str(close_step.get("with", {}).get("script", ""))
-    assert "no_change_reason == 'already_fixed'" in condition
-    assert "state: 'closed'" in script
-    assert "state_reason: 'completed'" in script
-    assert "auto-fix-reviewed" in script
-    assert "auto-fix-already-fixed" in script
-
-
-def test_codex_pr_gets_cross_family_checker(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
-    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
-    script = str(codex_pr_step.get("with", {}).get("script", ""))
-    assert "writer:codex" in script
-    assert "checker:claude" in script
-    assert "Required checker family: Claude" in script
-
-
-def test_codex_pr_creation_policy_block_is_classified(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
-    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
-    script = str(codex_pr_step.get("with", {}).get("script", ""))
-    assert "github_actions_pr_creation_disabled" in script
-    assert "not permitted to create or approve pull requests" in script
-    assert "core.setOutput('blocked', 'true')" in script
-    assert "core.warning" in script
 
 
 def test_branch_naming_convention(wf):
     steps = wf["jobs"]["fix"]["steps"]
-    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
-    assert oauth_step is not None, "Must have a Claude OAuth step"
-    with_block = oauth_step.get("with", {})
-    assert with_block.get("branch_prefix") == "auto-change/"
-    assert "issue-${{ steps.meta.outputs.issue_number }}" == with_block.get(
-        "branch_name_template"
-    ), (
-        "Branch must follow auto-change/issue-<N> naming convention"
+    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
+    assert meta_step is not None, "Must have a meta extraction step"
+    script = str(meta_step.get("with", {}).get("script", ""))
+    assert "auto-bug/issue-" in script, (
+        "Branch must follow auto-bug/issue-<N> naming convention"
     )
 
 
@@ -335,100 +214,13 @@ def test_pr_title_includes_auto_fix_prefix(wf):
     meta_step = next((s for s in steps if s.get("id") == "meta"), None)
     assert meta_step is not None
     script = str(meta_step.get("with", {}).get("script", ""))
-    assert "[auto-change]" in script, "PR title must start with [auto-change]"
-
-
-def test_meta_step_fetches_recent_issue_comments_for_feedback(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
-    assert meta_step is not None
-    script = str(meta_step.get("with", {}).get("script", ""))
-    assert "issues.listComments" in script
-    assert "issue_comments" in script
-    assert "slice(-5)" in script
+    assert "[auto-fix]" in script, "PR title must start with [auto-fix]"
 
 
 def test_pr_body_references_fixes_keyword(wf):
     steps = wf["jobs"]["fix"]["steps"]
-    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
-    assert oauth_step is not None, "Must have a Claude OAuth step"
-    prompt = str(oauth_step.get("with", {}).get("prompt", ""))
-    assert "Fixes #${{ steps.meta.outputs.issue_number }}" in prompt, (
-        "Claude prompt must require PR body to reference the issue with Fixes #N"
-    )
-
-
-def test_writer_prompts_require_plugin_mirror_for_workflow_runtime_edits(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert oauth_step is not None, "Must have a Claude OAuth step"
-    assert codex_step is not None, "Must have a Codex subscription step"
-    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
-    codex_prompt = str(codex_step.get("run", ""))
-    assert "python packaging/claude-plugin/build_plugin.py" in oauth_prompt
-    assert "python packaging/claude-plugin/build_plugin.py" in codex_prompt
-    assert "workflow/*" in oauth_prompt
-    assert "workflow/*" in codex_prompt
-
-
-def test_writer_prompts_include_recent_feedback_and_focused_verification(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert oauth_step is not None, "Must have a Claude OAuth step"
-    assert codex_step is not None, "Must have a Codex subscription step"
-    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
-    codex_prompt = str(codex_step.get("run", ""))
-    for prompt in (oauth_prompt, codex_prompt):
-        assert "Recent issue comments and loop feedback" in prompt
-        assert "verification failures" in prompt
-        assert "python -m ruff check" in prompt
-        assert "focused tests" in prompt
-
-
-def test_codex_step_enforces_post_generation_verification(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
-    assert codex_step is not None
-    run_script = codex_step.get("run", "")
-    assert "Post-Codex verification" in run_script
-    assert "git diff --name-only" in run_script
-    assert "python -m ruff check" in run_script
-    assert "python -m pytest" in run_script
-    assert "verification_status" in run_script
-    assert "Post-Codex verification failed; leaving request retryable" in run_script
-    assert "exit \"$verification_status\"" in run_script
-
-
-def test_no_pr_step_marks_review_without_failing_workflow(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    no_pr_step = next(
-        (s for s in steps if s.get("name") == "Mark needs-human if no PR opened"),
-        None,
-    )
-    assert no_pr_step is not None, "Must mark no-PR outcomes"
-    condition = str(no_pr_step.get("if", ""))
-    script = str(no_pr_step.get("with", {}).get("script", ""))
-    assert "no_change_reason != 'already_fixed'" in condition
-    assert "core.setFailed" not in script
-    assert "core.warning" in script
-    assert "auto-fix-reviewed" in script
-    assert "auto-fix-blocked" in script
-    assert "auto-fix-pr-blocked" in script
-    assert "auto-fix-branch-push-blocked" in script
-    assert "CODEX_BRANCH" in str(no_pr_step.get("env", {}))
-    assert "CODEX_PR_BLOCKED" in str(no_pr_step.get("env", {}))
-    assert "CODEX_PUSH_BLOCKED" in str(no_pr_step.get("env", {}))
-    assert "mode === 'codex_subscription' && codexBranch" in script
-
-
-def test_pr_blocked_label_is_defined(wf):
-    steps = wf["jobs"]["fix"]["steps"]
-    labels_step = next((s for s in steps if s.get("name") == "Ensure automation labels"), None)
-    assert labels_step is not None, "Must define automation labels"
-    script = str(labels_step.get("with", {}).get("script", ""))
-    assert "auto-fix-pr-blocked" in script
-    assert "GitHub blocked Actions from opening the PR" in script
-    assert "auto-fix-branch-push-blocked" in script
-    assert "GitHub blocked Actions from pushing the branch" in script
+    for step in steps:
+        pr_body = str(step.get("with", {}).get("pr_body", ""))
+        if "Fixes #" in pr_body:
+            return
+    pytest.fail("At least one Claude action step must have 'Fixes #N' in pr_body")

@@ -21,8 +21,6 @@ each operation opens, commits, closes.
 from __future__ import annotations
 
 import contextlib
-import copy
-import hashlib
 import json
 import logging
 import os
@@ -89,136 +87,6 @@ def _connect(base_path: str | Path) -> sqlite3.Connection:
 
 def _now() -> float:
     return time.time()
-
-
-def _orphaned_run_grace_seconds() -> float | None:
-    """Return the read-time orphan recovery grace window.
-
-    Background runs are owned by an in-process ``Future``. After a server
-    restart, durable rows can still say ``queued``/``running`` even though no
-    worker in the new process can complete them. Read paths use this window to
-    avoid showing stale "running" forever while giving active workers time to
-    report progress.
-    """
-    raw = os.environ.get("WORKFLOW_ORPHANED_RUN_GRACE_SECONDS", "3600")
-    lowered = raw.strip().lower()
-    if lowered in {"0", "off", "false", "no", "disabled"}:
-        return None
-    try:
-        seconds = float(lowered)
-    except ValueError:
-        seconds = 3600.0
-    if seconds <= 0:
-        return None
-    return max(60.0, seconds)
-
-
-def _has_live_future(run_id: str) -> bool:
-    try:
-        future = get_future(run_id)
-    except NameError:
-        return False
-    return future is not None and not future.done()
-
-
-def _latest_run_progress_at(conn: sqlite3.Connection, run_id: str) -> float | None:
-    row = conn.execute(
-        """
-        SELECT MAX(COALESCE(finished_at, started_at)) AS progress_at
-        FROM run_events
-        WHERE run_id = ?
-        """,
-        (run_id,),
-    ).fetchone()
-    if row is None or row["progress_at"] is None:
-        return None
-    try:
-        return float(row["progress_at"])
-    except (TypeError, ValueError):
-        return None
-
-
-def _mark_orphaned_run_if_needed(
-    conn: sqlite3.Connection,
-    *,
-    run_id: str,
-    status: str,
-    started_at: float | int | str | None,
-    now: float | None = None,
-) -> bool:
-    if status not in (RUN_STATUS_QUEUED, RUN_STATUS_RUNNING):
-        return False
-    if _has_live_future(run_id):
-        return False
-    grace = _orphaned_run_grace_seconds()
-    if grace is None:
-        return False
-    try:
-        started = float(started_at) if started_at is not None else 0.0
-    except (TypeError, ValueError):
-        started = 0.0
-    progress_at = _latest_run_progress_at(conn, run_id) or started
-    if progress_at <= 0:
-        return False
-    checked_at = now or _now()
-    stale_for = checked_at - progress_at
-    if stale_for < grace:
-        return False
-
-    message = (
-        "Run marked interrupted because no active background worker owns it "
-        f"and no progress has been recorded for {int(stale_for)}s "
-        f"(threshold {int(grace)}s). Rerun with the same inputs to continue."
-    )
-    cursor = conn.execute(
-        """
-        UPDATE runs
-        SET status = ?, error = ?, finished_at = ?
-        WHERE run_id = ? AND status IN (?, ?)
-        """,
-        (
-            RUN_STATUS_INTERRUPTED,
-            message,
-            checked_at,
-            run_id,
-            RUN_STATUS_QUEUED,
-            RUN_STATUS_RUNNING,
-        ),
-    )
-    return cursor.rowcount > 0
-
-
-def _recover_orphaned_runs_on_read(base_path: str | Path) -> int:
-    """Mark stale in-flight rows as interrupted when no worker owns them.
-
-    This complements startup recovery. Startup recovery handles rows that
-    exist before a new run action initializes the executor. Read-time recovery
-    handles the public-chatbot case where users keep polling after a restart
-    but no new write action happens to trigger startup recovery.
-    """
-    initialize_runs_db(base_path)
-    count = 0
-    now = _now()
-    with _connect(base_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT run_id, status, started_at FROM runs
-            WHERE status IN (?, ?)
-            """,
-            (RUN_STATUS_QUEUED, RUN_STATUS_RUNNING),
-        ).fetchall()
-        for row in rows:
-            if _mark_orphaned_run_if_needed(
-                conn,
-                run_id=row["run_id"],
-                status=row["status"],
-                started_at=row["started_at"],
-                now=now,
-            ):
-                count += 1
-    if count:
-        logger.info("Recovered %d orphaned in-flight runs on read", count)
-    return count
 
 
 def initialize_runs_db(base_path: str | Path) -> Path:
@@ -325,21 +193,6 @@ def initialize_runs_db(base_path: str | Path) -> Path:
         ON teammate_messages(to_node_id, sent_at);
     CREATE INDEX IF NOT EXISTS idx_tmsg_from_run
         ON teammate_messages(from_run_id);
-
-    CREATE TABLE IF NOT EXISTS run_child_attachments (
-        attachment_id       TEXT PRIMARY KEY,
-        parent_run_id       TEXT NOT NULL,
-        child_run_id        TEXT NOT NULL,
-        child_branch_def_id TEXT NOT NULL,
-        output_digest       TEXT NOT NULL,
-        evidence_handle     TEXT NOT NULL,
-        attached_at         REAL NOT NULL,
-        attachment_json     TEXT NOT NULL DEFAULT '{}',
-        UNIQUE(parent_run_id, child_run_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_child_attachments_child
-        ON run_child_attachments(child_run_id);
     """
     from workflow.branch_versions import BRANCH_VERSIONS_SCHEMA
     from workflow.contribution_events import CONTRIBUTION_EVENTS_SCHEMA
@@ -604,17 +457,6 @@ def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:
         ).fetchone()
         if row is None:
             return None
-        if _mark_orphaned_run_if_needed(
-            conn,
-            run_id=row["run_id"],
-            status=row["status"],
-            started_at=row["started_at"],
-        ):
-            row = conn.execute(
-                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
-            ).fetchone()
-            if row is None:
-                return None
         result = _row_to_run(row)
         # Surface concurrency stats from the last concurrency_stats system event.
         stats_row = conn.execute(
@@ -635,332 +477,6 @@ def get_run(base_path: str | Path, run_id: str) -> dict[str, Any] | None:
     return result
 
 
-class ChildRunAttachmentError(ValueError):
-    """Structured validation failure for attach_existing_child_run."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.details = details or {}
-
-
-_RECEIPT_WAITING_VALUES = frozenset({
-    "attach_required",
-    "blocked_before_child_attach",
-    "receipt_waiting",
-    "selected_attach_required",
-    "waiting_for_child_receipt",
-})
-
-
-def _normalise_digest(value: str) -> str:
-    value = (value or "").strip()
-    if not value:
-        return ""
-    if value.startswith("sha256:"):
-        return value
-    if len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value):
-        return f"sha256:{value.lower()}"
-    return value
-
-
-def _run_output_digest(output: dict[str, Any]) -> str:
-    payload = json.dumps(
-        output,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        default=str,
-    )
-    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _parent_is_receipt_waiting(output: dict[str, Any]) -> bool:
-    if output.get("stable_evidence_handle"):
-        return False
-    for key in ("selected_child_status", "selected_branch_state", "automation_claim_status"):
-        value = str(output.get(key, "")).strip().lower()
-        if value in {
-            "attached_completed",
-            "child_attached_existing_receipt",
-            "child_attached_with_handle",
-        }:
-            return False
-    for key in (
-        "parent_loop_status",
-        "selected_child_status",
-        "selected_branch_state",
-        "automation_claim_status",
-        "final_outcome_label",
-    ):
-        value = str(output.get(key, "")).strip().lower()
-        if value in _RECEIPT_WAITING_VALUES:
-            return True
-        if value.endswith("_attach_required") or value.endswith("_receipt_waiting"):
-            return True
-    return False
-
-
-def _selected_child_branch(parent_output: dict[str, Any]) -> str:
-    return (
-        str(parent_output.get("selected_child_branch_def_id") or "").strip()
-        or str(parent_output.get("selected_loop_branch") or "").strip()
-        or str(parent_output.get("child_branch_def_id") or "").strip()
-    )
-
-
-def attach_existing_child_run(
-    base_path: str | Path,
-    *,
-    parent_run_id: str,
-    child_run_id: str,
-    child_branch_def_id: str = "",
-    output_digest: str = "",
-    actor: str = "anonymous",
-) -> dict[str, Any]:
-    """Validate and attach a completed child run receipt to a waiting parent.
-
-    This is intentionally a receipt primitive. It only records provenance for
-    an already-finished child.
-    """
-    initialize_runs_db(base_path)
-    parent_run_id = parent_run_id.strip()
-    child_run_id = child_run_id.strip()
-    if not parent_run_id:
-        raise ChildRunAttachmentError(
-            "parent_run_id_required",
-            "parent run_id is required.",
-        )
-    if not child_run_id:
-        raise ChildRunAttachmentError(
-            "child_run_id_required",
-            "child_run_id is required.",
-        )
-
-    parent = get_run(base_path, parent_run_id)
-    if parent is None:
-        raise ChildRunAttachmentError(
-            "parent_not_found",
-            f"Parent run '{parent_run_id}' not found.",
-            {"parent_run_id": parent_run_id},
-        )
-    child = get_run(base_path, child_run_id)
-    if child is None:
-        raise ChildRunAttachmentError(
-            "child_not_found",
-            f"Child run '{child_run_id}' not found.",
-            {"child_run_id": child_run_id},
-        )
-
-    parent_output = copy.deepcopy(parent.get("output") or {})
-    if not _parent_is_receipt_waiting(parent_output):
-        raise ChildRunAttachmentError(
-            "parent_not_receipt_waiting",
-            "Parent run is not in a receipt-waiting state.",
-            {
-                "parent_run_id": parent_run_id,
-                "parent_loop_status": parent_output.get("parent_loop_status", ""),
-                "selected_child_status": parent_output.get("selected_child_status", ""),
-            },
-        )
-
-    supplied_child_branch = child_branch_def_id.strip()
-    expected_child_branch = _selected_child_branch(parent_output) or supplied_child_branch
-    if not expected_child_branch:
-        raise ChildRunAttachmentError(
-            "child_branch_required",
-            "child_branch_def_id is required when parent output has no selected child branch.",
-            {"parent_run_id": parent_run_id},
-        )
-    actual_child_branch = str(child.get("branch_def_id") or "")
-    if supplied_child_branch and supplied_child_branch != expected_child_branch:
-        raise ChildRunAttachmentError(
-            "child_branch_mismatch",
-            "Supplied child branch does not match the parent selected child branch.",
-            {
-                "child_run_id": child_run_id,
-                "expected_child_branch_def_id": expected_child_branch,
-                "supplied_child_branch_def_id": supplied_child_branch,
-                "actual_child_branch_def_id": actual_child_branch,
-            },
-        )
-    if actual_child_branch != expected_child_branch:
-        raise ChildRunAttachmentError(
-            "child_branch_mismatch",
-            "Child run branch does not match the selected child branch.",
-            {
-                "child_run_id": child_run_id,
-                "expected_child_branch_def_id": expected_child_branch,
-                "actual_child_branch_def_id": actual_child_branch,
-            },
-        )
-
-    child_status = str(child.get("status") or "")
-    if child_status != RUN_STATUS_COMPLETED:
-        raise ChildRunAttachmentError(
-            "child_not_completed",
-            "Child run must be completed before it can be attached.",
-            {"child_run_id": child_run_id, "child_status": child_status},
-        )
-
-    child_output = copy.deepcopy(child.get("output") or {})
-    if not child_output:
-        raise ChildRunAttachmentError(
-            "child_output_missing",
-            "Child run completed but has no output to attach.",
-            {"child_run_id": child_run_id},
-        )
-
-    computed_digest = _run_output_digest(child_output)
-    supplied_digest = _normalise_digest(output_digest)
-    if supplied_digest and supplied_digest != computed_digest:
-        raise ChildRunAttachmentError(
-            "output_digest_mismatch",
-            "Supplied child output digest does not match the stored child output.",
-            {
-                "child_run_id": child_run_id,
-                "supplied_output_digest": supplied_digest,
-                "computed_output_digest": computed_digest,
-            },
-        )
-
-    digest_suffix = computed_digest.split(":", 1)[1][:16]
-    evidence_handle = f"run-attachment:{parent_run_id}:{child_run_id}:{digest_suffix}"
-    attachment_id = f"{parent_run_id}:{child_run_id}"
-    attached_at = _now()
-    receipt = {
-        "attachment_id": attachment_id,
-        "parent_run_id": parent_run_id,
-        "child_run_id": child_run_id,
-        "child_branch_def_id": actual_child_branch,
-        "output_digest": computed_digest,
-        "evidence_handle": evidence_handle,
-        "attached_at": attached_at,
-        "attached_by": actor,
-        "provenance": "attached_existing_child",
-        "automation_claim_status": "child_attached_with_handle",
-    }
-
-    with _connect(base_path) as conn:
-        existing_child = conn.execute(
-            """
-            SELECT output_digest, evidence_handle FROM run_child_attachments
-            WHERE child_run_id = ?
-            LIMIT 1
-            """,
-            (child_run_id,),
-        ).fetchone()
-        if existing_child and existing_child["output_digest"] != computed_digest:
-            raise ChildRunAttachmentError(
-                "conflicting_child_digest",
-                "Child run was already attached with a different output digest.",
-                {
-                    "child_run_id": child_run_id,
-                    "existing_output_digest": existing_child["output_digest"],
-                    "computed_output_digest": computed_digest,
-                },
-            )
-
-        existing_pair = conn.execute(
-            """
-            SELECT output_digest, evidence_handle FROM run_child_attachments
-            WHERE parent_run_id = ? AND child_run_id = ?
-            """,
-            (parent_run_id, child_run_id),
-        ).fetchone()
-        if existing_pair and existing_pair["output_digest"] != computed_digest:
-            raise ChildRunAttachmentError(
-                "conflicting_child_digest",
-                "Child run was already attached to this parent with a different digest.",
-                {
-                    "parent_run_id": parent_run_id,
-                    "child_run_id": child_run_id,
-                    "existing_output_digest": existing_pair["output_digest"],
-                    "computed_output_digest": computed_digest,
-                },
-            )
-        if not existing_pair:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO run_child_attachments (
-                    attachment_id, parent_run_id, child_run_id,
-                    child_branch_def_id, output_digest, evidence_handle,
-                    attached_at, attachment_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    attachment_id,
-                    parent_run_id,
-                    child_run_id,
-                    actual_child_branch,
-                    computed_digest,
-                    evidence_handle,
-                    attached_at,
-                    json.dumps(receipt, sort_keys=True, default=str),
-                ),
-            )
-            existing_pair = conn.execute(
-                """
-                SELECT output_digest, evidence_handle FROM run_child_attachments
-                WHERE parent_run_id = ? AND child_run_id = ?
-                """,
-                (parent_run_id, child_run_id),
-            ).fetchone()
-        if existing_pair is None:
-            raise ChildRunAttachmentError(
-                "attachment_record_missing",
-                "Child attachment record could not be written.",
-                {"parent_run_id": parent_run_id, "child_run_id": child_run_id},
-            )
-        if existing_pair["output_digest"] != computed_digest:
-            raise ChildRunAttachmentError(
-                "conflicting_child_digest",
-                "Child run was already attached to this parent with a different digest.",
-                {
-                    "parent_run_id": parent_run_id,
-                    "child_run_id": child_run_id,
-                    "existing_output_digest": existing_pair["output_digest"],
-                    "computed_output_digest": computed_digest,
-                },
-            )
-        evidence_handle = existing_pair["evidence_handle"]
-        receipt["evidence_handle"] = evidence_handle
-
-    parent_output.update({
-        "selected_child_status": "attached_completed",
-        "selected_branch_state": "child_attached_existing_receipt",
-        "automation_claim_status": "child_attached_with_handle",
-        "stable_evidence_handle": evidence_handle,
-        "attached_child_run_id": child_run_id,
-        "attached_child_branch_def_id": actual_child_branch,
-        "attached_child_output_digest": computed_digest,
-        "attached_child_output": child_output,
-        "attached_child_receipt": receipt,
-        "blocked_execution_record": {},
-    })
-    if "keep_reject_decision" in child_output:
-        parent_output["attached_child_decision"] = child_output["keep_reject_decision"]
-
-    update_run_status(base_path, parent_run_id, output=parent_output)
-    return {
-        "status": "attached",
-        "parent_run_id": parent_run_id,
-        "child_run_id": child_run_id,
-        "child_branch_def_id": actual_child_branch,
-        "selected_child_status": "attached_completed",
-        "automation_claim_status": "child_attached_with_handle",
-        "stable_evidence_handle": evidence_handle,
-        "output_digest": computed_digest,
-        "attached_child_output": child_output,
-        "receipt": receipt,
-    }
-
-
 def list_runs(
     base_path: str | Path,
     *,
@@ -969,7 +485,6 @@ def list_runs(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     initialize_runs_db(base_path)
-    _recover_orphaned_runs_on_read(base_path)
     clauses: list[str] = []
     params: list[Any] = []
     if branch_def_id:
@@ -1038,7 +553,7 @@ def list_events(
 # whether new events have landed. Callers don't need to wait the full
 # max_wait_s once the run has resolved.
 _TERMINAL_STATUSES = frozenset({
-    "completed", "failed", "cancelled", "interrupted",
+    "completed", "failed", "cancelled",
 })
 
 
@@ -1658,7 +1173,6 @@ def _invoke_graph(
     provider_call: Callable[..., str] | None,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     concurrency_budget_override: int | None = None,
-    on_node_status: Callable[[str, str], None] | None = None,
 ) -> RunOutcome:
     """Compile + invoke the graph for an already-prepared run_id.
 
@@ -1668,17 +1182,6 @@ def _invoke_graph(
     thread_id = run_id
     execution_cursor = {"step": 0}
     provider_tracker: dict[str, str | None] = {"last": None}
-
-    def _emit_node_status(node_id: str, status: str) -> None:
-        if on_node_status is None:
-            return
-        try:
-            on_node_status(node_id, status)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Run %s node-status callback failed for %s status=%s",
-                run_id, node_id, status,
-            )
 
     # Phase 2 design_used emit (Task #75) — pre-build a graph_node_id ->
     # NodeDefinition lookup so each "ran" event can credit the artifact
@@ -1718,19 +1221,6 @@ def _invoke_graph(
                 started_at=_now(),
                 detail=detail,
             ))
-            _emit_node_status(node_id, NODE_STATUS_RUNNING)
-            return
-
-        if phase == "failed":
-            record_event(base_path, RunStepEvent(
-                run_id=run_id,
-                step_index=step + _PENDING_OFFSET,
-                node_id=node_id,
-                status=NODE_STATUS_FAILED,
-                started_at=_now(),
-                finished_at=_now(),
-                detail=detail,
-            ))
             return
 
         if is_cancel_requested(base_path, run_id):
@@ -1747,7 +1237,6 @@ def _invoke_graph(
             finished_at=_now(),
             detail=detail,
         ))
-        _emit_node_status(node_id, NODE_STATUS_RAN)
 
         # Phase 2 design_used emit (Task #75) — credit the NodeDefinition's
         # author for a successful step execution. Fires only at "ran" phase
@@ -1810,19 +1299,6 @@ def _invoke_graph(
         return RunOutcome(
             run_id=run_id, status=RUN_STATUS_FAILED,
             output={}, error=str(exc),
-        )
-    except Exception as exc:
-        logger.exception("Run %s failed during compile", run_id)
-        msg = f"Compile failed: {type(exc).__name__}: {exc}"
-        update_run_status(
-            base_path, run_id,
-            status=RUN_STATUS_FAILED,
-            error=msg,
-            finished_at=_now(),
-        )
-        return RunOutcome(
-            run_id=run_id, status=RUN_STATUS_FAILED,
-            output={}, error=msg,
         )
 
     update_run_status(base_path, run_id, status=RUN_STATUS_RUNNING)
@@ -1946,10 +1422,6 @@ def _invoke_graph(
                 finished_at=_now(),
                 detail={"reason": "timeout", "message": str(timeout_exc)},
             ))
-            _emit_node_status(
-                _node_id_from_timeout_exc(timeout_exc),
-                NODE_STATUS_FAILED,
-            )
             update_run_status(
                 base_path, run_id,
                 status=RUN_STATUS_FAILED,
@@ -1974,10 +1446,6 @@ def _invoke_graph(
                 finished_at=_now(),
                 detail={"reason": "empty_response", "message": str(empty_exc)},
             ))
-            _emit_node_status(
-                empty_exc.node_id or "(unknown)",
-                NODE_STATUS_FAILED,
-            )
             update_run_status(
                 base_path, run_id,
                 status=RUN_STATUS_FAILED,
@@ -2108,7 +1576,6 @@ def execute_branch(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
-    on_node_status: Callable[[str, str], None] | None = None,
 ) -> RunOutcome:
     """Synchronous end-to-end execution.
 
@@ -2136,7 +1603,6 @@ def execute_branch(
         provider_call=provider_call,
         recursion_limit=recursion_limit_override or DEFAULT_RECURSION_LIMIT,
         concurrency_budget_override=concurrency_budget_override,
-        on_node_status=on_node_status,
     )
 
 
@@ -2276,7 +1742,6 @@ def _execute_branch_core(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
-    on_node_status: Callable[[str, str], None] | None = None,
     branch_version_id: str | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
@@ -2315,7 +1780,6 @@ def _execute_branch_core(
                 provider_call=provider_call,
                 recursion_limit=effective_limit,
                 concurrency_budget_override=concurrency_budget_override,
-                on_node_status=on_node_status,
             )
         except Exception:
             # Belt-and-suspenders: _invoke_graph already catches and
@@ -2352,7 +1816,6 @@ def execute_branch_async(
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
     concurrency_budget_override: int | None = None,
-    on_node_status: Callable[[str, str], None] | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Prepare a def-based run synchronously and kick off graph execution
@@ -2386,7 +1849,6 @@ def execute_branch_async(
         provider_call=provider_call,
         recursion_limit_override=recursion_limit_override,
         concurrency_budget_override=concurrency_budget_override,
-        on_node_status=on_node_status,
         branch_version_id=None,
         _invocation_depth=_invocation_depth,
     )
@@ -2418,7 +1880,6 @@ def execute_branch_version_async(
     actor: str = "anonymous",
     provider_call: Callable[..., str] | None = None,
     recursion_limit_override: int | None = None,
-    on_node_status: Callable[[str, str], None] | None = None,
     _invocation_depth: int = 0,
 ) -> RunOutcome:
     """Execute a published branch_version snapshot (immutable).
@@ -2475,7 +1936,6 @@ def execute_branch_version_async(
         actor=actor,
         provider_call=provider_call,
         recursion_limit_override=recursion_limit_override,
-        on_node_status=on_node_status,
         branch_version_id=branch_version_id,
         _invocation_depth=_invocation_depth,
     )
@@ -2665,18 +2125,6 @@ def _invoke_graph_resume(
                 node_id=node_id,
                 status=NODE_STATUS_RUNNING,
                 started_at=_now(),
-                detail=detail,
-            ))
-            return
-
-        if phase == "failed":
-            record_event(base_path, RunStepEvent(
-                run_id=run_id,
-                step_index=step + _PENDING_OFFSET,
-                node_id=node_id,
-                status=NODE_STATUS_FAILED,
-                started_at=_now(),
-                finished_at=_now(),
                 detail=detail,
             ))
             return
@@ -3254,7 +2702,6 @@ ACTIONABLE_BY: dict[str, str] = {
     "timeout": "chatbot",
     "context_length_exceeded": "chatbot",
     "state_mutation_conflict": "chatbot",
-    "compile_error": "chatbot",
     "snapshot_schema_drift": "chatbot",
     "interrupted": "chatbot",
     # user — opaque/internal; chatbot escalates raw error for human judgment
@@ -3397,13 +2844,11 @@ __all__ = [
     "NODE_STATUS_RAN",
     "NODE_STATUS_FAILED",
     "ACTIONABLE_BY",
-    "ChildRunAttachmentError",
     "RunCancelledError",
     "RunOutcome",
     "RunStepEvent",
     # Phase 4 storage helpers
     "add_judgment",
-    "attach_existing_child_run",
     "build_node_status_map",
     "create_run",
     "execute_branch",

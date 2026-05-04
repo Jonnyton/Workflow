@@ -7,7 +7,6 @@ binaries or network access.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -269,27 +268,10 @@ class TestPreferredProvider:
         assert ProviderRouter._apply_preference(chain, "claude-code") == chain
 
     @pytest.mark.asyncio
-    async def test_api_key_preferred_writer_ignored_without_opt_in(self, monkeypatch):
+    async def test_preferred_writer_tried_first(self, monkeypatch):
         from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
-        monkeypatch.setattr(
-            runtime, "universe_config",
-            UniverseConfig(preferred_writer="gemini-free"),
-        )
-        providers = _make_providers()
-        router = ProviderRouter(providers=providers)
-
-        resp = await router.call("writer", "prompt", "system")
-        assert resp.provider == "claude-code"
-        assert providers["gemini-free"].call_count == 0
-
-    @pytest.mark.asyncio
-    async def test_preferred_writer_tried_first_with_api_key_opt_in(self, monkeypatch):
-        from workflow import runtime_singletons as runtime
-        from workflow.config import UniverseConfig
-
-        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
         monkeypatch.setattr(
             runtime, "universe_config",
             UniverseConfig(preferred_writer="gemini-free"),
@@ -301,27 +283,10 @@ class TestPreferredProvider:
         assert resp.provider == "gemini-free"
 
     @pytest.mark.asyncio
-    async def test_api_key_preferred_judge_ignored_without_opt_in(self, monkeypatch):
+    async def test_preferred_judge_tried_first(self, monkeypatch):
         from workflow import runtime_singletons as runtime
         from workflow.config import UniverseConfig
 
-        monkeypatch.setattr(
-            runtime, "universe_config",
-            UniverseConfig(preferred_judge="groq-free"),
-        )
-        providers = _make_providers()
-        router = ProviderRouter(providers=providers)
-
-        resp = await router.call("judge", "prompt", "system")
-        assert resp.provider == "codex"
-        assert providers["groq-free"].call_count == 0
-
-    @pytest.mark.asyncio
-    async def test_preferred_judge_tried_first_with_api_key_opt_in(self, monkeypatch):
-        from workflow import runtime_singletons as runtime
-        from workflow.config import UniverseConfig
-
-        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
         monkeypatch.setattr(
             runtime, "universe_config",
             UniverseConfig(preferred_judge="groq-free"),
@@ -350,7 +315,7 @@ class TestPreferredProvider:
         router = ProviderRouter(providers=providers)
 
         resp = await router.call("writer", "prompt", "system")
-        # API-key provider is ignored by default; chain stays subscription-first.
+        # Falls back through the rest of the chain
         assert resp.provider == "claude-code"
 
 
@@ -361,23 +326,12 @@ class TestPreferredProvider:
 
 class TestJudgeEnsemble:
     @pytest.mark.asyncio
-    async def test_fans_out_to_subscription_default_providers(self):
+    async def test_fans_out_to_all_available(self):
         providers = _make_providers()
         router = ProviderRouter(providers=providers)
 
         results = await router.call_judge_ensemble("judge this", "system")
-        # API-key-backed judges are ignored unless the host opts in.
-        assert len(results) == 2
-        families = {r.family for r in results}
-        assert families == {"openai", "local"}
-
-    @pytest.mark.asyncio
-    async def test_fans_out_to_all_available_with_api_key_opt_in(self, monkeypatch):
-        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
-        providers = _make_providers()
-        router = ProviderRouter(providers=providers)
-
-        results = await router.call_judge_ensemble("judge this", "system")
+        # All 5 judge providers available — should get 5 responses
         assert len(results) == 5
         families = {r.family for r in results}
         assert families == {"openai", "google", "meta", "xai", "local"}
@@ -392,13 +346,12 @@ class TestJudgeEnsemble:
         router = ProviderRouter(providers=providers)
 
         results = await router.call_judge_ensemble("judge this", "system")
-        assert len(results) == 1
+        assert len(results) == 2
         families = {r.family for r in results}
-        assert families == {"openai"}
+        assert families == {"openai", "google"}
 
     @pytest.mark.asyncio
-    async def test_ensemble_with_failures(self, monkeypatch):
-        monkeypatch.setenv("WORKFLOW_ALLOW_API_KEY_PROVIDERS", "1")
+    async def test_ensemble_with_failures(self):
         providers = {
             "codex": FakeProvider("codex", "openai", fail_with=ProviderError("x")),
             "gemini-free": FakeProvider("gemini-free", "google", "gemini-resp"),
@@ -640,8 +593,8 @@ class TestCodexProvider:
                 await provider.complete("prompt", "system", ModelConfig())
 
     @pytest.mark.asyncio
-    async def test_skip_git_repo_check_in_command_without_bwrap(self):
-        """codex exec must bypass sandbox only when bwrap is unavailable."""
+    async def test_skip_git_repo_check_in_command(self):
+        """codex exec must include --skip-git-repo-check."""
         from workflow.providers.codex_provider import CodexProvider
 
         captured_cmd = []
@@ -658,8 +611,6 @@ class TestCodexProvider:
         with (
             patch("workflow.providers.codex_provider._resolve_codex_cmd",
                   return_value=(["codex"], False)),
-            patch("workflow.providers.codex_provider.get_sandbox_status",
-                  return_value={"bwrap_available": False, "reason": "test"}),
             patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
         ):
             provider = CodexProvider()
@@ -668,72 +619,6 @@ class TestCodexProvider:
         assert "--skip-git-repo-check" in captured_cmd, (
             f"Expected --skip-git-repo-check in command: {captured_cmd}"
         )
-        assert "--dangerously-bypass-approvals-and-sandbox" in captured_cmd
-        assert "--full-auto" not in captured_cmd
-        assert "--ephemeral" in captured_cmd
-        assert "-C" in captured_cmd
-        assert "-m" in captured_cmd
-        assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.4"
-
-    @pytest.mark.asyncio
-    async def test_model_can_be_overridden_by_env(self, monkeypatch):
-        """Operators can move the provider forward after the deployed CLI supports it."""
-        from workflow.providers.codex_provider import CodexProvider
-
-        captured_cmd = []
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"hello", b""))
-        mock_proc.returncode = 0
-        mock_proc.kill = AsyncMock()
-        mock_proc.wait = AsyncMock()
-
-        async def _fake_exec(*args, **kwargs):
-            captured_cmd.extend(args)
-            return mock_proc
-
-        monkeypatch.setenv("WORKFLOW_CODEX_MODEL", "gpt-5.5")
-        with (
-            patch("workflow.providers.codex_provider._resolve_codex_cmd",
-                  return_value=(["codex"], False)),
-            patch("workflow.providers.codex_provider.get_sandbox_status",
-                  return_value={"bwrap_available": True, "reason": None}),
-            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
-        ):
-            provider = CodexProvider()
-            await provider.complete("prompt", "system", ModelConfig())
-
-        assert captured_cmd[captured_cmd.index("-m") + 1] == "gpt-5.5"
-
-    @pytest.mark.asyncio
-    async def test_uses_full_auto_when_bwrap_available(self):
-        """Healthy bwrap hosts should keep Codex's sandboxed auto mode."""
-        from workflow.providers.codex_provider import CodexProvider
-
-        captured_cmd = []
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"hello", b""))
-        mock_proc.returncode = 0
-        mock_proc.kill = AsyncMock()
-        mock_proc.wait = AsyncMock()
-
-        async def _fake_exec(*args, **kwargs):
-            captured_cmd.extend(args)
-            return mock_proc
-
-        with (
-            patch("workflow.providers.codex_provider._resolve_codex_cmd",
-                  return_value=(["codex"], False)),
-            patch("workflow.providers.codex_provider.get_sandbox_status",
-                  return_value={"bwrap_available": True, "reason": None}),
-            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
-        ):
-            provider = CodexProvider()
-            await provider.complete("prompt", "system", ModelConfig())
-
-        assert "--full-auto" in captured_cmd
-        assert "--dangerously-bypass-approvals-and-sandbox" not in captured_cmd
-        assert "--skip-git-repo-check" in captured_cmd
-        assert "--ephemeral" in captured_cmd
 
 
 # =====================================================================
@@ -783,13 +668,6 @@ class TestOllamaProvider:
 
 
 class TestGrokProvider:
-    def test_requires_api_key_provider_opt_in(self):
-        with patch.dict("os.environ", {"XAI_API_KEY": "test-key"}, clear=True):
-            from workflow.providers.grok_provider import GrokProvider
-
-            with pytest.raises(ProviderUnavailableError, match="disabled by default"):
-                GrokProvider()
-
     @pytest.mark.asyncio
     async def test_success(self):
         mock_choice = MagicMock()
@@ -800,15 +678,9 @@ class TestGrokProvider:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = mock_response
 
-        fake_openai = MagicMock()
-        fake_openai.OpenAI.return_value = mock_client
-
         with (
-            patch.dict(
-                "os.environ",
-                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
-            ),
-            patch.dict(sys.modules, {"openai": fake_openai}),
+            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
+            patch("openai.OpenAI", return_value=mock_client),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -827,15 +699,9 @@ class TestGrokProvider:
             "Error code: 429 - Rate limit exceeded"
         )
 
-        fake_openai = MagicMock()
-        fake_openai.OpenAI.return_value = mock_client
-
         with (
-            patch.dict(
-                "os.environ",
-                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
-            ),
-            patch.dict(sys.modules, {"openai": fake_openai}),
+            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
+            patch("openai.OpenAI", return_value=mock_client),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -850,15 +716,9 @@ class TestGrokProvider:
             "Internal server error"
         )
 
-        fake_openai = MagicMock()
-        fake_openai.OpenAI.return_value = mock_client
-
         with (
-            patch.dict(
-                "os.environ",
-                {"XAI_API_KEY": "test-key", "WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
-            ),
-            patch.dict(sys.modules, {"openai": fake_openai}),
+            patch.dict("os.environ", {"XAI_API_KEY": "test-key"}),
+            patch("openai.OpenAI", return_value=mock_client),
         ):
             from workflow.providers.grok_provider import GrokProvider
 
@@ -868,12 +728,8 @@ class TestGrokProvider:
 
     def test_missing_api_key_raises_unavailable(self):
         with (
-            patch.dict(
-                "os.environ",
-                {"WORKFLOW_ALLOW_API_KEY_PROVIDERS": "1"},
-                clear=True,
-            ),
-            patch.dict(sys.modules, {"openai": MagicMock()}),
+            patch.dict("os.environ", {}, clear=True),
+            patch("openai.OpenAI"),
         ):
             from workflow.providers.grok_provider import GrokProvider
 

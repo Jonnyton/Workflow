@@ -2,7 +2,7 @@
 
 Covers:
 - **Fix A (revised):** ``run_book`` entry barrier in
-  ``domains/fantasy_daemon/graphs/universe.py``. Refuses to draft when
+  ``domains/fantasy_author/graphs/universe.py``. Refuses to draft when
   ``worldbuild_signals.json`` has a queued ``synthesize_source`` whose
   manifest entry has empty ``synthesized_docs``.
 - **Fix C:** ``_synthesize_bite_by_bite`` per-bite diagnostics populate
@@ -23,7 +23,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from domains.fantasy_daemon.graphs.universe import (
     _has_unsynthesized_canon,
     run_book,
@@ -32,6 +31,7 @@ from domains.fantasy_daemon.phases.drift_cleanup import (
     cleanup_drift_kg,
     is_drift_seeded_scene,
 )
+
 from workflow.ingestion.extractors import (
     _LAST_BITE_OUTCOMES,
     _synthesize_bite_by_bite,

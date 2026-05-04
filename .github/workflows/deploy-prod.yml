@@ -17,11 +17,6 @@ name: Deploy prod
 #   DO_DROPLET_HOST  — Droplet public IP (e.g. 161.35.237.133)
 #   DO_SSH_USER      — SSH user on the Droplet (e.g. root or deploy)
 #   DO_SSH_KEY       — Private key PEM for the above user
-#
-# Optional subscription auth secret:
-#   WORKFLOW_CODEX_AUTH_JSON_B64 - base64-encoded ~/.codex/auth.json.
-#   When present, deploy syncs it into /etc/workflow/env without printing it
-#   and forces WORKFLOW_ALLOW_API_KEY_PROVIDERS=0 for the public daemon.
 
 on:
   workflow_run:
@@ -59,8 +54,6 @@ jobs:
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      HAS_CODEX_AUTH_BUNDLE: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -71,41 +64,19 @@ jobs:
 
       # Derive the image tag to deploy. workflow_dispatch override wins;
       # otherwise use the build-image run's head SHA.
-      #
-      # Fallback: if the resolved SHA tag does not exist in GHCR, fall back
-      # to :latest. Doc-only commits can skip build-image.yml, leaving no
-      # image for that commit SHA; :latest is the last successful built tag.
       - name: Resolve image tag
         id: tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "${{ inputs.image_tag }}" ]; then
-            tag="${{ inputs.image_tag }}"
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
             full_sha="${{ github.event.workflow_run.head_sha }}"
-            tag="${full_sha:0:12}"
+            echo "tag=${full_sha:0:12}" >> "$GITHUB_OUTPUT"
           else
-            tag="$(git rev-parse --short=12 HEAD)"
+            echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           fi
           owner_lower="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          image="ghcr.io/${owner_lower}/workflow-daemon"
-
-          echo "${GH_TOKEN}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null 2>&1 || true
-          if docker manifest inspect "${image}:${tag}" >/dev/null 2>&1; then
-            echo "::notice::image ${image}:${tag} exists in GHCR; deploying it"
-          else
-            echo "::warning::${image}:${tag} not found in GHCR; falling back to :latest"
-            tag="latest"
-          fi
-
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "image=${image}" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Image resolution"
-            echo ""
-            echo "- effective tag: \`${image}:${tag}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "image=ghcr.io/${owner_lower}/workflow-daemon" >> "$GITHUB_OUTPUT"
 
       - name: Verify secrets present
         run: |
@@ -153,53 +124,19 @@ jobs:
       # any mode-flip class is caught at the call site, not later by
       # systemd ExecStartPre.
       #
-      # BUG-002 (2026-04-19): host's Windows wiki path leaked to the
+      # BUG-002 (2026-04-19): host's Windows WIKI_PATH leaked to the
       # droplet env file, making wiki_path() resolve to /app/C:\Users\...
-      # Strip explicit WORKFLOW_WIKI_PATH so the resolver falls back to
-      # $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
-      # Also strip WORKFLOW_UNIVERSE: it is a stdio-shim override, and
-      # leaving it in the cloud env can bind workflow-worker to a
-      # different universe than the public MCP default.
-      - name: Scrub stale cloud env overrides
+      # Strip any legacy WIKI_PATH / WORKFLOW_WIKI_PATH lines so the
+      # resolver falls back to $WORKFLOW_DATA_DIR/wiki (=/data/wiki).
+      - name: Scrub legacy Windows WIKI_PATH env leakage
         run: |
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              'sudo bash -s -- delete WORKFLOW_WIKI_PATH WORKFLOW_UNIVERSE' \
+              'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH' \
               < deploy/install-workflow-env.sh
-
-      - name: Sync runtime deploy files
-        run: |
-          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
-              deploy/compose.yml \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-compose.yml"
-          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
-              deploy/vector.yaml \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector.yaml"
-          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
-              deploy/vector-betterstack.yaml \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector-betterstack.yaml"
-          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
-              deploy/vector-entrypoint.sh \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-vector-entrypoint.sh"
-          scp -i ~/.ssh/do_deploy -o BatchMode=yes \
-              deploy/workflow-daemon.service \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}:/tmp/workflow-daemon.service"
-          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "set -e; \
-               sudo mkdir -p /opt/workflow/deploy; \
-               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-compose.yml /opt/workflow/compose.yml; \
-               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-compose.yml /opt/workflow/deploy/compose.yml; \
-               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-vector.yaml /opt/workflow/deploy/vector.yaml; \
-               sudo install -m 0644 -o workflow -g workflow /tmp/workflow-vector-betterstack.yaml /opt/workflow/deploy/vector-betterstack.yaml; \
-               sudo install -m 0755 -o workflow -g workflow /tmp/workflow-vector-entrypoint.sh /opt/workflow/deploy/vector-entrypoint.sh; \
-               sudo install -m 0644 -o root -g root /tmp/workflow-daemon.service /etc/systemd/system/workflow-daemon.service; \
-               sudo systemctl daemon-reload"
 
       - name: Deploy new image
         id: deploy
-        env:
-          WORKFLOW_CODEX_AUTH_JSON_B64: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 }}
         run: |
           NEW_IMAGE="${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}"
           echo "Deploying: ${NEW_IMAGE}"
@@ -217,23 +154,6 @@ jobs:
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
               "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
               "printf '%s' '${NEW_IMAGE}' | sudo bash /tmp/install-workflow-env.sh set WORKFLOW_IMAGE"
-          if [ "${HAS_CODEX_AUTH_BUNDLE}" = "true" ]; then
-            echo "Deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64 found; syncing subscription auth bundle."
-            printf '%s' "${WORKFLOW_CODEX_AUTH_JSON_B64}" | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-                "sudo bash /tmp/install-workflow-env.sh set WORKFLOW_CODEX_AUTH_JSON_B64"
-            printf '%s' '0' | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-                "sudo bash /tmp/install-workflow-env.sh set WORKFLOW_ALLOW_API_KEY_PROVIDERS"
-          else
-            echo "::warning::WORKFLOW_CODEX_AUTH_JSON_B64 is not visible to deploy; leaving any existing droplet subscription auth untouched."
-          fi
-          {
-            echo "## Deploy subscription auth"
-            echo ""
-            echo "- WORKFLOW_CODEX_AUTH_JSON_B64 visible to deploy: \`${HAS_CODEX_AUTH_BUNDLE}\`"
-            echo "- API-key providers forced off when the Codex subscription bundle is synced."
-          } >> "$GITHUB_STEP_SUMMARY"
           # Pull + restart via the systemd unit (which runs docker
           # compose down + up with the new env).
           ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
@@ -274,89 +194,12 @@ jobs:
             fi
           done
 
-      - name: Verify cloud worker is running
-        run: |
-          running=""
-          for i in $(seq 1 30); do
-            running=$(ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-                "sudo docker inspect -f '{{.State.Running}}' workflow-worker 2>/dev/null || true")
-            if [ "${running}" = "true" ]; then
-              echo "workflow-worker running after ${i} poll(s)"
-              break
-            fi
-            sleep 2
-          done
-          if [ "${running}" != "true" ]; then
-            echo "::error::workflow-worker is not running after deploy; node execution is not 24/7."
-            ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-                "sudo docker compose -f /opt/workflow/compose.yml ps; sudo docker logs --tail 120 workflow-worker 2>&1 || true"
-            exit 1
-          fi
-          if ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo docker exec workflow-worker env | grep -q '^WORKFLOW_UNIVERSE='"; then
-            echo "::error::workflow-worker inherited WORKFLOW_UNIVERSE from /etc/workflow/env. That stdio-only override can bind the worker to a different universe than the public MCP default."
-            exit 1
-          fi
-          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              "sudo docker logs --tail 160 workflow-worker 2>&1 | grep -E 'cloud_worker:|Registered|Graph execution failed|subprocess exited|spawn failed|No module named|Traceback' || true"
-          ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
-              "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
-              'sudo docker exec -i workflow-worker python -' <<'PY'
-          import os
-          from pathlib import Path
-          from workflow.cloud_worker import _resolve_universe_path
-
-          root = Path(os.environ.get("WORKFLOW_DATA_DIR", "/data"))
-          active_marker = root / ".active_universe"
-          try:
-              active = active_marker.read_text(encoding="utf-8").strip()
-          except OSError:
-              active = ""
-
-          universe = _resolve_universe_path()
-          print(f"worker diagnostic: data_root={root}")
-          print(f"worker diagnostic: active_marker={active or '<unset>'}")
-          print(f"worker diagnostic: resolved_universe={universe}")
-          for name in (
-              ".runtime_status.json",
-              "status.json",
-              "activity.log",
-              "worldbuild_signals.json",
-              "work_targets.json",
-          ):
-              path = universe / name
-              try:
-                  size = path.stat().st_size if path.exists() else 0
-              except OSError:
-                  size = -1
-              print(f"worker diagnostic: {name} exists={path.exists()} bytes={size}")
-          PY
-
       - name: Post-deploy canary — canonical URL only
         id: canary
         run: |
           # Since CF Access Option-1 cutover, the direct URL (mcp.tinyassets.io)
           # correctly returns 403. Only the canonical URL is a valid health signal.
           python scripts/mcp_public_canary.py --url "${CANARY_URL}" --verbose
-
-      - name: Verify subscription LLM binding after synced Codex auth
-        if: env.HAS_CODEX_AUTH_BUNDLE == 'true'
-        run: |
-          python scripts/verify_llm_binding.py \
-              --url "${CANARY_URL}" --timeout 20 --require-sandbox \
-              --retries 12 --retry-delay 10
-
-      - name: Report subscription LLM binding when no deploy auth bundle is configured
-        if: env.HAS_CODEX_AUTH_BUNDLE != 'true'
-        run: |
-          python scripts/verify_llm_binding.py \
-              --url "${CANARY_URL}" --timeout 20 --require-sandbox \
-              --retries 12 --retry-delay 10
-          echo "Subscription LLM binding and sandbox runtime are already live."
 
       - name: Verify CF Access gates direct URL (expects 403/401)
         id: access-gate

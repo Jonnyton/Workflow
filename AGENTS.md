@@ -10,9 +10,8 @@ let it drive. Fantasy authoring is one domain. There will be others.
 One unified priority, not a ranked list. Every surface of the system
 works 24/7 with zero hosts online:
 
-- Tier-1 chatbot users create / browse / collaborate on nodes via a
-  real chatbot UI with the Workflow connector installed (Claude.ai,
-  ChatGPT Developer Mode, or a future equivalent surface).
+- Tier-1 chatbot users create / browse / collaborate on nodes via
+  Claude.ai.
 - Tier-3 OSS contributors `git clone` and run cleanly.
 - Tier-2 daemon hosts one-click install the tray (<5min friction).
 - Node discovery, remix, converge, and live collaboration surfaces.
@@ -78,7 +77,6 @@ If it's about what's happening right now → STATUS.md.
      relevant design module applies, then proceed.
 3. If the idea inbox is non-empty, scan `ideas/PIPELINE.md` and `ideas/INBOX.md`.
 4. If your approach conflicts with a PLAN.md principle, do NOT implement it. Add the conflict to STATUS.md Concerns. PLAN.md changes require user approval.
-5. **Cohit-prevention check before drafting:** before drafting a design note that proposes a new MCP action, citing an unfixed `BUG-NNN`, or pinning a sha in frontmatter / memory, run `python scripts/check_primitive_exists.py {action <verb>|bug <BUG-NNN>|sha <sha>}` from origin/main. Exits 0 (clean), 1 (warning — may be false positive), 2 (collision — investigate before drafting). Catches the "primitive already exists / already-landed work" class — see `.claude/agent-memory/dev-2/2026-05-02-check-primitive-exists-script.md` for the four 2026-05-02 cohit incidents this script is calibrated against.
 
 ### Updating the Three Files
 
@@ -169,25 +167,6 @@ scoped reader at `python scripts/docview.py`.
 - When the user points at an outside project, repo, paper, benchmark, article, or codebase and asks what Workflow should learn or integrate, use `external-research-implications`. That process must canonicalize the source, research current context, compare module-by-module against Workflow, write durable implications, and self-update the skill when the process itself improves.
 - Research-derived concepts need opposite-provider review before implementation. If Codex makes the initial finding, Claude researches/reviews it; if Claude makes the initial finding, Codex researches/reviews it. If another provider makes the initial finding, name a different reviewer provider explicitly in `STATUS.md`, preferring the Codex/Claude pair when available. The review must re-check sources and Workflow context, leave a durable artifact, and gate any build, git push, live rollout, or acceptance test based on the finding.
 
-### Where new conventions live
-
-This project is multi-provider: Codex, Cursor, Aider, Claude Code, Cowork,
-and future agents may work from the same repo. Project-level conventions go
-in `AGENTS.md` first so every provider can see the same process truth.
-Provider-specific files such as `CLAUDE.md`, `.claude/agents/*`,
-`.cursor/rules/*`, `.cursorrules`, and `.codex/*` are for harness-specific
-notes or pointers back to `AGENTS.md`.
-
-Before saving a rule, ask whether a teammate in another provider would need
-it. If yes, put it in `AGENTS.md`; if it is only about one harness, tag the
-section as `[harness-specific]`, `[Claude Code only]`, `[Cursor only]`,
-`[Codex only]`, `[Cowork only]`, or `[Aider only]`.
-
-Run `python scripts/check_cross_provider_drift.py` after editing
-provider-specific files. Claude Code also wires
-`.claude/hooks/cross_provider_drift_guard.py` as a PostToolUse hook for
-`Write`, `Edit`, and `MultiEdit` on the developer teammate.
-
 ### Multi-Session Steering
 
 - The user may steer multiple live sessions across different providers at once.
@@ -195,23 +174,6 @@ provider-specific files. Claude Code also wires
 - Use `STATUS.md`, `ideas/*.md`, and `.agents/activity.log` as the shared coordination surface.
 - If two sessions may converge on the same idea, narrow the file boundary and record the split in `STATUS.md` or `ideas/PIPELINE.md`.
 - A useful idea left only in chat is lost work.
-
-### GitHub/Worktree Coordination Spine
-
-- Treat GitHub branches plus local `../wf-<slug>` worktrees as the execution
-  spine for buildable work. `STATUS.md` still owns cross-provider file claims;
-  `scripts/worktree_status.py` owns persistent local worktree visibility.
-- Before building from any `STATUS.md` row, idea, spec, exec plan, audit, or
-  memory, refactor it into current project state: exact `STATUS.md` Files and
-  Depends, branch name, worktree path, PR or draft-PR/live-push expectation,
-  prior-provider memory refs, and related implication refs.
-- Each active worktree should have a local `_PURPOSE.md` with the lane source,
-  claim boundary, branch, worktree path, review gate, expected publish route,
-  memory refs, and implication refs. This file is local worktree metadata, not
-  product source, and is ignored by git.
-- Review-blocked work should still have a visible pending worktree lane, but
-  must not advance beyond planning/scaffolding until the required
-  opposite-provider review returns approve/adapt.
 
 ### Site preview / ship loop
 
@@ -240,7 +202,7 @@ Three patterns keep agent output trustworthy:
 
 **Verification is structural.** Every substantive change needs test/check evidence and an independent review path before it is treated as landed. Claude Code's `TaskCompleted` -> verifier loop is the preferred team implementation. Codex/Cowork satisfy the same invariant with focused tests plus independent diff/subagent review where available. Self-review alone is not enough for public-surface, storage, auth, migration, concurrency, or data-loss-risk changes.
 
-**Final chatbot-surface verification is a rendered chatbot conversation through the live connector.** For changes affecting public MCP behavior, chatbot UX, connector tool descriptions, user-visible node/workflow state, or `tinyassets.io`, final acceptance must use a real browser-rendered chatbot conversation with the installed Workflow MCP connector at `https://tinyassets.io/mcp`, following `ui-test`. Claude.ai and ChatGPT Developer Mode both satisfy this when the Workflow connector is visible/installed and the tester types user-like prompts in the browser. The proof requirement is not host-login Claude.ai access; it is a real user path through the live MCP service. Direct MCP calls, local scripts, tests, DOM-only checks, and canaries are supporting evidence, not final user-surface proof. Log the rendered prompt/result in `output/user_sim_session.md` and include a trace or screenshot path when available.
+**Final chatbot-surface verification is live Claude.ai.** For changes affecting public MCP behavior, Claude.ai UX, connector tool descriptions, user-visible node/workflow state, or `tinyassets.io`, final acceptance must use the real Claude.ai chat state with the installed Workflow MCP connector at `https://tinyassets.io/mcp`, following `ui-test`. Direct MCP calls, local scripts, tests, and canaries are supporting evidence, not final user-surface proof. The proof is rendered chatbot behavior in the live conversation, logged in `output/claude_chat_trace.md` and summarized in `output/user_sim_session.md`.
 
 **Post-fix clean-use evidence.** After the fix and `ui-test`, final verification must also look for evidence that actual users have used the affected feature cleanly since the fix landed. Use available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Freshness-stamp the evidence. If no post-fix real-user use is visible yet, say that explicitly and, for public-surface or high-risk changes, leave a short watch item in `STATUS.md` instead of claiming proven clean use.
 
@@ -522,9 +484,8 @@ keeps the next provider's `claim_check.py` accurate.
 8. **Fail loudly, never silently.** Mock fallbacks that look like real output are worse than crashes.
 9. **User uploads are authoritative.** Preserved verbatim. Never summarize, truncate, or reformat.
 10. **Contributor attribution uses `CONTRIBUTORS.md`.** When a branch or node ships and `attribution_credit` rows exist, read `CONTRIBUTORS.md` to map each `actor_id` to a GitHub handle and emit `Co-Authored-By:` lines in the commit message. Format: `Co-Authored-By: Display Name <handle@users.noreply.github.com>`. If an actor_id is not in the table, skip silently — never block a commit on missing attribution.
-11. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe. This canary is required evidence, not final chatbot-surface proof; MCP/chatbot-facing changes also require the rendered chatbot `ui-test` check above before final acceptance. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
-12. **Portfolio graph stays current.** Before changing public-facing docs, project status, repo structure, or lineage, inspect `PROJECT_GRAPH.yml` where present and the standards in `docs/portfolio/`. If the change affects how a project appears publicly, update the relevant manifest, `docs/project-lineage.md`, or portfolio index notes. Default stance is public-draft unless explicitly private, but public publishing remains gated by scan/review.
-13. **No destructive git ops without explicit approval.** Do not use `git reset --hard`, `git checkout --`, `git restore`, `git clean`, force-push, or stash/drop as cleanup or diagnostics unless the host explicitly asks for that operation. Do not switch a dirty worktree to `main`; create a clean main-based worktree/session for live-ready work.
+11. **Public-surface changes verify post-change.** After any edit to DNS records, Cloudflare tunnel config, GoDaddy Website Builder config, or any surface affecting `tinyassets.io`, run `python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp` (or `scripts/uptime_canary.py --once` when Layer-1 is wired) and confirm a green probe. This canary is required evidence, not final chatbot-surface proof; MCP/chatbot-facing changes also require the live Claude.ai `ui-test` check above before final acceptance. Canonical public endpoint is `https://tinyassets.io/mcp` only. `mcp.tinyassets.io` is an Access-gated internal tunnel origin (host directive 2026-04-20) — it exists in DNS but is not user-facing; direct requests without the Worker's CF Access service-token headers return 401/403. Do not document or share `mcp.tinyassets.io` in user-facing contexts. The 2026-04-19 P0 outage (`docs/audits/2026-04-20-public-mcp-outage-postmortem.md`) landed when a tunnel reshuffle silently dropped a route — no commit touched the broken surface, so only a post-change out-of-band probe can catch this class. Named reference probes (including PROBE-001, the validated full-stack smoke): `docs/ops/acceptance-probe-catalog.md`.
+12. **No destructive git ops without explicit approval.** Do not use `git reset --hard`, `git checkout --`, `git restore`, `git clean`, force-push, or stash/drop as cleanup or diagnostics unless the host explicitly asks for that operation. Do not switch a dirty worktree to `main`; create a clean main-based worktree/session for live-ready work.
 
 ---
 
@@ -549,9 +510,11 @@ the process was launched from.
 |-----|---------|---------|
 | `WORKFLOW_DATA_DIR` | Canonical root for all on-disk state (SQLite checkpoint, LanceDB indexes, per-universe output dirs). Absolute path. | Platform default — Windows: `%APPDATA%\Workflow`; Linux/macOS/container: `~/.workflow`. |
 | `WORKFLOW_UNIVERSE` | Per-universe override — specific universe dir for the stdio MCP shim (`workflow.mcp_server`). | `$WORKFLOW_DATA_DIR/default-universe`. |
+| `UNIVERSE_SERVER_BASE` | **Deprecated.** Legacy alias for `WORKFLOW_DATA_DIR`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `UNIVERSE_SERVER_DEFAULT_UNIVERSE` | Which universe ID is active when none explicit. | First subdir of `$WORKFLOW_DATA_DIR`. |
 | `WORKFLOW_REPO_ROOT` | Path to the local git checkout for `workflow.producers.goal_pool` + git-backed catalog writes. When unset, resolved via `Path(__file__).resolve().parent.parent`. | Derived from module path. |
 | `WORKFLOW_WIKI_PATH` | Canonical root for the cross-project knowledge wiki the `wiki` tool reads/writes. Resolved via `workflow.storage.wiki_path()`; inherits `data_dir()` platform handling when unset. | `$WORKFLOW_DATA_DIR/wiki` (platform default). |
+| `WIKI_PATH` | **Deprecated.** Legacy alias for `WORKFLOW_WIKI_PATH`. Still honored; emits `DeprecationWarning` when `WORKFLOW_DEPRECATIONS=1`. Pre-commit invariant 5 blocks new reads outside `workflow/storage/__init__.py`. | — |
 | `WORKFLOW_UPLOAD_WHITELIST` | Colon/semicolon-separated absolute-path prefixes allowed for `add_canon_from_path`. Unset = accept any absolute path. | Unset (permissive). |
 
 ### Auth + identity
@@ -586,11 +549,7 @@ Each flag reads as a string; truthy = `"on"`, `"1"`, `"true"`, `"yes"` (case-ins
 | `OLLAMA_HOST` | Local Ollama endpoint URL. Presence is the "local-LLM-bound" signal `get_status` reports. | Unset. |
 | `ANTHROPIC_BASE_URL` | Alternate Anthropic endpoint (e.g. self-hosted relay). Presence also flips `llm_endpoint_bound` to truthy. | Unset. |
 | `WORKFLOW_PIN_WRITER` | Pin a specific writer provider by name (e.g. `"claude-code"`, `"codex"`). Overrides the provider router's fallback chain. | Unset. |
-| `WORKFLOW_CODEX_AUTH_JSON_B64` | Base64-encoded `~/.codex/auth.json` bundle for the Codex provider's subscription auth. `deploy/docker-entrypoint.sh` decodes it on container startup and writes `~/.codex/auth.json`; rotate on each Codex CLI re-auth. | Unset. |
-| `WORKFLOW_ALLOW_API_KEY_PROVIDERS` | Explicit opt-in for API-key-backed daemon providers. Default project-wide policy, including self-hosted daemons, is subscription-only: API-key env vars are ignored unless this is truthy. Use only when the host deliberately chooses to run an API-key daemon. | `off` |
-| `WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY` | Deprecated no-op placeholder retained in `deploy/compose.yml` and `deploy/workflow-env.template` for migration safety. No code path reads this flag; use `WORKFLOW_ALLOW_API_KEY_PROVIDERS` directly. | Unset (no-op). |
-| `OPENAI_API_KEY` | Stripped by `deploy/docker-entrypoint.sh` unless `WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`. The legacy `codex login --with-api-key` path is intentionally not run; Codex auth flows through `WORKFLOW_CODEX_AUTH_JSON_B64`. | Unset. |
-| `GEMINI_API_KEY` / `GROQ_API_KEY` / `XAI_API_KEY` | Provider API keys for the Gemini / Groq / Grok providers respectively. Ignored unless `WORKFLOW_ALLOW_API_KEY_PROVIDERS` is truthy. | Unset. |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` / `XAI_API_KEY` | Provider API keys for the Gemini / Groq / Grok providers respectively. Missing key → provider unavailable. | Unset. |
 | `FANTASY_DAEMON_LLM_TYPES` | Comma-separated list of LLM types the fantasy daemon prefers (e.g. `"claude,codex"`). Filters provider selection. | Unset. |
 
 ### Observability + uptime
@@ -598,6 +557,7 @@ Each flag reads as a string; truthy = `"on"`, `"1"`, `"true"`, `"yes"` (case-ins
 | Var | Purpose | Default |
 |-----|---------|---------|
 | `WORKFLOW_MCP_CANARY_URL` | Public MCP URL the uptime canary probes. | `https://tinyassets.io/mcp` (canonical apex; `mcp.tinyassets.io` is an Access-gated internal tunnel origin, not user-facing — host directive 2026-04-20). |
+| `WORKFLOW_DEPRECATIONS` | Set to `1` / `true` / `yes` to surface deprecation warnings for legacy env vars + import shims. | Unset (silent). |
 | `TAB_WATCHDOG_INTERVAL_S` | Interval (seconds) for the tray tab-watchdog's polling. `scripts/tab_watchdog.py`. | `60`. |
 | `WORKFLOW_CLAUDE_CHAT_SCREENSHOTS` | User-sim skill flag — capture a screenshot on every `claude_chat.py` response settle. Cost: ~200 KB per response. | Unset (off). |
 

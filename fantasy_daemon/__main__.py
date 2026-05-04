@@ -23,7 +23,7 @@ import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Suppress langchain-core Pydantic V1 deprecation warning on Python 3.14+
 warnings.filterwarnings(
@@ -44,7 +44,6 @@ from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: E402
 # WORKFLOW_UNIFIED_EXECUTION=1 can compile its Branch.
 import fantasy_daemon.branch_registrations  # noqa: E402, F401
 import fantasy_daemon.runtime as runtime  # noqa: E402
-from fantasy_daemon.branch_registrations import clear_restartable_soft_stop  # noqa: E402
 from fantasy_daemon.desktop.dashboard import DashboardHandler  # noqa: E402
 from fantasy_daemon.desktop.notifications import NotificationManager  # noqa: E402
 from fantasy_daemon.desktop.tray import TrayApp  # noqa: E402
@@ -62,13 +61,6 @@ from fantasy_daemon.providers.ollama_provider import OllamaProvider  # noqa: E40
 from fantasy_daemon.providers.router import ProviderRouter  # noqa: E402
 
 logger = logging.getLogger("fantasy_author")
-
-_UNIVERSE_CYCLE_BRANCH_IDS = frozenset({
-    "fantasy_author/universe-cycle",
-    "fantasy_author:universe_cycle_wrapper",
-})
-
-_DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S = 30.0
 
 
 def _first_trace(output: dict[str, Any]) -> dict[str, Any]:
@@ -182,137 +174,6 @@ def _paid_market_enabled() -> bool:
     return value.strip().lower() in {"on", "1", "true", "yes"}
 
 
-def _resolve_loop_daemon_context(
-    universe_path: Path,
-    universe_id: str,
-) -> dict[str, Any]:
-    """Resolve the daemon identity used by the autonomous loop.
-
-    A configured env var is authoritative and fails loudly if invalid. Without
-    an env override, the loop opts into the host-marked project default soul
-    daemon when one exists, then falls back to the historical soulless id.
-    """
-    fallback = {
-        "daemon_id": f"daemon-{universe_id}",
-        "source": "legacy_fallback",
-        "has_soul": False,
-        "soul_text": "",
-        "soul_hash": "",
-        "domain_claims": [],
-        "daemon_wiki_context": "",
-        "daemon_wiki_status": {},
-    }
-    env_name = "WORKFLOW_LOOP_DAEMON_ID"
-    override = os.environ.get(env_name, "").strip()
-    if not override:
-        env_name = "WORKFLOW_DAEMON_ID"
-        override = os.environ.get(env_name, "").strip()
-
-    try:
-        from workflow.daemon_registry import (
-            get_daemon,
-            select_project_loop_daemon,
-        )
-        from workflow.daemon_wiki import read_daemon_wiki_context
-        from workflow.storage import data_dir
-
-        base_path = data_dir()
-        if override:
-            daemon = get_daemon(
-                base_path,
-                daemon_id=override,
-                include_soul=True,
-            )
-            source = f"env:{env_name}"
-        else:
-            daemon = select_project_loop_daemon(base_path, include_soul=True)
-            if daemon is None:
-                return fallback
-            source = "project_loop_default"
-
-        wiki_context = ""
-        wiki_status: dict[str, Any] = {}
-        if daemon.get("has_soul"):
-            wiki_packet = read_daemon_wiki_context(
-                base_path,
-                daemon_id=daemon["daemon_id"],
-                max_chars=6000,
-            )
-            wiki_context = str(wiki_packet.get("context", ""))
-            wiki_status = dict(wiki_packet.get("memory_status") or {})
-        return {
-            "daemon_id": str(daemon["daemon_id"]),
-            "source": source,
-            "has_soul": bool(daemon.get("has_soul")),
-            "soul_text": str(daemon.get("soul_text") or ""),
-            "soul_hash": str(daemon.get("soul_hash") or ""),
-            "domain_claims": list(daemon.get("domain_claims") or []),
-            "daemon_wiki_context": wiki_context,
-            "daemon_wiki_status": wiki_status,
-        }
-    except KeyError as exc:
-        if override:
-            raise RuntimeError(
-                f"{env_name}={override!r} does not match a registered daemon"
-            ) from exc
-        logger.exception(
-            "loop daemon lookup failed for universe %s at %s",
-            universe_id, universe_path,
-        )
-        return fallback
-    except Exception:
-        if override:
-            raise
-        logger.exception(
-            "project loop daemon lookup failed for universe %s at %s",
-            universe_id, universe_path,
-        )
-        return fallback
-
-
-def _record_loop_daemon_signal(
-    loop_daemon: dict[str, Any],
-    *,
-    universe_path: Path,
-    source_id: str,
-    outcome: str,
-    summary: str,
-    details: str = "",
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    """Best-effort learning signal for a soul-bearing loop daemon."""
-    if not loop_daemon.get("has_soul"):
-        return
-    daemon_id = str(loop_daemon.get("daemon_id") or "")
-    if not daemon_id:
-        return
-    try:
-        from workflow.daemon_wiki import record_daemon_signal
-        from workflow.storage import data_dir
-
-        merged_metadata = {
-            "loop_daemon": True,
-            "universe_path": str(Path(universe_path).resolve()),
-            "daemon_source": loop_daemon.get("source", ""),
-            **(metadata or {}),
-        }
-        record_daemon_signal(
-            data_dir(),
-            daemon_id=daemon_id,
-            source_kind="node",
-            source_id=source_id,
-            outcome=outcome,
-            summary=summary,
-            details=details,
-            metadata=merged_metadata,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "daemon wiki signal write failed for %s source=%s",
-            daemon_id, source_id,
-        )
-
-
 def _run_branch_task_producers_if_enabled(universe_path: Path) -> int:
     """Phase F: call registered BranchTaskProducers at cycle boundary.
 
@@ -381,82 +242,6 @@ def _try_dispatcher_pick(
     except Exception:  # noqa: BLE001
         logger.exception("dispatcher_pick failed")
         return None, {}
-
-
-def _branch_task_owner_id(claimed_task: Any) -> str:
-    return str(
-        getattr(claimed_task, "worker_owner_id", "")
-        or getattr(claimed_task, "claimed_by", "")
-        or ""
-    )
-
-
-def _branch_task_heartbeat_interval_seconds() -> float:
-    raw = (
-        os.environ.get("WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_S")
-        or os.environ.get("WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_SECONDS")
-        or str(_DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S)
-    )
-    try:
-        return max(1.0, float(raw))
-    except ValueError:
-        logger.warning(
-            "Invalid WORKFLOW_BRANCH_TASK_HEARTBEAT_INTERVAL_S=%r; using %.1fs",
-            raw,
-            _DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S,
-        )
-        return _DEFAULT_BRANCH_TASK_HEARTBEAT_INTERVAL_S
-
-
-def _build_branch_task_observers(
-    universe_path: Path, claimed_task: Any,
-) -> tuple[Callable[..., None], Callable[[str, str], None]]:
-    task_id = str(getattr(claimed_task, "branch_task_id", "") or "")
-    owner_id = _branch_task_owner_id(claimed_task)
-    interval = _branch_task_heartbeat_interval_seconds()
-    last_heartbeat = 0.0
-
-    def refresh_heartbeat(*, force: bool = False) -> None:
-        nonlocal last_heartbeat
-        if not task_id:
-            return
-        now_mono = time.monotonic()
-        if not force and (now_mono - last_heartbeat) < interval:
-            return
-        try:
-            from workflow.branch_tasks import refresh_task_heartbeat
-
-            refreshed = refresh_task_heartbeat(
-                universe_path,
-                task_id,
-                worker_owner_id=owner_id,
-            )
-            if refreshed is not None:
-                last_heartbeat = now_mono
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "branch_task heartbeat refresh failed for %s owner=%s",
-                task_id,
-                owner_id,
-            )
-
-    def mark_node_status(node_id: str, status: str) -> None:
-        if not task_id:
-            return
-        try:
-            from workflow.branch_tasks import mark_task_progress
-
-            mark_task_progress(universe_path, task_id)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "branch_task progress stamp failed for %s node=%s status=%s",
-                task_id,
-                node_id,
-                status,
-            )
-        refresh_heartbeat()
-
-    return refresh_heartbeat, mark_node_status
 
 
 def _finalize_claimed_task(
@@ -669,111 +454,6 @@ def _try_execute_claimed_node_bid(
     except Exception as exc:  # noqa: BLE001
         logger.exception("_try_execute_claimed_node_bid failed")
         return False, f"node_bid_execution_exception: {exc}"
-
-
-def _should_execute_claimed_branch_directly(claimed_task: Any) -> bool:
-    branch_def_id = str(getattr(claimed_task, "branch_def_id", "") or "")
-    if not branch_def_id or branch_def_id in _UNIVERSE_CYCLE_BRANCH_IDS:
-        return False
-    request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
-    return request_type in {"branch_run", "bug_investigation"}
-
-
-def _branch_task_inputs_for_execution(claimed_task: Any) -> dict[str, Any]:
-    inputs = dict(getattr(claimed_task, "inputs", {}) or {})
-    request_type = str(getattr(claimed_task, "request_type", "") or "branch_run")
-    if request_type == "bug_investigation" and not str(
-        inputs.get("request_text") or ""
-    ).strip():
-        from workflow.bug_investigation import build_run_payload
-
-        inputs = build_run_payload(inputs)
-    return inputs
-
-
-def _try_execute_claimed_branch_task(
-    universe_path: Path,
-    claimed_task: Any,
-    daemon_id: str,
-    on_node_status: Callable[[str, str], None] | None = None,
-) -> tuple[bool, str, dict[str, Any]]:
-    """Execute a claimed BranchTask's requested branch.
-
-    The default universe wrapper remains the long-running creative loop.
-    Community goal-pool tasks, however, carry an explicit branch_def_id
-    and must produce a durable Workflow run for that branch before the
-    queue row is marked terminal.
-    """
-    try:
-        from workflow.api.branches import _resolve_branch_id
-        from workflow.branches import BranchDefinition
-        from workflow.daemon_server import get_branch_definition
-        from workflow.runs import RUN_STATUS_COMPLETED, execute_branch
-        from workflow.storage import data_dir
-
-        base_path = data_dir()
-        requested = str(getattr(claimed_task, "branch_def_id", "") or "")
-        branch_def_id = _resolve_branch_id(requested, base_path)
-        if not branch_def_id:
-            return False, f"branch_not_found: {requested}", {
-                "requested_branch_def_id": requested,
-            }
-        try:
-            source_dict = get_branch_definition(base_path, branch_def_id=branch_def_id)
-        except KeyError:
-            return False, f"branch_not_found: {branch_def_id}", {
-                "branch_def_id": branch_def_id,
-            }
-        branch = BranchDefinition.from_dict(source_dict)
-        errors = branch.validate()
-        if errors:
-            return False, "branch_validation_failed", {
-                "branch_def_id": branch_def_id,
-                "validation_errors": errors,
-            }
-
-        provider_call: Any = None
-        try:
-            from domains.fantasy_daemon.phases._provider_stub import (
-                call_provider as provider_call,
-            )
-        except ImportError:
-            provider_call = None
-
-        actor = os.environ.get("UNIVERSE_SERVER_USER", "anonymous") or "anonymous"
-        outcome = execute_branch(
-            base_path,
-            branch=branch,
-            inputs=_branch_task_inputs_for_execution(claimed_task),
-            run_name=f"branch-task-{claimed_task.branch_task_id}",
-            actor=actor,
-            provider_call=provider_call,
-            on_node_status=on_node_status,
-        )
-        metadata = {
-            "branch_def_id": branch_def_id,
-            "run_id": outcome.run_id,
-            "run_status": outcome.status,
-            "actor": actor,
-        }
-        success = outcome.status == RUN_STATUS_COMPLETED
-        error = outcome.error if outcome.error else (
-            "" if success else f"run_status:{outcome.status}"
-        )
-        logger.info(
-            "dispatcher_pick: executed branch task %s branch=%s run=%s status=%s",
-            claimed_task.branch_task_id,
-            branch_def_id,
-            outcome.run_id,
-            outcome.status,
-        )
-        return success, error, metadata
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("_try_execute_claimed_branch_task failed")
-        return False, f"branch_task_execution_exception: {exc}", {
-            "universe_path": str(Path(universe_path)),
-            "daemon_id": daemon_id,
-        }
 
 
 def _dispatcher_observe(universe_path: Path) -> None:
@@ -1264,8 +944,6 @@ class DaemonController:
                     # Preserve series_completed list
                     if ev.get("series_completed"):
                         initial_state["series_completed"] = ev["series_completed"]
-                    if isinstance(ev.get("health"), dict):
-                        initial_state["health"] = dict(ev["health"])
                     logger.info(
                         "Resumed from checkpoint: words=%d, chapters=%d",
                         initial_state["total_words"],
@@ -1274,7 +952,6 @@ class DaemonController:
             except Exception:
                 logger.debug("No existing checkpoint to resume from",
                              exc_info=True)
-            initial_state = clear_restartable_soft_stop(initial_state)
 
             if self._dashboard:
                 self._dashboard.handle_event({
@@ -1301,47 +978,12 @@ class DaemonController:
             # pick BEFORE the stream. If a task is claimed, merge its
             # inputs into initial_state (inputs win on overlap).
             # Unclaimed picks fall through to default graph behavior.
-            loop_daemon_context = _resolve_loop_daemon_context(
-                output_dir, universe_id,
-            )
-            daemon_id = loop_daemon_context["daemon_id"]
-            initial_state.update({
-                "daemon_id": daemon_id,
-                "daemon_soul_text": loop_daemon_context.get("soul_text", ""),
-                "daemon_soul_hash": loop_daemon_context.get("soul_hash", ""),
-                "daemon_domain_claims": loop_daemon_context.get(
-                    "domain_claims", [],
-                ),
-                "daemon_wiki_context": loop_daemon_context.get(
-                    "daemon_wiki_context", "",
-                ),
-                "daemon_wiki_status": loop_daemon_context.get(
-                    "daemon_wiki_status", {},
-                ),
-            })
-            logger.info(
-                "loop daemon identity: %s source=%s has_soul=%s",
-                daemon_id,
-                loop_daemon_context.get("source", ""),
-                loop_daemon_context.get("has_soul", False),
-            )
+            daemon_id = f"daemon-{universe_id}"
             claimed_task, claimed_inputs = _try_dispatcher_pick(
                 output_dir, daemon_id,
             )
             claimed_failed_reason = ""
             cancel_requested_during_run = False
-
-            def branch_task_heartbeat(*, force: bool = False) -> None:
-                return None
-
-            def branch_task_node_status(node_id: str, status: str) -> None:
-                return None
-
-            if claimed_task is not None:
-                branch_task_heartbeat, branch_task_node_status = (
-                    _build_branch_task_observers(output_dir, claimed_task)
-                )
-                branch_task_heartbeat(force=True)
             if claimed_task is not None and claimed_inputs:
                 # inputs win on overlap; unknown keys tolerated by
                 # LangGraph initial_state.
@@ -1360,25 +1002,8 @@ class DaemonController:
                 claimed_task is not None
                 and claimed_task.branch_def_id.startswith(NODE_BID_SENTINEL_PREFIX)
             ):
-                branch_task_heartbeat()
                 nb_success, nb_error = _try_execute_claimed_node_bid(
                     output_dir, claimed_task, daemon_id,
-                )
-                branch_task_heartbeat(force=True)
-                _record_loop_daemon_signal(
-                    loop_daemon_context,
-                    universe_path=output_dir,
-                    source_id=f"node_bid:{claimed_task.branch_task_id}",
-                    outcome="passed" if nb_success else "failed",
-                    summary=(
-                        f"NodeBid {claimed_task.branch_task_id} "
-                        f"{'succeeded' if nb_success else 'failed'}."
-                    ),
-                    details=nb_error,
-                    metadata={
-                        "branch_def_id": claimed_task.branch_def_id,
-                        "trigger_source": claimed_task.trigger_source,
-                    },
                 )
                 _finalize_claimed_task(
                     output_dir, claimed_task,
@@ -1388,47 +1013,8 @@ class DaemonController:
                 self._cleanup()
                 return
 
-            if (
-                claimed_task is not None
-                and _should_execute_claimed_branch_directly(claimed_task)
-            ):
-                branch_success, branch_error, branch_metadata = (
-                    _try_execute_claimed_branch_task(
-                        output_dir,
-                        claimed_task,
-                        daemon_id,
-                        on_node_status=branch_task_node_status,
-                    )
-                )
-                branch_task_heartbeat(force=True)
-                _record_loop_daemon_signal(
-                    loop_daemon_context,
-                    universe_path=output_dir,
-                    source_id=claimed_task.branch_task_id,
-                    outcome="passed" if branch_success else "failed",
-                    summary=(
-                        f"Branch task {claimed_task.branch_task_id} "
-                        f"{'succeeded' if branch_success else 'failed'} "
-                        "via direct branch execution."
-                    ),
-                    details=branch_error,
-                    metadata={
-                        "branch_def_id": claimed_task.branch_def_id,
-                        "trigger_source": claimed_task.trigger_source,
-                        **branch_metadata,
-                    },
-                )
-                _finalize_claimed_task(
-                    output_dir, claimed_task,
-                    success=branch_success, error=branch_error,
-                )
-                claimed_task = None  # prevent wrapper finalization
-                self._cleanup()
-                return
-
             try:
                 for event in compiled.stream(initial_state, config=config):
-                    branch_task_heartbeat()
                     if self._stop_event.is_set():
                         logger.info("Stop signal received, shutting down")
                         break
@@ -1459,17 +1045,12 @@ class DaemonController:
                         (self._paused.is_set() or pause_file.exists())
                         and not self._stop_event.is_set()
                     ):
-                        branch_task_heartbeat()
                         self._paused.wait(timeout=1.0)
 
-                    # Activity/status handling must run even in --no-tray
-                    # cloud-worker mode; dashboard emission is gated inside
-                    # _handle_node_output.
-                    if isinstance(event, dict):
+                    # Stream events to dashboard
+                    if self._dashboard and isinstance(event, dict):
                         for node_name, node_output in event.items():
                             self._handle_node_output(node_name, node_output)
-                            if claimed_task is not None:
-                                branch_task_node_status(node_name, "ran")
 
                     # Phase E: at each cycle boundary (marked by the
                     # `universe_cycle` node in the direct graph, or
@@ -1530,44 +1111,12 @@ class DaemonController:
                                 success=False,
                                 error="cancel_finalize_failed",
                             )
-                        _record_loop_daemon_signal(
-                            loop_daemon_context,
-                            universe_path=output_dir,
-                            source_id=claimed_task.branch_task_id,
-                            outcome="cancelled",
-                            summary=(
-                                f"Branch task {claimed_task.branch_task_id} "
-                                "was cancelled during the loop run."
-                            ),
-                            metadata={
-                                "branch_def_id": claimed_task.branch_def_id,
-                                "trigger_source": claimed_task.trigger_source,
-                            },
-                        )
                     else:
                         _finalize_claimed_task(
                             output_dir,
                             claimed_task,
                             success=not claimed_failed_reason,
                             error=claimed_failed_reason,
-                        )
-                        _record_loop_daemon_signal(
-                            loop_daemon_context,
-                            universe_path=output_dir,
-                            source_id=claimed_task.branch_task_id,
-                            outcome=(
-                                "failed" if claimed_failed_reason else "passed"
-                            ),
-                            summary=(
-                                f"Branch task {claimed_task.branch_task_id} "
-                                f"{'failed' if claimed_failed_reason else 'passed'} "
-                                "in the loop run."
-                            ),
-                            details=claimed_failed_reason,
-                            metadata={
-                                "branch_def_id": claimed_task.branch_def_id,
-                                "trigger_source": claimed_task.trigger_source,
-                            },
                         )
                 self._cleanup()
 
@@ -2043,19 +1592,6 @@ class DaemonController:
                 self._combined_log(
                     f"Worldbuild: No changes, version {version}"
                 )
-
-        elif node_name == "universe_cycle_wrapper":
-            health = output.get("health", {})
-            if not isinstance(health, dict):
-                health = {}
-            reason = str(health.get("idle_reason") or "continue")
-            stopped = bool(health.get("stopped", False))
-            self._combined_log(
-                "Universe cycle wrapper: completed "
-                f"(stopped={stopped}, reason={reason}, "
-                f"words={output.get('total_words', 0)}, "
-                f"chapters={output.get('total_chapters', 0)})"
-            )
 
         elif node_name == "reflect":
             trace = _first_trace(output)
@@ -2609,7 +2145,7 @@ def main() -> None:
     if args.universe_server:
         # Set base path for the Workflow MCP server (resolves universe directories)
         base = str(Path(args.universe).resolve())
-        os.environ.setdefault("WORKFLOW_DATA_DIR", base)
+        os.environ.setdefault("UNIVERSE_SERVER_BASE", base)
         logger.info(
             "Starting Workflow MCP server on %s:%d (transport=%s, base=%s)",
             args.host, args.mcp_port, args.mcp_transport, base,

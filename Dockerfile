@@ -65,7 +65,6 @@ WORKDIR /build
 
 # Copy project metadata + source so editable install works.
 COPY pyproject.toml ./
-COPY PLAN.md ./
 COPY workflow/ ./workflow/
 COPY domains/ ./domains/
 # fantasy_daemon is the node-execution runtime invoked by
@@ -91,7 +90,6 @@ FROM python:3.11-slim
 # runtime; the codex module tree is COPY'd from the builder.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        bubblewrap \
         ca-certificates \
         curl \
         libgomp1 \
@@ -116,7 +114,6 @@ COPY --from=builder /build/workflow /app/workflow
 COPY --from=builder /build/domains /app/domains
 COPY --from=builder /build/fantasy_daemon /app/fantasy_daemon
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
-COPY --from=builder /build/PLAN.md /app/PLAN.md
 
 # Static data files required at runtime.
 # world_rules.lp is the ASP constraint program; asp_engine.py resolves it
@@ -150,8 +147,8 @@ USER workflow
 EXPOSE 8001
 
 # tini as PID 1 handles signal forwarding + zombie reaping.
-# docker-entrypoint.sh enforces cloud-daemon subscription-only auth,
-# optionally installs a subscription Codex auth bundle, then execs the CMD.
+# docker-entrypoint.sh runs codex login on first start if auth is missing,
+# then execs the CMD.
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker-entrypoint.sh"]
 
 # Default command — the FastMCP streamable-http server on 0.0.0.0:8001.

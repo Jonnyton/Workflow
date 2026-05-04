@@ -79,13 +79,6 @@ workflow-probe --tool wiki --args '{"action":"read","page":"index"}'
 workflow-probe --list                          # alias for 'tools'
 ```
 
-PowerShell can strip JSON quotes before native commands see them. For simple
-flat objects, `workflow-probe` also accepts the stripped form:
-
-```powershell
-python scripts\mcp_probe.py --tool goals --args "{action:search,query:research-paper,limit:5}"
-```
-
 ## Flags
 
 | Flag | Description |
@@ -93,7 +86,7 @@ python scripts\mcp_probe.py --tool goals --args "{action:search,query:research-p
 | `--url URL` | MCP endpoint (default: `https://tinyassets.io/mcp`) |
 | `--raw` | Print full JSON response instead of extracted text |
 | `--tool NAME` | Raw tool call |
-| `--args JSON` | JSON arguments for `--tool` (default: `{}`); simple flat PowerShell-stripped objects are accepted |
+| `--args JSON` | JSON arguments for `--tool` (default: `{}`) |
 | `--list` | List tools (legacy alias for `tools` subcommand) |
 
 ## Healthy-state snippets

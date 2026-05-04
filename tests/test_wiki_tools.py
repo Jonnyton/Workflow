@@ -143,7 +143,7 @@ def wiki_dir(tmp_path, monkeypatch):
         page_content, encoding="utf-8"
     )
 
-    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
+    monkeypatch.setenv("WIKI_PATH", str(wiki_root))
     return wiki_root
 
 
@@ -407,59 +407,6 @@ class TestWikiLint:
         issues = result.get("issues", [])
         assert any("ORPHAN" in i and "orphan-page" in i for i in issues)
 
-    def test_lint_single_page_excludes_whole_wiki_backlog(self, wiki_dir):
-        clean_content = (
-            "---\ntitle: Clean Page\ntype: concept\n"
-            "confidence: medium\nsources: [test]\n---\n\n"
-            "A clean page that links to [[test-project]] and has enough body "
-            "content for page-specific linting.\n"
-        )
-        (wiki_dir / "pages" / "concepts" / "clean-page.md").write_text(
-            clean_content, encoding="utf-8"
-        )
-        (wiki_dir / "index.md").write_text(
-            (wiki_dir / "index.md").read_text(encoding="utf-8")
-            + "- [[clean-page]] -- Clean Page\n",
-            encoding="utf-8",
-        )
-        (wiki_dir / "pages" / "concepts" / "orphan-page.md").write_text(
-            "---\ntitle: Orphan\ntype: concept\nconfidence: high\n"
-            "sources: [test]\n---\n\nUnrelated orphan backlog.\n",
-            encoding="utf-8",
-        )
-        wiki(
-            "write",
-            category="concepts",
-            filename="pending-draft",
-            content="---\ntitle: Pending Draft\ntype: concept\n---\n\nDraft backlog.",
-        )
-
-        result = json.loads(wiki("lint", page="clean-page"))
-
-        assert result["status"] == "healthy"
-        assert result["issues"] == []
-
-    def test_lint_single_draft_reports_promotion_blockers_only(self, wiki_dir):
-        wiki(
-            "write",
-            category="notes",
-            filename="skinny",
-            content="---\ntitle: Skinny\n---\ntoo short\n",
-        )
-        (wiki_dir / "pages" / "concepts" / "orphan-page.md").write_text(
-            "---\ntitle: Orphan\ntype: concept\nconfidence: high\n"
-            "sources: [test]\n---\n\nUnrelated orphan backlog.\n",
-            encoding="utf-8",
-        )
-
-        result = json.loads(wiki("lint", page="skinny"))
-        issues = result.get("issues", [])
-
-        assert result["status"] == "issues_found"
-        assert any("Missing type" in issue for issue in issues)
-        assert any("Body too short" in issue for issue in issues)
-        assert not any("orphan-page" in issue for issue in issues)
-
 
 class TestWikiSupersede:
     def test_supersede_page(self, wiki_dir):
@@ -557,7 +504,7 @@ class TestWikiDispatch:
         """
         root = tmp_path / "nonexistent"
         assert not root.exists()
-        monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(root))
+        monkeypatch.setenv("WIKI_PATH", str(root))
         result = json.loads(wiki("list"))
         assert "error" not in result, (
             f"wiki list errored instead of auto-scaffolding: {result!r}"

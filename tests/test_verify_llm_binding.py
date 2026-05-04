@@ -30,52 +30,6 @@ _STATUS_BOUND = {
         ]
     },
 }
-_STATUS_BOUND_NESTED = {
-    "jsonrpc": "2.0",
-    "id": 10,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": (
-                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
-                    '"phase": "idle"}'
-                ),
-            }
-        ]
-    },
-}
-_STATUS_BOUND_SANDBOX_OK = {
-    "jsonrpc": "2.0",
-    "id": 10,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": (
-                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
-                    '"sandbox_status": {"bwrap_available": true, "reason": null}}'
-                ),
-            }
-        ]
-    },
-}
-_STATUS_BOUND_SANDBOX_MISSING = {
-    "jsonrpc": "2.0",
-    "id": 10,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": (
-                    '{"active_host": {"llm_endpoint_bound": "codex"}, '
-                    '"sandbox_status": {"bwrap_available": false, '
-                    '"reason": "bwrap not found on PATH"}}'
-                ),
-            }
-        ]
-    },
-}
 _STATUS_UNBOUND = {
     "jsonrpc": "2.0",
     "id": 10,
@@ -129,17 +83,6 @@ def test_llm_bound_returns_status():
     assert result.get("llm_endpoint_bound") == "anthropic"
 
 
-def test_llm_bound_accepts_current_nested_status_shape():
-    post_fn = _make_post_fn(
-        (_INIT_OK, "sid1"),              # initialize
-        (_NOTIF_NONE, "sid1"),           # notifications/initialized
-        (_STATUS_BOUND_NESTED, "sid1"),  # get_status
-        (_ADD_CANON_OK, "sid1"),         # add_canon
-    )
-    result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
-    assert result["active_host"]["llm_endpoint_bound"] == "codex"
-
-
 def test_llm_bound_add_canon_non_fatal():
     """add_canon failure must not raise — binding check still passes."""
     post_fn = _make_post_fn(
@@ -150,33 +93,6 @@ def test_llm_bound_add_canon_non_fatal():
     )
     result = check_llm_binding("http://fake/mcp", 10.0, post_fn=post_fn)
     assert result.get("llm_endpoint_bound") == "anthropic"
-
-
-def test_require_sandbox_accepts_bwrap_available():
-    post_fn = _make_post_fn(
-        (_INIT_OK, "sid1"),
-        (_NOTIF_NONE, "sid1"),
-        (_STATUS_BOUND_SANDBOX_OK, "sid1"),
-        (_ADD_CANON_OK, "sid1"),
-    )
-    result = check_llm_binding(
-        "http://fake/mcp", 10.0, require_sandbox=True, post_fn=post_fn
-    )
-    assert result["sandbox_status"]["bwrap_available"] is True
-
-
-def test_require_sandbox_rejects_missing_bwrap():
-    post_fn = _make_post_fn(
-        (_INIT_OK, "sid1"),
-        (_NOTIF_NONE, "sid1"),
-        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
-    )
-    with pytest.raises(VerifyError) as exc_info:
-        check_llm_binding(
-            "http://fake/mcp", 10.0, require_sandbox=True, post_fn=post_fn
-        )
-    assert exc_info.value.code == 5
-    assert "bwrap not found" in exc_info.value.msg
 
 
 # ---------------------------------------------------------------------------
@@ -319,39 +235,3 @@ def test_main_returns_2_on_network_error():
     with patch("verify_llm_binding._post", side_effect=_failing):
         code = main(["--url", "http://fake/mcp", "--timeout", "5"])
     assert code == 2
-
-
-def test_main_retries_transient_sandbox_failure():
-    post_fn = _make_post_fn(
-        (_INIT_OK, "sid1"),
-        (_NOTIF_NONE, "sid1"),
-        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
-        (_INIT_OK, "sid2"),
-        (_NOTIF_NONE, "sid2"),
-        (_STATUS_BOUND_SANDBOX_OK, "sid2"),
-        (_ADD_CANON_OK, "sid2"),
-    )
-    with patch("verify_llm_binding._post", side_effect=post_fn):
-        code = main([
-            "--url", "http://fake/mcp",
-            "--timeout", "5",
-            "--require-sandbox",
-            "--retries", "2",
-            "--retry-delay", "0",
-        ])
-    assert code == 0
-
-
-def test_main_returns_5_when_required_sandbox_missing():
-    post_fn = _make_post_fn(
-        (_INIT_OK, "sid1"),
-        (_NOTIF_NONE, "sid1"),
-        (_STATUS_BOUND_SANDBOX_MISSING, "sid1"),
-    )
-    with patch("verify_llm_binding._post", side_effect=post_fn):
-        code = main([
-            "--url", "http://fake/mcp",
-            "--timeout", "5",
-            "--require-sandbox",
-        ])
-    assert code == 5

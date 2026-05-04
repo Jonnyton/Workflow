@@ -16,9 +16,9 @@ Two URLs, two roles. Named here once so every subsequent row + the docs-sweep fo
 |---|---|---|
 | `https://tinyassets.io/mcp` | **User-facing canonical. Single public entry point.** The URL that ships in Claude.ai connector configs, README, onboarding docs, and any tier-1 / tier-2 UX copy. Also the URL probed by all canaries. | Served via a Cloudflare Worker at the apex that routes `/mcp*` → tunnel origin → daemon. Worker is an independent Cloudflare edge layer. |
 | `https://mcp.tinyassets.io/mcp` | **Access-gated internal tunnel origin. Not user-facing.** | cloudflared tunnel hostname. Protected by Cloudflare Access (service-token, host directive 2026-04-20): direct requests without CF service-token headers return 401/403. Only the Worker injects those headers. Do not document or share in user-facing contexts; do not add to canary configs. |
-| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event). User-facing setup/runbook references are stale; audit-history notes may retain `api.tinyassets.io` when clearly labeled historical. |
+| ~~`https://api.tinyassets.io/mcp`~~ | **NOT live. Do not resurrect.** | Referenced in older docs as the intended-canonical but never shipped (NXDOMAIN in the 2026-04-19 P0 event). Any doc containing `api.tinyassets.io` is stale and should be corrected during Row G. |
 
-**Interaction rule.** If a future tunnel reconfig (Cloudflare dash work) touches `tinyassets.io/mcp`, Hard Rule 11 fires — run `scripts/uptime_canary.py --once` post-change and confirm green before marking the change complete.
+**Interaction rule.** If a future tunnel reconfig (Cloudflare dash work) touches `tinyassets.io/mcp`, Hard Rule 10 fires — run `scripts/uptime_canary.py --once` post-change and confirm green before marking the change complete.
 
 ---
 
@@ -164,9 +164,9 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 **Relationship to Row E (Worker):** Row D lands the direct-tunnel-origin side (`mcp.tinyassets.io/mcp`). The user-facing canonical `tinyassets.io/mcp` is fronted by an independent Cloudflare Worker (Row E) that forwards to this origin. Worker + tunnel origin are independent layers — either can be updated without the other. The Worker ships BEFORE the Hetzner cutover (it routes to the current tunnel origin regardless of whether that origin is the host machine or the Hetzner box); Hetzner cutover just changes which origin the Worker reaches.
 
-**Acceptance:** Host machine powered off for 1 hour -> user-facing `tinyassets.io/mcp` green via Layer-1 canary and public direct access to `mcp.tinyassets.io/mcp` still blocked by Cloudflare Access. That's the pass gate.
+**Acceptance:** Host machine powered off for 1 hour → `mcp.tinyassets.io/mcp` still green via Layer-1 canary. User-facing `tinyassets.io/mcp` also green (Worker + new origin path). That's the pass gate.
 
-**Effort:** ~1-1.5 dev-days. Hetzner provisioning + Docker Compose + Cloudflare tunnel binding + DNS flip + post-flip Hard Rule 11 probe on canonical URL plus direct-origin gate check.
+**Effort:** ~1-1.5 dev-days. Hetzner provisioning + Docker Compose + Cloudflare tunnel binding + DNS flip + post-flip Hard Rule 10 probe on BOTH URLs.
 
 **Blocks:** Row F (trial).
 
@@ -186,10 +186,10 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 **Acceptance:**
 1. `curl -X POST https://tinyassets.io/mcp -H 'content-type: application/json' -d '<initialize payload>'` returns a valid MCP initialize response.
-2. Response equivalence through the Worker to the tunnel origin — same JSON-RPC result shape, same tools available on `tools/list`; the public direct origin remains Access-gated.
+2. Response equivalence to `https://mcp.tinyassets.io/mcp` — same JSON-RPC result shape, same tools available on `tools/list`.
 3. Streaming transport works end-to-end: an MCP session over Claude.ai using `tinyassets.io/mcp` connector URL completes a tool call (e.g., `get_status`) without disconnection.
-4. Layer-1 canary probes `tinyassets.io/mcp` green for 10 min; direct-origin gate check stays 401/403.
-5. Hard Rule 11 satisfied post-deploy.
+4. Layer-1 canary adds a probe against `tinyassets.io/mcp` (in addition to the existing `mcp.tinyassets.io/mcp` probe) and both return green for 10 min.
+5. Hard Rule 10 satisfied post-deploy.
 
 **Effort:** ~0.5 dev-day. Worker is small (≤50 LOC), wrangler setup is standard, testing is single-run local + live smoke.
 
@@ -200,17 +200,16 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 **Files:** `scripts/selfhost_smoke.py` (new), `tests/smoke/test_selfhost_parity.py` (new under tier-3 smoke directory).
 
 **Scope:**
-- Current default `selfhost_smoke.py` hits `tinyassets.io/mcp` (user-facing canonical via Worker) for MCP behavior and confirms public direct access to `mcp.tinyassets.io/mcp` is blocked by Cloudflare Access (401/403).
-- Use `selfhost_smoke.py --internal-parity` only when `--tunnel` points at an internal/service-token path that is expected to speak MCP. Parity assertion: both URLs return equivalent tool sets + equivalent `get_status` structure.
-- Integration test should cover both modes: public direct-origin gate is blocked; internal/service-token parity has same tool set, same public-tool-output shape, same success behavior.
+- `selfhost_smoke.py` hits BOTH `tinyassets.io/mcp` (user-facing canonical via Worker) AND `mcp.tinyassets.io/mcp` (direct tunnel) + a known list of tool calls (`get_status`, `tools/list`, any critical cold-path). Fail-loud on any regression vs localhost baseline. Parity assertion: both URLs return equivalent tool sets + equivalent `get_status` structure.
+- Integration test asserts parity: same tool set, same public-tool-output shape, same success behavior.
 - Runs in the nightly tier-3 GHA (once that's live) against both URLs.
 
 **Acceptance (48-hour trial):**
 1. After Row D + Row E land, host powers down their local daemon.
-2. Layer-1 canary runs every 2 min for 48 hours against `tinyassets.io/mcp`; direct-origin checks expect `mcp.tinyassets.io/mcp` to stay Access-gated.
-3. Zero Layer-1 reds in the trailing 48 hours; zero direct-origin gate regressions.
+2. Layer-1 canary runs every 2 min for 48 hours against BOTH `tinyassets.io/mcp` and `mcp.tinyassets.io/mcp`.
+3. Zero Layer-1 reds in the trailing 48 hours on either URL.
 4. `selfhost_smoke.py` green at hour 1, hour 24, hour 47.
-5. Hard Rule 11 satisfied: no post-change DNS, Worker, or provider reconfig blips went undetected.
+5. Hard Rule 10 satisfied: no post-change DNS, Worker, or provider reconfig blips went undetected.
 
 **Effort:** ~0.25 dev-day for the script + test. Acceptance is 48h wall time + canary monitoring, ~0 dev-hours active.
 
@@ -218,10 +217,10 @@ Five rows. All dispatchable immediately against the current main. Zero provider-
 
 ### Row G (follow-up, do NOT execute now): Canonical-URL docs sweep
 
-**Files:** grep + update. Expected surfaces include `docs/specs/*`, `docs/audits/*`, `SUCCESSION.md`, `.claude/skills/ui-test/*`, `docs/ops/*`, any setup/runbook `.md` referencing `api.tinyassets.io/mcp` or referencing `mcp.tinyassets.io/mcp` as user-facing (vs debug-only). Preserve audit-history mentions that explicitly identify `api.` as historical / never-live.
+**Files:** grep + update. Expected surfaces include `docs/specs/*`, `docs/audits/*`, `SUCCESSION.md`, `.claude/skills/ui-test/*`, `docs/ops/*`, any `.md` referencing `api.tinyassets.io/mcp` or referencing `mcp.tinyassets.io/mcp` as user-facing (vs debug-only).
 
 **Scope:**
-- Replace every user-facing reference to `mcp.tinyassets.io/mcp` OR `api.tinyassets.io/mcp` with `tinyassets.io/mcp` (canonical per §0). EXCEPTIONS: `mcp.tinyassets.io/mcp` stays in canary/debug/tunnel docs; `api.tinyassets.io` may remain only in audit-history notes that label it historical / never-live.
+- Replace every user-facing reference to `mcp.tinyassets.io/mcp` OR `api.tinyassets.io/mcp` with `tinyassets.io/mcp` (canonical per §0). EXCEPTIONS stay as `mcp.tinyassets.io/mcp`: canary probe config, debugging runbooks, architecture docs explicitly describing the tunnel layer.
 - Add a one-line reminder near each canonical reference about the three-URL shape from §0 if the surface is contributor-facing (specs + skills); user-facing surfaces (README, onboarding) get the canonical only.
 - **No flip-flops after this sweep.** The URL architecture is locked: apex canonical via Worker, subdomain debug-only via tunnel. Future changes require explicit exec-plan amendment.
 
@@ -265,7 +264,7 @@ Lead surfaced 10 gaps 2026-04-20 after host asked *"what else is needed for 24/7
 - `.github/workflows/uptime-canary.yml` posts alarms via a Discord webhook OR opens a GitHub issue via `gh issue create` using the built-in `GITHUB_TOKEN`.
 
 **Scope:**
-- GHA cron at every 5 minutes (GHA's floor is `*/5` practically — 2-min cadence from host Task Scheduler remains best-effort + supplementary, not primary). Probes `tinyassets.io/mcp` for MCP health and the `mcp.tinyassets.io/mcp` public direct-origin gate for 401/403.
+- GHA cron at every 5 minutes (GHA's floor is `*/5` practically — 2-min cadence from host Task Scheduler remains best-effort + supplementary, not primary). Probes BOTH `tinyassets.io/mcp` AND `mcp.tinyassets.io/mcp`.
 - Alarm sink: **GitHub Issue on 2 consecutive reds.** Pre-decided per always-works criterion — Discord webhook requires a webhook secret + a Discord server we depend on; GitHub Issue uses the repo's existing infrastructure with zero new dependencies. Issue body includes last N probe lines + suspected cause from exit code. Issue is auto-closed on 3 consecutive greens (same workflow).
 - Host Task Scheduler canary continues as supplementary when host is online (2-min cadence catches faster); GHA is the uptime-critical path.
 
@@ -463,10 +462,10 @@ Single-dev serial: ~8-11 dev-days. Two-dev parallel: ~5-7 dev-days.
 
 The migration is "done" when all seven hold simultaneously for a 48-hour window:
 
-1. **Cloud canary (Row H GHA cron) green for 48 consecutive hours** — `tinyassets.io/mcp` MCP health stays green and `mcp.tinyassets.io/mcp` public direct-origin access stays gated. Zero `exit != 0` probes on either. **Probed from GHA, not from host** — that is the load-bearing part.
-2. **`selfhost_smoke.py` green at hour 1, 24, 47.** No tool output regressions from the remote box vs local prod baseline (captured one week before cutover). Default mode asserts canonical MCP health plus direct-origin Access gate; `--internal-parity` is reserved for service-token/internal tunnel paths.
+1. **Cloud canary (Row H GHA cron) green for 48 consecutive hours against BOTH URLs** — `tinyassets.io/mcp` (user-facing canonical via Worker) AND `mcp.tinyassets.io/mcp` (direct tunnel origin). Zero `exit != 0` probes on either. **Probed from GHA, not from host** — that is the load-bearing part.
+2. **`selfhost_smoke.py` green at hour 1, 24, 47.** No tool output regressions from the remote box vs local prod baseline (captured one week before cutover). Parity asserted between canonical + direct-origin URLs.
 3. **Host machine powered off or hibernated for ≥48 hours** without a single user-visible outage on `tinyassets.io/mcp`.
-4. **Hard Rule 11 satisfied:** any Cloudflare Worker, DNS, or provider-dashboard reconfig during the 48h window ran `scripts/uptime_canary.py --once` post-change against the canonical URL and confirmed the direct-origin gate stayed closed.
+4. **Hard Rule 10 satisfied:** any Cloudflare Worker, DNS, or provider-dashboard reconfig during the 48h window ran `scripts/uptime_canary.py --once` post-change against BOTH URLs and confirmed green.
 5. **Succession runbook updated** — `SUCCESSION.md` §5 references the provider box as the current authoritative origin, with a link to Row C's cloudflared config template for rebuild-from-scratch.
 6. **Row H alarm path verified** — induced outage during the trial produces a GitHub issue within ~10 min (Row H acceptance criterion held under live conditions).
 7. **Row J backup ran at least once during the 48h window** — nightly snapshot landed in Hetzner Storage Box, rotation logic verified (not a bare "does it work" — an actual snapshot for that date is browsable).
@@ -483,7 +482,7 @@ If all seven hold, **the host's computer is officially replaceable.** The foreve
 |---|---|
 | Row B (path extraction) surfaces undocumented Windows assumptions in LanceDB or a vendored dep | Start Row B audit in parallel with A; if surface area exceeds 1 dev-day, scope creep flag → re-estimate before committing. |
 | Hetzner regional outage during near-term operation | Per plan-b §5.2 fallback trigger: move to Fly.io if Hetzner sustained outage > 24h or repeated <99% availability for 3 months. Fallback shape documented; not engaged until observed. |
-| Tunnel auth regression during provider-swap | Row D includes Layer-1 canary probe immediately post-deploy + Hard Rule 11 post-change discipline. |
+| Tunnel auth regression during provider-swap | Row D includes Layer-1 canary probe immediately post-deploy + Hard Rule 10 post-change discipline. |
 | Host local dev setup breaks after path-extraction refactor | Row B acceptance requires Windows-host behavior unchanged when `WORKFLOW_DATA_DIR` is unset. Regression test in tests/smoke/ covers both Unix + Windows default resolution. |
 | Remote box starts empty but user-sim actually needs a universe | Box-starts-empty decision made in §3. If evidence surfaces post-deploy that a universe IS needed public-side, add a one-off data-seeding commit — additive, not re-architecture. |
 | 48h offline trial during host travel / real use | Trial period can be any 48 consecutive hours; host picks a low-stakes window. Do NOT gate acceptance on trial completion — acceptance is "when 48h clean has happened," not "immediately." |

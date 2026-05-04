@@ -41,6 +41,7 @@ from domains.fantasy_daemon.phases.worldbuild import (
     _scan_existing_canon,
     worldbuild,
 )
+
 from workflow.notes import add_note, update_note_status
 
 # -----------------------------------------------------------------------

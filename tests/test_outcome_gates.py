@@ -24,7 +24,7 @@ import pytest
 def gates_env(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("GATES_ENABLED", "1")
     from workflow import universe_server as us
@@ -64,7 +64,7 @@ _LADDER = [
 def test_gates_tool_gated_by_flag(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.delenv("GATES_ENABLED", raising=False)
     from workflow import universe_server as us
@@ -225,8 +225,8 @@ def test_claim_persists_to_gate_claims_table(gates_env):
     _call(us, "gates", "claim",
           branch_def_id=bid, rung_key="submitted",
           evidence_url="https://example.com/subm")
-    from workflow.daemon_server import db_path
-    conn = sqlite3.connect(db_path(base))
+    from workflow.daemon_server import author_server_db_path
+    conn = sqlite3.connect(author_server_db_path(base))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM gate_claims WHERE branch_def_id = ? "
@@ -247,11 +247,11 @@ def test_schema_has_gate_ladder_column(gates_env):
     import sqlite3
     us, base = gates_env  # noqa: F841 — importlib reloads ensure init
     from workflow.daemon_server import (
-        db_path,
+        author_server_db_path,
         initialize_author_server,
     )
     initialize_author_server(base)
-    conn = sqlite3.connect(db_path(base))
+    conn = sqlite3.connect(author_server_db_path(base))
     cols = {
         r[1] for r in conn.execute("PRAGMA table_info(goals)")
     }
@@ -263,11 +263,11 @@ def test_schema_has_gate_claims_table(gates_env):
     import sqlite3
     us, base = gates_env  # noqa: F841
     from workflow.daemon_server import (
-        db_path,
+        author_server_db_path,
         initialize_author_server,
     )
     initialize_author_server(base)
-    conn = sqlite3.connect(db_path(base))
+    conn = sqlite3.connect(author_server_db_path(base))
     tables = {
         r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"

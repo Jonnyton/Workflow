@@ -28,10 +28,8 @@ from pathlib import Path
 from typing import Any
 
 from workflow.api.helpers import (
-    _default_universe,
     _find_all_pages,
     _read_text,
-    _universe_dir,
     _wiki_drafts_dir,
     _wiki_pages_dir,
     _wiki_root,
@@ -624,7 +622,17 @@ def _wiki_promote(
     meta, body = _parse_frontmatter(content)
 
     if not skip_lint:
-        issues = _promotion_lint_issues(meta, body, found_category)
+        issues: list[str] = []
+        if not meta.get("title"):
+            issues.append("Missing title in frontmatter")
+        if not meta.get("type"):
+            issues.append("Missing type in frontmatter")
+        if not meta.get("sources") and not meta.get("path"):
+            issues.append("Missing sources in frontmatter")
+        if len(body.strip()) < 50:
+            issues.append("Body too short (< 50 chars)")
+        if not re.search(r"\[\[.+?\]\]", body) and found_category != "projects":
+            issues.append("No wikilinks found -- pages should cross-reference")
         if issues:
             return json.dumps({
                 "error": "Promotion blocked.",
@@ -755,131 +763,7 @@ def _wiki_supersede(
         return json.dumps({"error": f"Failed to supersede: {exc}"})
 
 
-def _promotion_lint_issues(
-    meta: dict[str, str],
-    body: str,
-    category: str,
-) -> list[str]:
-    issues: list[str] = []
-    if not meta.get("title"):
-        issues.append("Missing title in frontmatter")
-    if not meta.get("type"):
-        issues.append("Missing type in frontmatter")
-    if not meta.get("sources") and not meta.get("path"):
-        issues.append("Missing sources in frontmatter")
-    if len(body.strip()) < 50:
-        issues.append("Body too short (< 50 chars)")
-    if not re.search(r"\[\[.+?\]\]", body) and category != "projects":
-        issues.append("No wikilinks found -- pages should cross-reference")
-    return issues
-
-
-def _wiki_lint_single_page(page: str) -> str:
-    resolved = _resolve_page(page)
-    if resolved is None:
-        return json.dumps({"error": f"Page not found: {page}"})
-
-    rel = _page_rel_path(resolved)
-    is_draft = _wiki_drafts_dir() in resolved.parents
-    category = resolved.parent.name
-    raw = _read_text(resolved)
-    meta, body = _parse_frontmatter(raw)
-    page_name = resolved.stem
-    page_names = {p.stem for p in _find_all_pages(_wiki_pages_dir())}
-    issues: list[str] = []
-
-    for m in re.findall(r"\[\[([^\]]+)\]\]", raw):
-        link = m.lower().replace(" ", "-")
-        if link not in page_names:
-            issues.append(f"MISSING: [[{link}]]")
-
-    if is_draft:
-        issues.extend(_promotion_lint_issues(meta, body, category))
-    else:
-        idx_content = _read_text(_wiki_index_path())
-        indexed = {
-            m.lower().replace(" ", "-")
-            for m in re.findall(r"\[\[([^\]]+)\]\]", idx_content)
-        }
-        inbound = 0
-        for p in _find_all_pages(_wiki_pages_dir()):
-            if p == resolved:
-                continue
-            for m in re.findall(r"\[\[([^\]]+)\]\]", _read_text(p)):
-                link = m.lower().replace(" ", "-")
-                if link == page_name:
-                    inbound += 1
-
-        if inbound == 0 and page_name not in indexed:
-            issues.append(f"ORPHAN: {page_name}")
-        if page_name not in indexed:
-            issues.append(f"NOT INDEXED: {page_name}")
-
-        _append_page_metadata_lint(issues, page_name, meta)
-
-    if not issues:
-        return json.dumps({"status": "healthy", "page": rel, "issues": []})
-    return json.dumps({
-        "status": "issues_found",
-        "page": rel,
-        "count": len(issues),
-        "issues": issues,
-    })
-
-
-def _append_page_metadata_lint(
-    issues: list[str],
-    page_name: str,
-    meta: dict[str, str],
-) -> None:
-    now = datetime.now(timezone.utc)
-    confidence = (meta.get("confidence") or "").strip().lower()
-    updated_str = meta.get("updated")
-    days_since: int | None = None
-    if updated_str:
-        try:
-            updated_date = datetime.fromisoformat(updated_str).replace(
-                tzinfo=timezone.utc
-            )
-            days_since = (now - updated_date).days
-        except ValueError:
-            pass
-
-    if confidence == "superseded":
-        successor = (meta.get("superseded_by") or "").strip()
-        if successor and successor not in {
-            p.stem for p in _find_all_pages(_wiki_pages_dir())
-        }:
-            issues.append(
-                f"BROKEN SUPERSESSION: {page_name} points to "
-                f"[[{successor}]] which does not exist"
-            )
-        return
-
-    if (
-        (not confidence or confidence == "high")
-        and days_since is not None
-        and days_since > 90
-    ):
-        issues.append(f"STALE HIGH: {page_name} (last updated {days_since} days ago)")
-    if confidence == "low" and days_since is not None and days_since > 30:
-        issues.append(
-            f"LINGERING LOW: {page_name} (confidence: low for {days_since} days)"
-        )
-    if not confidence and meta.get("title"):
-        issues.append(f"NO CONFIDENCE: {page_name}")
-    if (
-        not meta.get("sources")
-        and not meta.get("path")
-        and meta.get("type") != "project"
-    ):
-        issues.append(f"NO SOURCES: {page_name}")
-
-
-def _wiki_lint(page: str = "", **_kwargs: Any) -> str:
-    if page:
-        return _wiki_lint_single_page(page)
-
+def _wiki_lint(**_kwargs: Any) -> str:
     all_pages = _find_all_pages(_wiki_pages_dir())
     all_drafts = _find_all_pages(_wiki_drafts_dir())
     page_names: set[str] = set()
@@ -1363,7 +1247,6 @@ def _wiki_file_bug(
     kind: str = "bug",
     tags: str = "",
     force_new: bool = False,
-    verbose: bool = False,
     **_kwargs: Any,
 ) -> str:
     """File a bug / feature request / design proposal to pages/bugs/.
@@ -1478,151 +1361,16 @@ def _wiki_file_bug(
     _append_wiki_log(
         f"file_bug | {rel_path} | {bug_id} {title} [{severity}] kind={effective_kind}"
     )
-    # FEAT-004: per-request-id traceable trigger receipt. Created BEFORE the
-    # enqueue so a crash in the trigger helper still leaves a durable record
-    # showing a trigger was expected. Backward-compatible: the existing
-    # ``investigation`` block in the response is preserved verbatim, and the
-    # new ``trigger`` block is additive.
-    investigation: dict[str, Any] = {"status": "skipped"}
-    trigger_block: dict[str, Any] | None = None
-    _receipt = None
-    try:
-        from workflow import bug_investigation
-        from workflow.wiki import trigger_receipts as _tr
-
-        frontmatter = {
-            "bug_id": bug_id,
-            "title": title,
-            "type": effective_kind,
-            "kind": effective_kind,
-            "component": component,
-            "severity": severity,
-            "status": "open",
-            "observed": observed,
-            "expected": expected,
-            "repro": repro,
-            "workaround": workaround,
-        }
-        universe_id = _default_universe()
-        universe_path = _universe_dir(universe_id)
-        # Pre-write trigger receipt (status=pending). Read canonical branch_def_id
-        # from env so the receipt records what we *expected* to invoke even if the
-        # enqueue helper rejects.
-        import os as _os
-        canonical_branch_def_id = _os.environ.get(
-            "WORKFLOW_BUG_INVESTIGATION_BRANCH_DEF_ID", "",
-        ).strip() or None
-        try:
-            _receipt = _tr.create_pending(
-                request_id=bug_id,
-                request_kind=effective_kind,
-                request_page=rel_path,
-                branch_def_id=canonical_branch_def_id,
-            )
-        except Exception as _rcpt_exc:  # noqa: BLE001 - filing must survive receipt-store outage.
-            _logger_wiki.warning(
-                "file_bug trigger_receipt create failed for %s: %s", bug_id, _rcpt_exc,
-            )
-            _receipt = None
-
-        try:
-            request_id = bug_investigation._maybe_enqueue_investigation(
-                bug_id=bug_id,
-                frontmatter=frontmatter,
-                base_path=universe_path,
-                universe_id=universe_id,
-            )
-        except Exception as _enq_exc:
-            # Trigger helper raised. Update receipt then re-raise into the outer
-            # except so the existing investigation = {"status": "error"} branch
-            # behavior is preserved.
-            if _receipt is not None:
-                try:
-                    _receipt = _tr.mark_failed(_receipt, error=_enq_exc)
-                    trigger_block = _receipt.to_response()
-                except Exception:  # noqa: BLE001 - last-resort, don't break filing.
-                    pass
-            raise
-
-        if request_id:
-            investigation_section = bug_investigation.format_investigation_comment(
-                request_id=request_id,
-                status="queued",
-            )
-            with open(target, "a", encoding="utf-8") as fh:
-                fh.write(investigation_section)
-            investigation = {
-                "status": "queued",
-                "dispatcher_request_id": request_id,
-            }
-            # Default response shape is compact — callers needing the
-            # full BranchTask mirror pass verbose=True. Cuts the typical
-            # file_bug response from ~3.7 KB to ~600 bytes (no 23-field
-            # BranchTask dump that mirrors inputs.request_text). The
-            # trigger_attempt_id + dispatcher_request_id below are already
-            # enough for chatbots/canaries to join request -> run; the full
-            # mirror is operator-only and can be fetched on-demand via
-            # ``universe action=queue_list`` with the branch_task_id.
-            if verbose:
-                try:
-                    from workflow.branch_tasks import read_queue
-
-                    task = next(
-                        (
-                            t for t in read_queue(universe_path)
-                            if t.branch_task_id == request_id
-                        ),
-                        None,
-                    )
-                    if task is not None:
-                        investigation["branch_task"] = task.to_dict()
-                except Exception as _queue_exc:  # noqa: BLE001
-                    _logger_wiki.warning(
-                        "file_bug investigation task read failed for %s: %s",
-                        bug_id,
-                        _queue_exc,
-                    )
-            if _receipt is not None:
-                try:
-                    _receipt = _tr.mark_queued(
-                        _receipt, dispatcher_request_id=request_id,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-        else:
-            # Skipped because no canonical branch configured (env var empty
-            # or filing without bug_id). Record on the receipt for audit.
-            if _receipt is not None:
-                try:
-                    _receipt = _tr.mark_skipped(
-                        _receipt, reason="no_canonical_branch",
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-
-        if _receipt is not None:
-            trigger_block = _receipt.to_response()
-    except Exception as exc:  # noqa: BLE001 - bug filing itself must survive trigger failure.
-        _logger_wiki.warning("file_bug investigation trigger failed for %s: %s", bug_id, exc)
-        investigation = {"status": "error", "error": str(exc)}
-
-    response_body: dict[str, Any] = {
+    return json.dumps({
         "path": rel_path,
         "bug_id": bug_id,
         "status": "filed",
         "kind": effective_kind,
         "severity": severity,
         "component": component,
-        "investigation": investigation,
         "note": "Filing sent to navigator triage pipeline. "
                 f"Use `wiki action=list category={category_dir}` to view.",
-    }
-    if trigger_block is not None:
-        # FEAT-004: surface the structured trigger receipt so callers (canaries
-        # / chatbots / operators) have a per-request-id join key without log
-        # scraping. ``investigation`` is preserved above for backward compat.
-        response_body["trigger"] = trigger_block
-    return json.dumps(response_body)
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1654,12 +1402,9 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
-    kind: str = "bug",
-    tags: str = "",
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
-    verbose: bool = False,
 ) -> str:
     """Dispatch entry for the wiki MCP tool. See universe_server.py for the
     chatbot-facing docstring; this function is the implementation invoked by
@@ -1668,14 +1413,15 @@ def wiki(
     try:
         wiki_root = _wiki_root()
     except ValueError as exc:
-        # _wiki_root() raises when WORKFLOW_WIKI_PATH holds a Windows path on
-        # a POSIX runtime (2026-04-19 container incident).
+        # _wiki_root() raises when WORKFLOW_WIKI_PATH / WIKI_PATH holds a
+        # Windows path on a POSIX runtime (2026-04-19 container incident
+        # — host env leaked into Linux container).
         return json.dumps({
             "error": str(exc),
             "hint": (
-                "Unset WORKFLOW_WIKI_PATH to use the platform default "
-                "(data_dir()/wiki), or set it to a POSIX absolute path "
-                "like '/data/wiki'."
+                "Unset WORKFLOW_WIKI_PATH/WIKI_PATH to use the platform "
+                "default (data_dir()/wiki), or set it to a POSIX absolute "
+                "path like '/data/wiki'."
             ),
         })
 
@@ -1696,7 +1442,8 @@ def wiki(
         return json.dumps({
             "error": f"Wiki not found at {wiki_root}.",
             "hint": (
-                "Set WORKFLOW_WIKI_PATH to the wiki directory."
+                "Set WORKFLOW_WIKI_PATH to the wiki directory (legacy "
+                "WIKI_PATH still honored)."
             ),
         })
 
@@ -1744,12 +1491,9 @@ def wiki(
         "observed": observed,
         "expected": expected,
         "workaround": workaround,
-        "kind": kind,
-        "tags": tags,
         "force_new": force_new,
         "bug_id": bug_id,
         "reporter_context": reporter_context,
-        "verbose": verbose,
     }
 
     return handler(**kwargs)

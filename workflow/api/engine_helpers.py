@@ -242,7 +242,7 @@ def _storage_backend():
     (`goals/<slug>.yaml`, `branches/<slug>.yaml`). The repo root is
     derived from ``_base_path().parent`` — production points
     ``output/`` at the project root, so its parent IS the git repo
-    root. Tests using ``WORKFLOW_DATA_DIR=<tmp_path>/output`` get
+    root. Tests using ``UNIVERSE_SERVER_BASE=<tmp_path>/output`` get
     ``<tmp_path>`` as the repo root, which isn't a git repo, so
     ``get_backend`` auto-probes to :class:`SqliteOnlyBackend` and
     leaves the host project repo untouched.

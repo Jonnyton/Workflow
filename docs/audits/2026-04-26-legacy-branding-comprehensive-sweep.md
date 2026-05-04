@@ -183,8 +183,8 @@ For `Universe Server` rewrite (the real bug class per §2.2):
 | `tests/test_claude_chat_inline_dismiss.py` | 3 | Test fixture | Inspect — may be intentional |
 | `tests/test_universe_server_telemetry.py` | 1 | Test naming (covered by B.1) | RENAME with phase test pass |
 | `tests/test_universe_server_framing.py` | 1 | Test naming | RENAME |
-| `tests/test_branch_runner.py` | renamed 2026-05-02 from `test_community_branches_phase3.py` | Test fixture | Clean |
-| `tests/test_branch_authoring_actions.py` | renamed 2026-05-02 from `test_community_branches_phase2.py` | Test fixture | Clean |
+| `tests/test_community_branches_phase3.py` | 1 | Test fixture | Inspect |
+| `tests/test_community_branches_phase2.py` | 1 | Test fixture | Inspect |
 | `scripts/claude_chat.py` | 1 | User-sim script | REWRITE |
 | `scripts/always_allow_watch.py` | 3 | Test/ops script | Inspect — may be intentional UI text |
 | `docs/audits/user-chat-intelligence/2026-04-19-devin-session1.md` | 4 | Historical session intelligence | LEAVE (HISTORICAL CONTEXT) |
@@ -261,14 +261,14 @@ Per STATUS, Phases D / E / F / G / H all shipped. Phase 7 close-pending (gate on
 | `tests/test_phase7.py` | `tests/test_storage_split.py` (or check what it actually tests) | Phase 7 |
 | `tests/test_phase7_h2_goals_cutover.py` | `tests/test_goals_cutover.py` | Phase 7 H2 |
 | `tests/test_phase7_h3_branch_cutover.py` | `tests/test_branch_cutover.py` | Phase 7 H3 |
-| `tests/test_unified_execution.py` | renamed 2026-05-02 from `test_phase_d_unified_execution.py` | Phase D |
-| `tests/test_dispatcher_queue.py` | renamed 2026-05-02 from `test_phase_e_dispatcher.py` | Phase E |
-| `tests/test_goal_pool.py` | renamed 2026-05-02 from `test_phase_f_goal_pool.py` | Phase F |
-| `tests/test_node_bid.py` | renamed 2026-05-02 from `test_phase_g_node_bid.py` | Phase G |
-| `tests/test_activity_log_parity.py` | renamed 2026-05-02 from `test_phase_h_activity_log_parity.py` | Phase H |
-| `tests/test_node_bid_claim_stress.py` | renamed 2026-05-02 from `test_phase_h_claim_stress.py` | Phase H |
-| `tests/test_daemon_dashboard.py` | renamed 2026-05-02 from `test_phase_h_dashboard.py` | Phase H |
-| `tests/test_dashboard_panes.py` | renamed 2026-05-02 from `test_phase_h_panes.py` | Phase H |
+| `tests/test_phase_d_unified_execution.py` | `tests/test_unified_execution.py` | Phase D |
+| `tests/test_phase_e_dispatcher.py` | `tests/test_dispatcher.py` | Phase E |
+| `tests/test_phase_f_goal_pool.py` | `tests/test_goal_pool.py` | Phase F |
+| `tests/test_phase_g_node_bid.py` | `tests/test_node_bid.py` | Phase G |
+| `tests/test_phase_h_activity_log_parity.py` | `tests/test_activity_log_parity.py` | Phase H |
+| `tests/test_phase_h_claim_stress.py` | `tests/test_claim_stress.py` | Phase H |
+| `tests/test_phase_h_dashboard.py` | `tests/test_dashboard.py` | Phase H |
+| `tests/test_phase_h_panes.py` | `tests/test_panes.py` | Phase H |
 
 **Note:** verify no name collision with existing test files before each rename. Mechanical sed; per-file targeted pytest after rename to confirm green. ~30-45 min.
 
@@ -451,7 +451,7 @@ Caller migration sites scheduled for in-flight rename arcs. **No action by this 
 
 Mostly handled by the rename arcs themselves, but flagging the docstring + comment refs that survive the mechanical sed:
 
-- `workflow/api/branches.py` — DB filename comments now reference `.workflow.db`; helper symbol still waits on the evaluation API lane.
+- `workflow/api/branches.py:103, 191` — comments about `.author_server.db` routing through `_connect()`. Update with Phase 6.
 - `workflow/payments/escrow.py` — docstring: "SQLite table escrow_locks lives in the same .author_server.db as ...". Update with Phase 6.
 - `workflow/api/engine_helpers.py` — docstring mentions "Tests using `UNIVERSE_SERVER_BASE=<tmp_path>/output`". Update with Arc C Phase 3.
 - `workflow/api/helpers.py` — docstring mentions legacy alias. Update with Arc C Phase 3.

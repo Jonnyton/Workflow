@@ -14,13 +14,6 @@ hooks:
           command: 'python "$env:CLAUDE_PROJECT_DIR/.claude/hooks/dev_idle_guard.py"'
           shell: powershell
           timeout: 10
-  PostToolUse:
-    - matcher: "Write|Edit|MultiEdit"
-      hooks:
-        - type: command
-          command: 'python "$env:CLAUDE_PROJECT_DIR/.claude/hooks/cross_provider_drift_guard.py"'
-          shell: powershell
-          timeout: 10
 ---
 
 You are the developer for Workflow. You write code and ship fast.

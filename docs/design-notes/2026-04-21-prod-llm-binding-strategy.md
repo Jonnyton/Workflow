@@ -2,8 +2,8 @@
 title: Prod LLM binding strategy — minimum viable two-provider stance
 date: 2026-04-21
 author: navigator
-status: superseded
-status_detail: Superseded 2026-04-30 by PLAN.md subscription-first provider auth policy.
+status: active
+status_detail: AWAITING LEAD RATIFICATION — no code changes until option selected
 related:
   - workflow/providers/router.py
   - domains/fantasy_daemon/phases/_provider_stub.py
@@ -11,11 +11,6 @@ related:
 ---
 
 # Prod LLM Binding Strategy
-
-> Superseded 2026-04-30: this note describes the earlier API-key binding
-> strategy. Cloud daemons now run LLM execution through host subscription
-> auth only; API-key provider env vars are scrubbed before default-daemon LLM
-> execution.
 
 ## Current state (diagnosis)
 
@@ -50,9 +45,10 @@ run. The chain terminates in `AllProvidersExhaustedError`, not in a degraded res
 
 ### Net effect
 
-Historical note: with Task #35 (codex CLI in image + `OPENAI_API_KEY`) landing,
-the daemon had exactly one provider, `codex`. That path is no longer approved
-for default daemons; use subscription-backed Claude/Codex auth instead.
+With Task #35 (codex CLI in image + `OPENAI_API_KEY`) landing: daemon has exactly
+one provider — `codex`. Any OpenAI rate limit, quota hit, or network blip exhausts
+the entire chain. Judge ensemble (`call_judge_ensemble`) needs multiple providers for
+diversity; with one provider it returns a single response or zero.
 
 ---
 

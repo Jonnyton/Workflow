@@ -10,61 +10,31 @@ Rule context: `feedback_wiki_bugs_vet_before_implement` + `project_bug_reports_a
 
 # Deferred specs — needs scoping before dev-dispatchable
 
-The rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22) plus the 2026-05-01 daemon-learning-wiki extension, soul/wiki/runtime boundary, and bounded-memory cap model. Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
+The four rows below trace from the `project_daemon_souls_and_summoning` architectural landing (host directive 2026-04-22). Each is strategy-cleared under the SHIP-IT default (primitive expansions that fit `project_user_builds_we_enable`) but needs a scoping session before dev picks it up — they touch tray UX, identity model changes, cryptographic primitives, or new data-model tiers that navigator alone should not scope unilaterally. Flagging here for visibility so they're not dropped; promote to full dev-dispatchable spec when lead + host schedule scoping.
 
 ---
 
 ## [deferred] Daemon roster + soul.md authoring surface
 
-**One-line:** Tray/chatbot UX + backend for host-authored named daemons, each with a persistent soul.md identity file. Creating a soul = creating an inactive daemon. Summoning activates a specific named daemon. Hosts may summon as many daemons as their provider capacity supports; same-provider repeats show warning-only subscription/rate-limit estimates, not a platform cap.
+**One-line:** Tray UX + backend for host-authored named daemons, each with a persistent soul.md identity file. Creating a soul = creating an inactive daemon. Summoning activates a specific named daemon.
 
-**Foundational.** The specs below all depend on this one being scoped first — daemon-as-persistent-named-object is the substrate. Touches `workflow_tray.py` (new daemon list + editor UX), `workflow/daemon/` likely new submodule (daemon registry, soul persistence, activation lifecycle), `workflow/storage/` (soul path resolution under `$WORKFLOW_DATA_DIR/daemons/<name>/soul.md`), MCP surface (new actions: `daemons action=list | create | edit_soul | summon | banish`). The current `author_definitions` / soul-hash / runtime-instance substrate is transitional: preserve soul hash, fork, fingerprint, and runtime concepts, but migrate or rename them into a project-wide daemon registry rather than entrenching a fantasy-author-specific author model.
+**Foundational.** The three specs below all depend on this one being scoped first — daemon-as-persistent-named-object is the substrate. Touches `workflow_tray.py` (new daemon list + editor UX), `workflow/daemon/` likely new submodule (daemon registry, soul persistence, activation lifecycle), `workflow/storage/` (soul path resolution under `$WORKFLOW_DATA_DIR/daemons/<name>/soul.md`), MCP surface (new actions: `daemons action=list | create | edit_soul | summon | banish`).
 
-**Open scoping questions:** tray interaction pattern for soul editor (external editor vs embedded); chatbot-first daemon control wording; live-daemon soul-edit semantics (hot-reload vs require-banish-resummon); soul versioning schema; default-soul shape for users who never author one; migration path from today's generic `UNIVERSE_SERVER_HOST_USER` identity to named-daemons; relationship to `cloud-droplet` executor identity (is cloud-worker a single default-souled daemon, or multiple?); provider-plan estimate source for second-and-later same-provider warnings; daemon fleet process supervision at high counts.
+**Open scoping questions:** tray interaction pattern for soul editor (external editor vs embedded); live-daemon soul-edit semantics (hot-reload vs require-banish-resummon); soul versioning schema; default-soul shape for users who never author one; migration path from today's generic `UNIVERSE_SERVER_HOST_USER` identity to named-daemons; relationship to `cloud-droplet` executor identity (is cloud-worker a single default-souled daemon, or multiple?).
 
 **Needs scoping with:** host (UX + identity model), dev team (tray + storage), navigator (strategy + security of soul-spoof attacks).
 
 ---
 
-## [deferred] Daemon learning wiki
+## [deferred] Per-node soul_policy field on NodeDefinition
 
-**One-line:** Every soul-bearing daemon gets a host-local markdown wiki that records raw node/gate signals, maintains synthesis pages, and guides recursive self-learning according to the daemon's soul.
-
-**Primitive shape:** The platform supplies the storage layout and signal-ingest contract, not a fixed personality curriculum. `soul.md` is the identity contract; `wiki/raw/signals/` stores immutable passed/failed/blocked/cancelled node and gate records; `wiki/pages/` stores maintained self-model, decision-policy, interests, failure modes, skills, and soul-evolution pages; `wiki/decision_log/` stores candidate work considered, chosen work, declined work, offers, and soul-policy conflicts; `wiki/soul_versions/` stores immutable amendments and forks; `wiki/claim_proofs/` stores domain claims and attestations; `WIKI.md` is the schema future daemon runs follow. The soul file defines "best version of itself"; the wiki helps the daemon evolve tactics and self-understanding toward that soul.
-
-**Bounded memory contract:** The wiki has a hard size cap by default. V1 default users get an age-scaled cap that starts smaller and plateaus: target 16 MiB during the first month, 64 MiB by one year, then fixed at 64 MiB unless the host changes policy. Workflow-owned always-on daemons use the same contract with a larger default plateau of 128 MiB. Hosts may opt into `fixed`, `age_scaled`, or `custom` cap policies and raise caps with explicit storage/context warnings. Compaction keeps the daemon useful under the cap: raw signals are compact records with links to large artifacts, synthesis pages are rewritten in place, decision logs roll up by period/domain, and low-value memories are evicted unless protected by audit, claim-proof, or soul-version rules. Prompt memory is capped separately: the runtime loads a bounded memory packet, not the wiki; target 2k-6k tokens, hard cap 8k tokens of soul/wiki overhead for a normal run.
-
-**Soul-edit rule:** The wiki may draft rare soul-evolution proposals, but it must not automatically rewrite the soul after failures. Failures first update tactics, known failure modes, and decision policy. Soul edits should clarify or mature the original spirit rather than replace it.
-
-**Depends on:** Daemon roster + soul.md authoring surface. Soulless daemons continue using default platform memory/dispatch and do not get a personal learning wiki.
-
-**Open scoping questions:** exact cap defaults by host tier; when to run synthesis passes (after every node/gate vs batched idle pass); how to prevent low-quality/noisy signals from corrupting the wiki; whether users can inspect/edit daemon wikis from tray/chat; whether host cap increases are manual-only or may auto-scale by daemon age/activity; whether repeated contradictions can force a soul-evolution review gate; whether users can publish selected wiki pages as remixable commons artifacts while keeping the default host-local.
-
----
-
-## [deferred] Per-node/gate soul_policy field
-
-**One-line:** Add `soul_policy: Literal['allow_daemon_soul', 'forbid_daemon_soul', 'require_verified_soul', 'use_node_soul', 'prepend_node_header', 'hybrid']`, optional `node_soul: str`, and optional domain requirements to node/gate definitions. Sibling to the (also-queued) `llm_policy` field — both are authoring decisions that shape how the daemon behaves on that node or gate.
+**One-line:** Add `soul_policy: Literal['allow_host_soul', 'append_node_header', 'insist_node_soul', 'hybrid']` + optional `node_soul: str` to NodeDefinition. Sibling to the (also-queued) `llm_policy` field — both are per-node authoring decisions that shape how the daemon behaves on that node.
 
 **Depends on:** Daemon roster + soul.md authoring surface (the "host soul" referent must exist first).
 
-**Open scoping questions:** hybrid-merge semantics (who wins on conflict); validation of node/gate-provided souls (are they user-writable untrusted content that navigator must vet?); precedence at run time (how prompt composition combines daemon soul + node/gate header + provided soul); does claim-time filtering reject incompatible daemon souls before execution; how domain requirements are expressed without hardcoding platform roles; which policies are advisory vs hard eligibility.
+**Open scoping questions:** hybrid-merge semantics (who wins on conflict); validation of node-provided souls (are they user-writable untrusted content that navigator must vet?); precedence at run time (how `_build_prompt_template_node` composes host soul + node header + node soul); does claim-time filter match on policy (daemon with incompatible policy can't claim).
 
 **Shares authoring surface with:** per-node llm_policy (dev-dispatchable) — when that lands, coordinate UX so both fields are surfaced together in the build/patch-branch spec flow.
-
----
-
-## [deferred] Soul-guided daemon decision node
-
-**One-line:** After each node/gate completion, a soul-bearing daemon enters a decision step that sees eligible work, soul policies, domain requirements, provider/capability requirements, wiki-derived preferences, decision history, and any offer/bid, then chooses, declines, or asks for capacity according to its soul. Soulless daemons use the default dispatcher policy.
-
-**Depends on:** Daemon roster + soul.md authoring surface (the soul exists); daemon learning wiki (preferences and learned failure modes); per-node/gate soul_policy (eligibility); claim-time soul-fingerprint if a policy requires verified souls; paid-market/dispatcher task surfaces for offers.
-
-**Audit requirement:** Each decision writes a durable record: candidate work considered, eligibility filters, offers, chosen work, declined work, soul-policy conflicts, and the daemon's stated reason. This feeds the daemon wiki and gives hosts/markets a reviewable trail when a daemon chases money, avoids work, or refuses soul-incompatible tasks.
-
-**Open scoping questions:** deterministic audit trail for model-chosen claims; how much candidate metadata to expose to the daemon; whether a soul may decline all eligible work; starvation controls when many daemons prefer the same lucrative work; how to represent soul interests without hardcoding platform taxonomies; how default soulless policy maps to today's dispatcher; how claim-time filtering and post-run model choice split responsibility.
-
-**Likely touch points:** `workflow/dispatcher.py`, `workflow/branch_tasks.py`, `workflow/producers/node_bid.py`, host-pool bid polling, decision logs surfaced in tray/chat, and runtime prompt composition for soul-aware decisions.
 
 ---
 
@@ -82,11 +52,11 @@ The rows below trace from the `project_daemon_souls_and_summoning` architectural
 
 ## [deferred] Claim-time soul-fingerprint (anti-spoof)
 
-**One-line:** Cryptographic primitive that lets a claiming daemon prove their soul is what they say it is, without the dispatcher having to trust claimer-asserted metadata. This also underpins node/gate domain requirements when eligibility depends on a verified claim or proof.
+**One-line:** Cryptographic primitive that lets a claiming daemon prove their soul is what they say it is, without the dispatcher having to trust claimer-asserted metadata.
 
 **Depends on:** Daemon roster + soul.md (souls are stable addressable entities).
 
-**Open scoping questions:** fingerprint scheme (sha256 of soul.md content vs keyed HMAC with a platform-side secret vs on-chain signature once crypto ledger lands); enforcement level (advisory display in claim UX vs hard match against a registry); key management for hosts (every host needs to sign their souls — keypair management burden); interaction with soul-editing (does a soul edit invalidate outstanding claims with the old fingerprint?); whether fingerprint is required OR opt-in per node/gate (probably opt-in: `requires_verified_soul: bool`); how verified domain claims attach to a soul and who is allowed to attest them.
+**Open scoping questions:** fingerprint scheme (sha256 of soul.md content vs keyed HMAC with a platform-side secret vs on-chain signature once crypto ledger lands); enforcement level (advisory display in claim UX vs hard match against a registry); key management for hosts (every host needs to sign their souls — keypair management burden); interaction with soul-editing (does a soul edit invalidate outstanding claims with the old fingerprint?); whether fingerprint is required OR opt-in per node (probably opt-in: `node_def.requires_verified_soul: bool`).
 
 **Important but not urgent:** spoofing matters once daemon identity drives gate-bonus payouts. Today with no paid-market live, the threat model is thin. Spec when Paid-Market flag comes on AND gate-bonus primitive lands.
 

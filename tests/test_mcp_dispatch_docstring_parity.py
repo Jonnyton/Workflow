@@ -113,15 +113,7 @@ def _universe_dispatch_keys() -> set[str]:
         "queue_list", "queue_cancel",
         "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
         "post_to_goal_pool", "submit_node_bid",
-        "community_change_context",
-        "daemon_overview", "daemon_list", "daemon_get",
-        "daemon_create", "daemon_summon", "daemon_pause",
-        "daemon_resume", "daemon_restart", "daemon_banish",
-        "daemon_update_behavior", "daemon_control_status",
-        "daemon_memory_capture", "daemon_memory_search",
-        "daemon_memory_list", "daemon_memory_review",
-        "daemon_memory_promote", "daemon_memory_status",
-        "set_tier_config",
+        "daemon_overview", "set_tier_config",
     }
 
 
@@ -373,18 +365,6 @@ def test_no_orphaned_documented_actions(
         f"that are not in the dispatch dict: {orphans}. Either remove "
         f"them from the docstring or wire them into dispatch."
     )
-
-
-def test_wiki_docstring_tells_clients_to_file_bug_directly() -> None:
-    """The wiki tool description must not trigger costly filing pre-flight."""
-    doc = us.wiki.__doc__ or ""
-
-    assert "call `file_bug` directly" in doc
-    assert "duplicate detection server-side" in doc
-    assert "do NOT need to search/list/read" in doc
-    assert "status=\"similar_found\"" in doc
-    assert "Start with `action=\"list\"`" not in doc
-    assert "Start with `action=\"read\"`" not in doc
 
 
 @pytest.mark.parametrize("name,handler,dispatch,documented", _PARITY_CASES)

@@ -144,7 +144,7 @@ Tests touching the evaluation public action names go through the `extensions` MC
 |---|---|---|
 | `tests/test_publish_version.py` | `extensions` | Via MCP tool (~6 imports) |
 | `tests/test_rollback.py` | `extensions` | Via MCP tool (presumed; not grep-confirmed inline; same pattern) |
-| `tests/test_branch_evaluation_iteration.py` | `extensions` | Via MCP tool |
+| `tests/test_community_branches_phase4.py` | `extensions` | Via MCP tool |
 | `tests/test_branch_versions_rollback_columns.py` | `extensions` (likely) | Via MCP tool |
 | `tests/test_run_branch_version.py` | `_action_run_branch_version` (Step 4 scope, NOT here) | Via direct import |
 
@@ -271,7 +271,7 @@ Estimated wall time: 45-75 min (smaller than Step 4 because zero direct test imp
 6. **No test edits required.** This is the headline win for Step 5.
 7. **Run `python packaging/claude-plugin/build_plugin.py`** to sync plugin runtime mirror.
 8. **Verification:**
-   - `pytest tests/test_publish_version.py tests/test_rollback.py tests/test_branch_evaluation_iteration.py tests/test_branch_versions_rollback_columns.py -q` → green (covers branch-versioning + judgment surface).
+   - `pytest tests/test_publish_version.py tests/test_rollback.py tests/test_community_branches_phase4.py tests/test_branch_versions_rollback_columns.py -q` → green (covers branch-versioning + judgment surface).
    - `pytest tests/test_run_branch_version.py -q` → green (sanity: Step 4's `_action_run_branch_version` did NOT accidentally move).
    - `pytest -q` → full suite green.
    - `ruff check workflow/api/evaluation.py workflow/universe_server.py` → clean.

@@ -164,11 +164,11 @@ def test_branch_request_runtime_and_ledger_flow(host_client: TestClient):
 
 def test_configure_bootstraps_universes_from_filesystem(tmp_path):
     """``configure`` must call ``sync_universes_from_filesystem`` so a
-    universe directory dropped on disk is registered in the daemon_server
+    universe directory dropped on disk is registered in the author_server
     DB. Regression guard for the missing bootstrap call — without it,
     downstream branch/request/runtime endpoints 404 on un-synced universes.
     """
-    import workflow.daemon_server as daemon_server
+    import workflow.daemon_server as author_server
     from fantasy_daemon.api import configure
 
     # Fresh base dir with a universe directory (no prior configure).
@@ -184,7 +184,7 @@ def test_configure_bootstraps_universes_from_filesystem(tmp_path):
     try:
         configure(base_path=str(base), api_key="fa_host_sk_x", daemon=None)
         # sync_universes_from_filesystem registers the dir in the DB.
-        record = daemon_server.get_universe(
+        record = author_server.get_universe(
             str(base), universe_id="my-new-universe",
         )
         assert record["universe_id"] == "my-new-universe"
@@ -325,12 +325,12 @@ def test_propose_author_fork_signature_regression():
     The api.py call site must use ``universe_id=`` / ``author_id=`` /
     ``duration_seconds=`` — the legacy ``parent_author_id=`` /
     ``vote_seconds=`` names produced a TypeError at runtime. Exercising
-    ``daemon_server.propose_author_fork`` directly pins the kwargs."""
+    ``author_server.propose_author_fork`` directly pins the kwargs."""
     import inspect
 
-    import workflow.daemon_server as daemon_server
+    import workflow.daemon_server as author_server
 
-    sig = inspect.signature(daemon_server.propose_author_fork)
+    sig = inspect.signature(author_server.propose_author_fork)
     params = sig.parameters
     # Signature must accept these exact kwargs:
     for required in (

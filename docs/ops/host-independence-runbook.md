@@ -167,7 +167,7 @@ Known secret metadata table:
 | `DO_SSH_KEY` | DigitalOcean | Non-expiring ed25519 keypair. | [#do-ssh-key](#do-ssh-key) |
 | `DO_DROPLET_HOST` | DigitalOcean | Non-secret IP identifier. | [#do-droplet-host](#do-droplet-host) |
 | `DO_SSH_USER` | DigitalOcean | Non-secret username. | [#do-ssh-user](#do-ssh-user) |
-| `OPENAI_API_KEY` | OpenAI | Deprecated; ignored by default daemons under subscription-only policy. | [#openai-api-key](#openai-api-key) |
+| `OPENAI_API_KEY` | OpenAI | Metadata JSON. | [#openai-api-key](#openai-api-key) |
 | `PUSHOVER_USER_KEY` | Pushover | Non-expiring account identifier. | [#pushover-user-key](#pushover-user-key) |
 | `PUSHOVER_APP_TOKEN` | Pushover | Non-expiring application token. | [#pushover-app-token](#pushover-app-token) |
 
@@ -265,29 +265,23 @@ expected entry in `authorized_keys`.
 
 #### openai-api-key
 
-**What:** Deprecated legacy Codex API-key credential. As of 2026-04-30,
-Workflow daemons run LLM calls through host subscription auth by default.
-`OPENAI_API_KEY` is stripped at container startup unless
-`WORKFLOW_ALLOW_API_KEY_PROVIDERS=1` and is not a valid default recovery path
-for `llm_endpoint_bound=unset`.
+**What:** Codex CLI credential. Required by the daemon container so
+`workflow.providers.codex_provider` can route LLM calls. Without it,
+`llm_endpoint_bound` reports `unset` and the LLM-binding canary goes
+red.
 
-**Do not rotate for default-daemon recovery.** Instead:
-1. Confirm `/etc/workflow/env` has `WORKFLOW_ALLOW_API_KEY_PROVIDERS=0`.
-2. Provide subscription auth, e.g. set `WORKFLOW_CODEX_AUTH_JSON_B64` to a
-   base64-encoded Codex subscription `~/.codex/auth.json`, or use the approved
-   Claude subscription lane for GitHub Actions (`CLAUDE_CODE_OAUTH_TOKEN`).
-3. Preferred: set `WORKFLOW_CODEX_AUTH_JSON_B64` as a GitHub Actions secret,
-   then trigger `.github/workflows/deploy-prod.yml`. Deploy syncs the bundle
-   into `/etc/workflow/env` through `deploy/install-workflow-env.sh`, keeps it
-   out of logs, and forces `WORKFLOW_ALLOW_API_KEY_PROVIDERS=0`.
-4. Manual fallback: SSH to droplet, edit `/etc/workflow/env`, then restore
-   permissions: `sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env`
+**Rotate:**
+1. platform.openai.com → Settings → API Keys → "workflow-daemon" →
+   Create new → copy once.
+2. `gh secret set OPENAI_API_KEY --body "<new key>"`.
+3. SSH to droplet, edit `/etc/workflow/env`:
+   `sudo sed -i 's|^OPENAI_API_KEY=.*|OPENAI_API_KEY=<new key>|' /etc/workflow/env`
+   then `sudo chown root:workflow /etc/workflow/env && sudo chmod 640 /etc/workflow/env`
    (ENV-UNREADABLE invariant per Task #3).
-5. `sudo systemctl restart workflow-daemon` if you used the manual fallback.
-6. Trigger `.github/workflows/llm-binding-canary.yml` manually or wait for
-   the next tick. Confirm `llm_endpoint_bound` is not `unset`.
-7. Leave `OPENAI_API_KEY=` blank in `/etc/workflow/env`. Revoke any old
-   project-specific OpenAI API key once no non-cloud process depends on it.
+4. `sudo systemctl restart workflow-daemon`.
+5. Wait for `.github/workflows/llm-binding-canary.yml` next tick (6h)
+   or trigger manually. Confirm `llm_endpoint_bound: codex`.
+6. Revoke prior key in OpenAI dashboard.
 
 #### pushover-user-key
 
@@ -523,11 +517,10 @@ checks that `llm_endpoint_bound` in `get_status` is not `"unset"`.
 - Recovery (green after open issue): comments RECOVERED + closes issue.
 
 **Likely causes when it fires:**
-- Subscription auth missing or expired (`WORKFLOW_CODEX_AUTH_JSON_B64` absent,
-  Codex auth file invalid, or Claude OAuth unavailable in the relevant lane)
+- `OPENAI_API_KEY` rotated or expired in `/etc/workflow/env`
 - `codex` CLI missing from the container image (image rebuild needed)
 - Container restarted without env file (`docker compose down` + manual restart)
-- API-key vars present but ignored because default daemons are subscription-only
+- `OLLAMA_HOST` or `ANTHROPIC_BASE_URL` unset after host reconfiguration
 
 **Manual re-check:**
 ```bash

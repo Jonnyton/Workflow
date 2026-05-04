@@ -78,7 +78,7 @@ def _call_build(spec_dict, verbose=None):
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.save_branch_definition", save_mock),
+        patch("workflow.author_server.save_branch_definition", save_mock),
         patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):
@@ -99,8 +99,8 @@ def _call_patch(branch_before, branch_after, changes_json, verbose=None):
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_before),
-        patch("workflow.daemon_server.save_branch_definition", save_mock),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_before),
+        patch("workflow.author_server.save_branch_definition", save_mock),
         patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.branches.BranchDefinition.validate", return_value=[]),
     ):
@@ -156,7 +156,7 @@ class TestBuildBranchSummaryDefault:
         saved = _make_branch_dict(name=spec["name"])
         save_mock = MagicMock(return_value=saved)
         with (
-            patch("workflow.daemon_server.save_branch_definition", save_mock),
+            patch("workflow.author_server.save_branch_definition", save_mock),
             patch("workflow.api.helpers._base_path", return_value="/fake"),
             patch("workflow.branches.BranchDefinition.validate", return_value=[]),
         ):
@@ -266,7 +266,7 @@ def _call_add_node(branch_dict, node_kwargs, verbose=None):
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.api.branches._apply_node_spec", return_value=""),
         patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
@@ -325,7 +325,7 @@ def _call_connect_nodes(branch_dict, from_node, to_node, verbose=None):
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.branches.EdgeDefinition", return_value=MagicMock()),
         patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
@@ -371,7 +371,7 @@ def _call_set_entry_point(branch_dict, node_id, verbose=None):
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),
@@ -419,7 +419,7 @@ def _call_add_state_field(branch_dict, field_name, field_type="str", verbose=Non
         kwargs["verbose"] = str(verbose).lower()
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.branches.BranchDefinition.from_dict", return_value=branch_mock),
         patch("workflow.api.engine_helpers._storage_backend") as sb_mock,
         patch("workflow.api.engine_helpers._storage_backend", new=sb_mock),

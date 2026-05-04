@@ -4,13 +4,14 @@ Per docs/exec-plans/active/2026-04-20-selfhost-uptime-migration.md Row B.
 The 2026-04-19 P0 had a container CWD-drift class: pre-Row-B, the daemon
 wrote to `/app/output` (CWD-relative) rather than `/data` (bind-mount).
 This resolver fixes that by refusing CWD-relative defaults and rooting
-every fallback at either an explicit env var or a platform-appropriate
-absolute path.
+every fallback at either an explicit env var, a legacy alias with
+deprecation warning, or a platform-appropriate absolute path.
 """
 
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ import pytest
 @pytest.fixture
 def clean_env(monkeypatch):
     """Strip all env vars the resolver reads so tests start from a known state."""
-    for name in ("WORKFLOW_DATA_DIR",):
+    for name in ("WORKFLOW_DATA_DIR", "UNIVERSE_SERVER_BASE", "WORKFLOW_DEPRECATIONS"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -28,14 +29,57 @@ def clean_env(monkeypatch):
 
 
 def test_workflow_data_dir_takes_precedence(clean_env, tmp_path):
-    """Explicit WORKFLOW_DATA_DIR wins over the platform default."""
+    """Explicit WORKFLOW_DATA_DIR wins over legacy + default."""
     from workflow.storage import data_dir
 
     target = tmp_path / "canonical"
     clean_env.setenv("WORKFLOW_DATA_DIR", str(target))
+    clean_env.setenv("UNIVERSE_SERVER_BASE", "/some/legacy/path")
 
     result = data_dir()
     assert result == target.resolve()
+
+
+def test_legacy_alias_used_when_canonical_unset(clean_env, tmp_path):
+    """UNIVERSE_SERVER_BASE resolves when WORKFLOW_DATA_DIR is not set."""
+    from workflow.storage import data_dir
+
+    target = tmp_path / "legacy"
+    clean_env.setenv("UNIVERSE_SERVER_BASE", str(target))
+
+    result = data_dir()
+    assert result == target.resolve()
+
+
+def test_legacy_alias_deprecation_warning_opt_in(clean_env, tmp_path):
+    """WORKFLOW_DEPRECATIONS=1 surfaces the deprecation; default silent."""
+    from workflow.storage import data_dir
+
+    target = tmp_path / "legacy"
+    clean_env.setenv("UNIVERSE_SERVER_BASE", str(target))
+    clean_env.setenv("WORKFLOW_DEPRECATIONS", "1")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        data_dir()
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(deprecations) == 1
+    assert "UNIVERSE_SERVER_BASE" in str(deprecations[0].message)
+    assert "WORKFLOW_DATA_DIR" in str(deprecations[0].message)
+
+
+def test_legacy_alias_silent_by_default(clean_env, tmp_path):
+    """Without WORKFLOW_DEPRECATIONS=1, legacy alias is silent."""
+    from workflow.storage import data_dir
+
+    target = tmp_path / "legacy"
+    clean_env.setenv("UNIVERSE_SERVER_BASE", str(target))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        data_dir()
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert deprecations == []
 
 
 # ---- platform defaults ----------------------------------------------------
@@ -133,7 +177,7 @@ def test_whitespace_only_env_treated_as_unset(clean_env):
 
 
 def test_universe_server_base_path_uses_data_dir(clean_env, tmp_path):
-    """workflow.api.helpers._base_path() delegates to data_dir()."""
+    """workflow.universe_server._base_path() delegates to data_dir()."""
     from workflow.api.helpers import _base_path
 
     target = tmp_path / "universe-server-root"

@@ -4,7 +4,7 @@ Double-click the desktop shortcut -> this script starts:
   1. One daemon per preferred provider (Author Daemons, LangGraph writing
      engines) with the writer role pinned via ``--provider <name>``
   2. MCP Workflow Server (Python, port 8001)
-  3. Optional local Cloudflare Tunnel for dev-only debugging
+  3. Cloudflare Tunnel (cloudflared, routes tinyassets.io -> localhost:8001)
 
 A system tray icon shows live status. Hover aggregates active providers.
 Right-click to start/stop per-provider daemons, change defaults, or quit.
@@ -47,31 +47,18 @@ from workflow.singleton_lock import (
 MCP_PORT = 8001
 MCP_URL = "https://tinyassets.io/mcp"
 ACTIVE_UNIVERSE_FILENAME = ".active_universe"
-TRAY_TUNNEL_ENABLED_ENV = "WORKFLOW_TRAY_ENABLE_TUNNEL"
-TUNNEL_TOKEN_ENV = "CLOUDFLARE_TUNNEL_TOKEN"
-LEGACY_TUNNEL_TOKEN_ENV = "TUNNEL_TOKEN"
-TRUE_VALUES = {"1", "true", "yes", "on"}
+TUNNEL_TOKEN = (
+    "eyJhIjoiYTQ2ZWI0ZjY5MjhkN2M1MzhiMzlmYmNlYmRlYmE0OWIi"
+    "LCJ0IjoiYjU5ZjNjZDktYTQ3YS00Yzk3LTgwZTQtNzgyNjUxM2RlNj"
+    "MwIiwicyI6Ik1EQmlPVGN6WVRBdE5qWmtPQzAwTldWaUxUa3paR1V0"
+    "T1RjeE16UXpNMll3WkdNMCJ9"
+)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_DIR / "logs"
 SINGLETON_LOCK_PATH = LOG_DIR / ".tray.lock"
 
 _LOCAL_PROVIDER_SET = set(LOCAL_PROVIDERS)
-
-
-def _env_truthy(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in TRUE_VALUES
-
-
-def _local_tunnel_enabled() -> bool:
-    return _env_truthy(TRAY_TUNNEL_ENABLED_ENV)
-
-
-def _local_tunnel_token() -> str:
-    return (
-        os.environ.get(TUNNEL_TOKEN_ENV, "").strip()
-        or os.environ.get(LEGACY_TUNNEL_TOKEN_ENV, "").strip()
-    )
 
 # ---------------------------------------------------------------------------
 # Icon rendering
@@ -112,13 +99,11 @@ def make_icon(color: tuple, size: int = 64) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 class UniverseServerManager:
-    """Manages daemons, local MCP, optional dev tunnel, and tab watchdog."""
+    """Manages N pinned-provider daemons + MCP server + cloudflared tunnel + tab watchdog."""
 
     def __init__(self) -> None:
-        # One entry per daemon process. The first process for a provider uses
-        # the provider name as key; later same-provider processes use
-        # provider#N. Value is (Popen, log_handle) so the log handle can be
-        # closed on teardown (FD-leak guard).
+        # One daemon per provider. Value is (Popen, log_handle) so the
+        # log handle can be closed on teardown (FD-leak guard).
         self.daemon_procs: dict[str, tuple[subprocess.Popen, IO]] = {}
         self.mcp_proc: subprocess.Popen | None = None
         self.tunnel_proc: subprocess.Popen | None = None
@@ -226,29 +211,9 @@ class UniverseServerManager:
         """Return provider names whose daemon subprocess is still alive."""
         with self._procs_lock:
             return [
-                self._provider_for_daemon_key(name)
-                for name, (proc, _) in self.daemon_procs.items()
+                name for name, (proc, _) in self.daemon_procs.items()
                 if proc.poll() is None
             ]
-
-    @staticmethod
-    def _provider_for_daemon_key(key: str) -> str:
-        return key.split("#", 1)[0]
-
-    def _running_provider_counts(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for provider in self._running_providers():
-            counts[provider] = counts.get(provider, 0) + 1
-        return counts
-
-    def _next_daemon_key(self, provider: str) -> str:
-        ordinal = self._running_provider_counts().get(provider, 0) + 1
-        key = provider if ordinal == 1 else f"{provider}#{ordinal}"
-        with self._procs_lock:
-            while key in self.daemon_procs:
-                ordinal += 1
-                key = f"{provider}#{ordinal}"
-        return key
 
     @property
     def _any_daemon_alive(self) -> bool:
@@ -323,13 +288,15 @@ class UniverseServerManager:
     def _can_start(self, provider: str) -> tuple[bool, str]:
         """Check constraint rules before spawning a daemon for *provider*.
 
-        Returns ``(ok, reason)``. ``ok`` is False for unknown providers or
-        when another local provider is already running. Subscription providers
-        may run multiple same-provider daemons; the tray warns separately.
+        Returns ``(ok, reason)``. ``ok`` is False when another daemon
+        already owns this provider name (subscription uniqueness) or
+        when another local provider is already running.
         """
         if provider not in ALL_PROVIDERS:
             return False, f"unknown provider {provider!r}"
         running = self._running_providers()
+        if provider in running:
+            return False, f"{provider} already running"
         if provider in _LOCAL_PROVIDER_SET:
             other_local = [p for p in running if p in _LOCAL_PROVIDER_SET]
             if other_local:
@@ -347,25 +314,9 @@ class UniverseServerManager:
             return False
 
         LOG_DIR.mkdir(exist_ok=True)
-        runtime_key = self._next_daemon_key(provider)
-        try:
-            from workflow.daemon_registry import provider_capacity_warning
-
-            warning = provider_capacity_warning(
-                provider,
-                running_count=self._running_provider_counts().get(provider, 0),
-            )
-            if warning:
-                print(f"  [warn] {warning['message']}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"  [warn] capacity warning unavailable for {provider}: {exc}")
-
-        log_name = runtime_key.replace("#", ".")
-        log_path = LOG_DIR / f"daemon.{log_name}.log"
+        log_path = LOG_DIR / f"daemon.{provider}.log"
         log = open(log_path, "a", encoding="utf-8")
-        log.write(
-            f"\n--- Daemon ({runtime_key}) start {time.strftime('%H:%M:%S')} ---\n"
-        )
+        log.write(f"\n--- Daemon ({provider}) start {time.strftime('%H:%M:%S')} ---\n")
         log.flush()
 
         universe_path = self._data_dir() / self._active_universe
@@ -374,7 +325,6 @@ class UniverseServerManager:
         # WORKFLOW_PIN_WRITER itself, but setting it in the env too means
         # the router pin survives even if the flag parsing changes.
         env["WORKFLOW_PIN_WRITER"] = provider
-        env["WORKFLOW_DAEMON_INSTANCE_KEY"] = runtime_key
         # Pin the data root so child's data_dir() resolves to the same
         # absolute path the tray picked. Prevents CWD drift between tray
         # and daemon when they launch from different working directories.
@@ -399,7 +349,7 @@ class UniverseServerManager:
             raise
 
         with self._procs_lock:
-            self.daemon_procs[runtime_key] = (proc, log)
+            self.daemon_procs[provider] = (proc, log)
         return True
 
     def start_mcp(self) -> None:
@@ -407,9 +357,9 @@ class UniverseServerManager:
         env = os.environ.copy()
         # Pin the canonical data root as an absolute path so the MCP
         # subprocess's data_dir() resolves identically no matter what
-        # CWD it inherits. Previously the tray used a CWD-relative
-        # "output" string for the daemon data root, which made the tray
-        # and MCP server drift onto different
+        # CWD it inherits. Previously we set the legacy
+        # UNIVERSE_SERVER_BASE to the literal "output" — a CWD-relative
+        # string that made the tray and MCP server drift onto different
         # on-disk trees whenever the tray wasn't launched from the repo
         # root (Task #7 / 2026-04-20 observability bug).
         env["WORKFLOW_DATA_DIR"] = str(self._data_dir())
@@ -438,27 +388,8 @@ class UniverseServerManager:
         log.write(f"\n--- Tunnel start {time.strftime('%H:%M:%S')} ---\n")
         log.flush()
 
-        if not _local_tunnel_enabled():
-            self.tunnel_proc = None
-            self._tunnel_alive = False
-            self._tunnel_ok = False
-            log.write(
-                "local tunnel disabled by default; set "
-                f"{TRAY_TUNNEL_ENABLED_ENV}=1 and {TUNNEL_TOKEN_ENV} for "
-                "dev-only tunnel debugging\n"
-            )
-            log.close()
-            return
-
-        token = _local_tunnel_token()
-        if not token:
-            log.close()
-            raise RuntimeError(
-                f"{TRAY_TUNNEL_ENABLED_ENV}=1 requires {TUNNEL_TOKEN_ENV}"
-            )
-
         self.tunnel_proc = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", "--token", token],
+            ["cloudflared", "tunnel", "run", "--token", TUNNEL_TOKEN],
             stdout=log,
             stderr=subprocess.STDOUT,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -579,31 +510,25 @@ class UniverseServerManager:
     def _kill_daemon_for(self, provider: str) -> None:
         """Terminate the daemon pinned to *provider* and close its log."""
         with self._procs_lock:
-            keys = [
-                key for key in self.daemon_procs
-                if self._provider_for_daemon_key(key) == provider
-            ]
-            entries = [self.daemon_procs.pop(key) for key in keys]
-        for proc, log in entries:
-            try:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-            finally:
+            entry = self.daemon_procs.pop(provider, None)
+        if entry is None:
+            return
+        proc, log = entry
+        try:
+            if proc.poll() is None:
+                proc.terminate()
                 try:
-                    log.close()
-                except Exception:
-                    pass
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        finally:
+            try:
+                log.close()
+            except Exception:
+                pass
 
     def _kill_all_daemons(self) -> None:
-        providers = {
-            self._provider_for_daemon_key(key)
-            for key in list(self.daemon_procs.keys())
-        }
-        for provider in providers:
+        for provider in list(self.daemon_procs.keys()):
             self._kill_daemon_for(provider)
 
     def kill_all(self) -> None:
@@ -762,11 +687,7 @@ class UniverseServerManager:
         self._phase = "Starting MCP server on port 8001..."
         self.start_mcp()
         time.sleep(2)
-        self._phase = (
-            "Starting Cloudflare tunnel..."
-            if _local_tunnel_enabled()
-            else "Skipping local Cloudflare tunnel"
-        )
+        self._phase = "Starting Cloudflare tunnel..."
         self.start_tunnel()
         self._phase = "Starting tab watchdog..."
         self.start_watchdog()
@@ -851,17 +772,10 @@ class UniverseServerManager:
 
         time.sleep(2)
 
-        # 3. Launch optional dev tunnel
-        self._phase = (
-            "Starting Cloudflare tunnel..."
-            if _local_tunnel_enabled()
-            else "Skipping local Cloudflare tunnel"
-        )
+        # 3. Launch tunnel
+        self._phase = "Starting Cloudflare tunnel..."
         self.start_tunnel()
-        if self.tunnel_proc is not None:
-            print("  [OK] Cloudflare tunnel starting")
-        else:
-            print("  [skip] Local Cloudflare tunnel disabled")
+        print("  [OK] Cloudflare tunnel starting")
 
         # 4. Launch tab watchdog
         self._phase = "Starting tab watchdog..."

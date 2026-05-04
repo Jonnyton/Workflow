@@ -65,7 +65,7 @@ def _reset_git_bridge_cache():
 def base_path(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     from workflow.daemon_server import initialize_author_server
     initialize_author_server(base)
@@ -192,7 +192,7 @@ def test_dirty_check_happens_before_sqlite_write(
         )
 
     monkeypatch.setattr(
-        "workflow.daemon_server.save_branch_definition", _track,
+        "workflow.author_server.save_branch_definition", _track,
     )
     with pytest.raises(DirtyFileError):
         backend.save_branch(_make_branch())
@@ -415,7 +415,7 @@ def test_save_branch_and_commit_dirty_lists_all_and_skips_write(
         raise AssertionError("save_branch_definition should not run on refused save")
 
     monkeypatch.setattr(
-        "workflow.daemon_server.save_branch_definition", _track,
+        "workflow.author_server.save_branch_definition", _track,
     )
 
     with pytest.raises(DirtyFileError) as exc:

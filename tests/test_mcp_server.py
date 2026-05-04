@@ -376,12 +376,12 @@ class TestMCPFlag:
 
 
 class TestMCPConfig:
-    def test_example_config_file_exists(self):
-        config_path = Path(__file__).parent.parent / ".mcp.example.json"
+    def test_config_file_exists(self):
+        config_path = Path(__file__).parent.parent / ".mcp.json"
         assert config_path.exists()
 
-    def test_example_config_is_valid_json(self):
-        config_path = Path(__file__).parent.parent / ".mcp.example.json"
+    def test_config_is_valid_json(self):
+        config_path = Path(__file__).parent.parent / ".mcp.json"
         data = json.loads(config_path.read_text(encoding="utf-8"))
         assert "mcpServers" in data
         assert "workflow" in data["mcpServers"]
@@ -389,12 +389,3 @@ class TestMCPConfig:
         assert server["command"] == "python"
         assert "-m" in server["args"]
         assert "workflow.mcp_server" in server["args"]
-
-    def test_local_config_is_ignored(self):
-        gitignore_path = Path(__file__).parent.parent / ".gitignore"
-        ignored = {
-            line.strip()
-            for line in gitignore_path.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        }
-        assert ".mcp.json" in ignored

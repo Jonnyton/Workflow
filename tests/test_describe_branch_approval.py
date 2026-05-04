@@ -47,7 +47,7 @@ def _call_describe(branch_dict, validate_errors=None):
         validate_errors = []
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch(
             "workflow.api.branches._related_wiki_pages",
@@ -65,7 +65,7 @@ def _call_get(branch_dict):
     from workflow.api.branches import _ext_branch_get
 
     with (
-        patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict),
+        patch("workflow.author_server.get_branch_definition", return_value=branch_dict),
         patch("workflow.api.helpers._base_path", return_value="/fake"),
         patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
         patch("workflow.api.engine_helpers._current_actor", return_value="tester"),
@@ -74,7 +74,7 @@ def _call_get(branch_dict):
             "workflow.api.branches._related_wiki_pages",
             return_value={"items": [], "truncated_count": 0},
         ),
-        patch("workflow.daemon_server.list_gate_claims", return_value=[]),
+        patch("workflow.author_server.list_gate_claims", return_value=[]),
     ):
         result = _ext_branch_get({"branch_def_id": branch_dict["branch_def_id"]})
     return json.loads(result)

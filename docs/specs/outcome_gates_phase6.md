@@ -328,7 +328,7 @@ New test file `tests/test_outcome_gates.py`:
 - `test_yaml_round_trip_claim` — `gates/<goal>/<branch>__<rung>.yaml` round-trip identity.
 
 Existing tests that need extension:
-- `tests/test_goals_surface.py` — add `gate_ladder_json` to the `goals` fixture shape. Existing assertions should pass unchanged because ladder defaults to `'[]'`.
+- `tests/test_community_branches_phase5.py` — add `gate_ladder_json` to the `goals` fixture shape. Existing assertions should pass unchanged because ladder defaults to `'[]'`.
 - `tests/test_phase7_h2_goals_cutover.py` — add ladder to round-trip fixture.
 
 ---

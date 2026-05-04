@@ -80,6 +80,22 @@ should stay thin routing layers unless the project explicitly changes that.
 - `.github/copilot-instructions.md` (GitHub Copilot)
 - `AGENTS.md` (OpenAI Codex)
 
+### Staged Capability Loading
+
+For domains with heavy references, load context by downstream need instead of
+all at once. A useful split is:
+
+1. Design rules: what good output requires.
+2. Capability/API reference: what the local template or library can already do.
+3. Asset/data protocol: schemas, keys, manifests, and generated artifacts.
+4. Implementation manual/source: loaded only immediately before editing.
+5. Debug protocol: loaded when verifying or repairing failures.
+
+This pattern is especially useful for `game-prototyping`: early planning reads
+the GDD contract and archetype pack; implementation reads the relevant template
+or API; verification reads the debug protocol. Do not front-load large manuals
+when the task is still classification or design.
+
 ### Level 2: Specs and Architecture
 
 Load the relevant spec section when starting a feature. Don't load the entire spec if only one section applies.

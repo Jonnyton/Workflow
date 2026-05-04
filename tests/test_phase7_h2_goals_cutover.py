@@ -52,7 +52,7 @@ def repo_env(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.delenv("WORKFLOW_STORAGE_BACKEND", raising=False)
     monkeypatch.delenv("WORKFLOW_GIT_AUTHOR", raising=False)
@@ -73,7 +73,7 @@ def no_git_env(tmp_path, monkeypatch):
     """No git repo at parent — backend auto-probes to SqliteOnly."""
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
     monkeypatch.delenv("WORKFLOW_STORAGE_BACKEND", raising=False)
 

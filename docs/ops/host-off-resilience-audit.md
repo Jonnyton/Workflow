@@ -63,8 +63,7 @@ row.
   `memory/project_secrets_outside_repo.md`).
 - **Contents (redacted):** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`,
   `DIGITALOCEAN_TOKEN`, `HETZNER_EMAIL`, `HETZNER_PASSWORD`,
-  `OPENAI_API_KEY` (historical; default daemons now ignore API-key provider
-  vars under the 2026-04-30 subscription-only policy).
+  `OPENAI_API_KEY`.
 - **What breaks when host is off:** Any lead session on a different
   machine can't source secrets; token rotation can't happen locally.
 - **Close action:** password-manager backup of the full file
@@ -75,15 +74,12 @@ row.
   - `DIGITALOCEAN_TOKEN` — for droplet-level actions from CI (reboot,
     resize, snapshot).
 
-### HD-3 — ~~LLM endpoint not bound on prod daemon~~ — SUPERSEDED: subscription-only provider auth
+### HD-3 — ~~LLM endpoint not bound on prod daemon~~ → CLOSED: codex provider
 
-- **Historical resolution:** codex CLI shipped in the daemon image
-  (Dockerfile Node 20 + `@openai/codex`) with `OPENAI_API_KEY` seeded to
-  `/etc/workflow/env` + GH Actions secret.
-- **Superseded 2026-04-30:** default daemon LLM execution is subscription-only.
-  `OPENAI_API_KEY` is stripped when
-  `WORKFLOW_ALLOW_API_KEY_PROVIDERS` is not truthy; use subscription-backed
-  Claude/Codex auth instead.
+- **Resolution:** codex CLI shipped in the daemon image (Dockerfile
+  Node 20 + `@openai/codex`), `OPENAI_API_KEY` seeded to
+  `/etc/workflow/env` + GH Actions secret. `get_status` reports
+  `llm_endpoint_bound: codex`.
 - **Why codex (not Anthropic):** codex CLI is subprocess-based (hard
   rule 3) and already wrapped by `workflow.providers.codex_provider`.
   No new HTTP wiring needed.

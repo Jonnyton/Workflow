@@ -626,8 +626,6 @@ class LauncherApp:
         ui_paths = (
             "workflow/desktop/launcher.py",
             "workflow/desktop/tray.py",
-            "fantasy_daemon/desktop/launcher.py",
-            "fantasy_daemon/desktop/tray.py",
             "fantasy_author/desktop/launcher.py",
             "fantasy_author/desktop/tray.py",
         )

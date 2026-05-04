@@ -79,6 +79,13 @@ Don't silently fill in ambiguous requirements. The spec's entire purpose is to s
    - **Ask first:** Database schema changes, adding dependencies, changing CI config
    - **Never do:** Commit secrets, edit vendor directories, remove failing tests without approval
 
+**Downstream-consumer sections:** For complex generated or multi-stage work,
+name who or what consumes each spec section. A section for assets should be
+usable by the asset generator or designer; a section for config should be
+pasteable into config files; a section for implementation should name files,
+hooks, APIs, and tests. This keeps the spec from becoming prose that cannot
+drive execution.
+
 **Spec template:**
 
 ```markdown

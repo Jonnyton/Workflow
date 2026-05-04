@@ -13,12 +13,7 @@ import os
 import time
 
 from workflow.exceptions import ProviderError, ProviderUnavailableError
-from workflow.providers.base import (
-    BaseProvider,
-    ModelConfig,
-    ProviderResponse,
-    require_api_key_provider_opt_in,
-)
+from workflow.providers.base import BaseProvider, ModelConfig, ProviderResponse
 
 
 class GrokProvider(BaseProvider):
@@ -28,8 +23,6 @@ class GrokProvider(BaseProvider):
     family = "xai"
 
     def __init__(self) -> None:
-        require_api_key_provider_opt_in(self.name)
-
         try:
             import openai  # noqa: F401
         except ImportError:

@@ -80,7 +80,7 @@ The top-level `fantasy_daemon/` violates this seam:
 
 **Tests using top-level path** (separate from `domains.fantasy_daemon.*` imports):
 - `tests/test_api.py`, `tests/test_api_edge_cases.py`, `tests/test_author_server_api.py` — use `fantasy_daemon.api`
-- `tests/test_unified_execution.py` — uses `fantasy_daemon.__main__` + `fantasy_daemon.branch_registrations`
+- `tests/test_phase_d_unified_execution.py` — uses `fantasy_daemon.__main__` + `fantasy_daemon.branch_registrations`
 - `tests/test_integration.py` — uses `fantasy_daemon.__main__`
 - ~56 test sites total.
 
@@ -127,19 +127,19 @@ The top-level `fantasy_daemon/` violates this seam:
 
 Per AGENTS.md "Full-platform architecture supersedes phased plan; migrate candidate" (STATUS Concern 2026-04-18 — `docs/design-notes/2026-04-18-full-platform-architecture.md`). Phase-named identifiers were a useful organizing tool DURING those phases but become confusing AFTER ship.
 
-#### B.1 — phase-named tests for shipped phases
+#### B.1 — `tests/test_phase_e_dispatcher.py`, `tests/test_phase_f_goal_pool.py`, `tests/test_phase_g_node_bid.py`, `tests/test_phase_h_*.py` — phase-named tests for shipped phases
 
 **Location:**
 - `tests/test_phase7.py`, `test_phase7_h2_goals_cutover.py`, `test_phase7_h3_branch_cutover.py` (Phase 7 — storage-package split, shipped)
-- `tests/test_unified_execution.py` (was `test_phase_d_unified_execution.py`)
-- `tests/test_dispatcher_queue.py` (was `test_phase_e_dispatcher.py`)
-- `tests/test_goal_pool.py` (was `test_phase_f_goal_pool.py`)
-- `tests/test_node_bid.py` (was `test_phase_g_node_bid.py`)
-- `tests/test_activity_log_parity.py`, `test_node_bid_claim_stress.py`, `test_daemon_dashboard.py`, `test_dashboard_panes.py` (were `test_phase_h_*`)
+- `tests/test_phase_d_unified_execution.py` (Phase D — task producers, shipped)
+- `tests/test_phase_e_dispatcher.py` (Phase E — dispatcher, shipped)
+- `tests/test_phase_f_goal_pool.py` (Phase F — goal pool, shipped)
+- `tests/test_phase_g_node_bid.py` (Phase G — node bid, shipped)
+- `tests/test_phase_h_activity_log_parity.py`, `test_phase_h_claim_stress.py`, `test_phase_h_dashboard.py`, `test_phase_h_panes.py` (Phase H — dashboard, shipped)
 
-**Status 2026-05-02:** Phase D-H shipped-phase test filenames are behavior-named. Phase 7 / Phase 6.2+ filenames remain separate because their closure gates are tracked elsewhere.
+**What's wrong:** Test names encode "Phase X" — phases that no longer organize the work. After 6+ months a contributor reading "test_phase_e_dispatcher" can't tell what's being tested without git archaeology. Should be renamed to describe behavior: `test_dispatcher.py`, `test_goal_pool.py`, `test_node_bid.py`, `test_dashboard_parity.py`, etc.
 
-**Recommendation:** DONE for Phase D-H; do not reopen unless a stale filename reference breaks tooling.
+**Recommendation:** REFACTOR — rename to behavior-named tests. Mechanical sed: `test_phase_e_dispatcher.py` → `test_dispatcher.py`, etc. Update CI references if any. ~30 min.
 
 **Blast radius: 2 (MEDIUM).** 11 test files renamed. Risk: if any task tracker / runbook still refers to "phase E tests," those references break — find/replace them too.
 
@@ -295,7 +295,7 @@ Already covered in A.3. Folds into housekeeping.
 | A.1 | `fantasy_daemon/` top-level layout violation | Engine/domain seam | 3 | Multi-week arc | NO — sketch design note first |
 | A.2 | `fantasy_author/` shim | Already-scoped | 1 | (folded into Arc B Phase 3) | NO — Arc B handles |
 | A.3 | `fantasy_author_original/` snapshot | Housekeeping | 1 | 5 min | YES (after host approval) |
-| B.1 | Phase-named tests rename | Naming drift | 2 | 30 min | DONE for Phase D-H; Phase 7 deferred |
+| B.1 | Phase-named tests rename | Naming drift | 2 | 30 min | YES, dev/dev-2 |
 | B.2 | `docs/specs/phase_*_preflight.md` archive | Doc graveyard | 2 | 1-2h | PARTIAL — gated on R7 for phase7 |
 | B.3 | `docs/specs/phase7_github_as_catalog.md` | Doc graveyard | 1 | 5 min | NO — gated on R7 close |
 | C.1 | `workflow/branches.py` rename | Naming clarity | 1 | 20 min | YES, dev-2 |

@@ -9,13 +9,11 @@
 //     404 handler → "Session terminated" in Claude.ai (the 2026-04-19 P0).
 //
 // Fix:
-//   This Worker runs on route `tinyassets.io/mcp*`. Requests to `/mcp`
-//   use the full custom-connector surface. Requests to `/mcp-directory`
-//   use the narrow review-ready surface for host directories. Both are
-//   forwarded to the internal tunnel origin at `mcp.tinyassets.io`
-//   (same path), authenticated via Cloudflare Access service-token
-//   headers. All other paths are left untouched by this Worker — they hit
-//   the GoDaddy origin as before.
+//   This Worker runs on route `tinyassets.io/mcp*`. Any request whose
+//   path begins with `/mcp` is forwarded to the internal tunnel origin at
+//   `mcp.tinyassets.io` (same path), authenticated via Cloudflare Access
+//   service-token headers. All other paths are left untouched by this
+//   Worker — they hit the GoDaddy origin as before.
 //
 // Security model (host directive 2026-04-20):
 //   - `tinyassets.io/mcp` is the ONLY public user-facing URL.
@@ -39,7 +37,6 @@
 //   - Pure proxy: no response-body rewriting.
 //
 // Canonical URL: https://tinyassets.io/mcp  (apex + path, user-facing).
-// Directory URL: https://tinyassets.io/mcp-directory  (review/listing surface).
 // Tunnel origin: https://mcp.tinyassets.io  (Access-gated, internal only).
 
 const TUNNEL_ORIGIN = 'https://mcp.tinyassets.io';
@@ -200,17 +197,10 @@ async function proxyToTunnel(request, env) {
  * themselves); this is purely the method-allow check.
  */
 function shouldProxy(pathname) {
-    // Anything under `/mcp` or `/mcp-directory` belongs to the tunnel. The Cloudflare route
+    // Anything under `/mcp` belongs to the tunnel. The Cloudflare route
     // `tinyassets.io/mcp*` should only invoke this Worker for matching
     // paths, but double-check to defend against route-misconfiguration.
-    return (
-        pathname === '/mcp' ||
-        pathname.startsWith('/mcp/') ||
-        pathname.startsWith('/mcp?') ||
-        pathname === '/mcp-directory' ||
-        pathname.startsWith('/mcp-directory/') ||
-        pathname.startsWith('/mcp-directory?')
-    );
+    return pathname === '/mcp' || pathname.startsWith('/mcp/') || pathname.startsWith('/mcp?');
 }
 
 export default {

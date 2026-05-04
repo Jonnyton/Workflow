@@ -139,7 +139,7 @@ Inventoried per the four uptime surfaces from the AGENTS.md Forever Rule:
 To surface to host async per my standing rule. One line, ≤150 chars:
 
 ```
-[2026-04-19 17:05] P0 public MCP outage — api.tinyassets.io NXDOMAIN during Cloudflare-tunnel reshuffle. Root-cause + canary: docs/audits/2026-04-20-public-mcp-outage-postmortem.md.
+[2026-04-19 17:05] P0 public MCP outage — tinyassets.io/mcp failed during tunnel/Worker route reshuffle. Root-cause + canary: docs/audits/2026-04-20-public-mcp-outage-postmortem.md.
 ```
 
 ---

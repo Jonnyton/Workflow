@@ -55,18 +55,13 @@ class TestBuildRunPayload:
             "workaround": "don't click",
         }
         payload = self._call(fm)
-        for key, value in fm.items():
-            assert payload[key] == value
-        assert payload["request_text"].startswith("bug BUG-042: Widget explodes")
-        assert "Observed: boom" in payload["request_text"]
-        assert "Expected: no boom" in payload["request_text"]
+        assert payload == fm
 
     def test_missing_keys_default_to_empty_string(self):
         payload = self._call({"bug_id": "BUG-001", "title": "Oops"})
         for key in ("component", "severity", "kind", "observed", "expected",
                     "repro", "workaround"):
             assert payload[key] == "", f"expected empty string for missing {key!r}"
-        assert payload["request_text"] == "bug BUG-001: Oops"
 
     def test_extra_keys_are_excluded(self):
         fm = {
@@ -79,20 +74,12 @@ class TestBuildRunPayload:
         assert "reporter" not in payload
         assert "filed_at" not in payload
 
-    def test_existing_request_text_is_preserved(self):
-        payload = self._call({
-            "bug_id": "BUG-003",
-            "title": "X",
-            "request_text": "custom request body",
-        })
-        assert payload["request_text"] == "custom request body"
-
     def test_payload_keys_are_stable(self):
-        """The 9 canonical fields plus request_text are always present."""
+        """The 9 canonical keys are always present regardless of input."""
         payload = self._call({})
         assert set(payload.keys()) == {
             "bug_id", "title", "component", "severity", "kind",
-            "observed", "expected", "repro", "workaround", "request_text",
+            "observed", "expected", "repro", "workaround",
         }
 
 

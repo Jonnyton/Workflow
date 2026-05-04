@@ -1,4 +1,4 @@
-"""Tests for Community Branches SQLite CRUD in daemon_server."""
+"""Tests for Community Branches SQLite CRUD in author_server."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from workflow.daemon_server import (
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
-    """Initialize the daemon_server DB and return the base path."""
+    """Initialize an author_server DB and return the base path."""
     initialize_author_server(tmp_path)
     return tmp_path
 

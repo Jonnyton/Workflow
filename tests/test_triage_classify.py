@@ -52,20 +52,6 @@ def test_env_unreadable_wins_over_compose_cascade():
     )
 
 
-def test_execstartpre_marker_text_does_not_mask_disk_full():
-    diag = (
-        "Process: 760709 ExecStartPre=/bin/sh -c test -r /etc/workflow/env "
-        "|| { echo \"ENV-UNREADABLE: /etc/workflow/env not readable\" >&2; "
-        "ls -l /etc/workflow/env >&2 || true; exit 1; } "
-        "(code=exited, status=0/SUCCESS)\n"
-        "--- df -h ---\n"
-        "Filesystem      Size  Used Avail Use% Mounted on\n"
-        "/dev/vda1        50G   48G     0 100% /\n"
-    )
-    result = tc.classify(diag)
-    assert result["class"] == tc.TriageClass.DISK_FULL
-
-
 # ---- OOM -----------------------------------------------------------------
 
 
@@ -275,11 +261,7 @@ def test_classify_whitespace_only_is_unknown():
 
 
 def test_evidence_truncates_past_200_chars():
-    long_context = (
-        "x" * 500
-        + "\nsh[123]: ENV-UNREADABLE: /etc/workflow/env\n"
-        + "y" * 500
-    )
+    long_context = "x" * 500 + "ENV-UNREADABLE" + "y" * 500
     result = tc.classify(long_context)
     assert result["class"] == tc.TriageClass.ENV_UNREADABLE
     # Window around match is at most ~80 chars (40 before + match + 40 after),

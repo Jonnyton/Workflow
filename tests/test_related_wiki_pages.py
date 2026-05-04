@@ -30,9 +30,9 @@ def branch_wiki_env(tmp_path, monkeypatch):
     (wiki / "pages" / "notes").mkdir(parents=True)
     (wiki / "drafts" / "notes").mkdir(parents=True)
 
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
-    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki))
+    monkeypatch.setenv("WIKI_PATH", str(wiki))
 
     from workflow import universe_server as us
 

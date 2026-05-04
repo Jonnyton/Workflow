@@ -6,10 +6,9 @@ Covered:
 - check_bwrap_failure raises SandboxUnavailableError on bwrap failure signature
 - check_bwrap_failure no-ops on normal stderr output
 - check_bwrap_failure no-ops on win32 regardless of content
-- probe_sandbox_available returns available only when bwrap --version and launch succeed
+- probe_sandbox_available returns correct shape when bwrap --version succeeds
 - probe_sandbox_available returns correct shape when bwrap not on PATH
 - probe_sandbox_available returns correct shape when bwrap --version fails
-- probe_sandbox_available rejects bwrap launch/user-namespace failure
 - get_sandbox_status returns cached result (probe called exactly once)
 - get_status includes sandbox_status key
 - _ext_branch_validate warns on bwrap-unavailable host with requires_sandbox nodes
@@ -80,11 +79,6 @@ class TestCheckBwrapFailure:
             with pytest.raises(SandboxUnavailableError):
                 check_bwrap_failure("bwrap: No permissions to create a new namespace\n")
 
-    def test_raises_on_bwrap_no_permissions_without_article(self):
-        with patch.object(sys, "platform", "linux"):
-            with pytest.raises(SandboxUnavailableError):
-                check_bwrap_failure("bwrap: No permissions to create new namespace\n")
-
     def test_raises_on_sandbox_init_failed(self):
         with patch.object(sys, "platform", "linux"):
             with pytest.raises(SandboxUnavailableError):
@@ -139,39 +133,16 @@ class TestProbeSandboxAvailable:
         assert result["bwrap_available"] is False
         assert "not found" in result.get("reason", "")
 
-    def test_returns_available_when_bwrap_version_and_launch_succeed(self):
-        version_result = MagicMock()
-        version_result.returncode = 0
-        version_result.stderr = ""
-        launch_result = MagicMock()
-        launch_result.returncode = 0
-        launch_result.stderr = ""
+    def test_returns_available_when_bwrap_version_succeeds(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
         with patch.object(sys, "platform", "linux"):
             with patch("shutil.which", return_value="/usr/bin/bwrap"):
-                with patch(
-                    "subprocess.run",
-                    side_effect=[version_result, launch_result],
-                ) as run_mock:
+                with patch("subprocess.run", return_value=mock_result):
                     result = probe_sandbox_available()
         assert result["bwrap_available"] is True
         assert result["reason"] is None
-        assert run_mock.call_count == 2
-
-    def test_returns_unavailable_when_bwrap_launch_nonzero(self):
-        version_result = MagicMock()
-        version_result.returncode = 0
-        version_result.stderr = ""
-        launch_result = MagicMock()
-        launch_result.returncode = 1
-        launch_result.stdout = ""
-        launch_result.stderr = "bwrap: No permissions to create new namespace"
-        with patch.object(sys, "platform", "linux"):
-            with patch("shutil.which", return_value="/usr/bin/bwrap"):
-                with patch("subprocess.run", side_effect=[version_result, launch_result]):
-                    result = probe_sandbox_available()
-        assert result["bwrap_available"] is False
-        assert "functional probe" in result.get("reason", "")
-        assert "No permissions" in result.get("reason", "")
 
     def test_returns_unavailable_when_bwrap_version_nonzero(self):
         mock_result = MagicMock()
@@ -250,7 +221,7 @@ class TestExtBranchValidateSandboxWarnings:
     def _call_validate(self, branch_dict: dict, bwrap_status: dict) -> dict:
         from workflow.api.branches import _ext_branch_validate
 
-        with patch("workflow.daemon_server.get_branch_definition", return_value=branch_dict):
+        with patch("workflow.author_server.get_branch_definition", return_value=branch_dict):
             with patch("workflow.providers.base.get_sandbox_status", return_value=bwrap_status):
                 return json.loads(_ext_branch_validate({"branch_def_id": "b1"}))
 
@@ -286,7 +257,7 @@ class TestExtBranchValidateSandboxWarnings:
     def test_missing_branch_returns_error(self):
         from workflow.api.branches import _ext_branch_validate
 
-        with patch("workflow.daemon_server.get_branch_definition", side_effect=KeyError("b1")):
+        with patch("workflow.author_server.get_branch_definition", side_effect=KeyError("b1")):
             result = json.loads(_ext_branch_validate({"branch_def_id": "b1"}))
         assert "error" in result
 
@@ -305,7 +276,7 @@ class TestExtBranchListSandboxFilter:
     def _call_list(self, rows: list[dict], rs_filter: str = "") -> dict:
         from workflow.api.branches import _ext_branch_list
 
-        with patch("workflow.daemon_server.list_branch_definitions", return_value=rows):
+        with patch("workflow.author_server.list_branch_definitions", return_value=rows):
             kwargs: dict = {}
             if rs_filter:
                 kwargs["requires_sandbox"] = rs_filter

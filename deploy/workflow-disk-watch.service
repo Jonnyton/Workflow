@@ -38,8 +38,6 @@ EnvironmentFile=/etc/workflow/env
 ExecStart=/usr/bin/python3 /opt/workflow/scripts/disk_watch.py
 # Step 2 — rotate run transcripts older than retention into archived/.
 ExecStart=/usr/bin/python3 -m scripts.rotate_run_transcripts
-# Step 3 matches p0-outage disk_full cleanup: Docker system/builder
-# prune plus journal vacuum, without Docker volumes.
 # Step 3 — auto-prune docker images if root volume is pressured.
 ExecStart=/usr/bin/python3 /opt/workflow/scripts/disk_autoprune.py
 # Each ExecStart runs sequentially; Type=oneshot treats all three as

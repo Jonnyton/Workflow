@@ -155,7 +155,7 @@ def test_runner_emits_node_timeout_event_and_marks_run_failed(
     whose detail marks reason='timeout'."""
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
     from workflow.daemon_server import (
@@ -215,7 +215,7 @@ def test_runner_emits_node_empty_response_event_and_marks_run_failed(
     run status to 'failed' — not silently mark the node 'ran' with output=''."""
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
     from workflow.daemon_server import (
@@ -272,7 +272,7 @@ def test_fast_provider_does_not_hit_timeout(tmp_path, monkeypatch):
     timeout does not trip the guard."""
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
 
     from workflow.daemon_server import (

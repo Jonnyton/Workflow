@@ -80,6 +80,8 @@ def mgr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (data_root / "testverse").mkdir()
     (data_root / ".active_universe").write_text("testverse", encoding="utf-8")
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    # Clear legacy alias so it doesn't shadow the canonical var.
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
 
     # Still redirect PROJECT_DIR + LOG_DIR to tmp for tray-local state
     # (singleton lock, log files, script lookup) that is intentionally
@@ -117,13 +119,11 @@ def test_start_refuses_unknown_provider(mgr: workflow_tray.UniverseServerManager
     assert mgr.daemon_procs == {}
 
 
-def test_start_allows_duplicate_subscription_provider_with_warning(mgr) -> None:
+def test_start_refuses_duplicate_subscription_provider(mgr) -> None:
     assert mgr.start_daemon_for("claude-code") is True
-    # Product behavior: same-provider daemons are allowed. The tray warns
-    # about provider capacity but does not enforce a Workflow cap.
-    assert mgr.start_daemon_for("claude-code") is True
-    assert list(mgr.daemon_procs.keys()) == ["claude-code", "claude-code#2"]
-    assert mgr._running_providers() == ["claude-code", "claude-code"]
+    # Second start for same provider is refused.
+    assert mgr.start_daemon_for("claude-code") is False
+    assert list(mgr.daemon_procs.keys()) == ["claude-code"]
 
 
 def test_start_refuses_second_local_provider(mgr, monkeypatch) -> None:
@@ -158,17 +158,6 @@ def test_kill_closes_log_handle(mgr) -> None:
     mgr._kill_daemon_for("codex")
     assert "codex" not in mgr.daemon_procs
     assert log.closed
-
-
-def test_kill_provider_closes_all_same_provider_handles(mgr) -> None:
-    mgr.start_daemon_for("claude-code")
-    mgr.start_daemon_for("claude-code")
-    handles = [log for _, log in mgr.daemon_procs.values()]
-
-    mgr._kill_daemon_for("claude-code")
-
-    assert mgr.daemon_procs == {}
-    assert all(log.closed for log in handles)
 
 
 def test_kill_all_daemons_closes_every_log(mgr) -> None:
@@ -269,16 +258,15 @@ def test_spawn_passes_provider_flag_and_env(mgr) -> None:
     flag_idx = record["cmd"].index("--provider")
     assert record["cmd"][flag_idx + 1] == "claude-code"
     assert record["kwargs"]["env"]["WORKFLOW_PIN_WRITER"] == "claude-code"
-    assert record["kwargs"]["env"]["WORKFLOW_DAEMON_INSTANCE_KEY"] == "claude-code"
     # Task #7: daemon child must inherit the tray's data_dir() as an
     # absolute WORKFLOW_DATA_DIR, not a CWD-relative path. Previously
-    # the tray set WORKFLOW_DATA_DIR="output" which drifted whenever
+    # the tray set UNIVERSE_SERVER_BASE="output" which drifted whenever
     # tray CWD != data_dir().
     env = record["kwargs"]["env"]
     assert "WORKFLOW_DATA_DIR" in env
     assert Path(env["WORKFLOW_DATA_DIR"]).is_absolute()
-    assert env.get("WORKFLOW_DATA_DIR", None) != "output", (
-        "CWD-relative literal must not leak to child"
+    assert env.get("UNIVERSE_SERVER_BASE", None) != "output", (
+        "legacy CWD-relative literal must not leak to child"
     )
 
 
@@ -295,21 +283,6 @@ def test_spawn_writes_per_provider_log_name(mgr, monkeypatch) -> None:
     assert any(p.name == "daemon.grok-free.log" for p in opened)
     # Restore not strictly needed; pytest unwinds monkeypatch at test end.
     _ = real_open
-
-
-def test_second_same_provider_spawn_writes_distinct_log_name(mgr, monkeypatch) -> None:
-    opened: list[Path] = []
-
-    def tracking_open(path, *args, **kwargs):
-        opened.append(Path(path))
-        return FakeLog()
-
-    monkeypatch.setattr("builtins.open", tracking_open, raising=False)
-    mgr.start_daemon_for("claude-code")
-    mgr.start_daemon_for("claude-code")
-
-    assert any(p.name == "daemon.claude-code.log" for p in opened)
-    assert any(p.name == "daemon.claude-code.2.log" for p in opened)
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +315,7 @@ def test_active_universe_falls_back_to_enumeration_in_data_dir(
     # No .active_universe marker on purpose.
 
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(data_root))
+    monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
     monkeypatch.setattr(workflow_tray, "PROJECT_DIR", tmp_path)
     monkeypatch.setattr(workflow_tray, "LOG_DIR", tmp_path / "logs")
 

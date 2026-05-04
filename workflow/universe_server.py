@@ -7,9 +7,8 @@ discover tools, and become the user's control interface — no
 installation, just a URL.
 
 Design principles:
-    - A small coarse-grained tool set, with narrow read-only aliases only
-      when live chatbot evidence shows hidden action verbs are not
-      discoverable enough for user-critical workflows
+    - Two coarse-grained tools (universe + extensions) so users only
+      click "allow" twice, not sixteen times
     - Universe-aware: tools accept universe context, not a hardcoded env var
     - MCP prompts deliver behavioral instructions so any connecting AI
       knows how to act as a control station
@@ -20,7 +19,7 @@ Transport: Streamable HTTP (current MCP standard for remote servers)
 
 Module shape (post Step 11+ retarget sweep): this file is a thin
 routing shell. Tool body implementations live in workflow.api.*
-submodules. The @mcp.tool / @mcp.prompt registrations below preserve
+submodules. The 7 @mcp.tool / @mcp.prompt registrations below preserve
 FastMCP introspection (chatbot-facing signature + docstring) and
 delegate to plain callables in those submodules (Pattern A2).
 """
@@ -28,12 +27,9 @@ delegate to plain callables in those submodules (Pattern A2).
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack, asynccontextmanager
 
-import uvicorn
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from starlette.applications import Starlette
 
 from workflow.api.branches import _branch_design_guide_prompt
 from workflow.api.engine_helpers import _warn_if_no_upload_whitelist
@@ -44,7 +40,6 @@ from workflow.api.prompts import _CONTROL_STATION_PROMPT
 from workflow.api.status import get_status as _get_status_impl
 from workflow.api.universe import _universe_impl
 from workflow.api.wiki import wiki as _wiki_impl
-from workflow.directory_server import directory_mcp
 
 logger = logging.getLogger("universe_server")
 
@@ -55,12 +50,14 @@ logger = logging.getLogger("universe_server")
 mcp = FastMCP(
     "workflow",
     instructions=(
-        "Workflow is a workflow-builder and long-horizon AI platform. "
+        "Workflow — a workflow-builder and long-horizon AI platform. "
         "Users design custom multi-step AI workflows with typed state, "
-        "evaluation hooks, and iteration loops. Fantasy authoring is a "
-        "benchmark, not the exclusive use case; other domains include "
-        "research papers, screenplays, literature reviews, investigative "
-        "journalism, recipe trackers, wedding planners, and news summaries. "
+        "evaluation hooks, and iteration loops. Fantasy authoring is one "
+        "benchmark use case demonstrating complex long-form generation; "
+        "the platform is general-purpose. Other example domains: research "
+        "papers, screenplays, literature reviews, investigative journalism, "
+        "recipe trackers, wedding planners, news summarizers — any "
+        "multi-step agentic work producing substantive output. "
         "\n\n"
         "If a user asks about their 'workflow builder', 'custom AI builder', "
         "'universe builder', 'the workflow thing', 'the connector', 'the "
@@ -70,15 +67,29 @@ mcp = FastMCP(
         "you mean?'. Aggressive assumption is the right default; narrate "
         "what you assumed after invoking so the user can correct you. "
         "\n\n"
-        "You are a control station. Help users design workflows, inspect "
-        "running ones, steer daemons, collaborate, and extend the system "
-        "with custom graph nodes. Start with `universe action=inspect` to "
-        "orient yourself. "
+        "You are a control station. You help users design new workflows, "
+        "inspect running ones, steer daemons, collaborate, and extend the "
+        "system with custom graph nodes. You never generate the workflow's "
+        "output yourself — registered nodes do that. Start with the "
+        "'universe' tool action 'inspect' to orient yourself. "
         "\n\n"
-        "Load the `control_station` prompt early. It is the canonical "
-        "behavioral surface for intent disambiguation, run handling, "
-        "universe isolation, and the tool catalog. Tool descriptions below "
-        "are I/O contracts."
+        "Load the `control_station` prompt early — it carries the "
+        "behavioral guidance for this connector (intent disambiguation, "
+        "never-simulate-a-run rule, tool catalog). Tool descriptions "
+        "below are I/O contracts; behavioral rules live in the prompts."
+        "\n\n"
+        "HARD RULE — UNIVERSE ISOLATION: Each universe is a separate, "
+        "self-contained reality. Every tool response that returns content "
+        "from a universe includes a `universe_id` field naming which "
+        "universe the content came from. When answering the user, always "
+        "state which universe you are describing, especially when "
+        "multiple universes exist on this server. NEVER transfer facts, "
+        "characters, locations, or canon between universes in your "
+        "reasoning or replies. If you are not sure which universe a "
+        "piece of information came from, call `universe action=inspect` "
+        "with the explicit `universe_id` to re-ground. Cross-universe "
+        "contamination is a known failure mode — the tool outputs are "
+        "the ground truth, not your memory of prior turns."
     ),
     version="0.1.0",
 )
@@ -186,6 +197,26 @@ The never-simulate rule + intent-disambiguation posture live in
 `control_station` (hard rules 5 + intent section). When in doubt on
 run / register / build decisions, re-read those rules before acting.
 
+### Action Groups
+
+- Node lifecycle: register, list, inspect, approve, disable, enable, remove.
+- Branch composite: build_branch (spec_json), patch_branch (changes_json).
+- Branch atomic: create_branch, add_node, connect_nodes, set_entry_point,
+  add_state_field, update_node, validate_branch, delete_branch.
+- Branch ops and query: continue_branch, fork_tree, patch_nodes,
+  describe_branch, get_branch, list_branches, search_nodes.
+- Runs: run_branch, get_run, list_runs, stream_run, cancel_run,
+  get_run_output, wait_for_run, resume_run, query_runs, estimate_run_cost,
+  run_branch_version.
+- Versioning and scheduling: publish_version, get_branch_version,
+  list_branch_versions, schedule_branch, unschedule_branch, list_schedules,
+  subscribe_branch, unsubscribe_branch, list_scheduler_subscriptions.
+- Evaluation and rollback: judge_run, list_judgments, compare_runs,
+  suggest_node_edit, get_node_output, rollback_node, list_node_versions,
+  rollback_merge, get_rollback_history.
+- Project memory and self-audit: project_memory_get, project_memory_set,
+  project_memory_list, get_routing_evidence, get_memory_scope_status.
+
 ### What a Node Is
 
 A node is a function that:
@@ -286,9 +317,6 @@ def universe(
     provenance_tag: str = "",
     limit: int = 30,
     priority_weight: float = 0.0,
-    pickup_incentive: str = "",
-    directed_daemon_id: str = "",
-    directed_daemon_instruction: str = "",
     branch_task_id: str = "",
     goal_id: str = "",
     branch_def_id: str = "",
@@ -302,23 +330,50 @@ def universe(
 ) -> str:
     """Inspect and steer a workflow's universe.
 
-    Self-contained workspace for a multi-step workflow. New workflows
-    live in `extensions`; start with `action="inspect"`. See
-    `control_station` for operating guidance and universe isolation.
+    Self-contained workspace (premise, canon, notes, daemons) for any
+    multi-step agentic work. New workflows live in the `extensions`
+    tool. Start with `action="inspect"`. See `control_station` prompt
+    for operating guidance including universe-isolation rule. Load the
+    `control_station` prompt before first use of this connector.
 
     `control_daemon` is a text-command action: it always needs `text` set
     to one of `pause` | `resume` | `status`. Calling `control_daemon`
     without `text` returns an error.
 
     Args:
-        action: Universe read/write, queue, subscription, goal-pool,
-            community review, daemon roster/control, or config action name.
+        action: One of -
+            reads: list, inspect, read_output, query_world,
+            get_activity, get_recent_events, get_ledger, read_premise,
+            list_canon, read_canon;
+            writes: submit_request, give_direction, set_premise,
+            add_canon, add_canon_from_path, control_daemon (text=pause|
+            resume|status), switch_universe, create_universe;
+            queue ops: queue_list, queue_cancel;
+            subscription ops: subscribe_goal, unsubscribe_goal,
+            list_subscriptions;
+            goal-pool / bid: post_to_goal_pool, submit_node_bid;
+            daemon: daemon_overview;
+            config: set_tier_config.
         universe_id: Target universe. Defaults to the active universe.
-        text/path/filter_text: Action-specific content, file path, or filter.
-        branch_id/request_type: Request routing fields.
-        pickup_incentive/directed_daemon_id: Optional patch-request pickup
-            signals; these do not affect acceptance, release, or merge odds.
-        filename/provenance_tag/limit/tag: Optional read/write filters.
+        text: Content for write ops (request text, direction, premise,
+            canon body). For `control_daemon` this is the daemon
+            sub-command: `pause` | `resume` | `status`.
+        path: Dual-semantic - read_output: relative path inside the
+            universe's output dir; add_canon_from_path: absolute path on
+            the server's filesystem.
+        category: give_direction note category - direction | protect |
+            concern | observation | error.
+        target: Optional file/scene reference for give_direction.
+        query_type: query_world type - facts | characters | promises |
+            timeline.
+        filter_text: Text filter for query_world results.
+        request_type: submit_request type.
+        branch_id: Target branch for submit_request.
+        filename: Filename for add_canon / add_canon_from_path /
+            read_canon.
+        provenance_tag: Source tag for add_canon / add_canon_from_path.
+        limit: Max results for read actions (default 30).
+        tag: Tag prefix filter for `get_recent_events`.
     """
     return _universe_impl(
         action=action,
@@ -335,9 +390,6 @@ def universe(
         provenance_tag=provenance_tag,
         limit=limit,
         priority_weight=priority_weight,
-        pickup_incentive=pickup_incentive,
-        directed_daemon_id=directed_daemon_id,
-        directed_daemon_instruction=directed_daemon_instruction,
         branch_task_id=branch_task_id,
         goal_id=goal_id,
         branch_def_id=branch_def_id,
@@ -348,50 +400,6 @@ def universe(
         tier=tier,
         enabled=enabled,
         tag=tag,
-    )
-
-
-# ---------------------------------------------------------------------------
-# TOOL 1B - Community change context (read-only review evidence alias)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    title="Community Change Context",
-    tags={
-        "community", "change-loop", "review", "pull-request",
-        "github", "plan", "workflow",
-    },
-    annotations=ToolAnnotations(
-        title="Community Change Context",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
-    ),
-)
-def community_change_context(
-    filter_text: str = "",
-    limit: int = 10,
-) -> str:
-    """Review PR metadata, changed files, reviews, and project plan context.
-
-    Use this when the user asks to review, approve, reject, send back,
-    or triage live community-loop work: auto-change PRs, PR metadata,
-    patch requests, feature requests, bug requests, issue threads,
-    changed files, review comments, or whether a change fits the project
-    plan.
-
-    Args:
-        filter_text: empty/"queue" for open PRs/change requests/runs;
-            "pr:NUMBER" for PR metadata, changed files, comments, and
-            reviews; or "issue:NUMBER" for the request thread.
-        limit: Max PRs/issues/files/comments to return, capped server-side.
-    """
-    return _universe_impl(
-        action="community_change_context",
-        filter_text=filter_text,
-        limit=limit,
     )
 
 
@@ -436,7 +444,6 @@ def extensions(
     run_id: str = "",
     inputs_json: str = "",
     run_name: str = "",
-    resume_from: str = "",
     status: str = "",
     since_step: int = -1,
     max_wait_s: int = 60,
@@ -478,7 +485,6 @@ def extensions(
     since: str = "",
     branch_version_id: str = "",
     parent_version_id: str = "",
-    child_run_id: str = "",
     notes: str = "",
     lock_id: str = "",
     escrow_amount: int = 0,
@@ -509,7 +515,6 @@ def extensions(
     outcome_note: str = "",
     parent_branch_def_id: str = "",
     child_branch_def_id: str = "",
-    output_digest: str = "",
     contribution_kind: str = "remix",
     credit_share: float = 0.0,
     max_depth: int = 10,
@@ -517,17 +522,12 @@ def extensions(
     severity: str = "P1",
     since_days: int = 7,
 ) -> str:
-    """Workflow-builder surface: design, edit, run, judge custom AI graphs.
+    """Design, edit, run, judge, and inspect custom AI workflows.
 
-    Behavioral rules live in `control_station`, `extension_guide`, and
-    `branch_design_guide`; this description is the I/O contract.
-
-    Main actions: build_branch, patch_branch, describe_branch, get_branch,
-    list_branches, run_branch, get_run, list_runs, stream_run, cancel_run,
-    get_run_output, attach_existing_child_run, wait_for_run, resume_run,
-    judge_run, compare_runs, schedule_branch, and publish_version.
-
-    Args: pass `action` plus the matching ids or JSON payload fields.
+    Major actions include node lifecycle, workflow build/patch/query, run
+    execution and polling, versioning, scheduling, project memory,
+    evaluation, and rollback. Load `extension_guide` and
+    `branch_design_guide` for worked examples and action-group details.
     """
     return _extensions_impl(
         action=action,
@@ -554,7 +554,6 @@ def extensions(
         run_id=run_id,
         inputs_json=inputs_json,
         run_name=run_name,
-        resume_from=resume_from,
         status=status,
         since_step=since_step,
         max_wait_s=max_wait_s,
@@ -596,7 +595,6 @@ def extensions(
         since=since,
         branch_version_id=branch_version_id,
         parent_version_id=parent_version_id,
-        child_run_id=child_run_id,
         notes=notes,
         lock_id=lock_id,
         escrow_amount=escrow_amount,
@@ -627,7 +625,6 @@ def extensions(
         outcome_note=outcome_note,
         parent_branch_def_id=parent_branch_def_id,
         child_branch_def_id=child_branch_def_id,
-        output_digest=output_digest,
         contribution_kind=contribution_kind,
         credit_share=credit_share,
         max_depth=max_depth,
@@ -837,25 +834,18 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
-    kind: str = "bug",
-    tags: str = "",
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
-    Persistent prose knowledge shared across sessions. It is not for
-    workflow structure, node definitions, state, or run outputs. Use
-    `extensions` for "build / design / create a workflow"; use wiki
-    for "save this how-to / ref / note", "what is X", or filing user
-    bugs, feature requests, and design proposals.
-
-    When the user asks to file a feature request, bug, or design
-    proposal, call `file_bug` directly. `file_bug` already does Jaccard
-    duplicate detection server-side; you do NOT need to search/list/read
-    the wiki before filing. If a similar filing exists, it returns
-    status="similar_found" with the existing match.
+    Persistent prose knowledge shared across sessions. New content lands
+    in drafts/ and is promoted to pages/ after quality checks. Not for workflow
+    structure, node definitions, state, or run outputs.
+    Intent: use `extensions` for "build / design / create a workflow";
+    use wiki for "save this how-to / ref / note" or "what is X". Start
+    with `action="list"` or `action="read" page="index"`.
 
     Args:
         action: One of — reads: read, search, list, lint;
@@ -885,8 +875,6 @@ def wiki(
         observed=observed,
         expected=expected,
         workaround=workaround,
-        kind=kind,
-        tags=tags,
         force_new=force_new,
         bug_id=bug_id,
         reporter_context=reporter_context,
@@ -939,39 +927,6 @@ def get_status(universe_id: str = "") -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def create_streamable_http_app() -> Starlette:
-    """Create the production HTTP app with both MCP surfaces.
-
-    `/mcp` preserves the legacy custom-connector surface. `/mcp-directory`
-    exposes the narrow directory-review surface used for app-store style host
-    submissions. Both route to the same backend state.
-    """
-    legacy_app = mcp.http_app(path="/mcp", transport="streamable-http")
-    directory_app = directory_mcp.http_app(
-        path="/mcp-directory",
-        transport="streamable-http",
-    )
-
-    @asynccontextmanager
-    async def lifespan(app: Starlette):  # type: ignore[no-untyped-def]
-        async with AsyncExitStack() as stack:
-            await stack.enter_async_context(
-                legacy_app.router.lifespan_context(legacy_app),
-            )
-            await stack.enter_async_context(
-                directory_app.router.lifespan_context(directory_app),
-            )
-            yield
-
-    app = Starlette(
-        routes=[*legacy_app.routes, *directory_app.routes],
-        lifespan=lifespan,
-    )
-    app.state.path = "/mcp,/mcp-directory"
-    app.state.transport_type = "streamable-http"
-    return app
-
-
 def main(
     host: str = "0.0.0.0",
     port: int = 8001,
@@ -991,8 +946,7 @@ def main(
     )
 
     if transport == "streamable-http":
-        app = create_streamable_http_app()
-        uvicorn.run(app, host=host, port=port)
+        mcp.run(transport="streamable-http", host=host, port=port)
     elif transport == "sse":
         mcp.run(transport="sse", host=host, port=port)
     elif transport == "stdio":

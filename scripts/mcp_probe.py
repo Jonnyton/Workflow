@@ -27,7 +27,6 @@ import urllib.request
 from typing import Any
 
 DEFAULT_URL = "https://tinyassets.io/mcp"
-MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # Set to True by --verbose at parse time; read by helpers.
 _VERBOSE = False
@@ -73,7 +72,7 @@ def _initialize(url: str) -> tuple[str | None, int]:
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "protocolVersion": "2025-06-18",
                 "clientInfo": {"name": "lead-probe", "version": "1"},
                 "capabilities": {},
             },
@@ -87,14 +86,6 @@ def _initialize(url: str) -> tuple[str | None, int]:
     _mcp_call(url, sid, {"jsonrpc": "2.0", "method": "notifications/initialized"})
     _vlog("notifications/initialized sent")
     return sid, 0
-
-
-def _tool_response_exit_code(resp: dict | None) -> int:
-    if not resp or "error" in resp or "result" not in resp:
-        return 1
-    if resp["result"].get("isError"):
-        return 1
-    return 0
 
 
 def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bool) -> int:
@@ -111,7 +102,7 @@ def _call_tool(url: str, sid: str | None, tool: str, tool_args: dict, *, raw: bo
     )
     if raw:
         print(json.dumps(resp, indent=2))
-        return _tool_response_exit_code(resp)
+        return 0
     if resp and "result" in resp:
         for item in resp["result"].get("content", []):
             if item.get("type") == "text":
@@ -153,7 +144,7 @@ def _cmd_wiki(url: str, raw: bool) -> int:
     return _call_tool(url, sid, "wiki", {"action": "list"}, raw=raw)
 
 
-def _cmd_tools(url: str, raw: bool) -> int:
+def _cmd_tools(url: str) -> int:
     sid, rc = _initialize(url)
     if rc:
         return rc
@@ -161,80 +152,9 @@ def _cmd_tools(url: str, raw: bool) -> int:
     if not resp or "result" not in resp:
         print(json.dumps(resp, indent=2))
         return 1
-    if raw:
-        print(json.dumps(resp, indent=2))
-        return 0
     for t in resp["result"]["tools"]:
         print(f"{t['name']:<20} {t.get('description', '').splitlines()[0][:80]}")
     return 0
-
-
-def _coerce_relaxed_value(value: str) -> Any:
-    value = value.strip().strip("'\"")
-    lower = value.lower()
-    if lower == "true":
-        return True
-    if lower == "false":
-        return False
-    if lower == "null":
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        return value
-
-
-def _parse_relaxed_object(raw: str) -> dict[str, Any] | None:
-    """Parse simple PowerShell-stripped JSON like {action:list,limit:5}.
-
-    This is deliberately shallow. Nested JSON still needs valid JSON quoting.
-    """
-    text = raw.strip()
-    if not (text.startswith("{") and text.endswith("}")):
-        return None
-    body = text[1:-1].strip()
-    if not body:
-        return {}
-
-    result: dict[str, Any] = {}
-    for part in body.split(","):
-        key, sep, value = part.partition(":")
-        if not sep:
-            return None
-        key = key.strip().strip("'\"")
-        if not key:
-            return None
-        result[key] = _coerce_relaxed_value(value)
-    return result
-
-
-def _parse_tool_args(raw: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        parsed = _parse_relaxed_object(raw)
-        if parsed is None:
-            raise ValueError(
-                "--args must be a JSON object; simple PowerShell-stripped "
-                "{action:list} objects are also accepted"
-            ) from exc
-    if not isinstance(parsed, dict):
-        raise ValueError("--args must decode to an object")
-    return parsed
-
-
-def _add_subcommand_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--url", default=argparse.SUPPRESS, help="MCP endpoint URL")
-    parser.add_argument(
-        "--raw",
-        action="store_true",
-        default=argparse.SUPPRESS,
-        help="print full JSON response",
-    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -249,21 +169,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="subcommand")
 
-    status = sub.add_parser("status", help="call get_status")
-    _add_subcommand_flags(status)
-
-    universes = sub.add_parser("universes", help="list all universes")
-    _add_subcommand_flags(universes)
+    sub.add_parser("status", help="call get_status")
+    sub.add_parser("universes", help="list all universes")
 
     uni = sub.add_parser("universe", help="inspect a specific universe")
     uni.add_argument("universe_id", help="universe ID to inspect")
-    _add_subcommand_flags(uni)
 
-    wiki = sub.add_parser("wiki", help="list wiki pages")
-    _add_subcommand_flags(wiki)
-
-    tools = sub.add_parser("tools", help="list available MCP tools")
-    _add_subcommand_flags(tools)
+    sub.add_parser("wiki", help="list wiki pages")
+    sub.add_parser("tools", help="list available MCP tools")
 
     # Raw / legacy flags (no subcommand path)
     p.add_argument("--tool", help="tool name for raw call")
@@ -290,25 +203,21 @@ def main() -> int:
     if args.subcommand == "wiki":
         return _cmd_wiki(url, raw)
     if args.subcommand == "tools":
-        return _cmd_tools(url, raw)
+        return _cmd_tools(url)
 
     # Legacy / raw path
     if args.list:
-        return _cmd_tools(url, raw)
+        return _cmd_tools(url)
 
     if not args.tool:
         print("use a subcommand (status/universes/universe/wiki/tools) or --tool <name>",
               file=sys.stderr)
         return 2
 
-    try:
-        tool_args = _parse_tool_args(args.args)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
     sid, rc = _initialize(url)
     if rc:
         return rc
+    tool_args = json.loads(args.args)
     return _call_tool(url, sid, args.tool, tool_args, raw=raw)
 
 

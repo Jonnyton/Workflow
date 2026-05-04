@@ -1,32 +1,20 @@
 ---
 name: ui-test
-description: Simulate a Claude.ai or ChatGPT user driving the Workflow daemon via the custom MCP connector. Use when testing the live end-user surface. You type into the real chatbot UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
+description: Simulate a Claude.ai phone user driving the Workflow daemon via the custom MCP connector. Use when testing the live end-user surface. You type into the real Claude.ai chat UI in a visible browser tab, read the real rendered response, and log to a shared md with the lead. No MCP bypass. No browser tricks a human user could not do.
 ---
 
 # ui-test
 
-You simulate a real person chatting with Claude.ai or ChatGPT on their phone or laptop, using the Workflow MCP connector at `https://tinyassets.io/mcp` (the canonical URL installed by users). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
+You simulate a real person chatting with Claude.ai on their phone or laptop, using the Workflow MCP connector at `https://tinyassets.io/mcp` (already added on the host's profile; this is the canonical URL installed by users). You do **not** call the MCP directly. You do **not** parse DOM metadata that a human user cannot see. You type into the chat box. You read the rendered response. You log what happened.
 
 The human host is watching the browser tab. Your job is to look like a naive, curious user — one who does not know tool names, action parameters, or anything about the system's internals. If the chatbot doesn't understand you, that's a finding, not a problem to route around.
 
 ## Driver routes
 
-- **Claude Code route:** use the visible Chrome profile through `scripts/claude_chat.py`. This remains the default route for Claude team user-sim. Host-login Claude.ai access is not the proof requirement; Claude.ai is valid when a real browser session can use the Workflow connector.
-- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use the in-app browser when ChatGPT Developer Mode is enabled and the Workflow connector is added/visible in that same session. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
+- **Claude Code route:** use the host-visible Chrome profile through `scripts/claude_chat.py`. This remains the default route for Claude team user-sim.
+- **Codex / ChatGPT desktop route:** when Codex has browser or computer control, use it only to drive the same live Claude.ai session/profile that has the real Workflow MCP connector installed. Do not verify in an isolated browser profile unless the host explicitly says that profile is the user-installed connector state.
 
-## Proof standard
-
-The verification target is a rendered chatbot conversation using the live installed connector. Claude.ai, ChatGPT Developer Mode, and future chatbot clients are all acceptable when the tester can see the connector in the browser, type a normal user prompt, and observe the chatbot's rendered answer or tool-use result. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
-
-## ChatGPT live preflight
-
-When using the Codex / ChatGPT desktop route, check these before the first prompt and log the result:
-
-- The visible tab is `https://chatgpt.com/` or an existing `chatgpt.com/c/...` conversation.
-- Developer mode is enabled for the conversation.
-- The composer shows the `Workflow` connector/tool as available.
-
-If any item is missing, stop the mission and ask the host to fix that exact item. Do not test through a fresh profile or a direct MCP call.
+The verification target is the rendered Claude.ai conversation using the installed connector. Browser automation, screenshots, DOM snapshots, direct tests, and public canaries can help navigate or gather supporting evidence; they do not replace final rendered chatbot proof.
 
 After `ui-test` passes, also look for post-fix clean-use evidence from actual users when the affected feature is public or high-risk. Check available production traces, connector/server logs, support reports, user-visible history, or other real-user evidence. Record the timestamp, environment, and evidence source. If no real-user use is visible yet, say so plainly and leave a short watch item in `STATUS.md` rather than implying the feature has been proven clean for users.
 
@@ -39,15 +27,15 @@ Codex is mechanically good at browser operation, but must not massage the chatbo
 - Do not coach the bot around a UX failure; log the failure.
 - Before every prompt, ask: "Would a normal chatbot user type this without knowing Workflow internals?" If no, rewrite it.
 
-## Claude.ai setup the host does once (not you)
+## Setup the host does once (not you)
 
-For the Claude Code route, the host launches Chrome with:
+The host launches Chrome with:
 
 ```
 powershell -Command "Start-Process 'C:\\Users\\Jonathan\\AppData\\Local\\ms-playwright\\chromium-1208\\chrome-win64\\chrome.exe' -ArgumentList '--user-data-dir=C:\\Users\\Jonathan\\.claude-ai-profile','--remote-debugging-port=9222','--no-first-run','--disable-blink-features=AutomationControlled','https://claude.ai/new'"
 ```
 
-logs into claude.ai in that window only if the test route needs authenticated Claude access and the profile's session is not already persisted (the `--user-data-dir` caches auth; a returning host is often already logged in and goes straight to the chat), confirms the Workflow connector is on, and keeps the window visible. Before you act, verify with:
+logs into claude.ai in that window **if the profile's session is not already persisted** (the `--user-data-dir` caches auth; a returning host is often already logged in and goes straight to the chat), confirms the Workflow connector is on, and keeps the window visible. Before you act, verify with:
 
 ```bash
 python scripts/claude_chat.py status
@@ -85,9 +73,22 @@ If you don't check the **"Always allow"** / **"Don't ask again for this tool"** 
 
 If a mission stalls (no progress for >30s after an `ask` that should have triggered a tool call), check whether a hidden dialog is waiting — `claude_chat.py status` may not report dialog state.
 
-## When no Mission brief exists yet
+## When to run user-sim missions
 
-If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **do NOT self-initiate.** SendMessage the lead asking for a brief. Past work has shown self-initiated missions waste prompts and produce findings nobody wanted. Standing-by-without-brief is correct.
+Run anytime. user-sim is the strongest final-verification surface for the live state — stronger than local pytest, stronger than direct MCP probes, stronger than canaries. The rendered chatbot conversation through the installed connector is the only proof that a patch actually works for real users; everything else is supporting evidence.
+
+**Self-initiate when you see one of these:**
+
+- A patch was just merged that touches user-facing behavior — drive a sim to verify it landed in the running daemon AND produces the intended user experience.
+- Live MCP recovered after an outage — drive a sim to confirm the recovery is real, not just canary-green at the protocol level.
+- A new feature was wired (a goal binding, a new connector tool, a config env var) — drive a sim to test it via natural user phrasing, not by pre-arranged tool calls.
+- A periodic health check on the loop — pick a persona, run their natural flow, see what happens. Treat this as a recurring duty, not a one-off task.
+
+**Standing-by-without-brief is the wrong default when the live state is testable.** The skill's discipline rules (tab hygiene, persona authenticity, connector anchor, naive voice, stop-on-3-bugs, prompt economy, write-action authorization) keep self-initiated missions tight and on-purpose. They do not mean "wait for a brief" — they mean "when you run, run carefully."
+
+A brief from the lead is welcome when one exists (a specific scenario, persona, or surface to focus on). If you'd benefit from one and the live state is non-trivial to triage on its own, ask. But routine final-verification of recent patches should not wait.
+
+**History:** The earlier "do NOT self-initiate" rule was retired 2026-05-02 per host directive ("user-sim missions can be run anytime and are the best way to do final tests of the live state to see if patches landed and actually work as intended"). Self-initiated missions had previously been flagged as waste; the corrected framing recognises that the substrate now ships often enough that real-time verification produces more signal than waste.
 
 ## Claude Code driver
 
@@ -138,7 +139,7 @@ Good test domains share: multi-step graph, state across steps, memory/retrieval 
 
 ## CRITICAL — Anchor every chat in the connector
 
-If your opening prompt doesn't pull the chatbot into the Workflow connector context, the bot will answer as a general assistant and never touch our MCP. That tests the base chatbot, not Workflow — worthless.
+If your opening prompt doesn't pull Claude.ai into the Workflow connector context, the bot will answer as a general assistant and never touch our MCP. That tests Claude, not Workflow — worthless.
 
 **Rule: every new chat begins with an opening prompt that explicitly references the connector.** Examples:
 
@@ -308,7 +309,7 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never restate the obvious ("so my workflow is called X") — just act.
 - Don't re-validate already-green behaviors in the same mission.
 - If a prompt returns what you expected, log one line and move on. Don't follow up with "can you confirm?"
-- Stop on first bug in a probe area. Don't keep pushing after a known-broken path.
+- Don't bang on the same broken path with the same prompt. Log the bug, then probe adjacent ground (related edge cases, root-cause clues, what's next in the dependency chain) while context is warm.
 
 **Log discipline:**
 - USER ACTION entries: 1–3 lines max. Command + result summary. Full response lives in the trace; don't re-quote it in the log.
@@ -317,13 +318,21 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never write prose summaries of trace content in the log. The trace IS the detail.
 - MISSION SUMMARY: ≤15 lines total, bullet form.
 
-**Stop-early triggers:**
-- 3 bugs → stop (existing rule).
-- Mission's primary question answered (green or red) → stop, write FINDINGS, don't keep exploring.
-- Bot repeats a behavior you've already logged → stop.
-- Out of authorized writes → stop, ask lead before escalating.
+**Hard stops (chat ends here):**
+- 3 bugs → stop, log, wait. Beyond this risks masking root cause with noise.
+- Out of authorized writes → stop, ask lead before escalating to more writes.
+- Lead writes `LEAD STOP` or sends a stop message → stop immediately. No "relaxed pace."
+- Hit Claude.ai's rate limit or tool-call cap that pauses progress → stop, report up.
+- Bot literally loops (same tool calls + same verbatim answer twice) → stop and triage.
 
-**When in doubt about whether to ask:** don't. Write a `NOTE` entry with the question and let the lead decide. Preserving a prompt is worth more than getting your curiosity satisfied.
+**Soft non-stops — DO NOT end the chat here:**
+- The immediate question got answered. The chat is a working surface, not a single-question lookup. As long as it's producing value toward the larger project goal (loop running 24/7, substrate gaps closing, observability tightening), keep iterating with the next-most-leveraged question.
+- You spec'd a piece. Drive to "what's the smallest thing I can ship from here", "what would block this from working tomorrow", "what does this depend on we haven't tested yet."
+- A bug was found in a probe area. Log it, then keep exploring adjacent ground while context is warm — the cost to ramp another chat to the same depth is high.
+
+The pattern: each chat is a multi-objective working session. Treat it like pairing with a coworker for an hour, not asking a librarian a single question. The lead's direction (in chat or via session log) always wins; in absence of direction, drive forward toward the larger objective.
+
+**When in doubt about whether to ask:** ask, if it serves the larger goal. The chatbot's context is warm; restarting is expensive. The earlier "preserve prompts at all costs" framing was retired 2026-05-02 per host directive ("why oberterraially stop after finding what your looking for?"). The new framing: keep iterating as long as it's substantive.
 
 ## Budget and boundaries
 

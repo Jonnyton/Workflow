@@ -16,7 +16,6 @@ from wiki_bug_sync import (  # noqa: E402
     create_gh_issue,
     fetch_bug_detail,
     list_new_bugs,
-    list_new_change_requests,
     read_cursor,
     sync,
     write_cursor,
@@ -153,44 +152,6 @@ def test_list_new_bugs_sorted_ascending():
     }
     result = list_new_bugs(wiki_list, cursor=2)
     assert [e["bug_number"] for e in result] == [3, 4, 5]
-
-
-# ---------------------------------------------------------------------------
-# list_new_change_requests
-# ---------------------------------------------------------------------------
-
-
-def test_live_wiki_refactoring_request_is_project_design():
-    wiki_list = {
-        "promoted": [
-            {
-                "path": (
-                    "pages/plans/"
-                    "live-wiki-refactoring-and-multi-generation-attribution.md"
-                ),
-                "title": "Live Wiki Refactoring + Multi-Generation Attribution",
-                "type": "unknown",
-            }
-        ]
-    }
-    result = list_new_change_requests(wiki_list, seen_paths=set())
-    assert len(result) == 1
-    assert result[0]["request_kind"] == "project-design"
-
-
-def test_plain_promoted_plan_remains_docs_ops():
-    wiki_list = {
-        "promoted": [
-            {
-                "path": "pages/plans/methods-prose-rubric.md",
-                "title": "Methods-Prose Rubric",
-                "type": "plan",
-            }
-        ]
-    }
-    result = list_new_change_requests(wiki_list, seen_paths=set())
-    assert len(result) == 1
-    assert result[0]["request_kind"] == "docs-ops"
 
 
 # ---------------------------------------------------------------------------

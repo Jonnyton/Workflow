@@ -7,7 +7,7 @@ It is intentionally decoupled from MCP action wiring (universe_server.py) and
 from the gate claim record itself (workflow/gates/schema.py). The caller
 decides when to call each primitive; this module just maintains the ledger.
 
-SQLite table ``escrow_locks`` lives in the same ``.workflow.db`` as
+SQLite table ``escrow_locks`` lives in the same ``.author_server.db`` as
 ``gate_claims`` — shared connection context from workflow.storage._connect.
 
 Invariants enforced here:

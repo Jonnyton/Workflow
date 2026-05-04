@@ -31,10 +31,12 @@ intermediate file.
 
 from __future__ import annotations
 
+import hashlib  # noqa: F401  (re-exported for legacy callers of daemon_server)
 import json
-import os
+import secrets  # noqa: F401  (re-exported for legacy callers of daemon_server)
 import sqlite3
 import time
+import uuid  # noqa: F401  (re-exported for legacy callers of daemon_server)
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +44,7 @@ from typing import Any
 # Constants
 # -------------------------------------------------------------------
 
-DB_FILENAME = ".workflow.db"
-_LEGACY_DB_FILENAME = ".author_server.db"
-_SQLITE_SIBLING_SUFFIXES = ("-wal", "-shm")
+DB_FILENAME = ".author_server.db"
 DEFAULT_BRANCH_MODE = "no_fixed_mainline"
 DEFAULT_QUICK_VOTE_SECONDS = 300
 SESSION_PREFIX = "fa_session_"
@@ -128,8 +128,8 @@ def _looks_like_windows_path(raw: str) -> bool:
 
     Matches ``C:\\...``, ``c:/...``, ``D:\\...`` etc. Used to detect
     cross-OS env-var leakage: a host machine setting
-    ``WORKFLOW_WIKI_PATH=C:\\Users\\Jonathan\\...`` that then reaches a
-    Linux container joins against CWD on POSIX (``Path("C:\\Users\\...")``
+    ``WIKI_PATH=C:\\Users\\Jonathan\\...`` that then reaches a Linux
+    container joins against CWD on POSIX (``Path("C:\\Users\\...")``
     is NOT absolute on POSIX) and yields nonsense like
     ``/app/C:\\Users\\Jonathan\\Projects\\Wiki``.
     """
@@ -169,7 +169,11 @@ def data_dir() -> Path:
 
     Resolution order (first match wins):
       1. ``$WORKFLOW_DATA_DIR`` if set and non-empty.
-      2. Platform default:
+      2. Legacy ``$UNIVERSE_SERVER_BASE`` if set and non-empty. Emits a
+         deprecation warning when ``WORKFLOW_DEPRECATIONS=1`` so the
+         legacy name can be found and updated without noise in normal
+         operation.
+      3. Platform default:
          - Windows: ``%APPDATA%\\Workflow`` if ``APPDATA`` is set, else
            ``Path.home() / 'AppData' / 'Roaming' / 'Workflow'``.
          - macOS / Linux / container: ``~/.workflow``.
@@ -179,26 +183,43 @@ def data_dir() -> Path:
     daemon's on-disk root so that a containerized deploy setting
     ``WORKFLOW_DATA_DIR=/data`` gets all writes inside the bind-mount.
 
-    The previous shape defaulted to CWD-relative ``"output"`` and produced
-    the 2026-04-19 container CWD-drift bug: running the daemon from ``/app``
-    wrote to ``/app/output`` instead of ``/data``. This function eliminates
-    that class by refusing to return CWD-relative paths.
+    The previous shape (``UNIVERSE_SERVER_BASE`` defaulting to CWD-relative
+    ``"output"``) produced the 2026-04-19 container CWD-drift bug: running
+    the daemon from ``/app`` wrote to ``/app/output`` instead of
+    ``/data``. This function eliminates that class by refusing to return
+    CWD-relative paths.
 
     Notes
     -----
     - This is the *root* for all on-disk state, not the universe dir.
       Per-universe directories sit under this root. The previous
-      root setting conflated the two; the contract is that
-      ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and universes are
-      subdirectories (e.g., ``/data/my-universe``).
+      ``UNIVERSE_SERVER_BASE`` conflated the two; the new contract is
+      that ``WORKFLOW_DATA_DIR`` is the root (e.g., ``/data``) and
+      universes are subdirectories (e.g., ``/data/my-universe``).
     - The directory is not created here. Callers that write into it
       are responsible for ``mkdir(parents=True, exist_ok=True)``.
     """
     import os
+    import warnings
+
     explicit = os.environ.get("WORKFLOW_DATA_DIR", "").strip()
     if explicit:
         _reject_windows_path_on_posix(explicit, "WORKFLOW_DATA_DIR")
         return Path(explicit).expanduser().resolve()
+
+    legacy = os.environ.get("UNIVERSE_SERVER_BASE", "").strip()
+    if legacy:
+        _reject_windows_path_on_posix(legacy, "UNIVERSE_SERVER_BASE")
+        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
+            warnings.warn(
+                "UNIVERSE_SERVER_BASE is deprecated; migrate to "
+                "WORKFLOW_DATA_DIR. Both currently resolve to the same "
+                "path; UNIVERSE_SERVER_BASE will be removed in a future "
+                "release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return Path(legacy).expanduser().resolve()
 
     # Platform default.
     appdata = os.environ.get("APPDATA", "").strip()
@@ -211,27 +232,6 @@ def data_dir() -> Path:
     return (Path.home() / ".workflow").resolve()
 
 
-def active_universe_id(base: Path | None = None) -> str:
-    """Return the dynamic active universe marker when it points at a real universe.
-
-    ``UNIVERSE_SERVER_DEFAULT_UNIVERSE`` is a boot/default setting. The
-    runtime ``switch_universe`` MCP action writes ``.active_universe`` under
-    the data root, so read that marker before falling back to static defaults.
-    Invalid marker contents are ignored instead of becoming path traversal.
-    """
-    root = base or data_dir()
-    marker = root / ".active_universe"
-    try:
-        uid = marker.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-    if not uid or "/" in uid or "\\" in uid or uid.startswith("."):
-        return ""
-    if not (root / uid).is_dir():
-        return ""
-    return uid
-
-
 def wiki_path() -> Path:
     """Return the on-disk root for the knowledge wiki.
 
@@ -239,7 +239,9 @@ def wiki_path() -> Path:
 
     Resolution order (first match wins):
       1. ``$WORKFLOW_WIKI_PATH`` if set and non-empty.
-      2. Platform default: ``data_dir() / "wiki"`` — inherits the
+      2. Legacy ``$WIKI_PATH`` if set and non-empty. Emits a
+         deprecation warning when ``WORKFLOW_DEPRECATIONS=1``.
+      3. Platform default: ``data_dir() / "wiki"`` — inherits the
          canonical data root's platform handling (Windows
          ``%APPDATA%\\Workflow\\wiki``; Linux/macOS ``~/.workflow/wiki``).
 
@@ -249,100 +251,42 @@ def wiki_path() -> Path:
     leaked the developer's username into docs. Using this resolver
     closes that class the same way ``data_dir`` did for universe state.
 
-    If a Windows-style path leaks into a POSIX runtime, this resolver raises
-    ``ValueError`` rather than silently returning a nonsense path.
+    If a Windows-style path leaks into a POSIX runtime (the
+    2026-04-19 container incident: host set ``WIKI_PATH`` on Windows,
+    value shipped into the Linux container, ``Path("C:\\...")``
+    joined against ``/app`` yielding ``/app/C:\\Users\\Jonathan\\...``),
+    this resolver raises ``ValueError`` rather than silently returning
+    a nonsense path.
 
     Returns an absolute, resolved Path. Does not create the directory;
     callers mkdir on first write.
     """
     import os
+    import warnings
+
     explicit = os.environ.get("WORKFLOW_WIKI_PATH", "").strip()
     if explicit:
         _reject_windows_path_on_posix(explicit, "WORKFLOW_WIKI_PATH")
         return Path(explicit).expanduser().resolve()
 
+    legacy = os.environ.get("WIKI_PATH", "").strip()
+    if legacy:
+        _reject_windows_path_on_posix(legacy, "WIKI_PATH")
+        if os.environ.get("WORKFLOW_DEPRECATIONS", "").strip() in {"1", "true", "yes"}:
+            warnings.warn(
+                "WIKI_PATH is deprecated; migrate to WORKFLOW_WIKI_PATH. "
+                "Both currently resolve to the same path; WIKI_PATH will "
+                "be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return Path(legacy).expanduser().resolve()
+
     # Platform default — inherit data_dir's platform handling.
     return (data_dir() / "wiki").resolve()
 
 
-def _sqlite_db_siblings(db_file: Path) -> tuple[Path, ...]:
-    return tuple(
-        db_file.with_name(f"{db_file.name}{suffix}")
-        for suffix in _SQLITE_SIBLING_SUFFIXES
-    )
-
-
-def _replace_if_exists(source: Path, target: Path) -> bool:
-    if not source.exists():
-        return False
-    os.replace(source, target)
-    return True
-
-
-def _legacy_backup_path(legacy_db_path: Path) -> Path:
-    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    base = legacy_db_path.with_name(f"{legacy_db_path.name}.legacy-{timestamp}")
-    candidate = base
-    counter = 1
-    while candidate.exists() or any(
-        sibling.exists() for sibling in _sqlite_db_siblings(candidate)
-    ):
-        candidate = legacy_db_path.with_name(
-            f"{base.name}-{counter}"
-        )
-        counter += 1
-    return candidate
-
-
-def _move_db_with_sqlite_siblings(source: Path, target: Path) -> list[str]:
-    moved = []
-    if _replace_if_exists(source, target):
-        moved.append(source.name)
-    for source_sibling, target_sibling in zip(
-        _sqlite_db_siblings(source), _sqlite_db_siblings(target),
-        strict=True,
-    ):
-        if _replace_if_exists(source_sibling, target_sibling):
-            moved.append(source_sibling.name)
-    return moved
-
-
-def _migrate_legacy_db_filename(base_path: str | Path) -> None:
-    base = Path(base_path)
-    legacy_db = base / _LEGACY_DB_FILENAME
-    canonical_db = base / DB_FILENAME
-
-    if not legacy_db.exists():
-        return
-
-    if canonical_db.exists():
-        backup = _legacy_backup_path(legacy_db)
-        moved = _move_db_with_sqlite_siblings(legacy_db, backup)
-        _logger.warning(
-            "Both %s and %s existed in %s; using %s and backed up legacy "
-            "SQLite files to %s (%s)",
-            canonical_db.name,
-            legacy_db.name,
-            base,
-            canonical_db.name,
-            backup.name,
-            ", ".join(moved) if moved else "no files moved",
-        )
-        return
-
-    moved = _move_db_with_sqlite_siblings(legacy_db, canonical_db)
-    if moved:
-        _logger.info(
-            "Migrated legacy SQLite filename in %s from %s to %s (%s)",
-            base,
-            legacy_db.name,
-            canonical_db.name,
-            ", ".join(moved),
-        )
-
-
-def db_path(base_path: str | Path) -> Path:
-    _migrate_legacy_db_filename(base_path)
+def author_server_db_path(base_path: str | Path) -> Path:
     return Path(base_path) / DB_FILENAME
 
 
@@ -562,9 +506,9 @@ def universe_id_from_path(universe_path: str | Path) -> str:
 
 
 def _connect(base_path: str | Path) -> sqlite3.Connection:
-    path = db_path(base_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30.0)
+    db_path = author_server_db_path(base_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
@@ -597,9 +541,9 @@ __all__ = [
     "_json_dumps",
     "_json_loads",
     "_slugify",
+    "author_server_db_path",
     "base_path_from_universe",
     "data_dir",
-    "db_path",
     "inspect_storage_utilization",
     "universe_id_from_path",
     "wiki_path",

@@ -1,7 +1,7 @@
-"""Fantasy daemon package.
+"""Fantasy Author — backward compatibility shim.
 
-Shared engine code lives under ``workflow``. Domain implementation code lives
-under ``domains.fantasy_daemon``.
+This package re-exports from workflow/ and domains/fantasy_author/.
+New code should import from workflow.* or domains.fantasy_author.* directly.
 """
 
 __version__ = "0.1.0"

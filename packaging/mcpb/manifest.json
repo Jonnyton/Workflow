@@ -35,7 +35,7 @@
         "${__dirname}/server.py"
       ],
       "env": {
-        "WORKFLOW_DATA_DIR": "${user_config.workflow_data_dir}",
+        "UNIVERSE_SERVER_BASE": "${user_config.universe_base}",
         "UNIVERSE_SERVER_DEFAULT_UNIVERSE": "${user_config.default_universe}"
       }
     }
@@ -62,9 +62,9 @@
     }
   },
   "user_config": {
-    "workflow_data_dir": {
+    "universe_base": {
       "type": "directory",
-      "title": "Workflow Data Directory",
+      "title": "Universe Base Directory",
       "description": "Select the directory that contains your universe folders, such as this repo's output directory.",
       "required": true
     },

@@ -157,7 +157,9 @@ class TestGetStatusCooldownField:
 #      `ACTIONABLE_BY` (so chatbot can always look up `actionable_by`).
 #
 # Source of truth: `workflow.runs.ACTIONABLE_BY` (canonical map).
-# Helpers under test live at `workflow.api.runs`.
+# Helpers under test live at `workflow.universe_server._actionable_by`
+# and `workflow.universe_server._classify_run_outcome_error` (back-compat
+# shim re-exports from `workflow.api.runs` post-decomp Step 4).
 
 
 _VALID_ACTIONABLE_BY = frozenset({"host", "chatbot", "user", "none"})

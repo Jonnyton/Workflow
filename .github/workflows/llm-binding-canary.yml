@@ -5,8 +5,8 @@ name: LLM binding canary
 # after 2 consecutive reds; closes it on recovery.
 #
 # Why: verify_llm_binding.py was previously run only from the host
-# machine. When host is offline, silent binding loss (subscription auth
-# expiry, codex CLI drift, docker restart) goes undetected for hours.
+# machine. When host is offline, silent binding loss (token rotation,
+# codex CLI drift, docker restart) goes undetected for hours.
 # This workflow runs on GitHub's infra every 6h — zero host dependency.
 #
 # Consecutive-state: open llm-binding-red issue IS the state.
@@ -56,7 +56,7 @@ jobs:
             --url "${PROBE_URL}" --timeout 20 2>&1)
           code=$?
           set -e
-          _delim="EOF_$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+          _delim="EOF_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
           {
             echo "status=$code"
             echo "msg<<${_delim}"
@@ -186,8 +186,8 @@ jobs:
                     `Auto-opened by the LLM binding canary after ${threshold} consecutive reds.`,
                     `Daemon at \`${process.env.PROBE_URL}\` reports no LLM provider bound.`,
                     ``,
-                    `Likely causes: subscription auth missing/expired, codex CLI missing ` +
-                    `from image, or container restarted without the env file.`,
+                    `Likely causes: OPENAI_API_KEY rotated, codex CLI missing from image, ` +
+                    `OLLAMA_HOST unset after container restart.`,
                     ``,
                     `See: \`scripts/verify_llm_binding.py\` + \`docs/ops/host-independence-runbook.md\``,
                     ``,
@@ -224,10 +224,8 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          {
-            echo "### LLM binding canary result"
-            echo ""
-            echo "- **endpoint** → \`${{ env.PROBE_URL }}\`"
-            echo "- **verify exit** → \`${{ needs.probe.outputs.status }}\`"
-            echo "- **overall** → **${{ needs.probe.outputs.overall }}**"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "### LLM binding canary result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **endpoint** → \`${{ env.PROBE_URL }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **verify exit** → \`${{ needs.probe.outputs.status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **overall** → **${{ needs.probe.outputs.overall }}**" >> "$GITHUB_STEP_SUMMARY"

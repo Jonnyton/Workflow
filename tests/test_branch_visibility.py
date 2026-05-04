@@ -26,15 +26,14 @@ import pytest
 def base_path(tmp_path, monkeypatch):
     base = tmp_path / "output"
     base.mkdir()
-    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("UNIVERSE_SERVER_BASE", str(base))
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
     monkeypatch.setenv("WORKFLOW_GATES_ENABLED", "1")
     from workflow.daemon_server import initialize_author_server
     initialize_author_server(base)
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
     yield base
 
 
@@ -225,10 +224,9 @@ def test_list_claims_hides_private_branch_from_non_owner(
     gid = _seed_claims_for_filter_tests(base_path)
     # Alice looks (non-owner of the private Branch).
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(mkt._action_gates_list_claims({"goal_id": gid}))
     assert result["status"] == "ok"
@@ -240,10 +238,9 @@ def test_list_claims_hides_private_branch_from_non_owner(
 def test_list_claims_shows_own_private_to_owner(base_path, monkeypatch):
     gid = _seed_claims_for_filter_tests(base_path)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(mkt._action_gates_list_claims({"goal_id": gid}))
     assert result["status"] == "ok"
@@ -256,10 +253,9 @@ def test_leaderboard_hides_private_branch_from_non_owner(
 ):
     gid = _seed_claims_for_filter_tests(base_path)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(mkt._action_gates_leaderboard({"goal_id": gid}))
     assert result["status"] == "ok"
@@ -270,10 +266,9 @@ def test_leaderboard_hides_private_branch_from_non_owner(
 def test_leaderboard_shows_own_private_to_owner(base_path, monkeypatch):
     gid = _seed_claims_for_filter_tests(base_path)
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(mkt._action_gates_leaderboard({"goal_id": gid}))
     assert result["status"] == "ok"
@@ -326,17 +321,15 @@ def test_private_branch_on_public_goal_is_visible_to_owner(
 
     # Bob owns it — sees his claim on the public leaderboard.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
     r = json.loads(mkt._action_gates_leaderboard({"goal_id": "g-public"}))
     assert any(e["branch_def_id"] == "b-secret" for e in r["entries"])
 
     # Alice doesn't own it — doesn't see it, even though the Goal is public.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    importlib.reload(mkt)
-    importlib.reload(br)
+    importlib.reload(mkt); importlib.reload(br)
     r2 = json.loads(mkt._action_gates_leaderboard({"goal_id": "g-public"}))
     assert not any(e["branch_def_id"] == "b-secret" for e in r2["entries"])
 
@@ -346,10 +339,9 @@ def test_private_branch_on_public_goal_is_visible_to_owner(
 
 def test_branch_create_accepts_visibility(base_path, monkeypatch):
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(br._ext_branch_create({
         "name": "My secret branch",
@@ -371,10 +363,9 @@ def test_branch_get_hides_private_from_non_owner(base_path, monkeypatch):
 
     # Alice probes for it.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(br._ext_branch_get({"branch_def_id": "b-hidden"}))
     assert "error" in result
@@ -382,8 +373,7 @@ def test_branch_get_hides_private_from_non_owner(base_path, monkeypatch):
 
     # Bob can see it.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    importlib.reload(mkt)
-    importlib.reload(br)
+    importlib.reload(mkt); importlib.reload(br)
     result = json.loads(br._ext_branch_get({"branch_def_id": "b-hidden"}))
     assert result.get("branch_def_id") == "b-hidden"
     assert result.get("visibility") == "private"
@@ -432,10 +422,9 @@ def test_goal_get_hides_private_branch_from_non_owner(
 
     # Alice (non-owner of the private branch) hits goals.get.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
 
     result = json.loads(mkt._action_goal_get({"goal_id": goal_saved["goal_id"]}))
     branch_ids = {b["branch_def_id"] for b in result.get("branches", [])}
@@ -445,8 +434,7 @@ def test_goal_get_hides_private_branch_from_non_owner(
 
     # Bob (owner of the private branch) hits goals.get — sees both.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    importlib.reload(mkt)
-    importlib.reload(br)
+    importlib.reload(mkt); importlib.reload(br)
     result = json.loads(mkt._action_goal_get({"goal_id": goal_saved["goal_id"]}))
     branch_ids = {b["branch_def_id"] for b in result.get("branches", [])}
     assert branch_ids == {"b-public-on-public", "b-private-on-public"}
@@ -500,10 +488,9 @@ def test_goal_common_nodes_hides_private_branch_from_non_owner(
 
     # Alice asks. min_branches=1 so a single contributor surfaces.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
-    from workflow.api import branches as br
     from workflow.api import market as mkt
-    importlib.reload(mkt)
-    importlib.reload(br)
+    from workflow.api import branches as br
+    importlib.reload(mkt); importlib.reload(br)
     result = json.loads(mkt._action_goal_common_nodes({
         "goal_id": goal_saved["goal_id"],
         "min_branches": 1,
@@ -522,8 +509,7 @@ def test_goal_common_nodes_hides_private_branch_from_non_owner(
 
     # Bob sees both contributions.
     monkeypatch.setenv("UNIVERSE_SERVER_USER", "bob")
-    importlib.reload(mkt)
-    importlib.reload(br)
+    importlib.reload(mkt); importlib.reload(br)
     result = json.loads(mkt._action_goal_common_nodes({
         "goal_id": goal_saved["goal_id"],
         "min_branches": 1,

@@ -65,24 +65,12 @@ describe('shouldProxy', () => {
         assert.equal(shouldProxy('/mcp/foo'), true);
     });
 
-    it('accepts /mcp-directory', () => {
-        assert.equal(shouldProxy('/mcp-directory'), true);
-    });
-
-    it('accepts /mcp-directory/foo', () => {
-        assert.equal(shouldProxy('/mcp-directory/foo'), true);
-    });
-
     it('rejects /', () => {
         assert.equal(shouldProxy('/'), false);
     });
 
     it('rejects /mcpx (no slash, not /mcp)', () => {
         assert.equal(shouldProxy('/mcpx'), false);
-    });
-
-    it('rejects /mcp-directory-old', () => {
-        assert.equal(shouldProxy('/mcp-directory-old'), false);
     });
 
     it('rejects paths outside /mcp', () => {

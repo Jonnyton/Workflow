@@ -28,8 +28,7 @@ Why supervise a subprocess instead of re-implementing the claim loop?
     SqliteSaver, dashboard events, knowledge graph, heartbeat. Replicating
     it in-process would be a substantial refactor.
   - The subprocess inherits ``/etc/workflow/env`` (via compose env_file)
-    after project-wide provider auth policy is applied. API-key provider
-    env vars are stripped unless ``WORKFLOW_ALLOW_API_KEY_PROVIDERS=1``.
+    so OPENAI_API_KEY + UNIVERSE_SERVER_* all flow through cleanly.
   - Supervision is simple: restart on exit, exponential backoff on
     repeated failures. The GHA p0-outage-triage watchdog-hotloop class
     already covers the pathological case if backoff hits its ceiling.
@@ -49,13 +48,12 @@ is this supervisor's subprocess.
 
 LLM routing
 -----------
-The subprocess defaults to subscription-backed auth. API-key provider env vars
-are stripped unless the host deliberately enables
-``WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`` for this daemon. Optionally, host can
-set ``FANTASY_DAEMON_LLM_TYPES`` or ``WORKFLOW_PIN_WRITER`` on the cloud side
-to pin an approved subscription-backed model and let the host's tray handle
-other runs when it's online — that configuration is orthogonal to this
-supervisor and applies naturally via ``/etc/workflow/env``.
+The subprocess inherits ``OPENAI_API_KEY`` from the env file. No new
+secrets are required. Optionally, host can set ``FANTASY_DAEMON_LLM_TYPES``
+or ``WORKFLOW_PIN_WRITER`` on the cloud side to pin a cheap model and
+let the host's tray handle the expensive runs when it's online — that
+configuration is orthogonal to this supervisor and applies naturally
+via ``/etc/workflow/env``.
 
 Stdlib only.
 """
@@ -80,7 +78,6 @@ DEFAULT_CRASH_BACKOFF_S = 5.0     # Initial backoff on non-zero exit.
 DEFAULT_MAX_BACKOFF_S = 300.0     # 5-min ceiling on exponential backoff.
 DEFAULT_BACKOFF_MULT = 2.0        # Doubling per consecutive crash.
 DEFAULT_POLL_INTERVAL_S = 0.5     # Subprocess monitor poll granularity.
-DEFAULT_PRODUCER_POLL_INTERVAL_S = 30.0  # Goal-pool pickup latency cap.
 
 # Host identity. Matches AGENTS.md §Configuration →
 # UNIVERSE_SERVER_HOST_USER semantics. We default to "cloud-droplet"
@@ -104,12 +101,8 @@ def _resolve_universe_path() -> Path:
     if explicit:
         return Path(explicit)
 
-    from workflow.storage import active_universe_id, data_dir
+    from workflow.storage import data_dir
     base = data_dir()
-
-    active_uid = active_universe_id(base)
-    if active_uid:
-        return base / active_uid
 
     default_uid = os.environ.get("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "").strip()
     if default_uid:
@@ -140,105 +133,16 @@ def _build_subprocess_env() -> dict[str, str]:
     """Construct the env dict the fantasy_daemon subprocess inherits.
 
     Starts from the parent env, overlays the cloud-specific host-user
-    identity, and applies the project-wide provider auth policy before
-    subprocess launch.
+    identity. Keeps OPENAI_API_KEY + WORKFLOW_* + dispatcher flags +
+    LLM routing vars in place (inherited from parent / env file).
     """
-    from workflow.providers.base import subprocess_env_without_api_keys
-
-    env = subprocess_env_without_api_keys() or dict(os.environ)
+    env = dict(os.environ)
     env["UNIVERSE_SERVER_HOST_USER"] = _cloud_host_user()
     # Make sure unified execution is on — dispatcher pick is gated on
     # this flag. It defaults on in production but we force it here so
     # cloud worker behavior is deterministic regardless of env file.
     env.setdefault("WORKFLOW_UNIFIED_EXECUTION", "1")
     return env
-
-
-def _truthy_env(name: str) -> bool:
-    value = os.environ.get(name, "")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _register_branch_task_producers_from_env() -> None:
-    """Register flag-enabled producers in this worker process.
-
-    The modules may have been imported before the env flags were set,
-    so call ``register_if_enabled()`` explicitly instead of relying on
-    import-time side effects.
-    """
-    if _truthy_env("WORKFLOW_GOAL_POOL"):
-        from workflow.producers.goal_pool import register_if_enabled
-
-        register_if_enabled()
-    if _truthy_env("WORKFLOW_PAID_MARKET"):
-        from workflow.producers.node_bid import register_if_enabled
-
-        register_if_enabled()
-
-
-def _queue_has_running_branch_task(universe: Path) -> bool:
-    """Return True when interrupting the subprocess may abandon a claim."""
-    try:
-        from workflow.branch_tasks import read_queue
-
-        return any(task.status == "running" for task in read_queue(universe))
-    except Exception:  # noqa: BLE001
-        logger.exception("cloud_worker: queue status check failed")
-        return True
-
-
-def _has_pickable_branch_task(universe: Path) -> bool:
-    """Return True when the dispatcher has an eligible pending task.
-
-    The MCP server appends some BranchTasks directly (not via producers).
-    The long-running fantasy_daemon subprocess only attempts a dispatcher
-    claim at startup, so the supervisor must notice these pending rows and
-    restart the idle wrapper process to let it pick them up.
-    """
-    try:
-        from workflow.dispatcher import (
-            dispatcher_enabled,
-            load_dispatcher_config,
-            select_next_task,
-        )
-
-        if not dispatcher_enabled():
-            return False
-        unified = os.environ.get("WORKFLOW_UNIFIED_EXECUTION", "1")
-        if unified.strip().lower() in {"0", "off", "false", "no"}:
-            return False
-        return select_next_task(
-            universe,
-            config=load_dispatcher_config(universe),
-        ) is not None
-    except Exception:  # noqa: BLE001
-        logger.exception("cloud_worker: pending BranchTask check failed")
-        return False
-
-
-def _pump_branch_task_producers(universe: Path) -> int:
-    """Append producer output to ``branch_tasks.json``.
-
-    ``fantasy_daemon`` only scans producers at graph-start. The cloud
-    worker is long-running, so a public goal-pool post that lands after
-    startup can otherwise sit in ``goal_pool/`` indefinitely. Pumping
-    here keeps the queue fresh even while the default graph is active.
-    """
-    if not (_truthy_env("WORKFLOW_GOAL_POOL") or _truthy_env("WORKFLOW_PAID_MARKET")):
-        return 0
-    try:
-        _register_branch_task_producers_from_env()
-
-        from workflow.dispatcher import run_branch_task_producers_into_queue
-        from workflow.subscriptions import list_subscriptions
-
-        return run_branch_task_producers_into_queue(
-            universe,
-            subscribed_goals=list_subscriptions(universe),
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("cloud_worker: branch-task producer pump failed")
-        return 0
 
 
 def _spawn_fantasy_daemon(
@@ -324,7 +228,6 @@ def run_supervisor(
     max_backoff: float = DEFAULT_MAX_BACKOFF_S,
     backoff_mult: float = DEFAULT_BACKOFF_MULT,
     poll_interval: float = DEFAULT_POLL_INTERVAL_S,
-    producer_poll_interval: float = DEFAULT_PRODUCER_POLL_INTERVAL_S,
     max_iterations: int | None = None,
     spawn_fn=None,
     sleep_fn=None,
@@ -395,13 +298,6 @@ def run_supervisor(
 
         # Poll until subprocess exits, while respecting stop signal.
         returncode: int | None = None
-        queue_restart_reason = ""
-        # The subprocess attempts its dispatcher claim during startup. If
-        # BranchTasks are already pending, polling immediately would terminate
-        # the child before it gets a chance to claim them, creating a restart
-        # loop. Start the producer clock now and only restart if the task is
-        # still pickable after one poll interval.
-        last_producer_poll = time.monotonic()
         while True:
             if stopping["flag"]:
                 logger.info("cloud_worker: terminating subprocess on stop signal")
@@ -423,55 +319,13 @@ def run_supervisor(
             if rc is not None:
                 returncode = rc
                 break
-            if producer_poll_interval > 0:
-                now = time.monotonic()
-                if now - last_producer_poll >= producer_poll_interval:
-                    last_producer_poll = now
-                    if not _queue_has_running_branch_task(universe):
-                        appended = _pump_branch_task_producers(universe)
-                        if appended > 0:
-                            queue_restart_reason = (
-                                f"{appended} producer task(s)"
-                            )
-                        elif _has_pickable_branch_task(universe):
-                            queue_restart_reason = "pending BranchTask"
-
-                        if queue_restart_reason:
-                            logger.info(
-                                "cloud_worker: queued %s; "
-                                "restarting subprocess to pick them up",
-                                queue_restart_reason,
-                            )
-                            try:
-                                proc.terminate()
-                                proc.wait(timeout=30)
-                            except subprocess.TimeoutExpired:
-                                logger.warning(
-                                    "cloud_worker: subprocess did not exit "
-                                    "after producer restart; killing",
-                                )
-                                try:
-                                    proc.kill()
-                                except OSError:
-                                    pass
-                                returncode = -1
-                                break
-                            except OSError:
-                                returncode = -1
-                                break
-                            returncode = 0
-                            break
             sleep_fn(poll_interval)
 
         state.record_exit(returncode if returncode is not None else -1)
         logger.info(
             "cloud_worker: subprocess exited rc=%s (%s); %s",
             returncode,
-            (
-                f"queue-restart:{queue_restart_reason}"
-                if queue_restart_reason
-                else "clean" if returncode == 0 else "crash"
-            ),
+            "clean" if returncode == 0 else "crash",
             state.summary(),
         )
 
@@ -539,13 +393,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Stop after this many supervisor iterations (testing only).",
     )
     parser.add_argument(
-        "--producer-poll-interval",
-        type=float,
-        default=DEFAULT_PRODUCER_POLL_INTERVAL_S,
-        help="Seconds between cloud-side producer scans while the "
-             f"subprocess is running (default: {DEFAULT_PRODUCER_POLL_INTERVAL_S}).",
-    )
-    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="DEBUG-level logging.",
     )
@@ -568,7 +415,6 @@ def main(argv: list[str] | None = None) -> int:
         idle_backoff=args.idle_backoff,
         crash_backoff=args.crash_backoff,
         max_backoff=args.max_backoff,
-        producer_poll_interval=args.producer_poll_interval,
         max_iterations=args.max_iterations,
     )
     logger.info("cloud_worker: supervisor exited; %s", state.summary())

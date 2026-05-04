@@ -9,6 +9,7 @@ OSS contributor, etc.). The resolver closes the class the same way
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,10 @@ def clean_env(monkeypatch):
     """Strip env vars the wiki + data_dir resolvers read."""
     for name in (
         "WORKFLOW_WIKI_PATH",
+        "WIKI_PATH",
         "WORKFLOW_DATA_DIR",
+        "UNIVERSE_SERVER_BASE",
+        "WORKFLOW_DEPRECATIONS",
     ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
@@ -33,8 +37,43 @@ def test_workflow_wiki_path_takes_precedence(clean_env, tmp_path):
 
     target = tmp_path / "canonical-wiki"
     clean_env.setenv("WORKFLOW_WIKI_PATH", str(target))
+    clean_env.setenv("WIKI_PATH", "/some/legacy/wiki")
 
     assert wiki_path() == target.resolve()
+
+
+def test_legacy_wiki_path_used_when_canonical_unset(clean_env, tmp_path):
+    from workflow.storage import wiki_path
+
+    target = tmp_path / "legacy-wiki"
+    clean_env.setenv("WIKI_PATH", str(target))
+    assert wiki_path() == target.resolve()
+
+
+def test_legacy_wiki_path_deprecation_warning_opt_in(clean_env, tmp_path):
+    from workflow.storage import wiki_path
+
+    clean_env.setenv("WIKI_PATH", str(tmp_path))
+    clean_env.setenv("WORKFLOW_DEPRECATIONS", "1")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        wiki_path()
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(deprecations) == 1
+    assert "WIKI_PATH" in str(deprecations[0].message)
+    assert "WORKFLOW_WIKI_PATH" in str(deprecations[0].message)
+
+
+def test_legacy_wiki_path_silent_by_default(clean_env, tmp_path):
+    from workflow.storage import wiki_path
+
+    clean_env.setenv("WIKI_PATH", str(tmp_path))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        wiki_path()
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert deprecations == []
 
 
 # ---- platform defaults ----------------------------------------------------
@@ -76,6 +115,7 @@ def test_empty_string_env_treated_as_unset(clean_env, tmp_path):
     from workflow.storage import wiki_path
 
     clean_env.setenv("WORKFLOW_WIKI_PATH", "")
+    clean_env.setenv("WIKI_PATH", "")
     clean_env.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
 
     assert wiki_path() == (tmp_path / "wiki").resolve()
@@ -143,7 +183,7 @@ def test_wiki_path_exported_from_workflow_storage(clean_env):
 
 # ---- cross-OS leakage rejection (2026-04-19 container incident) ----------
 #
-# Host sets WORKFLOW_WIKI_PATH="C:\\Users\\Jonathan\\Projects\\Wiki" in its shell, the
+# Host sets WIKI_PATH="C:\\Users\\Jonathan\\Projects\\Wiki" in its shell, the
 # value propagates to the container (docker env var pass-through, or stale
 # compose file), and on Linux ``Path("C:\\Users\\...")`` is NOT absolute —
 # joining against CWD yields ``/app/C:\\Users\\Jonathan\\Projects\\Wiki``.
@@ -181,6 +221,19 @@ def test_wiki_path_rejects_windows_path_on_posix(clean_env, monkeypatch):
     assert "WORKFLOW_WIKI_PATH" in msg
     assert "C:\\Users\\Jonathan\\Projects\\Wiki" in msg
     assert "POSIX" in msg
+
+
+def test_wiki_path_rejects_legacy_windows_path_on_posix(clean_env, monkeypatch):
+    import os as _os
+
+    import workflow.storage as storage
+
+    monkeypatch.setattr(_os, "name", "posix")
+
+    clean_env.setenv("WIKI_PATH", "C:\\Users\\Jonathan\\Projects\\Wiki")
+    with pytest.raises(ValueError) as exc_info:
+        storage.wiki_path()
+    assert "WIKI_PATH" in str(exc_info.value)
 
 
 def test_data_dir_rejects_windows_path_on_posix(clean_env, monkeypatch):

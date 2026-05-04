@@ -72,6 +72,7 @@ class TestGetStatusMissingDataFiles:
     def test_missing_data_files_in_get_status(self, tmp_path, monkeypatch):
         """get_status includes missing_data_files key."""
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
         (tmp_path / "default-universe").mkdir()
 
         from workflow.universe_server import get_status
@@ -84,6 +85,7 @@ class TestGetStatusMissingDataFiles:
     def test_missing_data_files_empty_in_checkout(self, tmp_path, monkeypatch):
         """In a normal checkout, no data files are missing."""
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("UNIVERSE_SERVER_BASE", raising=False)
         (tmp_path / "default-universe").mkdir()
 
         from workflow.universe_server import get_status

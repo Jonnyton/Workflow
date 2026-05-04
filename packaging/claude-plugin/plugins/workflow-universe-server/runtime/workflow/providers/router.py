@@ -23,12 +23,6 @@ from workflow.providers.base import (
     BaseProvider,
     ModelConfig,
     ProviderResponse,
-    api_key_providers_enabled,
-)
-from workflow.providers.diagnostics import (
-    ProviderAttemptDiagnostic,
-    build_chain_state,
-    classify_unavailable,
 )
 from workflow.providers.quota import (
     COOLDOWN_OTHER,
@@ -70,9 +64,6 @@ _JUDGE_PROVIDERS: list[str] = [
 
 
 _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama-local"})
-_API_KEY_PROVIDERS: frozenset[str] = frozenset(
-    {"gemini-free", "groq-free", "grok-free"}
-)
 
 # BUG-029 Part B: number of consecutive empty-prose responses from a local
 # provider (when chain-drained) before raising AllProvidersExhaustedError.
@@ -159,13 +150,6 @@ class ProviderRouter:
             return chain
         return [p for p in chain if p in allowlist]
 
-    @staticmethod
-    def _apply_api_key_provider_policy(chain: list[str]) -> list[str]:
-        """Drop API-key-backed providers unless the host opted into them."""
-        if api_key_providers_enabled():
-            return chain
-        return [p for p in chain if p not in _API_KEY_PROVIDERS]
-
     async def call(
         self,
         role: str,
@@ -231,80 +215,32 @@ class ProviderRouter:
                 )
             chain = filtered
 
-        auth_filtered = self._apply_api_key_provider_policy(chain)
-        if not auth_filtered:
-            if is_pinned_writer:
-                raise AllProvidersExhaustedError(
-                    f"Pinned writer provider {pin_writer!r} is API-key-backed "
-                    "and disabled by default. Set "
-                    "WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 only for an intentional "
-                    "API-key daemon, or pin a subscription-backed provider."
-                )
-            raise AllProvidersExhaustedError(
-                f"All providers for role={role!r} are API-key-backed and "
-                "disabled by default. Workflow daemons are subscription-only "
-                "unless WORKFLOW_ALLOW_API_KEY_PROVIDERS=1 is set."
-            )
-        if auth_filtered != chain:
-            logger.info(
-                "Ignoring API-key providers by default for role=%s: removed=%s",
-                role,
-                [p for p in chain if p not in auth_filtered],
-            )
-            chain = auth_filtered
-
-        # FEAT-006: collect per-provider skip/failure diagnostics so the
-        # final AllProvidersExhaustedError can carry structured detail.
-        attempts: list[ProviderAttemptDiagnostic] = []
-
         for provider_name in chain:
             provider = self._providers.get(provider_name)
             if provider is None:
                 logger.info("Provider %s not in registry, skipping", provider_name)
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="skipped",
-                    skip_class="not_in_registry",
-                    detail="provider name not registered with daemon",
-                ))
                 continue
             if not self._quota.available(provider_name):
                 logger.info("Skipping %s (quota/cooldown)", provider_name)
-                cd = self._quota.cooldown_remaining(provider_name)
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="skipped",
-                    skip_class="quota_or_cooldown",
-                    detail="quota or cooldown gate",
-                    cooldown_remaining_s=cd if cd > 0 else None,
-                ))
                 continue
 
             logger.info("Trying provider %s for role=%s", provider_name, role)
             try:
                 resp = await provider.complete(prompt, system, cfg)
                 self._quota.record_success(provider_name)
-            except ProviderUnavailableError as exc:
+            except ProviderUnavailableError:
                 self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
                 logger.warning(
                     "Provider %s unavailable, cooldown %ds",
                     provider_name, COOLDOWN_UNAVAILABLE,
                 )
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="failed",
-                    skip_class=classify_unavailable(exc),
-                    detail=str(exc)[:200],
-                ))
                 continue
-            except ProviderTimeoutError as exc:
+            except ProviderTimeoutError:
                 self._quota.cooldown(provider_name, COOLDOWN_TIMEOUT)
                 logger.warning(
                     "Provider %s timed out, cooldown %ds",
                     provider_name, COOLDOWN_TIMEOUT,
                 )
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="failed",
-                    skip_class="timed_out",
-                    detail=str(exc)[:200],
-                ))
                 continue
             except ProviderError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
@@ -312,20 +248,10 @@ class ProviderRouter:
                     "Provider %s error, cooldown %ds: %s",
                     provider_name, COOLDOWN_OTHER, exc,
                 )
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="failed",
-                    skip_class="provider_error",
-                    detail=str(exc)[:200],
-                ))
                 continue
-            except Exception as exc:
+            except Exception:
                 self._quota.cooldown(provider_name, COOLDOWN_OTHER)
                 logger.exception("Unexpected error from %s", provider_name)
-                attempts.append(ProviderAttemptDiagnostic(
-                    provider=provider_name, status="failed",
-                    skip_class="unknown",
-                    detail=f"{type(exc).__name__}: {str(exc)[:160]}",
-                ))
                 continue
 
             # Successful call — apply BUG-029 Part B: track consecutive empty
@@ -381,21 +307,9 @@ class ProviderRouter:
             logger.warning("All judge providers exhausted -- returning degraded response")
             return DEGRADED_JUDGE_RESPONSE
 
-        # FEAT-006: attach structured diagnostics so get_run.error_detail
-        # can show *why* each provider was skipped without parsing logs.
-        chain_state = build_chain_state(
-            role=role,
-            chain=chain,
-            attempts=attempts,
-            api_key_providers_enabled=api_key_providers_enabled(),
-            pinned_writer=pin_writer if is_pinned_writer else None,
-            allowlist=allowlist,
-        )
         raise AllProvidersExhaustedError(
             f"All providers exhausted for role={role}. "
-            "Daemon should retry with backoff.",
-            attempts=attempts,
-            chain_state=chain_state,
+            "Daemon should retry with backoff."
         )
 
     # ------------------------------------------------------------------
@@ -482,15 +396,6 @@ class ProviderRouter:
                     attempt_order, role,
                 )
             attempt_order = filtered_order
-
-        auth_filtered_order = self._apply_api_key_provider_policy(attempt_order)
-        if attempt_order and not auth_filtered_order:
-            logger.warning(
-                "Provider auth policy removes all API-key policy providers "
-                "(%s) for role=%s; falling through to role chain.",
-                attempt_order, role,
-            )
-        attempt_order = auth_filtered_order
 
         # Try policy-derived providers
         for provider_name in attempt_order:
@@ -651,15 +556,6 @@ class ProviderRouter:
                 "intersected with %s yields no judges.",
                 allowlist, _JUDGE_PROVIDERS,
             )
-        auth_ensemble = self._apply_api_key_provider_policy(ensemble)
-        if ensemble and not auth_ensemble:
-            logger.warning(
-                "Provider auth policy removes all API-key judge providers "
-                "(%s); no judges available without "
-                "WORKFLOW_ALLOW_API_KEY_PROVIDERS=1.",
-                ensemble,
-            )
-        ensemble = auth_ensemble
 
         # Find all available judge providers
         available: list[tuple[str, BaseProvider]] = []

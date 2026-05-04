@@ -1,99 +1,127 @@
 ---
-status: superseded
-superseded_by: docs/design-notes/2026-04-25-extend-run-continue-branch.md
-superseded_on: 2026-05-01
+status: active
 ---
 
-# Recency + Continue-Branch Primitives (Superseded Spec)
+# Recency + Continue-Branch Primitives (Pre-Implementation Spec)
 
 **Date:** 2026-04-27
 **Author:** codex-gpt5-desktop
-**Status:** Superseded 2026-05-01. F2 was accepted by host on
-2026-04-28 as: drop Recency as a platform primitive and fold
-`continue_branch` into the existing `run_branch` surface as
-`resume_from=<run_id>`.
+**Status:** Pre-draft spec. Action signatures + test matrix frozen. Implementation blocked on `#18` file lock release (`workflow/api/runs.py`, `tests/`).
 
-## 1. Superseding Decision
+## 1. Scope
 
-Do not implement these retired action contracts:
+Define two user-facing action verbs on existing tool surfaces (no new top-level tool names):
 
-- `extensions action=my_recent_runs`
-- `goals action=my_recent`
-- `extensions action=continue_branch from_run_id=<run_id>`
+1. `extensions action=my_recent_runs`
+2. `extensions action=continue_branch from_run_id=<run_id>`
 
-The accepted post-`#18` implementation target is a single optional parameter
-on the existing run action:
+And one goals recency companion:
 
-```
-extensions action=run_branch branch_def_id=<target_branch> resume_from=<run_id>
-```
+3. `goals action=my_recent`
 
-The matching live work row is in `STATUS.md`:
-`run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28).
+This spec only freezes input/output contracts, dispatch routing, and tests so implementation can start immediately post-`#18`.
 
-## 2. Current Contract
+## 2. Non-goals
 
-### 2.1 Input
+- No new top-level MCP tool.
+- No changes to run execution semantics beyond "continue from prior run context."
+- No broad schema migration.
 
-Extend the existing `run_branch` action without adding a new action-table verb.
+## 3. API contracts
 
-- `action` (required): `"run_branch"`
-- existing branch selector and run inputs: unchanged
-- `resume_from` (optional string): prior run id whose context should be used
-  as the source for continuation
+### 3.1 `extensions action=my_recent_runs`
 
-When `resume_from` is absent, `run_branch` behavior must remain unchanged.
+**Inputs**
+- `action` (required): `"my_recent_runs"`
+- `limit` (optional int, default 10, max 50)
+- `branch_id` (optional string filter)
 
-### 2.2 Behavior
+**Behavior**
+- Filter by current effective actor (`UNIVERSE_SERVER_USER` identity path used elsewhere).
+- Return newest-first run summaries.
 
-When `resume_from` is present:
+**Output shape**
+- `{ ok: true, runs: [RunSummary], count: int }`
+- `RunSummary` should include minimally:
+  - `run_id`
+  - `branch_id`
+  - `status`
+  - `created_at`
+  - `goal_title` (when available)
 
-- Resolve the source run by id.
-- Enforce the same actor/visibility scope used by existing run reads.
-- Reuse source-run context needed for continuation, including prior inputs and
-  checkpoint/artifact references where the current run model supports them.
-- Dispatch through the normal `run_branch` path; no standalone
-  `continue_branch` execution path is introduced.
-- Treat the branch named on the `run_branch` request as the target branch. The
-  source run supplies continuation context, not a sibling-branch creation rule.
+### 3.2 `goals action=my_recent`
 
-### 2.3 Output
+**Inputs**
+- `action` (required): `"my_recent"`
+- `limit` (optional int, default 10, max 50)
 
-Keep the existing `run_branch` success envelope. If the current envelope can
-accept extra metadata without breaking callers, include:
+**Behavior**
+- Filter goals by current effective actor.
+- Return newest-first goal summaries.
 
-- `resume_from` or `source_run_id`
-- new run/request id already emitted by `run_branch`
-- target branch id already emitted by `run_branch`
+**Output shape**
+- `{ ok: true, goals: [GoalSummary], count: int }`
 
-Do not create the historical `{ continuation: ... }` envelope from the retired
-standalone action.
+### 3.3 `extensions action=continue_branch`
 
-### 2.4 Error Model
+**Inputs**
+- `action` (required): `"continue_branch"`
+- `from_run_id` (required string)
+- `instructions` (required string; user intent for extension)
+- `mode` (optional enum; default `"sibling-branch"`)
+  - Allowed v1 values: `"sibling-branch"` only (freeze now, reserve future expansion)
 
-Failures should be deterministic and fail loudly:
+**Behavior v1**
+- Resolve source run by `from_run_id`.
+- Create a sibling continuation context from source run's branch/run parameters.
+- Apply new `instructions` as additive intent.
+- Dispatch as a normal run request (no special execution path).
 
-- `resume_from` id not found -> structured not-found error.
-- source run belongs to a different actor scope -> unauthorized/not-visible
-  error.
-- source run state cannot be resumed from the target branch -> validation
-  error naming the state/branch mismatch.
-- malformed `resume_from` -> validation error.
+**Output shape**
+- `{ ok: true, continuation: { source_run_id, new_branch_id, request_id } }`
 
-## 3. Retired Recency Shape
+## 4. Dispatch-table conventions
 
-The Recency part of this old spec failed the commons-first/minimal-primitive
-retest in `docs/audits/2026-04-28-commons-first-tool-surface-audit.md`.
-Chatbots can compose the user intent in 1-2 existing calls:
+Follow existing `_action_*` routing conventions:
 
-1. Query recent runs owned by the actor, newest first.
-2. Optionally fetch the associated goal/branch context.
+- `workflow/api/runs.py`
+  - add `_action_my_recent_runs`
+  - add `_action_continue_branch`
+- `workflow/api/market.py` (or goals action host file)
+  - add `_action_my_recent`
 
-That is a documentation/wiki composition pattern, not a platform action.
+Action-table updates must preserve unknown-action fail-loud behavior.
 
-## 4. Historical Context
+## 5. Error model
 
-This file is kept to preserve the decision trail for the 2026-04-27 backlog
-promotion. It should not be used as an implementation source except to explain
-why the old `my_recent*` and standalone `continue_branch` contracts were
-retired.
+Common failures should be deterministic:
+
+- `from_run_id` not found → structured not-found error.
+- `from_run_id` belongs to a different actor scope → unauthorized/not-visible error.
+- `limit` out of range → validation error with accepted bounds.
+- missing `instructions` for `continue_branch` → validation error.
+
+## 6. Test matrix (minimum)
+
+1. `my_recent_runs` returns only caller-owned runs.
+2. `my_recent_runs limit` clamps/rejects as specified.
+3. `my_recent` returns only caller-owned goals.
+4. `continue_branch` creates continuation envelope with `source_run_id`, `new_branch_id`, `request_id`.
+5. `continue_branch` rejects missing/unknown `from_run_id`.
+6. cross-user visibility guard for `continue_branch`.
+7. dispatch unknown action still fails loudly.
+
+## 7. Rollout order post-#18
+
+1. Implement `my_recent_runs`
+2. Implement `my_recent`
+3. Implement `continue_branch`
+4. Run focused tests then full suite slices touching runs/market dispatch
+
+## 8. Acceptance
+
+This pre-spec is complete when:
+
+- action names and parameters are frozen,
+- output envelopes are frozen enough for tests/clients,
+- implementation can proceed without re-opening product-scope debates.

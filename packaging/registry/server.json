@@ -1,14 +1,14 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.Jonnyton/workflow-universe-server",
-  "title": "Workflow",
-  "description": "Create, browse, remix, collaborate on, and run durable AI workflow nodes from MCP hosts.",
+  "name": "io.github.jonnyton/workflow-universe-server",
+  "title": "Workflow Server",
+  "description": "Workflow / Workflow Builder — build, run, and steer custom AI workflows as graphs of agent nodes inside shared universes. Ships with a long-form fiction domain (autonomous Author daemons writing novels) and is extensible to other domains. Also known as: workflow builder, custom AI builder, universe builder, agent workflow platform.",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/Jonnyton/Workflow",
     "source": "github"
   },
-  "websiteUrl": "https://tinyassets.io/connect",
+  "websiteUrl": "https://github.com/Jonnyton/Workflow",
   "icons": [
     {
       "src": "https://raw.githubusercontent.com/Jonnyton/Workflow/main/assets/icon.png",
@@ -18,10 +18,15 @@
       ]
     }
   ],
-  "remotes": [
+  "packages": [
     {
-      "type": "streamable-http",
-      "url": "https://tinyassets.io/mcp-directory"
+      "registryType": "mcpb",
+      "identifier": "https://github.com/Jonnyton/Workflow/releases/download/v0.1.0/workflow-universe-server-0.1.0.mcpb",
+      "version": "0.1.0",
+      "fileSha256": "79fd128642e7787e4a831697426695213c73ebc2c5ceb55a1dabd672681a739d",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }

@@ -29,7 +29,7 @@
 #     < deploy/install-workflow-env.sh
 #
 #   # Delete one or more keys (no stdin needed):
-#   ssh "$DROPLET" 'sudo bash -s -- delete WORKFLOW_WIKI_PATH' \
+#   ssh "$DROPLET" 'sudo bash -s -- delete WIKI_PATH WORKFLOW_WIKI_PATH' \
 #     < deploy/install-workflow-env.sh
 #
 # Idempotency

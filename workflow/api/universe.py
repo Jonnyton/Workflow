@@ -53,9 +53,6 @@ import logging
 import os
 import re
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -96,8 +93,6 @@ def _extract_submit_request(
         {
             "request_type": kwargs.get("request_type", "") or None,
             "branch_id": kwargs.get("branch_id", "") or None,
-            "pickup_incentive": kwargs.get("pickup_incentive", "") or None,
-            "directed_daemon_id": kwargs.get("directed_daemon_id", "") or None,
         },
     )
 
@@ -275,151 +270,6 @@ def _extract_set_tier_config(
     )
 
 
-def _extract_daemon_create(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    daemon = result.get("daemon", {}) if isinstance(result.get("daemon"), dict) else {}
-    daemon_id = str(daemon.get("daemon_id") or "")
-    name = str(daemon.get("display_name") or "")
-    return (
-        daemon_id,
-        _truncate(f"create daemon {name}"),
-        {
-            "soul_mode": daemon.get("soul_mode"),
-            "has_soul": daemon.get("has_soul"),
-            "domain_claims": daemon.get("domain_claims", []),
-        },
-    )
-
-
-def _extract_daemon_summon(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    runtime = result.get("runtime", {}) if isinstance(result.get("runtime"), dict) else {}
-    runtime_id = str(runtime.get("runtime_instance_id") or "")
-    provider = str(runtime.get("provider_name") or "")
-    daemon_id = str(runtime.get("daemon_id") or "")
-    return (
-        runtime_id,
-        _truncate(f"summon {daemon_id} on {provider}"),
-        {
-            "daemon_id": daemon_id,
-            "provider_name": provider,
-            "model_name": runtime.get("model_name"),
-            "status": runtime.get("status"),
-        },
-    )
-
-
-def _extract_daemon_banish(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    runtime = result.get("runtime", {}) if isinstance(result.get("runtime"), dict) else {}
-    runtime_id = str(runtime.get("runtime_instance_id") or "")
-    return (
-        runtime_id,
-        _truncate(f"banish runtime {runtime_id}"),
-        {
-            "daemon_id": runtime.get("daemon_id"),
-            "status": runtime.get("status"),
-        },
-    )
-
-
-def _extract_daemon_control(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    runtime_id = str(result.get("runtime_instance_id") or "")
-    action = str(result.get("action") or kwargs.get("action", "daemon_control"))
-    return (
-        runtime_id or str(result.get("daemon_id", "")),
-        _truncate(f"{action} {runtime_id}"),
-        {
-            "daemon_id": result.get("daemon_id"),
-            "runtime_instance_id": result.get("runtime_instance_id"),
-            "authority_scope": result.get("authority_scope"),
-            "effect": result.get("effect"),
-            "action_id": result.get("action_id"),
-        },
-    )
-
-
-def _extract_daemon_update_behavior(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    daemon_id = str(result.get("daemon_id") or "")
-    return (
-        daemon_id,
-        _truncate(f"update daemon behavior {daemon_id}"),
-        {
-            "daemon_id": daemon_id,
-            "authority_scope": result.get("authority_scope"),
-            "effect": result.get("effect"),
-            "action_id": result.get("action_id"),
-        },
-    )
-
-
-def _extract_daemon_memory_capture(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    entry = result.get("entry", {}) if isinstance(result.get("entry"), dict) else {}
-    entry_id = str(entry.get("entry_id") or "")
-    daemon_id = str(result.get("daemon_id") or entry.get("daemon_id") or "")
-    return (
-        entry_id,
-        _truncate(f"capture daemon memory {daemon_id}"),
-        {
-            "daemon_id": daemon_id,
-            "entry_id": entry_id,
-            "memory_kind": entry.get("memory_kind"),
-            "promotion_state": entry.get("promotion_state"),
-        },
-    )
-
-
-def _extract_daemon_memory_review(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    entry_id = str(result.get("entry_id") or "")
-    daemon_id = str(result.get("daemon_id") or "")
-    decision = str(result.get("decision") or "")
-    return (
-        entry_id,
-        _truncate(f"{decision} daemon memory {entry_id}"),
-        {
-            "daemon_id": daemon_id,
-            "entry_id": entry_id,
-            "decision": decision,
-        },
-    )
-
-
-def _extract_daemon_memory_promote(
-    kwargs: dict[str, Any], result: dict[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
-    from workflow.api.engine_helpers import _truncate
-    promotion_id = str(result.get("promotion_id") or "")
-    daemon_id = str(result.get("daemon_id") or "")
-    return (
-        promotion_id,
-        _truncate(f"promote daemon memory {daemon_id}"),
-        {
-            "daemon_id": daemon_id,
-            "promotion_id": promotion_id,
-            "entry_ids": result.get("entry_ids", []),
-            "promoted_count": result.get("promoted_count", 0),
-        },
-    )
-
-
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
     "give_direction": (_extract_give_direction, None),
@@ -435,16 +285,6 @@ WRITE_ACTIONS: dict[str, Any] = {
     "post_to_goal_pool": (_extract_post_to_goal_pool, None),
     "submit_node_bid": (_extract_submit_node_bid, None),
     "set_tier_config": (_extract_set_tier_config, None),
-    "daemon_create": (_extract_daemon_create, None),
-    "daemon_summon": (_extract_daemon_summon, None),
-    "daemon_banish": (_extract_daemon_banish, None),
-    "daemon_pause": (_extract_daemon_control, None),
-    "daemon_resume": (_extract_daemon_control, None),
-    "daemon_restart": (_extract_daemon_control, None),
-    "daemon_update_behavior": (_extract_daemon_update_behavior, None),
-    "daemon_memory_capture": (_extract_daemon_memory_capture, None),
-    "daemon_memory_review": (_extract_daemon_memory_review, None),
-    "daemon_memory_promote": (_extract_daemon_memory_promote, None),
 }
 
 
@@ -557,10 +397,9 @@ def _dispatch_with_ledger(
 # Daemon telemetry — liveness, staleness, human-readable phase
 # ---------------------------------------------------------------------------
 # The daemon writes `current_phase` and `last_updated` into status.json via
-# `domains.fantasy_daemon.phases._activity.update_phase`. status.json itself
+# `domains.fantasy_author.phases._activity.update_phase`. status.json itself
 # is not a heartbeat — it only moves when a phase transitions. For liveness
 # we also consult `activity.log`, which is appended to on every node entry,
-# `.runtime_status.json`, which is refreshed while the graph process is alive,
 # and PROGRAM.md + work_targets.json to disambiguate "no premise" vs
 # "starved for work" vs "actually running".
 
@@ -575,35 +414,23 @@ _STALE_IDLE_SECONDS = 24 * 60 * 60
 def _last_activity_at(udir: Path, status: dict[str, Any] | None) -> str | None:
     """Return the most recent heartbeat ISO timestamp we can find.
 
-    Uses the newest of activity.log mtime (node progress),
-    .runtime_status.json mtime (running-process heartbeat), status.json's
-    `last_updated`, and status.json file mtime. Returns None only if nothing
-    on disk indicates the daemon ever ran.
+    Prefers activity.log mtime (updated on every node entry), falls back to
+    status.json's `last_updated`, then status.json file mtime. Returns None
+    only if nothing on disk indicates the daemon ever ran.
     """
-    heartbeat_candidates: list[datetime] = []
-
-    for path in (udir / "activity.log", udir / ".runtime_status.json"):
-        if not path.exists():
-            continue
+    log_path = udir / "activity.log"
+    if log_path.exists():
         try:
-            heartbeat_candidates.append(
-                datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc),
-            )
+            return datetime.fromtimestamp(
+                log_path.stat().st_mtime, tz=timezone.utc,
+            ).isoformat()
         except OSError:
             pass
-    if heartbeat_candidates:
-        return max(heartbeat_candidates).isoformat()
 
     if status and isinstance(status, dict):
         last_updated = status.get("last_updated")
         if isinstance(last_updated, str) and last_updated:
-            try:
-                parsed = datetime.fromisoformat(last_updated)
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                return parsed.astimezone(timezone.utc).isoformat()
-            except ValueError:
-                pass
+            return last_updated
 
     status_path = udir / "status.json"
     if status_path.exists():
@@ -1040,15 +867,8 @@ def _action_submit_request(
     request_type: str = "scene_direction",
     branch_id: str = "",
     priority_weight: float = 0.0,
-    pickup_incentive: str = "",
-    directed_daemon_id: str = "",
-    directed_daemon_instruction: str = "",
     **_kwargs: Any,
 ) -> str:
-    from workflow.api.market import (
-        PATCH_REQUEST_AUTHORITY_BOUNDARY,
-        normalize_patch_request_incentive,
-    )
     from workflow.branch_tasks import BranchTask, append_task, new_task_id
     from workflow.work_targets import REQUESTS_FILENAME
 
@@ -1095,29 +915,6 @@ def _action_submit_request(
         pw = 0.0
 
     request_id = f"req_{int(time.time())}_{os.urandom(4).hex()}"
-    incentive = normalize_patch_request_incentive(
-        str(pickup_incentive or ""),
-        requester_id=source,
-    )
-    authority_boundary = dict(PATCH_REQUEST_AUTHORITY_BOUNDARY)
-    requester_directed_daemon: dict[str, Any] | None = None
-    if directed_daemon_id.strip():
-        from workflow.daemon_registry import (
-            build_requester_directed_daemon_assignment,
-        )
-
-        requester_directed_daemon = build_requester_directed_daemon_assignment(
-            _base_path(),
-            daemon_id=directed_daemon_id.strip(),
-            requester_id=source,
-            patch_request_id=request_id,
-            instruction=directed_daemon_instruction or text,
-        )
-        if requester_directed_daemon.get("effect") == "refused":
-            return json.dumps({
-                "error": "directed_daemon_not_authorized",
-                "requester_directed_daemon": requester_directed_daemon,
-            })
     request_obj = {
         "id": request_id,
         "type": request_type,
@@ -1126,11 +923,7 @@ def _action_submit_request(
         "status": "pending",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": source,
-        "pickup_incentive": incentive,
-        "authority_boundary": authority_boundary,
     }
-    if requester_directed_daemon is not None:
-        request_obj["requester_directed_daemon"] = requester_directed_daemon
 
     requests_path = udir / REQUESTS_FILENAME
     existing = _read_json(requests_path)
@@ -1163,21 +956,9 @@ def _action_submit_request(
                 "request_id": request_id,
                 "request_type": request_type,
                 "branch_id": branch_id or "",
-                "pickup_incentive": incentive,
-                "authority_boundary": authority_boundary,
-                "requester_directed_daemon": requester_directed_daemon,
             },
-            trigger_source=(
-                "owner_queued"
-                if requester_directed_daemon is not None
-                else "host_request" if is_host else "user_request"
-            ),
+            trigger_source="host_request" if is_host else "user_request",
             priority_weight=pw,
-            pickup_signal_weight=float(incentive.get("pickup_signal_weight") or 0.0),
-            directed_daemon_id=(
-                str(requester_directed_daemon.get("daemon_id", ""))
-                if requester_directed_daemon is not None else ""
-            ),
         )
         append_task(udir, task)
         branch_task_id = task.branch_task_id
@@ -1202,9 +983,6 @@ def _action_submit_request(
         "branch_task_id": branch_task_id,
         "status": "pending",
         "priority_weight": pw,
-        "pickup_incentive": incentive,
-        "authority_boundary": authority_boundary,
-        "requester_directed_daemon": requester_directed_daemon,
         "queue_position": pending_count,
         "ahead_of_yours": ahead,
         "what_happens_next": (
@@ -1266,545 +1044,6 @@ def _action_queue_list(
         "running_count": sum(1 for r in rows if r.get("status") == "running"),
         "tier_status": cfg.tier_status_map(),
     })
-
-
-# ---------------------------------------------------------------------------
-# Daemon roster + runtime actions
-# ---------------------------------------------------------------------------
-
-
-def _parse_inputs_object(inputs_json: str) -> tuple[dict[str, Any], str | None]:
-    if not inputs_json.strip():
-        return {}, None
-    try:
-        parsed = json.loads(inputs_json)
-    except json.JSONDecodeError as exc:
-        return {}, f"inputs_json invalid JSON: {exc}"
-    if not isinstance(parsed, dict):
-        return {}, "inputs_json must be a JSON object."
-    return parsed, None
-
-
-def _action_daemon_list(
-    universe_id: str = "",
-    limit: Any = 30,
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_registry import list_daemons, list_runtime_instances
-
-    uid = universe_id or _default_universe()
-    try:
-        n = int(limit)
-    except (TypeError, ValueError):
-        n = 30
-    if n <= 0:
-        n = 30
-    daemons = list_daemons(_base_path())[:n]
-    runtimes = list_runtime_instances(_base_path(), universe_id=uid)
-    return json.dumps({
-        "universe_id": uid,
-        "daemons": daemons,
-        "runtimes": runtimes,
-        "count": len(daemons),
-        "runtime_count": len(runtimes),
-    }, default=str)
-
-
-def _action_daemon_get(
-    inputs_json: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_registry import get_daemon
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
-    if not daemon_id:
-        return json.dumps({"error": "daemon_id is required."})
-    try:
-        daemon = get_daemon(
-            _base_path(),
-            daemon_id=daemon_id,
-            include_soul=bool(data.get("include_soul", False)),
-        )
-    except KeyError:
-        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
-    return json.dumps({"daemon": daemon}, default=str)
-
-
-def _action_daemon_create(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import create_daemon
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    display_name = str(data.get("display_name") or text or "").strip()
-    if not display_name:
-        return json.dumps({"error": "display_name is required."})
-    try:
-        daemon = create_daemon(
-            _base_path(),
-            display_name=display_name,
-            created_by=_current_actor(),
-            soul_mode=str(data.get("soul_mode") or "").strip() or None,
-            soul_text=str(data.get("soul_text") or ""),
-            domain_claims=data.get("domain_claims")
-            if isinstance(data.get("domain_claims"), list)
-            else None,
-            lineage_parent_id=str(data.get("lineage_parent_id") or "").strip() or None,
-            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
-        )
-    except ValueError as exc:
-        return json.dumps({"error": str(exc)})
-    return json.dumps({
-        "universe_id": universe_id or _default_universe(),
-        "daemon": daemon,
-    }, default=str)
-
-
-def _action_daemon_summon(
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import summon_daemon
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    daemon_id = str(data.get("daemon_id") or "").strip()
-    provider_name = str(data.get("provider_name") or "").strip()
-    model_name = str(data.get("model_name") or provider_name).strip()
-    uid = universe_id or str(data.get("universe_id") or "").strip() or _default_universe()
-    if not daemon_id:
-        return json.dumps({"error": "daemon_id is required."})
-    if not provider_name:
-        return json.dumps({"error": "provider_name is required."})
-    try:
-        runtime = summon_daemon(
-            _base_path(),
-            daemon_id=daemon_id,
-            universe_id=uid,
-            provider_name=provider_name,
-            model_name=model_name,
-            branch_id=branch_id or data.get("branch_id") or None,
-            created_by=_current_actor(),
-            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
-        )
-    except KeyError:
-        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
-    except ValueError as exc:
-        return json.dumps({"error": str(exc)})
-    return json.dumps({"universe_id": uid, "runtime": runtime}, default=str)
-
-
-def _action_daemon_banish(
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_task_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import control_runtime_instance
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    runtime_id = str(data.get("runtime_instance_id") or branch_task_id or "").strip()
-    if not runtime_id:
-        return json.dumps({"error": "runtime_instance_id is required."})
-    try:
-        result = control_runtime_instance(
-            _base_path(),
-            runtime_instance_id=runtime_id,
-            actor_id=_current_actor(),
-            action="banish",
-        )
-    except KeyError:
-        return json.dumps({"error": f"Runtime '{runtime_id}' not found."})
-    result["universe_id"] = universe_id or _default_universe()
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_runtime_control(
-    action_name: str,
-    *,
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_task_id: str = "",
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import control_runtime_instance
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    runtime_id = str(data.get("runtime_instance_id") or branch_task_id or "").strip()
-    if not runtime_id:
-        return json.dumps({"error": "runtime_instance_id is required."})
-    try:
-        result = control_runtime_instance(
-            _base_path(),
-            runtime_instance_id=runtime_id,
-            actor_id=_current_actor(),
-            action=action_name,
-        )
-    except KeyError:
-        return json.dumps({"error": f"Runtime '{runtime_id}' not found."})
-    result["universe_id"] = universe_id or _default_universe()
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_pause(
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_task_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    return _action_daemon_runtime_control(
-        "pause",
-        universe_id=universe_id,
-        inputs_json=inputs_json,
-        branch_task_id=branch_task_id,
-    )
-
-
-def _action_daemon_resume(
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_task_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    return _action_daemon_runtime_control(
-        "resume",
-        universe_id=universe_id,
-        inputs_json=inputs_json,
-        branch_task_id=branch_task_id,
-    )
-
-
-def _action_daemon_restart(
-    universe_id: str = "",
-    inputs_json: str = "",
-    branch_task_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    return _action_daemon_runtime_control(
-        "restart",
-        universe_id=universe_id,
-        inputs_json=inputs_json,
-        branch_task_id=branch_task_id,
-    )
-
-
-def _action_daemon_update_behavior(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import update_daemon_behavior
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
-    if not daemon_id:
-        return json.dumps({"error": "daemon_id is required."})
-    behavior = data.get("behavior_update")
-    if not isinstance(behavior, dict):
-        behavior = {"note": text.strip()} if text.strip() else {}
-    if not behavior:
-        return json.dumps({"error": "behavior_update is required."})
-    try:
-        result = update_daemon_behavior(
-            _base_path(),
-            daemon_id=daemon_id,
-            actor_id=_current_actor(),
-            behavior_update=behavior,
-            apply_now=bool(data.get("apply_now") or data.get("apply")),
-        )
-    except KeyError:
-        return json.dumps({"error": f"Daemon '{daemon_id}' not found."})
-    result["universe_id"] = universe_id or _default_universe()
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_control_status(
-    universe_id: str = "",
-    inputs_json: str = "",
-    node_def_id: str = "",
-    branch_task_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_registry import daemon_control_status
-
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return json.dumps({"error": err})
-    result = daemon_control_status(
-        _base_path(),
-        actor_id=_current_actor(),
-        daemon_id=str(data.get("daemon_id") or node_def_id or "").strip() or None,
-        runtime_instance_id=(
-            str(data.get("runtime_instance_id") or branch_task_id or "").strip()
-            or None
-        ),
-        universe_id=universe_id or str(data.get("universe_id") or "").strip() or None,
-    )
-    result["universe_id"] = universe_id or _default_universe()
-    return json.dumps(result, default=str)
-
-
-def _as_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _as_string_list(value: Any) -> list[str] | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, list):
-        out = [str(item).strip() for item in value if str(item).strip()]
-        return out or None
-    if isinstance(value, str):
-        out = [part.strip() for part in value.split(",") if part.strip()]
-        return out or None
-    return None
-
-
-def _daemon_memory_inputs(
-    inputs_json: str,
-    *,
-    node_def_id: str = "",
-) -> tuple[dict[str, Any], str, str | None]:
-    data, err = _parse_inputs_object(inputs_json)
-    if err:
-        return {}, "", err
-    daemon_id = str(data.get("daemon_id") or node_def_id or "").strip()
-    if not daemon_id:
-        return data, "", "daemon_id is required."
-    return data, daemon_id, None
-
-
-def _action_daemon_memory_capture(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_brain import capture_daemon_memory
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    content = str(data.get("content") or text or "").strip()
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
-    temporal_bounds = (
-        data.get("temporal_bounds") if isinstance(data.get("temporal_bounds"), dict)
-        else None
-    )
-    try:
-        entry = capture_daemon_memory(
-            _base_path(),
-            daemon_id=daemon_id,
-            content=content,
-            memory_kind=str(data.get("memory_kind") or "semantic"),
-            source_type=str(data.get("source_type") or "manual"),
-            source_id=str(data.get("source_id") or _current_actor() or "manual"),
-            source_path=str(data.get("source_path") or ""),
-            source_hash=str(data.get("source_hash") or ""),
-            reliability=str(data.get("reliability") or ""),
-            temporal_bounds=temporal_bounds,
-            language_type=str(data.get("language_type") or ""),
-            confidence=float(data.get("confidence", 0.5)),
-            importance=float(data.get("importance", 0.5)),
-            sensitivity_tier=str(data.get("sensitivity_tier") or "normal"),
-            visibility=str(data.get("visibility") or "host_private"),
-            promotion_state=str(data.get("promotion_state") or "candidate"),
-            supersedes_entry_id=(
-                str(data.get("supersedes_entry_id")).strip()
-                if data.get("supersedes_entry_id") else None
-            ),
-            metadata=metadata,
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    return json.dumps({"universe_id": uid, "daemon_id": daemon_id, "entry": entry}, default=str)
-
-
-def _action_daemon_memory_search(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    filter_text: str = "",
-    limit: Any = 5,
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_brain import search_daemon_memory
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    query = str(data.get("query") or text or filter_text or "").strip()
-    try:
-        result = search_daemon_memory(
-            _base_path(),
-            daemon_id=daemon_id,
-            query=query,
-            limit=int(data.get("limit", limit)),
-            min_score=float(data.get("min_score", 0.0)),
-            include_superseded=_as_bool(data.get("include_superseded", False)),
-            memory_kinds=_as_string_list(data.get("memory_kinds")),
-            visibility=(
-                str(data.get("visibility")).strip()
-                if data.get("visibility") else None
-            ),
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    result["universe_id"] = uid
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_memory_list(
-    universe_id: str = "",
-    inputs_json: str = "",
-    limit: Any = 50,
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_brain import list_daemon_memory
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    try:
-        result = list_daemon_memory(
-            _base_path(),
-            daemon_id=daemon_id,
-            limit=int(data.get("limit", limit)),
-            include_superseded=_as_bool(data.get("include_superseded", False)),
-            memory_kinds=_as_string_list(data.get("memory_kinds")),
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    result["universe_id"] = uid
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_memory_review(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    branch_task_id: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.api.engine_helpers import _current_actor
-    from workflow.daemon_brain import review_daemon_memory
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    entry_id = str(data.get("entry_id") or branch_task_id or "").strip()
-    if not entry_id:
-        return json.dumps({"universe_id": uid, "error": "entry_id is required."})
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
-    try:
-        result = review_daemon_memory(
-            _base_path(),
-            daemon_id=daemon_id,
-            entry_id=entry_id,
-            decision=str(data.get("decision") or text or ""),
-            reviewer_id=str(data.get("reviewer_id") or _current_actor() or "host"),
-            note=str(data.get("note") or ""),
-            superseded_by_entry_id=(
-                str(data.get("superseded_by_entry_id")).strip()
-                if data.get("superseded_by_entry_id") else None
-            ),
-            metadata=metadata,
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    result["universe_id"] = uid
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_memory_promote(
-    universe_id: str = "",
-    inputs_json: str = "",
-    text: str = "",
-    branch_task_id: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_brain import promote_daemon_memory_to_wiki
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    entry_ids = _as_string_list(data.get("entry_ids")) or _as_string_list(branch_task_id)
-    summary = str(data.get("summary") or text or "").strip()
-    target_rel_path = str(data.get("target_rel_path") or "pages/brain/review.md")
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else None
-    try:
-        result = promote_daemon_memory_to_wiki(
-            _base_path(),
-            daemon_id=daemon_id,
-            entry_ids=entry_ids or [],
-            summary=summary,
-            target_rel_path=target_rel_path,
-            metadata=metadata,
-        )
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    result["universe_id"] = uid
-    return json.dumps(result, default=str)
-
-
-def _action_daemon_memory_status(
-    universe_id: str = "",
-    inputs_json: str = "",
-    node_def_id: str = "",
-    **_kwargs: Any,
-) -> str:
-    from workflow.daemon_brain import memory_observability_status
-
-    uid = universe_id or _default_universe()
-    data, daemon_id, err = _daemon_memory_inputs(inputs_json, node_def_id=node_def_id)
-    if err:
-        return json.dumps({"universe_id": uid, "error": err})
-    try:
-        result = memory_observability_status(_base_path(), daemon_id=daemon_id)
-    except (KeyError, ValueError, TypeError) as exc:
-        return json.dumps({"universe_id": uid, "error": str(exc)})
-    result["universe_id"] = uid
-    return json.dumps(result, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -1925,325 +1164,6 @@ def _tail_file_lines(path: Path, n: int) -> list[str]:
         return [ln.rstrip("\n") for ln in lines[-n:]]
     except OSError:
         return []
-
-
-_CHANGE_LOOP_PLAN_HEADINGS = (
-    "Scoping Rules",
-    "Work Targets And Review Gates",
-    "Multiplayer Daemon Platform",
-    "Multi-User Evolutionary Design",
-)
-
-
-def _repo_root() -> Path:
-    override = os.environ.get("WORKFLOW_REPO_ROOT")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[2]
-
-
-def _shorten(value: Any, max_chars: int) -> str:
-    text = "" if value is None else str(value)
-    if len(text) <= max_chars:
-        return text
-    return text[: max(0, max_chars - 15)].rstrip() + "\n...[truncated]"
-
-
-def _github_repo() -> str:
-    return os.environ.get("WORKFLOW_GITHUB_REPO", "Jonnyton/Workflow")
-
-
-def _github_get_json(
-    path: str,
-    *,
-    params: dict[str, str | int] | None = None,
-    timeout: float = 10.0,
-) -> Any:
-    api = os.environ.get("WORKFLOW_GITHUB_API", "https://api.github.com")
-    query = f"?{urllib.parse.urlencode(params)}" if params else ""
-    url = f"{api.rstrip('/')}{path}{query}"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "workflow-community-change-context/1.0",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def _github_read(
-    path: str,
-    *,
-    params: dict[str, str | int] | None = None,
-) -> tuple[Any | None, str | None]:
-    try:
-        return _github_get_json(path, params=params), None
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")[:300]
-        return None, f"GitHub HTTP {exc.code} for {path}: {body}"
-    except (TimeoutError, OSError, urllib.error.URLError) as exc:
-        return None, f"GitHub request failed for {path}: {exc}"
-    except json.JSONDecodeError as exc:
-        return None, f"GitHub response was not JSON for {path}: {exc}"
-
-
-def _issue_label_names(item: dict[str, Any]) -> list[str]:
-    labels: list[str] = []
-    for label in item.get("labels", []) or []:
-        if isinstance(label, str):
-            labels.append(label)
-        elif isinstance(label, dict) and label.get("name"):
-            labels.append(str(label["name"]))
-    return labels
-
-
-def _extract_plan_section(text: str, heading: str) -> str:
-    lines = text.splitlines()
-    start = None
-    marker = f"## {heading}"
-    for idx, line in enumerate(lines):
-        if line.strip() == marker:
-            start = idx
-            break
-    if start is None:
-        return ""
-    end = len(lines)
-    for idx in range(start + 1, len(lines)):
-        if lines[idx].startswith("## "):
-            end = idx
-            break
-    return "\n".join(lines[start:end]).strip()
-
-
-def _change_loop_plan_context() -> dict[str, str]:
-    plan_path = _repo_root() / "PLAN.md"
-    try:
-        text = plan_path.read_text(encoding="utf-8")
-    except OSError:
-        return {}
-    sections: dict[str, str] = {}
-    for heading in _CHANGE_LOOP_PLAN_HEADINGS:
-        excerpt = _extract_plan_section(text, heading)
-        if excerpt:
-            sections[heading] = _shorten(excerpt, 2400)
-    return sections
-
-
-def _summarize_pr(pr: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "number": pr.get("number"),
-        "title": pr.get("title"),
-        "state": pr.get("state"),
-        "draft": pr.get("draft"),
-        "html_url": pr.get("html_url"),
-        "head": (pr.get("head") or {}).get("ref"),
-        "head_sha": (pr.get("head") or {}).get("sha"),
-        "base": (pr.get("base") or {}).get("ref"),
-        "labels": _issue_label_names(pr),
-        "created_at": pr.get("created_at"),
-        "updated_at": pr.get("updated_at"),
-        "body_excerpt": _shorten(pr.get("body", ""), 1000),
-    }
-
-
-def _summarize_issue(issue: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "number": issue.get("number"),
-        "title": issue.get("title"),
-        "state": issue.get("state"),
-        "html_url": issue.get("html_url"),
-        "labels": _issue_label_names(issue),
-        "created_at": issue.get("created_at"),
-        "updated_at": issue.get("updated_at"),
-        "body_excerpt": _shorten(issue.get("body", ""), 1200),
-    }
-
-
-def _comments_excerpt(comments: list[dict[str, Any]], max_items: int) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for comment in comments[-max_items:]:
-        user = comment.get("user") or {}
-        rows.append({
-            "author": str(user.get("login", "unknown")),
-            "created_at": str(comment.get("created_at", "")),
-            "body_excerpt": _shorten(comment.get("body", ""), 1400),
-        })
-    return rows
-
-
-def _action_community_change_context(
-    *,
-    filter_text: str = "",
-    limit: int = 10,
-    **_kwargs: Any,
-) -> str:
-    """Read-only community change-loop context for chatbot review.
-
-    `filter_text` selects the slice:
-    - empty / "queue": open PRs, auto-change PRs, open change requests,
-      latest auto-fix runs, and relevant PLAN.md sections.
-    - "pr:NUMBER": PR metadata, changed files, patch excerpts, comments, and
-      reviews.
-    - "issue:NUMBER": issue metadata and recent comments.
-    """
-    repo = _github_repo()
-    selector = (filter_text or "").strip().lower()
-    try:
-        n_limit = max(1, min(int(limit or 10), 25))
-    except (TypeError, ValueError):
-        n_limit = 10
-
-    result: dict[str, Any] = {
-        "kind": "community_change_context",
-        "repo": repo,
-        "selector": selector or "queue",
-        "plan_sections": _change_loop_plan_context(),
-        "review_standard": [
-            "Judge design fit against PLAN.md, not only test status.",
-            "Prefer minimal primitives and community-build paths over convenience tools.",
-            "Reject patch-on-patch fixes that hide missing base capability.",
-            "For Codex-written PRs, require Claude-family checker before merge.",
-        ],
-        "errors": [],
-    }
-
-    if selector.startswith("pr:") or (
-        selector.startswith("#") and selector[1:].isdigit()
-    ):
-        number_text = selector.split(":", 1)[1] if ":" in selector else selector[1:]
-        try:
-            pr_number = int(number_text)
-        except ValueError:
-            return json.dumps({"error": f"Invalid PR selector: {filter_text!r}"})
-        pr, err = _github_read(f"/repos/{repo}/pulls/{pr_number}")
-        if err:
-            result["errors"].append(err)
-        files, files_err = _github_read(
-            f"/repos/{repo}/pulls/{pr_number}/files",
-            params={"per_page": n_limit},
-        )
-        if files_err:
-            result["errors"].append(files_err)
-        comments, comments_err = _github_read(
-            f"/repos/{repo}/issues/{pr_number}/comments",
-            params={"per_page": n_limit},
-        )
-        if comments_err:
-            result["errors"].append(comments_err)
-        reviews, reviews_err = _github_read(
-            f"/repos/{repo}/pulls/{pr_number}/reviews",
-            params={"per_page": n_limit},
-        )
-        if reviews_err:
-            result["errors"].append(reviews_err)
-
-        result["target"] = f"pr:{pr_number}"
-        if isinstance(pr, dict):
-            result["pr"] = _summarize_pr(pr)
-        if isinstance(files, list):
-            result["files"] = [
-                {
-                    "filename": f.get("filename"),
-                    "status": f.get("status"),
-                    "additions": f.get("additions"),
-                    "deletions": f.get("deletions"),
-                    "changes": f.get("changes"),
-                    "patch_excerpt": _shorten(f.get("patch", ""), 1800),
-                }
-                for f in files[:n_limit]
-            ]
-        if isinstance(comments, list):
-            result["comments"] = _comments_excerpt(comments, n_limit)
-        if isinstance(reviews, list):
-            result["reviews"] = [
-                {
-                    "author": str((r.get("user") or {}).get("login", "unknown")),
-                    "state": r.get("state"),
-                    "submitted_at": r.get("submitted_at"),
-                    "body_excerpt": _shorten(r.get("body", ""), 1200),
-                }
-                for r in reviews[-n_limit:]
-            ]
-        return json.dumps(result, default=str)
-
-    if selector.startswith("issue:"):
-        try:
-            issue_number = int(selector.split(":", 1)[1])
-        except ValueError:
-            return json.dumps({"error": f"Invalid issue selector: {filter_text!r}"})
-        issue, err = _github_read(f"/repos/{repo}/issues/{issue_number}")
-        if err:
-            result["errors"].append(err)
-        comments, comments_err = _github_read(
-            f"/repos/{repo}/issues/{issue_number}/comments",
-            params={"per_page": n_limit},
-        )
-        if comments_err:
-            result["errors"].append(comments_err)
-        result["target"] = f"issue:{issue_number}"
-        if isinstance(issue, dict):
-            result["issue"] = _summarize_issue(issue)
-        if isinstance(comments, list):
-            result["comments"] = _comments_excerpt(comments, n_limit)
-        return json.dumps(result, default=str)
-
-    prs, prs_err = _github_read(
-        f"/repos/{repo}/pulls",
-        params={"state": "open", "per_page": n_limit},
-    )
-    if prs_err:
-        result["errors"].append(prs_err)
-    issues, issues_err = _github_read(
-        f"/repos/{repo}/issues",
-        params={"state": "open", "per_page": n_limit},
-    )
-    if issues_err:
-        result["errors"].append(issues_err)
-    runs, runs_err = _github_read(
-        f"/repos/{repo}/actions/workflows/auto-fix-bug.yml/runs",
-        params={"per_page": min(n_limit, 10)},
-    )
-    if runs_err:
-        result["errors"].append(runs_err)
-
-    if isinstance(prs, list):
-        result["open_prs"] = [_summarize_pr(pr) for pr in prs[:n_limit]]
-        result["open_auto_change_prs"] = [
-            _summarize_pr(pr)
-            for pr in prs
-            if str(pr.get("title", "")).startswith("[auto-change]")
-            or str((pr.get("head") or {}).get("ref", "")).startswith("auto-change/")
-        ]
-    if isinstance(issues, list):
-        change_requests = [
-            _summarize_issue(issue) for issue in issues if "pull_request" not in issue
-        ]
-        result["open_change_requests"] = change_requests
-        result["open_daemon_request_issues"] = [
-            issue for issue in change_requests if "daemon-request" in issue["labels"]
-        ]
-    if isinstance(runs, dict):
-        result["latest_auto_fix_runs"] = [
-            {
-                "id": run.get("id"),
-                "status": run.get("status"),
-                "conclusion": run.get("conclusion"),
-                "event": run.get("event"),
-                "head_sha": run.get("head_sha"),
-                "created_at": run.get("created_at"),
-                "html_url": run.get("html_url"),
-            }
-            for run in runs.get("workflow_runs", [])[: min(n_limit, 10)]
-        ]
-    result["usage"] = (
-        "Use filter_text='pr:NUMBER' for changed files/comments/reviews, "
-        "or filter_text='issue:NUMBER' for the request thread."
-    )
-    return json.dumps(result, default=str)
 
 
 def _action_daemon_overview(
@@ -3952,9 +2872,6 @@ def _universe_impl(
     provenance_tag: str = "",
     limit: int = 30,
     priority_weight: float = 0.0,
-    pickup_incentive: str = "",
-    directed_daemon_id: str = "",
-    directed_daemon_instruction: str = "",
     branch_task_id: str = "",
     goal_id: str = "",
     branch_def_id: str = "",
@@ -3996,24 +2913,7 @@ def _universe_impl(
         "list_subscriptions": _action_list_subscriptions,
         "post_to_goal_pool": _action_post_to_goal_pool,
         "submit_node_bid": _action_submit_node_bid,
-        "community_change_context": _action_community_change_context,
         "daemon_overview": _action_daemon_overview,
-        "daemon_list": _action_daemon_list,
-        "daemon_get": _action_daemon_get,
-        "daemon_create": _action_daemon_create,
-        "daemon_summon": _action_daemon_summon,
-        "daemon_pause": _action_daemon_pause,
-        "daemon_resume": _action_daemon_resume,
-        "daemon_restart": _action_daemon_restart,
-        "daemon_banish": _action_daemon_banish,
-        "daemon_update_behavior": _action_daemon_update_behavior,
-        "daemon_control_status": _action_daemon_control_status,
-        "daemon_memory_capture": _action_daemon_memory_capture,
-        "daemon_memory_search": _action_daemon_memory_search,
-        "daemon_memory_list": _action_daemon_memory_list,
-        "daemon_memory_review": _action_daemon_memory_review,
-        "daemon_memory_promote": _action_daemon_memory_promote,
-        "daemon_memory_status": _action_daemon_memory_status,
         "set_tier_config": _action_set_tier_config,
     }
 
@@ -4039,9 +2939,6 @@ def _universe_impl(
         "provenance_tag": provenance_tag,
         "limit": limit,
         "priority_weight": priority_weight,
-        "pickup_incentive": pickup_incentive,
-        "directed_daemon_id": directed_daemon_id,
-        "directed_daemon_instruction": directed_daemon_instruction,
         "branch_task_id": branch_task_id,
         "goal_id": goal_id,
         "branch_def_id": branch_def_id,

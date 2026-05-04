@@ -49,7 +49,6 @@ Output format (single-line JSON so shell parsers can consume it):
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import re
 import sys
@@ -74,8 +73,7 @@ class TriageClass:
     UNKNOWN = "unknown"
 
 
-# Priority-ordered detectors. First match wins, except provider_exhaustion,
-# which needs timestamp-window logic and is handled explicitly in classify().
+# Priority-ordered detectors. First match wins.
 # (class_name, compiled_regex, auto_repairable, manual_only, description)
 #
 # Spec ordering (docs/design-notes/2026-04-23-revert-loop-canary-spec.md
@@ -90,11 +88,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
     # 1. ENV-UNREADABLE (Task #3 class) — most specific, check first.
     (
         TriageClass.ENV_UNREADABLE,
-        re.compile(
-            r"(?m)^(?!.*ExecStartPre=)"
-            r"(?!.*\becho\s+['\"]?ENV-UNREADABLE:)"
-            r".*ENV-UNREADABLE:"
-        ),
+        re.compile(r"ENV-UNREADABLE"),
         True,
         False,
         "systemd/entrypoint/sed-site emitted the canonical marker",
@@ -111,7 +105,33 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         True,
         "cloudflared rejected tunnel token — manual rotation required",
     ),
-    # 3. Disk full — df output showing >=90% usage on / or /data/docker.
+    # 3. Provider exhaustion — PRIORITY OVER disk_full per spec §Q6.
+    #    Daemon alive + writing, but every scene terminates as REVERT.
+    #    The 2026-04-23 signature: N≥5 "Commit: ... REVERT" verdicts in
+    #    a 20-min window with "draft provider failed" cause. Repair is
+    #    halt-the-generator (docker stop workflow-worker + .pause) —
+    #    cause-addressing, not symptom-addressing.
+    #
+    #    Signal discipline (spec §Q2): ONLY terminal Commit:REVERT
+    #    verdicts count. "Draft: FAILED" and "All providers exhausted"
+    #    are explicitly excluded — they add noise from retry-recoveries
+    #    and from transient cooldowns. Both surfaces are visible to
+    #    operators via the canary's richer pattern, but the triage
+    #    classifier anchors on the terminal verdict shape to match the
+    #    repair's preconditions.
+    (
+        TriageClass.PROVIDER_EXHAUSTION,
+        re.compile(
+            r"(?:Commit:.*score\s+\d+\.\d+\s*--\s*REVERT|"
+            r"Commit:\s*reverting.*draft provider failed|"
+            r"score\s+0\.0{1,2}\s*--\s*REVERT)",
+            re.IGNORECASE,
+        ),
+        True,
+        False,
+        "daemon alive but revert-looping — pause worker + page host priority=2",
+    ),
+    # 4. Disk full — df output showing >=90% usage on / or /data/docker.
     (
         TriageClass.DISK_FULL,
         re.compile(
@@ -121,7 +141,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         False,
         "df reports >=90% usage on / or /var/lib/docker or /data",
     ),
-    # 4. OOM — kernel OOM killer or compose "killed as a result of limit".
+    # 5. OOM — kernel OOM killer or compose "killed as a result of limit".
     (
         TriageClass.OOM,
         re.compile(
@@ -136,7 +156,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         False,
         "kernel OOM-killer or container OOMKilled event",
     ),
-    # 5. Image pull failure — compose-up reports manifest-not-found or
+    # 6. Image pull failure — compose-up reports manifest-not-found or
     #    pull backoff on the pinned tag.
     (
         TriageClass.IMAGE_PULL_FAILURE,
@@ -152,7 +172,7 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
         False,
         "compose up failed pulling pinned image; fall back to :latest",
     ),
-    # 6. Watchdog hot-loop — systemd start-limit hit OR explicit restart
+    # 7. Watchdog hot-loop — systemd start-limit hit OR explicit restart
     #    counter >20 visible in `systemctl status`.
     (
         TriageClass.WATCHDOG_HOTLOOP,
@@ -170,82 +190,8 @@ _DETECTORS: list[tuple[str, re.Pattern, bool, bool, str]] = [
     ),
 ]
 
-_PROVIDER_EXHAUSTION_DESCRIPTION = (
-    "daemon alive but revert-looping — pause worker + page host priority=2"
-)
-_PROVIDER_CRITICAL_PATTERN = re.compile(
-    r"CRITICAL revert-loop:\s*(?P<count>\d+)\s+REVERTs?\s+in\s+last\s+"
-    r"(?P<window>\d+)min",
-    re.IGNORECASE,
-)
-_PROVIDER_REVERT_PATTERNS: tuple[re.Pattern, ...] = (
-    re.compile(r"Commit:.*score\s+\d+\.\d+\s*--\s*REVERT", re.IGNORECASE),
-    re.compile(r"Commit:\s*reverting.*draft provider failed", re.IGNORECASE),
-    re.compile(r"score\s+0\.0{1,2}\s*--\s*REVERT", re.IGNORECASE),
-)
-_TIMESTAMP_PATTERNS: tuple[re.Pattern, ...] = (
-    re.compile(
-        r"(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
-        r"(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)"
-    ),
-    re.compile(r"\[(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]"),
-)
-_PROVIDER_WINDOW_MIN = 20
-_PROVIDER_REVERT_THRESHOLD = 5
 
-
-def _parse_timestamp(raw_line: str) -> dt.datetime | None:
-    for pattern in _TIMESTAMP_PATTERNS:
-        match = pattern.search(raw_line)
-        if not match:
-            continue
-        raw = match.group("ts")
-        if raw.endswith("Z"):
-            raw = raw[:-1] + "+00:00"
-        if "T" not in raw:
-            raw = raw.replace(" ", "T") + "+00:00"
-        try:
-            parsed = dt.datetime.fromisoformat(raw)
-        except ValueError:
-            continue
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=dt.timezone.utc)
-        return parsed.astimezone(dt.timezone.utc)
-    return None
-
-
-def _line_is_provider_revert(line: str) -> bool:
-    return any(pattern.search(line) for pattern in _PROVIDER_REVERT_PATTERNS)
-
-
-def _provider_exhaustion_evidence(
-    diag: str,
-    *,
-    now: dt.datetime,
-) -> str | None:
-    explicit = _PROVIDER_CRITICAL_PATTERN.search(diag)
-    if explicit:
-        return explicit.group(0)
-
-    cutoff = now - dt.timedelta(minutes=_PROVIDER_WINDOW_MIN)
-    recent_reverts: list[str] = []
-    for line in diag.splitlines():
-        if not _line_is_provider_revert(line):
-            continue
-        timestamp = _parse_timestamp(line)
-        if timestamp is None or timestamp < cutoff:
-            continue
-        recent_reverts.append(line.strip())
-        if len(recent_reverts) >= _PROVIDER_REVERT_THRESHOLD:
-            return (
-                f"{len(recent_reverts)} REVERTs in last "
-                f"{_PROVIDER_WINDOW_MIN}min; latest={recent_reverts[-1]}"
-            )
-
-    return None
-
-
-def classify(diag: str, *, now: dt.datetime | None = None) -> dict:
+def classify(diag: str) -> dict:
     """Return classification dict for a diag bundle.
 
     Contract:
@@ -257,36 +203,7 @@ def classify(diag: str, *, now: dt.datetime | None = None) -> dict:
         "description": <str, human-readable class description>
       }
     """
-    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
-
-    for class_name, pattern, auto_repairable, manual_only, description in _DETECTORS[:2]:
-        match = pattern.search(diag)
-        if match:
-            # Extract a small window around the match for log surfacing.
-            start = max(0, match.start() - 40)
-            end = min(len(diag), match.end() + 40)
-            evidence = diag[start:end].replace("\n", " ").strip()
-            if len(evidence) > 200:
-                evidence = evidence[:200] + "…"
-            return {
-                "class": class_name,
-                "auto_repairable": auto_repairable,
-                "manual_only": manual_only,
-                "evidence": evidence,
-                "description": description,
-            }
-
-    provider_evidence = _provider_exhaustion_evidence(diag, now=now)
-    if provider_evidence:
-        return {
-            "class": TriageClass.PROVIDER_EXHAUSTION,
-            "auto_repairable": True,
-            "manual_only": False,
-            "evidence": provider_evidence[:200],
-            "description": _PROVIDER_EXHAUSTION_DESCRIPTION,
-        }
-
-    for class_name, pattern, auto_repairable, manual_only, description in _DETECTORS[2:]:
+    for class_name, pattern, auto_repairable, manual_only, description in _DETECTORS:
         match = pattern.search(diag)
         if match:
             # Extract a small window around the match for log surfacing.

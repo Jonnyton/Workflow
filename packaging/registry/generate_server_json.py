@@ -9,14 +9,10 @@ from pathlib import Path
 SCHEMA_URL = (
     "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 )
-REGISTRY_NAME = "io.github.Jonnyton/workflow-universe-server"
-TITLE = "Workflow"
-DESCRIPTION = (
-    "Create, browse, remix, collaborate on, and run durable AI workflow nodes from MCP hosts."
-)
+REGISTRY_NAME = "io.github.jonnyton/workflow-universe-server"
+TITLE = "Workflow Server"
+DESCRIPTION = "Inspect and steer Workflow universes through a host-run daemon MCP server."
 REPOSITORY_URL = "https://github.com/Jonnyton/Workflow"
-WEBSITE_URL = "https://tinyassets.io/connect"
-REMOTE_URL = "https://tinyassets.io/mcp-directory"
 ICON_URL = "https://raw.githubusercontent.com/Jonnyton/Workflow/main/assets/icon.png"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -49,9 +45,14 @@ def _release_url(version: str) -> str:
     )
 
 
-def _build_document(*, include_package: bool = False) -> dict[str, object]:
+def _build_document() -> dict[str, object]:
     version = _read_version()
-    document: dict[str, object] = {
+    if not BUNDLE_PATH.is_file():
+        raise FileNotFoundError(
+            f"Built MCPB bundle not found: {BUNDLE_PATH}. Run the MCPB pack step first."
+        )
+
+    return {
         "$schema": SCHEMA_URL,
         "name": REGISTRY_NAME,
         "title": TITLE,
@@ -61,7 +62,7 @@ def _build_document(*, include_package: bool = False) -> dict[str, object]:
             "url": REPOSITORY_URL,
             "source": "github",
         },
-        "websiteUrl": WEBSITE_URL,
+        "websiteUrl": REPOSITORY_URL,
         "icons": [
             {
                 "src": ICON_URL,
@@ -69,20 +70,7 @@ def _build_document(*, include_package: bool = False) -> dict[str, object]:
                 "sizes": ["512x512"],
             }
         ],
-        "remotes": [
-            {
-                "type": "streamable-http",
-                "url": REMOTE_URL,
-            }
-        ],
-    }
-
-    if include_package:
-        if not BUNDLE_PATH.is_file():
-            raise FileNotFoundError(
-                f"Built MCPB bundle not found: {BUNDLE_PATH}. Run the MCPB pack step first."
-            )
-        document["packages"] = [
+        "packages": [
             {
                 "registryType": "mcpb",
                 "identifier": _release_url(version),
@@ -92,9 +80,8 @@ def _build_document(*, include_package: bool = False) -> dict[str, object]:
                     "type": "stdio",
                 },
             }
-        ]
-
-    return document
+        ],
+    }
 
 
 def _validate(document: dict[str, object]) -> None:
@@ -113,7 +100,7 @@ def _validate(document: dict[str, object]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate the MCP Registry server.json for Workflow."
+        description="Generate the MCP Registry server.json from the built MCPB bundle."
     )
     parser.add_argument(
         "--check",
@@ -125,18 +112,9 @@ def main() -> None:
         action="store_true",
         help="Validate the generated document against the official schema.",
     )
-    parser.add_argument(
-        "--include-package",
-        action="store_true",
-        help=(
-            "Include the local MCPB package release metadata. Use only after "
-            "packaging/dist/workflow-universe-server.mcpb and the matching "
-            "GitHub release asset exist."
-        ),
-    )
     args = parser.parse_args()
 
-    document = _build_document(include_package=args.include_package)
+    document = _build_document()
 
     if args.validate:
         _validate(document)

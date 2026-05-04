@@ -22,6 +22,12 @@ raw when the project already has overlapping skills or stronger local patterns.
 - Write descriptions that say both what the skill does and when to use it.
 - Prefer adapting outside ideas into Workflow conventions over copying their
   file layouts, naming, or docs blindly.
+- When adapting an external repo, record the source URL, commit, audit date,
+  license observed, and what was intentionally not imported.
+- For large skills, keep `SKILL.md` as the routing workflow and move heavy
+  material into targeted `references/` files. Prefer a split by downstream
+  consumer: design rules, capability/API reference, asset/data protocol,
+  implementation checklist, and verification/debug protocol.
 - Do not introduce `README.md`, `CHANGELOG.md`, `CONTEXT.md`, or
   `agents/openai.yaml` unless the repo explicitly adopts those patterns.
 
@@ -68,6 +74,9 @@ Add `references/` when:
 
 - the skill needs repo-specific schemas, conventions, or checklists
 - the extra detail would bloat `SKILL.md`
+- the skill has staged context needs, where early planning should load light
+  design/capability docs and implementation should load heavier checklists only
+  when needed
 
 Add `scripts/` when:
 

@@ -9,7 +9,7 @@ Steps:
   2. POST /accounts/{acct}/access/apps            (self-hosted app for mcp.tinyassets.io)
   3. POST /accounts/{acct}/access/apps/{uuid}/policies  (Service Auth = token)
   4. PUT  /accounts/{acct}/workers/scripts/{script}/secrets  (two secrets)
-  5. Three-check verification. Exit 3 if post-apply verification fails.
+  5. Three-check verification.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ SERVICE_TOKEN_NAME = "workflow-mcp-worker"
 APP_DOMAIN = "mcp.tinyassets.io"
 APP_NAME = "workflow-mcp-worker-gate"
 POLICY_NAME = "worker-only"
-MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
 def _make_client() -> CloudflareClient:
@@ -162,16 +161,14 @@ def _put_worker_secret(
     print(f"worker-secret: set {name} on {script_name}")
 
 
-def three_check(canonical: str, internal: str) -> bool:
+def three_check(canonical: str, internal: str) -> None:
     print("\n=== three-check ===")
-    ok = True
     req = urllib.request.Request(
         canonical,
         method="POST",
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-            "User-Agent": "workflow-cf-access-cutover/1.0",
         },
         data=json.dumps(
             {
@@ -179,7 +176,7 @@ def three_check(canonical: str, internal: str) -> bool:
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "protocolVersion": "2025-06-18",
                     "clientInfo": {"name": "cutover-probe", "version": "1"},
                     "capabilities": {},
                 },
@@ -189,36 +186,27 @@ def three_check(canonical: str, internal: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             body = resp.read().decode()
-            green = resp.status == 200 and "serverInfo" in body
-            ok = ok and green
             print(
                 f"(a) canonical {canonical}: {resp.status} "
-                f"{'GREEN' if green else 'UNEXPECTED'}"
+                f"{'GREEN' if 'serverInfo' in body else 'UNEXPECTED'}"
             )
     except Exception as e:
-        ok = False
         print(f"(a) canonical {canonical}: FAILED {e}")
 
     try:
         req = urllib.request.Request(internal, method="HEAD")
         with urllib.request.urlopen(req, timeout=10) as resp:
-            gated = resp.status >= 400
-            ok = ok and gated
             print(
                 f"(b) internal {internal}: status={resp.status} "
-                f"({'OK' if gated else 'UNEXPECTED: still reachable'})"
+                f"({'UNEXPECTED: still reachable' if resp.status < 400 else 'OK'})"
             )
     except urllib.error.HTTPError as e:
-        gated = e.code in (401, 403)
-        ok = ok and gated
         print(
             f"(b) internal {internal}: {e.code} "
-            f"({'OK: gated' if gated else 'UNEXPECTED'})"
+            f"({'OK: gated' if e.code in (401, 403) else 'UNEXPECTED'})"
         )
     except Exception as e:
-        ok = False
         print(f"(b) internal {internal}: {e}")
-    return ok
 
 
 def main() -> int:
@@ -276,8 +264,7 @@ def main() -> int:
         return 1
 
     if args.apply and not args.skip_verify:
-        if not three_check("https://tinyassets.io/mcp", f"https://{APP_DOMAIN}/mcp"):
-            return 3
+        three_check("https://tinyassets.io/mcp", f"https://{APP_DOMAIN}/mcp")
 
     return 0
 

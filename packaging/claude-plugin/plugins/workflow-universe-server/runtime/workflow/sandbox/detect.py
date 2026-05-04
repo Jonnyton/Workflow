@@ -45,7 +45,6 @@ class SandboxStatus:
 
 _BWRAP_FAILURE_PATTERNS: tuple[str, ...] = (
     "bwrap: No permissions to create a new namespace",
-    "bwrap: No permissions to create new namespace",
     "bwrap: No such file or directory",
     "sandbox initialization failed",
 )
@@ -73,8 +72,7 @@ def detect_bwrap() -> SandboxStatus:
     """Probe whether bwrap is present and executable on the current host.
 
     Returns a SandboxStatus with:
-      - available=True if bwrap is on PATH, ``bwrap --version`` exits 0, and
-        a minimal bwrap launch succeeds.
+      - available=True if bwrap is on PATH and ``bwrap --version`` exits 0.
       - available=False with a human-readable reason otherwise.
 
     Result is NOT cached here — callers should cache at their appropriate scope.
@@ -97,7 +95,7 @@ def detect_bwrap() -> SandboxStatus:
         )
 
     try:
-        version_result = subprocess.run(
+        result = subprocess.run(
             [bwrap_path, "--version"],
             capture_output=True,
             text=True,
@@ -110,46 +108,14 @@ def detect_bwrap() -> SandboxStatus:
             reason=f"probe error: {exc}",
         )
 
-    if version_result.returncode != 0:
+    if result.returncode != 0:
         return SandboxStatus(
             available=False,
             bwrap_path=bwrap_path,
-            reason=version_result.stderr.strip() or "bwrap --version failed",
+            reason=result.stderr.strip() or "bwrap --version failed",
         )
 
-    version = version_result.stdout.strip() or version_result.stderr.strip() or None
-
-    try:
-        launch_result = subprocess.run(
-            [bwrap_path, "--ro-bind", "/", "/", "/bin/sh", "-c", "true"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except OSError as exc:
-        return SandboxStatus(
-            available=False,
-            bwrap_path=bwrap_path,
-            version=version,
-            reason=f"functional probe error: {exc}",
-        )
-
-    if launch_result.returncode != 0:
-        excerpt = (
-            launch_result.stderr.strip()
-            or launch_result.stdout.strip()
-            or "no output"
-        )
-        return SandboxStatus(
-            available=False,
-            bwrap_path=bwrap_path,
-            version=version,
-            reason=(
-                f"bwrap functional probe exited {launch_result.returncode}: "
-                f"{excerpt[:200]}"
-            ),
-        )
-
+    version = result.stdout.strip() or result.stderr.strip() or None
     return SandboxStatus(
         available=True,
         bwrap_path=bwrap_path,

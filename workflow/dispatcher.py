@@ -55,7 +55,6 @@ class DispatcherConfig:
         default_factory=lambda: dict(_DEFAULT_TIER_WEIGHTS),
     )
     recency_half_life_seconds: float = 86400.0
-    pickup_signal_term_cap: float = 5.0
     bid_coefficient: float = 0.0
     bid_term_cap: float = 30.0
     goal_affinity_coefficient: float = 0.0
@@ -167,10 +166,6 @@ def score_task(
     recency = 10.0 * math.exp(-age_s * math.log(2) / half_life)
 
     boost = max(0.0, float(task.priority_weight))
-    pickup_signal = min(
-        max(0.0, float(getattr(task, "pickup_signal_weight", 0.0))),
-        config.pickup_signal_term_cap,
-    )
 
     # Paid-bid term, capped to prevent a high bid from swamping the
     # host_request tier.
@@ -179,7 +174,7 @@ def score_task(
     goal_term = config.goal_affinity_coefficient  # coefficient only; no signal
     cost_term = -config.cost_penalty_coefficient
 
-    return tier + recency + boost + pickup_signal + bid_term + goal_term + cost_term
+    return tier + recency + boost + bid_term + goal_term + cost_term
 
 
 def run_branch_task_producers_into_queue(

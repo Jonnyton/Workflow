@@ -64,13 +64,13 @@ Depth: lead memory `project_commons_first_architecture.md`.
 
 ### 5. User capability axis — browser-only vs local-app, across providers
 
-**Rule:** Workflow has two basic user shapes for product-design purposes: **browser-only** (phone or computer; chats through web client — Claude.ai web, ChatGPT web; no local file system or code execution) and **local-app** (computer with chat-client app + computer-use access — Claude Code, ChatGPT desktop with computer-use; local file system, local code execution, daemon hosting). Orthogonal axis: MCP host provider. Claude and ChatGPT are P0 launch/discoverability gates, not the market boundary. Any user-facing chatbot, IDE agent, local model shell, enterprise agent builder, or custom app that can connect to a Workflow MCP server is part of the customer model; non-P0 hosts get explicit matrix-scoped support and caveats instead of being treated as invisible long tail.
+**Rule:** Workflow has two basic user shapes for product-design purposes: **browser-only** (phone or computer; chats through web client — Claude.ai web, ChatGPT web; no local file system or code execution) and **local-app** (computer with chat-client app + computer-use access — Claude Code, ChatGPT desktop with computer-use; local file system, local code execution, daemon hosting). Orthogonal axis: chat provider — primary targets are Claude users and OpenAI users; long tail of OSS clients (OpenClaw, Cline, Aider, Continue, OpenWebUI, LibreChat) gets best-effort support via MCP-to-spec.
 
 **Why:** "Use Claude.ai instead" or "use Claude Code instead" is an anti-pattern. A real user is on whatever client they chose, and the platform reaches them there. Bugs that work on one provider but not another are P1 product bugs, not "use the other one." Don't second-class browser-only users — compensate via cleverness (host the daemon for them, publish results to shareable URLs, stream long outputs, save state to universe, compose chains that produce tangible deliverables, use platform scalability advantages like parallelism + retries + evaluators that no single browser session could do alone).
 
-**How to apply:** Every feature design names its target capability tier and host coverage. Local-app: daemon hosting, file system I/O, local program invocation, autoresearch overnight, multi-tenant tray, OSS-clone-and-extend. Browser-only: cloud-mediated equivalents for everything actionable. Launch parity: test on both Claude and ChatGPT before claiming a public chatbot feature ships. Matrix parity: for any other host, say exactly which host was verified and what caveat remains. A primitive earns its keep MORE if it works equivalently across both capability tiers and many MCP hosts; a primitive that only helps local-app users or one provider is a much higher bar to ship. Hopeful future: the gap collapses (Claude.ai gaining computer-use, ChatGPT gaining MCP local-file capabilities, browser sandboxing improving) — primitives should compose the same way regardless of capability tier; tier just determines leverage paths, not feature existence.
+**How to apply:** Every feature design names its target capability tier and provider coverage. Local-app: daemon hosting, file system I/O, local program invocation, autoresearch overnight, multi-tenant tray, OSS-clone-and-extend. Browser-only: cloud-mediated equivalents for everything actionable. Provider parity: test on both Claude and ChatGPT before claiming feature ships. A primitive earns its keep MORE if it works equivalently across both capability tiers + both providers; a primitive that only helps local-app users is a much higher bar to ship. Hopeful future: the gap collapses (Claude.ai gaining computer-use, ChatGPT gaining MCP local-file capabilities, browser sandboxing improving) — primitives should compose the same way regardless of capability tier; tier just determines leverage paths, not feature existence.
 
-Depth: lead memory `project_user_capability_axis.md`; host matrix `docs/design-notes/2026-05-01-mcp-host-customer-matrix.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
+Depth: lead memory `project_user_capability_axis.md`. Refines `project_user_tiers` (which is about install friction); both lenses are valid.
 
 ---
 
@@ -141,16 +141,13 @@ Correctly-flat modules at root (small typed surfaces with no clear sibling): `pr
 - **Two coexisting executors, one file-locked claim.** Node execution runs on the cloud-side `cloud_worker` supervisor (distinct identity `cloud-droplet`) *and* on any host-side tray (identity `host`). Both call `branch_tasks.claim_task`; the file-lock sidecar guarantees no double-claim. The cloud worker closes the "MCP reachable but nothing executes" gap — `last_activity_canary` is the proof signal. Host-tray remains valid for users who want local-model runs with their own keys. (Cloud-worker shipped in 4d1265c; supervises `fantasy_daemon` subprocess, inherits `/etc/workflow/env`.) Per-universe dashboards are orthogonal to executor identity.
 - **Private chats, public actions.** Conversations stay private; any universe-affecting action is publicly attributable.
 - **Daemons are the public agent identity.** Summonable, forkable, defined by durable soul files. Soul changes create new forks rather than overwriting. ("Author" → "daemon" rename in flight; agent-runtime concept is `daemon_id`, content-authorship concept stays `author_id` + `author_kind` discriminator. See `docs/exec-plans/active/2026-04-15-author-to-daemon-rename.md` §1.5.)
-- **Daemon identity is platform-wide, not domain-specific authoring.** The current `author_definitions` / soul-hash / runtime-instance substrate is transitional: preserve the useful soul, fork, fingerprint, and runtime concepts, but migrate or rename it into the general daemon registry rather than entrenching a fantasy-author-specific author model. Content provenance still uses `author_id` + `author_kind`; daemon soul identity is runtime identity, eligibility identity, and personality/policy.
 - **Branch-first collaboration.** Branches are first-class, long-lived, public-forkable. Reconciliation optional, no fixed mainline.
 - **Swarm runtime.** No universe-wide single active daemon. Runtime capacity and daemon identity are separate resources.
-- **Host daemon fleets are capacity-bounded, not product-capped.** The one-daemon host posture was a development/testing throttle, not product design. A host may summon as many daemons as they can afford and operate, including multiple daemons on the same provider. Second-and-later same-provider summons show warning-only subscription/rate-limit guidance with an estimated required provider plan; they do not enforce a platform subscription gate. Target scale is many hosts, potentially thousands, each running as many soul-bearing or soulless daemons as their provider capacity supports.
 - **GitHub is an export sink, not the canonical store.** Canonical state lives in Postgres (Supabase-hosted at launch). GitHub receives a periodic flat-YAML export of public goals/branches/nodes; contributions via GitHub PR are accepted via a round-trip YAML → webhook → Postgres import path. One-way-door decision (host-approved 2026-04-18, `docs/design-notes/2026-04-18-full-platform-architecture.md §4`) — reverting after realtime collaboration is active requires data migration.
 - **Local-first execution, git-native sync (bridge state).** The DO Droplet self-host migration (2026-04-20) is the current bridge. Postgres-canonical replaces local-first when the control-plane backend ships.
 - **User-controllable state architecture.** Users should eventually inspect, steer, and redesign workflow/state structure conversationally.
 - **Multi-host is the destination.** Local-host is important, but end-state is a network of hosts contributing model capacity to shared projects.
 - **The system must evolve itself.** Stagnation is the worst failure mode. Workflow, memory policy, retrieval, evaluation, naming should all learn from research and outcomes over time.
-- **Native optimization, not an ASI-Evolve clone.** Workflow adopts the ASI-Evolve/AlphaEvolve lesson as an engine-native pattern: users ask through any MCP-connected chatbot, the platform runs bounded evaluator-driven optimization over nodes, branches, evaluators, prompts, policies, and topology, and accepted changes land through normal versioned/provenance-aware branch history. Do not vendor or parallel-run a separate ASI pipeline that bypasses MCP, branch lineage, host-pool claiming, evaluator chains, privacy gates, or real-world outcome gates. Canonical rationale: `docs/audits/2026-05-02-asi-evolve-architecture-implications.md`; integration design: `docs/design-notes/2026-05-02-community-evolvable-optimization-integration.md`.
 - **Work targets are the unit of intentional work.** Any locus the daemon may work on next — uploads, canon repair, world notes, plans, scenes.
 - **Tags stay loose; role and lifecycle stay guarded.** Publishable-vs-notes role, publish stage, and true discard are explicit state transitions.
 - **Context is tools, not pre-assembly.** The writer should query through tools. Pre-assembly is a transitional compromise.
@@ -210,13 +207,7 @@ The daemon writes autonomously. MCP clients and the host dashboard are the user-
 
 **Goal:** A multi-tenant workflow platform where many users and daemons collaborate without collapsing into one shared chat or one hidden runtime.
 
-**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape. Host fleet size is an operating-cost decision, not a platform cap: hosts can run many daemons, including many on one provider, with warning-only provider-plan/rate-limit estimates for additional same-provider daemons.
-
-**Always ready for the next user and daemon fleet.** A host-only or private-alpha rollout is an exposure gate, not a single-user architecture. Storage, authorization, queues, budgets, audits, daemon bindings, and runtime activations carry tenant/owner boundaries from the first build so more users and more daemons can join by changing exposure and capacity limits, not by redesigning the substrate.
-
-**Soul eligibility.** Nodes and gates may declare whether daemon souls are allowed, forbidden, required, replaced by a node/gate-provided soul, or combined with a temporary node/gate header. They may also declare domain requirements for eligible souls, such as scientific, legal, artistic, local-model-only, or other community-defined qualifications. Claim-time verification checks the daemon soul fingerprint and required claims/proofs before execution; prompt composition then applies the accepted host soul, provided soul, or temporary header according to the node/gate policy.
-
-**Soul-guided dispatch.** After a daemon finishes a node or gate, a soul-bearing daemon returns to a decision step that lists all work it is eligible to claim, including node/gate soul policy, domain requirements, required provider/capability, and any offer. The daemon may choose highest money, specific interests, reputation, public-good impact, or refusal to work on soul-incompatible nodes according to its soul. Soulless daemons use the default platform dispatcher policy.
+**Principle:** Separate identity from runtime. Daemons are public, forkable, summonable agent identities defined by soul files; runtime instances are resource allocations bound to providers, models, and executor hosts. Every `(user, daemon, executor)` tuple is independently addressable; today's degenerate case is N=1 of the general shape.
 
 Defaults: cloud control plane with named accounts; private per-user MCP sessions; shared tool contract; per-universe dashboards; public attributable actions; public read + public fork; no fixed mainline; long-lived branch coexistence; admin-gated runtime capacity; user votes for daemon forks; multi-host execution from day one (cloud-droplet + opt-in host-tray coexist via file-locked claim).
 
@@ -272,24 +263,6 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** Layered — deterministic checks for provable failures, an editorial reader for natural-language critique, environment-grounded artifacts and traces for verification. One strong independent reader beats a committee of shallow scorers. **Evaluation is platform-wide, not fantasy-specific** — the §33 unifying frame (`docs/design-notes/2026-04-15-evaluation-layers.md` if landed; otherwise the §33 framing in the full-platform note) treats fantasy judges, autoresearch metrics, moderation rubrics, real-world outcomes, and discovery ranking as instantiations of one `Evaluator` primitive.
 
-**Accepted direction: Acceptance Scenario Packs.** Host approved the AgencyBench-derived direction on 2026-05-02: Workflow should grow reusable long-horizon scenario packs that combine user simulation, rubric checks, MCP/API or browser evidence, and artifact capture into `EvalResult` evidence. Do not vendor AgencyBench or its harness; define Workflow-native scenario contracts after the required opposite-provider research review. Canonical rationale: `docs/audits/2026-05-02-frontier-repo-radar-2.md`.
-
----
-
-## Community Evolvable Optimization
-
-**Goal:** Make every useful piece of the platform improvable by users and daemons without requiring the project maintainers to be online.
-
-**Principle:** Optimization is a native run type, not a sidecar research script. A user with any MCP-connected chatbot should be able to say "improve this branch overnight under this budget and ask before merging"; Workflow then creates versioned candidates, runs locked evaluators, records typed lessons, preserves lineage, and proposes or applies changes according to the user's merge policy.
-
-**User model:** The primary user is not a Python researcher running a local experiment. The primary user is a person steering through Claude.ai, ChatGPT, Open WebUI, LibreChat, a local IDE, or any future MCP client. Chat remains the control station. The daemon and host network do the work. Users can redesign branches, evaluators, and optimization policy conversationally; the platform translates that into bounded specs, not hidden prompt magic.
-
-**Community model:** Branches, nodes, evaluators, and lessons are remixable public commons when privacy policy permits. The platform should preserve many competing solution families rather than collapse to one global "best" workflow. Quality-diversity search, lineage, attribution, and real-world outcome gates are core to keeping the project alive and community-evolvable.
-
-**Safety model:** Candidate generators cannot edit the evaluator or the locked harness they are being judged by. Optimization runs declare editable surface, evaluator chain, budget, stop conditions, merge policy, provenance, and visibility up front. Private instance data must not be promoted into reusable cognition unless the privacy layer explicitly permits it.
-
-**Implementation stance:** First ship contracts: `EvaluatorResult`, `OptimizationRun`, typed analyzer lessons, and MCP-facing actions that compose existing `runs`, `branches`, `evaluation`, `host_pool`, and provenance primitives. Runtime refactors must strengthen those primitives instead of adding a parallel ASI-Evolve-style control plane.
-
 ---
 
 ## Constraints
@@ -330,8 +303,6 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 
 **Principle:** Keep the core portable; add platform wrappers around it. MCPB packages, Claude Code / Cowork plugins, registry metadata, and future `.cnw.zip` packaging are distribution layers over the same daemon and tool surface, not replacement architectures.
 
-**Principle (MCP host coverage):** Discoverability work is matrix-driven. Claude and ChatGPT are P0 launch gates, but every MCP-capable host is a possible customer surface. The current host support list, caveats, and acceptance proofs live in `docs/design-notes/2026-05-01-mcp-host-customer-matrix.md`.
-
 **Principle (install-readiness is continuous):** Main is a downloadable release at all times. Every change preserves flawless first-install — packaging auto-builds via CI (import probe + plugin drift check), user-facing copy is branded and unambiguous, broken install is a production bug (not a latent issue). Viral spread can happen any day; optimize throughout, not as a pre-release phase.
 
 **Principle (discovery via entry points, not filesystem scan):** Domain discovery uses `importlib.metadata.entry_points(group="workflow.domains")` per PyPA spec. Filesystem scan of `domains/*/skill.py` is a dev-mode fallback for editable worktrees only. Compat aliases stay out of discovery — compat lives in import shims, not in the domain registry contract. (See spaghetti audit hotspot #6.)
@@ -345,10 +316,6 @@ Defaults: cloud control plane with named accounts; private per-user MCP sessions
 **Goal:** Make the system operable, testable, replayable, and improvable across both product runtime and AI-to-AI development.
 
 **Principle:** Harnesses are first-class architecture. Browser harnesses, builder automation, traces, regression tests, dashboards, and role-based agent coordination materially improve system intelligence by making behavior legible and correctable. The same principle applies to the development process — the **Three Living Files** (AGENTS.md / PLAN.md / STATUS.md, see `AGENTS.md`) and the verifier/navigator/dev/user-sim roles separate process truth, design truth, live state, quality, direction, and live-mission validation. These roles are architectural capabilities; each provider implements them through its available harness rather than one universal team mechanism. That's not just process; it's part of the theory of durable agentic work.
-
-**GitHub/worktree coordination spine:** Buildable work flows through GitHub-shaped lanes: a current `STATUS.md` Work row, a purpose-named branch, a sibling `../wf-<slug>` worktree, and a PR or draft PR as the fold-back object. Relevant `PLAN.md` modules are the project/module understanding that each lane must review during planning, build, review, and fold-back. `ideas/INBOX.md` is a loose idea feed; its entries can be parked at the bottom of a lane as "Idea feed refs" so they are not forgotten, but they are not design truth or build authority. `ideas/PIPELINE.md`, provider memories, audits, specs, and exec plans are context feeds that must be refactored into current STATUS/worktree/PR state before build. This keeps community ideas and external-research implications alive without turning old docs into parallel build queues.
-
-**Provider-context feed:** Provider-specific memory and automation systems are inputs to the GitHub/worktree spine, not separate planning authorities. `scripts/provider_context_feed.py` scans Claude/Codex/Cursor/shared memory, idea, research, automation, and worktree handoff surfaces at claim, plan, build, review, fold-back, and memory-write checkpoints. Relevant findings are promoted into STATUS/worktree/PR lanes; irrelevant or stale findings are noted or ignored. This keeps hidden provider context from bypassing the community-visible project state.
 
 ---
 
@@ -396,8 +363,6 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 
 **Non-goals for now:** account system MVP scope under Q1; monetization scoped to 1% crypto fee on paid-market bids only; moderation = community-flagged with volunteer-mod review (Q10-host RESOLVED).
 
-**Currency naming + test rail:** The real currency reference is `Destiny (tiny)` with symbol `tiny`. Current Workflow monetization and paid-market tests use `test tiny` on Base Sepolia only. Mainnet Destiny/tiny settlement, staking, DAO voting, and treasury flows are deferred until a later real-currency integration phase; current contract references are naming anchors, not active Workflow rails. See `docs/design-notes/2026-04-29-token-naming-and-test-currency.md`.
-
 ---
 
 ## Uptime And Alarm Path
@@ -415,8 +380,6 @@ Fantasy domain keeps scene/chapter/book/universe names in its own graph. Shared 
 **Alarm ladder, host-phone-independent:** Pushover paging from the GHA `alarm-sink` step at threshold-cross (2 consecutive reds = ~10 min outage), `priority=2` + vibrate-tier for the initial page, escalating re-page at 1h / 4h / 24h if the `p0-outage` issue remains open with no human comment (19c2261). The probe (uptime-canary at 5-min GHA cron) is the signal source; Pushover is the delivery. Neither runs on a host. The 2026-04-21 P0 (~18h dark) exposed that probe-without-paging is not an alarm path — the canary had fired every tick for 18 hours; nothing paged.
 
 **DR validated end-to-end 2026-04-22.** The drill provisions a fresh Debian VM, bootstraps via `hetzner-bootstrap.sh`, restores `/etc/workflow/env` from offsite (GH release backup assets), restores the data volume from offsite, starts the daemon, and asserts canonical canary-green within SLA. Decoupling of restore + start steps (a8fdb97) + owner-path sweep (9ef6c3d) + exit-code propagation (4f936fe) + SSH-tunnel probe (c50b6e8) together make the drill honest — no host keystrokes bridge any step. Weekly recurrence is the always-on regression check.
-
-**Loop uptime maintenance skill (2026-05-03 add).** A fourth path lives at .agents/skills/loop-uptime-maintenance/SKILL.md — the discipline for handling failure classes not yet graduated to layers 1-3. Entry condition: the loop is too broken to self-heal via its own loop (dispatcher wedged, supervisor in restart loop, daemon subprocess wedged, MCP surface 502, filesystem-bricked state). Every application produces an incident log + substrate improvement + (usually) a PLAN.md update. Success metric is usage trending to zero — every incident graduates a failure class out of the skill into one of the three layers above. The skill is the authorized escape from the user-sim discipline when (and only when) the user-sim path is itself the broken thing.
 
 **What is explicitly *not* in this layer:**
 - On-box pagers (share host-fate with the daemon).
