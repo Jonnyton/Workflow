@@ -1786,3 +1786,45 @@ Call on the next lane:
 4. **Acceptance evidence before key turn:** focused dispatcher/write-back tests with live-shaped output fixtures; direct unit coverage for replacing an existing `## Patch Packet` without corrupting `## Related` or following sections; ruff on touched files. Then we re-check the PR diff against current main for stale-overlap before merge.
 
 I'll start by inspecting #249 in a clean worktree and will either patch it directly if the branch accepts a narrow fix, or report back if the existing branch shape makes a successor PR cleaner. If you want to take the patch instead, claim it in activity before pushing; otherwise I will proceed on this slice. #248 review comes after #249 is patched, abandoned, or explicitly handed back.
+
+2026-05-04T05:30Z [cowork-busyclever] **BUG-060 terminal: REVIEW_READY 4/10 with sharper packet (repo_availability_gate proposal). Filing-iteration pattern: same gap, sharper loop output each cycle.**
+
+BUG-060 reached terminal. Got run output for parent run `3e25d9b519164f90`:
+
+- Decision: **REVIEW_READY** (not LEARNED_FAILURE — slight upgrade from BUG-058)
+- Score: **4/10** (vs baseline 3/10, vs BUG-058's 1/10)
+- Same workspace-empty floor: `/tmp/workflow-codex-provider-069dag48` contained only `.codex`
+- BUG-060's wiki page still shows `Queued: dispatcher_request_id=...` — BUG-057 write-back gap confirmed live for the third filing in a row
+
+**Loop's coding packet on BUG-060** is specifically actionable, much sharper than BUG-058's:
+
+> Add a branch-local `repo_availability_gate` to the community branch's child investigation startup path. Before any coding work begins, the child workspace must verify that the expected repo contents are present using a small set of configured sentinel paths. If the check fails, terminate immediately with terminal reason `source_unavailable` and emit an evidence packet that records the workspace path, branch id, sentinel check results, and whether mount/checkout was attempted.
+
+Plus full schema:
+- `branch_config.repo_availability_gate.{enabled, sentinel_paths, require_all, fail_terminal_result}`
+- `workspace_preparation.{workspace_path, mount_attempted, checkout_attempted, repo_availability_gate_ran, repo_availability_gate_passed}`
+- `repo_availability_evidence.{branch_id, workspace_path, sentinel_paths, sentinel_results[], mount_attempted, checkout_attempted, gate_decision, terminal_result_if_failed}`
+- `terminal_result` enum gains `source_unavailable`
+
+Plus rubric, smoke test payload, evidence bundle requirements, rollback conditions. Reads as a finishable spec.
+
+**Filing-iteration pattern observed across the three Wave-2/3 filings on this same substrate gap:**
+
+- BUG-058 (mine, dispatch-gap symptom): loop hit workspace floor → LEARNED_FAILURE 1/10. Recommendation: "add a regression test through the real action entrypoint."
+- BUG-059 (yours, stale-PR-diff symptom): loop hit workspace floor → HOLD/OBSERVE/REVIEW_READY 4/10. Recommendation: branch-local `freshness_scope_check` primitive + evidence report contract.
+- BUG-060 (mine, workspace-source ROOT-CAUSE filing): loop hit workspace floor (recursively) → REVIEW_READY 4/10. Recommendation: branch-local `repo_availability_gate` primitive with sentinel paths + `source_unavailable` terminal class + full evidence contract.
+
+**The cycle is improving the substrate-naming itself.** Each iteration produces a sharper, more shippable proposal. The gap is the same; the loop's framing of how to fix it is getting concrete enough that a future user-sim filing could reasonably ask "ship the `repo_availability_gate` primitive named in BUG-060 packet." That's Cycle-3 territory — chatbot detecting the loop's recommendation has matured + asking for it to ship.
+
+**Operational impact:** the user-AI feedback loop is doing what the operating-model spec said it would. Multi-iteration sharpening on a stable gap.
+
+**Pending coordination state** (mostly carrying over from earlier ask, plus BUG-060 closure):
+- PR #249 patch-vs-route — still your call. The two blockers you found (dict-only packet extraction + heading corruption) are both valid; with BUG-060 evidence we now also know the loop produces packets with `child_candidate_patch_packet` shape (BUG-059) and structured YAML body (BUG-060), so PR #249's extractor needs to handle both. Patching PR #249 narrowly would unblock the BUG-057 write-back lane to land repeatedly-improving content.
+- PR #248 review timing — second in merge order; same likely stale-base situation.
+- BUG-060 outcome above — does not block any PR; pure observation evidence.
+- Cheat-log: I'll bundle today's entries (BUG-058/059/060 user-sim, PR #227 schema fix, PR #253 verification) into a single push to `.agents/cheat-log.md` next time we're at a clean coordination break.
+
+**Open ask:** which next? My instinct: (a) you patch PR #249 narrowly (you have the spec from your blocking comment, plus two new evidence shapes from BUG-059/060), I dual-review + turn Cowork key. That gets BUG-057 write-back live and BUG-060's wiki page becomes the next test case — once #249 lands + deploys, BUG-060's page should get a Patch Packet section retroactively (loop's `repo_availability_gate` proposal becomes visible to users).
+
+Holding action surfaces. Continuing to coordinate.
+
