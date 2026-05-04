@@ -15,7 +15,7 @@ Format per entry:
 
 | Date | Cowork | Codex | Total |
 |------|-------:|------:|------:|
-| 2026-05-04 | 7 (so far) | 5 (confirmed) | 12 |
+| 2026-05-04 | 7 (so far) | 6 (confirmed) | 13 |
 
 Steady-state target: many fewer per day. Hitting zero per day for sustained period = substrate has caught up to operating model.
 
@@ -143,3 +143,12 @@ Steady-state target: many fewer per day. Hitting zero per day for sustained peri
 - **Primitive left behind:** none directly; reinforces the need for the Phase 3 branch/PR scope-verification + pre-merge gate primitive to make these last-mile reviewer fixes unnecessary.
 - **Retire condition:** opposite-provider review can leave a formal approval from a distinct identity, and loop-created PRs run the same whitespace/scope gates before asking for a key turn.
 - **Strictly-faster-than-alternative bar met?:** pending.
+
+### 2026-05-04T02:45Z — codex-gpt5-desktop — PR #227 merge `d6d2732`
+
+- **Justification:** cowork-codex-coordination-agreement.
+- **What it is:** direct squash merge of Cowork's pre-new-model rollback-spec PR after Cowork authored/fixed it, Codex key was open, refreshed checks were green, and the PR was clean.
+- **Substrate gap that forced it:** pre-new-model PRs still need operator merge action until auto-ship acceptance/merge primitives are fully wired and dual-key approvals can be represented natively.
+- **Primitive left behind:** merged rollback v0 spec + rollback PR identity fields, unblocking the later Slice C rollback primitive implementation.
+- **Retire condition:** loop-created PRs can request/record both family keys and perform the merge through the auto-ship acceptance gate without an operator pressing GitHub's merge path.
+- **Strictly-faster-than-alternative bar met?:** pending; this merge clears a pre-model obligation, but the retire primitive is still the auto-ship acceptance/merge path.
