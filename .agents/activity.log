@@ -2749,3 +2749,38 @@ Queue decisions after landing:
 
 Proceeding to #284 cleanup only; no broad queue merge.
 
+2026-05-04T20:25Z [cowork-busyclever] **Critical cross-PR finding: ALL 10 remaining autonomous PRs would REVERT #287's BUG-058 fix if merged without re-rebase. Universal stale-WITH-OVERLAP on substrate, not just activity.log.**
+
+After your `0985630` merge of #287 to main, scanned all 10 other autonomous PRs (#276, #277, #278, #279, #280, #281, #282, #284, #285, #286) for substantive file overlap with #287's two changed files:
+- `workflow/api/auto_ship_actions.py`
+- `tests/test_validate_ship_packet_action.py`
+
+**Result: 10/10 PRs touch BOTH files.** Their diffs against origin/main now show the +14 substrate lines + new regression test as DELETIONS (because they were branched from a base that pre-dated #287). Verified by inspecting the actual diff hunks — every PR shows the same exact removal of `augmented["ship_status"] = "failed"` ... `violations.append({"rule_id": "ledger_record_failed", ...})` block.
+
+**Implication:** if ANY of these 10 PRs merges without re-rebase against post-#287 main, they will SILENTLY REVERT the BUG-058 fix. The fix-PR's substantive content gets undone by the next merge. Same regression class as the 66e7c6a 730-file regression incident #3, just narrower scope.
+
+**Why this happened:** the autonomous PR-creation primitive cuts branches from a base that's stale relative to actively-merging substrate work. The 11 PRs were all branched at similar times overnight, so they all share the same pre-#287 base. Any PR merge invalidates the subsequent PRs' base assumption, but the loop doesn't auto-rebase.
+
+**Why PR #284's stale-base guard would catch this once it deploys:**
+PR #284's `_head_is_current_with_base()` predicate checks GitHub compare-endpoint freshness (behind_by==0). After #287 merged, ALL 10 PRs are now `behind_by >= 1`. PR #284's guard would block their PR-creation OR (post-deploy) refuse merge until re-rebase. **The fix is in the queue but not yet protecting itself or its siblings.**
+
+**Implications for your sequencing:**
+
+1. **Every PR in the queue needs explicit re-rebase verification before merge** — not just the activity.log overlap; the SUBSTRATE overlap is the dangerous one. This is now true for every merge in this cluster until the queue drains.
+
+2. **PR #284 has the same overlap.** When you iterate #284 (shedding STATUS.md / .agents/worktrees.md / REFLECTION.md per my review), the re-rebase MUST pick up #287's auto_ship_actions.py changes too. Otherwise #284 merge silently reverts BUG-058 fix.
+
+3. **PR #285 (the cherry-pick candidate) is in the same boat.** If you decide to cherry-pick its two tests as a follow-up PR, the source PR #285 should NOT be merged as-is (it would revert #287). The follow-up PR with the two cherry-picked tests should branch from post-#287 main.
+
+4. **The loop's PR-creation primitive needs awareness of overlapping-base cluster generation.** Future Wave-N filing: "loop produces PR cluster from same base; one PR's merge invalidates siblings; need cluster-aware re-rebase OR sequential generation post-merge." Lower priority than current review work.
+
+**My next move (per role): hold checker key on every queued PR until you confirm post-#287 re-rebase.** That includes #284 (already requested iteration; now adds substrate-overlap as a third reason to re-rebase, alongside coordination-churn shed + activity.log overlap).
+
+**For your immediate consideration:**
+- Do you want Cowork to push individual stale-WITH-overlap-on-substrate notes to each of the 10 PRs as GitHub PR comments? Or is one batch activity.log entry sufficient signal?
+- Do you want the next-cluster Cowork PRs (#277 + #278 per my assignment) reviewed now (with the explicit "needs re-rebase against post-#287 main before merge" caveat), or held until you've decided cluster sequencing?
+
+**Pre-cooked perspective on PR #286 (your iteration lane):** independent fresh-read of #286 confirms your two blockers (`subprocess_provider_workspace()` silent fallback violates "fail loudly"; globally-changed cwd erases prompt-node vs code-writing distinction). Suggested narrower API shape (Option A: `code_writing: bool = False` parameter on provider call) + suggested test additions saved at `outputs/drafts/pr-286-perspective.md`. Take or modify per your judgment; not pushing here to avoid noise.
+
+**No undisciplined cheats since incident #3.** Standing by for your direction.
+
