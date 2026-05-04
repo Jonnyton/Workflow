@@ -2684,3 +2684,51 @@ These are valid. Recommendation: **close #285 + add a small follow-up PR with th
 
 **Holding for your call on the cherry-pick option for #285** + your re-rebase + merge of #287. Once #287 lands, will start #284 review per your assignment with explicit attention to your pre-read note (shed coordination churn from STATUS.md / .agents/worktrees.md / REFLECTION.md unless I find good reason to keep them). No undisciplined cheats since incident #3.
 
+2026-05-04T20:05Z [cowork-busyclever] **Cowork review on PR #284 (BUG-059 stale-base guard, head `0de9cf0`): substrate solid, agree on coordination-churn shed, REFLECTION.md needs convention decision. Iterate before merge.**
+
+**Substrate code (auto_ship_pr.py +133/-... in dual install paths): solid.**
+
+- `_validate_base_branch()` parallels existing `_validate_head_branch()` pattern. Correct.
+- `_get_github_json()` parallels existing `_post_github_json()`. Same shape, same auth headers, same error wrapping. Correct DI seam.
+- `_compare_url()` uses `urllib.parse.quote(safe="")` so `/` in `auto-change/issue-XXX-...` branch names encodes to `%2F`. Verified URL builds correctly: `https://api.github.com/repos/Jonnyton/Workflow/compare/main...auto-change%2Fissue-999-codex-123`.
+- `_head_is_current_with_base()` predicate is correct: `behind_by == 0 AND status in {"ahead", "identical"}`. Handles all four GitHub compare statuses correctly:
+  - `ahead` + `behind_by=0` → fresh (passes)
+  - `identical` → fresh (passes)
+  - `behind` → `behind_by > 0` → blocked
+  - `diverged` → `behind_by > 0` → blocked
+- Two distinct error_classes (`pr_create_base_check_failed` for transport/HTTP, `pr_create_stale_head` for actual staleness) is the right granularity. Fail-fast semantics aligned with Memory-Scope-Defense-In-Depth principle.
+- Test coverage: existing tests get the `fake_get` freshness shim, new `test_enabled_rejects_stale_head_before_pr_creation` exercises diverged path with explicit assertion that POST is not called. Good shape.
+- No scope creep on substrate. Pure pre-PR-creation guard.
+
+**Coordination churn (your pre-read concern: agree on shed):**
+
+- `STATUS.md` row "BUG-059 loop PR stale-base guard — claimed:codex-gpt5-bug059": **shed.** By merge time the claim is stale (work complete). STATUS rows belong in the loop's in-flight claim tracker, not the substrate PR.
+- `.agents/worktrees.md` 10-line entry "BUG-059 Stale Auto-Change PR Guard - 2026-05-04": **shed.** Same reasoning — worktree existed during the work; not durable info post-merge.
+- `REFLECTION.md` (NEW top-level file, 5 lines, "Surprised me / Pattern worth capturing / Do differently"): **convention decision needed.** Content is genuinely useful loop self-observation:
+  > "Surprised me: the auto-ship PR path already had a clean injected HTTP seam for POST tests, so adding a GET seam kept the stale-base guard small.  
+  > Pattern worth capturing: PR creation from generated branches should prove branch freshness with a compare check before opening review surfaces.  
+  > Do differently: install/check the repo dev extras earlier when the checkout starts without `pytest` or `ruff`."
+  
+  But location problem: if every loop-produced PR adds a top-level REFLECTION.md, the repo root clutters fast. Three options:
+  1. **Shed entirely.** Lose the reflection content; loop's reflexion data lives only internally.
+  2. **Move to per-PR location.** E.g., `docs/research/loop-reflections/2026-05-04-bug-059-stale-base.md`. Preserves content without root clutter.
+  3. **Roll up.** Single `REFLECTION.md` file that grows over time, organized by date/PR. Same root concern; less clutter but still grows.
+  
+  My recommendation: **option 2** (move to `docs/research/loop-reflections/`). Treats reflections as research artifacts (which they are) and keeps root clean. Convention can be: each loop-produced PR drops its reflection file there, named by date+PR-or-bug-id. Loop reflexion engine learns the new path. But this is your call — the convention sets a long-term pattern for every future loop-produced PR.
+
+**Stale-WITH-overlap (multiple files this time):**
+
+- `.agents/activity.log`: deletes 111 lines (biggest stale yet — would lose the cluster-strategy entries + your refinement + my checker key + cheat-log addition reference). Standard re-rebase.
+- `.agents/cheat-log.md`: deletes 9 lines — the placeholder commit slip entry I just added (commit `a53e156`). FIRST PR in the cluster to overlap on cheat-log too. Same re-rebase pattern needed; cheat-log is append-only by convention same as activity.log.
+
+**Cowork review verdict: substrate KEY READY but pending iteration.** Specifically:
+1. Shed STATUS.md + .agents/worktrees.md additions (clearly stale by merge)
+2. Decide REFLECTION.md disposition (shed / move to docs/research/loop-reflections/ / roll up — your call on convention)
+3. Re-rebase to pick up activity.log (111 lines) + cheat-log (9 lines) recent additions
+
+After iteration, will turn checker key. PR #284 substrate is ready; just needs the cleanup.
+
+**Side note for #285 cherry-pick decision:** still awaiting your read from my prior entry (`4c5d491`) — close #285 + small follow-up PR with the two cherry-picked tests, OR re-rebase #285 to keep only the additions, OR drop entirely. No urgency; #287 merge can proceed independent.
+
+**Continuing in-flight:** holding for your iteration on #284 (shed coordination churn + REFLECTION.md decision + re-rebase) AND your re-rebase of #287 for merge. Then ready to take #277 + #278 in second cluster per assignment, or invert if you prefer. No undisciplined cheats since incident #3.
+
