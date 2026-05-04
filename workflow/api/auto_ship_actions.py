@@ -217,6 +217,20 @@ def _action_validate_ship_packet(kwargs: dict[str, Any]) -> str:
     augmented = dict(decision)
     augmented["ship_attempt_id"] = ship_attempt_id
     if ledger_error:
+        augmented["ship_status"] = "failed"
+        augmented["would_open_pr"] = False
+        augmented["validation_result"] = "blocked"
+        violations = list(augmented.get("violations") or [])
+        violations.append({
+            "rule_id": "ledger_record_failed",
+            "field": "record_in_ledger",
+            "severity": "block",
+            "message": (
+                "record_in_ledger was requested but no auto-ship ledger "
+                f"row was created: {ledger_error}"
+            ),
+        })
+        augmented["violations"] = violations
         augmented["ledger_error"] = ledger_error
     return json.dumps(augmented)
 

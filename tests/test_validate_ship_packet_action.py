@@ -430,7 +430,7 @@ class TestLedgerRecording:
 
     def test_ledger_write_failure_surfaces_in_response(self, tmp_path, monkeypatch):
         """If record_attempt raises (e.g. invalid universe), the wrapper
-        keeps the validator's decision and surfaces ledger_error."""
+        blocks acceptance and surfaces ledger_error."""
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "")
         # No universe directories exist; helper falls back to "default-universe"
@@ -442,9 +442,12 @@ class TestLedgerRecording:
             "universe_id": "../escape-attempt",
             "request_id": "REQ-ERR",
         }))
-        # Decision still in response
-        assert result["validation_result"] == "passed"
-        # Plus a clear ledger_error explaining what went wrong
+        # A packet cannot be accepted for shipping without its requested
+        # ledger row.
+        assert result["validation_result"] == "blocked"
+        assert result["would_open_pr"] is False
+        assert result["ship_status"] == "failed"
+        assert any(v["rule_id"] == "ledger_record_failed" for v in result["violations"])
         assert "ledger_error" in result
         assert (
             "Invalid universe_id" in result["ledger_error"]
@@ -452,6 +455,36 @@ class TestLedgerRecording:
         )
         # And no ship_attempt_id — the write didn't happen
         assert result.get("ship_attempt_id") is None
+
+    def test_extensions_dispatch_blocks_acceptance_when_requested_ledger_not_recorded(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Regression for BUG-058: the public extensions action must not
+        return an accepting ship decision when record_in_ledger=true but no
+        ledger row is created.
+        """
+        from workflow.auto_ship_ledger import read_attempts
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-uni")
+        (tmp_path / "default-uni").mkdir(parents=True, exist_ok=True)
+
+        result = json.loads(_extensions_impl(
+            action="validate_ship_packet",
+            body_json=json.dumps(self._packet()),
+            record_in_ledger=True,
+            universe_id="../escape-attempt",
+            request_id="REQ-BUG-058",
+        ))
+
+        assert result["validation_result"] == "blocked"
+        assert result["would_open_pr"] is False
+        assert result["ship_status"] == "failed"
+        assert result.get("ship_attempt_id") is None
+        assert any(v["rule_id"] == "ledger_record_failed" for v in result["violations"])
+        assert read_attempts(tmp_path / "default-uni") == []
 
     def test_two_recorded_calls_produce_distinct_ledger_rows(self, tmp_path, monkeypatch):
         """The validator is pure but the wrapper must produce a fresh
