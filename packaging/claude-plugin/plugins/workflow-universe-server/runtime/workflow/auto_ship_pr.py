@@ -293,11 +293,30 @@ def open_auto_ship_pr(
         "draft": False,
     }
     post = post_json or _post_github_json
-    status, response = post(
-        f"https://api.github.com/repos/{repo_slug}/pulls",
-        gh_token,
-        payload,
-    )
+    try:
+        status, response = post(
+            f"https://api.github.com/repos/{repo_slug}/pulls",
+            gh_token,
+            payload,
+        )
+    except Exception as exc:  # noqa: BLE001 - preserve ledger observability
+        msg = f"GitHub PR create request failed: {type(exc).__name__}: {exc}"
+        ledger_error = _mark_attempt(
+            universe_path,
+            attempt_id,
+            ship_status="failed",
+            error_class="pr_create_failed",
+            error_message=msg,
+        )
+        return _error_result(
+            ship_attempt_id=attempt_id,
+            ship_status="failed",
+            error_class="pr_create_failed",
+            error_message=msg,
+            would_open_pr=True,
+            dry_run=False,
+            ledger_error=ledger_error,
+        )
     if status not in {200, 201}:
         msg = response.get("message") or json.dumps(response, default=str)
         ledger_error = _mark_attempt(

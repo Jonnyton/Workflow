@@ -194,6 +194,32 @@ def test_github_api_failure_records_failed(tmp_path):
     assert row.error_class == "pr_create_failed"
 
 
+def test_github_network_exception_records_failed(tmp_path):
+    attempt_id = _record(tmp_path)
+
+    def fake_post(url, token, payload):
+        raise OSError("network down")
+
+    result = open_auto_ship_pr(
+        universe_path=tmp_path,
+        ship_attempt_id=attempt_id,
+        head_branch="auto-change/issue-999-codex-123",
+        title="[auto-change] BUG-999",
+        create_enabled=True,
+        token="gh-token",
+        post_json=fake_post,
+    )
+
+    assert result["ship_status"] == "failed"
+    assert result["error_class"] == "pr_create_failed"
+    assert "network down" in result["error_message"]
+    row = find_attempt(tmp_path, attempt_id)
+    assert row is not None
+    assert row.ship_status == "failed"
+    assert row.error_class == "pr_create_failed"
+    assert "network down" in row.error_message
+
+
 def test_blocked_attempt_is_not_eligible_for_pr_creation(tmp_path):
     attempt_id = _record(
         tmp_path,
