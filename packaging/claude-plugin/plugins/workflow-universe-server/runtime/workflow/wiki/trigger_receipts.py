@@ -262,6 +262,47 @@ def mark_queued(
     return receipt
 
 
+def mark_run_resolved(
+    *,
+    dispatcher_request_id: str,
+    run_id: str,
+    db_path: Path | None = None,
+) -> TriggerReceipt | None:
+    """Attach the eventual Workflow run_id to a queued trigger receipt.
+
+    ``file_bug`` only knows the dispatcher request id when it returns; a
+    daemon claims that request later and creates the actual run. This helper
+    closes that async traceability gap by joining back on dispatcher_request_id.
+    """
+    dispatcher_request_id = dispatcher_request_id.strip()
+    run_id = run_id.strip()
+    if not dispatcher_request_id or not run_id:
+        return None
+
+    with _conn(db_path) as c:
+        row = c.execute(
+            "SELECT * FROM wiki_trigger_attempts "
+            "WHERE dispatcher_request_id=? "
+            "ORDER BY queued_at DESC, attempted_at DESC LIMIT 1",
+            (dispatcher_request_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        c.execute(
+            """UPDATE wiki_trigger_attempts
+               SET run_id=?
+               WHERE trigger_attempt_id=?""",
+            (run_id, row["trigger_attempt_id"]),
+        )
+        updated = dict(row)
+        updated["run_id"] = run_id
+    logger.info(
+        "trigger_receipt | run_resolved | dispatcher=%s run=%s",
+        dispatcher_request_id, run_id,
+    )
+    return TriggerReceipt(**updated)
+
+
 def mark_failed(
     receipt: TriggerReceipt,
     *,

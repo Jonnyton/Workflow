@@ -821,6 +821,19 @@ def _try_execute_claimed_branch_task(
             "run_status": outcome.status,
             "actor": actor,
         }
+        if str(getattr(claimed_task, "request_type", "") or "") == "bug_investigation":
+            try:
+                from workflow.wiki.trigger_receipts import mark_run_resolved
+
+                mark_run_resolved(
+                    dispatcher_request_id=str(claimed_task.branch_task_id),
+                    run_id=str(outcome.run_id),
+                )
+            except Exception:  # noqa: BLE001 - receipt sync must not fail execution.
+                logger.exception(
+                    "bug_investigation trigger receipt run_id sync failed for %s",
+                    claimed_task.branch_task_id,
+                )
         attach_result = _maybe_attach_bug_investigation_patch_packet(
             claimed_task,
             outcome.status,

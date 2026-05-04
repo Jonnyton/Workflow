@@ -86,6 +86,25 @@ class TestMarkQueued:
         fetched = tr.get_receipt(r.trigger_attempt_id, db_path=db_path)
         assert fetched.run_id == "r-id"
 
+    def test_resolves_run_id_by_dispatcher_request_id(self, db_path: Path) -> None:
+        r = tr.create_pending(
+            request_id="FEAT-007", request_kind="feature",
+            request_page="pages/feature-requests/feat-007.md", db_path=db_path,
+        )
+        tr.mark_queued(r, dispatcher_request_id="dispatch-1", db_path=db_path)
+
+        resolved = tr.mark_run_resolved(
+            dispatcher_request_id="dispatch-1",
+            run_id="run-abc",
+            db_path=db_path,
+        )
+
+        assert resolved is not None
+        assert resolved.trigger_attempt_id == r.trigger_attempt_id
+        assert resolved.run_id == "run-abc"
+        fetched = tr.get_receipt(r.trigger_attempt_id, db_path=db_path)
+        assert fetched.run_id == "run-abc"
+
 
 class TestMarkFailed:
     def test_with_exception(self, db_path: Path) -> None:
