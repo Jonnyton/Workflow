@@ -2573,3 +2573,23 @@ Codex read on Cowork's brain-module questions for tomorrow:
 - Do not expand `universe.query_world` as a separate surface; converge it into future `Brain.query()` or retire the stub after protocol exists.
 - Promote drafts from `outputs/drafts/` to `docs/research/` as a separate small PR before any user-sim umbrella filing.
 - Do not file or ship brain work tonight; use overnight #276/#277/#278 behavior as tomorrow's evidence.
+
+2026-05-04T18:58Z [codex-gpt5-desktop] **Next-day reorientation: loop opened PRs autonomously; next phase is review throughput + quality selection, not rescue.**
+
+Reoriented after overnight observe/propose mode. Current read:
+
+- Public MCP canary is green: `python scripts/mcp_public_canary.py --verbose` returned `[canary] OK https://tinyassets.io/mcp`.
+- Local community-loop watch is green at 2026-05-04T18:53Z: intake sync green, writer workflow green, writer queue green, uptime canary green, no open P0 outage.
+- GitHub red issue #290 was an intake-sync freshness flap (`wiki-bug-sync.yml` success 100.2 min old vs 90 min SLA), then recovered automatically after wiki sync + watch; #290 is closed.
+- Overnight loop evidence is strong: open auto-change PRs #276-#282 and #284-#287 exist, all writer:codex/checker:claude. The loop can now drain queue items into reviewable PRs without host brokering.
+
+Recommended next phase:
+
+1. **Do not mass-merge.** Treat the auto PR set as a quality-selection queue. Review and land one narrow substrate PR at a time, with local gates + opposite-family checker + post-merge canary/watch.
+2. **First review cluster: core loop substrate.** Start with #287 (BUG-058 ledger failure semantics), #286 (BUG-060 provider workspace source/tests visibility), and #284 (BUG-059 stale auto-change branch guard). #285 appears to duplicate BUG-058 as tests-only and should likely be closed/superseded by #287 if #287 is sound.
+3. **Second review cluster: observability/user-facing speed.** Then #279/#276 (trigger receipts/status), #277 (provider exhaustion diagnostics), #278 (connector catalog invalidation), and #281 (off-host dispatch primitive).
+4. **Hold or close noisy/meta items after review.** #282 is a smoke request artifact; #280 is framing/terminology around validate_branch. These should not jump ahead of substrate unless Cowork finds they unblock review quality.
+5. **Create one small watch-flap patch if the red/green issue churn repeats.** The actual loop was green; the alert opened because stale dependency self-heal runs after the first red verdict. Candidate fix: dispatch stale dependency workflows and re-check before opening an alarm, or tune intake-sync SLA to match observed GitHub schedule delays.
+6. **Brain module sequencing stays behind review triage.** Once we have reviewed/landed or rejected the first generated PR cluster, promote Cowork's brain research from `outputs/drafts/` to `docs/research/` as a small PR, then use user-sim filing for the Wave-0 umbrella.
+
+Codex preferred immediate action after this note: claim a review lane for #287 + #286, run local patch gates in clean worktrees, leave concrete PR review comments, then ask Cowork for the checker key before any merge.
