@@ -26,6 +26,7 @@ from workflow.providers.base import (
     ProviderResponse,
     check_bwrap_failure,
     subprocess_env_without_api_keys,
+    subprocess_provider_workspace,
 )
 
 
@@ -69,6 +70,7 @@ class ClaudeProvider(BaseProvider):
         if system:
             cmd.extend(["--system-prompt", system])
         proc_env = subprocess_env_without_api_keys()
+        workdir = str(subprocess_provider_workspace())
 
         win_kw = _no_window_kwargs()
         if use_shell:
@@ -78,6 +80,7 @@ class ClaudeProvider(BaseProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=proc_env,
+                cwd=workdir,
                 **win_kw,
             )
         else:
@@ -87,6 +90,7 @@ class ClaudeProvider(BaseProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=proc_env,
+                cwd=workdir,
                 **win_kw,
             )
 
@@ -154,6 +158,7 @@ class ClaudeProvider(BaseProvider):
         if system:
             cmd.extend(["--system-prompt", system])
         proc_env = subprocess_env_without_api_keys()
+        workdir = str(subprocess_provider_workspace())
 
         win_kw = _no_window_kwargs()
         if use_shell:
@@ -163,6 +168,7 @@ class ClaudeProvider(BaseProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=proc_env,
+                cwd=workdir,
                 **win_kw,
             )
         else:
@@ -172,6 +178,7 @@ class ClaudeProvider(BaseProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=proc_env,
+                cwd=workdir,
                 **win_kw,
             )
 

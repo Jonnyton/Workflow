@@ -12,7 +12,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 
 from workflow.exceptions import (
@@ -27,6 +26,7 @@ from workflow.providers.base import (
     check_bwrap_failure,
     get_sandbox_status,
     subprocess_env_without_api_keys,
+    subprocess_provider_workspace,
 )
 
 
@@ -80,11 +80,10 @@ class CodexProvider(BaseProvider):
             if sandbox_status.get("bwrap_available")
             else ["--dangerously-bypass-approvals-and-sandbox"]
         )
-        # Prompt-node calls need Codex as a subscription-backed text model,
-        # not as a repo-editing agent. Run from an empty ephemeral directory.
-        # Prefer Codex's sandboxed auto mode when bwrap is actually usable;
-        # bwrap-less hosts fall back to the hosted subscription mode already
-        # used by auto-fix, with API keys stripped and an empty working dir.
+        # Loop investigation coding packets need the Workflow source/tests in
+        # view. Prefer Codex's sandboxed auto mode when bwrap is actually
+        # usable; bwrap-less hosts fall back to hosted subscription mode with
+        # API keys stripped.
         cmd = [
             *base_cmd,
             "exec",
@@ -95,42 +94,42 @@ class CodexProvider(BaseProvider):
             "--ephemeral",
         ]
         proc_env = subprocess_env_without_api_keys()
+        workdir = str(subprocess_provider_workspace())
 
         win_kw = _no_window_kwargs()
-        with tempfile.TemporaryDirectory(prefix="workflow-codex-provider-") as workdir:
-            cmd_with_cwd = [*cmd, "-C", workdir]
-            if use_shell:
-                proc = await asyncio.create_subprocess_shell(
-                    shlex.join(cmd_with_cwd),
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=proc_env,
-                    **win_kw,
-                )
-            else:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd_with_cwd,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=proc_env,
-                    **win_kw,
-                )
+        cmd_with_cwd = [*cmd, "-C", workdir]
+        if use_shell:
+            proc = await asyncio.create_subprocess_shell(
+                shlex.join(cmd_with_cwd),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=proc_env,
+                **win_kw,
+            )
+        else:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_with_cwd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=proc_env,
+                **win_kw,
+            )
 
-            start = time.monotonic()
+        start = time.monotonic()
 
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(input=full_input.encode("utf-8")),
-                    timeout=config.timeout,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                raise ProviderTimeoutError(
-                    f"codex exec exceeded {config.timeout}s timeout"
-                )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=full_input.encode("utf-8")),
+                timeout=config.timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise ProviderTimeoutError(
+                f"codex exec exceeded {config.timeout}s timeout"
+            )
 
         elapsed_ms = (time.monotonic() - start) * 1000
 

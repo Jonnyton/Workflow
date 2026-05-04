@@ -9,6 +9,7 @@ from __future__ import annotations
 import abc
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +88,28 @@ def subprocess_env_without_api_keys() -> dict[str, str] | None:
     for name in API_KEY_PROVIDER_ENV_VARS:
         env.pop(name, None)
     return env
+
+
+def subprocess_provider_workspace() -> Path:
+    """Return the repo workspace subprocess-backed coding providers should see.
+
+    Community loop coding packets ask Claude/Codex to inspect and patch the
+    Workflow source tree. Prefer the host-declared repo root, then the local
+    checkout containing this package; fall back to the process cwd only when it
+    visibly contains the source tree.
+    """
+    candidates: list[Path] = []
+    env_root = os.environ.get("WORKFLOW_REPO_ROOT", "").strip()
+    if env_root:
+        candidates.append(Path(env_root))
+    candidates.append(Path(__file__).resolve().parents[2])
+    candidates.append(Path.cwd())
+
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if (resolved / "workflow").is_dir() and (resolved / "tests").is_dir():
+            return resolved
+    return candidates[0].expanduser().resolve()
 
 
 # bwrap failure signature emitted to stderr on Linux hosts that lack
