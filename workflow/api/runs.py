@@ -658,10 +658,17 @@ def _compose_run_snapshot(
     # so it doesn't have to guess (Mara's failure mode 2026-04-24).
     if run_record["status"] == "failed":
         error_annotation = _classify_run_outcome_error(run_record.get("error", ""))
+        failure_lines = ["", f"Error: {run_record.get('error', '')}"]
         if error_annotation:
             snapshot["failure_class"] = error_annotation[0]
             snapshot["suggested_action"] = error_annotation[1]
-            snapshot["actionable_by"] = _actionable_by(error_annotation[0])
+            actionable_by = _actionable_by(error_annotation[0])
+            snapshot["actionable_by"] = actionable_by
+            failure_lines.append(
+                f"Next action ({actionable_by}): {error_annotation[1]}",
+            )
+        snapshot["text"] = "\n".join([summary, *failure_lines])
+        snapshot["summary"] = snapshot["text"]
     return snapshot
 
 

@@ -591,6 +591,9 @@ class TestActionableByOnGetRunSnapshot:
         assert snapshot["failure_class"] == "empty_llm_response"
         assert snapshot["actionable_by"] == "host"
         assert snapshot["suggested_action"]
+        assert "Error: Empty LLM response" in snapshot["text"]
+        assert "Next action (host):" in snapshot["text"]
+        assert snapshot["suggested_action"] in snapshot["text"]
 
     def test_completed_omits_actionable_by(self):
         snapshot = self._make_snapshot("completed", "")
@@ -600,6 +603,11 @@ class TestActionableByOnGetRunSnapshot:
         # Symmetric with failure_class/suggested_action — opaque means no enrichment.
         snapshot = self._make_snapshot("failed", "some opaque crash nobody knows")
         assert "actionable_by" not in snapshot
+
+    def test_failed_unknown_still_surfaces_error_in_text(self):
+        snapshot = self._make_snapshot("failed", "some opaque crash nobody knows")
+        assert "Error: some opaque crash nobody knows" in snapshot["text"]
+        assert "Next action" not in snapshot["text"]
 
 
 class TestActionableByOnListRecentRuns:
