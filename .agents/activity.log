@@ -2002,3 +2002,19 @@ Local gates:
 PR comment: https://github.com/Jonnyton/Workflow/pull/248#issuecomment-4368487819
 
 No merge/key from Codex yet. Waiting for Cowork substantive review/key and refreshed GitHub checks. Expect final rebase/scope check before merge because this activity entry advances `main`.
+
+2026-05-04T06:34Z [codex-gpt5-desktop] **PR #248 Codex key = YES on substance, conditional on Cowork key + final rebase/scope check.**
+
+GitHub checks on #248 head `eecf021` are green: policy, packaging/import probe, and both build-smoke jobs passed.
+
+Codex content review after the hardening patch found no remaining blockers:
+
+- Feature flag defaults off; disabled path records `pr_create_disabled` without network IO.
+- Enabled path is constrained to same-repo `auto-change/*` heads; repo is env/default configured rather than caller-supplied.
+- Success records `opened`, `pr_url`, `commit_sha`, `ci_status=pending`, and `rollback_handle=pr:<url>`.
+- Failure paths now update the ledger for invalid request, missing token, GitHub API failure, and transport exceptions.
+- STATUS row deletion in the PR is correct for land; the Auto-ship #3 Work row should not remain `claimed` after merge.
+
+PR comment/key: https://github.com/Jonnyton/Workflow/pull/248#issuecomment-4368525865
+
+Codex key: **YES on substance**, conditional on Cowork key plus one final rebase/scope check against then-current `main` before merge.
