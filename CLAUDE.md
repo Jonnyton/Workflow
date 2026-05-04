@@ -107,3 +107,46 @@ Standing behavior, not on-demand:
 - After every significant learning (bug pattern, team behavior issue, user feedback, architecture decision), immediately update the relevant file: `LAUNCH_PROMPT.md`, `.claude/agents/*.md`, `AGENTS.md`, this file, memory, or skills.
 - Each session should leave these files better than it found them.
 - Guardrail: files get REFINED not BLOATED. Every line earns its place.
+
+### FUSE git plumbing rule (Cowork sessions) — STOP-THE-LINE on stale-index regressions
+
+When committing via git plumbing on a FUSE-locked checkout (Cowork sessions
+do this because regular `git add` + `git commit` race against FUSE locks),
+**NEVER `cp .git/index $GIT_INDEX_FILE`**. The local `.git/index` reflects
+whatever staged state was last in sync with origin, which can be many
+commits behind. Building a tree from that copy regresses every file that
+landed on origin since the local index timestamp.
+
+**Mandatory pattern:**
+
+```bash
+# Use scripts/fuse_safe_commit.py — it does the safe pattern + scope verification.
+python3 scripts/fuse_safe_commit.py \
+    --base-ref origin/main \
+    --file "REPO_PATH:CONTENT_PATH" \
+    --message "commit message" \
+    --max-files 1 \
+    --update-ref .git/refs/heads/main
+git push origin main
+```
+
+The wrapper:
+- Builds a fresh `GIT_INDEX_FILE` (no `cp .git/index`).
+- `git read-tree <base-ref>` from the canonical state.
+- `hash-object` + `update-index --add --cacheinfo` for each declared file.
+- Runs `git diff --stat <base-ref>..<new-commit>` and **REFUSES** to return
+  the commit hash if file count exceeds `--max-files`.
+- Optionally writes the resulting sha to a local ref via `--update-ref`.
+
+If you must call git plumbing directly (rare — only when the wrapper's
+shape doesn't fit), follow the same primitives: fresh temp index, no
+`cp .git/index`, verify scope via `git diff --stat <parent>..<new>` BEFORE
+pushing.
+
+**Spec reference:** incident log at
+`.agents/skills/loop-uptime-maintenance/incidents/2026-05-04-cowork-stale-index-regression.md`
+(720-file regression on 66e7c6a, recovered to 631bae9, root cause was
+`cp .git/index` pattern). Same kitchen-sink-diff failure mode that affects
+auto-change writers — both share the structural vulnerability of capturing
+state from "wherever the local checkout happens to be" instead of "the
+known-good base ref."
