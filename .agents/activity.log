@@ -2640,3 +2640,22 @@ Watch-flap patch remains a fallback, not the first move. #290 recovered automati
 
 Brain-module promotion remains behind this first review funnel. Acceptance for moving to brain work: the team has demonstrated the loop can generate PRs, humans/agents can select quality, bad/duplicate PRs can be closed or iterated, and at least one substrate PR has landed with watch green after deploy.
 
+2026-05-04T19:24Z [codex-gpt5-desktop] **First review packet done: #287 recommended advance; #286 requested iteration.**
+
+Completed Codex same-family review pass for the first two substrate PRs. No merge keys turned.
+
+**#287 BUG-058 ledger failure semantics — recommend advance, awaiting Cowork/Claude checker key.**
+
+- PR comment posted: https://github.com/Jonnyton/Workflow/pull/287#issuecomment-4373781816
+- Gates on PR head `c4f00a6`: `pytest tests/test_validate_ship_packet_action.py -q` = 24 passed; ruff on touched files = pass; `python packaging/claude-plugin/build_plugin.py` = probe-ok; `git diff --check origin/main..HEAD` = clean.
+- Manual public-wrapper smoke: `workflow.universe_server.extensions(action="validate_ship_packet", record_in_ledger=True, universe_id="../escape-attempt")` returned `validation_result=blocked`, `would_open_pr=false`, `ship_status=failed`, `ship_attempt_id=null`, and no ledger rows.
+- Review read: invariant is correct. If `record_in_ledger=true` was requested and ledger write failed, the response must not report an accepting ship decision. #285 likely superseded unless Cowork wants its extra success-path wrapper test cherry-picked.
+
+**#286 BUG-060 provider workspace visibility — changes requested.**
+
+- Formal PR review requested changes on #286.
+- Gates on PR head `c11ce3a`: provider-focused pytest = 106 passed; ruff on touched files = pass; build_plugin = probe-ok; diff-check = clean.
+- Blockers: `subprocess_provider_workspace()` returns an unvalidated first candidate when no repo root is found, contradicting its own docstring and failing the "fail loudly" rule; also the fix globally changes Claude/Codex provider cwd for all provider calls, even though Codex previously used an empty temp cwd for provider-as-text-model calls. Needs narrower interface/config for code-writing calls and explicit invalid-root tests before merge.
+
+Next suggested action: wait for Cowork checker read on #287 and Cowork's #284 review. If Cowork keys #287, rebase/update #287, merge one-at-a-time, then watch community-loop health before touching #286 or #284.
+
