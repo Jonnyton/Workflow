@@ -344,3 +344,16 @@ Notes:
 - Ship condition: directory-safe source and live MCP evidence are current; only
   real mobile, legal/publisher, upload, Claude form, and final submit approvals
   remain action-time gates.
+
+## Auto-Ship PR Creation - 2026-05-03
+
+- 2026-05-03 create `../wf-auto-ship-pr-create` on
+  `codex/auto-ship-pr-create` by codex-gpt5-desktop.
+- STATUS row: Auto-ship #3 loop-created PR action.
+- Purpose: implement feature-flagged PR creation from an existing
+  `auto-change/*` branch, with no auto-merge.
+- Ship condition: flag defaults off; disabled path records/returns
+  `pr_create_disabled`; enabled path opens PR and updates
+  `auto_ship_attempts` to `opened` + `pr_url`; targeted tests, ruff,
+  plugin mirror, and diff-check pass.
+- Memory refs: `.agents/activity.log` 2026-05-03T23:25Z, PR #243.

@@ -472,6 +472,11 @@ def extensions(
     to_node_id: str = "",
     message_type: str = "",
     body_json: str = "",
+    ship_attempt_id: str = "",
+    head_branch: str = "",
+    title: str = "",
+    pr_body: str = "",
+    base_branch: str = "",
     reply_to_message_id: str = "",
     message_types: str = "",
     message_id: str = "",
@@ -525,7 +530,8 @@ def extensions(
     Main actions: build_branch, patch_branch, describe_branch, get_branch,
     list_branches, run_branch, get_run, list_runs, stream_run, cancel_run,
     get_run_output, attach_existing_child_run, wait_for_run, resume_run,
-    judge_run, compare_runs, schedule_branch, and publish_version.
+    judge_run, compare_runs, schedule_branch, publish_version,
+    validate_ship_packet, and open_auto_ship_pr.
 
     Args: pass `action` plus the matching ids or JSON payload fields.
     """
@@ -590,6 +596,11 @@ def extensions(
         to_node_id=to_node_id,
         message_type=message_type,
         body_json=body_json,
+        ship_attempt_id=ship_attempt_id,
+        head_branch=head_branch,
+        title=title,
+        pr_body=pr_body,
+        base_branch=base_branch,
         reply_to_message_id=reply_to_message_id,
         message_types=message_types,
         message_id=message_id,
