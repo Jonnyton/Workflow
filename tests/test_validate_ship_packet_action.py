@@ -9,6 +9,7 @@ wrapper layer only.
 
 from __future__ import annotations
 
+import inspect
 import json
 
 from workflow.api.auto_ship_actions import (
@@ -92,6 +93,22 @@ class TestHandlerLayer:
 
 
 class TestDispatchIntegration:
+    def test_public_extensions_signature_exposes_ledger_kwargs(self):
+        from workflow import universe_server as us
+
+        params = inspect.signature(us.extensions).parameters
+        for name in (
+            "record_in_ledger",
+            "universe_id",
+            "request_id",
+            "parent_run_id",
+            "release_gate_result",
+            "ship_class",
+            "changed_paths_json",
+            "stable_evidence_handle",
+        ):
+            assert name in params
+
     def test_action_routes_to_handler_via_extensions_dispatch(self):
         packet = {
             "release_gate_result": "APPROVE_AUTO_SHIP",
@@ -119,6 +136,64 @@ class TestDispatchIntegration:
         result = json.loads(result_str)
         assert "error" in result
         assert "body_json" in result["error"]
+
+    def test_validate_ship_packet_dispatch_forwards_ledger_kwargs(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        from workflow.auto_ship_ledger import read_attempts
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-uni")
+        universe = tmp_path / "ledger-uni"
+        universe.mkdir(parents=True, exist_ok=True)
+        packet = {
+            "release_gate_result": "APPROVE_AUTO_SHIP",
+            "ship_class": "docs_canary",
+            "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
+            "child_score": 9.5,
+            "risk_level": "low",
+            "blocked_execution_record": {},
+            "stable_evidence_handle": "packet-evidence",
+            "automation_claim_status": "child_attached_with_handle",
+            "rollback_plan": "Revert commit <sha>",
+            "changed_paths": ["docs/autoship-canaries/from-packet.md"],
+            "diff": "+ x\n",
+        }
+
+        result_str = _extensions_impl(
+            action="validate_ship_packet",
+            body_json=json.dumps(packet),
+            record_in_ledger=True,
+            universe_id="ledger-uni",
+            request_id="REQ-DISPATCH",
+            parent_run_id="parent-run",
+            child_run_id="child-run",
+            branch_def_id="branch-def",
+            release_gate_result="APPROVE_AUTO_SHIP",
+            ship_class="docs_canary",
+            changed_paths_json=json.dumps([
+                "docs/autoship-canaries/from-dispatch.md",
+            ]),
+            stable_evidence_handle="dispatch-evidence",
+        )
+        result = json.loads(result_str)
+
+        assert result.get("ledger_error") is None
+        assert result["ship_attempt_id"]
+        rows = read_attempts(universe)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.request_id == "REQ-DISPATCH"
+        assert row.parent_run_id == "parent-run"
+        assert row.child_run_id == "child-run"
+        assert row.branch_def_id == "branch-def"
+        assert row.stable_evidence_handle == "dispatch-evidence"
+        assert json.loads(row.changed_paths_json) == [
+            "docs/autoship-canaries/from-dispatch.md",
+        ]
 
     def test_open_auto_ship_pr_routes_to_handler_disabled(self, tmp_path, monkeypatch):
         from workflow.auto_ship_ledger import ShipAttempt, find_attempt, record_attempt

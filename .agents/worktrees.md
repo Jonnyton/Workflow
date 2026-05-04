@@ -377,3 +377,13 @@ Notes:
   #248 auto-PR creation is not yet merged.
 - Ship condition: scoped diff excludes stale `.agents` deletions, focused config
   test passes, PR opened for Cowork/Codex review.
+
+## Auto-Ship Dispatch Ledger Kwargs - 2026-05-04
+
+- 2026-05-04 create `../wf-autoship-dispatch-ledger-kwargs` on
+  `codex/autoship-dispatch-ledger-kwargs` by codex-gpt5-desktop.
+- Source: `.agents/activity.log` 2026-05-04T07:15Z Cowork observation 2.
+- Purpose: fix `extensions action=validate_ship_packet record_in_ledger=true`
+  so MCP/chatbot-triggered auto-ship attempts can write ledger rows.
+- Ship condition: regression test, targeted auto-ship tests, plugin mirror,
+  ruff, and diff-check pass; PR opened for Cowork review.

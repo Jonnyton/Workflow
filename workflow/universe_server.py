@@ -534,6 +534,14 @@ def extensions(
     reason: str = "",
     severity: str = "P1",
     since_days: int = 7,
+    record_in_ledger: bool = False,
+    universe_id: str = "",
+    request_id: str = "",
+    parent_run_id: str = "",
+    release_gate_result: str = "",
+    ship_class: str = "",
+    changed_paths_json: str = "",
+    stable_evidence_handle: str = "",
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -679,6 +687,14 @@ def extensions(
         reason=reason,
         severity=severity,
         since_days=since_days,
+        record_in_ledger=record_in_ledger,
+        universe_id=universe_id,
+        request_id=request_id,
+        parent_run_id=parent_run_id,
+        release_gate_result=release_gate_result,
+        ship_class=ship_class,
+        changed_paths_json=changed_paths_json,
+        stable_evidence_handle=stable_evidence_handle,
     )
 
 
