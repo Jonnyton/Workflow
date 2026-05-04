@@ -314,7 +314,8 @@ def universe(
         action: One of — reads: list, inspect, read_output, query_world,
             get_activity, get_recent_events, get_ledger, read_premise,
             list_canon, read_canon; writes: submit_request,
-            give_direction, set_premise, add_canon, add_canon_from_path,
+            dispatch_worker_task, give_direction, set_premise,
+            add_canon, add_canon_from_path,
             create_universe, switch_universe; queue: queue_list,
             queue_cancel; subscriptions: subscribe_goal, unsubscribe_goal,
             list_subscriptions; goal-pool: post_to_goal_pool,
@@ -328,7 +329,9 @@ def universe(
             daemon_memory_promote, daemon_memory_status; config: set_tier_config;
         universe_id: Target universe. Defaults to the active universe.
         text/path/filter_text: Action-specific content, file path, or filter.
-        branch_id/request_type: Request routing fields.
+        branch_id/request_type/branch_def_id/inputs_json: Request routing
+            fields; dispatch_worker_task queues an explicit branch task for a
+            remote worker without requiring this client to run a daemon.
         pickup_incentive/directed_daemon_id: Optional patch-request pickup
             signals; these do not affect acceptance, release, or merge odds.
         filename/provenance_tag/limit/tag: Optional read/write filters.

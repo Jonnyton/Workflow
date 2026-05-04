@@ -355,6 +355,121 @@ def test_submit_negative_priority_weight_rejected(server_base, monkeypatch):
     assert q == []
 
 
+def test_dispatch_worker_task_queues_explicit_branch_for_off_host_worker(
+    server_base, monkeypatch,
+):
+    from workflow.api.universe import _action_dispatch_worker_task
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+
+    resp = json.loads(_action_dispatch_worker_task(
+        universe_id=uid,
+        branch_def_id="change-loop",
+        inputs_json=json.dumps({"request_text": "fix issue 266"}),
+        required_llm_type="codex",
+        priority_weight=50.0,
+    ))
+
+    assert resp["status"] == "pending"
+    assert resp["branch_task_id"]
+    assert resp["priority_weight"] == 0.0
+    assert "does not need to keep a local daemon running" in resp["what_happens_next"]
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
+    assert len(q) == 1
+    assert q[0].branch_task_id == resp["branch_task_id"]
+    assert q[0].branch_def_id == "change-loop"
+    assert q[0].inputs == {"request_text": "fix issue 266"}
+    assert q[0].request_type == "branch_run"
+    assert q[0].trigger_source == "user_request"
+    assert q[0].required_llm_type == "codex"
+    assert q[0].status == "pending"
+
+
+def test_dispatch_worker_task_wrapper_defaults_to_branch_run(
+    server_base, monkeypatch,
+):
+    from workflow.api.universe import _universe_impl
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+
+    resp = json.loads(_universe_impl(
+        action="dispatch_worker_task",
+        universe_id=uid,
+        branch_def_id="change-loop",
+    ))
+
+    assert resp["status"] == "pending"
+    assert resp["request_type"] == "branch_run"
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
+    assert q[0].request_type == "branch_run"
+
+
+def test_dispatch_worker_task_host_can_set_tier_and_priority(
+    server_base, monkeypatch,
+):
+    from workflow.api.universe import _action_dispatch_worker_task
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "host")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+
+    resp = json.loads(_action_dispatch_worker_task(
+        universe_id=uid,
+        branch_def_id="change-loop",
+        request_type="feature_request",
+        priority_weight=12.0,
+        tier="owner_queued",
+    ))
+
+    assert resp["status"] == "pending"
+    assert resp["trigger_source"] == "owner_queued"
+    assert resp["priority_weight"] == 12.0
+    q = read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid)
+    assert q[0].request_type == "feature_request"
+    assert q[0].trigger_source == "owner_queued"
+
+
+def test_dispatch_worker_task_rejects_nested_inputs(server_base, monkeypatch):
+    from workflow.api.universe import _action_dispatch_worker_task
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+
+    resp = json.loads(_action_dispatch_worker_task(
+        universe_id=uid,
+        branch_def_id="change-loop",
+        inputs_json=json.dumps({"nested": {"unsafe": True}}),
+    ))
+
+    assert resp["status"] == "rejected"
+    assert "invalid_inputs" in resp["error"]
+    assert read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid) == []
+
+
+def test_dispatch_worker_task_non_host_cannot_override_tier(
+    server_base, monkeypatch,
+):
+    from workflow.api.universe import _action_dispatch_worker_task
+
+    _, uid = server_base
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "alice")
+    monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "host")
+
+    resp = json.loads(_action_dispatch_worker_task(
+        universe_id=uid,
+        branch_def_id="change-loop",
+        tier="owner_queued",
+    ))
+
+    assert resp["status"] == "rejected"
+    assert resp["error"] == "tier override is host-only."
+    assert read_queue(Path(os.environ["WORKFLOW_DATA_DIR"]) / uid) == []
+
+
 # ───────────────────────────────────────────────────────────────────────
 # DaemonController integration (6 tests)
 # ───────────────────────────────────────────────────────────────────────

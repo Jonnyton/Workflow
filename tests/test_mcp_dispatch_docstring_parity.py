@@ -106,7 +106,7 @@ def _universe_dispatch_keys() -> set[str]:
     return {
         "list", "inspect", "read_output", "query_world",
         "get_activity", "get_recent_events", "get_ledger",
-        "submit_request", "give_direction",
+        "submit_request", "dispatch_worker_task", "give_direction",
         "read_premise", "set_premise",
         "add_canon", "add_canon_from_path",
         "list_canon", "read_canon",
