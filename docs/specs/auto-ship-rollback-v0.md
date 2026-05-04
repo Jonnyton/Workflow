@@ -182,11 +182,30 @@ ledger via `update_attempt`:
 | `error_class` | `""` | `"rollback_deferred"` | `"rollback_skipped"` |
 | `error_message` | reason text | reason text | reason text |
 | `rollback_handle` | unchanged (set by Slice A) | unchanged | unchanged |
+| `rollback_pr_number` | rollback PR # (Phase 4b) | `""` | `""` |
+| `rollback_pr_url` | rollback PR URL (Phase 4b) | `""` | `""` |
 
-Note that the Slice A `MUTABLE_FIELDS` set already includes
-`observation_status`, `observation_status_at`, `error_class`,
-`error_message`, and `ship_status` — so no schema change is required.
-Slice C is purely an additive consumer of Slice A's existing surface.
+Schema notes (updated per Codex's PR #227 review on 2026-05-03; addressed
+in commit `8b75e90`):
+
+- The Slice A `MUTABLE_FIELDS` set already includes `observation_status`,
+  `observation_status_at`, `error_class`, `error_message`, and
+  `ship_status` — so the rollback decision-class fields above are
+  writable by `record_rollback_decision` without further schema change
+  for the dry-run/Phase-4a path.
+- `rollback_pr_number` and `rollback_pr_url` were ADDED to the ledger
+  schema in commit `8b75e90` (PR #227 schema-fix) so Phase 4b can store
+  the rollback PR identity in structured form rather than parsing prose.
+  Both fields are in `MUTABLE_FIELDS`. Default empty string when no
+  rollback PR has been issued. `get_status.auto_ship_health.rollback_recommendations`
+  surfaces them directly so chatbots and operators can locate the
+  rollback PR without parsing prose (Codex's review preference).
+- Forward-compat: `ShipAttempt.from_dict` ignores unknown keys, so old
+  JSONL rows written before the schema addition still hydrate cleanly
+  with the new fields defaulting to empty string.
+
+Slice C is therefore an additive consumer of Slice A's surface plus the
+two structured rollback-PR-identity fields added in PR #227.
 
 ## 6. Phase split
 
