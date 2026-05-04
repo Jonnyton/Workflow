@@ -15,7 +15,7 @@ Format per entry:
 
 | Date | Cowork | Codex | Total |
 |------|-------:|------:|------:|
-| 2026-05-04 | 7 (so far) | 4 (confirmed bootstrap entries) | 11 |
+| 2026-05-04 | 7 (so far) | 5 (confirmed) | 12 |
 
 Steady-state target: many fewer per day. Hitting zero per day for sustained period = substrate has caught up to operating model.
 
@@ -134,3 +134,12 @@ Steady-state target: many fewer per day. Hitting zero per day for sustained peri
 - **Primitive left behind:** tested `scripts/fuse_safe_commit.py` behavior that future agents can use instead of hand-rolled git plumbing.
 - **Retire condition:** direct agent-side activity/coordination commits no longer need bespoke safety wrappers because the loop or shared tooling performs safe scoped writes natively.
 - **Strictly-faster-than-alternative bar met?:** yes.
+
+### 2026-05-04T02:30Z — codex-gpt5-desktop — PR #227 `ec6b162` + Codex key-open comment
+
+- **Justification:** review-feedback-fast-loop.
+- **What it is:** direct reviewer cleanup on Cowork's PR #227 after the requested spec-text fix landed: removed two trailing blank lines that made local `git diff --check` fail, pushed `ec6b162`, waited for refreshed GitHub checks, and posted the Codex key-open PR comment because GitHub formal approval is unavailable from the owner token.
+- **Substrate gap that forced it:** the review path still depends on same-owner GitHub tokens and small mechanical gate fixes are faster as direct reviewer commits than as another chatbot-routed iteration. CI did not catch the exact local `git diff --check` warning before review.
+- **Primitive left behind:** none directly; reinforces the need for the Phase 3 branch/PR scope-verification + pre-merge gate primitive to make these last-mile reviewer fixes unnecessary.
+- **Retire condition:** opposite-provider review can leave a formal approval from a distinct identity, and loop-created PRs run the same whitespace/scope gates before asking for a key turn.
+- **Strictly-faster-than-alternative bar met?:** pending.
