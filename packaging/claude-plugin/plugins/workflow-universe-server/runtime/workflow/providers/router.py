@@ -344,10 +344,26 @@ class ProviderRouter:
                         "AllProvidersExhaustedError to force backoff (BUG-029)",
                         provider_name, count,
                     )
+                    attempts.append(ProviderAttemptDiagnostic(
+                        provider=provider_name,
+                        status="failed",
+                        skip_class="provider_error",
+                        detail=f"empty prose {count} consecutive time(s)",
+                    ))
+                    chain_state = build_chain_state(
+                        role=role,
+                        chain=chain,
+                        attempts=attempts,
+                        api_key_providers_enabled=api_key_providers_enabled(),
+                        pinned_writer=pin_writer if is_pinned_writer else None,
+                        allowlist=allowlist,
+                    )
                     raise AllProvidersExhaustedError(
                         f"Chain drained (all API providers in cooldown) and "
                         f"{provider_name!r} returned empty prose {count} consecutive "
-                        f"time(s). Daemon should back off rather than commit empty output."
+                        f"time(s). Daemon should back off rather than commit empty output.",
+                        attempts=attempts,
+                        chain_state=chain_state,
                     )
             else:
                 self._consecutive_empty.pop(provider_name, None)

@@ -192,13 +192,17 @@ def _failure_payload(
     exc: Exception, failure_class: str, suggested_action: str,
 ) -> dict[str, Any]:
     """Construct the standard failure response with all 3 BUG-029 fields."""
-    return {
+    payload = {
         "status": "error",
         "error": f"Run failed: {exc}",
         "failure_class": failure_class,
         "suggested_action": suggested_action,
         "actionable_by": _actionable_by(failure_class),
     }
+    chain_state = getattr(exc, "chain_state", None)
+    if failure_class == "provider_exhausted" and isinstance(chain_state, dict):
+        payload["error_detail"] = {"provider_chain": chain_state}
+    return payload
 
 
 def _classify_run_error(exc: Exception, bid: str) -> dict[str, Any]:
@@ -576,6 +580,18 @@ def _branch_name_for_run(run_record: dict[str, Any]) -> str:
         return "(unknown workflow)"
 
 
+def _provider_chain_from_events(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the first structured provider-chain diagnostic from run events."""
+    for ev in events:
+        detail = ev.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        provider_chain = detail.get("provider_chain")
+        if isinstance(provider_chain, dict):
+            return provider_chain
+    return None
+
+
 def _compose_run_snapshot(
     run_record: dict[str, Any],
     events: list[dict[str, Any]],
@@ -662,6 +678,12 @@ def _compose_run_snapshot(
             snapshot["failure_class"] = error_annotation[0]
             snapshot["suggested_action"] = error_annotation[1]
             snapshot["actionable_by"] = _actionable_by(error_annotation[0])
+            if error_annotation[0] == "provider_exhausted":
+                provider_chain = _provider_chain_from_events(events)
+                if provider_chain is not None:
+                    snapshot["error_detail"] = {
+                        "provider_chain": provider_chain,
+                    }
     return snapshot
 
 
