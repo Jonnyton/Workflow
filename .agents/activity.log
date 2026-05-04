@@ -2359,3 +2359,27 @@ Suggesting (when next strategic-planning moment arises) we add a step before the
 
 **Continuing in-flight:** PR #252/#251 dual-review next entry (both look clean on substance; will flag the activity.log stale-with-overlap as standard re-rebase requirement). Holding for #4a/#4b prep where Codex incorporates the dispatch-gap subpatch. No undisciplined cheats since incident #3.
 
+2026-05-04T07:58Z [cowork-busyclever] **Cowork keys: PR #252 = YES on substance, PR #251 = YES on substance. Both stale-WITH-overlap on `.agents/activity.log` only — standard re-rebase before merge.**
+
+Read both PRs end-to-end while at /tmp/wf-cowork-synth on origin/main fresh checkout.
+
+**PR #252 (`wiki: bridge patch request framing fix from issue 245`, head `8c26aeb`):**
+- Substance: clean. Routes `patch_request` kind through wiki/extensions/file_bug correctly. Updates prompts.py docstring guidance to chatbots (kind selection: bug/patch_request/feature/design). Updates wiki.py `_render_bug_markdown` to emit `type: {kind}` not `type: bug` (was a bug — feature/design pages were getting `type: bug` frontmatter). Updates `_scan_existing_bugs` regex to handle PR-/FEAT-/DESIGN- prefixes uniformly. Updates `_wiki_cosign_bug` docstring to mention patch-requests dir. Updates `wiki_bug_sync.py _change_kind` to route patch-requests/feature-requests/design-proposals into correct change_kind lanes. Updates `universe_server.py` action enumeration in extensions/wiki docstrings (a side improvement — explicit action group enumeration helps chatbot tool-catalog stability per Cycle 3). Adds 4 tests covering patch-request lane, legacy-bug-typed-patch routing, feature-request lane, design-proposal lane.
+- Both `workflow/api/*` and `src/workflow_runtime/runtime/workflow/api/*` paths touched (the dual install layout) — consistent across both, no skew.
+- Codex key: YES. **Cowork key: YES on substance.**
+
+**PR #251 (`docs: bridge loop autonomy roadmap config from issue 244`, head `75d1f47`):**
+- Substance: clean. Adds new `auto_ship_ship_classes.yaml` (80 lines) — version-1 config with `defaults` (auto_merge=false, keys_auto_open=false, required_keys=[codex_reviewer, cowork_reviewer], approval_ttl=30min, required_status_checks, forbidden_paths covers runtime/providers/api/wiki/dispatcher/.github/scripts/deploy/migrations/secrets/auth — solid blast-radius gate), `reviewer_roles` (codex/cowork/host with provider_family + github_review_required), `ship_classes` (docs_canary with allowed_paths + graduation criteria). Closed-by-default for unknown classes per the docstring guidance — important safety property. Adds `docs/specs/2026-05-04-loop-autonomy-roadmap.md` (223 lines) — the bridge spec from Issue #244. References auto-ship-canary-v0 milestone + 2026-05-03 dual-key spec + PR #227 Slice C rollback. Stays one roadmap entry per Codex's framing (parts are coupled: PR creation + keyed auto-merge + ship-class graduation + branch protection + observation + rollback + self-seeking define one control loop). Adds 27-line config test. Touches docs/milestones/auto-ship-canary-v0.md (4 lines, ref-link) + docs/specs/INDEX.md (1 line, new entry).
+- Codex key: YES. **Cowork key: YES on substance.**
+
+**Stale-WITH-overlap on `.agents/activity.log` (both PRs):**
+Both branches were cut before my brain-inventory entry (75541d0), Codex's `0e50641` PR-ready entry, and my new round-3 entry (7f002ed). They would delete the most recent ~150 lines of activity.log. Same pattern as PR #248/#249/#252/#253 stale-base catches earlier today — this is now five PRs in a row hitting it.
+
+**Both PRs need re-rebase to origin/main before merge.** No additional substance changes required — just rebase pickup of the recent activity.log additions.
+
+**On the recurring stale-WITH-overlap pattern:** five PRs in a row hitting this same dynamic is itself substrate signal. The friction is real but it's also the dual-review discipline working — Cowork's stale-base catch keeps each PR clean before merge. But the overhead is non-trivial. Consider for #4a/#4b prep: maybe the right substrate primitive is "auto-rebase before merge for activity.log-only-overlap" since these never have substance conflicts on activity.log (the file is append-only by convention). Out-of-scope for any current PR; mentioning as a noticed pattern worth thinking about.
+
+**Suggested merge order after rebase:** PR #252 first (substance is bridge for routing, low blast radius, no auto-ship interaction), then PR #251 (config-only + docs, also low blast radius, but it formalizes the policy reference for #4a/#4b so giving #252 first ordering). Either order is safe — both are docs + config + tests, no runtime behavior changes.
+
+**Continuing in-flight:** holding for re-rebase + merge of both. Then ready for #4a/#4b prep where Codex incorporates the dispatch-gap subpatch (`record_in_ledger` + universe_id + request_id + parent_run_id + child_run_id + branch_def_id + release_gate_result + ship_class + changed_paths_json + stable_evidence_handle as_kwargs through `_extensions_impl` to auto_ship_handler). No undisciplined cheats since incident #3.
+
