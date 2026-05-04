@@ -12,6 +12,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -27,6 +28,7 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _AUTO_CHANGE_BRANCH_RE = re.compile(r"^auto-change/[A-Za-z0-9._/-]+$")
 
 JsonPost = Callable[[str, str, dict[str, Any]], tuple[int, dict[str, Any]]]
+JsonGet = Callable[[str, str], tuple[int, dict[str, Any]]]
 
 
 def pr_create_enabled(value: str | None = None) -> bool:
@@ -64,6 +66,13 @@ def _validate_head_branch(head_branch: str) -> str:
             "head_branch must be an existing same-repo auto-change/* branch"
         )
     return head
+
+
+def _validate_base_branch(base_branch: str) -> str:
+    base = base_branch.strip() or "main"
+    if ".." in base or base.endswith("/") or not re.fullmatch(r"[A-Za-z0-9._/-]+", base):
+        raise ValueError("base_branch must be a simple same-repo branch ref")
+    return base
 
 
 def _error_result(
@@ -151,6 +160,45 @@ def _post_github_json(url: str, token: str, payload: dict[str, Any]) -> tuple[in
         return exc.code, parsed
 
 
+def _get_github_json(url: str, token: str) -> tuple[int, dict[str, Any]]:
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "workflow-auto-ship-pr-create",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8")
+            return resp.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed: dict[str, Any] = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {"message": body}
+        return exc.code, parsed
+
+
+def _compare_url(repo_slug: str, base_branch: str, head_branch: str) -> str:
+    base = urllib.parse.quote(base_branch, safe="")
+    head = urllib.parse.quote(head_branch, safe="")
+    return f"https://api.github.com/repos/{repo_slug}/compare/{base}...{head}"
+
+
+def _head_is_current_with_base(compare: dict[str, Any]) -> bool:
+    status = str(compare.get("status") or "")
+    try:
+        behind_by = int(compare.get("behind_by") or 0)
+    except (TypeError, ValueError):
+        return False
+    return behind_by == 0 and status in {"ahead", "identical"}
+
+
 def open_auto_ship_pr(
     *,
     universe_path: Path,
@@ -162,6 +210,7 @@ def open_auto_ship_pr(
     repo: str | None = None,
     create_enabled: bool | None = None,
     token: str | None = None,
+    get_json: JsonGet | None = None,
     post_json: JsonPost | None = None,
 ) -> dict[str, Any]:
     """Open a PR for a passed auto-ship attempt.
@@ -244,6 +293,7 @@ def open_auto_ship_pr(
 
     try:
         head = _validate_head_branch(head_branch)
+        base = _validate_base_branch(base_branch)
         repo_slug = _repo_slug(repo)
     except ValueError as exc:
         msg = str(exc)
@@ -284,11 +334,92 @@ def open_auto_ship_pr(
             ledger_error=ledger_error,
         )
 
+    get = get_json or _get_github_json
+    compare_link = _compare_url(repo_slug, base, head)
+    try:
+        compare_status, compare_response = get(compare_link, gh_token)
+    except Exception as exc:  # noqa: BLE001 - preserve ledger observability
+        msg = f"GitHub branch freshness check failed: {type(exc).__name__}: {exc}"
+        ledger_error = _mark_attempt(
+            universe_path,
+            attempt_id,
+            ship_status="failed",
+            error_class="pr_create_base_check_failed",
+            error_message=msg,
+        )
+        result = _error_result(
+            ship_attempt_id=attempt_id,
+            ship_status="failed",
+            error_class="pr_create_base_check_failed",
+            error_message=msg,
+            would_open_pr=True,
+            dry_run=False,
+            ledger_error=ledger_error,
+        )
+        result["head_branch"] = head
+        result["base_branch"] = base
+        return result
+
+    if compare_status != 200:
+        msg = compare_response.get("message") or json.dumps(compare_response, default=str)
+        error_message = (
+            f"GitHub branch freshness check failed with HTTP {compare_status}: {msg}"
+        )
+        ledger_error = _mark_attempt(
+            universe_path,
+            attempt_id,
+            ship_status="failed",
+            error_class="pr_create_base_check_failed",
+            error_message=error_message,
+        )
+        result = _error_result(
+            ship_attempt_id=attempt_id,
+            ship_status="failed",
+            error_class="pr_create_base_check_failed",
+            error_message=error_message,
+            would_open_pr=True,
+            dry_run=False,
+            ledger_error=ledger_error,
+        )
+        result["head_branch"] = head
+        result["base_branch"] = base
+        return result
+
+    if not _head_is_current_with_base(compare_response):
+        status_text = str(compare_response.get("status") or "unknown")
+        behind_by = compare_response.get("behind_by")
+        msg = (
+            f"head_branch {head!r} is behind/diverged from base_branch {base!r}; "
+            f"compare_status={status_text!r} behind_by={behind_by!r}. "
+            "Rebase or recreate the auto-change branch before PR creation."
+        )
+        ledger_error = _mark_attempt(
+            universe_path,
+            attempt_id,
+            ship_status="failed",
+            error_class="pr_create_stale_head",
+            error_message=msg,
+        )
+        result = _error_result(
+            ship_attempt_id=attempt_id,
+            ship_status="failed",
+            error_class="pr_create_stale_head",
+            error_message=msg,
+            would_open_pr=True,
+            dry_run=False,
+            ledger_error=ledger_error,
+        )
+        result["head_branch"] = head
+        result["base_branch"] = base
+        result["compare_status"] = status_text
+        result["behind_by"] = behind_by
+        return result
+
     pr_title = title.strip() or f"[auto-change] {attempt.request_id or attempt_id}"
     payload = {
         "title": pr_title,
         "head": head,
-        "base": base_branch.strip() or "main",
+        "base": base,
         "body": body,
         "draft": False,
     }

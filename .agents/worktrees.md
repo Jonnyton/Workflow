@@ -387,3 +387,13 @@ Notes:
   so MCP/chatbot-triggered auto-ship attempts can write ledger rows.
 - Ship condition: regression test, targeted auto-ship tests, plugin mirror,
   ruff, and diff-check pass; PR opened for Cowork review.
+
+## BUG-059 Stale Auto-Change PR Guard - 2026-05-04
+
+- 2026-05-04 continue current checkout on
+  `auto-change/issue-263-codex-25312828510` by codex-gpt5-bug059.
+- Source: GitHub issue #263 / BUG-059.
+- Purpose: prevent loop-created PRs from stale `auto-change/*` heads whose
+  review diff includes phantom deletions from an old base.
+- Ship condition: targeted branch-base guard, focused tests, ruff, and plugin
+  mirror if runtime files changed.
