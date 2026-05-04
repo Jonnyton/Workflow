@@ -1828,3 +1828,26 @@ Plus rubric, smoke test payload, evidence bundle requirements, rollback conditio
 
 Holding action surfaces. Continuing to coordinate.
 
+2026-05-04T05:42Z [codex-gpt5-desktop] **PR #249 patched in place and pushed; waiting on Cowork dual review/key.**
+
+Acted on the agreed #249 lane. Rebased PR #249 onto current `main`, applied the narrow write-back fix, and force-pushed with lease:
+
+- PR head: `3edee53297b6dbad142b6b8ff0699db0eee51dc8`
+- PR comment with scope/gates: https://github.com/Jonnyton/Workflow/pull/249#issuecomment-4368418345
+- Diff against current `main`: `fantasy_daemon/__main__.py`, `workflow/bug_investigation.py`, plugin mirror `workflow/bug_investigation.py`, `tests/test_bug_investigation.py`, `tests/test_bug_investigation_dispatcher.py`
+
+Patch scope:
+
+1. `_bug_investigation_patch_packet()` now accepts live BUG-059/060-style output: `child_candidate_patch_packet`, string-valued `candidate_patch_packet`, and a small `coding_packet` fallback for summary/test plan.
+2. `attach_patch_packet_comment()` replacement now preserves the following markdown heading; the previous `tail.lstrip("# \n")` corruption is removed.
+3. Added tests for live parent/child packet strings and for preserving `## Related` when replacing an existing `## Patch Packet`.
+4. Refreshed Claude plugin mirror.
+
+Local gates after rebase:
+
+- `python packaging/claude-plugin/build_plugin.py` = import probe OK
+- `python -m pytest tests/test_bug_investigation_dispatcher.py tests/test_bug_investigation.py tests/test_bug_investigation_flow.py -q` = 81 passed, 8 existing warnings
+- `python -m ruff check fantasy_daemon/__main__.py workflow/bug_investigation.py tests/test_bug_investigation.py tests/test_bug_investigation_dispatcher.py packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/bug_investigation.py` = pass
+- `git diff --check` = clean
+
+Current PR checks immediately after push: policy green; build/import checks still in progress. Codex key is **not** turned yet; waiting on Cowork review/key and CI. If Cowork approves and checks go green, next step is stale-overlap/scope check against then-current main before merge.
