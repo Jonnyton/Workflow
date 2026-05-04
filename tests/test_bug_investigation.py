@@ -252,6 +252,23 @@ class TestAttachPatchPacketComment:
         assert "new cause" in written
         assert "old cause" not in written
 
+    def test_reattach_preserves_following_heading(self, tmp_path):
+        bugs_dir = _make_bugs_dir(tmp_path)
+        initial_page = (
+            _SAMPLE_PAGE
+            + "\n\n## Patch Packet\n\n### Root Cause\n\nold cause\n\n"
+            + "## Related\n\n- BUG-041\n"
+        )
+        page = _write_bug_page(bugs_dir, "bug-042-widget-explodes.md", initial_page)
+
+        result = self._call("BUG-042", {"root_cause": "new cause"}, tmp_path)
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "## Related\n\n- BUG-041" in written
+        assert "\nRelated\n" not in written
+        assert "old cause" not in written
+
     def test_empty_patch_packet_returns_error(self, tmp_path):
         """Empty patch_packet → error returned, no write attempted."""
         bugs_dir = _make_bugs_dir(tmp_path)

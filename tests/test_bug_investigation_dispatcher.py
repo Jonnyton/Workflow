@@ -426,3 +426,76 @@ class TestBugInvestigationPatchPacketWriteBack:
 
         assert result["status"] == "attached"
         assert "attach child packet output" in page.read_text(encoding="utf-8")
+
+    def test_attaches_live_parent_child_candidate_packet_string(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import (
+            _maybe_attach_bug_investigation_patch_packet,
+        )
+
+        page = self._make_bug_page(tmp_path)
+        monkeypatch.setattr("workflow.storage.wiki_path", lambda: tmp_path)
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        result = _maybe_attach_bug_investigation_patch_packet(
+            task,
+            "completed",
+            {
+                "child_candidate_patch_packet": (
+                    "The patch packet is in "
+                    "[candidate_patch_packet.md](/tmp/workflow/candidate_patch_packet.md:1)."
+                ),
+                "child_run_id": "e12caa6629ff48d6",
+                "coding_packet": {
+                    "status": "CHILD_REVIEW_READY",
+                    "candidate_packet_summary": "freshness_scope_check before PR creation",
+                },
+            },
+        )
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "## Patch Packet" in written
+        assert "candidate_patch_packet.md" in written
+        assert "### Implementation Sketch" in written
+
+    def test_attaches_live_child_candidate_packet_string(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import (
+            _maybe_attach_bug_investigation_patch_packet,
+        )
+
+        page = self._make_bug_page(tmp_path)
+        monkeypatch.setattr("workflow.storage.wiki_path", lambda: tmp_path)
+        task = BranchTask(
+            branch_task_id="bt-bug",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        result = _maybe_attach_bug_investigation_patch_packet(
+            task,
+            "completed",
+            {
+                "candidate_patch_packet": (
+                    "**candidate_patch_packet**\n\n"
+                    "`repo_availability_gate` blocks coding before source is present."
+                ),
+                "keep_reject_decision": "REVIEW_READY",
+            },
+        )
+
+        assert result["status"] == "attached"
+        written = page.read_text(encoding="utf-8")
+        assert "repo_availability_gate" in written
+        assert "### Implementation Sketch" in written

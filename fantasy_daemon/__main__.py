@@ -691,15 +691,38 @@ def _branch_task_inputs_for_execution(claimed_task: Any) -> dict[str, Any]:
     return inputs
 
 
+def _coerce_bug_investigation_patch_packet(packet: Any) -> dict[str, Any]:
+    if isinstance(packet, dict) and packet:
+        return packet
+    if isinstance(packet, str) and packet.strip():
+        return {"implementation_sketch": packet.strip()}
+    return {}
+
+
 def _bug_investigation_patch_packet(output: dict[str, Any]) -> dict[str, Any]:
     """Return the completed investigation packet from known output shapes."""
-    for key in ("patch_packet", "candidate_patch_packet"):
-        packet = output.get(key)
-        if isinstance(packet, dict) and packet:
+    for key in ("patch_packet", "candidate_patch_packet", "child_candidate_patch_packet"):
+        packet = _coerce_bug_investigation_patch_packet(output.get(key))
+        if packet:
             return packet
     child_output = output.get("attached_child_output")
     if isinstance(child_output, dict):
         return _bug_investigation_patch_packet(child_output)
+    coding_packet = output.get("coding_packet")
+    if isinstance(coding_packet, dict):
+        packet: dict[str, Any] = {}
+        summary = str(coding_packet.get("candidate_packet_summary") or "").strip()
+        if summary:
+            packet["implementation_sketch"] = summary
+        tests = coding_packet.get("expected_tests")
+        if isinstance(tests, list):
+            test_plan = "\n".join(f"- {str(item).strip()}" for item in tests if str(item).strip())
+        else:
+            test_plan = str(tests or "").strip()
+        if test_plan:
+            packet["test_plan"] = test_plan
+        if packet:
+            return packet
     return {}
 
 

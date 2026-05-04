@@ -162,7 +162,7 @@ def attach_patch_packet_comment(
         next_h2 = re.search(r"\n## ", existing[head_idx + len(_PATCH_PACKET_HEADING):])
         if next_h2:
             tail = existing[head_idx + len(_PATCH_PACKET_HEADING) + next_h2.start():]
-            body = existing[:head_idx].rstrip() + packet_section + "\n\n" + tail.lstrip("# \n")
+            body = existing[:head_idx].rstrip() + packet_section + "\n\n" + tail.lstrip("\n")
         else:
             body = existing[:head_idx].rstrip() + packet_section + "\n"
     else:
