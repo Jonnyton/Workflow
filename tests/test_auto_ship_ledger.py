@@ -506,3 +506,73 @@ def test_mutable_fields_excludes_identity_fields():
 
 def test_ledger_filename_matches_spec_lowercase_snake():
     assert LEDGER_FILENAME == "auto_ship_attempts.jsonl"
+
+
+# ── Slice C — rollback PR identity fields (PR #227, Codex review 2026-05-03) ──
+
+
+def test_ship_attempt_has_rollback_pr_identity_fields():
+    """Schema check: ShipAttempt has rollback_pr_number + rollback_pr_url
+    fields with empty-string defaults (forward-compat with rows written
+    before Slice C lands)."""
+    row = ShipAttempt(
+        ship_attempt_id="ship_20260504_aa11bb22",
+        created_at="2026-05-04T01:00:00+00:00",
+        updated_at="2026-05-04T01:00:00+00:00",
+        ship_status="skipped",
+    )
+    assert row.rollback_pr_number == ""
+    assert row.rollback_pr_url == ""
+    # Also via to_dict (so chatbots/operators see the keys even when empty)
+    d = row.to_dict()
+    assert "rollback_pr_number" in d
+    assert "rollback_pr_url" in d
+
+
+def test_update_attempt_can_mutate_rollback_pr_identity_fields(tmp_path):
+    """update_attempt accepts rollback_pr_number + rollback_pr_url because
+    they're in MUTABLE_FIELDS. This is the contract record_rollback_decision
+    relies on per docs/specs/auto-ship-rollback-v0.md."""
+    row = ShipAttempt(
+        ship_attempt_id="ship_20260504_cc33dd44",
+        created_at="2026-05-04T01:01:00+00:00",
+        updated_at="2026-05-04T01:01:00+00:00",
+        ship_status="merged",
+        ship_class="docs_canary",
+    )
+    record_attempt(tmp_path, row)
+    update_attempt(
+        tmp_path,
+        row.ship_attempt_id,
+        ship_status="rolled_back",
+        rollback_pr_number="500",
+        rollback_pr_url="https://github.com/Jonnyton/Workflow/pull/500",
+    )
+    rd = find_attempt(tmp_path, row.ship_attempt_id)
+    assert rd is not None
+    assert rd.ship_status == "rolled_back"
+    assert rd.rollback_pr_number == "500"
+    assert rd.rollback_pr_url == "https://github.com/Jonnyton/Workflow/pull/500"
+
+
+def test_old_row_without_rollback_pr_fields_loads_cleanly():
+    """Forward-compat: a JSONL row written before this PR (no rollback_pr_*)
+    must still hydrate via from_dict, with empty defaults."""
+    legacy_row = {
+        "ship_attempt_id": "ship_20260501_legacy01",
+        "created_at": "2026-05-01T00:00:00+00:00",
+        "updated_at": "2026-05-01T00:00:00+00:00",
+        "ship_status": "merged",
+        "request_id": "REQ-LEGACY",
+    }
+    row = ShipAttempt.from_dict(legacy_row)
+    assert row.ship_attempt_id == "ship_20260501_legacy01"
+    assert row.rollback_pr_number == ""
+    assert row.rollback_pr_url == ""
+
+
+def test_mutable_fields_includes_rollback_pr_identity():
+    """Explicit allowlist check so the schema and the mutability rules
+    stay in sync."""
+    assert "rollback_pr_number" in MUTABLE_FIELDS
+    assert "rollback_pr_url" in MUTABLE_FIELDS

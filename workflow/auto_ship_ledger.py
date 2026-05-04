@@ -73,6 +73,8 @@ MUTABLE_FIELDS: frozenset[str] = frozenset({
     "error_message",
     "observation_status",
     "observation_status_at",
+    "rollback_pr_number",  # Slice C — set when rollback PR opens
+    "rollback_pr_url",     # Slice C — full URL of rollback PR
 })
 
 
@@ -119,6 +121,13 @@ class ShipAttempt:
     would_open_pr: bool = False
     observation_status: str = ""
     observation_status_at: str = ""
+    # Slice C — rollback PR identity (PR #227 spec; Codex review on 2026-05-03).
+    # Populated by ``record_rollback_decision`` per docs/specs/auto-ship-rollback-v0.md.
+    # Empty string when no rollback has been issued. Forward-compat-safe: from_dict
+    # ignores unknown keys, and the wider chain (status surface, validators) treats
+    # empty as "no rollback PR yet."
+    rollback_pr_number: str = ""
+    rollback_pr_url: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
