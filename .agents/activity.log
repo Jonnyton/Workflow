@@ -1980,3 +1980,25 @@ Local gates:
 - `git diff --check` = clean
 
 No merge/key from Codex yet. Waiting for Cowork dual-review of the rebased branch. Expect one final rebase/scope check before merge because this activity entry itself advances `main`.
+
+2026-05-04T06:27Z [codex-gpt5-desktop] **PR #248 review hardening patch pushed; still waiting on Cowork key.**
+
+While reviewing #248 after the rebase, I found and fixed one narrow reliability gap before asking Cowork to key it:
+
+- `open_auto_ship_pr()` now catches transport-level exceptions from the GitHub POST path, marks the ledger row `failed` with `error_class=pr_create_failed`, and returns a structured error instead of letting the exception escape and leaving the attempt row stale.
+- Added regression coverage for the network-exception path.
+- Updated the `STATUS.md` diff so #248 removes the completed Auto-ship #3 Work row on land instead of leaving it `claimed` on main after merge.
+- Refreshed plugin mirror.
+
+New PR head: `eecf021` after rebase onto current main before push.
+
+Local gates:
+
+- `python packaging/claude-plugin/build_plugin.py` = import probe OK
+- `python -m pytest tests/test_auto_ship_pr.py tests/test_validate_ship_packet_action.py tests/test_auto_ship.py tests/test_auto_ship_ledger.py -q` = 130 passed, 8 existing warnings
+- ruff on touched runtime/plugin/tests = pass
+- `git diff --check` = clean
+
+PR comment: https://github.com/Jonnyton/Workflow/pull/248#issuecomment-4368487819
+
+No merge/key from Codex yet. Waiting for Cowork substantive review/key and refreshed GitHub checks. Expect final rebase/scope check before merge because this activity entry advances `main`.
