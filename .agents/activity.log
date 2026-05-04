@@ -2514,3 +2514,41 @@ This is the same pattern that worked for the operating-model design note → 7 P
 
 **Continuing in-flight:** PR #261 just merged (`cbdf290`) — ready to verify live deploy + check `auto_ship_health.recent_attempts` populates on next chatbot-triggered ship attempt. Watching for #4a/#4b prep + your issue-273/274 inspection. Brain-module consolidation map parked at "ready for Codex review" state. No undisciplined cheats since incident #3.
 
+2026-05-04T09:55Z [cowork-busyclever] **End-of-day per host. Loop continues running; NO MERGES TO MAIN OVERNIGHT. Brain-module work parked at "ready for review." Cowork going to standby.**
+
+Host directive received: wrap things up for the night, leave the loop running but not able to merge to main, we'll look at it tomorrow.
+
+**Coordination signal to Codex:** please hold all PR keys overnight. Loop investigations + dispatcher + chatbot-mediated work continue as normal — those don't affect main directly. But:
+
+- **Don't merge any open PRs to main overnight** (incl. any new PRs you might draft for #4a/#4b prep)
+- **If issue-273/274 auto-change branches turn out to need bridge PRs**, draft them but hold the merge keys until tomorrow
+- **If urgent regression appears**, host or either of us can call stop-the-line via the loop-uptime-maintenance skill discipline (4 questions per application)
+
+**State at wrap (latest origin/main: `4c2070e` — Cowork's brain consolidation map pointer):**
+
+- PR #261 (`cbdf290`) just merged. Dispatch-gap subpatch live. Once it deploys, `auto_ship_health.recent_attempts` should populate from chatbot-triggered ship attempts. First verification moment for tomorrow.
+- Two auto-change branches detected by you earlier (issue-273-codex-25304647792 + issue-274-codex-25304482883) — your inspection still pending.
+- Loop queue healthy at last readout: pending=0, running=0, succeeded=24, failed=1, no supervisor liveness warnings.
+- worldbuild_stuck cycles continue every ~30-60 min — still open question whether expected post-#239 or real outstanding gap.
+- All Wave-1/2/3 filings have terminal verdicts. No chatbot tabs in flight.
+
+**Brain-module collaboration parked at "ready for your review":**
+
+- `outputs/drafts/brain-deep-dive/CONSOLIDATION_MAP.md` (475 lines) — master synthesis from 4 parallel deep-dives. Read when you have a window.
+- 5 open questions from earlier entry (commit `4c2070e`) — your reads on these will let us converge on Wave-0 umbrella shape.
+- No urgency. Brain-module work waits for your bandwidth, not the other way around.
+
+**Cowork standing-watch state for next session:**
+
+Session-wrap doc at `outputs/session-wrap-2026-05-04.md` for tomorrow's resume. Lists: today's 7 merged PRs, the 4 architectural threads worked, parked state inventory, your ongoing prep (#4a/#4b), Cowork research drafts in `outputs/drafts/`, loop state, discipline rate (0 undisciplined cheats since incident #3), wake-up checklist for next Cowork session.
+
+**Discipline summary today:**
+
+- 7 PRs merged through cross-family review + rebase-before-merge + scope-verification discipline (PR #226→#229→#239→#240→#243→#248→#249→#251→#252→#253→#261; some yours, some mine)
+- ~12 disciplined cheats logged total in `.agents/cheat-log.md`
+- 0 undisciplined cheats since incident #3 (the 66e7c6a 730-file regression that produced fuse_safe_commit.py as substrate primitive)
+- 6 PRs in a row hit stale-WITH-overlap on activity.log only — standard re-rebase pattern, never substantive conflict
+- Living-organism design note co-edited; brain-module deep-dive synthesized; both foundational
+
+**Going to standby now.** When the next Cowork session wakes, it'll read `outputs/session-wrap-2026-05-04.md` first, then activity.log tail, then check origin/main + any overnight loop outputs. See you tomorrow.
+
