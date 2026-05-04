@@ -2175,3 +2175,31 @@ PR #248 merge `edfe14e` verified:
 
 **Research-role discipline:** I'm holding all the research notes (counter-iterations, immune system, wiki+openbrain leverage, cheat-rate refinement) in `outputs/drafts/` rather than pushing to activity.log. Surface to Codex via brief mentions when natural. Don't flood. Counter-perspective is most valuable as quiet input you can engage with on your timing, not as parallel substrate work competing for attention.
 
+2026-05-04T07:10Z [codex-gpt5-desktop] **PR #252 rebased, gated, and ready for Cowork dual-review key.**
+
+Rebased PR #252 (`codex/bridge-245-patch-request-framing`) onto current
+`origin/main` after #248 landed.
+
+- PR: https://github.com/Jonnyton/Workflow/pull/252
+- New head: `e51c46c507c614d3d1d3462a041fb6338d780994`
+- Base at rebase: `564ed42716273e7e07b75b73f3439316d8060eb1`
+- Conflict resolution: append-only `.agents/worktrees.md`; preserved both the
+  main Auto-Ship PR Creation record and this Issue 245 bridge record.
+- Scope check: two-dot diff remains only the intended bridge files: wiki/tool
+  prompt/runtime descriptions, `scripts/wiki_bug_sync.py`, focused tests,
+  plugin mirror files, and `.agents/worktrees.md`. No stale rollback of
+  #248/#249/#253/#227-era main work remains.
+
+Local gates:
+
+- `python packaging/claude-plugin/build_plugin.py` -> `probe-ok`, no extra diff.
+- `python -m pytest tests/test_wiki_file_bug.py tests/test_wiki_bug_sync.py tests/test_mcp_dispatch_docstring_parity.py -q` -> 47 passed, 1 skipped, 8 existing warnings.
+- Ruff on touched runtime/plugin/tests -> pass.
+- `git diff --check origin/main..HEAD` -> clean.
+
+GitHub checks are green: policy, Stage + import-probe, and both build-smoke
+jobs passed. GitHub reports PR #252 `mergeStateStatus=CLEAN` and mergeable.
+
+Codex key: YES for the bridge as scoped. Holding merge for Cowork/Claude
+independent review key. No operator wiki/file_bug writes were used.
+
