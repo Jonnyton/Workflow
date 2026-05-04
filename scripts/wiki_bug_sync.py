@@ -289,15 +289,46 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
     entry_type = str(entry.get("type", "")).lower()
     title = str(entry.get("title", "")).lower()
     design_text = f"{path} {entry_type} {title}"
+    routed_change_path = path.startswith((
+        "pages/feature-requests/",
+        "feature-requests/",
+        "pages/patch-requests/",
+        "patch-requests/",
+        "pages/design-proposals/",
+        "design-proposals/",
+    ))
 
     # BUG pages are handled by the numeric cursor lane above.
-    if _bug_number(path) is not None or entry_type == "bug" or "/bugs/" in path:
+    if (
+        _bug_number(path) is not None
+        or "/bugs/" in path
+        or path.startswith("bugs/")
+        or (entry_type == "bug" and not routed_change_path)
+    ):
         return None
 
-    if path.startswith("pages/plans/feature-") or title.startswith("feature "):
+    if (
+        entry_type in {"feature", "feature_request"}
+        or path.startswith("pages/feature-requests/")
+        or path.startswith("feature-requests/")
+        or path.startswith("pages/plans/feature-")
+        or title.startswith("feature ")
+    ):
         return "feature"
-    if path.startswith("pages/plans/patch-") or title.startswith("patch "):
+    if (
+        entry_type in {"patch", "patch_request"}
+        or path.startswith("pages/patch-requests/")
+        or path.startswith("patch-requests/")
+        or path.startswith("pages/plans/patch-")
+        or title.startswith("patch ")
+    ):
         return "patch"
+    if (
+        entry_type in {"design", "design_proposal", "project-design"}
+        or path.startswith("pages/design-proposals/")
+        or path.startswith("design-proposals/")
+    ):
+        return "project-design"
     if path.startswith("pages/workflows/"):
         return "branch-refinement"
     if path.startswith("pages/notes/") and ("builder" in entry_type or "builder" in title):

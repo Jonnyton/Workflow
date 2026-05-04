@@ -357,3 +357,13 @@ Notes:
   `auto_ship_attempts` to `opened` + `pr_url`; targeted tests, ruff,
   plugin mirror, and diff-check pass.
 - Memory refs: `.agents/activity.log` 2026-05-03T23:25Z, PR #243.
+
+## Issue 245 Patch-Request Framing Bridge - 2026-05-04
+
+- 2026-05-04 create `../wf-bridge-245-patch-request-framing` on
+  `codex/bridge-245-patch-request-framing` by codex-gpt5-desktop.
+- Source: `origin/auto-change/issue-245-codex-25294660657`, GitHub issue #245.
+- Purpose: manually bridge the loop-created BUG-056 patch/feature/design
+  request framing fix while #248 auto-PR creation is not yet merged.
+- Ship condition: scoped diff excludes stale `.agents` deletions, plugin mirror
+  rebuilt, focused tests pass, PR opened for Cowork/Codex review.

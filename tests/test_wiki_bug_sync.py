@@ -193,6 +193,51 @@ def test_plain_promoted_plan_remains_docs_ops():
     assert result[0]["request_kind"] == "docs-ops"
 
 
+def test_patch_request_page_enters_patch_lane():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": "pages/patch-requests/pr-001-update-connector-guidance.md",
+                "title": "Update connector guidance",
+                "type": "patch_request",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "patch"
+
+
+def test_legacy_bug_typed_patch_request_page_enters_patch_lane():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": "pages/patch-requests/pr-002-legacy-type-bug.md",
+                "title": "Legacy patch page",
+                "type": "bug",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "patch"
+
+
+def test_feature_request_page_enters_feature_lane():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": "pages/feature-requests/feat-001-add-bulk-review.md",
+                "title": "Add bulk review",
+                "type": "feature",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "feature"
+
+
 # ---------------------------------------------------------------------------
 # cursor read/write
 # ---------------------------------------------------------------------------

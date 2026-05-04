@@ -311,8 +311,21 @@ def universe(
     without `text` returns an error.
 
     Args:
-        action: Universe read/write, queue, subscription, goal-pool,
-            community review, daemon roster/control, or config action name.
+        action: One of — reads: list, inspect, read_output, query_world,
+            get_activity, get_recent_events, get_ledger, read_premise,
+            list_canon, read_canon; writes: submit_request,
+            give_direction, set_premise, add_canon, add_canon_from_path,
+            create_universe, switch_universe; queue: queue_list,
+            queue_cancel; subscriptions: subscribe_goal, unsubscribe_goal,
+            list_subscriptions; goal-pool: post_to_goal_pool,
+            submit_node_bid; community review: community_change_context;
+            daemon roster/control: daemon_overview, daemon_list,
+            daemon_get, daemon_create, daemon_summon, daemon_pause,
+            daemon_resume, daemon_restart, daemon_banish,
+            daemon_update_behavior, daemon_control_status,
+            control_daemon; daemon memory: daemon_memory_capture,
+            daemon_memory_search, daemon_memory_list, daemon_memory_review,
+            daemon_memory_promote, daemon_memory_status; config: set_tier_config;
         universe_id: Target universe. Defaults to the active universe.
         text/path/filter_text: Action-specific content, file path, or filter.
         branch_id/request_type: Request routing fields.
@@ -532,6 +545,27 @@ def extensions(
     get_run_output, attach_existing_child_run, wait_for_run, resume_run,
     judge_run, compare_runs, schedule_branch, publish_version,
     validate_ship_packet, and open_auto_ship_pr.
+
+    Action groups:
+    - Registry: register, list, inspect, approve, disable, enable, remove.
+    - Branch atomic: create_branch, list_branches, get_branch,
+      describe_branch, delete_branch, add_node, connect_nodes,
+      set_entry_point, add_state_field, validate_branch, build_branch,
+      patch_branch, patch_nodes, update_node, rollback_node,
+      suggest_node_edit, search_nodes.
+    - Runs: run_branch, list_runs, get_run, get_run_output, stream_run,
+      wait_for_run, cancel_run, resume_run, query_runs, compare_runs,
+      estimate_run_cost, get_node_output, attach_existing_child_run,
+      get_routing_evidence, get_memory_scope_status.
+    - Judgments: judge_run, list_judgments.
+    - Versions: publish_version, list_branch_versions, get_branch_version,
+      run_branch_version, rollback_merge, get_rollback_history,
+      list_node_versions.
+    - Project memory: project_memory_get, project_memory_set,
+      project_memory_list.
+    - Scheduler: schedule_branch, unschedule_branch, subscribe_branch,
+      unsubscribe_branch, list_schedules, list_scheduler_subscriptions.
+    - Provenance: fork_tree.
 
     Args: pass `action` plus the matching ids or JSON payload fields.
     """
@@ -860,13 +894,14 @@ def wiki(
     workflow structure, node definitions, state, or run outputs. Use
     `extensions` for "build / design / create a workflow"; use wiki
     for "save this how-to / ref / note", "what is X", or filing user
-    bugs, feature requests, and design proposals.
+    bugs, patch requests, feature requests, and design proposals.
 
-    When the user asks to file a feature request, bug, or design
-    proposal, call `file_bug` directly. `file_bug` already does Jaccard
-    duplicate detection server-side; you do NOT need to search/list/read
-    the wiki before filing. If a similar filing exists, it returns
-    status="similar_found" with the existing match.
+    When the user asks to file a bug, patch request, feature request, or
+    design proposal, call `file_bug` directly with the matching `kind`
+    (`bug`, `patch_request`, `feature`, or `design`). `file_bug` already
+    does Jaccard duplicate detection server-side; you do NOT need to search/list/read
+    the wiki before filing. If a similar filing exists,
+    it returns status="similar_found" with the existing match.
 
     Args:
         action: One of — reads: read, search, list, lint;

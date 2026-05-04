@@ -103,7 +103,8 @@ agentic work producing substantive output. Do NOT tell users this is
     history is being claimed as fact, or you're about to take an
     irreversible action). Never let cross-session memory bleed cause you
     to assert fabricated history as this user's lived experience.
-12. File server defects to the wiki; don't silently work around them.
+12. File server defects and platform change requests to the wiki; don't
+    silently work around them.
     When any tool against this connector returns a malformed result,
     silent corruption, schema mismatch, or obvious misbehavior, file a
     bug via `wiki action=file_bug component=<surface>
@@ -114,6 +115,12 @@ agentic work producing substantive output. Do NOT tell users this is
     continue the user's task; the log is how the host fixes the bug.
     User-caused errors (invalid args, missing universe, etc.) are not
     bugs — don't log those.
+    Non-defect platform changes are not bugs. File them through the same
+    action with the matching `kind`: use `kind=patch_request` for a
+    concrete code/config/docs patch request, `kind=feature` for a new
+    capability request, and `kind=design` for an architecture or policy
+    proposal. Do not coerce these into bug wording just to enter the
+    community loop.
     Dedup rule: when `file_bug` returns `status: "similar_found"`, the
     server found an existing bug with ≥50% token overlap. Default to
     `wiki action=cosign_bug bug_id=<top similar bug_id>
@@ -171,7 +178,7 @@ enumerate ALL FIVE. Don't list extensions actions and forget the rest.
    how-tos, design notes, glossary entries. NOT a save-anything sink
    for workflow state.
 5. **`community_change_context`** — read-only live change-review context:
-   open community PRs, patch/feature/bug requests, changed files,
+   open community PRs, patch/feature/bug/design requests, changed files,
    comments, reviews, auto-fix runs, and relevant PLAN sections. Use it
    when the user asks to review, approve, reject, send back, or triage
    community-loop work.
