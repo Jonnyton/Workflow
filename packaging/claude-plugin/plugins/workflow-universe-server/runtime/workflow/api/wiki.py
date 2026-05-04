@@ -1174,7 +1174,7 @@ def _render_bug_markdown(
         f"---\n"
         f"id: {bug_id}\n"
         f"title: {title}\n"
-        f"type: bug\n"
+        f"type: {kind}\n"
         f"kind: {kind}\n"
         f"created: {first_seen_date}\n"
         f"updated: {first_seen_date}\n"
@@ -1220,7 +1220,7 @@ def _scan_existing_bugs(bugs_dir: Path) -> list[dict[str, Any]]:
         return []
     results = []
     for p in bugs_dir.glob("*.md"):
-        m = _BUG_ID_RE.match(p.stem)
+        m = re.match(r"^([A-Z]+)-(\d{3,})", p.stem, re.IGNORECASE)
         if not m:
             continue
         try:
@@ -1257,7 +1257,7 @@ def _scan_existing_bugs(bugs_dir: Path) -> list[dict[str, Any]]:
                     break
         haystack = _bug_token_set(fm_title + " " + observed_text[:300])
         results.append({
-            "bug_id": p.stem.split("-", 2)[0].upper() + "-" + p.stem.split("-", 2)[1],
+            "bug_id": f"{m.group(1).upper()}-{m.group(2)}",
             "title": fm_title,
             "status": fm_status,
             "haystack_tokens": haystack,
@@ -1271,13 +1271,14 @@ def _wiki_cosign_bug(
     reporter_context: str = "",
     **_kwargs: Any,
 ) -> str:
-    """Append a cosign to an existing bug / feature / design filing.
+    """Append a cosign to an existing bug / feature / design / patch filing.
 
     Derives the target directory from the ``bug_id`` prefix
     (``BUG-`` → ``pages/bugs/``, ``FEAT-`` → ``pages/feature-requests/``,
-    ``DESIGN-`` → ``pages/design-proposals/``). Appends a ``## Cosigns``
-    section (or extends existing), and increments the ``cosign_count``
-    frontmatter field. Returns ``{status: "cosigned", bug_id, cosign_count}``.
+    ``DESIGN-`` → ``pages/design-proposals/``, ``PR-`` →
+    ``pages/patch-requests/``). Appends a ``## Cosigns`` section (or
+    extends existing), and increments the ``cosign_count`` frontmatter
+    field. Returns ``{status: "cosigned", bug_id, cosign_count}``.
     """
     if not bug_id:
         return json.dumps({"error": "bug_id is required for cosign_bug."})
@@ -1366,11 +1367,12 @@ def _wiki_file_bug(
     verbose: bool = False,
     **_kwargs: Any,
 ) -> str:
-    """File a bug / feature request / design proposal to pages/bugs/.
+    """File a bug, feature request, design proposal, or patch request.
 
-    ``kind`` defaults to "bug"; set to "feature" or "design" for non-bug
-    filings. All three use the same pipeline — navigator vets before dev
-    implements (design-participation rule).
+    ``kind`` defaults to "bug"; set to "feature", "design", or
+    "patch_request" for non-bug filings. All kinds use the same request
+    pipeline — navigator vets before dev implements (design-participation
+    rule).
 
     Bypasses the draft-gate — filings land in pages/ immediately
     for host triage. ID is server-assigned via _next_bug_id. Atomic

@@ -34,6 +34,7 @@ handlers are parameterless single-action tools (`get_status`, `pause`,
 
 from __future__ import annotations
 
+import inspect
 import re
 
 import pytest
@@ -262,8 +263,13 @@ def _block_actions(slab: str, indent: int = 2) -> set[str]:
     return out
 
 
+def _tool_doc(handler) -> str:
+    """Return the normalized docstring shape exposed to MCP clients."""
+    return inspect.getdoc(handler) or ""
+
+
 def _docstring_actions_universe() -> set[str]:
-    doc = us.universe.__doc__ or ""
+    doc = _tool_doc(us.universe)
     slab = _extract_slab(
         doc,
         r"action:\s*One of\s*[—\-]",
@@ -273,7 +279,7 @@ def _docstring_actions_universe() -> set[str]:
 
 
 def _docstring_actions_wiki() -> set[str]:
-    doc = us.wiki.__doc__ or ""
+    doc = _tool_doc(us.wiki)
     slab = _extract_slab(
         doc,
         r"action:\s*One of\s*[—\-]",
@@ -283,20 +289,20 @@ def _docstring_actions_wiki() -> set[str]:
 
 
 def _docstring_actions_gates() -> set[str]:
-    doc = us.gates.__doc__ or ""
+    doc = _tool_doc(us.gates)
     primary = _extract_slab(doc, r"\nActions \([^)]*\):\s*\n", r"\n\n")
     bonus = _extract_slab(doc, r"\nBonus actions \([^)]*\):\s*\n", r"\n\n")
     return _block_actions(primary) | _block_actions(bonus)
 
 
 def _docstring_actions_goals() -> set[str]:
-    doc = us.goals.__doc__ or ""
+    doc = _tool_doc(us.goals)
     slab = _extract_slab(doc, r"\nActions:\s*\n", r"\n\n")
     return _block_actions(slab)
 
 
 def _docstring_actions_extensions() -> set[str]:
-    doc = us.extensions.__doc__ or ""
+    doc = _tool_doc(us.extensions)
     slab = _extract_slab(doc, r"\nAction groups:\s*\n", r"\n\n")
     return _bullet_group_actions(slab)
 
@@ -377,7 +383,7 @@ def test_no_orphaned_documented_actions(
 
 def test_wiki_docstring_tells_clients_to_file_bug_directly() -> None:
     """The wiki tool description must not trigger costly filing pre-flight."""
-    doc = us.wiki.__doc__ or ""
+    doc = _tool_doc(us.wiki)
 
     assert "call `file_bug` directly" in doc
     assert "duplicate detection server-side" in doc
