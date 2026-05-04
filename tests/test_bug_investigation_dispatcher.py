@@ -369,6 +369,63 @@ class TestBugInvestigationPatchPacketWriteBack:
         assert "## Patch Packet" in written
         assert "completed run output was never attached" in written
 
+    def test_direct_branch_execution_resolves_trigger_receipt_run_id(
+        self, tmp_path, monkeypatch
+    ):
+        from fantasy_daemon.__main__ import _try_execute_claimed_branch_task
+
+        class FakeBranch:
+            def validate(self):
+                return []
+
+        class FakeOutcome:
+            run_id = "run-resolved-1"
+            status = "completed"
+            output = {}
+            error = ""
+
+        resolved: dict[str, str] = {}
+        monkeypatch.setattr("workflow.storage.data_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            "workflow.api.branches._resolve_branch_id",
+            lambda requested, base_path: "branch-canonical",
+        )
+        monkeypatch.setattr(
+            "workflow.daemon_server.get_branch_definition",
+            lambda base_path, branch_def_id: {"name": "fake"},
+        )
+        monkeypatch.setattr(
+            "workflow.branches.BranchDefinition.from_dict",
+            staticmethod(lambda data: FakeBranch()),
+        )
+        monkeypatch.setattr(
+            "workflow.runs.execute_branch",
+            lambda *args, **kwargs: FakeOutcome(),
+        )
+        monkeypatch.setattr(
+            "workflow.wiki.trigger_receipts.mark_run_resolved",
+            lambda **kwargs: resolved.update(kwargs),
+        )
+        task = BranchTask(
+            branch_task_id="dispatch-123",
+            branch_def_id="branch-canonical",
+            universe_id="u",
+            inputs={"bug_id": "BUG-057"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        success, error, metadata = _try_execute_claimed_branch_task(
+            tmp_path, task, "daemon-1",
+        )
+
+        assert success is True
+        assert error == ""
+        assert metadata["run_id"] == "run-resolved-1"
+        assert resolved == {
+            "dispatcher_request_id": "dispatch-123",
+            "run_id": "run-resolved-1",
+        }
+
     def test_non_completed_bug_investigation_does_not_attach_false_packet(
         self, tmp_path, monkeypatch
     ):
