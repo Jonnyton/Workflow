@@ -367,3 +367,13 @@ Notes:
   request framing fix while #248 auto-PR creation is not yet merged.
 - Ship condition: scoped diff excludes stale `.agents` deletions, plugin mirror
   rebuilt, focused tests pass, PR opened for Cowork/Codex review.
+
+## Issue 244 Autonomy Roadmap Bridge - 2026-05-04
+
+- 2026-05-04 create `../wf-bridge-244-autonomy-roadmap` on
+  `codex/bridge-244-autonomy-roadmap` by codex-gpt5-desktop.
+- Source: `origin/auto-change/issue-244-codex-25294779205`, GitHub issue #244.
+- Purpose: manually bridge the loop-created autonomy roadmap/config branch while
+  #248 auto-PR creation is not yet merged.
+- Ship condition: scoped diff excludes stale `.agents` deletions, focused config
+  test passes, PR opened for Cowork/Codex review.

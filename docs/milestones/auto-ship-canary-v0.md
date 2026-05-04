@@ -6,6 +6,10 @@ Primary branch: `change_loop_v1` (`fd5c66b1d87d`)
 Proposed variant: `change_loop_v1_auto_keep_canary`
 Goal: land the first autonomously shipped patch through the community-driven patch loop, under a narrow, allowlisted, reversible canary envelope.
 
+Roadmap extension: `docs/specs/2026-05-04-loop-autonomy-roadmap.md` records
+the coherent autonomy ladder across PR creation, keyed auto-merge,
+ship-class graduation, observation, rollback, and empty-queue self-seeking.
+
 ## 1. Purpose
 
 The community patch loop can now ingest filed requests, run investigation/coding/release/observation stages, and persist receipts. What it cannot yet do is **ship a patch end-to-end without a human merging it**.
