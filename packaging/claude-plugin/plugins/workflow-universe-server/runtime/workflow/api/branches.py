@@ -708,6 +708,12 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
     except Exception:  # noqa: BLE001 — best-effort non-blocking warning
         pass
 
+    admission_tests = _branch_admission_tests(
+        errors=errors,
+        unapproved_source_code_nodes=unapproved_sc,
+        sandbox_warnings=sandbox_warnings,
+    )
+
     return json.dumps({
         "branch_def_id": bid,
         "valid": not errors,
@@ -715,7 +721,83 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
         "runnable": not errors and not unapproved_sc,
         "unapproved_source_code_nodes": unapproved_sc,
         "sandbox_warnings": sandbox_warnings,
+        "admission_tests": admission_tests,
+        "collision_classes": [
+            cls
+            for test in admission_tests
+            if test["id"] == "collision_classes"
+            for cls in test["classes"]
+        ],
     })
+
+
+def _branch_admission_tests(
+    *,
+    errors: list[str],
+    unapproved_source_code_nodes: list[dict[str, str]],
+    sandbox_warnings: list[str],
+) -> list[dict[str, Any]]:
+    collision_classes = _validation_collision_classes(errors)
+    return [
+        {
+            "id": "structural_validation",
+            "label": "Structural validation",
+            "passed": not errors,
+            "blocking": True,
+            "errors": errors,
+        },
+        {
+            "id": "collision_classes",
+            "label": "Collision checks",
+            "passed": not collision_classes,
+            "blocking": True,
+            "classes": collision_classes,
+        },
+        {
+            "id": "source_code_approval",
+            "label": "Source-code approval",
+            "passed": not unapproved_source_code_nodes,
+            "blocking": True,
+            "nodes": unapproved_source_code_nodes,
+        },
+        {
+            "id": "host_sandbox",
+            "label": "Host sandbox availability",
+            "passed": not sandbox_warnings,
+            "blocking": False,
+            "warnings": sandbox_warnings,
+        },
+    ]
+
+
+def _validation_collision_classes(errors: list[str]) -> list[dict[str, str]]:
+    classes: list[dict[str, str]] = []
+    for error in errors:
+        lowered = error.lower()
+        if lowered.startswith("duplicate node definition id:"):
+            classes.append({
+                "class": "duplicate_node_definition_id",
+                "message": error,
+            })
+        elif lowered.startswith("duplicate graph node id:"):
+            classes.append({
+                "class": "duplicate_graph_node_id",
+                "message": error,
+            })
+        elif lowered.startswith("duplicate state field name:"):
+            classes.append({
+                "class": "duplicate_state_field_name",
+                "message": error,
+            })
+        elif (
+            lowered.startswith("state field name ")
+            and " collides with a graph node id" in lowered
+        ):
+            classes.append({
+                "class": "state_field_graph_node_id_collision",
+                "message": error,
+            })
+    return classes
 
 
 _MERMAID_ID_SAFE = re.compile(r"[^A-Za-z0-9_]")
