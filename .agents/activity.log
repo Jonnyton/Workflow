@@ -994,3 +994,34 @@ Wiki + openbrain IS the loop's brain. Chatbots are user-facing edges. Loop is th
 
 **Standing rules unchanged.** Cheats this session: 3 (all disclosed earlier, 0 since). 0 substrate moves outside dual-review/loop-uptime-maintenance discipline. Wave-1 ledger: BUG-056 + BUG-057 sitting at REVIEW_READY/HOLD/OBSERVE on their wiki pages, BUG-056's chatbot tab still actively producing implementation handoff for Claude (not abandoned). Issue #244 (Filing C autonomy roadmap) routed to GitHub Issues by chatbot rather than wiki — separate routing surface, may or may not enter the loop's queue. Worth checking.
 
+
+2026-05-04T00:38Z [cowork-busyclever] **STOP-THE-LINE: I broke origin/main with 66e7c6a. Force-recovered to 631bae9. Loop-uptime-maintenance skill applied. Apology + incident log + skill update.**
+
+The previous activity.log entry I pushed (66e7c6a, 00:30Z) accidentally regressed 730 files / -81390 lines from `1b2bf83`. Removed `workflow/auto_ship.py`, `workflow/auto_ship_ledger.py`, `workflow/api/auto_ship_actions.py`, `workflow/daemon_memory.py`, `workflow/daemon_registry.py`, `workflow/daemon_wiki.py`, `workflow/wiki/trigger_receipts.py`, `workflow/providers/diagnostics.py`, and 720+ other recent additions while looking like a 35-line activity.log change.
+
+**Root cause:** built the commit via git plumbing using `cp .git/index $GIT_INDEX_FILE` — copied a stale local index instead of reading fresh from `1b2bf83`'s actual tree. **Same kitchen-sink-diff failure mode I had diagnosed in your auto-change branches ~5 minutes earlier** (outputs/drafts/finding-auto-change-kitchen-sink-diff.md). Embarrassing. The substrate fix shape I proposed for auto-change writers (branch fresh from main, scope diff to issue) applies verbatim to my own plumbing.
+
+**Recovery (commit 631bae9):**
+- Built recovery commit using fresh `git read-tree 1b2bf83` (NOT `cp .git/index`)
+- Hashed only the intended `.agents/activity.log` blob, added to fresh index
+- `git diff --stat 1b2bf83..631bae9` shows exactly `.agents/activity.log | 35 +++++++++++++++++++++++++++++++++++` — no other changes
+- Force-pushed `+ 66e7c6a...631bae9 main -> main (forced update)` at 00:36Z
+- All 730 regressed files restored; the activity.log content I intended is preserved
+
+**No production impact.** Deployed daemon kept running pre-66e7c6a code throughout. Queue stayed healthy, supervisor warnings stayed clear. No deploy ran from main during the bad-state window. Risk window was about 6 minutes between push and detection.
+
+**If you pulled 66e7c6a between 00:30Z and 00:36Z, please `git fetch origin && git reset --hard origin/main`** to drop the regression from your local checkout. If you didn't pull, you saw nothing.
+
+**Incident log + four reflection questions** at `.agents/skills/loop-uptime-maintenance/incidents/2026-05-04-cowork-stale-index-regression.md`. Substrate improvements named:
+1. `scripts/fuse_safe_commit.py` — wrapper that always `git read-tree <ref>` from known-good base, never `cp .git/index`. Verifies diff scope before producing commit hash. Same shape + safety stance as `fuse_safe_write.py`.
+2. CLAUDE.md addition — explicit rule for FUSE-locked git plumbing.
+3. Cowork session-start ritual — `git fetch && git read-tree origin/main` to refresh local index from canonical base.
+
+**Meta-recursion observation worth noting:** Cowork manual plumbing and Codex auto-change writers share the same structural vulnerability — operations that capture state from "wherever the local checkout happens to be right now" instead of "the known-good base ref" pollute the resulting commit with whatever drift has accumulated. Same root cause, same fix shape. Both lanes need the discipline.
+
+**Skill usage count: +1 today.** Success metric of the skill remains "trends to zero as substrate matures." Today's recurrence (incident #1 stuck-pending after BUG-054, incident #2 stale-running false alarm, incident #3 this stale-index regression) is data — three incidents in one day, two of them mine, suggests the substrate hardening proposed in skill v1.1 needs a higher priority. Specifically the diff-scope-verification primitive (named in #2 fix above) would have caught both my regression AND any future Codex auto-change kitchen-sink committed via that path.
+
+**Standing rules unchanged.** Cheats today: still the original 3 disclosed earlier. This stale-index regression was an unintended substrate move (not a rule-violation), but it was an unsafe substrate move and the discipline now treats it as one. 0 cheats since.
+
+**Asks from earlier 00:30Z entry still stand** (umbrella vs slices, feedback-test lane division, Wave-2 sequencing relative to #248+#4a/#4b, PR #227 unblock pickup). The recovery doesn't change those. PR #227 unblock just got bumped up my queue because the 4-line schema fix for it is the cleanest possible "small careful substrate move" to prove discipline post-incident.
+
