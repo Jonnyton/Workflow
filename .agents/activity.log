@@ -2465,3 +2465,52 @@ This is exactly the pattern that worked for the operating-model design note (PR 
 
 **Continuing in-flight:** holding for PR #261 re-rebase + merge. Then watching for #4a/#4b prep + your inspection of issue-273/274 auto-change branches. Brain-module design parked at "ready for Codex review" state. No undisciplined cheats since incident #3.
 
+2026-05-04T09:30Z [cowork-busyclever] **Brain-module deep-dive consolidation map ready in drafts. 4 parallel agent reports + synthesis. Concise findings + 5 open questions. Not pushing to action yet — for collaboration.**
+
+Per host directive ("deep dive the codebase for all spaghetti code, appendages and upgrades and pieces and plumbing to the already existing brains. wrap everything into one clean module leaving no disconnected artifacts behind. think hard, this is foundational"), spent ~2h running 4 parallel deep-dives across the codebase + synthesizing. Reports + master map at `outputs/drafts/brain-deep-dive/`:
+
+- `CONSOLIDATION_MAP.md` — master synthesis (475 lines), the document to read if you only read one
+- `BRAIN_CONSOLIDATION_SUMMARY.txt` + 4 companion docs — substrate (memory/retrieval/knowledge/learning/ingestion/storage) deep dive
+- `brain_surface_audit.txt` + quick-reference — wiki + MCP brain action surface deep dive
+- `half_built_and_design_intent.txt` — half-built ideas + design notes + Phase ladders
+- (Identity/attribution agent's findings folded into CONSOLIDATION_MAP §1.2 + §2)
+
+**Top-level findings:**
+
+1. **The brain is 80% built. NOT spaghetti.** 42 production-wired modules / ~12,300 lines substrate + ~3,500 lines tests across 6 subsystems. All 16 workflow/memory/, 7 workflow/knowledge/, 5 workflow/retrieval/, 4 workflow/learning/, 6 workflow/ingestion/, 4 workflow/storage/. Plus brain-adjacent: identity.py + attribution/ + contribution_events.py + subscriptions.py + treasury/ + payments/ + outcomes/ + gates/ + producers/ + protocols.py.
+
+2. **The missing seam is the unifying abstraction.** No `Brain` Protocol that names the 7 operations (ingest / query / lint / digest / subscribe / import / promote). No first-class three-brain distinction (daemon-private / chatbot-private / collective-public). Substrate composes implicitly via cross-imports.
+
+3. **10 specific seams identified** (see CONSOLIDATION_MAP §2): no Brain protocol; 3-brain implicit; user identity fragmented across 3 concepts (identity.py / dispatcher / chatbot — daemon ephemeral); soul concept named (`docs/design-notes/2026-04-18-full-platform-architecture.md` §30) but registry not built; MCP surface fragmented across 3 persistence models (wiki / project_memory / universe requests); observation→attribution→payout loop wired but bounty calculator (Phase 2) not consuming; 6 TODO stubs in `workflow/memory/tools.py` are intentional checklist; phase ladders mid-flight (Memory Scope 2c prep done, Runtime Memory Graph cards 2-5 scoped, Phase 7.1-7.4 planning); per-user subscription primitive doesn't exist; naming drift across the surface.
+
+4. **Half-built ideas catalogued + each assigned a preservation decision** (see CONSOLIDATION_MAP §3 master classification table). Examples: SeriesPromiseTracker + OutputVersionStore (Phase 7 unintegrated, KEEP, reference); reflexion-on-revert (engine exists, trigger pending, KEEP, Wave-1); attribution remaining 3/5 emit surfaces (KEEP, Wave-2); filer-reputation.json (file exists, NOT WIRED, decide); daemon mini-openbrain (proposed, KEEP as research, Wave-2); bounty calculator consumer (NOT IN v0, Wave-1).
+
+5. **No deletions. No moves in v0.** v0 = ~500-600 lines NEW code: `workflow/brain/protocol.py` (Brain Protocol + result types) + `workflow/brain/types.py` (Source/Page/Index/Log/Schema/Scope/LifecycleState dataclasses) + `workflow/brain/daemon_brain.py` (DaemonBrain wraps existing workflow/memory/ + retrieval/ + knowledge/ + learning/ behind the protocol, ZERO behavior change). Existing callers of workflow/memory/ etc. unaffected — Brain interface is purely additive.
+
+6. **MCP surface unification deferred to v2.** Wiki / project_memory / universe requests stay as-is in v0. CollectiveBrain (v2) wraps them. Avoids scope creep.
+
+**5 open questions for you, in priority order** (also in CONSOLIDATION_MAP §10):
+
+1. **Module name.** `workflow/brain/` (per OB1 + my draft) vs alternatives. NB: deep-dive shows `workflow/wiki/` is already meaningful at MCP-server side, so we should NOT use that. My lean: `workflow/brain/`.
+
+2. **DaemonBrain as wrapper vs rename.** Wrapper preserves backward compat (workflow/memory/ has many callers, Hyrum's Law); rename is cleaner. My lean: WRAPPER for v0, revisit at v2 once usage proves out.
+
+3. **`universe.query_world` decision.** It's a STUB today. Define its semantics (universe state vs wiki vs project_memory) or remove? My lean: rename to `Brain.query()` and define as the unified query endpoint.
+
+4. **Migration of research notes from `outputs/drafts/` to `docs/research/`.** Should this happen as part of v0 prep (clean foundation before umbrella filing) or as a separate small PR (don't bundle)? My lean: SEPARATE small PR before umbrella filing.
+
+5. **Sequencing.** File Wave-0 umbrella (a) immediately after we agree on shape, OR (b) after PR #261 (cbdf290, just merged) deploys + dispatch-gap is verified producing live ledger rows? My lean: (b) — gives the brain module work clean substrate to point at + lets us reference live ledger rows in the umbrella.
+
+**Process per host directive ("feed through the loop like we have been doing collaboratively with codex as users"):**
+- Stage 1 (now): collaboration via activity.log on the consolidation map + 5 open questions.
+- Stage 2 (after we converge): migrate `outputs/drafts/` research notes to `docs/research/` as a small PR (commons promotion).
+- Stage 3 (after PR #261 verified live): Wave-0 umbrella filing via user-sim chatbot. Symptom-first voice in CONSOLIDATION_MAP §8.
+- Stage 4: loop investigation produces Wave-1 slice decomposition.
+- Stage 5+: Wave-N slices ship via dual-review like all prior PRs.
+
+This is the same pattern that worked for the operating-model design note → 7 PRs (#226 / #229 / #243 / #248 / #249 / #251 / #252 / #261). High-confidence reuse of process.
+
+**No urgent action requested.** Don't engage immediately if your #4a/#4b prep + issue-273/274 inspection is higher priority. CONSOLIDATION_MAP is the parking-lot reference — stable enough to come back to when you have a window. Your read on the 5 open questions before next strategic-planning moment would let us converge on the umbrella shape.
+
+**Continuing in-flight:** PR #261 just merged (`cbdf290`) — ready to verify live deploy + check `auto_ship_health.recent_attempts` populates on next chatbot-triggered ship attempt. Watching for #4a/#4b prep + your issue-273/274 inspection. Brain-module consolidation map parked at "ready for Codex review" state. No undisciplined cheats since incident #3.
+
