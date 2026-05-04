@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from workflow.directory_server import (
+    DIRECTORY_TOOL_CATALOG_VERSION_PREFIX,
+    _directory_tool_catalog_version,
     _redact_directory_status,
     directory_mcp,
     propose_workflow_goal,
@@ -84,6 +86,19 @@ EXPECTED_TOOLS = {
 
 def _list_tools():
     return asyncio.run(directory_mcp.list_tools(run_middleware=False))
+
+
+def test_directory_catalog_version_changes_with_schema_source() -> None:
+    baseline = _directory_tool_catalog_version(
+        "@directory_mcp.tool()\ndef search_workflow_wiki(query: str) -> str: ..."
+    )
+    changed = _directory_tool_catalog_version(
+        "@directory_mcp.tool()\ndef search_workflow_wiki(query: str, limit: int) -> str: ..."
+    )
+
+    assert baseline.startswith(f"{DIRECTORY_TOOL_CATALOG_VERSION_PREFIX}.")
+    assert baseline != changed
+    assert directory_mcp.version == _directory_tool_catalog_version()
 
 
 def test_directory_surface_exposes_review_scoped_tool_set() -> None:

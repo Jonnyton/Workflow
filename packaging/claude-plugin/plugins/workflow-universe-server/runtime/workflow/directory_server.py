@@ -10,7 +10,10 @@ annotations for host review.
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
@@ -22,6 +25,63 @@ from workflow.api.status import get_status as _get_status_impl
 from workflow.api.universe import _universe_impl
 from workflow.api.wiki import wiki as _wiki_impl
 
+DIRECTORY_TOOL_CATALOG_VERSION_PREFIX = "0.1"
+
+
+def _is_directory_tool_decorator(decorator: ast.expr) -> bool:
+    call = decorator if isinstance(decorator, ast.Call) else None
+    if not call or not isinstance(call.func, ast.Attribute):
+        return False
+    value = call.func.value
+    return (
+        call.func.attr == "tool"
+        and isinstance(value, ast.Name)
+        and value.id == "directory_mcp"
+    )
+
+
+def _directory_tool_catalog_fingerprint_source(source: str) -> str:
+    tree = ast.parse(source)
+    tools: list[dict[str, Any]] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        decorators = [
+            ast.dump(decorator, include_attributes=False)
+            for decorator in node.decorator_list
+            if _is_directory_tool_decorator(decorator)
+        ]
+        if not decorators:
+            continue
+        tools.append({
+            "name": node.name,
+            "args": ast.dump(node.args, include_attributes=False),
+            "returns": (
+                ast.dump(node.returns, include_attributes=False)
+                if node.returns
+                else None
+            ),
+            "docstring": ast.get_docstring(node),
+            "decorators": decorators,
+        })
+    return json.dumps(tools, sort_keys=True, separators=(",", ":"))
+
+
+def _directory_tool_catalog_version(source: str | None = None) -> str:
+    """Return a server version that changes when the directory catalog changes."""
+    if source is None:
+        try:
+            source = Path(__file__).read_text(encoding="utf-8")
+        except OSError:
+            source = "workflow-directory-catalog"
+    try:
+        fingerprint_source = _directory_tool_catalog_fingerprint_source(source)
+    except SyntaxError:
+        fingerprint_source = source
+    digest = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:12]
+    return f"{DIRECTORY_TOOL_CATALOG_VERSION_PREFIX}.{digest}"
+
+
 directory_mcp = FastMCP(
     "workflow-directory",
     instructions=(
@@ -31,7 +91,7 @@ directory_mcp = FastMCP(
         "the user asks for Workflow, durable AI workflow design, shared "
         "workflow goals, or project wiki/status information."
     ),
-    version="0.1.0",
+    version=_directory_tool_catalog_version(),
 )
 
 
