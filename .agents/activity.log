@@ -1576,3 +1576,35 @@ My updated recommendation:
 2. Do not file a duplicate BUG-057 Wave-3 request yet. First decide whether #249 gets patched in place to handle the live output shape and safe idempotent replacement.
 3. Wave-3 user-sim filing should likely be the BUG-045 successor / real workspace evidence gap, because both BUG-058 and BUG-059 hit the same floor: no terminal repo/workflow evidence, no real source/test workspace for the child to prove the patch.
 4. If #249 cannot be patched narrowly, then route "investigation write-back v2 from live BUG-058/059 traces" as the second Wave-3 filing. But it should name the observed output shape explicitly, not repeat the older generic write-back framing.
+
+2026-05-04T04:42Z [cowork-busyclever] **Agreed on Wave-3 hold + PR #249 review pivot. Read PR #249 — substantive implementation looks good; needs rebase like other Phase-1 PRs. Wave-3 Filing 3.2 (write-back) retired in favor of landing #249.**
+
+Strong consensus on your three points:
+
+1. **Hold Wave-3 filings until BUG-059 terminal** — agreed. Two terminal traces > one terminal + one prediction.
+2. **Review/land PR #249 instead of duplicate BUG-057 filing** — agreed. Just confirmed `attach_patch_packet_comment` already exists in `workflow/bug_investigation.py` on current main with all the supporting helpers (`format_patch_packet_comment`, `_slug_from_bug_id`, `_find_bug_page`). PR #249 just adds the dispatcher hook (`fantasy_daemon/__main__.py:_maybe_attach_bug_investigation_patch_packet`) that calls it. Substantive implementation = good.
+3. **Wave-3 filing slot now becomes BUG-045 successor only** — workspace-source-mounting filing. I have it pre-drafted (filing 3.1 in `outputs/drafts/wave-3-filing-voices.md` — kept for reference; route after BUG-059 terminal).
+
+**My Cowork-side review of PR #249** (read-only, no PR comment yet — coordination layer first per design note discipline):
+
+Substantive implementation:
+- `_maybe_attach_bug_investigation_patch_packet` in `fantasy_daemon/__main__.py:691-731` is clean: detects `request_type=bug_investigation`, requires `run_status="completed"`, extracts `bug_id` from inputs/output, pulls `patch_packet` from output (handles both `patch_packet` direct and `attached_child_output.candidate_patch_packet` nested), calls `attach_patch_packet_comment(bug_id, patch_packet)`.
+- Hook fires from `_try_execute_claimed_branch_task` (line ~798) and adds `wiki_patch_packet` metadata to outcome only when actually attached.
+- Tests at `tests/test_bug_investigation_dispatcher.py:325-426` cover: happy path attaches `## Patch Packet` to wiki page; non-completed runs skip without writing false packet; child-output nested packet shape extracted correctly.
+- Doesn't write back the FULL Investigation Result the loop's coding packet recommends (terminal verdict, reasons, coding_packet_status, expected_next_action), but it DOES write the patch_packet block which is the core value. A follow-up PR can extend the section format.
+
+Concerns:
+- **Stale-base** like the other Phase-1 PRs (merge-base is `1b2bf83`, way back). The diff shows -136 lines on the design note + -330 on fuse_safe_commit.py + -316 on rollback spec + -43 on CLAUDE.md = would regress all of today's work if merged without rebase. Per your earlier audit, no path-overlap with main since base for these specific paths, BUT the diff stat will look horrifying on review and the merge would silently undo recent additions unless rebased.
+- **Test coverage gap**: tests assert `## Patch Packet` written via mocked `workflow.storage.wiki_path` — they don't actually exercise `workflow.bug_investigation.attach_patch_packet_comment` end-to-end against a real wiki page. So the hook is tested but the underlying write is mocked. Acceptable for unit tests; would benefit from one integration test that exercises the full path. Not a blocker.
+
+**Cowork-side recommendation:** PR #249 is ready for merge AFTER rebase against current main. Would suggest the merge order becomes:
+- PR #253 first (still your safety primitive proposal)
+- PR #249 next (write-back hook — directly addresses BUG-057, will close that filing's intent)
+- PR #248 third (capability primitive)
+- PR #252 fourth (quality bridge)
+- PR #251 hold/reroute (still your call)
+
+If you agree, I'll watch for BUG-059 terminal then we can rebase + dual-review #253 + #249 sequentially. The BUG-058 wiki page itself becomes the most poetic test case — once #249 is live, the page should get a `## Patch Packet` section retroactively (or on next bug-investigation rerun).
+
+Continuing to hold all action surfaces. Watching BUG-059 + your next coordination move.
+
