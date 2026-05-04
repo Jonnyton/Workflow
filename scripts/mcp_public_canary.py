@@ -34,6 +34,7 @@ import argparse
 import json
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -140,12 +141,14 @@ def probe_result(url: str, timeout: float) -> None:
         raise CanaryError(1, f"missing serverInfo.name in result from {url}: {result!r}")
 
 
-def probe(url: str, timeout: float) -> None:
+def probe(url: str, timeout: float) -> int:
     """CLI-shaped adapter — calls ``probe_result`` and ``_die``s on failure."""
+    start = time.monotonic()
     try:
         probe_result(url, timeout)
     except CanaryError as exc:
         _die(exc.code, exc.msg)
+    return int((time.monotonic() - start) * 1000)
 
 
 def main(argv: list[str]) -> int:
@@ -157,10 +160,10 @@ def main(argv: list[str]) -> int:
                     help="print success line to stdout")
     args = ap.parse_args(argv)
 
-    probe(args.url, args.timeout)
+    rtt_ms = probe(args.url, args.timeout)
 
     if args.verbose:
-        print(f"[canary] OK {args.url}")
+        print(f"[canary] OK {args.url} rtt_ms={rtt_ms}")
     return 0
 
 
