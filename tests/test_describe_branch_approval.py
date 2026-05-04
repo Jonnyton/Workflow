@@ -275,3 +275,50 @@ class TestValidateBranchApproval:
         ids = {n["node_id"] for n in result["unapproved_source_code_nodes"]}
         assert ids == {"n1", "n3"}
         assert result["runnable"] is False
+
+    def test_collision_errors_are_admission_test_classes(self):
+        """validate_branch: collision failures are structured for admission checks."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(
+            branch,
+            validate_errors=[
+                "Duplicate node definition ID: 'draft'.",
+                "Duplicate graph node ID: 'draft'.",
+                "Duplicate state field name: 'draft'.",
+                "State field name 'draft' collides with a graph node ID. "
+                "Rename the state field or node before running this branch.",
+                "Entry point is required when branch has nodes.",
+            ],
+        )
+
+        collision_test = next(
+            t for t in result["admission_tests"] if t["id"] == "collision_classes"
+        )
+        classes = {c["class"] for c in collision_test["classes"]}
+        assert collision_test["passed"] is False
+        assert collision_test["blocking"] is True
+        assert classes == {
+            "duplicate_node_definition_id",
+            "duplicate_graph_node_id",
+            "duplicate_state_field_name",
+            "state_field_graph_node_id_collision",
+        }
+        assert result["collision_classes"] == collision_test["classes"]
+
+    def test_non_collision_errors_keep_collision_admission_test_green(self):
+        """validate_branch: unrelated structural failures do not look like collisions."""
+        node = _make_node(source_code="", approved=False)
+        branch = _make_branch_dict(node_defs=[node])
+        result = _call_validate(
+            branch,
+            validate_errors=["Entry point is required when branch has nodes."],
+        )
+
+        collision_test = next(
+            t for t in result["admission_tests"] if t["id"] == "collision_classes"
+        )
+        assert result["valid"] is False
+        assert collision_test["passed"] is True
+        assert collision_test["classes"] == []
+        assert result["collision_classes"] == []
