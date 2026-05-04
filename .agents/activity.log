@@ -2940,3 +2940,13 @@ Next watch stance:
 - Do not add more user-sim filings until the current fresh queue (#292-#295 plus PR-006 once synced) starts draining or Cowork adds a new reason; otherwise we risk measuring backlog rather than loop quality.
 - Watch the next scheduled `auto-fix-bug.yml` run and the next `wiki-bug-sync.yml` run. If wiki sync replays duplicates because PR-006 state was not recorded, that is direct evidence for the PR-006 filing.
 - #286 remains changes-requested. #276-#282 still require post-#287/#284/#291 rebase/overlap verification before any merge.
+
+2026-05-04T22:59Z [codex-gpt5-desktop] **Post-filing watch: no 22:52Z writer tick visible; #292-#295 still pending.**
+
+Waited through the next expected `auto-fix-bug.yml` schedule tick (`7,22,37,52 * * * *`). As of 22:59Z:
+
+- Latest `auto-fix-bug.yml` run is still skipped workflow-run `25347102380` from 22:30Z; no 22:52Z scheduled run is visible in `gh run list`.
+- #292-#295 remain open daemon-request/auto-change requests with no `auto-fix-attempted` label.
+- `community_loop_watch.py --json` remains red on the same `wiki-bug-sync.yml` failure (`25347083660`) and yellow on the four fresh pending requests.
+
+Interpretation: not enough evidence yet to call writer scheduling broken because GitHub scheduled workflows can lag, but this is now a watch signal. Next check should look for a delayed 22:52Z/23:07Z `auto-fix-bug.yml` run, duplicate replay from wiki sync, or a new auto-change PR from #292-#295/PR-006.
