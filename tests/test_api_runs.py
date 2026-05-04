@@ -24,6 +24,11 @@ from workflow.api.runs import (
     _ensure_runs_recovery,
     _failure_payload,
 )
+from workflow.exceptions import AllProvidersExhaustedError
+from workflow.providers.diagnostics import (
+    ProviderAttemptDiagnostic,
+    build_chain_state,
+)
 
 # ── module surface ──────────────────────────────────────────────────────────
 
@@ -169,6 +174,31 @@ def test_failure_payload_shape():
     assert "actionable_by" in out
     assert "oops" in out["error"]
     assert out["error"].startswith("Run failed:")
+
+
+def test_classify_run_error_exposes_provider_chain_detail():
+    attempts = [
+        ProviderAttemptDiagnostic(
+            provider="codex",
+            status="failed",
+            skip_class="auth_invalid",
+            detail="401 Unauthorized",
+        ),
+    ]
+    exc = AllProvidersExhaustedError(
+        "All providers exhausted for role=writer",
+        attempts=attempts,
+        chain_state=build_chain_state(
+            role="writer",
+            chain=["codex"],
+            attempts=attempts,
+        ),
+    )
+    out = _classify_run_error(exc, "b1")
+    assert out["failure_class"] == "provider_exhausted"
+    assert out["error_detail"]["provider_chain"]["attempts"][0]["skip_class"] == (
+        "auth_invalid"
+    )
 
 
 # ── _ensure_runs_recovery idempotency ───────────────────────────────────────

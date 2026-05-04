@@ -229,12 +229,18 @@ def _emit_failed_event(
     """Emit a terminal failed event before re-raising CompilerError."""
     if event_sink is None:
         return
+    detail: dict[str, Any] = {
+        "phase": "failed",
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+    }
+    chain_state = getattr(exc, "chain_state", None)
+    if isinstance(chain_state, dict):
+        detail["provider_chain"] = chain_state
     try:
         event_sink(
             node_id=node_id,
-            phase="failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
+            **detail,
         )
     except Exception as sink_exc:  # noqa: BLE001
         if _is_cancel_exception(sink_exc):

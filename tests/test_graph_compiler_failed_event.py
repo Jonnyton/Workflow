@@ -26,7 +26,12 @@ from workflow.branches import (
     GraphNodeRef,
     NodeDefinition,
 )
+from workflow.exceptions import AllProvidersExhaustedError
 from workflow.graph_compiler import CompilerError, compile_branch
+from workflow.providers.diagnostics import (
+    ProviderAttemptDiagnostic,
+    build_chain_state,
+)
 from workflow.runs import (
     NODE_STATUS_FAILED,
     NODE_STATUS_RUNNING,
@@ -90,6 +95,59 @@ def test_failed_event_emitted_on_provider_exception():
     assert failed_events[0]["node_id"] == "step1"
     assert "exhausted" in failed_events[0]["error"].lower()
     assert failed_events[0]["error_type"] == "RuntimeError"
+
+
+def test_failed_event_preserves_provider_chain_diagnostics():
+    """FEAT-006: provider_exhausted events must expose per-provider reasons."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    attempts = [
+        ProviderAttemptDiagnostic(
+            provider="codex",
+            status="failed",
+            skip_class="auth_invalid",
+            detail="401 Unauthorized",
+        ),
+        ProviderAttemptDiagnostic(
+            provider="ollama-local",
+            status="failed",
+            skip_class="provider_error",
+            detail="local model unavailable",
+        ),
+    ]
+    chain_state = build_chain_state(
+        role="writer",
+        chain=["codex", "ollama-local"],
+        attempts=attempts,
+        api_key_providers_enabled=False,
+    )
+    captured: list[dict] = []
+
+    def _sink(node_id, **detail):
+        captured.append({"node_id": node_id, **detail})
+
+    def _exhausted(prompt, system, *, role):
+        raise AllProvidersExhaustedError(
+            "All providers exhausted for role=writer",
+            attempts=attempts,
+            chain_state=chain_state,
+        )
+
+    branch = _simple_branch()
+    compiled = compile_branch(branch, provider_call=_exhausted, event_sink=_sink)
+    runnable = compiled.graph.compile(checkpointer=InMemorySaver())
+    with pytest.raises(CompilerError):
+        runnable.invoke(
+            {"x": "test"},
+            config={"configurable": {"thread_id": "t-fail-diagnostics"}},
+        )
+
+    failed_events = [e for e in captured if e.get("phase") == "failed"]
+    assert failed_events
+    provider_chain = failed_events[0]["provider_chain"]
+    assert provider_chain["role"] == "writer"
+    assert provider_chain["attempts"][0]["provider"] == "codex"
+    assert provider_chain["attempts"][0]["skip_class"] == "auth_invalid"
 
 
 def test_failed_event_emitted_on_policy_path_exception(monkeypatch):

@@ -324,7 +324,12 @@ class TestAsyncRunOutcomeEnrichment:
 class TestComposeRunSnapshotEnrichment:
     """Test that _compose_run_snapshot enriches failed runs with failure_class/suggested_action."""
 
-    def _make_snapshot(self, status: str, error: str) -> dict:
+    def _make_snapshot(
+        self,
+        status: str,
+        error: str,
+        events: list[dict] | None = None,
+    ) -> dict:
         from workflow.api.runs import _compose_run_snapshot
 
         run_record = {
@@ -341,7 +346,7 @@ class TestComposeRunSnapshotEnrichment:
             patch("workflow.runs.build_node_status_map", return_value=[]),
             patch("workflow.api.runs._run_mermaid_from_events", return_value=""),
         ):
-            return _compose_run_snapshot(run_record, [])
+            return _compose_run_snapshot(run_record, events or [])
 
     def test_failed_run_empty_response_enriched(self):
         snapshot = self._make_snapshot(
@@ -361,6 +366,45 @@ class TestComposeRunSnapshotEnrichment:
         snapshot = self._make_snapshot("completed", "")
         assert "failure_class" not in snapshot
         assert "suggested_action" not in snapshot
+
+    def test_provider_exhausted_snapshot_exposes_provider_chain(self):
+        events = [{
+            "node_id": "llm_step",
+            "status": "failed",
+            "detail": {
+                "provider_chain": {
+                    "role": "writer",
+                    "chain": ["codex", "ollama-local"],
+                    "attempts": [
+                        {
+                            "provider": "codex",
+                            "status": "failed",
+                            "skip_class": "auth_invalid",
+                            "detail": "401 Unauthorized",
+                        },
+                        {
+                            "provider": "ollama-local",
+                            "status": "failed",
+                            "skip_class": "provider_error",
+                            "detail": "local model unavailable",
+                        },
+                    ],
+                },
+            },
+        }]
+        snapshot = self._make_snapshot(
+            "failed",
+            "CompilerError: Provider call failed in node 'llm_step': "
+            "All providers exhausted for role=writer",
+            events,
+        )
+        assert snapshot["failure_class"] == "provider_exhausted"
+        assert snapshot["error_detail"]["provider_chain"]["attempts"][0] == {
+            "provider": "codex",
+            "status": "failed",
+            "skip_class": "auth_invalid",
+            "detail": "401 Unauthorized",
+        }
 
 
 # ---------------------------------------------------------------------------
