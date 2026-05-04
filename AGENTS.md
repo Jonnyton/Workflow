@@ -563,6 +563,9 @@ the process was launched from.
 | `UNIVERSE_SERVER_AUTH` | Auth mode. `"true"` / `"1"` enables OAuth-gated MCP. Disabled by default for single-operator dev. | `false`. |
 | `UNIVERSE_SERVER_PORT` | Port used by `workflow.auth.wellknown` when emitting OAuth metadata URLs. | `8001`. |
 | `WORKFLOW_GIT_AUTHOR` | Verbatim override for git commit author (e.g. `"Workflow User <user@users.noreply.workflow.local>"`). Highest precedence; falls through to `UNIVERSE_SERVER_USER`-derived synthetic. | Unset (synthetic from `UNIVERSE_SERVER_USER`). |
+| `WORKFLOW_CODEX_AUTH_JSON_B64` | Base64-encoded `~/.codex/auth.json` bundle for the codex provider's subscription auth. Decoded by `deploy/docker-entrypoint.sh` on container startup and written to `~/.codex/auth.json`. Required for `codex` provider availability under the default subscription-only posture. Replaces the retired `OPENAI_API_KEY`-driven `codex login --with-api-key` path. Rotate on each codex CLI re-auth. Source: b8d30ac. | Unset. |
+| `WORKFLOW_CLOUD_DAEMON_SUBSCRIPTION_ONLY` | **Deprecated no-op placeholder.** Retained in `deploy/compose.yml` + `deploy/workflow-env.template` for migration safety since `b8d30ac` inverted the semantic to the canonical `WORKFLOW_ALLOW_API_KEY_PROVIDERS` flag (see §LLM + provider routing). No code path reads this var; operators should rely on `WORKFLOW_ALLOW_API_KEY_PROVIDERS` directly. Source: b8d30ac. | Unset (no-op). |
+| `OPENAI_API_KEY` | **Stripped at entrypoint** by `deploy/docker-entrypoint.sh` unless `WORKFLOW_ALLOW_API_KEY_PROVIDERS=1`. The legacy `codex login --with-api-key` path is intentionally not run; codex auth flows through `WORKFLOW_CODEX_AUTH_JSON_B64`. Setting `OPENAI_API_KEY` without the opt-in flag has no effect. Source: b8d30ac. | Unset. |
 
 ### Feature flags
 
