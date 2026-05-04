@@ -511,6 +511,36 @@ class TestClaudeProvider:
         assert resp.family == "anthropic"
 
     @pytest.mark.asyncio
+    async def test_runs_from_workflow_repo_root(self, tmp_path, monkeypatch):
+        from workflow.providers.claude_provider import ClaudeProvider
+
+        repo = tmp_path / "repo"
+        (repo / "workflow").mkdir(parents=True)
+        (repo / "tests").mkdir()
+        monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
+
+        captured_kwargs = {}
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"Hello world", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _fake_exec(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_proc
+
+        with (
+            patch("workflow.providers.claude_provider._resolve_claude_cmd",
+                  return_value=(["claude"], False)),
+            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        ):
+            provider = ClaudeProvider()
+            await provider.complete("prompt", "system", ModelConfig())
+
+        assert captured_kwargs["cwd"] == str(repo.resolve())
+
+    @pytest.mark.asyncio
     async def test_exit_code_1_quick_triggers_unavailable(self):
         from workflow.providers.claude_provider import ClaudeProvider
 
@@ -576,6 +606,39 @@ class TestCodexProvider:
         assert resp.text == "codex output"
         assert resp.provider == "codex"
         assert resp.family == "openai"
+
+    @pytest.mark.asyncio
+    async def test_runs_from_workflow_repo_root(self, tmp_path, monkeypatch):
+        from workflow.providers.codex_provider import CodexProvider
+
+        repo = tmp_path / "repo"
+        (repo / "workflow").mkdir(parents=True)
+        (repo / "tests").mkdir()
+        monkeypatch.setenv("WORKFLOW_REPO_ROOT", str(repo))
+
+        captured_cmd = []
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"codex output", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock()
+
+        async def _fake_exec(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with (
+            patch("workflow.providers.codex_provider._resolve_codex_cmd",
+                  return_value=(["codex"], False)),
+            patch("workflow.providers.codex_provider.get_sandbox_status",
+                  return_value={"bwrap_available": True, "reason": None}),
+            patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        ):
+            provider = CodexProvider()
+            await provider.complete("prompt", "system", ModelConfig())
+
+        assert "-C" in captured_cmd
+        assert captured_cmd[captured_cmd.index("-C") + 1] == str(repo.resolve())
 
     @pytest.mark.asyncio
     async def test_error_raises_provider_error(self):
