@@ -53,6 +53,8 @@ _STUCK_PENDING_THRESHOLD_S = 120
 _AUTO_SHIP_OBSERVATION_WINDOW_S = 24 * 60 * 60
 _AUTO_SHIP_RECENT_ATTEMPT_LIMIT = 10
 _AUTO_SHIP_TEXT_FIELD_LIMIT = 500
+_TRIGGER_RECEIPT_RECENT_LIMIT = 10
+_TRIGGER_RECEIPT_STALE_MINUTES = 30
 
 
 def _parse_iso_to_epoch(value: str) -> float | None:
@@ -143,6 +145,77 @@ def _compact_ship_attempt(attempt: Any) -> dict[str, Any]:
             value = _compact_status_text(value)
         summary[field] = value
     return summary
+
+
+def _compact_trigger_receipt(receipt: Any) -> dict[str, Any]:
+    summary = {
+        "trigger_attempt_id": receipt.trigger_attempt_id,
+        "request_id": receipt.request_id,
+        "request_kind": receipt.request_kind,
+        "status": receipt.status,
+        "attempted_at": receipt.attempted_at,
+    }
+    for field in (
+        "goal_id",
+        "branch_def_id",
+        "queued_at",
+        "run_id",
+        "dispatcher_request_id",
+        "error_class",
+        "error_message",
+    ):
+        value = getattr(receipt, field)
+        if not value:
+            continue
+        if field == "error_message":
+            value = _compact_status_text(value)
+        summary[field] = value
+    return summary
+
+
+def _compute_trigger_receipt_health(
+    *,
+    db_path: Path | None = None,
+    recent_limit: int = _TRIGGER_RECEIPT_RECENT_LIMIT,
+    stale_minutes: int = _TRIGGER_RECEIPT_STALE_MINUTES,
+) -> dict[str, Any]:
+    """Summarize FEAT-004 trigger receipts for status/smoke checks.
+
+    The sqlite table is the durable request-trigger outbox. This read-only
+    status view lets operators and canaries confirm that request filings are
+    producing traceable receipts without scraping logs or loading full wiki
+    pages.
+    """
+    try:
+        from workflow.wiki import trigger_receipts
+        summary = trigger_receipts.health_summary(db_path=db_path)
+        recent = trigger_receipts.recent_attempts(recent_limit, db_path=db_path)
+        orphans = trigger_receipts.orphan_attempts(
+            stale_minutes=stale_minutes,
+            db_path=db_path,
+        )
+    except Exception as exc:  # noqa: BLE001 — status must not break on receipt I/O.
+        return {
+            "receipt_store_available": False,
+            "summary": {"window_size": 0, "by_status": {}, "last_seen_at": {}},
+            "recent_attempts": [],
+            "orphan_attempts": [],
+            "stale_minutes": stale_minutes,
+            "warnings": [f"receipt_store_read_failed: {exc}"],
+        }
+
+    warnings: list[str] = []
+    if orphans:
+        warnings.append(f"{len(orphans)} stale trigger receipt attempt(s) need review.")
+
+    return {
+        "receipt_store_available": True,
+        "summary": summary,
+        "recent_attempts": [_compact_trigger_receipt(r) for r in recent],
+        "orphan_attempts": [_compact_trigger_receipt(r) for r in orphans],
+        "stale_minutes": stale_minutes,
+        "warnings": warnings,
+    }
 
 
 def _observation_window_remaining_s(
@@ -795,6 +868,18 @@ def get_status(universe_id: str = "") -> str:
             "ledger_available": False,
         }
 
+    # trigger_receipt_health — FEAT-004 smoke view. Read-only summary of
+    # wiki file_bug trigger receipts so a status probe can distinguish
+    # "request filed with receipt" from silent enqueue/drop failures.
+    try:
+        trigger_receipt_health = _compute_trigger_receipt_health()
+    except Exception as exc:  # noqa: BLE001 — best-effort observability
+        trigger_receipt_health = {
+            "error": "compute_failed",
+            "detail": str(exc),
+            "receipt_store_available": False,
+        }
+
     response = {
         "schema_version": 1,
         "active_host": policy_payload["active_host"],
@@ -816,6 +901,7 @@ def get_status(universe_id: str = "") -> str:
         "missing_data_files": missing_data_files,
         "supervisor_liveness": supervisor_liveness,
         "auto_ship_health": auto_ship_health,
+        "trigger_receipt_health": trigger_receipt_health,
         "universe_id": uid,
         "universe_exists": universe_exists,
     }
