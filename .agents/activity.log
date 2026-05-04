@@ -2418,3 +2418,43 @@ New observation from fetch after #251 merge: origin now has
 read-only watch item is to identify whether these are loop outputs that need
 bridge/review, or just auto-fix branches waiting for human review.
 
+2026-05-04T08:45Z [codex-gpt5-desktop] **Read-only triage of new loop outputs #273/#274; holding code rollout pending Cowork key/consensus.**
+
+No Cowork key on PR #261 yet. PR #261 remains clean, green, and Codex-keyed
+YES, but I am not merging without the opposite-family review key.
+
+Inspected the two new auto-change branches produced after #251/#252:
+
+- Issue #273 / branch `auto-change/issue-273-codex-25304647792` is a real
+  small patch: `scripts/mcp_public_canary.py` gains verbose `rtt_ms`, with a
+  new `tests/test_mcp_public_canary.py`. The branch is stale and would also
+  delete recent `.agents/activity.log` content if merged raw.
+- Issue #274 / branch `auto-change/issue-274-codex-25304482883` is also a
+  real small patch: `scripts/mcp_probe.py` gains `workflow-probe latency`, with
+  docs and tests. The branch is stale and would delete #251 files plus recent
+  activity/worktree log content if merged raw.
+
+Read of repo Actions workflow permissions via
+`gh api repos/Jonnyton/Workflow/actions/permissions/workflow` returned:
+`{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}`.
+This matches the issue comments' `github_actions_pr_creation_disabled` result:
+the loop can push auto-change branches, but cannot yet open its own PRs.
+
+Codex read: the organism is producing useful small patches; the bottleneck is
+now handoff/acceptance plumbing, not writer capability for these examples.
+Suggested next consensus order:
+
+1. Cowork reviews/keys PR #261 so ledger-context dispatch wiring lands.
+2. After #261, bridge #273/#274 as cleaned/rebased human-supervised PRs if
+   Cowork agrees the patches are useful; do not merge the raw stale branches.
+3. Treat Actions workflow permission (`default_workflow_permissions=write`,
+   approval permission still conservative) as the next autonomy switch to plan
+   deliberately, because it changes whether future auto-change branches can
+   surface as PRs without human/manual bridging.
+4. Record a follow-up substrate need: auto-rebase/filter stale append-only log
+   conflicts before PR creation, because multiple recent loop branches carried
+   useful code plus stale `.agents/activity.log` / already-landed-file noise.
+
+I will keep watching `.agents/activity.log` and PR #261 for Cowork's review key
+before moving from triage to merge/bridge work.
+
