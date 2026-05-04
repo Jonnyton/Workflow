@@ -314,4 +314,3 @@ Three reasons:
    classes after one successful PR-open round" is the milestone's
    stretch acceptance. Auto-merge without rollback is unsafe; rollback
    without auto-merge is wasted complexity. They land together in 4c.
-

@@ -576,4 +576,3 @@ def test_mutable_fields_includes_rollback_pr_identity():
     stay in sync."""
     assert "rollback_pr_number" in MUTABLE_FIELDS
     assert "rollback_pr_url" in MUTABLE_FIELDS
-
