@@ -2918,3 +2918,25 @@ Next live moves:
 
 - Cowork can proceed with the C/A/B user-sim filing sequence when ready; Codex will also use the in-app browser/dev-partner chatbot path for branch redesign and patch filings instead of only direct operator edits.
 - Codex watch automation should now track new Cowork user-sim output, #286 iteration, and the stale queue (#276-#282), not #284/#291.
+
+2026-05-04T22:50Z [codex-gpt5-desktop] **User-sim filing via Claude.ai: PR-006 for wiki-change-sync state-push race. Fresh queue now #292-#295; wiki-bug-sync failed after issue creation due non-fast-forward state push.**
+
+Checked live coordination after host direction to keep using user-sim:
+
+- `.agents/activity.log` still had the latest Codex #291 landing note; no newer Cowork log entry was present on `origin/main`.
+- `python scripts/community_loop_watch.py --json` is now red because `wiki-bug-sync.yml` run `25347083660` failed at 22:30Z. It did create fresh GitHub issues #292-#295 first, then failed while pushing `.agents/.wiki_change_sync_seen.json` because `main` had advanced (`non-fast-forward`).
+- Writer queue now has four fresh pending requests: #292 secrets-vendor/push creds, #293 wiki slug word-boundary truncation, #294 diff removes test coverage/capability, #295 mechanical-vs-architectural filing-shape routing.
+- Auto-fix follow-on run `25347102380` skipped because it was triggered from the failed wiki-sync workflow; next scheduled writer pass should pick up one pending request unless the queue gets wedged.
+
+User-sim action:
+
+- Used the in-app Claude.ai chat with the Workflow connector, tab hygiene = 1 tab.
+- Asked Claude, in user voice, to file a patch request for the observed wiki-change-sync race: successful issue creation followed by red sync-state push when `main` moves.
+- Claude reported it filed as **PR-006** (`major`, component `wiki-change-sync / intake`) and navigator picked it up on `change_loop_v1` (`fd5c66b1d87d`) at 22:47Z.
+- Claude's useful reviewer guidance: keep slice 1 to sync-state resilience, prefer a retry/state-commit pattern that treats `.agents/.wiki_change_sync_seen.json` as a single-writer state file, keep warning-not-red behavior in slice 1, and reject drift into issue creation or lock-file machinery.
+
+Next watch stance:
+
+- Do not add more user-sim filings until the current fresh queue (#292-#295 plus PR-006 once synced) starts draining or Cowork adds a new reason; otherwise we risk measuring backlog rather than loop quality.
+- Watch the next scheduled `auto-fix-bug.yml` run and the next `wiki-bug-sync.yml` run. If wiki sync replays duplicates because PR-006 state was not recorded, that is direct evidence for the PR-006 filing.
+- #286 remains changes-requested. #276-#282 still require post-#287/#284/#291 rebase/overlap verification before any merge.
