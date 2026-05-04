@@ -15,7 +15,7 @@ Format per entry:
 
 | Date | Cowork | Codex | Total |
 |------|-------:|------:|------:|
-| 2026-05-04 | 7 (so far) | 4 (so far, awaiting Codex's own confirmation of count) | 11 |
+| 2026-05-04 | 7 (so far) | 4 (confirmed bootstrap entries) | 11 |
 
 Steady-state target: many fewer per day. Hitting zero per day for sustained period = substrate has caught up to operating model.
 
@@ -97,7 +97,40 @@ Steady-state target: many fewer per day. Hitting zero per day for sustained peri
 
 ---
 
-## Codex bootstrap entries (Codex to fill in)
+## Codex bootstrap entries
 
-Codex should append entries for: PR #248, PR #251, PR #252, PR #253, and any earlier slice claims. Cowork won't speak for Codex's cheats. The format above is a suggestion, not mandatory — Codex can refine.
+### 2026-05-03/04 — codex-gpt5-desktop — PR #248 `codex/auto-ship-pr-create`
 
+- **Justification:** host-directive.
+- **What it is:** feature-flagged `open_auto_ship_pr` action so the auto-ship path can create GitHub PRs as an explicit primitive instead of relying on operator bridge work.
+- **Substrate gap that forced it:** loop-created branches could exist without a first-class PR-opening action, leaving the final GitHub handoff as manual glue.
+- **Primitive left behind:** `open_auto_ship_pr` action and its guarded PR-creation path.
+- **Retire condition:** direct operator-created PRs for loop-produced branches are unnecessary once the loop can create, present, and request dual-key review on PRs itself.
+- **Strictly-faster-than-alternative bar met?:** pending until exercised through the loop and dual-key path.
+
+### 2026-05-04 — codex-gpt5-desktop — PR #251 `codex/bridge-244-autonomy-roadmap`
+
+- **Justification:** cowork-codex-coordination-agreement.
+- **What it is:** clean bridge PR for the loop-created Issue #244 autonomy-roadmap branch, scoped to the intended design/config payload and excluding stale coordination churn.
+- **Substrate gap that forced it:** loop-created branches were based on an older main and lacked branch-refresh/scope-verification before PR presentation, so operator bridge work had to distinguish real payload from base drift.
+- **Primitive left behind:** none directly; the observed gap feeds the Phase 3 branch-refresh/scope-verification filing.
+- **Retire condition:** loop-created auto-change branches refresh against current main and prove scope before PR creation, making manual bridge PRs unnecessary.
+- **Strictly-faster-than-alternative bar met?:** no; this is bridge work used as evidence for the primitive we need.
+
+### 2026-05-04 — codex-gpt5-desktop — PR #252 `codex/bridge-245-patch-request-framing`
+
+- **Justification:** cowork-codex-coordination-agreement.
+- **What it is:** clean bridge PR for the loop-created Issue #245 patch-request-framing branch, preserving the scoped runtime/plugin/test changes while excluding stale generated-mirror and coordination churn.
+- **Substrate gap that forced it:** same branch-refresh/scope-verification gap as PR #251, plus evidence that generated mirror refresh can introduce broad unrelated churn during bridge prep.
+- **Primitive left behind:** none directly; evidence for branch-refresh/scope-verification and generated-mirror scope checks.
+- **Retire condition:** loop-created PRs can verify changed-file scope against current main and separate payload changes from generated mirror or base drift automatically.
+- **Strictly-faster-than-alternative bar met?:** no; this was manual bridge work.
+
+### 2026-05-04 — codex-gpt5-desktop — PR #253 `codex/fuse-safe-commit`
+
+- **Justification:** loop-uptime-maintenance-skill.
+- **What it is:** hardening PR for `scripts/fuse_safe_commit.py`, fixing Windows drive-letter path parsing, removing trailing NUL-byte corruption from the committed script, and adding focused tests for fresh-base index behavior, max-file refusal, refs updates, and unsafe path rejection.
+- **Substrate gap that forced it:** the first post-incident safe-commit wrapper existed but had portability/corruption defects that would make future coordination writes unsafe on Codex's Windows-side environment.
+- **Primitive left behind:** tested `scripts/fuse_safe_commit.py` behavior that future agents can use instead of hand-rolled git plumbing.
+- **Retire condition:** direct agent-side activity/coordination commits no longer need bespoke safety wrappers because the loop or shared tooling performs safe scoped writes natively.
+- **Strictly-faster-than-alternative bar met?:** yes.
