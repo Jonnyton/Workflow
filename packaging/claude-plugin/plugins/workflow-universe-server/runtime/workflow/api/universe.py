@@ -102,6 +102,25 @@ def _extract_submit_request(
     )
 
 
+def _extract_dispatch_worker_task(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    task_id = str(result.get("branch_task_id", ""))
+    branch_def_id = str(kwargs.get("branch_def_id", ""))
+    return (
+        task_id,
+        _truncate(f"dispatch worker task {branch_def_id}"),
+        {
+            "branch_task_id": task_id,
+            "branch_def_id": branch_def_id,
+            "request_type": result.get("request_type", ""),
+            "trigger_source": result.get("trigger_source", ""),
+            "required_llm_type": result.get("required_llm_type", ""),
+        },
+    )
+
+
 def _extract_give_direction(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
@@ -422,6 +441,7 @@ def _extract_daemon_memory_promote(
 
 WRITE_ACTIONS: dict[str, Any] = {
     "submit_request": (_extract_submit_request, None),
+    "dispatch_worker_task": (_extract_dispatch_worker_task, None),
     "give_direction": (_extract_give_direction, None),
     "set_premise": (_extract_set_premise, None),
     "add_canon": (_extract_add_canon, None),
@@ -1211,6 +1231,137 @@ def _action_submit_request(
             f"The daemon will see your request on its next review cycle; "
             f"{position_note}. Use `universe action=inspect universe_id={uid}` "
             "to watch the queue or check whether your request is now active work."
+        ),
+    })
+
+
+def _action_dispatch_worker_task(
+    universe_id: str = "",
+    branch_def_id: str = "",
+    inputs_json: str = "",
+    request_type: str = "branch_run",
+    priority_weight: float = 0.0,
+    required_llm_type: str = "",
+    directed_daemon_id: str = "",
+    bid: float = 0.0,
+    tier: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Queue an explicit BranchTask for an off-host worker to claim.
+
+    This is intentionally an enqueue primitive only. It lets a Windows/macOS
+    chatbot client or other non-daemon host dispatch work without running the
+    daemon locally; existing dispatcher workers still perform claim, lease,
+    heartbeat, execution, and terminal status updates.
+    """
+    from workflow.branch_tasks import (
+        VALID_TRIGGER_SOURCES,
+        BranchTask,
+        append_task,
+        new_task_id,
+    )
+    from workflow.producers.goal_pool import validate_pool_task_inputs
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+    branch_def_id = str(branch_def_id or "").strip()
+    if not branch_def_id:
+        return json.dumps({"error": "branch_def_id required."})
+
+    if inputs_json.strip():
+        try:
+            inputs = json.loads(inputs_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": f"inputs_json invalid JSON: {exc}"})
+    else:
+        inputs = {}
+    ok, reason = validate_pool_task_inputs(inputs)
+    if not ok:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"invalid_inputs: {reason}",
+        })
+
+    try:
+        pw = float(priority_weight)
+    except (TypeError, ValueError):
+        pw = 0.0
+    if pw < 0:
+        return json.dumps({
+            "status": "rejected",
+            "error": "priority_weight must be >= 0.",
+        })
+    try:
+        bid_value = float(bid)
+    except (TypeError, ValueError):
+        return json.dumps({
+            "status": "rejected",
+            "error": "bid must be numeric",
+        })
+    if bid_value < 0:
+        return json.dumps({
+            "status": "rejected",
+            "error": "bid must be >= 0.",
+        })
+
+    source = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")
+    is_host = source == host_id
+    if not is_host:
+        pw = 0.0
+
+    requested_tier = str(tier or "").strip()
+    if requested_tier and requested_tier not in VALID_TRIGGER_SOURCES:
+        return json.dumps({
+            "status": "rejected",
+            "error": f"invalid tier: {requested_tier}",
+            "valid_tiers": sorted(VALID_TRIGGER_SOURCES),
+        })
+    if requested_tier and not is_host:
+        return json.dumps({
+            "status": "rejected",
+            "error": "tier override is host-only.",
+        })
+    trigger_source = requested_tier or ("host_request" if is_host else "user_request")
+
+    normalized_request_type = str(request_type or "").strip() or "branch_run"
+    if normalized_request_type == "scene_direction":
+        normalized_request_type = "branch_run"
+
+    task = BranchTask(
+        branch_task_id=new_task_id(),
+        branch_def_id=branch_def_id,
+        universe_id=uid,
+        inputs=inputs,
+        trigger_source=trigger_source,
+        priority_weight=pw,
+        required_llm_type=str(required_llm_type or "").strip(),
+        directed_daemon_id=str(directed_daemon_id or "").strip(),
+        bid=bid_value,
+        request_type=normalized_request_type,
+    )
+    try:
+        append_task(udir, task)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to queue off-host BranchTask %s: %s", branch_def_id, exc)
+        return json.dumps({"error": f"Failed to queue worker task: {exc}"})
+
+    return json.dumps({
+        "universe_id": uid,
+        "branch_task_id": task.branch_task_id,
+        "status": "pending",
+        "branch_def_id": task.branch_def_id,
+        "request_type": task.request_type,
+        "trigger_source": task.trigger_source,
+        "priority_weight": task.priority_weight,
+        "required_llm_type": task.required_llm_type,
+        "directed_daemon_id": task.directed_daemon_id,
+        "bid": task.bid,
+        "what_happens_next": (
+            "A dispatcher worker can claim this task from branch_tasks.json; "
+            "this client does not need to keep a local daemon running."
         ),
     })
 
@@ -3979,6 +4130,7 @@ def _universe_impl(
         "get_recent_events": _action_get_recent_events,
         "get_ledger": _action_get_ledger,
         "submit_request": _action_submit_request,
+        "dispatch_worker_task": _action_dispatch_worker_task,
         "give_direction": _action_give_direction,
         "read_premise": _action_read_premise,
         "set_premise": _action_set_premise,
