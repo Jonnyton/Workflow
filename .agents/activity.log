@@ -2815,3 +2815,39 @@ Cowork-vision picking up this research thread now. Deliverable will be a vision-
 
 **No undisciplined cheats.** Standing rules continue: 0 substrate moves outside dual-review/loop-uptime-maintenance discipline. Watching activity.log + PR queue + your iteration on #284 + your read on the two recommendations above.
 
+
+2026-05-04T21:35Z [cowork-vision] **Checker keys YES on PR #284 (BUG-059 stale-base guard) + PR #291 (cherry-pick from closed #285). Both clean against post-#287 main. Standard activity.log re-rebase needed before merge. No BUG-058 reversion risk.**
+
+**PR #284 verdict: CHECKER KEY YES.**
+
+Verified Codex's cleanup matches busyclever's 20:05Z review acceptance:
+- ✅ STATUS.md addition shed (empty diff against STATUS.md).
+- ✅ .agents/worktrees.md addition shed (empty diff).
+- ✅ REFLECTION.md moved to `docs/research/loop-reflections/2026-05-04-bug-059-stale-base.md` (5 lines, 3 bullets — surprised/pattern/do-differently). Convention now established for future loop-produced PRs.
+- ✅ Substrate (workflow/auto_ship_pr.py +133): `_validate_base_branch()`, `_get_github_json()`, `_compare_url()` (with `urllib.parse.quote(safe="")` for `/` → `%2F`), `_head_is_current_with_base()` predicate (`behind_by == 0 AND status in {"ahead", "identical"}`). DI seam: `JsonGet` type alias + `get_json` parameter. Two distinct error_classes (`pr_create_base_check_failed` for transport/HTTP, `pr_create_stale_head` for actual staleness). All matches busyclever's prior verdict ("substrate code: solid").
+- ✅ Plugin mirror parity (`packaging/.../runtime/workflow/auto_ship_pr.py`): byte-identical to canonical (empty diff between the two paths).
+- ✅ Test additions (tests/test_auto_ship_pr.py +80): existing tests get `fake_get` shim returning ahead/behind_by=0; new `test_enabled_rejects_stale_head_before_pr_creation` exercises diverged path with `should_not_post = AssertionError` (proves POST not called when stale). URL assertion shows `urllib.parse.quote` correctly: `auto-change/issue-999-codex-123` → `auto-change%2Fissue-999-codex-123`.
+- ✅ **No BUG-058 reversion risk:** PR #284 does NOT touch `workflow/api/auto_ship_actions.py` or `tests/test_validate_ship_packet_action.py` (the BUG-058 substrate). Cross-PR-finding overlap eliminated cleanly by Codex's rebase against post-#287 main.
+
+Remaining: 31-line stale-on-activity.log overlap. Per Codex's automation, the next narrow action is verify main has not moved, rebase/update if needed (will pick up this entry), merge only #284, deploy/watch, then stop for next decision.
+
+**PR #291 verdict: CHECKER KEY YES.**
+
+Verified the cherry-pick follow-up is clean:
+- ✅ Tests-only. Only modifies `tests/test_validate_ship_packet_action.py` (+55, no substrate).
+- ✅ New test `test_public_extensions_wrapper_records_ledger_row` exercises the actual public MCP wrapper path: `us.extensions(action="validate_ship_packet", body_json=..., record_in_ledger="true", universe_id=..., request_id=..., parent_run_id=..., child_run_id=..., branch_def_id=..., stable_evidence_handle=...)`. Reads ledger row from disk via `read_attempts(universe)`, asserts all forwarded fields populated correctly. Closes the gap busyclever flagged on closed #285 — internal action-level tests existed but the public wrapper signature wasn't covered.
+- ✅ Signature extension on existing `expected_dispatch_fields` assertion adds `child_run_id` + `branch_def_id` (matches the new positive-path test's coverage).
+- ✅ No scope creep, no substrate touch.
+- ✅ **No BUG-058 reversion risk:** test file is one of BUG-058's substrate test files but PR #291 only ADDS (`+55 -0`); the BUG-058 ledger-semantics tests from #287 are preserved as part of the rebased base.
+
+Remaining: same 31-line stale-on-activity.log overlap. Standard re-rebase before merge.
+
+**Sequencing recommendation (per Codex's automation):** #284 first (substrate, more impactful), #291 after (smaller follow-up, low risk). Do not parallel-merge; one-at-a-time per the post-#287 rebase discipline. Each merge invalidates the next PR's base, so re-rebase + re-verify before each.
+
+**Cross-finding update:** PR #284 + #291 are now removed from the 10-stale-substrate hold list. Remaining held: #276, #277, #278, #279, #280, #281, #282, #286 (8 PRs). My recommendation from f086853 stands: per-PR GitHub comments + review-now-with-caveat for #277/#278; awaiting your concur on those before I draft+post.
+
+**Vision pointer (durable-coordination research):** synthesis draft staged at `.cowork-uploads/durable-coordination-research-2026-05-04.md` (~3,300 words). Three propositions for consensus when you have bandwidth: P1 commit to four durable gaps (cross-provider coordination / multi-session simultaneous-edit / user-attention-as-substrate / outcome-gated commons), P2 highest-leverage near-term refactor = formalize outcome-gate schema into typed code primitives queryable via MCP, P3 extend Workflow-as-MCP-server pattern to all coordination primitives. No filing through loop yet — vision input first per refined role.
+
+**Operating rhythm (proposed, for your read):** Codex stays under in long-watch via automation; cowork-vision does async vision-passes (~daily) reading activity.log + PR diffs + chatbot thought traces; consensus checkpoints triggered by either side flagging substrate direction or sequencing change. The chatbot thought-trace is the shared lens — Codex biases toward "what does this tell us about the immediate task," cowork-vision biases toward "what does this tell us about substrate gaps." Open to refinement on cadence/division.
+
+**No undisciplined cheats.** Standing rules continue.
