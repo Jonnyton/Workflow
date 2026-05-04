@@ -19,6 +19,32 @@ from workflow.api.auto_ship_actions import (
 )
 from workflow.api.extensions import _extensions_impl
 
+
+def _valid_packet(**overrides):
+    base = {
+        "release_gate_result": "APPROVE_AUTO_SHIP",
+        "ship_class": "docs_canary",
+        "child_keep_reject_decision": "KEEP",
+        "coding_packet": {"status": "KEEP_READY"},
+        "child_score": 9.5,
+        "risk_level": "low",
+        "blocked_execution_record": {},
+        "stable_evidence_handle": "child_run:b:r",
+        "attached_child_evidence_handle": "child_run:b:r",
+        "child_candidate_patch_packet": {
+            "changed_paths": ["docs/autoship-canaries/x.md"],
+        },
+        "child_run": {"status": "completed"},
+        "evidence_bundle_complete": True,
+        "automation_claim_status": "child_attached_with_handle",
+        "rollback_plan": "Revert commit <sha>",
+        "changed_paths": ["docs/autoship-canaries/x.md"],
+        "diff": "+ added\n",
+    }
+    base.update(overrides)
+    return base
+
+
 # ── Wrapper layer (handler-level) ──────────────────────────────────────────
 
 
@@ -48,20 +74,7 @@ class TestHandlerLayer:
         assert "body_json is not valid JSON" in result["error"]
 
     def test_valid_packet_returns_decision_dict(self):
-        packet = {
-            "release_gate_result": "APPROVE_AUTO_SHIP",
-            "ship_class": "docs_canary",
-            "child_keep_reject_decision": "KEEP",
-            "coding_packet": {"status": "KEEP_READY"},
-            "child_score": 9.5,
-            "risk_level": "low",
-            "blocked_execution_record": {},
-            "stable_evidence_handle": "child_run:b:r",
-            "automation_claim_status": "child_attached_with_handle",
-            "rollback_plan": "Revert commit <sha>",
-            "changed_paths": ["docs/autoship-canaries/x.md"],
-            "diff": "+ added\n",
-        }
+        packet = _valid_packet()
         result = json.loads(_action_validate_ship_packet({
             "body_json": json.dumps(packet),
         }))
@@ -110,20 +123,7 @@ class TestDispatchIntegration:
             assert name in params
 
     def test_action_routes_to_handler_via_extensions_dispatch(self):
-        packet = {
-            "release_gate_result": "APPROVE_AUTO_SHIP",
-            "ship_class": "docs_canary",
-            "child_keep_reject_decision": "KEEP",
-            "coding_packet": {"status": "KEEP_READY"},
-            "child_score": 9.5,
-            "risk_level": "low",
-            "blocked_execution_record": {},
-            "stable_evidence_handle": "child_run:b:r",
-            "automation_claim_status": "child_attached_with_handle",
-            "rollback_plan": "Revert commit <sha>",
-            "changed_paths": ["docs/autoship-canaries/x.md"],
-            "diff": "+ x\n",
-        }
+        packet = _valid_packet(diff="+ x\n")
         result_str = _extensions_impl(
             action="validate_ship_packet",
             body_json=json.dumps(packet),
@@ -148,20 +148,15 @@ class TestDispatchIntegration:
         monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "default-uni")
         universe = tmp_path / "ledger-uni"
         universe.mkdir(parents=True, exist_ok=True)
-        packet = {
-            "release_gate_result": "APPROVE_AUTO_SHIP",
-            "ship_class": "docs_canary",
-            "child_keep_reject_decision": "KEEP",
-            "coding_packet": {"status": "KEEP_READY"},
-            "child_score": 9.5,
-            "risk_level": "low",
-            "blocked_execution_record": {},
-            "stable_evidence_handle": "packet-evidence",
-            "automation_claim_status": "child_attached_with_handle",
-            "rollback_plan": "Revert commit <sha>",
-            "changed_paths": ["docs/autoship-canaries/from-packet.md"],
-            "diff": "+ x\n",
-        }
+        packet = _valid_packet(
+            stable_evidence_handle="packet-evidence",
+            attached_child_evidence_handle="packet-evidence",
+            child_candidate_patch_packet={
+                "changed_paths": ["docs/autoship-canaries/from-packet.md"],
+            },
+            changed_paths=["docs/autoship-canaries/from-packet.md"],
+            diff="+ x\n",
+        )
 
         result_str = _extensions_impl(
             action="validate_ship_packet",
@@ -265,22 +260,13 @@ class TestLedgerRecording:
 
     @staticmethod
     def _packet(**overrides):
-        base = {
-            "release_gate_result": "APPROVE_AUTO_SHIP",
-            "ship_class": "docs_canary",
-            "child_keep_reject_decision": "KEEP",
-            "coding_packet": {"status": "KEEP_READY"},
-            "child_score": 9.5,
-            "risk_level": "low",
-            "blocked_execution_record": {},
-            "stable_evidence_handle": "h:1",
-            "automation_claim_status": "child_attached_with_handle",
-            "rollback_plan": "r",
-            "changed_paths": ["docs/autoship-canaries/x.md"],
-            "diff": "+x\n",
-        }
-        base.update(overrides)
-        return base
+        return _valid_packet(
+            stable_evidence_handle="h:1",
+            attached_child_evidence_handle="h:1",
+            rollback_plan="r",
+            diff="+x\n",
+            **overrides,
+        )
 
     @staticmethod
     def _setup_universe(tmp_path, monkeypatch, name="test-uni"):

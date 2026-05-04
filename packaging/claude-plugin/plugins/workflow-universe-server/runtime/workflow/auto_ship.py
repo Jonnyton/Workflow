@@ -30,6 +30,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from workflow.coding_packet_rubric import validate_rubric_packet
+
 # ── Envelope constants from auto-ship-canary-v0.md §6 ─────────────────────
 
 #: Ship classes allowed for v0 (§6.2). Any other class is blocked.
@@ -444,6 +446,9 @@ def validate_ship_request(packet: dict[str, Any]) -> dict[str, Any]:
 
     # §6.3 — diff-content checks
     violations.extend(_diff_violations(packet.get("diff", "")))
+
+    # Rubric §5 + §7 — structural KEEP/anti-pattern checks.
+    violations.extend(validate_rubric_packet(packet))
 
     # Decision
     if violations:

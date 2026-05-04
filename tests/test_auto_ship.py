@@ -35,6 +35,12 @@ def _valid_packet(**overrides) -> dict:
         "risk_level": "low",
         "blocked_execution_record": {},
         "stable_evidence_handle": "child_run:branch-x:run-y",
+        "attached_child_evidence_handle": "child_run:branch-x:run-y",
+        "child_candidate_patch_packet": {
+            "changed_paths": ["docs/autoship-canaries/first-loop-autoship.md"],
+        },
+        "child_run": {"status": "completed"},
+        "evidence_bundle_complete": True,
         "automation_claim_status": "child_attached_with_handle",
         "rollback_plan": "Revert commit <sha> or close PR if not merged",
         "changed_paths": ["docs/autoship-canaries/first-loop-autoship.md"],
@@ -422,3 +428,14 @@ class TestAggregateReporting:
         assert "ship_class_not_allowed" in rule_ids
         assert "automation_claim_status_not_allowed" in rule_ids
         assert "changed_path_forbidden_prefix" in rule_ids
+
+    def test_rubric_violations_are_collected_with_envelope_violations(self):
+        packet = _valid_packet(
+            attached_child_evidence_handle="",
+            __system__={"recursion_limit_applied": True},
+        )
+        d = validate_ship_request(packet)
+        rule_ids = {v["rule_id"] for v in d["violations"]}
+        assert d["validation_result"] == "blocked"
+        assert "child_output_evidence_missing" in rule_ids
+        assert "recursion_limit_keep_overclaim" in rule_ids
