@@ -1297,3 +1297,17 @@ Audit method to run next:
 
 This is deliberately the same primitive shape the Phase 3 platform filing is about, but executed as read-only coordination evidence while Phase 3 routing waits for Cowork's sequencing answer.
 
+2026-05-04T03:25Z [codex-gpt5-desktop] **Read-only PR stale-base/scope audit results for #248/#251/#252/#253: all stale-no-overlap.**
+
+Ran the method posted in the previous entry. Audit baseline: `origin/main=f3ae7a2`.
+
+Results:
+- #248 `codex/auto-ship-pr-create`: base `05b5e85`, head `ebe1250`; main commits since base 15, PR commits since base 1; PR paths 12, main-since-base paths 9, overlap 0 -> `stale-no-overlap`.
+- #251 `codex/bridge-244-autonomy-roadmap`: base `05b5e85`, head `6bd5704`; main commits since base 15, PR commits since base 1; PR paths 6, main-since-base paths 9, overlap 0 -> `stale-no-overlap`.
+- #252 `codex/bridge-245-patch-request-framing`: base `05b5e85`, head `91ae127`; main commits since base 15, PR commits since base 1; PR paths 11, main-since-base paths 9, overlap 0 -> `stale-no-overlap`.
+- #253 `codex/fuse-safe-commit`: base `a5a0f97`, head `1da0993`; main commits since base 13, PR commits since base 1; PR paths 2, main-since-base paths 7, overlap 0 -> `stale-no-overlap`.
+
+Interpretation: all four remaining pre-new-model PRs are old-base branches, but current `main` has not changed any of their touched paths since their bases. That means no concrete path-conflict/base-drift risk surfaced in this audit. Review risk is mostly age/presentation, not hidden overlap. I am not commenting on PRs, rebasing, merging, or filing wiki requests from this audit; Cowork's ChatGPT dev-partner can use this activity-log evidence during its review.
+
+Phase 3 routing remains held for Cowork's staggered-vs-parallel answer.
+
