@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from wiki_bug_sync import (  # noqa: E402
     SyncError,
     _bug_number,
+    _change_issue_body_md,
     create_gh_issue,
     fetch_bug_detail,
     list_new_bugs,
@@ -238,6 +239,54 @@ def test_feature_request_page_enters_feature_lane():
     assert result[0]["request_kind"] == "feature"
 
 
+def test_legacy_bug_typed_feature_request_page_enters_feature_lane():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": (
+                    "pages/feature-requests/"
+                    "feat-001-cowork-smoke-2-verify-wiki-to-branch-trigger.md"
+                ),
+                "title": "Verify wiki to branch trigger",
+                "type": "bug",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "feature"
+
+
+def test_change_issue_body_preserves_canonical_kind_when_type_is_legacy_bug():
+    entry = {
+        "path": "pages/feature-requests/feat-001-verify.md",
+        "title": "Verify wiki trigger",
+        "type": "bug",
+    }
+    meta = {
+        "id": "FEAT-001",
+        "kind": "feature",
+        "type": "bug",
+        "component": "loop",
+        "severity": "cosmetic",
+        "status": "open",
+    }
+
+    body = _change_issue_body_md(entry, meta)
+
+    assert "**Wiki id:** `FEAT-001`" in body
+    assert "**Wiki kind:** `feature`" in body
+    assert "**Wiki type:** `bug`" in body
+    assert "**Component:** `loop`" in body
+    assert "**Severity:** `cosmetic`" in body
+    assert "**Status:** `open`" in body
+
+
+def test_change_issue_body_falls_back_to_entry_type_without_frontmatter():
+    body = _change_issue_body_md({"type": "feature"}, {})
+    assert body == "**Wiki type:** `feature`"
+
+
 # ---------------------------------------------------------------------------
 # cursor read/write
 # ---------------------------------------------------------------------------
@@ -296,6 +345,31 @@ def test_create_gh_issue_no_token_raises():
             body_md="desc", dry_run=False,
         )
     assert exc_info.value.code == 3
+
+
+def test_create_gh_change_issue_dry_run_prints_kind_metadata(capsys):
+    from wiki_bug_sync import create_gh_change_issue
+
+    url = create_gh_change_issue(
+        token="",
+        repo="owner/repo",
+        request_kind="feature",
+        title="Verify wiki trigger",
+        path="pages/feature-requests/feat-001-verify.md",
+        body_md=(
+            "**Wiki id:** `FEAT-001`\n"
+            "**Wiki kind:** `feature`\n"
+            "**Wiki type:** `bug`"
+        ),
+        dry_run=True,
+    )
+
+    out = capsys.readouterr().out
+    assert url == "[dry-run]"
+    assert "[WIKI-FEATURE] Verify wiki trigger" in out
+    assert "body=" in out
+    assert "**Wiki kind:** `feature`" in out
+    assert "**Wiki type:** `bug`" in out
 
 
 def test_fetch_bug_detail_reads_with_page_not_path():
@@ -405,6 +479,69 @@ def test_sync_one_new_bug_updates_cursor(tmp_path):
     assert rc == 0
     assert created_issues == ["BUG-003"]
     assert read_cursor(cursor_path) == 3
+
+
+def test_sync_feature_request_issue_body_uses_frontmatter_kind(tmp_path):
+    cursor_path = tmp_path / "cursor"
+    change_seen_path = tmp_path / "seen.json"
+    write_cursor(99, cursor_path)
+    created: list[dict] = []
+    path = "pages/feature-requests/feat-001-cowork-smoke-2-verify.md"
+
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_wiki_list_resp([{"path": path, "title": "Verify trigger"}]), "sid1"),
+        (_wiki_read_resp({
+            "id": "FEAT-001",
+            "title": "Verify trigger",
+            "type": "bug",
+            "kind": "feature",
+            "component": "loop",
+            "severity": "cosmetic",
+            "status": "open",
+        }), "sid1"),
+    )
+
+    def _fake_create_change_issue(
+        token, repo, request_kind, title, path, body_md,
+        dry_run=False, gh_api=None, timeout=20.0,
+    ):
+        created.append({
+            "request_kind": request_kind,
+            "title": title,
+            "path": path,
+            "body_md": body_md,
+        })
+        return "https://github.com/owner/repo/issues/265"
+
+    with patch("wiki_bug_sync.create_gh_change_issue", side_effect=_fake_create_change_issue):
+        rc = sync(
+            "http://fake/mcp",
+            5.0,
+            dry_run=False,
+            include_community_requests=True,
+            token="fake-token",
+            cursor_path=cursor_path,
+            change_seen_path=change_seen_path,
+            post_fn=post_fn,
+        )
+
+    assert rc == 0
+    assert created == [{
+        "request_kind": "feature",
+        "title": "Verify trigger",
+        "path": path,
+        "body_md": (
+            "**Wiki id:** `FEAT-001`\n"
+            "**Wiki kind:** `feature`\n"
+            "**Wiki type:** `bug`\n"
+            "**Component:** `loop`\n"
+            "**Severity:** `cosmetic`\n"
+            "**Status:** `open`"
+        ),
+    }]
+    assert path in json.loads(change_seen_path.read_text(encoding="utf-8"))["seen_paths"]
 
 
 # ---------------------------------------------------------------------------

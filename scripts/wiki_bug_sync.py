@@ -566,7 +566,10 @@ def create_gh_change_issue(
     )
 
     if dry_run:
-        print(f"[wiki-bug-sync] DRY-RUN: would create issue {title_str!r} labels={labels}")
+        print(
+            "[wiki-bug-sync] DRY-RUN: would create issue "
+            f"{title_str!r} labels={labels} body={issue_body!r}"
+        )
         return "[dry-run]"
 
     if not token:
@@ -600,6 +603,28 @@ def create_gh_change_issue(
         raise SyncError(3, f"GitHub API error {exc.code}: {body_err}") from exc
     except (urllib.error.URLError, OSError) as exc:
         raise SyncError(3, f"GitHub network error: {exc}") from exc
+
+
+def _change_issue_body_md(entry: dict[str, Any], meta: dict[str, Any]) -> str:
+    """Build the compact metadata block for a non-bug community change issue."""
+    lines: list[str] = []
+    for label, key in (
+        ("Wiki id", "id"),
+        ("Wiki kind", "kind"),
+        ("Wiki type", "type"),
+        ("Component", "component"),
+        ("Severity", "severity"),
+        ("Status", "status"),
+    ):
+        value = str(meta.get(key) or "").strip()
+        if value:
+            lines.append(f"**{label}:** `{value}`")
+
+    entry_type = str(entry.get("type", "unknown") or "unknown").strip()
+    if not any(line.startswith("**Wiki type:**") for line in lines):
+        lines.append(f"**Wiki type:** `{entry_type}`")
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -686,7 +711,7 @@ def sync(
                 meta = {}
 
             title = meta.get("title") or entry.get("title") or Path(path).stem
-            body_md = f"**Wiki type:** `{entry.get('type', 'unknown')}`"
+            body_md = _change_issue_body_md(entry, meta)
             issue_url = create_gh_change_issue(
                 _token,
                 repo,

@@ -145,6 +145,21 @@ Notes:
 - Claude design memory:
   `.claude/agent-memory/navigator/2026-05-02-worktree-discipline-design.md`.
 
+## Issue 265 Wiki Feature Lane - 2026-05-04
+
+- Provider: codex-wiki-feature
+- Branch: `auto-change/issue-265-codex-25310770943`
+- Lane state: Active lane
+- Worktree: `/home/runner/work/Workflow/Workflow`
+- STATUS/Issue/PR: Issue #265; STATUS row `Issue #265 wiki feature smoke bridge`
+- PLAN refs: `Community Evolvable Optimization`
+- Purpose: preserve canonical wiki feature kind metadata for legacy bug-typed feature request pages.
+- _PURPOSE.md: `/home/runner/work/Workflow/Workflow/_PURPOSE.md`
+- Memory refs: none
+- Related implications: live wiki page has `type: bug`, `kind: feature`
+- Idea feed refs: none
+- Ship/abandon: focused wiki sync tests and ruff pass; workflow owns commit/PR.
+
 ## Existing Main Entry - 2026-05-02
 
 - 2026-05-02 create `../wf-provider-identity-bridge` on
