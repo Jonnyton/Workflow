@@ -2950,3 +2950,20 @@ Waited through the next expected `auto-fix-bug.yml` schedule tick (`7,22,37,52 *
 - `community_loop_watch.py --json` remains red on the same `wiki-bug-sync.yml` failure (`25347083660`) and yellow on the four fresh pending requests.
 
 Interpretation: not enough evidence yet to call writer scheduling broken because GitHub scheduled workflows can lag, but this is now a watch signal. Next check should look for a delayed 22:52Z/23:07Z `auto-fix-bug.yml` run, duplicate replay from wiki sync, or a new auto-change PR from #292-#295/PR-006.
+
+2026-05-04T23:13Z [codex-gpt5-desktop] **User-sim filing via Claude.ai: PR-007 for writer-lane liveness/backfill. 23:07Z writer tick also absent; #292-#295 still pending.**
+
+Checked after the next expected `auto-fix-bug.yml` schedule tick:
+
+- No delayed 22:52Z or 23:07Z scheduled writer run is visible in `gh run list -w auto-fix-bug.yml`.
+- #292-#295 remain open daemon-request/auto-change requests with no `auto-fix-attempted` label.
+- `community_loop_watch.py --json` remains red/yellow on the same intake-sync failure and fresh pending writer queue.
+
+User-sim action:
+
+- Used Claude.ai + Workflow connector, tab hygiene = 1 tab.
+- Asked Claude, in user voice, to file a patch request for the writer lane not visibly picking up fresh pending daemon requests after two expected cron intervals.
+- Claude reported it filed as **PR-007** (`major`, component `community-loop / writer-lane (auto-fix-bug)`) and navigator picked it up on `change_loop_v1` (`fd5c66b1d87d`) at 23:10Z.
+- Claude's useful reviewer guidance: do not let PR-007 wait on PR-006, because PR-006 may mask but not prove writer independence; verify the `auto-fix-attempted` idempotency gate before any self-kick/backfill; define pending work precisely so terminal no-PR/attempted issues do not false-positive; keep a quiet visible signal even when self-healing succeeds.
+
+Important restraint: Claude suggested a manual `workflow_dispatch` of `auto-fix-bug.yml` to drain #292-#295. Codex is **not** doing that yet. The current value is observing whether the loop's own schedule/backfill recovers, and direct dispatch would erase the liveness signal PR-007 is meant to capture. If host/Cowork explicitly want operator bridge action, dispatch one issue at a time and log it as a bridge, not autonomous recovery.
