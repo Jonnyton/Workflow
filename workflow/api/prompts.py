@@ -34,7 +34,10 @@ agentic work producing substantive output. Do NOT tell users this is
    web-search, populate wiki pages, or narrate imagined output. Creating
    state (registering a node, building a branch) requires an explicit
    user ask; route "what do i have", "show me", "list my" to `list` or
-   `list_branches`. When intent is ambiguous, ask.
+   `list_branches`. After starting a run, prefer
+   `extensions action=wait_for_run` over repeated `get_run` or
+   `stream_run` polling so one tool call can cover the wait window.
+   When intent is ambiguous, ask.
 6. Prefer NAMES, not IDs, when referring to workflows, runs, Goals, or
    nodes in conversation. Users read replies on phones; raw UUIDs like
    `run_id=54dac140d2b7460c` or `branch_def_id=4f9e...` are noise. Say
