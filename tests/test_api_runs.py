@@ -195,6 +195,54 @@ def test_action_run_branch_returns_str():
     assert isinstance(out, str)
 
 
+def test_action_run_branch_rejects_node_state_key_collision(tmp_path, monkeypatch):
+    from workflow.branches import (
+        BranchDefinition,
+        EdgeDefinition,
+        GraphNodeRef,
+        NodeDefinition,
+    )
+    from workflow.daemon_server import initialize_author_server, save_branch_definition
+
+    monkeypatch.setattr(runs_mod, "_base_path", lambda: tmp_path)
+    initialize_author_server(tmp_path)
+
+    branch = BranchDefinition(
+        name="change_loop_v1 repro",
+        entry_point="investigation_gate",
+    )
+    branch.node_defs = [
+        NodeDefinition(
+            node_id="investigation_gate",
+            display_name="Investigation Gate",
+            prompt_template="decide next step",
+        )
+    ]
+    branch.graph_nodes = [
+        GraphNodeRef(
+            id="investigation_gate",
+            node_def_id="investigation_gate",
+            position=0,
+        )
+    ]
+    branch.edges = [
+        EdgeDefinition(from_node="START", to_node="investigation_gate"),
+        EdgeDefinition(from_node="investigation_gate", to_node="END"),
+    ]
+    branch.state_schema = [{"name": "investigation_gate", "type": "str"}]
+    saved = save_branch_definition(tmp_path, branch_def=branch.to_dict())
+
+    out = json.loads(_action_run_branch({"branch_def_id": saved["branch_def_id"]}))
+
+    assert "run_id" not in out
+    assert out["error"] == "Branch is not valid. Fix these before running:"
+    assert out["validation_errors"] == [
+        "Node ID 'investigation_gate' conflicts with state field name "
+        "'investigation_gate'. Rename either the node or the state field "
+        "before running."
+    ]
+
+
 # Arc A re-export shims removed in Task #18 retarget sweep — the
 # `test_universe_server_reexports_run_actions` + parametrized identity tests
 # are gone alongside the shim block.

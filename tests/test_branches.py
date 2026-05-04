@@ -518,6 +518,16 @@ class TestBranchDefinition:
         errors = b.validate()
         assert any("Duplicate state field" in e for e in errors)
 
+    def test_validate_node_id_state_field_collision(self):
+        b = _make_sample_branch()
+        b.state_schema.append({"name": "orient-def", "type": "str"})
+        errors = b.validate()
+        assert any(
+            "Node ID 'orient-def' conflicts with state field name 'orient-def'"
+            in e
+            for e in errors
+        )
+
     def test_fork(self):
         b = _make_sample_branch()
         b.stats["run_count"] = 42

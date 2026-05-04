@@ -989,6 +989,13 @@ class BranchDefinition:
                     errors.append(f"Duplicate state field name: '{name}'.")
                 field_names.add(name)
 
+        colliding_ids = seen_defs & field_names
+        for name in sorted(colliding_ids):
+            errors.append(
+                f"Node ID '{name}' conflicts with state field name '{name}'. "
+                "Rename either the node or the state field before running."
+            )
+
         # Build-time placeholder validation: every ``{ident}`` in a
         # node's prompt_template must resolve via the node's
         # input_keys OR the branch-level state_schema. Runtime
