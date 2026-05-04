@@ -185,6 +185,40 @@ class TestMcpRecursionLimitOverride:
         # Guard: 50 is in the valid 10-1000 range.
         assert 10 <= 50 <= 1000
 
+    def test_run_branch_passes_override_to_executor(self, tmp_path, monkeypatch):
+        import json
+
+        from workflow.api.runs import _action_run_branch
+        from workflow.runs import RunOutcome
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        self._stub_valid_branch(monkeypatch)
+        captured: dict[str, int | None] = {}
+
+        def _fake_execute_branch_async(*_args, **kwargs):
+            captured["recursion_limit_override"] = kwargs.get(
+                "recursion_limit_override"
+            )
+            return RunOutcome(
+                run_id="run-1",
+                status="queued",
+                output={},
+                error="",
+            )
+
+        monkeypatch.setattr(
+            "workflow.runs.execute_branch_async",
+            _fake_execute_branch_async,
+        )
+
+        result = json.loads(_action_run_branch({
+            "branch_def_id": "b1",
+            "recursion_limit_override": "250",
+        }))
+
+        assert result["status"] == "queued"
+        assert captured["recursion_limit_override"] == 250
+
     def _stub_valid_branch(self, monkeypatch):
         from unittest.mock import MagicMock
 
