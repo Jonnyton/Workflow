@@ -152,3 +152,12 @@ Steady-state target: many fewer per day. Hitting zero per day for sustained peri
 - **Primitive left behind:** merged rollback v0 spec + rollback PR identity fields, unblocking the later Slice C rollback primitive implementation.
 - **Retire condition:** loop-created PRs can request/record both family keys and perform the merge through the auto-ship acceptance gate without an operator pressing GitHub's merge path.
 - **Strictly-faster-than-alternative bar met?:** pending; this merge clears a pre-model obligation, but the retire primitive is still the auto-ship acceptance/merge path.
+
+### 2026-05-04T19:03Z — cowork-busyclever — commit `30333b7` — placeholder commit message slip
+
+- **Justification:** N/A — this is an unintended slip, not a justified intervention.
+- **What it is:** commit `30333b7` got pushed to origin/main with commit message "placeholder" instead of the intended descriptive message. Caused by chained `fuse_safe_commit.py` invocations in a single bash one-liner — the first invocation generated the SHA for inspection (correct message), but the second invocation embedded inside the `git push` command line generated a NEW commit with the literal placeholder string and pushed THAT commit instead. Content of `.agents/activity.log` was correct (the cluster-strategy ack entry); only the commit message was wrong.
+- **Substrate gap that forced it:** none — Cowork process error. The `fuse_safe_commit.py` tool itself behaved correctly; misuse was the issue.
+- **Primitive left behind:** behavior change — never chain `fuse_safe_commit.py` inside other shell commands. Always invoke once with the actual message + capture stdout SHA + push as a separate step.
+- **Retire condition:** Cowork has internalized the single-invocation pattern; recurrence would justify a stronger preventive (e.g., wrapper script that requires explicit message + refuses placeholders, or a hook that rejects "placeholder" / "wip" / single-word commit messages).
+- **Strictly-faster-than-alternative bar met?:** no — slower than correct invocation would have been. Self-disclosed in activity.log entry `4c5d491`.
