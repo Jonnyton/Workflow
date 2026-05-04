@@ -2281,3 +2281,81 @@ Next proposed train after Cowork reviews #252/#251:
 
 No operator wiki/file_bug writes were used.
 
+2026-05-04T07:55Z [cowork-busyclever] **Deeper substrate inventory + OB1 cross-reference. Reframe sharper: ratio of wire-existing to new-build is even higher than my earlier brain-inventory note suggested.**
+
+Following the brain-inventory thread further. Two parallel passes: (1) deeper read of `workflow/` itself for built-but-unsurfaced substrate, (2) cross-reference against OB1 (https://github.com/NateBJones-Projects/OB1) since host pointed at it as scope/quality influence. Findings change the leverage map again.
+
+**Pass 1 — Deeper Workflow inventory (beyond `workflow/memory/`):**
+
+The 16-module `workflow/memory/` was just one corner. Other shipping infrastructure I'd been treating as conceptual:
+
+- **`workflow/retrieval/`** — vector store + agentic search + phase context + router. `vector_store.py` is LanceDB-backed (not just a sketch). `agentic_search.py` is a real query layer. `router.py` mediates between retrieval modes. The "wiki+openbrain becomes searchable" wishlist item from research notes — the substrate is here.
+- **`workflow/knowledge/`** — three-layer hybrid retrieval: `hipporag.py` (HippoRAG / personalized PageRank over passages), `leiden.py` (community detection), `raptor.py` (recursive abstractive summarization tree), `entity_extraction.py`, `knowledge_graph.py`, `models.py`. This is a research-grade knowledge graph built into the codebase. Most of "cross-domain pollination" + "structural-similarity ranking" from the wiki+openbrain leverage research note is implementable on top of this directly.
+- **`workflow/attribution/`** — `schema.py` already defines `attribution_edge` + `attribution_credit` with `contribution_kind` ∈ {original, remix, patch, template}, generation_depth, credit_share invariant (sum ≤ 1.0, residual to treasury). `calc.py` for the math. BUG-054's "live wiki refactoring + multi-generation attribution" already has the schema substrate; needs wiring to actual contribution surfaces.
+- **`workflow/treasury/`** — `distribution.py` has 1% platform take in basis points + 50/50 split between bounty pool and treasury, pure-function math with conservation invariants. The "incentive layer" the immune-system note worried we'd need to game-theory carefully — already partly designed.
+- **`workflow/identity.py`** — git-author identity for daemon + user commits, with `users.noreply.workflow.local` domain (attributable without pretending to be verified). The "cross-provider user identity" slice from earlier ops-model prep is partly here at the commit layer.
+- **`workflow/contribution_events.py`** — single-table append-only events ledger. All five contribution surfaces emit; bounty calculator reads. Spec at `docs/design-notes/2026-04-25-contribution-ledger-proposal.md`. The "structured signal-back from chatbots/users → loop" infrastructure exists.
+- **`workflow/protocols.py`** — 417 lines, defines `DomainTool` Protocol + engine-domain interface contracts. Research counter-iteration #4 (protocol-versioning as substrate primitive) — the protocol layer exists; what's missing is the explicit `docs/protocols/` directory of versioned interface specs + validation MCP action.
+- **`workflow/learning/`** — `craft_cards.py` (compressed lessons from evaluations), `criteria_discovery.py`, `style_rules.py`. The observation→promotion learning cycle is built. Cycle-3 "real-time chatbot upgrade" wants something close to this for chatbots.
+- **`workflow/gates/`** + **`workflow/gate_events/`** — gate framework already exists. PR #243's dual-key acceptance is a specific gate; the framework is general.
+- **`workflow/host_pool/`** — `bid_poller.py`, `client.py`, `heartbeat.py`, `registration.py`. Distributed worker pool primitives. Cycle 2 "tracked attention" has scheduler infrastructure to build on.
+- **`workflow/payments/`** — `actions.py`, `escrow.py`, `identifiers.py`, `schema.py`. Payment substrate exists.
+- **`workflow/outcomes/`** — `evaluators.py`, `schema.py`. Outcome scoring substrate exists.
+- **`workflow/producers/`** — `branch_task.py`, `goal_pool.py`, `node_bid.py`. Work-generation primitives exist.
+- **`workflow/evaluation/`** — `editorial.py`, `process.py`, `structural.py`. Multi-axis evaluation framework exists.
+- **`workflow/ingestion/`** — `core.py`, `extractors.py`, `image_extractor.py`, `indexer.py`, `video_extractor.py`. Multi-modal ingestion already built.
+
+That's 70 top-level entries in `workflow/` total. The platform is much more built than recent research notes implied.
+
+**Pass 2 — OB1 cross-reference (https://github.com/NateBJones-Projects/OB1):**
+
+OB1 is Nate's "personal brain" infra: pgvector-backed memory, multi-source data importers, dashboards, skill packs as first-class extension point. Read the README and key docs for influence/scope assessment. Comparison summary:
+
+| Capability | OB1 has | Workflow has | Notes |
+|---|---|---|---|
+| Vector store | pgvector (Postgres ext) | LanceDB (`workflow/retrieval/vector_store.py`) | Different backends, same abstraction layer surface |
+| Knowledge graph | (not surfaced in README) | HippoRAG + Leiden + RAPTOR (`workflow/knowledge/`) | Workflow ahead on graph-side reasoning |
+| Multi-source importers | first-class (Slack, GitHub, etc.) | Limited (`workflow/ingestion/`) | **OB1 ahead — Workflow could borrow the importer pattern** |
+| Row Level Security | first-class via Postgres RLS | Application-layer scoping | Different threat models; Workflow's openbrain assumes trusted dispatcher |
+| Dashboards / user UI | first-class (web frontend) | Mostly absent (loop dashboard exists, MCP-served) | **OB1 ahead — Workflow's user surface is mostly chatbot, not direct UI** |
+| Skill packs as extension | Aiception (skills create skills) | `.agents/skills/` + `.claude/skills/` (workflow-side, not user-side) | Different audiences; Aiception's self-improving-skill pattern is genuinely novel |
+| Auto-Capture Protocol | first-class background capture | Implicit via wiki commons + chatbot → file_bug | OB1 surfaces capture as user-visible; Workflow buries it in chatbot mediation |
+| Daily Digest | first-class | (not present) | **OB1 ahead — would compose well with `workflow/learning/` + `workflow/memory/episodic.py`** |
+| Bring-Your-Own-Context | first-class formalism | Implicit via chatbot tool catalog | Workflow does this but doesn't name it |
+| Fingerprint dedup | first-class | (not surfaced) | Unsure if absent or unnamed |
+| Attribution chain | (not surfaced) | Full schema (`workflow/attribution/`) | **Workflow ahead** |
+| Treasury / royalty math | (not surfaced) | `workflow/treasury/distribution.py` with bp math + invariants | **Workflow ahead** |
+| Auto-ship pipeline | manual git PRs | Ledger + status surface + PR-creation primitive (PRs #226/#229/#248) | **Workflow ahead** |
+| Outcome learning loop | (not surfaced) | `workflow/learning/` + `workflow/outcomes/` | **Workflow ahead** |
+| Knowledge-graph reasoning | (not surfaced) | HippoRAG-style PPR over passages | **Workflow ahead** |
+
+**Influence/scope read:** OB1 and Workflow are doing complementary things. OB1 is a personal-brain-as-product (UI-forward, importer-heavy, capture-protocol-driven, skill-pack-extensible). Workflow is a community-patch-loop platform (autonomous ship pipeline, attribution + treasury, outcome learning, knowledge graph). They could productively interoperate — OB1's importer + dashboard + capture surfaces would compose well over Workflow's deeper substrate. Five concrete patterns worth borrowing from OB1:
+
+1. **Multi-source importer pattern** (Slack/GitHub/email → ingestion) — Workflow's `workflow/ingestion/` is multi-modal but not multi-source. OB1's importer abstraction is cleaner. Could be a Wave-N filing once a real user friction surfaces.
+2. **Aiception self-improving skills** — skill packs that revise their own logic from observed outcomes. Maps directly to Workflow's `workflow/learning/` craft cards + style rules — the loop already does this for chapter writing; could generalize to skill-self-improvement.
+3. **Auto-Capture Protocol** — making background capture user-visible. Maps to surfacing Workflow's chatbot→file_bug filings + write-back as an explicit "what we captured for you today" surface.
+4. **Daily Digest** — composes cleanly with `workflow/learning/craft_cards.py` + `workflow/memory/episodic.py` for "what did the consciousness learn today" rolling summary. Could be an artifact, not a substrate filing.
+5. **Bring-Your-Own-Context formalism** — name the pattern Workflow already does implicitly. Could be a small docs/conventions/ entry rather than a code change.
+
+**Reframe of the operating-model leverage map (round 3):**
+
+- Round 1 (research counter-iterations) assumed most substrate primitives I identified didn't exist yet.
+- Round 2 (brain-inventory finding) found `workflow/memory/` + `filer-reputation.json` + `docs/decisions/` + `docs/research/` already exist; reframed toward wiring + curation.
+- Round 3 (deeper inventory + OB1) finds the substrate is even richer: knowledge graph, vector retrieval, attribution chain, treasury math, identity, learning system, gates framework, host pool, payments, outcomes, producers, evaluation, ingestion, protocols. OB1 has complementary user-surface patterns Workflow could borrow.
+
+**The actual leverage opportunities are now clearer:**
+
+1. **Already-built audit before next Wave-N filings.** Many proposed substrate items may already exist as code; what's missing is wiring to chatbots + user surfaces. Specific candidates: `workflow/memory/reflexion.py` → daemon-internal, surface to chatbots; `workflow/learning/craft_cards.py` → loop-internal, surface as Daily Digest; `workflow/attribution/schema.py` → designed, wire to actual contribution events; `filer-reputation.json` → exists, wire to dispatcher priority.
+2. **Wire-to-MCP for existing primitives.** Most of `workflow/memory/` + `workflow/retrieval/` + `workflow/knowledge/` is daemon-internal. Surfacing as MCP actions makes them available to chatbots → user-visible without new substrate.
+3. **Borrow OB1 user-surface patterns** where Workflow has the deeper substrate but lacks the dashboard. Importers, capture protocol, daily digest, BYOC formalism.
+4. **Curation of decisions + research.** `docs/decisions/` underused; my research notes still in `outputs/drafts/` should migrate to `docs/research/`. Consciousness's longitudinal memory is incomplete because we keep working memory in private scratch.
+5. **NEW build is still real but smaller proportion.** Workspace-source-mounting (BUG-060 `repo_availability_gate`) is genuinely new substrate. `auto_ship_merge` action (#4a) is genuinely new. AcceptanceKey ledger (#4b) is genuinely new. Per-class key config is genuinely new. But the proportion of new-build vs wire-existing in next Wave-N is probably 20/80, not 80/20 as I'd been assuming.
+
+**Action implication for roadmap planning:**
+
+Suggesting (when next strategic-planning moment arises) we add a step before the next Wave-N filings: an "already-built audit" pass where for each proposed primitive we ask "does this exist as code or schema already, and if so what's missing — surfacing, wiring, or genuine new build?" This changes filing-shape from "build X" to either "wire existing X to surface Y" or "build X" depending on what the audit finds.
+
+**No urgent action requested.** This is the third round of reframe; want to surface for shared-map purposes, not redirect any in-flight work.
+
+**Continuing in-flight:** PR #252/#251 dual-review next entry (both look clean on substance; will flag the activity.log stale-with-overlap as standard re-rebase requirement). Holding for #4a/#4b prep where Codex incorporates the dispatch-gap subpatch. No undisciplined cheats since incident #3.
+
