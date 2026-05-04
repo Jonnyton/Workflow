@@ -117,13 +117,17 @@ The success criterion: when the cheat count hits zero per day for a sustained pe
 5. **Cross-family review is the dual-key primitive applied at every layer.** PR #243 names this for auto-ship acceptance. Same pattern applies to substantive design decisions: the other family's eyes catch things the in-family thinking misses.
 6. **Cheats are logged together.** Both of us reference the same skill discipline. The cheat-rate is a project metric, not a per-agent metric.
 
-## Open questions for Cowork + Codex to converge on
+## Resolved decisions (was: open questions; converged 2026-05-04T01:46Z via Codex's response on activity.log)
 
-1. **Cheat-rate accounting cadence.** Daily? Weekly? Per substrate area? Where does the running count live (this design note? a separate ledger? `.agents/cheat_log.md`)?
-2. **Dev-partner chatbot identity persistence.** Should each of our dev-partner conversations have a stable identity across sessions? How does that connect to the cross-provider user identity work named as a Wave-2 substrate piece?
-3. **Coordination-surface promotion rules.** When does a draft graduate from `outputs/drafts/` to a `docs/design-notes/` shared surface? What's the trigger?
-4. **Wave-2 sequencing relative to this model.** Once we're aligned, what's the first Wave-2 filing each of us routes through our dev-partner chatbot? My instinct: Cowork files dispatch-gap (smallest) first; Codex files something analogous from the platform side. Both watch the loop's response.
-5. **What "ready to proceed" looks like.** Both Cowork and Codex tell the host we're aligned + have practiced the coordination surface use. Then we proceed to Wave-2 filings.
+1. **Cheat-rate ledger location.** Use a separate append-only `.agents/cheat-log.md` (later possibly `.agents/cheat-log.jsonl` for countable events). Keep `activity.log` narrative; ledger and narrative cross-link. This design note only summarizes the metric, never becomes the ledger itself.
+2. **Dev-partner chatbot identity.** Each dev-partner is a stable named planning partner with a seed prompt + durable transcript pointer. Do NOT build identity substrate yet — wait for evidence from these two conversations (Cowork ↔ ChatGPT dev-partner; Codex ↔ Claude dev-partner) before committing to any cross-provider identity primitive.
+3. **Coordination-surface promotion rules.** Draft → design note when both families cite it OR when the content changes sequencing. Design note → spec when implementation is blocked on the decision. Everything else stays scratch (`outputs/drafts/` for Cowork; equivalent scratch surface for Codex).
+4. **Wave-2 sequencing.** Don't rush filings. First practice the coordination surface with this design note + the cheat-log construction + opening dev-partner chatbot conversations. THEN route one small filing per pair: Cowork's loop-side filing = dispatch-gap (record_in_ledger has no path through extensions.py dispatch). Codex's platform-side analog should be chosen with the Claude dev-partner — likely around branch/PR lifecycle friction (safe branch refresh + scope verification for loop-created auto-change branches) or feedback-confirmation substrate, NOT direct code.
+5. **"Ready to proceed" definition.** Both Cowork and Codex have read this design note + co-edited if needed + reached agreement on these 5 decisions + opened dev-partner chatbot conversations + signaled readiness to host via activity.log. Then host gives the proceed signal and we route the first Wave-2 filings.
+
+## Existing PR disposition (added 2026-05-04T01:46Z per Codex response)
+
+PRs that existed before the new working model — #248, #249, #251, #252, #253, #227 — stay under the double-key cadence rather than retroactively re-routing through user-sim chatbots. Pre-new-model direct actions are not undone; they continue under existing dual-review discipline. New patches under the new model start with the chatbot-routing-first default unless a cheat justification applies.
 
 ## Living document
 
