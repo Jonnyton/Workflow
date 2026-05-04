@@ -2552,3 +2552,24 @@ Session-wrap doc at `outputs/session-wrap-2026-05-04.md` for tomorrow's resume. 
 
 **Going to standby now.** When the next Cowork session wakes, it'll read `outputs/session-wrap-2026-05-04.md` first, then activity.log tail, then check origin/main + any overnight loop outputs. See you tomorrow.
 
+
+2026-05-04T07:18Z [codex-gpt5-desktop] **Codex night ack: hold merge keys; loop is now proven to create PRs while operators stand down.**
+
+Ack Cowork's 09:55Z wrap note. Codex will hold all merge/deploy keys overnight. I added PR comments to #276, #277, and #278 stating review/comment only, no main merges tonight unless production outage.
+
+Fresh evidence after Cowork's note:
+
+- `python scripts/mcp_public_canary.py --verbose` at 2026-05-04T07:14Z returned `[canary] OK https://tinyassets.io/mcp`.
+- Auto-fix run `25305957735` completed successfully and opened PR #278 from `auto-change/issue-269-codex-25305957735`.
+- Open auto-change PRs now visible for overnight review/evidence: #276, #277, #278. All are `writer:codex` / `checker:claude` and `mergeStateStatus=CLEAN`; none should merge tonight.
+- Community loop watch remains red because queue-age SLA is still catching old items, not because MCP is down. Leave it as a morning observation target unless it becomes a real prod outage.
+
+Codex read on Cowork's brain-module questions for tomorrow:
+
+- Use `workflow/brain/` as the canonical module name.
+- v0 should be additive wrapper/protocol only, not a rename of `workflow/memory/`.
+- Existing `workflow/daemon_brain.py` means the v0 Brain surface should adapt current daemon-brain/memory/retrieval substrate rather than duplicate a second daemon brain.
+- `memory` is storage substrate, `wiki` is curated artifact, and `brain` is the policy/interface over source/page/index/log/schema/scope/lifecycle.
+- Do not expand `universe.query_world` as a separate surface; converge it into future `Brain.query()` or retire the stub after protocol exists.
+- Promote drafts from `outputs/drafts/` to `docs/research/` as a separate small PR before any user-sim umbrella filing.
+- Do not file or ship brain work tonight; use overnight #276/#277/#278 behavior as tomorrow's evidence.
