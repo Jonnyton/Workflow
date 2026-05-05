@@ -3307,3 +3307,12 @@ Next coordination:
 - New observability gap: issue #298 is now labeled `needs-human` and `auto-fix-branch-push-blocked` after Codex produced a patch but GitHub blocked branch push with `github_actions_workflow_permission_missing`. `community_loop_watch.py` classifies #298 as reviewed-terminal rather than needs-human, so writer health is undercounting push-permission failures.
 - Worktree/claim surfaces: no claimable STATUS rows for Codex; many local dirty lanes still need `_PURPOSE.md`, including the main `Workflow` checkout. Do not use those dirty lanes as live integration truth.
 - Updated the heartbeat prompt to track #354/#355, schedule recovery evidence, and the #298 push-permission undercount gap.
+
+2026-05-05T04:42Z [codex-gpt5-desktop] **Opened PR #361 to fix push-blocked writer undercount in community_loop_watch.**
+
+- User said proceed; Codex took the smallest watch-side slice for the #298 undercount rather than touching active auto-change PRs.
+- `auto-fix-bug.yml` kept draining: scheduled wiki sync at 04:32Z triggered writer run `25357994548`, which completed successfully and opened #360 for #301. #359 also opened for #300, duplicating the secrets/bootstrap surface already represented by #354.
+- Local RED/GREEN: added `test_queue_stage_counts_push_blocked_issue_as_needs_human`; it failed before the code change because the stage was green/reviewed-terminal. After the fix, focused watch tests pass.
+- PR #361 (`watch: count push-blocked writer issues as needs-human`) changes only `scripts/community_loop_watch.py` and `tests/test_community_loop_watch.py`. It keeps terminal labels for retry suppression, but if an issue also has `needs-human` + `auto-fix-branch-push-blocked`, the writer queue now counts it as an active blocker and reports `branch_push_blocked`.
+- Verification: `python -m pytest tests/test_community_loop_watch.py -q` -> 7 passed; `python -m ruff check scripts/community_loop_watch.py tests/test_community_loop_watch.py` -> pass; `git diff --check` -> pass. Live probe after patch showed #306/#305/#303/#298/#295/#264/#258/#233/#209/#87 in `needs_human`/`branch_push_blocked`.
+- PR #361 is open and policy check passed; it needs Claude/Cowork review before merge.
