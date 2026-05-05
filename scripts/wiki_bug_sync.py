@@ -72,6 +72,7 @@ _PAYMENT_FREE_OK_LABEL = "payment:free-ok"
 _WRITER_POOL_LABEL = "writer-pool:claude-codex"
 _CHECKER_POLICY_LABEL = "checker:cross-family"
 _GATE_REQUIRED_LABEL = "gate-required"
+_DESIGN_NOTE_DRAFT_LABEL = "design-note-draft"
 _DAEMON_REQUEST_LABELS = [
     _DAEMON_REQUEST_LABEL,
     _AUTO_CHANGE_LABEL,
@@ -99,6 +100,21 @@ _CHANGE_KIND_PREFIX: dict[str, str] = {
     "branch-refinement": "WIKI-BRANCH",
     "project-design": "WIKI-DESIGN",
 }
+
+_ARCHITECTURAL_FILING_MARKERS = (
+    "architecture",
+    "architectural",
+    "design",
+    "design-note",
+    "design note",
+    "operating-model",
+    "operating model",
+    "refactoring",
+    "roadmap",
+    "strategic",
+    "substrate",
+    "synthesis",
+)
 
 _INIT_PAYLOAD = {
     "jsonrpc": "2.0",
@@ -307,6 +323,18 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
     ):
         return None
 
+    is_patch_request = (
+        entry_type in {"patch", "patch_request"}
+        or path.startswith("pages/patch-requests/")
+        or path.startswith("patch-requests/")
+        or path.startswith("pages/plans/patch-")
+        or title.startswith("patch ")
+    )
+    if is_patch_request and any(
+        marker in design_text for marker in _ARCHITECTURAL_FILING_MARKERS
+    ):
+        return "project-design"
+
     if (
         entry_type in {"feature", "feature_request"}
         or path.startswith("pages/feature-requests/")
@@ -315,13 +343,7 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
         or title.startswith("feature ")
     ):
         return "feature"
-    if (
-        entry_type in {"patch", "patch_request"}
-        or path.startswith("pages/patch-requests/")
-        or path.startswith("patch-requests/")
-        or path.startswith("pages/plans/patch-")
-        or title.startswith("patch ")
-    ):
+    if is_patch_request:
         return "patch"
     if (
         entry_type in {"design", "design_proposal", "project-design"}
@@ -336,16 +358,8 @@ def _change_kind(entry: dict[str, Any]) -> str | None:
     if path.startswith("pages/plans/") and any(
         marker in design_text
         for marker in (
-            "architecture",
+            *_ARCHITECTURAL_FILING_MARKERS,
             "attribution",
-            "design",
-            "operating-model",
-            "operating model",
-            "refactoring",
-            "roadmap",
-            "strategic",
-            "substrate",
-            "synthesis",
         )
     ):
         return "project-design"
@@ -461,6 +475,8 @@ def _label_color(label: str) -> str:
         return "b60205"
     if label == _GATE_REQUIRED_LABEL:
         return "fbca04"
+    if label == _DESIGN_NOTE_DRAFT_LABEL:
+        return "c5def5"
     if label.startswith("severity:"):
         return "d93f0b"
     if label.startswith("request:"):
@@ -550,16 +566,34 @@ def create_gh_change_issue(
 ) -> str:
     """Create a non-bug community change Issue."""
     kind_label = _REQUEST_KIND_LABELS.get(request_kind, "request:change")
-    labels = [*_DAEMON_REQUEST_LABELS, kind_label]
+    if request_kind == "project-design":
+        labels = [
+            _DAEMON_REQUEST_LABEL,
+            _PAYMENT_FREE_OK_LABEL,
+            _GATE_REQUIRED_LABEL,
+            _DESIGN_NOTE_DRAFT_LABEL,
+            kind_label,
+        ]
+        request_contract = (
+            "**Daemon request contract:** claimable by paid or free design-note "
+            "drafting daemons that meet the declared gate requirements. "
+            "Architectural filings must produce reviewable design-note drafts, "
+            "not auto-change code branches.\n"
+        )
+    else:
+        labels = [*_DAEMON_REQUEST_LABELS, kind_label]
+        request_contract = (
+            "**Daemon request contract:** claimable by paid or free daemons that meet "
+            "the declared gate requirements. Code-change writers are Claude/Codex "
+            "only and require an opposite-family checker.\n"
+        )
     prefix = _CHANGE_KIND_PREFIX.get(request_kind, "WIKI-CHANGE")
     title_str = f"[{prefix}] {title}"
     issue_body = (
         f"**Request kind:** {request_kind}\n"
         f"**Wiki path:** `{path}`\n\n"
-        "**Daemon request contract:** claimable by paid or free daemons that meet "
-        "the declared gate requirements. Code-change writers are Claude/Codex "
-        "only and require an opposite-family checker.\n"
-        "**Bounty terms:** no paid bounty is attached by default; if one is "
+        + request_contract
+        + "**Bounty terms:** no paid bounty is attached by default; if one is "
         "added, settlement follows the gate ladder's `bounty_requirements`.\n\n"
         f"{body_md}\n\n"
         f"_Auto-filed by wiki-change-sync from wiki page `{path}`._"

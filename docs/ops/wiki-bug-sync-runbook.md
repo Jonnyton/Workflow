@@ -60,6 +60,7 @@ commits increments back. This makes reruns idempotent.
 | BUG page | `request:bug` |
 | `pages/plans/feature-*` | `request:feature` |
 | `pages/plans/patch-*` | `request:patch` |
+| architectural/design-shaped patch filings | `request:project-design` + `design-note-draft` |
 | `pages/workflows/*` | `request:branch-refinement` |
 | builder notes under `pages/notes/*` | `request:branch-refinement` |
 | strategic/roadmap/design/architecture/refactoring/attribution plans | `request:project-design` |

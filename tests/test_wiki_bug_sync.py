@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from wiki_bug_sync import (  # noqa: E402
     SyncError,
     _bug_number,
+    create_gh_change_issue,
     create_gh_issue,
     fetch_bug_detail,
     list_new_bugs,
@@ -208,6 +209,24 @@ def test_patch_request_page_enters_patch_lane():
     assert result[0]["request_kind"] == "patch"
 
 
+def test_architectural_patch_request_enters_project_design_lane():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": "pages/patch-requests/pr-004-dispatcher-filing-shape.md",
+                "title": (
+                    "Dispatcher should detect filing-shape mechanical vs "
+                    "architectural"
+                ),
+                "type": "patch_request",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "project-design"
+
+
 def test_legacy_bug_typed_patch_request_page_enters_patch_lane():
     wiki_list = {
         "promoted": [
@@ -296,6 +315,24 @@ def test_create_gh_issue_no_token_raises():
             body_md="desc", dry_run=False,
         )
     assert exc_info.value.code == 3
+
+
+def test_project_design_issue_routes_to_design_note_draft_not_auto_change(capsys):
+    url = create_gh_change_issue(
+        token="",
+        repo="owner/repo",
+        request_kind="project-design",
+        title="Dispatcher filing shape",
+        path="pages/patch-requests/pr-004-dispatcher-filing-shape.md",
+        body_md="desc",
+        dry_run=True,
+    )
+    out = capsys.readouterr().out
+    assert url == "[dry-run]"
+    assert "request:project-design" in out
+    assert "design-note-draft" in out
+    assert "auto-change" not in out
+    assert "writer-pool:claude-codex" not in out
 
 
 def test_fetch_bug_detail_reads_with_page_not_path():

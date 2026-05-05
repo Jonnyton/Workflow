@@ -122,6 +122,13 @@ def test_discover_retries_branch_push_blocked_when_push_token_visible(wf):
     assert "workflow push token is now visible" in script
 
 
+def test_discover_skips_project_design_issues(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    assert "request:project-design" in script
+    assert "design-note drafting does not use auto-change branches" in script
+
+
 def test_discover_scheduled_backfill_reads_oldest_pending_first(wf):
     discover_step = wf["jobs"]["discover"]["steps"][0]
     script = str(discover_step.get("with", {}).get("script", ""))

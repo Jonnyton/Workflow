@@ -115,6 +115,10 @@ jobs:
               if (!issue || issue.pull_request || seenIssueNumbers.has(issue.number)) {
                 return;
               }
+              if (hasLabel(issue, 'request:project-design')) {
+                core.info(`Skipping project-design issue #${issue.number}; design-note drafting does not use auto-change branches.`);
+                return;
+              }
               const needsHuman = hasLabel(issue, 'needs-human');
               const attempted = hasLabel(issue, 'auto-fix-attempted');
               const reviewed = hasLabel(issue, 'auto-fix-reviewed');
