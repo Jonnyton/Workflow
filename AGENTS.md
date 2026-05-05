@@ -610,7 +610,7 @@ host path to `/data`. See `deploy/README.md` for the full pattern.
 
 ### Local secrets — vault-first
 
-Local operator secrets (Cloudflare tokens, DigitalOcean token, Hetzner creds, OpenAI key) load from a password manager, not a plaintext file. Vendor is chosen via `WORKFLOW_SECRETS_VENDOR` — `1password` (default), `bitwarden`, or `plaintext` (migration-period opt-out, to be retired after cutover).
+Local operator secrets (Cloudflare tokens, DigitalOcean token, Hetzner creds, OpenAI key, and the local `GH_TOKEN` push credential for sandboxed AI sessions) load from a password manager, not a plaintext file. Vendor is chosen via `WORKFLOW_SECRETS_VENDOR` — `1password` (default), `bitwarden`, or `plaintext` (migration-period opt-out, to be retired after cutover).
 
 Bootstrap on a fresh machine:
 

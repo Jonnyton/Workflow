@@ -11,7 +11,8 @@ shipped_date: 2026-04-22
 secrets live in plaintext at `$HOME/workflow-secrets.env`. A stolen or
 compromised laptop walks every key we depend on: Cloudflare API tokens,
 DigitalOcean management token, Hetzner fallback credentials, OpenAI
-key. The plaintext file has no protection beyond the OS user's file
+key, and local GitHub push credentials for sandboxed AI sessions. The
+plaintext file has no protection beyond the OS user's file
 permissions.
 
 **Goal:** replace the plaintext file with a password-manager-backed
@@ -57,6 +58,10 @@ once the host confirms cutover works.
 **Vault path convention:**
 - **1Password:** vault = `workflow` (override with `WORKFLOW_SECRETS_VAULT`); item name = the KEY (e.g. `CLOUDFLARE_API_TOKEN`); field = `password`.
 - **Bitwarden:** item name = the KEY; login.password = the value.
+
+`GH_TOKEN` is the local sandbox push credential. It should be a
+least-privilege fine-grained PAT for this repo, normally limited to
+`contents:write` and `pull_requests:write`; use GitHub Actions secrets for CI.
 
 ## Fresh-laptop bootstrap runbook
 
