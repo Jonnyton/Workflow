@@ -421,3 +421,14 @@ Notes:
   checks fire on loop-created PRs.
 - Ship condition: workflow static tests, actionlint, diff-check, PR opened for
   Claude/Cowork review.
+
+## Branch-Push Retry Priority - 2026-05-05
+
+- 2026-05-05 create `../wf-branch-push-terminal-retry` on
+  `codex/branch-push-terminal-retry` by codex-gpt5-desktop.
+- Source: after PR #398 landed, issue #87 stayed `branch_push_blocked` while
+  normal old pending issues were selected first.
+- Purpose: prioritize retryable `auto-fix-branch-push-blocked` issues across all
+  auto labels before normal queue discovery.
+- Ship condition: focused workflow tests, ruff, diff-check, PR opened for
+  Claude/Cowork review.
