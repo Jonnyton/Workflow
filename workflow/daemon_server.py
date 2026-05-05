@@ -441,6 +441,11 @@ def initialize_author_server(base_path: str | Path) -> Path:
                 "ALTER TABLE goals ADD COLUMN gate_ladder_json "
                 "TEXT NOT NULL DEFAULT '[]'"
             )
+        if "external_run_attestations_json" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN external_run_attestations_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            )
         # fork_from migration: content-addressed lineage tracking.
         if "fork_from" not in existing_cols:
             conn.execute(
@@ -2420,6 +2425,10 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         canonical_history_raw = row["canonical_branch_history_json"]
     except (IndexError, KeyError):
         canonical_history_raw = "[]"
+    try:
+        external_run_attestations_raw = row["external_run_attestations_json"]
+    except (IndexError, KeyError):
+        external_run_attestations_raw = "[]"
     return {
         "goal_id": row["goal_id"],
         "name": row["name"],
@@ -2433,6 +2442,9 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "canonical_branch_version_id": canonical_bvid,
         "canonical_branch_history": _json_loads(
             canonical_history_raw or "[]", []
+        ),
+        "external_run_attestations": _json_loads(
+            external_run_attestations_raw or "[]", []
         ),
     }
 
@@ -2451,8 +2463,10 @@ def save_goal(
             """
             INSERT OR REPLACE INTO goals (
                 goal_id, name, description, author, tags_json,
-                visibility, created_at, updated_at, gate_ladder_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                visibility, created_at, updated_at, gate_ladder_json,
+                external_run_attestations_json, canonical_branch_version_id,
+                canonical_branch_history_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 goal_id,
@@ -2464,6 +2478,9 @@ def save_goal(
                 goal.get("created_at", now),
                 now,
                 _json_dumps(list(goal.get("gate_ladder", []) or [])),
+                _json_dumps(list(goal.get("external_run_attestations", []) or [])),
+                goal.get("canonical_branch_version_id"),
+                _json_dumps(list(goal.get("canonical_branch_history", []) or [])),
             ),
         )
     return get_goal(base_path, goal_id=goal_id)
@@ -2519,6 +2536,46 @@ def update_goal(
             params,
         )
     return get_goal(base_path, goal_id=goal_id)
+
+
+def attest_external_run(
+    base_path: str | Path,
+    *,
+    goal_id: str,
+    manifest_uri: str,
+    manifest_sha256: str = "",
+    run_id: str = "",
+    note: str = "",
+    attested_by: str = "anonymous",
+) -> dict[str, Any]:
+    """Append local-execution provenance manifest metadata to a Goal."""
+    initialize_author_server(base_path)
+    goal = get_goal(base_path, goal_id=goal_id)
+    attestations = list(goal.get("external_run_attestations") or [])
+    now = _now()
+    attestation = {
+        "attestation_id": uuid.uuid4().hex[:12],
+        "manifest_uri": manifest_uri,
+        "manifest_sha256": manifest_sha256,
+        "run_id": run_id,
+        "note": note,
+        "attested_by": attested_by,
+        "attested_at": now,
+    }
+    attestations.append(attestation)
+    with _connect(base_path) as conn:
+        conn.execute(
+            """
+            UPDATE goals
+               SET external_run_attestations_json = ?,
+                   updated_at = ?
+             WHERE goal_id = ?
+            """,
+            (_json_dumps(attestations), now, goal_id),
+        )
+    updated = get_goal(base_path, goal_id=goal_id)
+    updated["latest_external_run_attestation"] = attestation
+    return updated
 
 
 def set_canonical_branch(

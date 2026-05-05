@@ -26,11 +26,11 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
     Attribution handlers:
         _action_record_remix / _action_get_provenance
 
-    Goal handlers (9):
+    Goal handlers (10):
         _action_goal_propose / _action_goal_update / _action_goal_bind /
         _action_goal_list / _action_goal_get / _action_goal_search /
         _action_goal_leaderboard / _action_goal_common_nodes /
-        _action_goal_set_canonical
+        _action_goal_set_canonical / _action_goal_attest_external_run
 
     Gates handlers (9 + 6 gate_event):
         _action_gates_define_ladder / _action_gates_get_ladder /
@@ -914,6 +914,10 @@ def _action_goal_get(kwargs: dict[str, Any]) -> str:
     if goal.get("description"):
         lines.append("")
         lines.append(goal["description"])
+    attestations = list(goal.get("external_run_attestations") or [])
+    if attestations:
+        lines.append("")
+        lines.append(f"External run attestations: {len(attestations)}")
     lines.append("")
     if branches:
         lines.append(
@@ -1323,6 +1327,71 @@ def _action_goal_set_canonical(kwargs: dict[str, Any]) -> str:
     }, default=str)
 
 
+def _action_goal_attest_external_run(kwargs: dict[str, Any]) -> str:
+    from workflow.api.branches import _ensure_workflow_db
+    from workflow.api.engine_helpers import (
+        _current_actor,
+        _format_commit_failed,
+        _storage_backend,
+    )
+    from workflow.daemon_server import (
+        attest_external_run,
+        get_goal,
+    )
+    from workflow.identity import git_author
+
+    gid = (kwargs.get("goal_id") or "").strip()
+    manifest_uri = (kwargs.get("manifest_uri") or "").strip()
+    if not gid:
+        return json.dumps({"status": "rejected", "error": "goal_id is required."})
+    if not manifest_uri:
+        return json.dumps({
+            "status": "rejected",
+            "error": "manifest_uri is required for attest_external_run.",
+        })
+    _ensure_workflow_db()
+    try:
+        goal = get_goal(_base_path(), goal_id=gid)
+    except KeyError:
+        return json.dumps({"status": "rejected", "error": f"Goal '{gid}' not found."})
+    if goal.get("visibility") == "deleted":
+        return json.dumps({
+            "status": "rejected",
+            "error": f"Goal '{gid}' is soft-deleted; external runs cannot be attested.",
+        })
+
+    updated = attest_external_run(
+        _base_path(),
+        goal_id=gid,
+        manifest_uri=manifest_uri,
+        manifest_sha256=(kwargs.get("manifest_sha256") or "").strip(),
+        run_id=(kwargs.get("run_id") or "").strip(),
+        note=(kwargs.get("attestation_note") or "").strip(),
+        attested_by=_current_actor(),
+    )
+    try:
+        saved, _commit = _storage_backend().save_goal_and_commit(
+            updated,
+            author=git_author(_current_actor()),
+            message=f"goals.attest_external_run: {gid}",
+            force=bool(kwargs.get("force", False)),
+        )
+    except CommitFailedError as exc:
+        return json.dumps(_format_commit_failed(exc))
+    attestation = saved["external_run_attestations"][-1]
+    text = (
+        f"**External run attested for Goal '{saved['name']}'.** "
+        "The provenance manifest is now bound to this Goal."
+    )
+    return json.dumps({
+        "text": text,
+        "status": "attested",
+        "goal_id": gid,
+        "attestation": attestation,
+        "goal": saved,
+    }, default=str)
+
+
 _GOAL_ACTIONS: dict[str, Any] = {
     "propose": _action_goal_propose,
     "update": _action_goal_update,
@@ -1333,6 +1402,7 @@ _GOAL_ACTIONS: dict[str, Any] = {
     "leaderboard": _action_goal_leaderboard,
     "common_nodes": _action_goal_common_nodes,
     "set_canonical": _action_goal_set_canonical,
+    "attest_external_run": _action_goal_attest_external_run,
 }
 
 # Provider-routing compatibility: ChatGPT can render `/mcp-directory` tool
@@ -1345,7 +1415,7 @@ _GOAL_ACTION_ALIASES: dict[str, str] = {
 }
 
 _GOAL_WRITE_ACTIONS: frozenset[str] = frozenset({
-    "propose", "update", "bind", "set_canonical",
+    "propose", "update", "bind", "set_canonical", "attest_external_run",
 })
 
 
@@ -1422,6 +1492,10 @@ def goals(
     visibility: str = "",
     query: str = "",
     metric: str = "",
+    manifest_uri: str = "",
+    manifest_sha256: str = "",
+    run_id: str = "",
+    attestation_note: str = "",
     min_branches: int = 2,
     author: str = "",
     limit: int = 50,
@@ -1446,6 +1520,9 @@ def goals(
       set_canonical Mark a branch_version_id as the Goal's canonical
                    (best-known) branch. Author-only or host-only.
                    Pass branch_version_id="" to unset.
+      attest_external_run Bind an external/local execution provenance manifest
+                   to a Goal. Needs goal_id and manifest_uri. Optional
+                   manifest_sha256, run_id, attestation_note.
       list         Browse Goals. Optional author, tags (CSV first
                    value only), limit. Soft-deleted Goals hidden.
       get          Full Goal view + bound Branches. Needs goal_id.
@@ -1474,6 +1551,10 @@ def goals(
       name/description/tags/visibility: Goal fields for propose/update.
       query: search query.
       metric: leaderboard metric (run_count/forks/outcome).
+      manifest_uri: provenance manifest URI or local path for
+        attest_external_run.
+      manifest_sha256/run_id/attestation_note: optional external-run
+        attestation metadata.
       min_branches: common_nodes cutoff (default 2).
       scope: common_nodes aggregation. 'this_goal' (default) restricts
         to one Goal; 'all' aggregates cross-Goal.
@@ -1497,6 +1578,10 @@ def goals(
         "visibility": visibility,
         "query": query,
         "metric": metric,
+        "manifest_uri": manifest_uri,
+        "manifest_sha256": manifest_sha256,
+        "run_id": run_id,
+        "attestation_note": attestation_note,
         "min_branches": min_branches,
         "author": author,
         "limit": limit,

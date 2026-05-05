@@ -297,6 +297,9 @@ def goal_to_yaml_payload(goal: dict[str, Any]) -> dict[str, Any]:
     ladder = list(goal.get("gate_ladder", []) or [])
     if ladder:
         payload["gate_ladder"] = ladder
+    attestations = list(goal.get("external_run_attestations", []) or [])
+    if attestations:
+        payload["external_run_attestations"] = attestations
     return payload
 
 
@@ -315,6 +318,9 @@ def goal_from_yaml_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "created_at": payload.get("created_at", 0.0),
         "updated_at": payload.get("updated_at", 0.0),
         "gate_ladder": list(payload.get("gate_ladder", []) or []),
+        "external_run_attestations": list(
+            payload.get("external_run_attestations", []) or []
+        ),
     }
 
 

@@ -279,6 +279,7 @@ def test_goal_round_trip_is_identity():
         "created_at": 1712000000.0,
         "updated_at": 1712000500.0,
         "gate_ladder": [],
+        "external_run_attestations": [],
     }
     payload = goal_to_yaml_payload(original)
     reconstituted = goal_from_yaml_payload(payload)
@@ -307,6 +308,62 @@ def test_goal_payload_is_yaml_safe():
     dumped = yaml.safe_dump(payload, sort_keys=False)
     loaded = yaml.safe_load(dumped)
     assert loaded == payload
+
+
+def test_goal_payload_round_trips_external_run_attestations():
+    original = {
+        "goal_id": "goal_xyz",
+        "name": "Produce academic paper",
+        "external_run_attestations": [{
+            "attestation_id": "att_1",
+            "manifest_uri": "runs/local-42/provenance.json",
+            "manifest_sha256": "abc123",
+            "run_id": "local-42",
+            "note": "Ran locally.",
+            "attested_by": "tester",
+            "attested_at": 1712000500.0,
+        }],
+    }
+
+    payload = goal_to_yaml_payload(original)
+    reconstituted = goal_from_yaml_payload(payload)
+
+    assert reconstituted["external_run_attestations"] == original[
+        "external_run_attestations"
+    ]
+
+
+def test_save_goal_preserves_attestations_and_canonical_fields(tmp_path):
+    from workflow.daemon_server import get_goal, save_goal
+
+    saved = save_goal(tmp_path, goal={
+        "goal_id": "goal_xyz",
+        "name": "Produce academic paper",
+        "external_run_attestations": [{
+            "attestation_id": "att_1",
+            "manifest_uri": "runs/local-42/provenance.json",
+            "manifest_sha256": "abc123",
+            "run_id": "local-42",
+            "note": "Ran locally.",
+            "attested_by": "tester",
+            "attested_at": 1712000500.0,
+        }],
+        "canonical_branch_version_id": "branch_ver_1",
+        "canonical_branch_history": [{
+            "branch_version_id": "branch_ver_0",
+            "unset_at": 1712000400.0,
+            "replaced_by": "branch_ver_1",
+        }],
+    })
+    got = get_goal(tmp_path, goal_id=saved["goal_id"])
+
+    assert got["external_run_attestations"] == saved["external_run_attestations"]
+    assert got["canonical_branch_version_id"] == "branch_ver_1"
+    assert got["canonical_branch_history"] == [{
+        "branch_version_id": "branch_ver_0",
+        "unset_at": 1712000400.0,
+        "replaced_by": "branch_ver_1",
+    }]
 
 
 # ─────────────────────────────────────────────────────────────────────

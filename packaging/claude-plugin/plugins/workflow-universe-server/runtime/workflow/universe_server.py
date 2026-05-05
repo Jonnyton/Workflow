@@ -728,6 +728,10 @@ def goals(
     visibility: str = "",
     query: str = "",
     metric: str = "",
+    manifest_uri: str = "",
+    manifest_sha256: str = "",
+    run_id: str = "",
+    attestation_note: str = "",
     min_branches: int = 2,
     author: str = "",
     limit: int = 50,
@@ -748,6 +752,8 @@ def goals(
                    unbind. Needs branch_def_id.
       set_canonical Mark a branch_version_id as the Goal's canonical
                    branch. Author-only or host-only.
+      attest_external_run Bind an external/local execution provenance manifest
+                   to a Goal. Needs goal_id and manifest_uri.
       list         Browse Goals. Optional author, tags, limit.
       get          Full Goal view + bound Branches. Needs goal_id.
       search       LIKE-based substring search over name, description,
@@ -767,6 +773,10 @@ def goals(
         visibility=visibility,
         query=query,
         metric=metric,
+        manifest_uri=manifest_uri,
+        manifest_sha256=manifest_sha256,
+        run_id=run_id,
+        attestation_note=attestation_note,
         min_branches=min_branches,
         author=author,
         limit=limit,

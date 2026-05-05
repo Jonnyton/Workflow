@@ -50,11 +50,11 @@ def test_module_exposes_expected_public_names():
         "_action_get_outcome",
         # Attribution handlers
         "_action_record_remix", "_action_get_provenance",
-        # Goal handlers (9)
+        # Goal handlers (10)
         "_action_goal_propose", "_action_goal_update", "_action_goal_bind",
         "_action_goal_list", "_action_goal_get", "_action_goal_search",
         "_action_goal_leaderboard", "_action_goal_common_nodes",
-        "_action_goal_set_canonical",
+        "_action_goal_set_canonical", "_action_goal_attest_external_run",
         # Gates main handlers (9)
         "_action_gates_define_ladder", "_action_gates_get_ladder",
         "_action_gates_claim", "_action_gates_retract",
@@ -109,14 +109,15 @@ def test_attribution_actions_keys():
 # ── _GOAL_ACTIONS dispatch table ────────────────────────────────────────────
 
 
-def test_goal_actions_table_has_9_handlers():
-    assert len(_GOAL_ACTIONS) == 9
+def test_goal_actions_table_has_10_handlers():
+    assert len(_GOAL_ACTIONS) == 10
 
 
 def test_goal_actions_keys():
     expected = {
         "propose", "update", "bind", "list", "get", "search",
         "leaderboard", "common_nodes", "set_canonical",
+        "attest_external_run",
     }
     assert set(_GOAL_ACTIONS.keys()) == expected
 
@@ -126,8 +127,11 @@ def test_goal_write_actions_subset_of_goal_actions():
 
 
 def test_goal_write_actions_includes_state_mutators():
-    """propose, update, bind, set_canonical are state-mutating writes."""
-    for w in ("propose", "update", "bind", "set_canonical"):
+    """propose, update, bind, set_canonical, attest are writes."""
+    for w in (
+        "propose", "update", "bind", "set_canonical",
+        "attest_external_run",
+    ):
         assert w in _GOAL_WRITE_ACTIONS
 
 
@@ -175,6 +179,45 @@ def test_goals_unknown_action_lists_directory_aliases():
     out = json.loads(goals(action="totally_bogus_action"))
     assert "propose_workflow_goal" in out["available_actions"]
     assert "search_workflow_goals" in out["available_actions"]
+
+
+def test_goal_attest_external_run_binds_manifest_to_goal(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
+    proposed = json.loads(goals(action="propose", name="G"))
+    gid = proposed["goal"]["goal_id"]
+
+    result = json.loads(goals(
+        action="attest_external_run",
+        goal_id=gid,
+        manifest_uri="runs/local-42/provenance.json",
+        manifest_sha256="abc123",
+        run_id="local-42",
+        attestation_note="Ran on a local daemon.",
+    ))
+
+    assert result["status"] == "attested"
+    attestation = result["attestation"]
+    assert attestation["manifest_uri"] == "runs/local-42/provenance.json"
+    assert attestation["manifest_sha256"] == "abc123"
+    assert attestation["run_id"] == "local-42"
+    assert attestation["attested_by"] == "tester"
+
+    got = json.loads(goals(action="get", goal_id=gid))
+    assert got["goal"]["external_run_attestations"] == [attestation]
+    assert "External run attestations: 1" in got["text"]
+
+
+def test_goal_attest_external_run_requires_manifest_uri(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("UNIVERSE_SERVER_USER", "tester")
+    proposed = json.loads(goals(action="propose", name="G"))
+    gid = proposed["goal"]["goal_id"]
+
+    result = json.loads(goals(action="attest_external_run", goal_id=gid))
+
+    assert result["status"] == "rejected"
+    assert "manifest_uri" in result["error"]
 
 
 # ── _GATES_ACTIONS dispatch table ───────────────────────────────────────────
