@@ -400,6 +400,50 @@ def test_supervisor_restarts_idle_subprocess_for_still_pending_task_after_grace(
     assert spawned[0].terminate_called is True
 
 
+def test_supervisor_restarts_for_pickable_bug_investigation_after_grace(
+    tmp_path,
+    monkeypatch,
+):
+    from workflow.branch_tasks import BranchTask, append_task
+
+    monkeypatch.setenv("WORKFLOW_REQUEST_TYPE_PRIORITIES", "bug_investigation")
+    append_task(
+        tmp_path,
+        BranchTask(
+            branch_task_id="BUG-050",
+            branch_def_id="change-loop",
+            universe_id="u",
+            inputs={
+                "bug_id": "BUG-050",
+                "request_text": "bug BUG-050: dispatcher pickup smoke",
+            },
+            trigger_source="owner_queued",
+            request_type="bug_investigation",
+        ),
+    )
+    times = iter([100.0, 131.0])
+    monkeypatch.setattr(cw.time, "monotonic", lambda: next(times))
+    _sleep_calls, sleep_fn = _make_sleep_recorder()
+    spawned: list[FakeProc] = []
+
+    def spawn(universe):
+        proc = FakeProc(returncode=0, steps_until_exit=10)
+        spawned.append(proc)
+        return proc
+
+    state = cw.run_supervisor(
+        tmp_path,
+        producer_poll_interval=30.0,
+        poll_interval=0.01,
+        max_iterations=1,
+        spawn_fn=spawn,
+        sleep_fn=sleep_fn,
+    )
+
+    assert state.total_clean_exits == 1
+    assert spawned[0].terminate_called is True
+
+
 def test_supervisor_does_not_restart_when_task_is_already_running(tmp_path):
     from workflow.branch_tasks import BranchTask, append_task
 
