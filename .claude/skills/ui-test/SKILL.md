@@ -98,7 +98,7 @@ If a mission stalls (no progress for >30s after an `ask` that should have trigge
 
 ## When no Mission brief exists yet
 
-If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **do NOT self-initiate.** SendMessage the lead asking for a brief. Past work has shown self-initiated missions waste prompts and produce findings nobody wanted. Standing-by-without-brief is correct.
+If the lead pings you to start but no `LEAD DIRECTION` entry exists in the session log tail and `output/mcp_test_plan.md` doesn't have a current Mission, **self-initiate.** Pick a small probe in line with the broader project frame (latest `STATUS.md`/PLAN/active concerns) -- for example, a recent bug to revalidate, an unverified workflow surface, or a public-canary follow-up. Log a one-line `USER NOTE self-initiate: <intent>` entry so the lead can steer if needed. Past discipline of standing-by-without-brief produced idle waste; staying productive on a small targeted probe is correct.
 
 ## Claude Code driver
 
@@ -319,7 +319,7 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never restate the obvious ("so my workflow is called X") — just act.
 - Don't re-validate already-green behaviors in the same mission.
 - If a prompt returns what you expected, log one line and move on. Don't follow up with "can you confirm?"
-- Stop on first bug in a probe area. Don't keep pushing after a known-broken path.
+- Log first bug in a probe area, then **try a different probe** rather than re-pushing the known-broken path. Stay productive on adjacent surfaces.
 
 **Log discipline:**
 - USER ACTION entries: 1–3 lines max. Command + result summary. Full response lives in the trace; don't re-quote it in the log.
@@ -328,11 +328,15 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - Never write prose summaries of trace content in the log. The trace IS the detail.
 - MISSION SUMMARY: ≤15 lines total, bullet form.
 
-**Stop-early triggers:**
-- 3 bugs → stop (existing rule).
-- Mission's primary question answered (green or red) → stop, write FINDINGS, don't keep exploring.
-- Bot repeats a behavior you've already logged → stop.
-- Out of authorized writes → stop, ask lead before escalating.
+**Soft-non-stop triggers** (note them, switch lane, keep working):
+- 3+ bugs in one mission area -> log FINDINGS for that area, switch to a different probe lane.
+- Mission's primary question answered -> write FINDINGS, then pick a related question or adjacent surface; don't idle.
+- Bot repeats a behavior you've already logged -> vary the prompt or change probe; the repetition itself is data.
+- Out of authorized writes -> switch to read-only probes, ask lead in parallel before escalating writes.
+
+**Hard-stop triggers (these still stop):**
+- Lead writes `LEAD STOP` -> stop immediately.
+- Harness failure on the active route (CDP down for Claude Code route; in-app browser unavailable for Codex route) -> stop and log the exact harness blocker.
 
 **When in doubt about whether to ask:** don't. Write a `NOTE` entry with the question and let the lead decide. Preserving a prompt is worth more than getting your curiosity satisfied.
 
@@ -344,13 +348,15 @@ Every `ask` burns host's claude.ai quota. Every log entry is lead's context. Be 
 - **Never** type more than one write-equivalent request per priority.
 - **Never** start a new chat mid-priority without authorization (loses context that may be under test).
 
-## Stop conditions
+## Hard-stop conditions
 
-- 3 bugs → stop, log, wait.
-- Bot refuses or errors repeatedly → stop, SendMessage.
-- Claude Code route only: `claude_chat.py status` starts failing → stop, SendMessage.
-- Codex in-app browser route only: the in-app browser becomes unavailable, leaves the visible Claude.ai mission tab, or cannot show the Workflow connector → stop and log the exact harness blocker.
-- Lead writes `LEAD STOP` or sends a stop message → stop immediately. No "relaxed pace."
+These are the only triggers that stop the mission outright. Everything else gets a soft-non-stop response: log it, switch lane, keep working.
+
+- Lead writes `LEAD STOP` or sends a stop message -> stop immediately. No "relaxed pace."
+- Claude Code route only: `claude_chat.py status` starts failing -> stop, SendMessage. (CDP is route-specific; does not apply to Codex.)
+- Codex in-app browser route only: the in-app browser becomes unavailable, leaves the visible Claude.ai mission tab, or cannot show the Workflow connector -> stop and log the exact harness blocker.
+- Anthropic / Cowork ChatGPT route only: ChatGPT browser context lost or Workflow connector becomes invisible in the Developer Mode composer -> stop and log the harness blocker.
+- Bot refuses or errors repeatedly across multiple probes (not just one) -> stop and SendMessage; the repeated cross-probe failure is the signal, not any single bot reply.
 
 ## Never
 
