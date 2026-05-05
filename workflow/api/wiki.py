@@ -136,10 +136,23 @@ def _parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
     if not match:
         return {}, content
     meta: dict[str, str] = {}
-    for line in match.group(1).split("\n"):
+    lines = match.group(1).split("\n")
+    for index, line in enumerate(lines):
+        if line and line[0].isspace():
+            continue
         idx = line.find(":")
         if idx > 0:
-            meta[line[:idx].strip()] = line[idx + 1:].strip()
+            value = line[idx + 1:].strip()
+            if not value:
+                block_lines: list[str] = []
+                for next_line in lines[index + 1:]:
+                    if next_line and not next_line[0].isspace():
+                        break
+                    stripped = next_line.strip()
+                    if stripped:
+                        block_lines.append(stripped)
+                value = "\n".join(block_lines)
+            meta[line[:idx].strip()] = value
     return meta, match.group(2)
 
 

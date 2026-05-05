@@ -271,6 +271,35 @@ def test_wiki_promote_lint_blocks_when_required_fields_missing(wiki_env):
     assert any("Body too short" in i for i in res["issues"])
 
 
+def test_wiki_promote_lint_accepts_block_sources_with_non_http_uri(wiki_env):
+    body = (
+        "---\n"
+        "title: Local Source Note\n"
+        "type: note\n"
+        "sources:\n"
+        "  - file:///tmp/local-source.md\n"
+        "---\n"
+        "This note cites a local [[source-reference]] with enough content "
+        "to satisfy promotion lint without requiring an HTTP URL.\n"
+    )
+    meta, _ = _parse_frontmatter(body)
+    assert meta["sources"] == "- file:///tmp/local-source.md"
+    assert "- file" not in meta
+
+    json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="local-source-note",
+            content=body,
+        )
+    )
+
+    res = json.loads(wiki(action="promote", filename="local-source-note"))
+
+    assert res["status"] == "promoted"
+
+
 def test_wiki_supersede_requires_three_args(wiki_env):
     res = json.loads(wiki(action="supersede"))
     assert "error" in res
@@ -335,6 +364,7 @@ def test_wiki_file_bug_queued_investigation_returns_branch_task_lease_shape(
             title="Lease metadata response shape",
             observed="queued task lacks visible lease metadata",
             force_new=True,
+            verbose=True,
         )
     )
 
