@@ -168,6 +168,24 @@ def _extract_add_canon_from_path(
     )
 
 
+def _extract_save_manuscript_fragment(
+    _kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    fragment_id = str(result.get("fragment_id", ""))
+    version = int(result.get("version", 0) or 0)
+    return (
+        f"manuscript/fragments/{fragment_id}.json",
+        f"manuscript fragment {fragment_id} v{version}",
+        {
+            "fragment_id": fragment_id,
+            "version": version,
+            "bytes": result.get("bytes", 0),
+            "history_retained": True,
+            "private": True,
+        },
+    )
+
+
 def _extract_control_daemon(
     kwargs: dict[str, Any], result: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
@@ -429,6 +447,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "set_premise": (_extract_set_premise, None),
     "add_canon": (_extract_add_canon, None),
     "add_canon_from_path": (_extract_add_canon_from_path, None),
+    "save_manuscript_fragment": (_extract_save_manuscript_fragment, None),
     "control_daemon": (_extract_control_daemon, {"pause", "resume"}),
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
@@ -3581,6 +3600,213 @@ def _action_add_canon_from_path(
         return json.dumps({"error": f"Failed to ingest file: {exc}"})
 
 
+_MANUSCRIPT_FRAGMENT_MAX_BYTES = 256 * 1024
+
+
+def _manuscript_fragments_dir(udir: Path) -> Path:
+    return udir / "manuscript" / "fragments"
+
+
+def _manuscript_fragment_id(filename: str) -> str:
+    stem = Path(filename).name.strip()
+    if not stem:
+        return ""
+    if stem.endswith(".json"):
+        stem = stem[:-5]
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip(".-")
+
+
+def _manuscript_fragment_path(udir: Path, fragment_id: str) -> Path:
+    return _manuscript_fragments_dir(udir) / f"{fragment_id}.json"
+
+
+def _load_manuscript_fragment(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _action_save_manuscript_fragment(
+    universe_id: str = "",
+    filename: str = "",
+    text: str = "",
+    tag: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Save private author-authored manuscript text with retained versions.
+
+    This is deliberately not canon ingestion: it writes under
+    ``manuscript/fragments/``, emits no synthesis signal, and treats the
+    text as host-private draft material.
+    """
+    from workflow.api.engine_helpers import _current_actor
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    fragment_id = _manuscript_fragment_id(filename)
+    if not fragment_id:
+        return json.dumps({
+            "error": "filename is required for manuscript fragments.",
+        })
+
+    text = _normalize_escaped_text(text)
+    if not text.strip():
+        return json.dumps({"error": "Manuscript fragment text cannot be empty."})
+
+    data = text.encode("utf-8")
+    if len(data) > _MANUSCRIPT_FRAGMENT_MAX_BYTES:
+        return json.dumps({
+            "error": (
+                "Manuscript fragment exceeds "
+                f"{_MANUSCRIPT_FRAGMENT_MAX_BYTES} bytes "
+                f"({len(data)} submitted). Split the scene fragment."
+            ),
+        })
+
+    path = _manuscript_fragment_path(udir, fragment_id)
+    now = datetime.now(timezone.utc).isoformat()
+    actor = _current_actor()
+    digest = sha256(data).hexdigest()
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = _load_manuscript_fragment(path)
+        versions = doc.get("versions", [])
+        if not isinstance(versions, list):
+            versions = []
+        version = len(versions) + 1
+        versions.append({
+            "version": version,
+            "created_at": now,
+            "author": actor,
+            "tag": tag or None,
+            "sha256": digest,
+            "bytes": len(data),
+            "text": text,
+        })
+        saved = {
+            "schema_version": 1,
+            "fragment_id": fragment_id,
+            "visibility": "host_private",
+            "created_at": doc.get("created_at") or now,
+            "updated_at": now,
+            "current_version": version,
+            "versions": versions,
+        }
+        tmp_path = path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(saved, indent=2), encoding="utf-8")
+        tmp_path.replace(path)
+        return json.dumps({
+            "universe_id": uid,
+            "fragment_id": fragment_id,
+            "status": "saved",
+            "visibility": "host_private",
+            "version": version,
+            "versions_count": len(versions),
+            "bytes": len(data),
+            "history_retained": True,
+            "canonical_path": str(path),
+            "note": (
+                "Private manuscript fragment saved. It is not canon and "
+                "does not emit a synthesis signal."
+            ),
+        })
+    except OSError as exc:
+        return json.dumps({
+            "error": f"Failed to save manuscript fragment: {exc}",
+        })
+
+
+def _action_list_manuscript_fragments(
+    universe_id: str = "",
+    limit: int = 30,
+    **_kwargs: Any,
+) -> str:
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    try:
+        max_items = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        max_items = 30
+
+    fragments: list[dict[str, Any]] = []
+    frag_dir = _manuscript_fragments_dir(udir)
+    if frag_dir.exists():
+        for path in sorted(
+            frag_dir.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
+            doc = _load_manuscript_fragment(path)
+            versions = doc.get("versions", [])
+            latest = versions[-1] if isinstance(versions, list) and versions else {}
+            fragments.append({
+                "fragment_id": doc.get("fragment_id") or path.stem,
+                "visibility": doc.get("visibility") or "host_private",
+                "current_version": doc.get("current_version") or 0,
+                "versions_count": len(versions) if isinstance(versions, list) else 0,
+                "updated_at": doc.get("updated_at"),
+                "latest_tag": latest.get("tag") if isinstance(latest, dict) else None,
+                "latest_bytes": latest.get("bytes") if isinstance(latest, dict) else None,
+            })
+            if len(fragments) >= max_items:
+                break
+
+    return json.dumps({
+        "universe_id": uid,
+        "fragments": fragments,
+        "count": len(fragments),
+        "visibility": "host_private",
+    })
+
+
+def _action_read_manuscript_fragment(
+    universe_id: str = "",
+    filename: str = "",
+    **_kwargs: Any,
+) -> str:
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    fragment_id = _manuscript_fragment_id(filename)
+    if not fragment_id:
+        return json.dumps({
+            "error": (
+                "filename is required. Use list_manuscript_fragments "
+                "to see available fragments."
+            ),
+        })
+
+    path = _manuscript_fragment_path(udir, fragment_id)
+    if not path.exists():
+        return json.dumps({
+            "universe_id": uid,
+            "error": f"Manuscript fragment not found: {fragment_id}",
+            "hint": "Use list_manuscript_fragments to see available fragments.",
+        })
+
+    doc = _load_manuscript_fragment(path)
+    return json.dumps({
+        "universe_id": uid,
+        "fragment_id": doc.get("fragment_id") or fragment_id,
+        "visibility": doc.get("visibility") or "host_private",
+        "current_version": doc.get("current_version") or 0,
+        "versions": doc.get("versions") if isinstance(doc.get("versions"), list) else [],
+    })
+
+
 def _action_list_canon(
     universe_id: str = "",
     **_kwargs: Any,
@@ -4194,6 +4420,9 @@ def _universe_impl(
         "set_premise": _action_set_premise,
         "add_canon": _action_add_canon,
         "add_canon_from_path": _action_add_canon_from_path,
+        "save_manuscript_fragment": _action_save_manuscript_fragment,
+        "list_manuscript_fragments": _action_list_manuscript_fragments,
+        "read_manuscript_fragment": _action_read_manuscript_fragment,
         "list_canon": _action_list_canon,
         "read_canon": _action_read_canon,
         "list_sources": _action_list_sources,
