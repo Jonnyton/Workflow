@@ -122,6 +122,16 @@ def test_discover_retries_branch_push_blocked_when_push_token_visible(wf):
     assert "workflow push token is now visible" in script
 
 
+def test_discover_prioritizes_branch_push_blocked_before_normal_queue(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    branch_blocked_pass = "await scanAutoLabels({ onlyBranchPushBlocked: true });"
+    normal_pass = "await scanAutoLabels();"
+    assert "onlyBranchPushBlocked" in script
+    assert "!hasLabel(issue, 'auto-fix-branch-push-blocked')" in script
+    assert script.index(branch_blocked_pass) < script.index(normal_pass)
+
+
 def test_discover_scheduled_backfill_reads_oldest_pending_first(wf):
     discover_step = wf["jobs"]["discover"]["steps"][0]
     script = str(discover_step.get("with", {}).get("script", ""))

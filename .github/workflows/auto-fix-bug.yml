@@ -161,25 +161,39 @@ jobs:
                 pushIfPending(issue, { retryAttempted: true });
               }
             } else {
-              for (const labelName of autoLabels) {
-                const { data: issues } = await github.rest.issues.listForRepo({
-                  owner,
-                  repo,
-                  state: 'open',
-                  labels: labelName,
-                  sort: 'created',
-                  direction: 'asc',
-                  per_page: 100,
-                });
-                for (const issue of issues) {
-                  pushIfPending(issue);
-                  if (rows.length >= maxIssues) {
-                    break;
+              async function scanAutoLabels(options = {}) {
+                const onlyBranchPushBlocked = options.onlyBranchPushBlocked || false;
+                for (const labelName of autoLabels) {
+                  const { data: issues } = await github.rest.issues.listForRepo({
+                    owner,
+                    repo,
+                    state: 'open',
+                    labels: labelName,
+                    sort: 'created',
+                    direction: 'asc',
+                    per_page: 100,
+                  });
+                  for (const issue of issues) {
+                    if (
+                      onlyBranchPushBlocked &&
+                      !hasLabel(issue, 'auto-fix-branch-push-blocked')
+                    ) {
+                      continue;
+                    }
+                    pushIfPending(issue);
+                    if (rows.length >= maxIssues) {
+                      return;
+                    }
                   }
                 }
-                if (rows.length >= maxIssues) {
-                  break;
-                }
+              }
+
+              await scanAutoLabels({ onlyBranchPushBlocked: true });
+              if (rows.length >= maxIssues) {
+                core.info('Prioritized retryable branch-push-blocked issue before normal queue discovery.');
+              }
+              if (rows.length < maxIssues) {
+                await scanAutoLabels();
               }
             }
 
