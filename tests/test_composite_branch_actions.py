@@ -104,6 +104,10 @@ def test_branch_schema_documents_build_branch_node_and_graph_shape(comp_env):
     assert "build_branch_spec" in result
     assert "node_defs" in result["build_branch_spec"]["properties"]
     assert "graph" in result["build_branch_spec"]["properties"]
+    assert result["build_branch_spec"]["required"] == ["name", "node_defs"]
+    assert result["build_branch_spec"]["rule"] == (
+        "Provide either entry_point or graph.entry_point."
+    )
     node_fields = result["node_definition"]["fields"]
     assert node_fields["node_id"]["required"] is True
     assert "prompt_template" in node_fields

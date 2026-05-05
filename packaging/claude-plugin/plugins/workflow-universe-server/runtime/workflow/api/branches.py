@@ -1019,7 +1019,7 @@ def _ext_branch_schema(kwargs: dict[str, Any]) -> str:
         ),
         "build_branch_spec": {
             "type": "object",
-            "required": ["name", "node_defs", "entry_point"],
+            "required": ["name", "node_defs"],
             "properties": {
                 "name": {"type": "string", "required": True},
                 "description": {"type": "string", "required": False},
@@ -1055,6 +1055,7 @@ def _ext_branch_schema(kwargs: dict[str, Any]) -> str:
                 "entry_point": {
                     "type": "string",
                     "alias": "graph.entry_point",
+                    "description": "Required unless graph.entry_point is supplied.",
                 },
                 "graph": {
                     "type": "object",
@@ -1062,10 +1063,14 @@ def _ext_branch_schema(kwargs: dict[str, Any]) -> str:
                         "nodes": {"type": "array", "items": "GraphNodeRef"},
                         "edges": {"type": "array"},
                         "conditional_edges": {"type": "array"},
-                        "entry_point": {"type": "string"},
+                        "entry_point": {
+                            "type": "string",
+                            "description": "Required unless top-level entry_point is supplied.",
+                        },
                     },
                 },
             },
+            "rule": "Provide either entry_point or graph.entry_point.",
         },
         "node_definition": {
             "fields": {
