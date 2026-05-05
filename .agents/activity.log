@@ -3150,3 +3150,29 @@ Coordination interpretation:
 
 - The loop now has stronger evidence for a combined writer-readiness slice: oldest-first/fair queue selection, in-progress/lease idempotency, Actions dependency bootstrap for `ruff`/`pytest`, and PR readiness/dependency modeling.
 - #311 (`Auto-change PR queue needs auto-rebase or auto-close-superseded handling for stale-base PRs`) now exists in the loop itself, which is a good sign: the stale-base/self-correction concern has entered the queue. The next thing to watch is whether the loop prioritizes/refines it or lets it starve behind fresher requests.
+
+2026-05-05T01:29Z [codex-gpt5-desktop] **Codex in-app Claude user-sim succeeded; Claude consensus points at #286 + oldest-first writer ordering.**
+
+User asked Codex to use the visible in-app browser to close the prior route issue. Codex used the Browser Use `iab` route, not CDP:
+
+- Visible tab: `https://claude.ai/chat/38213b65-82bc-418b-b14d-4653d2e75a56`.
+- Sent one coordination prompt asking Claude to help prioritize without filing anything new.
+- Claude used the Workflow connector surface (`Community Change Context` calls visible in the rendered chat) and finished a response. No new filing was requested or made.
+
+Claude's senior-dev recommendation:
+
+- Smallest next substrate fix: triage/land #286 (BUG-060: empty coding workspace) before application-layer PR review. Verify whether #286 also provides dev deps; if not, add a narrow `ruff`/`pytest` bootstrap in `auto-fix-bug.yml` as a stopgap.
+- Pair that with writer issue selection ordered oldest-pending-first. The current newest-first drift is starving #311 and older pipeline-improving work.
+- Hold or locally verify code-touching auto-change PRs while writer verification is unreliable. Do not treat writer success as checker success.
+- Review oldest-first and manually classify stale bases for #276-#286 until #311-class auto-rebase/auto-close exists.
+- #297 and #302 appear to be sibling attempts for the same patch request; compare before any merge.
+- Keep cross-family checker discipline: Codex-authored PRs still need Claude-family checks.
+
+Concurrent loop event:
+
+- While Claude responded, `auto-fix-bug.yml` run `25352641163` completed and opened PR #324 for #323. #324 is clean but has empty `statusCheckRollup`, continuing the no-check PR readiness signal.
+
+Coordination interpretation:
+
+- The browser-route issue is closed: Codex can operate Claude.ai via in-app browser and should use that route for future OpenAI-family user-sim.
+- Next consensus candidate for real work is no longer broad "watch everything"; it is a narrow writer-readiness tranche: #286 workspace/dev-deps first, then oldest-first queue selection, while keeping PR readiness/dependency modeling (#311) on deck.
