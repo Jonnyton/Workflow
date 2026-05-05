@@ -403,11 +403,21 @@ def test_branch_naming_convention(wf):
     assert oauth_step is not None, "Must have a Claude OAuth step"
     with_block = oauth_step.get("with", {})
     assert with_block.get("branch_prefix") == "auto-change/"
-    assert "issue-${{ steps.meta.outputs.issue_number }}" == with_block.get(
-        "branch_name_template"
-    ), (
-        "Branch must follow auto-change/issue-<N> naming convention"
-    )
+    branch_template = str(with_block.get("branch_name_template", ""))
+    assert "issue-${{ steps.meta.outputs.issue_number }}" in branch_template
+    assert "claude-${{ github.run_id }}" in branch_template
+    assert with_block.get("branch_name_template") != (
+        "issue-${{ steps.meta.outputs.issue_number }}"
+    ), "Claude must not reuse a stale auto-change/issue-<N> branch across runs"
+
+
+def test_codex_branch_is_created_from_fresh_origin_main(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert codex_step is not None, "Must have a Codex subscription writer step"
+    run_script = codex_step.get("run", "")
+    assert "git fetch --no-tags --prune origin main" in run_script
+    assert 'git checkout -B "$branch" "origin/main"' in run_script
 
 
 def test_pr_title_includes_auto_fix_prefix(wf):
