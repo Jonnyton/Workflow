@@ -3323,3 +3323,11 @@ Next coordination:
 - PR #362 touches `workflow/auto_ship.py`, plugin mirror `auto_ship.py`, and `tests/test_auto_ship.py`. It has the normal Codex-writer / Claude-checker policy comment and empty `statusCheckRollup`; do not merge without gates and opposite-family review.
 - Live `python scripts/community_loop_watch.py --json` from current main is still red, but now because 38 pending requests are older than 45 minutes. The stage still hides push-blocked issues in `reviewed_terminal` until PR #361 is merged.
 - New PR #360 remains slug truncation; #359 and #354 are duplicate/overlapping secrets/bootstrap GH_TOKEN surfaces and should be reviewed together.
+
+2026-05-05T05:00Z [codex-gpt5-desktop] **Security-sensitive review comments left on duplicate GH_TOKEN/bootstrap PRs #354 and #359.**
+
+- Reviewed PR #354 and #359 diffs read-only. No literal real token was visible in either diff.
+- Left Codex same-family review comments on both PRs (not Claude checker keys): hold both until one canonical secrets/bootstrap lane is selected or combined, then close/supersede the duplicate.
+- Required cleanup called out: both touch `scripts/cowork-bootstrap.sh`, `scripts/secrets_keys.txt`, and `tests/test_cowork_bootstrap.py`; merging both would create conflict/duplication.
+- Scope blocker called out: the GH_TOKEN docs/runbook need to explicitly mention `workflows:write` when sandbox writers may push `.github/workflows/*` edits, because the live failure class is `github_actions_workflow_permission_missing`. Plain contents/PR permissions would recreate the same blocker for workflow edits.
+- Both PRs still have empty `statusCheckRollup` and need normal gates plus required Claude-family checker before merge.
