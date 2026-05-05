@@ -6,6 +6,15 @@
   const ADF_FILE_NAME = "scorched-tanks-v1.90-autostart.adf";
   const VAMIGA_RELOAD_SETTLE_MS = 1800;
   const DISK_INSERT_RETRY_DELAYS_MS = [300, 900, 1800, 3200];
+  const INPUT_REPLAY_PROOF = Object.freeze({
+    status: "not-configured",
+    runnerRequest: "RUNNER-011",
+    strategy: "emulator-native",
+    activeNativeFormat: null,
+    acceptedNativeFormats: ["BSV", "FS_UAE_REC", "DOSBOX_MOVIE"],
+    blocker:
+      "vAmigaWeb launcher has no declared native input movie loader yet",
+  });
 
   const installButton = document.getElementById("install-button");
   const fullscreenButton = document.getElementById(
@@ -47,6 +56,7 @@
     runtimeReadyEvents: 0,
     frameLoads: 0,
     audioState: "locked",
+    inputReplay: { ...INPUT_REPLAY_PROOF },
     exactPlayable: false,
     blocker: "not-started",
   };

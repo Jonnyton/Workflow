@@ -17,6 +17,33 @@
     "preferred_firmware": "licensed/kickstart-a500-1.3.rom",
     "fallback_firmware": "AROS Kickstart replacement"
   },
+  "input_replay": {
+    "status": "NOT_CONFIGURED",
+    "runner_request": "RUNNER-011",
+    "strategy": "emulator-native deterministic playback only",
+    "accepted_native_formats": [
+      {
+        "format": "BSV",
+        "emulator_family": "libretro/RetroArch",
+        "extensions": [".bsv"],
+        "role": "deterministic input movie"
+      },
+      {
+        "format": "FS_UAE_REC",
+        "emulator_family": "FS-UAE",
+        "extensions": [".fs-uae-rec", ".rec"],
+        "role": "Amiga-native input recording"
+      },
+      {
+        "format": "DOSBOX_MOVIE",
+        "emulator_family": "DOSBox",
+        "extensions": [".avi"],
+        "role": "DOSBox captured movie evidence, not input playback"
+      }
+    ],
+    "active_native_format": null,
+    "blocker": "The current browser vAmigaWeb launcher has no declared native input movie loader; exact-game acceptance must keep using live user-input proof until a native replay adapter is wired."
+  },
   "verification": {
     "date": "2026-05-01",
     "exact_result": "v1.90 autostart media has valid boot metadata; local browser proof mounted the ADF once with audio running and no repeated reset loop, but the AROS firmware path still does not reach playable Scorched Tanks.",
