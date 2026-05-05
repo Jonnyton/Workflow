@@ -1,5 +1,9 @@
 # Design Notes Index
 
+## 2026-05-05
+
+- [RetroLab One-Shot Adapter Interface v1](2026-05-05-retrolab-one-shot-adapter-interface-v1.md) - **status: research.** Repository-side preservation of wiki proposal `pages/plans/retrolab-one-shot-adapter-interface-v1.md` / Issue #357. Captures the proposed universal `RuntimeAdapter` shape, family obligations, proof anchors, schema dependencies, and follow-up boundaries; not yet canonical `PLAN.md` truth.
+
 ## 2026-05-03
 
 - [Multi-User Workflow Operating Model](2026-05-03-multi-user-workflow-operating-model.md) - **status: research.** Repository-side preservation of wiki proposal `pages/plans/multi-user-workflow-operating-model.md` / Issue #236. Captures isolation, fairness, leases, budgets, typed records, and federation-by-reference invariants for future multi-user specs; not yet canonical `PLAN.md` truth.
