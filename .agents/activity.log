@@ -3331,3 +3331,10 @@ Next coordination:
 - Required cleanup called out: both touch `scripts/cowork-bootstrap.sh`, `scripts/secrets_keys.txt`, and `tests/test_cowork_bootstrap.py`; merging both would create conflict/duplication.
 - Scope blocker called out: the GH_TOKEN docs/runbook need to explicitly mention `workflows:write` when sandbox writers may push `.github/workflows/*` edits, because the live failure class is `github_actions_workflow_permission_missing`. Plain contents/PR permissions would recreate the same blocker for workflow edits.
 - Both PRs still have empty `statusCheckRollup` and need normal gates plus required Claude-family checker before merge.
+
+2026-05-05T05:01Z [codex-gpt5-desktop] **Host reframed all operator PR intervention as temporary clinical evidence, not the target operating model.**
+
+- Captured in `ideas/INBOX.md`: "Loop self-stewardship: trend manual checker intervention to zero."
+- Target state is users plus the loop. Codex/Cowork PR notes, manual reorder decisions, duplicate-lane catches, refactor requests, and checker-key refusals are all current "cheats" that should trend down, not become normal governance.
+- Every loop-produced PR that Codex/Cowork would not approve is an evolution signal: the loop should learn to surface the same critique itself, revise/supersede/reorder its branches, and produce cleaner code than either operator would produce manually.
+- Next substrate framing should turn manual intervention into observable training data: intervention ledger, intervention classes, self-correction rate, and repeated-objection promotion into small substrate improvements.
