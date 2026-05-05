@@ -134,6 +134,27 @@ def test_discover_prioritizes_permission_blocked_before_normal_queue(wf):
     assert script.index(permission_blocked_pass) < script.index(normal_pass)
 
 
+def test_discover_respects_priority_and_skip_labels(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    priority_loop = "'priority:loop-discipline'"
+    priority_layer = "'priority:primitive-layer'"
+    priority_surface = "'priority:primitive-surface'"
+    normal_scan = "for (const labelName of autoLabels)"
+    assert priority_loop in script
+    assert priority_layer in script
+    assert priority_surface in script
+    assert "'await-primitive-layer'" in script
+    assert "'complete'" in script
+    assert "function shouldSkipIssue" in script
+    assert "labels: labelNames.join(',')" in script
+    assert script.index(priority_loop) < script.index(priority_layer)
+    assert script.index(priority_layer) < script.index(priority_surface)
+    assert script.index("for (const priorityLabel of priorityLabelOrder)") < (
+        script.index(normal_scan)
+    )
+
+
 def test_permission_blocked_retry_clears_terminal_labels_when_push_token_visible(wf):
     steps = wf["jobs"]["fix"]["steps"]
     clear_step = next(
