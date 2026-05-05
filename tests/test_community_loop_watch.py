@@ -177,3 +177,88 @@ def test_queue_stage_counts_push_blocked_issue_as_needs_human(monkeypatch):
     assert stage["status"] == "red"
     assert stage["details"]["needs_human"] == [298]
     assert stage["details"]["reviewed_terminal"] == []
+
+
+def test_queue_stage_counts_pr_blocked_issue_as_needs_human(monkeypatch):
+    now = dt.datetime(2026, 5, 5, 21, 20, tzinfo=dt.timezone.utc)
+
+    def fake_list_loop_issues(*_args, **_kwargs):
+        return [
+            {
+                "number": 70,
+                "title": "Writer pushed a branch but could not open the PR",
+                "created_at": "2026-05-01T01:00:00Z",
+                "html_url": "https://example.test/issues/70",
+                "labels": [
+                    {"name": watch.BLOCKED_LABEL},
+                    {"name": watch.ATTEMPTED_LABEL},
+                    {"name": watch.REVIEWED_LABEL},
+                    {"name": watch.CLAUDE_SUBSCRIPTION_MISSING_LABEL},
+                    {"name": watch.PR_BLOCKED_LABEL},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(watch, "list_loop_issues", fake_list_loop_issues)
+
+    stage = watch.queue_stage(
+        "owner/repo",
+        api="https://api.github.test",
+        token=None,
+        timeout=1,
+        now=now,
+        max_pending_age_min=45,
+    )
+
+    assert stage["status"] == "red"
+    assert stage["details"]["needs_human"] == [70]
+    assert stage["details"]["pr_blocked"] == [70]
+    assert stage["details"]["reviewed_terminal"] == []
+    assert "PR creation was blocked" in stage["summary"]
+
+
+def test_queue_stage_summarizes_mixed_permission_blocks(monkeypatch):
+    now = dt.datetime(2026, 5, 5, 21, 20, tzinfo=dt.timezone.utc)
+
+    def fake_list_loop_issues(*_args, **_kwargs):
+        return [
+            {
+                "number": 87,
+                "title": "Writer could not push the branch",
+                "created_at": "2026-04-30T23:00:00Z",
+                "html_url": "https://example.test/issues/87",
+                "labels": [
+                    {"name": watch.BLOCKED_LABEL},
+                    {"name": watch.ATTEMPTED_LABEL},
+                    {"name": watch.REVIEWED_LABEL},
+                    {"name": watch.BRANCH_PUSH_BLOCKED_LABEL},
+                ],
+            },
+            {
+                "number": 70,
+                "title": "Writer could not open the PR",
+                "created_at": "2026-05-01T01:00:00Z",
+                "html_url": "https://example.test/issues/70",
+                "labels": [
+                    {"name": watch.BLOCKED_LABEL},
+                    {"name": watch.ATTEMPTED_LABEL},
+                    {"name": watch.REVIEWED_LABEL},
+                    {"name": watch.PR_BLOCKED_LABEL},
+                ],
+            },
+        ]
+
+    monkeypatch.setattr(watch, "list_loop_issues", fake_list_loop_issues)
+
+    stage = watch.queue_stage(
+        "owner/repo",
+        api="https://api.github.test",
+        token=None,
+        timeout=1,
+        now=now,
+        max_pending_age_min=45,
+    )
+
+    assert stage["details"]["branch_push_blocked"] == [87]
+    assert stage["details"]["pr_blocked"] == [70]
+    assert "branch-push and PR-creation permission blocks" in stage["summary"]

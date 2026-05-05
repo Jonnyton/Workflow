@@ -354,6 +354,7 @@ def queue_stage(
     missing_codex_subscription: list[dict[str, Any]] = []
     auth_missing: list[dict[str, Any]] = []
     provider_exhausted: list[dict[str, Any]] = []
+    pr_blocked: list[dict[str, Any]] = []
     branch_push_blocked: list[dict[str, Any]] = []
     reviewed_terminal: list[dict[str, Any]] = []
     attempted: list[dict[str, Any]] = []
@@ -364,6 +365,7 @@ def queue_stage(
         labels = _labels(issue)
         if BLOCKED_LABEL in labels and (
             labels.isdisjoint(TERMINAL_REVIEW_LABELS)
+            or PR_BLOCKED_LABEL in labels
             or BRANCH_PUSH_BLOCKED_LABEL in labels
         ):
             needs_human.append(issue)
@@ -373,9 +375,11 @@ def queue_stage(
                 missing_codex_subscription.append(issue)
             if AUTH_MISSING_LABEL in labels:
                 auth_missing.append(issue)
+            if PR_BLOCKED_LABEL in labels:
+                pr_blocked.append(issue)
             if BRANCH_PUSH_BLOCKED_LABEL in labels:
                 branch_push_blocked.append(issue)
-            elif PROVIDER_EXHAUSTED_LABEL in labels:
+            if PROVIDER_EXHAUSTED_LABEL in labels:
                 provider_exhausted.append(issue)
         elif not labels.isdisjoint(TERMINAL_REVIEW_LABELS):
             reviewed_terminal.append(issue)
@@ -400,6 +404,7 @@ def queue_stage(
         "branch_push_blocked": [
             issue.get("number") for issue in branch_push_blocked
         ],
+        "pr_blocked": [issue.get("number") for issue in pr_blocked],
         "provider_exhausted": [issue.get("number") for issue in provider_exhausted],
         "pending": [issue.get("number") for issue in pending],
         "old_pending": [issue.get("number") for issue in old_pending],
@@ -411,7 +416,15 @@ def queue_stage(
     if needs_human:
         first = needs_human[0]
         root_cause = "automated writer is blocked"
-        if missing_subscription and missing_codex_subscription:
+        if branch_push_blocked and pr_blocked:
+            root_cause = (
+                "automated writer hit branch-push and PR-creation permission blocks"
+            )
+        elif branch_push_blocked:
+            root_cause = "automated writer produced a patch but branch push was blocked"
+        elif pr_blocked:
+            root_cause = "automated writer pushed a branch but PR creation was blocked"
+        elif missing_subscription and missing_codex_subscription:
             root_cause = (
                 "Claude subscription OAuth and Codex subscription auth bundle "
                 "are not visible to GitHub Actions"
@@ -426,8 +439,6 @@ def queue_stage(
             )
         elif auth_missing:
             root_cause = "approved subscription-backed writer auth is missing"
-        elif branch_push_blocked:
-            root_cause = "automated writer produced a patch but branch push was blocked"
         elif provider_exhausted:
             root_cause = "approved writer provider returned quota/capacity exhaustion"
         pending_clause = (
