@@ -10,11 +10,14 @@ implementation surface.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 
 import pytest
 
 from workflow.api import runtime_ops as rt_mod
+from workflow.api.extensions import _extensions_impl
 from workflow.api.runtime_ops import (
+    _FS_CAPTURE_ACTIONS,
     _INSPECT_DRY_ACTIONS,
     _MESSAGING_ACTIONS,
     _PROJECT_MEMORY_ACTIONS,
@@ -22,6 +25,7 @@ from workflow.api.runtime_ops import (
     _SCHEDULER_ACTIONS,
     _action_dry_inspect_node,
     _action_dry_inspect_patch,
+    _action_fs_capture_text,
     _action_messaging_send,
     _action_project_memory_get,
     _action_project_memory_set,
@@ -38,8 +42,10 @@ def test_module_exposes_expected_public_names():
     expected = {
         "_PROJECT_MEMORY_ACTIONS", "_PROJECT_MEMORY_WRITE_ACTIONS",
         "_INSPECT_DRY_ACTIONS", "_MESSAGING_ACTIONS", "_SCHEDULER_ACTIONS",
+        "_FS_CAPTURE_ACTIONS",
         "_action_project_memory_get", "_action_project_memory_set",
         "_action_project_memory_list",
+        "_action_fs_capture_text",
         "_action_dry_inspect_node", "_action_dry_inspect_patch",
         "_load_branch_for_inspect", "_apply_patch_ops",
         "_action_messaging_send", "_action_messaging_receive",
@@ -72,6 +78,17 @@ def test_project_memory_write_actions_only_set():
 
 def test_project_memory_write_actions_subset_of_actions():
     assert _PROJECT_MEMORY_WRITE_ACTIONS <= set(_PROJECT_MEMORY_ACTIONS.keys())
+
+
+# ── _FS_CAPTURE_ACTIONS dispatch table ─────────────────────────────────────
+
+
+def test_fs_capture_actions_table_has_1_handler():
+    assert len(_FS_CAPTURE_ACTIONS) == 1
+
+
+def test_fs_capture_actions_keys():
+    assert set(_FS_CAPTURE_ACTIONS.keys()) == {"fs_capture_text"}
 
 
 # ── _INSPECT_DRY_ACTIONS dispatch table ─────────────────────────────────────
@@ -121,6 +138,7 @@ def test_scheduler_actions_keys():
     "table_name, table",
     [
         ("_PROJECT_MEMORY_ACTIONS", _PROJECT_MEMORY_ACTIONS),
+        ("_FS_CAPTURE_ACTIONS", _FS_CAPTURE_ACTIONS),
         ("_INSPECT_DRY_ACTIONS", _INSPECT_DRY_ACTIONS),
         ("_MESSAGING_ACTIONS", _MESSAGING_ACTIONS),
         ("_SCHEDULER_ACTIONS", _SCHEDULER_ACTIONS),
@@ -162,6 +180,70 @@ def test_action_project_memory_get_missing_args_returns_error():
 def test_action_project_memory_set_missing_args_returns_error():
     out = json.loads(_action_project_memory_set({}))
     assert "error" in out
+
+
+def test_action_fs_capture_text_reads_utf8_file_with_sha256(tmp_path, monkeypatch):
+    src = tmp_path / "LICENSE.txt"
+    src.write_text("Permission granted.\n", encoding="utf-8")
+    monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(tmp_path))
+
+    out = json.loads(_action_fs_capture_text({"path": str(src)}))
+
+    assert out["path"] == str(src.resolve())
+    assert out["content"] == "Permission granted.\n"
+    assert out["sha256"] == sha256(b"Permission granted.\n").hexdigest()
+    assert out["bytes"] == len("Permission granted.\n".encode("utf-8"))
+    assert out["encoding"] == "utf-8"
+
+
+def test_extensions_impl_routes_fs_capture_text_path(tmp_path, monkeypatch):
+    src = tmp_path / "LICENSE.txt"
+    src.write_text("Permission granted.\n", encoding="utf-8")
+    monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(tmp_path))
+
+    out = json.loads(_extensions_impl(action="fs_capture_text", path=str(src)))
+
+    assert out["content"] == "Permission granted.\n"
+    assert out["sha256"] == sha256(b"Permission granted.\n").hexdigest()
+
+
+def test_action_fs_capture_text_requires_whitelist(tmp_path, monkeypatch):
+    src = tmp_path / "LICENSE.txt"
+    src.write_text("Permission granted.\n", encoding="utf-8")
+    monkeypatch.delenv("WORKFLOW_UPLOAD_WHITELIST", raising=False)
+
+    out = json.loads(_action_fs_capture_text({"path": str(src)}))
+
+    assert "error" in out
+    assert "WORKFLOW_UPLOAD_WHITELIST is required" in out["error"]
+
+
+def test_action_fs_capture_text_rejects_path_outside_whitelist(
+    tmp_path, monkeypatch,
+):
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    src = outside / "LICENSE.txt"
+    src.write_text("Permission granted.\n", encoding="utf-8")
+    monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(allowed))
+
+    out = json.loads(_action_fs_capture_text({"path": str(src)}))
+
+    assert "error" in out
+    assert "not under any WORKFLOW_UPLOAD_WHITELIST" in out["error"]
+
+
+def test_action_fs_capture_text_rejects_non_utf8(tmp_path, monkeypatch):
+    src = tmp_path / "LICENSE.txt"
+    src.write_bytes(b"\xff\xfe")
+    monkeypatch.setenv("WORKFLOW_UPLOAD_WHITELIST", str(tmp_path))
+
+    out = json.loads(_action_fs_capture_text({"path": str(src)}))
+
+    assert "error" in out
+    assert "not valid UTF-8" in out["error"]
 
 
 def test_action_dry_inspect_node_missing_branch_id_returns_error_dict():

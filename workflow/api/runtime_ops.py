@@ -1,11 +1,12 @@
 """Runtime-coordination subsystem — extracted from workflow/universe_server.py
 (Task #13 — decomp Step 6).
 
-Houses 4 small-to-medium action groups that share a common runtime-coordination
+Houses 5 small-to-medium action groups that share a common runtime-coordination
 purpose: project-scoped memory, zero-side-effect dry inspection, teammate
-messaging, and scheduler hooks. The MCP tool decoration stays in
-``workflow/universe_server.py`` (Pattern A2 from the decomp plan); this
-module is plain functions consumed via the ``extensions()`` MCP tool.
+messaging, scheduler hooks, and constrained filesystem text capture. The
+MCP tool decoration stays in ``workflow/universe_server.py`` (Pattern A2
+from the decomp plan); this module is plain functions consumed via the
+``extensions()`` MCP tool.
 
 Public surface (back-compat re-exported via ``workflow.universe_server``):
     Dispatch tables:
@@ -13,6 +14,7 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
         _INSPECT_DRY_ACTIONS
         _MESSAGING_ACTIONS
         _SCHEDULER_ACTIONS
+        _FS_CAPTURE_ACTIONS
 
     Project memory handlers:
         _action_project_memory_get / _action_project_memory_set /
@@ -32,6 +34,9 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
         _action_unsubscribe_branch / _action_pause_schedule /
         _action_unpause_schedule / _action_list_scheduler_subscriptions
 
+    Filesystem capture handlers:
+        _action_fs_capture_text
+
 Cross-module note: ``_current_actor`` lives in ``workflow.universe_server``
 (universe-engine territory) and is lazy-imported inside the functions that
 use it. This avoids the load-time cycle (universe_server back-compat-imports
@@ -39,12 +44,14 @@ symbols from this module). Same pattern as Tasks #11/#12.
 
 There is NO dispatch-glue function here (unlike runs.py's
 _dispatch_run_action and evaluation.py's _dispatch_judgment_action). The
-``extensions()`` body inlines the dispatch loop directly for these 4 tables;
+``extensions()`` body inlines the dispatch loop directly for these 5 tables;
 the ledger-write path consults ``_PROJECT_MEMORY_WRITE_ACTIONS`` only
-(messaging/dry-inspect/scheduler have no separate write-set in current code).
+(fs-capture/messaging/dry-inspect/scheduler have no separate write-set in
+current code).
 
 Source ranges extracted (current line numbers, post-#12 land):
 - L7078–7148 — Project memory (3 handlers + dispatch dict + write set)
+- WIKI-PATCH — Filesystem capture (1 handler + dispatch dict)
 - L7152–7290 — Dry-inspect (helpers + 2 handlers + dispatch dict)
 - L7406–7498 — Teammate messaging (3 handlers + dispatch dict)
 - L7500–7690 — Scheduler (8 handlers + dispatch dict)
@@ -58,11 +65,15 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 from workflow.api.helpers import _base_path
 
 logger = logging.getLogger("universe_server.runtime_ops")
+
+_FS_CAPTURE_TEXT_MAX_BYTES = 1024 * 1024
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -136,6 +147,92 @@ _PROJECT_MEMORY_ACTIONS: dict[str, Any] = {
 }
 
 _PROJECT_MEMORY_WRITE_ACTIONS: frozenset[str] = frozenset({"project_memory_set"})
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# fs_capture_text — constrained UTF-8 file read for audit-chain capture
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def _resolve_whitelisted_text_path(raw_path: str) -> tuple[Path | None, str | None]:
+    from workflow.api.engine_helpers import _upload_whitelist_prefixes
+
+    if not raw_path:
+        return None, "path is required."
+
+    src = Path(raw_path)
+    if not src.is_absolute():
+        return None, "path must be absolute."
+
+    whitelist = _upload_whitelist_prefixes()
+    if whitelist is None:
+        return None, (
+            "WORKFLOW_UPLOAD_WHITELIST is required for fs_capture_text "
+            "because this action returns file content."
+        )
+
+    try:
+        resolved = src.resolve(strict=True)
+    except FileNotFoundError:
+        return None, f"File not found: {raw_path}"
+    except OSError as exc:
+        return None, f"Failed to resolve path: {exc}"
+
+    if not any(resolved.is_relative_to(prefix) for prefix in whitelist):
+        return None, (
+            "Path is not under any WORKFLOW_UPLOAD_WHITELIST prefix. "
+            f"Resolved={resolved!s}, allowed_prefixes={[str(p) for p in whitelist]}."
+        )
+    if not resolved.is_file():
+        return None, f"Not a regular file: {raw_path}"
+    return resolved, None
+
+
+def _action_fs_capture_text(kwargs: dict[str, Any]) -> str:
+    path = (kwargs.get("path") or "").strip()
+    resolved, error = _resolve_whitelisted_text_path(path)
+    if error:
+        return json.dumps({"error": error})
+    assert resolved is not None
+
+    try:
+        data = resolved.read_bytes()
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to read file: {exc}"})
+
+    if len(data) > _FS_CAPTURE_TEXT_MAX_BYTES:
+        return json.dumps({
+            "error": (
+                f"File is too large for fs_capture_text: {len(data)} bytes "
+                f"> {_FS_CAPTURE_TEXT_MAX_BYTES}."
+            ),
+        })
+
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return json.dumps({
+            "error": (
+                f"File is not valid UTF-8 ({exc.reason} at byte "
+                f"{exc.start}). Convert to UTF-8 before capture."
+            ),
+        })
+
+    digest = sha256(data).hexdigest()
+    return json.dumps({
+        "path": str(resolved),
+        "encoding": "utf-8",
+        "bytes": len(data),
+        "chars": len(content),
+        "sha256": digest,
+        "sha256_prefixed": f"sha256:{digest}",
+        "content": content,
+    })
+
+
+_FS_CAPTURE_ACTIONS: dict[str, Any] = {
+    "fs_capture_text": _action_fs_capture_text,
+}
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -562,4 +659,3 @@ _SCHEDULER_ACTIONS: dict[str, Any] = {
     "unpause_schedule": _action_unpause_schedule,
     "list_scheduler_subscriptions": _action_list_scheduler_subscriptions,
 }
-

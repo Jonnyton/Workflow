@@ -437,6 +437,7 @@ def extensions(
     output_keys: str = "",
     source_code: str = "",
     dependencies: str = "",
+    path: str = "",
     enabled_only: bool = True,
     branch_def_id: str = "",
     name: str = "",
@@ -559,6 +560,7 @@ def extensions(
 
     Action groups:
     - Registry: register, list, inspect, approve, disable, enable, remove.
+    - Filesystem capture: fs_capture_text.
     - Branch atomic: create_branch, list_branches, get_branch,
       describe_branch, delete_branch, add_node, connect_nodes,
       set_entry_point, add_state_field, validate_branch, build_branch,
@@ -590,6 +592,7 @@ def extensions(
         output_keys=output_keys,
         source_code=source_code,
         dependencies=dependencies,
+        path=path,
         enabled_only=enabled_only,
         branch_def_id=branch_def_id,
         name=name,

@@ -9,7 +9,7 @@ registrations (control_station / extension_guide), `main()` daemon
 entrypoint, the `@mcp.custom_route("/")` health-check, and module imports.
 
 This module is the **most cross-tool-coupled** of the decomposition: the
-``extensions()`` tool body funnels caller kwargs into 12 dispatch tables
+``extensions()`` tool body funnels caller kwargs into 13 dispatch tables
 already extracted in Steps 4-8. Top-of-module imports (not lazy) since
 extensions.py is hot-path routing.
 
@@ -78,6 +78,7 @@ from workflow.api.runs import (
     _dispatch_run_action,
 )
 from workflow.api.runtime_ops import (
+    _FS_CAPTURE_ACTIONS,
     _INSPECT_DRY_ACTIONS,
     _MESSAGING_ACTIONS,
     _PROJECT_MEMORY_ACTIONS,
@@ -239,6 +240,7 @@ def _extensions_impl(
     output_keys: str = "",
     source_code: str = "",
     dependencies: str = "",
+    path: str = "",
     enabled_only: bool = True,
     branch_def_id: str = "",
     name: str = "",
@@ -484,6 +486,14 @@ def _extensions_impl(
                 pass
         return result_str
 
+    # ── Constrained filesystem capture ────────────────────────────────────
+    fs_capture_handler = _FS_CAPTURE_ACTIONS.get(action)
+    if fs_capture_handler is not None:
+        fs_capture_kwargs: dict[str, Any] = {
+            "path": path,
+        }
+        return fs_capture_handler(fs_capture_kwargs)
+
     # ── Branch versioning ──────────────────────────────────────────────────
     bv_handler = _BRANCH_VERSION_ACTIONS.get(action)
     if bv_handler is not None:
@@ -651,6 +661,7 @@ def _extensions_impl(
             "suggest_node_edit", "get_node_output",
             "rollback_node", "list_node_versions",
             "project_memory_get", "project_memory_set", "project_memory_list",
+            "fs_capture_text",
             "dry_inspect_node", "dry_inspect_patch",
             "messaging_send", "messaging_receive", "messaging_ack",
             "publish_version", "get_branch_version", "list_branch_versions",

@@ -148,6 +148,7 @@ def _extensions_dispatch_keys() -> set[str]:
         | set(runs_mod._RUN_ACTIONS.keys())
         | set(evaluation_mod._JUDGMENT_ACTIONS.keys())
         | set(runtime_ops_mod._PROJECT_MEMORY_ACTIONS.keys())
+        | set(runtime_ops_mod._FS_CAPTURE_ACTIONS.keys())
         | set(evaluation_mod._BRANCH_VERSION_ACTIONS.keys())
         | set(runtime_ops_mod._MESSAGING_ACTIONS.keys())
         | set(market_mod._ESCROW_ACTIONS.keys())
