@@ -126,13 +126,18 @@ def test_discover_retries_permission_blocked_when_push_token_visible(wf):
 def test_discover_prioritizes_permission_blocked_before_normal_queue(wf):
     discover_step = wf["jobs"]["discover"]["steps"][0]
     script = str(discover_step.get("with", {}).get("script", ""))
+    backfill_branch = script[
+        script.index("} else {\n  await scanAutoLabels({ onlyPermissionBlocked: true });"):
+    ]
     permission_blocked_pass = "await scanAutoLabels({ onlyPermissionBlocked: true });"
     normal_pass = "await scanAutoLabels();"
     assert "onlyPermissionBlocked" in script
     assert "!hasLabel(issue, 'auto-fix-branch-push-blocked')" in script
     assert "!hasLabel(issue, 'auto-fix-pr-blocked')" in script
     assert "ignoreSkip: onlyPermissionBlocked" in script
-    assert script.index(permission_blocked_pass) < script.index(normal_pass)
+    assert backfill_branch.index(permission_blocked_pass) < backfill_branch.index(
+        normal_pass
+    )
 
 
 def test_discover_respects_priority_and_skip_labels(wf):
@@ -153,6 +158,22 @@ def test_discover_respects_priority_and_skip_labels(wf):
     assert script.index(priority_layer) < script.index(priority_surface)
     assert script.index("for (const priorityLabel of priorityLabelOrder)") < (
         script.index(normal_scan)
+    )
+
+
+def test_labeled_event_prioritizes_claimable_priority_before_trigger_issue(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    assert "const triggerLabels = [...autoLabels, ...priorityLabelOrder];" in script
+    assert "triggerLabels.includes(label?.name)" in script
+    event_branch = script[
+        script.index("if (context.eventName === 'issues')"):
+        script.index("} else if (context.eventName === 'workflow_dispatch'")
+    ]
+    assert "await scanAutoLabels();" in event_branch
+    assert "if (rows.length < maxIssues)" in event_branch
+    assert event_branch.index("await scanAutoLabels();") < event_branch.index(
+        "pushIfPending(issue, { retryAttempted: true });"
     )
 
 
