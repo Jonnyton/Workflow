@@ -11,6 +11,8 @@ annotations for host review.
 from __future__ import annotations
 
 import json
+from functools import wraps
+from inspect import signature
 from typing import Any
 
 from fastmcp import FastMCP
@@ -112,17 +114,53 @@ def _directory_safe_status(universe_id: str = "") -> str:
     return json.dumps(_redact_directory_status(payload), default=str)
 
 
-@directory_mcp.tool(
-    title="Get Workflow Status",
-    tags={"status", "workflow", "diagnostics"},
-    annotations=ToolAnnotations(
-        title="Get Workflow Status",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
-)
+
+
+
+def _structured_return(raw):
+    """Wrap an MCP tool result so FastMCP populates ``structured_content``.
+
+    ChatGPT (OpenAI Apps SDK) wedges on substrate-changing tool calls when
+    the response carries only ``content`` (text) without ``structuredContent``
+    (typed dict) + ``_meta`` annotations. Claude tolerates either shape.
+
+    Mirrors the helpers in workflow.universe_server applied via PR #493 + #495.
+    """
+    import json as _json
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        return {"result": raw}
+    if isinstance(raw, str):
+        try:
+            parsed = _json.loads(raw)
+        except (_json.JSONDecodeError, ValueError):
+            return {"text": raw}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"result": parsed}
+    return {"result": raw}
+
+
+def _register_structured_tool(fn, *, server, title=None, tags=None, annotations=None):
+    """Register an MCP adapter without changing the direct Python API."""
+
+    @wraps(fn)
+    def _tool(*args, **kwargs):
+        return _structured_return(fn(*args, **kwargs))
+
+    _tool.__name__ = f"_mcp_{fn.__name__}"
+    _tool.__signature__ = signature(fn).replace(return_annotation=dict)
+    kwargs = {"name": fn.__name__, "output_schema": None}
+    if title is not None:
+        kwargs["title"] = title
+    if tags is not None:
+        kwargs["tags"] = tags
+    if annotations is not None:
+        kwargs["annotations"] = annotations
+    return server.tool(**kwargs)(_tool)
+
+
 def get_workflow_status(universe_id: str = "") -> str:
     """Use this when the user asks whether Workflow is reachable or safe to use.
 
@@ -132,17 +170,21 @@ def get_workflow_status(universe_id: str = "") -> str:
     return _directory_safe_status(universe_id=universe_id)
 
 
-@directory_mcp.tool(
-    title="List Workflow Universes",
-    tags={"universes", "workflow", "browse"},
+_mcp_get_workflow_status = _register_structured_tool(
+    get_workflow_status,
+    server=directory_mcp,
+    title='Get Workflow Status',
+    tags={'status', 'workflow', 'diagnostics'},
     annotations=ToolAnnotations(
-        title="List Workflow Universes",
+        title='Get Workflow Status',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def list_workflow_universes(limit: int = 30) -> str:
     """Use this when the user wants to browse available Workflow universes.
 
@@ -152,17 +194,21 @@ def list_workflow_universes(limit: int = 30) -> str:
     return _universe_impl(action="list", limit=limit)
 
 
-@directory_mcp.tool(
-    title="Inspect Workflow Universe",
-    tags={"universes", "workflow", "inspect"},
+_mcp_list_workflow_universes = _register_structured_tool(
+    list_workflow_universes,
+    server=directory_mcp,
+    title='List Workflow Universes',
+    tags={'universes', 'workflow', 'browse'},
     annotations=ToolAnnotations(
-        title="Inspect Workflow Universe",
+        title='List Workflow Universes',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def inspect_workflow_universe(universe_id: str = "") -> str:
     """Use this when the user wants a summary of one Workflow universe.
 
@@ -172,17 +218,21 @@ def inspect_workflow_universe(universe_id: str = "") -> str:
     return _universe_impl(action="inspect", universe_id=universe_id)
 
 
-@directory_mcp.tool(
-    title="List Workflow Goals",
-    tags={"goals", "workflow", "browse"},
+_mcp_inspect_workflow_universe = _register_structured_tool(
+    inspect_workflow_universe,
+    server=directory_mcp,
+    title='Inspect Workflow Universe',
+    tags={'universes', 'workflow', 'inspect'},
     annotations=ToolAnnotations(
-        title="List Workflow Goals",
+        title='Inspect Workflow Universe',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def list_workflow_goals(tags: str = "", author: str = "", limit: int = 50) -> str:
     """Use this when the user wants to browse existing shared Workflow goals.
 
@@ -194,17 +244,21 @@ def list_workflow_goals(tags: str = "", author: str = "", limit: int = 50) -> st
     return _goals_impl(action="list", tags=tags, author=author, limit=limit)
 
 
-@directory_mcp.tool(
-    title="Search Workflow Goals",
-    tags={"goals", "workflow", "search"},
+_mcp_list_workflow_goals = _register_structured_tool(
+    list_workflow_goals,
+    server=directory_mcp,
+    title='List Workflow Goals',
+    tags={'goals', 'workflow', 'browse'},
     annotations=ToolAnnotations(
-        title="Search Workflow Goals",
+        title='List Workflow Goals',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def search_workflow_goals(query: str, limit: int = 20) -> str:
     """Use this when the user wants to find Workflow goals by text or tag.
 
@@ -215,17 +269,21 @@ def search_workflow_goals(query: str, limit: int = 20) -> str:
     return _goals_impl(action="search", query=query, limit=limit)
 
 
-@directory_mcp.tool(
-    title="Get Workflow Goal",
-    tags={"goals", "workflow", "inspect"},
+_mcp_search_workflow_goals = _register_structured_tool(
+    search_workflow_goals,
+    server=directory_mcp,
+    title='Search Workflow Goals',
+    tags={'goals', 'workflow', 'search'},
     annotations=ToolAnnotations(
-        title="Get Workflow Goal",
+        title='Search Workflow Goals',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def get_workflow_goal(goal_id: str) -> str:
     """Use this when the user wants details for a specific Workflow goal.
 
@@ -235,17 +293,21 @@ def get_workflow_goal(goal_id: str) -> str:
     return _goals_impl(action="get", goal_id=goal_id)
 
 
-@directory_mcp.tool(
-    title="Search Workflow Wiki",
-    tags={"wiki", "knowledge", "workflow", "search"},
+_mcp_get_workflow_goal = _register_structured_tool(
+    get_workflow_goal,
+    server=directory_mcp,
+    title='Get Workflow Goal',
+    tags={'goals', 'workflow', 'inspect'},
     annotations=ToolAnnotations(
-        title="Search Workflow Wiki",
+        title='Get Workflow Goal',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def search_workflow_wiki(query: str, category: str = "", max_results: int = 10) -> str:
     """Use this when the user wants to search Workflow project knowledge.
 
@@ -261,17 +323,21 @@ def search_workflow_wiki(query: str, category: str = "", max_results: int = 10) 
         max_results=max_results,
     )
 
-@directory_mcp.tool(
-    title="Read Workflow Wiki Page",
-    tags={"wiki", "knowledge", "workflow", "read"},
+
+_mcp_search_workflow_wiki = _register_structured_tool(
+    search_workflow_wiki,
+    server=directory_mcp,
+    title='Search Workflow Wiki',
+    tags={'wiki', 'knowledge', 'workflow', 'search'},
     annotations=ToolAnnotations(
-        title="Read Workflow Wiki Page",
+        title='Search Workflow Wiki',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
 def read_workflow_wiki_page(page: str) -> str:
     """Use this when the user wants to read one Workflow wiki page.
 
@@ -281,17 +347,21 @@ def read_workflow_wiki_page(page: str) -> str:
     return _wiki_impl(action="read", page=page)
 
 
-@directory_mcp.tool(
-    title="List Workflow Runs",
-    tags={"runs", "workflow", "browse"},
+_mcp_read_workflow_wiki_page = _register_structured_tool(
+    read_workflow_wiki_page,
+    server=directory_mcp,
+    title='Read Workflow Wiki Page',
+    tags={'wiki', 'knowledge', 'workflow', 'read'},
     annotations=ToolAnnotations(
-        title="List Workflow Runs",
+        title='Read Workflow Wiki Page',
         readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
     ),
 )
+
+
 def list_workflow_runs(status: str = "", limit: int = 20) -> str:
     """Use this when the user wants recent Workflow run history.
 
@@ -302,17 +372,21 @@ def list_workflow_runs(status: str = "", limit: int = 20) -> str:
     return _extensions_impl(action="list_runs", status=status, limit=limit)
 
 
-@directory_mcp.tool(
-    title="Propose Workflow Goal",
-    tags={"goals", "workflow", "create"},
+_mcp_list_workflow_runs = _register_structured_tool(
+    list_workflow_runs,
+    server=directory_mcp,
+    title='List Workflow Runs',
+    tags={'runs', 'workflow', 'browse'},
     annotations=ToolAnnotations(
-        title="Propose Workflow Goal",
-        readOnlyHint=False,
+        title='List Workflow Runs',
+        readOnlyHint=True,
         destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        idempotentHint=True,
+        openWorldHint=False,
     ),
 )
+
+
 def propose_workflow_goal(
     name: str,
     description: str = "",
@@ -336,17 +410,21 @@ def propose_workflow_goal(
     )
 
 
-@directory_mcp.tool(
-    title="Submit Workflow Request",
-    tags={"requests", "workflow", "queue"},
+_mcp_propose_workflow_goal = _register_structured_tool(
+    propose_workflow_goal,
+    server=directory_mcp,
+    title='Propose Workflow Goal',
+    tags={'goals', 'workflow', 'create'},
     annotations=ToolAnnotations(
-        title="Submit Workflow Request",
+        title='Propose Workflow Goal',
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=False,
-        openWorldHint=False,
+        openWorldHint=True,
     ),
 )
+
+
 def submit_workflow_request(
     text: str,
     universe_id: str = "",
@@ -368,3 +446,18 @@ def submit_workflow_request(
         request_type=request_type,
         branch_id=branch_id,
     )
+
+
+_mcp_submit_workflow_request = _register_structured_tool(
+    submit_workflow_request,
+    server=directory_mcp,
+    title='Submit Workflow Request',
+    tags={'requests', 'workflow', 'queue'},
+    annotations=ToolAnnotations(
+        title='Submit Workflow Request',
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
