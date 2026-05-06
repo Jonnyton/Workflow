@@ -203,7 +203,7 @@ class TestProviderRouterDiagnostics:
         assert err.chain_state is not None
         assert err.chain_state["role"] == "writer"
         assert err.chain_state["api_key_providers_enabled"] is False
-        assert err.chain_state["chain"] == ["claude-code", "codex", "ollama-local"]
+        assert err.chain_state["chain"] == ["codex", "ollama-local"]
         attempts = {attempt.provider: attempt for attempt in err.attempts}
         assert attempts["claude-code"].skip_class == "not_in_registry"
         assert attempts["codex"].skip_class == "auth_invalid"

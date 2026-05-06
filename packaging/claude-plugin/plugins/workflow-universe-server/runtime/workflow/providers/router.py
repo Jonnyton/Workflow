@@ -119,6 +119,32 @@ class ProviderRouter:
     def available_providers(self) -> list[str]:
         return list(self._providers)
 
+    def effective_chain(
+        self,
+        chain: list[str],
+    ) -> tuple[list[str], list[ProviderAttemptDiagnostic]]:
+        """Return registered providers from *chain* plus explicit exclusions.
+
+        ``FALLBACK_CHAINS`` records preference order, but runtime routing must
+        only advertise and iterate providers that were actually registered at
+        startup. Missing CLI-backed providers, such as ``claude-code`` in the
+        cloud image, are reported as exclusions rather than silent phantom
+        entries at the front of the live chain.
+        """
+        effective: list[str] = []
+        excluded: list[ProviderAttemptDiagnostic] = []
+        for provider_name in chain:
+            if provider_name in self._providers:
+                effective.append(provider_name)
+                continue
+            excluded.append(ProviderAttemptDiagnostic(
+                provider=provider_name,
+                status="skipped",
+                skip_class="not_in_registry",
+                detail="provider name not registered with daemon",
+            ))
+        return effective, excluded
+
     # ------------------------------------------------------------------
     # Core routing
     # ------------------------------------------------------------------
@@ -253,9 +279,22 @@ class ProviderRouter:
             )
             chain = auth_filtered
 
-        # FEAT-006: collect per-provider skip/failure diagnostics so the
-        # final AllProvidersExhaustedError can carry structured detail.
+        # FEAT-006 / BUG-025: collect per-provider skip/failure diagnostics so
+        # the final AllProvidersExhaustedError can carry structured detail.
+        # For normal fallback routing, remove unregistered providers before
+        # iteration so the live chain does not advertise phantom first entries.
         attempts: list[ProviderAttemptDiagnostic] = []
+        if not is_pinned_writer:
+            effective_chain, excluded = self.effective_chain(chain)
+            if excluded:
+                logger.info(
+                    "Excluding unregistered providers from effective role=%s "
+                    "chain: %s",
+                    role,
+                    [attempt.provider for attempt in excluded],
+                )
+                attempts.extend(excluded)
+            chain = effective_chain
 
         for provider_name in chain:
             provider = self._providers.get(provider_name)
