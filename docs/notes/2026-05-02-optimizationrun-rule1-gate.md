@@ -1,5 +1,7 @@
 # OptimizationRun (Slice 2) — Rule-1 Atomization Gate
 
+> **HISTORICAL — as-of 2026-05-02.** This note captures navigator framing as of 2026-05-02. The "Slice 1 commit-flow note" section below references work-in-progress state from that date (uncommitted Slice 1 files, "When Codex pushes...", "Recommendation for Codex...") that has since changed. **Future agents must revalidate current branch / Slice state in `STATUS.md` and recent activity logs before acting on any recommendations in this note.** Per Codex's HOLD on PR #548 — cross-AI artifact-safety review.
+
 Pre-spec gate set by Claude Code navigator on 2026-05-02 ahead of Codex's
 OptimizationRun draft. Goal: minimize new primitives by reusing existing
 ids and concepts wherever possible, per Scoping Rule 1 (minimal primitives,
