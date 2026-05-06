@@ -140,6 +140,7 @@ Each rubric concept maps to a concrete surface for observation:
 | Promotion math | Aggregation surfaces in `get_status.loop_health[<branch_def_id>]` (new field). |
 | Auto-ship eligibility | `auto_ship_packet_v0` validates rubric §6 before any repo write (PR #198 spec). |
 | Anti-pattern detection | Validator hooks at coding_dispatch + review_release_gate that reject packets violating §7. |
+| Loop self-learning | `pages/brain/blocked-patterns.md` is the durable pre-claim page for rejected repeatable work shapes. Verdict feedback may update it, but automatic closed-loop trigger proof is gated on BUG-049 terminal run evidence. |
 
 ## 9. Failure handling
 
@@ -148,6 +149,9 @@ If a packet violates rubric §5 or §7:
 - `manual_review_required=true`.
 - Activity log emits `[rubric_violation] run_id=<id> rule=<rule> field=<field>`.
 - The loop variant's `get_status.loop_health.rubric_violations_24h` increments.
+- The reusable blocked shape is captured or refreshed in
+  `pages/brain/blocked-patterns.md` before the daemon claims similar work
+  again.
 
 If a shipped patch produces a `rolled_back` event:
 - Loop variant cooldown for 24h (auto-ship suppressed).
