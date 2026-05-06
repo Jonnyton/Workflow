@@ -920,15 +920,16 @@ def wiki(
 
     When the user asks to file a bug, patch request, feature request, or
     design proposal, call `file_bug` directly with the matching `kind`
-    (`bug`, `patch_request`, `feature`, or `design`). `file_bug` already
-    does Jaccard duplicate detection server-side; you do NOT need to search/list/read
-    the wiki before filing. If a similar filing exists,
+    (`bug`, `patch_request`, `feature`, or `design`), or call
+    `file_feature_request` for a direct feature-request filing verb.
+    `file_bug` and `file_feature_request` already do Jaccard duplicate detection server-side;
+    you do NOT need to search/list/read the wiki before filing. If a similar filing exists,
     it returns status="similar_found" with the existing match.
 
     Args:
-        action: One of — reads: read, search, list, lint;
-            writes: write, patch, consolidate, promote, ingest, supersede,
-            sync_projects, file_bug, cosign_bug.
+        action: One of — read, search, list, lint, write, patch, consolidate,
+            promote, ingest, supersede, sync_projects, file_bug,
+            file_feature_request, cosign_bug;
         old_text/new_text: For action="patch", exact text to replace server-side.
         expected_sha256: Optional full-page hash guard for action="patch".
     """

@@ -282,6 +282,28 @@ class TestWikiWrite:
         )
 
 
+class TestWikiFileFeatureRequest:
+    def test_dispatch_routes_file_feature_request(self, wiki_dir):
+        result = json.loads(
+            wiki(
+                "file_feature_request",
+                component="wiki",
+                severity="minor",
+                title="Add a direct feature filing verb",
+                observed="Feature requests require a direct wiki verb.",
+                expected="A direct verb creates a feature-request filing.",
+            )
+        )
+
+        assert result["status"] == "filed"
+        assert result["kind"] == "feature"
+        assert result["bug_id"].startswith("FEAT-")
+        assert result["path"].startswith("pages/feature-requests/")
+        body = (wiki_dir / result["path"]).read_text(encoding="utf-8")
+        assert "type: feature" in body
+        assert "kind: feature" in body
+
+
 class TestWikiPromote:
     def test_promote_valid_draft(self, wiki_dir):
         # Write a draft with valid frontmatter and wikilinks
