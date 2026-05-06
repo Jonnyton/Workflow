@@ -27,6 +27,7 @@ AttemptStatus = Literal["skipped", "failed"]
 #   auth_invalid        - refresh subscription auth bundle / API key
 #   endpoint_unreachable- network / service outage
 #   timed_out           - subprocess hang / network slow
+#   empty_response      - provider returned a blank response body
 #   provider_error      - structured provider error (see detail)
 #   unknown             - unhandled exception (see detail)
 SkipClass = Literal[
@@ -35,6 +36,7 @@ SkipClass = Literal[
     "auth_invalid",
     "endpoint_unreachable",
     "timed_out",
+    "empty_response",
     "provider_error",
     "unknown",
 ]

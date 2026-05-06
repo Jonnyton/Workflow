@@ -157,6 +157,37 @@ class TestProviderRouterCall:
         assert resp.text == "codex-resp"
 
     @pytest.mark.asyncio
+    async def test_writer_falls_back_on_empty_response(self):
+        providers = _make_providers(
+            **{"claude-code": FakeProvider("claude-code", "anthropic", "")}
+        )
+        router = ProviderRouter(providers=providers)
+
+        resp = await router.call("writer", "write prose", "system")
+
+        assert resp.provider == "codex"
+        assert resp.text == "codex-resp"
+        assert providers["claude-code"].call_count == 1
+        assert providers["codex"].call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_writer_empty_response_exhausts_with_diagnostic(self):
+        providers = {
+            "claude-code": FakeProvider("claude-code", "anthropic", ""),
+            "codex": FakeProvider("codex", "openai", ""),
+            "ollama-local": FakeProvider("ollama-local", "local", ""),
+        }
+        router = ProviderRouter(providers=providers)
+
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            await router.call("writer", "write prose", "system")
+
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["claude-code"].skip_class == "empty_response"
+        assert attempts["codex"].skip_class == "empty_response"
+        assert attempts["ollama-local"].skip_class == "empty_response"
+
+    @pytest.mark.asyncio
     async def test_writer_falls_to_ollama(self):
         failing = {
             "claude-code": FakeProvider("claude-code", "anthropic", fail_with=ProviderError("x")),
@@ -353,6 +384,23 @@ class TestPreferredProvider:
         resp = await router.call("writer", "prompt", "system")
         # API-key provider is ignored by default; chain stays subscription-first.
         assert resp.provider == "claude-code"
+
+    @pytest.mark.asyncio
+    async def test_policy_provider_empty_response_falls_through(self):
+        providers = _make_providers(
+            **{"codex": FakeProvider("codex", "openai", "")}
+        )
+        router = ProviderRouter(providers=providers)
+
+        text, provider = await router.call_with_policy(
+            "writer",
+            "prompt",
+            "system",
+            {"preferred": {"provider": "codex"}},
+        )
+
+        assert (text, provider) == ("claude-resp", "claude-code")
+        assert providers["codex"].call_count == 1
 
 
 # =====================================================================
