@@ -154,6 +154,36 @@ def test_build_branch_rejects_empty_spec(comp_env):
     assert result["suggestions"]
 
 
+def test_validate_branch_accepts_unsaved_spec_without_persisting(comp_env):
+    us, _ = comp_env
+    before = _call(us, "list_branches")
+    result = _call(us, "validate_branch", spec_json=json.dumps(RECIPE_SPEC))
+    assert result["valid"] is True
+    assert result["source"] == "spec_json"
+    assert result["draft"] is True
+    assert result["errors"] == []
+    assert result["suggestions"] == []
+
+    after = _call(us, "list_branches")
+    assert after["count"] == before["count"]
+    assert sorted(b["branch_def_id"] for b in after["branches"]) == sorted(
+        b["branch_def_id"] for b in before["branches"]
+    )
+
+
+def test_validate_branch_draft_returns_build_suggestions(comp_env):
+    us, _ = comp_env
+    spec = {**RECIPE_SPEC, "entry_point": ""}
+    result = _call(us, "validate_branch", spec_json=json.dumps(spec))
+    assert result["valid"] is False
+    assert result["source"] == "spec_json"
+    assert result["draft"] is True
+    assert any("Entry point is required" in err for err in result["errors"])
+    fixes = " ".join(s["proposed_fix"] for s in result["suggestions"])
+    assert "capture" in fixes
+    assert result["attempted_spec"]["name"] == "Recipe tracker"
+
+
 def test_build_branch_rejects_duplicate_node_ids(comp_env):
     us, _ = comp_env
     spec = {
