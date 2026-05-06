@@ -481,6 +481,26 @@ class TestProviderRegistration:
         with patch("shutil.which", return_value="/usr/local/bin/codex"):
             assert CodexProvider.is_available()
 
+    def test_effective_chain_excludes_unregistered_providers(self):
+        """Runtime chain skips absent CLI providers instead of advertising them first."""
+        router = ProviderRouter(
+            providers={
+                "codex": FakeProvider("codex", "openai"),
+                "ollama-local": FakeProvider("ollama-local", "local"),
+            },
+        )
+
+        chain, excluded = router.effective_chain(FALLBACK_CHAINS["writer"])
+
+        assert chain == ["codex", "ollama-local"]
+        assert [attempt.provider for attempt in excluded] == [
+            "claude-code",
+            "gemini-free",
+            "groq-free",
+            "grok-free",
+        ]
+        assert {attempt.skip_class for attempt in excluded} == {"not_in_registry"}
+
 
 # =====================================================================
 # ClaudeProvider (subprocess mock)
@@ -887,7 +907,8 @@ class TestGrokProvider:
 
 
 class TestFallbackChainDefinitions:
-    def test_writer_chain_starts_with_claude(self):
+    def test_writer_preference_chain_starts_with_claude(self):
+        """Static preference may name Claude; runtime effective_chain probes it."""
         assert FALLBACK_CHAINS["writer"][0] == "claude-code"
         assert FALLBACK_CHAINS["writer"][-1] == "ollama-local"
 
