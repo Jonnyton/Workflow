@@ -177,7 +177,7 @@ class TestGetStatusSandboxField:
         original = base_mod._sandbox_probe_cache
         base_mod._sandbox_probe_cache = {"bwrap_available": False, "reason": "test-host"}
         try:
-            from workflow.universe_server import get_status
+            from workflow.api.status import get_status
             monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
             result_str = get_status()
         finally:
@@ -206,7 +206,7 @@ class TestGetStatusSandboxField:
                 base_mod, "probe_sandbox_available",
                 side_effect=RuntimeError("probe exploded"),
             ):
-                from workflow.universe_server import get_status
+                from workflow.api.status import get_status
                 monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
                 result = json.loads(get_status())
         finally:

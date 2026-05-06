@@ -363,7 +363,7 @@ class TestExtBranchListSandboxFilter:
 
 class TestGetStatusSandboxStatus:
     def test_sandbox_status_key_present(self):
-        from workflow.universe_server import get_status
+        from workflow.api.status import get_status
         fake_status = {"bwrap_available": False, "reason": "test host"}
         with patch("workflow.providers.base.get_sandbox_status", return_value=fake_status):
             result = json.loads(get_status())
@@ -371,7 +371,7 @@ class TestGetStatusSandboxStatus:
         assert result["sandbox_status"]["bwrap_available"] is False
 
     def test_sandbox_status_survives_probe_exception(self):
-        from workflow.universe_server import get_status
+        from workflow.api.status import get_status
         _target = "workflow.providers.base.get_sandbox_status"
         with patch(_target, side_effect=RuntimeError("probe fail")):
             result = json.loads(get_status())
