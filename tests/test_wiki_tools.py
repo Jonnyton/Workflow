@@ -154,6 +154,24 @@ class TestWikiRead:
         assert "Test Project" in result["content"]
         assert result["truncated"] is False
 
+    def test_read_page_as_shareable_artifact(self, wiki_dir):
+        result = json.loads(wiki("read", page="test-project", format="artifact"))
+
+        assert result["format"] == "artifact"
+        assert result["artifact"] == {
+            "kind": "shareable_markdown",
+            "mime_type": "text/markdown",
+            "filename": "test-project.md",
+            "title": "Test Project",
+            "content": result["content"],
+        }
+
+    def test_read_rejects_unknown_format(self, wiki_dir):
+        result = json.loads(wiki("read", page="test-project", format="pdf"))
+
+        assert result["error"] == "Unsupported read format: pdf"
+        assert "artifact" in result["available_formats"]
+
     def test_read_special_index(self, wiki_dir):
         result = json.loads(wiki("read", page="index"))
         assert "Wiki Index" in result["content"]
@@ -753,3 +771,13 @@ class TestWikiMCPRegistration:
 
         assert properties["kind"] == {"default": "bug", "type": "string"}
         assert "kind" not in wiki_tool.parameters["required"]
+
+    def test_wiki_read_format_field_is_in_mcp_schema(self):
+        tools = asyncio.run(mcp.list_tools(run_middleware=False))
+        wiki_tool = next(t for t in tools if t.name == "wiki")
+        properties = wiki_tool.parameters["properties"]
+
+        assert properties["format"]["default"] == ""
+        assert properties["format"]["type"] == "string"
+        assert "artifact" in properties["format"]["description"]
+        assert "format" not in wiki_tool.parameters["required"]

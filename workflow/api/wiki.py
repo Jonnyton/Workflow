@@ -339,9 +339,22 @@ def _resolve_bugs_canonical(parent: Path, slug: str) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-def _wiki_read(page: str = "", **_kwargs: Any) -> str:
+def _wiki_read(page: str = "", format: str = "", **_kwargs: Any) -> str:
     if not page:
         return json.dumps({"error": "page parameter is required."})
+
+    requested_format = (format or "json").strip().lower().replace("_", "-")
+    artifact_formats = {"artifact", "shareable-artifact", "shareable-markdown"}
+    if requested_format not in {"json", "markdown", *artifact_formats}:
+        return json.dumps({
+            "error": f"Unsupported read format: {format}",
+            "available_formats": [
+                "json",
+                "markdown",
+                "artifact",
+                "shareable-artifact",
+            ],
+        })
 
     resolved = _resolve_page(page)
     if resolved is None:
@@ -351,21 +364,36 @@ def _wiki_read(page: str = "", **_kwargs: Any) -> str:
     is_draft = _wiki_drafts_dir() in resolved.parents
     rel = _page_rel_path(resolved)
     content = _draft_read_content(text, is_draft=is_draft)
+    meta, _body = _parse_frontmatter(text)
+    title = str(meta.get("title") or resolved.stem)
 
     if len(text) > 15000:
-        return json.dumps({
+        response = {
             "path": rel,
             "is_draft": is_draft,
             "content": content[:15000],
             "truncated": True,
             "total_chars": len(text),
-        })
-    return json.dumps({
-        "path": rel,
-        "is_draft": is_draft,
-        "content": content,
-        "truncated": False,
-    })
+        }
+    else:
+        response = {
+            "path": rel,
+            "is_draft": is_draft,
+            "content": content,
+            "truncated": False,
+        }
+
+    if requested_format in {"markdown", *artifact_formats}:
+        response["format"] = "artifact" if requested_format in artifact_formats else "markdown"
+        response["artifact"] = {
+            "kind": "shareable_markdown",
+            "mime_type": "text/markdown",
+            "filename": resolved.name,
+            "title": title,
+            "content": response["content"],
+        }
+
+    return json.dumps(response)
 
 
 def _draft_read_content(text: str, *, is_draft: bool) -> str:
@@ -1764,6 +1792,7 @@ def wiki(
     bug_id: str = "",
     reporter_context: str = "",
     verbose: bool = False,
+    format: str = "",
 ) -> str:
     """Dispatch entry for the wiki MCP tool. See universe_server.py for the
     chatbot-facing docstring; this function is the implementation invoked by
@@ -1858,6 +1887,7 @@ def wiki(
         "bug_id": bug_id,
         "reporter_context": reporter_context,
         "verbose": verbose,
+        "format": format,
     }
 
     return handler(**kwargs)
