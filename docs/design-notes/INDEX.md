@@ -1,5 +1,9 @@
 # Design Notes Index
 
+## 2026-05-05
+
+- [RetroLab Gap Burndown v1](2026-05-05-retrolab-gap-burndown-v1.md) - **status: research.** Repository-side preservation of wiki proposal `pages/plans/retrolab-gap-burndown-v1.md` / Issue #346. Captures the PASS catalog, near-PASS blockers, runner ticket graph, platform family constraints, and candidate research queue for future RetroLab specs; not yet canonical `PLAN.md` truth.
+
 ## 2026-05-03
 
 - [Multi-User Workflow Operating Model](2026-05-03-multi-user-workflow-operating-model.md) - **status: research.** Repository-side preservation of wiki proposal `pages/plans/multi-user-workflow-operating-model.md` / Issue #236. Captures isolation, fairness, leases, budgets, typed records, and federation-by-reference invariants for future multi-user specs; not yet canonical `PLAN.md` truth.
