@@ -141,12 +141,16 @@ def test_discover_respects_priority_and_skip_labels(wf):
     priority_loop = "'priority:loop-discipline'"
     priority_layer = "'priority:primitive-layer'"
     priority_surface = "'priority:primitive-surface'"
+    priority_await_layer = "'priority:await-primitive-layer'"
+    priority_domain_feature = "'priority:domain-feature'"
+    priority_complete = "'priority:complete'"
     normal_scan = "for (const labelName of autoLabels)"
     assert priority_loop in script
     assert priority_layer in script
     assert priority_surface in script
-    assert "'await-primitive-layer'" in script
-    assert "'complete'" in script
+    assert priority_await_layer in script
+    assert priority_domain_feature in script
+    assert priority_complete in script
     assert "function shouldSkipIssue" in script
     assert "labels: labelNames.join(',')" in script
     assert script.index(priority_loop) < script.index(priority_layer)
@@ -154,6 +158,22 @@ def test_discover_respects_priority_and_skip_labels(wf):
     assert script.index("for (const priorityLabel of priorityLabelOrder)") < (
         script.index(normal_scan)
     )
+
+
+def test_ensures_all_patch_priority_class_labels(wf):
+    labels_step = wf["jobs"]["fix"]["steps"][0]
+    script = str(labels_step.get("with", {}).get("script", ""))
+    expected = [
+        "priority:loop-discipline",
+        "priority:primitive-layer",
+        "priority:primitive-surface",
+        "priority:await-primitive-layer",
+        "priority:domain-feature",
+        "priority:complete",
+        "priority:unclassified",
+    ]
+    for label in expected:
+        assert f"name: '{label}'" in script
 
 
 def test_permission_blocked_retry_clears_terminal_labels_when_push_token_visible(wf):

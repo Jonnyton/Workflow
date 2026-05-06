@@ -89,7 +89,11 @@ jobs:
               'priority:primitive-layer',
               'priority:primitive-surface',
             ];
-            const skipLabels = ['await-primitive-layer', 'complete'];
+            const skipLabels = [
+              'priority:await-primitive-layer',
+              'priority:domain-feature',
+              'priority:complete',
+            ];
             const hasWriterAuth = process.env.HAS_WRITER_AUTH === 'true';
             const hasWorkflowPushToken = process.env.HAS_WORKFLOW_PUSH_TOKEN === 'true';
             const autoFixDisabled = process.env.AUTO_FIX_DISABLED === 'true';
@@ -279,6 +283,41 @@ jobs:
                 name: 'gate-required',
                 color: 'fbca04',
                 description: 'Branch/gate/bounty requirements are part of the request contract.',
+              },
+              {
+                name: 'priority:loop-discipline',
+                color: 'd93f0b',
+                description: 'Patch teaches dispatcher/writer/loop discipline; process before primitive-layer work.',
+              },
+              {
+                name: 'priority:primitive-layer',
+                color: 'fbca04',
+                description: 'Patch is a foundational node, edge, trigger, state, composition, or runtime primitive.',
+              },
+              {
+                name: 'priority:primitive-surface',
+                color: 'c5def5',
+                description: 'Patch fixes correctness or discoverability for an already-shipped primitive surface.',
+              },
+              {
+                name: 'priority:await-primitive-layer',
+                color: 'ededed',
+                description: 'Patch is valid but should wait until primitive-layer work makes it composable.',
+              },
+              {
+                name: 'priority:domain-feature',
+                color: 'ededed',
+                description: 'Patch is domain-specific and should defer to user-composed primitive-layer work.',
+              },
+              {
+                name: 'priority:complete',
+                color: '0e8a16',
+                description: 'Patch is already shipped or superseded and should be closed with a resolving artifact.',
+              },
+              {
+                name: 'priority:unclassified',
+                color: 'cfd3d7',
+                description: 'Patch lacks enough evidence for a confident priority-class decision.',
               },
               {
                 name: 'needs-human',

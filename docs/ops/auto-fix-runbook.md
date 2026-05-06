@@ -144,6 +144,16 @@ rule in the PR body.
 
 PRs require review before merge. Host reviews the diff.
 
+## Patch priority classes
+
+The backfill queue honors the wiki taxonomy from
+`pages/references/pages-references-patch-priority-classes.md`. It scans
+`priority:loop-discipline` first, then `priority:primitive-layer`, then
+`priority:primitive-surface`. It skips `priority:await-primitive-layer`,
+`priority:domain-feature`, and `priority:complete` during normal discovery;
+`priority:unclassified` stays eligible for human/refinement handling but does
+not receive a priority boost.
+
 ## What the writer is asked to do
 
 1. Read `AGENTS.md` and `STATUS.md` for project context.
