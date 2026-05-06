@@ -1,5 +1,9 @@
 # Design Notes Index
 
+## 2026-05-06
+
+- [Brain Growth as the Next-Phase Through-Line](proposed/2026-05-06-brain-growth-through-line.md) - **status: proposed.** Repository-side preservation of wiki concept `pages/concepts/pages-concepts-cowork-unfinished-central-ambition-audit-and-refactored-direction-2026-05-06.md` / Issue #473. Interprets the next phase as improving the notice -> route -> execute -> evaluate -> remember -> promote cycle; requires opposite-family review against the original wiki page before acceptance.
+
 ## 2026-05-03
 
 - [Multi-User Workflow Operating Model](2026-05-03-multi-user-workflow-operating-model.md) - **status: research.** Repository-side preservation of wiki proposal `pages/plans/multi-user-workflow-operating-model.md` / Issue #236. Captures isolation, fairness, leases, budgets, typed records, and federation-by-reference invariants for future multi-user specs; not yet canonical `PLAN.md` truth.
