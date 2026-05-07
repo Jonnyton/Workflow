@@ -38,8 +38,8 @@ name: Auto-fix change
 # Variable-based toggle preserves the secrets; no data loss.
 #
 # Branch naming:
-#   mechanical filings:    auto-change/issue-<N>
-#   architectural filings: design-note-draft/issue-<N>
+#   mechanical filings:    auto-change/issue-<N>-<writer>-<run_id>
+#   architectural filings: design-note-draft/issue-<N>-<writer>-<run_id>
 # PR title/body are requested in the prompt because claude-code-action@v1 no
 # longer accepts the v0 `pr_title` / `pr_body` inputs.
 
@@ -793,7 +793,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           base_branch: main
           branch_prefix: ${{ steps.meta.outputs.branch_prefix }}
-          branch_name_template: issue-${{ steps.meta.outputs.issue_number }}
+          branch_name_template: issue-${{ steps.meta.outputs.issue_number }}-claude-${{ github.run_id }}
           prompt: |
             You are handling a community change request in the Workflow repository.
 
@@ -1356,7 +1356,7 @@ jobs:
             const filingShape = '${{ steps.meta.outputs.filing_shape }}';
             const branch = mode === 'codex_subscription'
               ? '${{ steps.codex-subscription.outputs.branch }}'
-              : `${branchPrefix}issue-${issueNumber}`;
+              : `${branchPrefix}issue-${issueNumber}-claude-${context.runId}`;
             async function selfReviewLoopPr(pr) {
               const failures = [];
               const headRef = pr.head?.ref || '';
@@ -1524,7 +1524,7 @@ jobs:
             const codexBranch = process.env.CODEX_BRANCH || '';
             const branch = mode === 'codex_subscription' && codexBranch
               ? codexBranch
-              : `${branchPrefix}issue-${issueNumber}`;
+              : `${branchPrefix}issue-${issueNumber}-claude-${context.runId}`;
             const wikiPath = process.env.WIKI_PATH || 'not declared';
             const expectedBranchTask = process.env.EXPECTED_BRANCH_TASK || `${branchPrefix}issue-${issueNumber}`;
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;

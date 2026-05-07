@@ -542,6 +542,24 @@ def test_claude_ready_for_checker_requires_pre_checker_self_review(wf):
     )
 
 
+def test_claude_pr_lookup_uses_run_scoped_branch(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    claude_pr_step = next((s for s in steps if s.get("id") == "claude-pr"), None)
+    no_pr_step = next(
+        (s for s in steps if s.get("name") == "Mark needs-human if no PR opened"),
+        None,
+    )
+    assert claude_pr_step is not None, "Must find and label Claude-created PRs"
+    assert no_pr_step is not None, "Must detect existing Claude PRs before no-PR receipt"
+    claude_pr_script = str(claude_pr_step.get("with", {}).get("script", ""))
+    no_pr_script = str(no_pr_step.get("with", {}).get("script", ""))
+    branch_expression = "`${branchPrefix}issue-${issueNumber}-claude-${context.runId}`"
+    assert branch_expression in claude_pr_script
+    assert branch_expression in no_pr_script
+    assert "head: `${context.repo.owner}:${branch}`" in claude_pr_script
+    assert "head: `${context.repo.owner}:${branch}`" in no_pr_script
+
+
 def test_codex_pr_creation_uses_workflow_push_token_for_checks(wf):
     steps = wf["jobs"]["fix"]["steps"]
     codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
@@ -613,11 +631,10 @@ def test_branch_naming_convention(wf):
     assert "core.setOutput('branch_prefix', branchPrefix)" in meta_script
     with_block = oauth_step.get("with", {})
     assert with_block.get("branch_prefix") == "${{ steps.meta.outputs.branch_prefix }}"
-    assert "issue-${{ steps.meta.outputs.issue_number }}" == with_block.get(
-        "branch_name_template"
-    ), (
-        "Branch must follow the filing-shape branch prefix plus issue-<N>"
-    )
+    assert (
+        "issue-${{ steps.meta.outputs.issue_number }}-claude-${{ github.run_id }}"
+        == with_block.get("branch_name_template")
+    ), "Claude branches must be run-scoped so stale issue branches are not reused"
 
 
 def test_meta_step_extracts_reconciliation_artifacts(wf):
