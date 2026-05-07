@@ -615,6 +615,8 @@ jobs:
             const filingShape = architecturalKinds.has(requestKind) ? 'architectural' : 'mechanical';
             const branchPrefix = filingShape === 'architectural' ? 'design-note-draft/' : 'auto-change/';
             const prTitlePrefix = filingShape === 'architectural' ? '[design-note]' : '[auto-change]';
+            const wikiPathMatch = body.match(/\*\*Wiki path:\*\*\s*`([^`]+)`/i);
+            const wikiPath = wikiPathMatch ? wikiPathMatch[1] : '';
 
             // Pull request id from titles like "[BUG-003] ..." or "[WIKI-FEATURE] ...".
             const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
@@ -624,6 +626,7 @@ jobs:
               : wikiMatch
                 ? wikiMatch[1].toUpperCase()
                 : `ISSUE-${String(issue.issue_number).padStart(3, '0')}`;
+            const expectedBranchTask = `${branchPrefix}issue-${issue.issue_number}`;
 
             // Short title = everything after the bracketed request prefix, trimmed.
             const shortTitle = title.replace(/^\[?(BUG-\d+|WIKI-[A-Z-]+)\]?\s*/i, '').trim() || title;
@@ -633,6 +636,8 @@ jobs:
             core.setOutput('request_kind', requestKind);
             core.setOutput('filing_shape', filingShape);
             core.setOutput('branch_prefix', branchPrefix);
+            core.setOutput('wiki_path', wikiPath);
+            core.setOutput('expected_branch_task', expectedBranchTask);
             core.setOutput('short_title', shortTitle);
             core.setOutput('pr_title', `${prTitlePrefix} ${requestId}: ${shortTitle}`);
             core.setOutput('issue_body', body);
@@ -706,9 +711,14 @@ jobs:
                ${{ steps.meta.outputs.pr_title }}
             10. The PR body must start with:
                Fixes #${{ steps.meta.outputs.issue_number }}
-            11. Include `Writer family: Claude` and `Required checker family: Codex`.
-            12. Include a short fix summary, tests run, and any remaining risks.
-            13. Do not redesign community-authored branches unless the issue explicitly asks for that.
+            11. Include a `Request artifact reconciliation` section that lists:
+               - Wiki page: `${{ steps.meta.outputs.wiki_path || 'not declared' }}`
+               - GitHub issue: `#${{ steps.meta.outputs.issue_number }}`
+               - Branch task: `${{ steps.meta.outputs.expected_branch_task }}`
+               - PR artifact: this PR
+            12. Include `Writer family: Claude` and `Required checker family: Codex`.
+            13. Include a short fix summary, tests run, and any remaining risks.
+            14. Do not redesign community-authored branches unless the issue explicitly asks for that.
 
             If you cannot find a safe targeted change or are not confident, leave a
             comment in the code and exit gracefully. Do not guess.
@@ -902,6 +912,8 @@ jobs:
           CODEX_BRANCH: ${{ steps.codex-subscription.outputs.branch }}
           PR_TITLE: ${{ steps.meta.outputs.pr_title }}
           ISSUE_NUMBER: ${{ steps.meta.outputs.issue_number }}
+          WIKI_PATH: ${{ steps.meta.outputs.wiki_path }}
+          EXPECTED_BRANCH_TASK: ${{ steps.meta.outputs.expected_branch_task }}
         with:
           # PAT-created PRs fire pull_request checks; GITHUB_TOKEN-created PRs do not.
           github-token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
@@ -910,6 +922,8 @@ jobs:
             const issueNumber = Number(process.env.ISSUE_NUMBER);
             const filingShape = '${{ steps.meta.outputs.filing_shape }}';
             const branchPrefix = '${{ steps.meta.outputs.branch_prefix }}';
+            const wikiPath = process.env.WIKI_PATH || 'not declared';
+            const expectedBranchTask = process.env.EXPECTED_BRANCH_TASK || `${branchPrefix}issue-${issueNumber}`;
             async function selfReviewLoopPr(pr) {
               const failures = [];
               const headRef = pr.head?.ref || '';
@@ -988,6 +1002,13 @@ jobs:
                   base: 'main',
                   body: [
                     `Fixes #${issueNumber}`,
+                    '',
+                    '## Request artifact reconciliation',
+                    '',
+                    `- Wiki page: \`${wikiPath}\``,
+                    `- GitHub issue: #${issueNumber}`,
+                    `- Branch task: \`${expectedBranchTask}\``,
+                    '- PR artifact: this PR',
                     '',
                     'Writer family: Codex',
                     'Required checker family: Claude',

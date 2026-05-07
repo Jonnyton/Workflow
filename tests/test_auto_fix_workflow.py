@@ -584,6 +584,17 @@ def test_branch_naming_convention(wf):
     )
 
 
+def test_meta_step_extracts_reconciliation_artifacts(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
+    assert meta_step is not None
+    script = str(meta_step.get("with", {}).get("script", ""))
+    assert r"body.match(/\*\*Wiki path:\*\*\s*`([^`]+)`/i)" in script
+    assert "core.setOutput('wiki_path', wikiPath)" in script
+    assert "const expectedBranchTask = `${branchPrefix}issue-${issue.issue_number}`" in script
+    assert "core.setOutput('expected_branch_task', expectedBranchTask)" in script
+
+
 def test_pr_title_prefix_uses_filing_shape(wf):
     steps = wf["jobs"]["fix"]["steps"]
     meta_step = next((s for s in steps if s.get("id") == "meta"), None)
@@ -629,6 +640,25 @@ def test_pr_body_references_fixes_keyword(wf):
     assert "Fixes #${{ steps.meta.outputs.issue_number }}" in prompt, (
         "Claude prompt must require PR body to reference the issue with Fixes #N"
     )
+
+
+def test_writer_pr_bodies_reconcile_request_surfaces(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    codex_env = str(codex_pr_step.get("env", {}))
+    codex_script = str(codex_pr_step.get("with", {}).get("script", ""))
+    for text in (oauth_prompt, codex_script):
+        assert "Request artifact reconciliation" in text
+        assert "Wiki page" in text
+        assert "GitHub issue" in text
+        assert "Branch task" in text
+        assert "PR artifact" in text
+    assert "WIKI_PATH" in codex_env
+    assert "EXPECTED_BRANCH_TASK" in codex_env
 
 
 def test_writer_prompts_require_plugin_mirror_for_workflow_runtime_edits(wf):
