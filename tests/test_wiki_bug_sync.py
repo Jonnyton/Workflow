@@ -193,6 +193,24 @@ def test_plain_promoted_plan_remains_docs_ops():
     assert result[0]["request_kind"] == "docs-ops"
 
 
+def test_promoted_concept_with_mechanical_filing_shape_remains_docs_ops():
+    wiki_list = {
+        "promoted": [
+            {
+                "path": (
+                    "pages/concepts/"
+                    "anticipation-gap-and-permission-ladder-jones-2026-05-07.md"
+                ),
+                "title": "Anticipation Gap and Permission Ladder",
+                "type": "unknown",
+            }
+        ]
+    }
+    result = list_new_change_requests(wiki_list, seen_paths=set())
+    assert len(result) == 1
+    assert result[0]["request_kind"] == "docs-ops"
+
+
 def test_patch_request_page_enters_patch_lane():
     wiki_list = {
         "promoted": [
