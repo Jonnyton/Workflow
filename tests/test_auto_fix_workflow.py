@@ -664,13 +664,52 @@ def test_meta_step_fetches_recent_issue_comments_for_feedback(wf):
     assert "slice(-5)" in script
 
 
-def test_pr_body_references_fixes_keyword(wf):
+def test_meta_step_defaults_non_final_patch_phases_to_part_of(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    meta_step = next((s for s in steps if s.get("id") == "meta"), None)
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    assert meta_step is not None, "Must have request metadata step"
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    assert codex_step is not None, "Must have a Codex subscription writer step"
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+
+    meta_script = str(meta_step.get("with", {}).get("script", ""))
+    assert "function issueLinkKeyword" in meta_script
+    assert "requestKind !== 'patch'" in meta_script
+    assert "final_phase" in meta_script
+    assert "matchAll" in meta_script
+    assert "Number(match[1]) < Number(match[2])" in meta_script
+    assert "'Part of'" in meta_script
+    assert "core.setOutput('issue_link_line'" in meta_script
+
+    prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    assert "${{ steps.meta.outputs.issue_link_line }}" in prompt
+
+    codex_run = str(codex_step.get("run", ""))
+    assert codex_step.get("env", {}).get("ISSUE_LINK_LINE") == (
+        "${{ steps.meta.outputs.issue_link_line }}"
+    )
+    assert '-m "$ISSUE_LINK_LINE"' in codex_run
+    assert '"Fixes #${{ steps.meta.outputs.issue_number }}"' not in codex_run
+
+    codex_pr_script = str(codex_pr_step.get("with", {}).get("script", ""))
+    assert codex_pr_step.get("env", {}).get("ISSUE_LINK_LINE") == (
+        "${{ steps.meta.outputs.issue_link_line }}"
+    )
+    assert "process.env.ISSUE_LINK_LINE" in codex_pr_script
+    assert "body: [" in codex_pr_script
+    assert "issueLinkLine," in codex_pr_script
+
+
+def test_pr_body_references_issue_link_output(wf):
     steps = wf["jobs"]["fix"]["steps"]
     oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
     assert oauth_step is not None, "Must have a Claude OAuth step"
     prompt = str(oauth_step.get("with", {}).get("prompt", ""))
-    assert "Fixes #${{ steps.meta.outputs.issue_number }}" in prompt, (
-        "Claude prompt must require PR body to reference the issue with Fixes #N"
+    assert "${{ steps.meta.outputs.issue_link_line }}" in prompt, (
+        "Claude prompt must use the computed issue link line"
     )
 
 

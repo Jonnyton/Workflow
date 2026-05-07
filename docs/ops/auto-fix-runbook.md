@@ -121,7 +121,8 @@ Variable-based toggle preserves secrets; no data loss from toggling.
 - Claude branch: `auto-change/issue-<N>` where N = GH issue number
 - Codex branch: `auto-change/issue-<N>-codex-<run_id>` to avoid collisions
 - PR title: `[auto-change] <request-id>: <short title>`
-- PR body: `Fixes #N` plus change summary
+- PR body: `Fixes #N` plus change summary, or `Part of #N` when the
+  request metadata marks a patch request as a non-final multi-phase change.
 - PR labels: `writer:claude` requires `checker:codex`; `writer:codex`
   requires `checker:claude`. The `Daemon request policy` PR check enforces
   that same-family machine review is not accepted.
