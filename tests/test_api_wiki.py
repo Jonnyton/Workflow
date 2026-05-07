@@ -18,6 +18,7 @@ from workflow.api.wiki import (
     _BUGS_CATEGORY,
     _KIND_ROUTING,
     _VALID_BUG_KINDS,
+    _VALID_DESIGN_SCOPES,
     _VALID_SEVERITIES,
     _WIKI_CATEGORIES,
     _bug_token_set,
@@ -483,6 +484,37 @@ def test_wiki_file_bug_rejects_invalid_severity(wiki_env):
     assert "error" in res
     assert "valid" in res
     assert set(res["valid"]) == set(_VALID_SEVERITIES)
+
+
+def test_wiki_file_bug_design_accepts_design_scope_severity(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_bug",
+            component="wiki",
+            severity="cross-cutting",
+            title="Design severity vocabulary",
+            kind="design",
+            force_new=True,
+        )
+    )
+    assert res["status"] == "filed"
+    assert res["kind"] == "design"
+    assert res["bug_id"].startswith("DESIGN-")
+    assert res["severity"] == "cross-cutting"
+
+
+def test_wiki_file_bug_design_rejects_bug_severity_vocabulary(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_bug",
+            component="wiki",
+            severity="minor",
+            title="Design severity vocabulary",
+            kind="design",
+        )
+    )
+    assert "error" in res
+    assert set(res["valid"]) == set(_VALID_DESIGN_SCOPES)
 
 
 def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):

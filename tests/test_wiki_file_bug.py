@@ -280,7 +280,7 @@ class TestFileBugKindField:
     def test_kind_design_annotates_frontmatter(self, wiki_dir):
         out = json.loads(
             _wiki_file_bug(
-                component="x", severity="minor", title="Design proposal Z",
+                component="x", severity="module", title="Design proposal Z",
                 kind="design",
             )
         )
@@ -288,6 +288,31 @@ class TestFileBugKindField:
         path = wiki_dir / out["path"]
         body = path.read_text(encoding="utf-8")
         assert "kind: design" in body
+        assert "severity: module" in body
+
+    def test_kind_design_uses_scope_vocabulary_for_severity(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x",
+                severity="cross-cutting",
+                title="Design proposal vocabulary",
+                kind="design",
+            )
+        )
+        assert out["status"] == "filed"
+        assert out["kind"] == "design"
+
+    def test_kind_design_rejects_bug_severity_vocabulary(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x",
+                severity="minor",
+                title="Design proposal Z",
+                kind="design",
+            )
+        )
+        assert "error" in out
+        assert out["valid"] == ["local", "module", "cross-cutting", "platform"]
 
     def test_invalid_kind_rejected(self, wiki_dir):
         out = json.loads(
@@ -448,7 +473,7 @@ class TestFileBugKindRouting:
     def test_kind_design_lands_in_design_proposals_dir(self, wiki_dir):
         out = json.loads(
             _wiki_file_bug(
-                component="x", severity="minor", title="Design proposal Z",
+                component="x", severity="module", title="Design proposal Z",
                 kind="design",
             )
         )
@@ -519,7 +544,7 @@ class TestFileBugKindRouting:
             component="x", severity="minor", title="feat one", kind="feature",
         ))
         d = json.loads(_wiki_file_bug(
-            component="x", severity="minor", title="design one", kind="design",
+            component="x", severity="module", title="design one", kind="design",
         ))
         assert b["bug_id"] == "BUG-001"
         assert f["bug_id"] == "FEAT-001"
@@ -594,7 +619,7 @@ class TestFileBugKindRouting:
     def test_cosign_design_routes_to_design_proposals_dir(self, wiki_dir):
         from workflow.universe_server import wiki
         d = json.loads(_wiki_file_bug(
-            component="x", severity="minor", title="design prop K", kind="design",
+            component="x", severity="module", title="design prop K", kind="design",
         ))
         design_id = d["bug_id"]
         cos = json.loads(

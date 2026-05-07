@@ -1340,6 +1340,7 @@ _KIND_FEATURES_DIR = "feature-requests"
 _KIND_DESIGNS_DIR = "design-proposals"
 _KIND_PATCH_REQUESTS_DIR = "patch-requests"
 _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
+_VALID_DESIGN_SCOPES = ("local", "module", "cross-cutting", "platform")
 
 # Per-kind routing: kind -> (category-dir-name, ID-prefix). Each prefix has its
 # own independent NNN counter. New filings route per kind; existing pages stay
@@ -1351,6 +1352,17 @@ _KIND_ROUTING: dict[str, tuple[str, str]] = {
     "design":        (_KIND_DESIGNS_DIR,        "DESIGN"),
     "patch_request": (_KIND_PATCH_REQUESTS_DIR, "PR"),
 }
+
+_VALID_SEVERITIES_BY_KIND: dict[str, tuple[str, ...]] = {
+    "bug": _VALID_SEVERITIES,
+    "feature": _VALID_SEVERITIES,
+    "patch_request": _VALID_SEVERITIES,
+    "design": _VALID_DESIGN_SCOPES,
+}
+
+
+def _valid_severities_for_kind(kind: str) -> tuple[str, ...]:
+    return _VALID_SEVERITIES_BY_KIND.get(kind, _VALID_SEVERITIES)
 
 
 def _next_id(pages_dir: Path, drafts_dir: Path, prefix: str) -> str:
@@ -1625,21 +1637,23 @@ def _wiki_file_bug(
     When omitted, a Jaccard similarity ≥ 0.5 against an existing bug's
     title+body returns {status: "similar_found"} instead of filing.
     """
-    if not title or not component or not severity:
-        return json.dumps({
-            "error": "title, component, and severity are required.",
-            "hint": "severity must be one of: " + " | ".join(_VALID_SEVERITIES),
-        })
-    if severity not in _VALID_SEVERITIES:
-        return json.dumps({
-            "error": f"Invalid severity '{severity}'.",
-            "valid": list(_VALID_SEVERITIES),
-        })
     effective_kind = kind.strip().lower() if kind else "bug"
     if effective_kind not in _VALID_BUG_KINDS:
         return json.dumps({
             "error": f"Invalid kind '{kind}'.",
             "valid": sorted(_VALID_BUG_KINDS),
+        })
+
+    valid_severities = _valid_severities_for_kind(effective_kind)
+    if not title or not component or not severity:
+        return json.dumps({
+            "error": "title, component, and severity are required.",
+            "hint": "severity must be one of: " + " | ".join(valid_severities),
+        })
+    if severity not in valid_severities:
+        return json.dumps({
+            "error": f"Invalid severity '{severity}' for kind '{effective_kind}'.",
+            "valid": list(valid_severities),
         })
 
     category_dir, id_prefix = _KIND_ROUTING[effective_kind]
