@@ -650,6 +650,32 @@ jobs:
             const wikiPathMatch = body.match(/\*\*Wiki path:\*\*\s*`([^`]+)`/i);
             const wikiPath = wikiPathMatch ? wikiPathMatch[1] : '';
 
+            function issueLinkKeyword(requestKind, body) {
+              if (requestKind !== 'patch') {
+                return 'Fixes';
+              }
+              const text = String(body || '').toLowerCase();
+              const hasFinalMarker = [
+                /(^|\n)\s*(final|final_phase|is_final_phase)\s*:\s*true\b/,
+                /(^|\n)\s*phase\s*:\s*final\b/,
+                /(^|\n)\s*(?:the\s+)?final\s+phase\b/,
+                /\blast\s+phase\b/,
+              ].some((pattern) => pattern.test(text));
+              if (hasFinalMarker) {
+                return 'Fixes';
+              }
+              const hasNonFinalMarker = [
+                /(^|\n)\s*(final|final_phase|is_final_phase)\s*:\s*false\b/,
+                /\bnon[- ]final\b/,
+                /\bnot\s+(?:the\s+)?final\b/,
+                /\bintermediate\s+phase\b/,
+              ].some((pattern) => pattern.test(text));
+              const hasEarlierNumberedPhase = Array.from(
+                text.matchAll(/\bphase\s+(\d+)\s*(?:of|\/)\s*(\d+)\b/g)
+              ).some((match) => Number(match[1]) < Number(match[2]));
+              return hasNonFinalMarker || hasEarlierNumberedPhase ? 'Part of' : 'Fixes';
+            }
+
             // Pull request id from titles like "[BUG-003] ..." or "[WIKI-FEATURE] ...".
             const bugMatch = title.match(/\[?(BUG-\d+)\]?/i);
             const wikiMatch = title.match(/\[?(WIKI-[A-Z-]+)\]?/i);
@@ -672,6 +698,7 @@ jobs:
             core.setOutput('expected_branch_task', expectedBranchTask);
             core.setOutput('short_title', shortTitle);
             core.setOutput('pr_title', `${prTitlePrefix} ${requestId}: ${shortTitle}`);
+            core.setOutput('issue_link_line', `${issueLinkKeyword(requestKind, body)} #${issue.issue_number}`);
             core.setOutput('issue_body', body);
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -742,7 +769,7 @@ jobs:
             9. If you make changes, open a pull request titled:
                ${{ steps.meta.outputs.pr_title }}
             10. The PR body must start with:
-               Fixes #${{ steps.meta.outputs.issue_number }}
+               ${{ steps.meta.outputs.issue_link_line }}
             11. Include a `Request artifact reconciliation` section that lists:
                - Wiki page: `${{ steps.meta.outputs.wiki_path || 'not declared' }}`
                - GitHub issue: `#${{ steps.meta.outputs.issue_number }}`
@@ -766,6 +793,7 @@ jobs:
           WORKFLOW_PUSH_TOKEN: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
           PR_TITLE: ${{ steps.meta.outputs.pr_title }}
           BRANCH_PREFIX: ${{ steps.meta.outputs.branch_prefix }}
+          ISSUE_LINK_LINE: ${{ steps.meta.outputs.issue_link_line }}
         run: |
           set -euo pipefail
           branch="${BRANCH_PREFIX}issue-${{ steps.meta.outputs.issue_number }}-codex-${GITHUB_RUN_ID}"
@@ -910,7 +938,7 @@ jobs:
           git config user.email "workflow-daemon[bot]@users.noreply.github.com"
           git add -A
           git commit -m "$PR_TITLE" \
-            -m "Fixes #${{ steps.meta.outputs.issue_number }}" \
+            -m "$ISSUE_LINK_LINE" \
             -m "Writer family: Codex" \
             -m "Required checker family: Claude"
           push_log="$RUNNER_TEMP/codex-git-push.log"
@@ -944,6 +972,7 @@ jobs:
           CODEX_BRANCH: ${{ steps.codex-subscription.outputs.branch }}
           PR_TITLE: ${{ steps.meta.outputs.pr_title }}
           ISSUE_NUMBER: ${{ steps.meta.outputs.issue_number }}
+          ISSUE_LINK_LINE: ${{ steps.meta.outputs.issue_link_line }}
           WIKI_PATH: ${{ steps.meta.outputs.wiki_path }}
           EXPECTED_BRANCH_TASK: ${{ steps.meta.outputs.expected_branch_task }}
         with:
@@ -952,6 +981,7 @@ jobs:
           script: |
             const branch = process.env.CODEX_BRANCH;
             const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const issueLinkLine = process.env.ISSUE_LINK_LINE || `Fixes #${issueNumber}`;
             const filingShape = '${{ steps.meta.outputs.filing_shape }}';
             const branchPrefix = '${{ steps.meta.outputs.branch_prefix }}';
             const wikiPath = process.env.WIKI_PATH || 'not declared';
@@ -1033,7 +1063,7 @@ jobs:
                   head: branch,
                   base: 'main',
                   body: [
-                    `Fixes #${issueNumber}`,
+                    issueLinkLine,
                     '',
                     '## Request artifact reconciliation',
                     '',
