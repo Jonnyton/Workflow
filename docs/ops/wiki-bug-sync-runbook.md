@@ -143,6 +143,11 @@ Labels are created automatically if missing.
 | `gate-required` | `fbca04` |
 | `priority:*` | `f9d0c4` |
 
+`priority:*` follows the wiki Patch Priority Classes reference where the
+filing text gives enough signal: `complete`, `loop-discipline`,
+`primitive-layer`, `primitive-surface`, `await-primitive-layer`,
+`domain-feature`, or `unclassified`.
+
 ## Request contract
 
 `daemon-request` is the public work-order label. It means a paid or free

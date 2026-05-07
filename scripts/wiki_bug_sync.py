@@ -75,6 +75,10 @@ _GATE_REQUIRED_LABEL = "gate-required"
 _PRIORITY_LOOP_DISCIPLINE_LABEL = "priority:loop-discipline"
 _PRIORITY_PRIMITIVE_LAYER_LABEL = "priority:primitive-layer"
 _PRIORITY_PRIMITIVE_SURFACE_LABEL = "priority:primitive-surface"
+_PRIORITY_AWAIT_PRIMITIVE_LAYER_LABEL = "priority:await-primitive-layer"
+_PRIORITY_DOMAIN_FEATURE_LABEL = "priority:domain-feature"
+_PRIORITY_COMPLETE_LABEL = "priority:complete"
+_PRIORITY_UNCLASSIFIED_LABEL = "priority:unclassified"
 _DAEMON_REQUEST_LABELS = [
     _DAEMON_REQUEST_LABEL,
     _AUTO_CHANGE_LABEL,
@@ -150,6 +154,44 @@ _PRIMITIVE_SURFACE_KINDS = {
     "feature",
     "patch",
 }
+
+_COMPLETE_MARKERS = (
+    "already shipped",
+    "already resolved",
+    "close-supersede",
+    "complete",
+    "resolved by",
+    "shipped through",
+    "superseded",
+)
+
+_AWAIT_PRIMITIVE_LAYER_MARKERS = (
+    "await primitive",
+    "await-primitive-layer",
+    "awaits primitive",
+    "composes from primitives",
+    "defer with label",
+    "once primitives",
+    "once the primitive",
+    "pre-claim duplicate-signature",
+)
+
+_DOMAIN_FEATURE_MARKERS = (
+    "adapter",
+    "domain feature",
+    "domain-feature",
+    "domain-specific",
+    "goals api",
+    "linter",
+    "retrolab",
+    "runner",
+)
+
+_UNCLASSIFIED_MARKERS = (
+    "missing evidence",
+    "not enough context",
+    "unclassified",
+)
 
 _INIT_PAYLOAD = {
     "jsonrpc": "2.0",
@@ -531,8 +573,16 @@ def priority_labels_for_request(
 ) -> list[str]:
     """Return queue-priority labels promoted from request classifier signals."""
     corpus = " ".join((request_kind, title, path, body_md)).lower()
+    if any(marker in corpus for marker in _COMPLETE_MARKERS):
+        return [_PRIORITY_COMPLETE_LABEL]
     if any(marker in corpus for marker in _LOOP_DISCIPLINE_MARKERS):
         return [_PRIORITY_LOOP_DISCIPLINE_LABEL]
+    if any(marker in corpus for marker in _AWAIT_PRIMITIVE_LAYER_MARKERS):
+        return [_PRIORITY_AWAIT_PRIMITIVE_LAYER_LABEL]
+    if any(marker in corpus for marker in _DOMAIN_FEATURE_MARKERS):
+        return [_PRIORITY_DOMAIN_FEATURE_LABEL]
+    if any(marker in corpus for marker in _UNCLASSIFIED_MARKERS):
+        return [_PRIORITY_UNCLASSIFIED_LABEL]
     if (
         request_kind == "project-design"
         or any(marker in corpus for marker in _PRIMITIVE_LAYER_MARKERS)

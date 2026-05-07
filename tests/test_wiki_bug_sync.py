@@ -369,6 +369,31 @@ def test_priority_labels_promote_patch_to_primitive_surface():
     ) == ["priority:primitive-surface"]
 
 
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        (
+            "PR-001 already shipped through WORKFLOW_PUSH_TOKEN install",
+            "priority:complete",
+        ),
+        (
+            "Writer pre-claim duplicate-signature composes from primitives",
+            "priority:await-primitive-layer",
+        ),
+        (
+            "RetroLab runner adapter should support archive smoke checks",
+            "priority:domain-feature",
+        ),
+        (
+            "Snapshot lacks enough context; missing evidence trail needed",
+            "priority:unclassified",
+        ),
+    ],
+)
+def test_priority_labels_cover_patch_priority_classes(title, expected):
+    assert priority_labels_for_request("patch", title=title) == [expected]
+
+
 def test_create_gh_change_issue_includes_promoted_priority_label(capsys):
     url = create_gh_change_issue(
         token="",
