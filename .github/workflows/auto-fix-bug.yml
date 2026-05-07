@@ -435,6 +435,11 @@ jobs:
                 description: 'Automated writer produced a patch, but GitHub blocked Actions from pushing the branch.',
               },
               {
+                name: 'needs_source_read',
+                color: 'd93f0b',
+                description: 'Automated writer could not prove live MCP wiki source-read before closing or checker routing.',
+              },
+              {
                 name: 'auto-fix-superseded',
                 color: 'cfd3d7',
                 description: 'Older auto-change PR was closed because a newer branch superseded it.',
@@ -1013,12 +1018,121 @@ jobs:
             echo "push_block_reason="
           } >> "$GITHUB_OUTPUT"
 
+      - name: Read live MCP brain source before closing wiki-origin request
+        id: live-brain-source-read
+        continue-on-error: true
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'codex_subscription' &&
+          (
+            steps.codex-subscription.outputs.changed == 'true' ||
+            steps.codex-subscription.outputs.no_change_reason == 'already_fixed'
+          )
+        env:
+          WIKI_PATH: ${{ steps.meta.outputs.wiki_path }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${WIKI_PATH:-}" || "${WIKI_PATH}" == "not declared" ]]; then
+            echo "::error::Wiki-origin issue has no wiki_path metadata; refusing to prove live brain source-read."
+            exit 1
+          fi
+          proof_file="$RUNNER_TEMP/live-brain-source-read.json"
+          python - "$proof_file" "$WIKI_PATH" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          proof_path, wiki_path = sys.argv[1], sys.argv[2]
+          args = {
+              "action": "read",
+              "page": wiki_path,
+              "query": "auto-change PR close wiki-origin issue source-read proof",
+              "max_results": 5,
+          }
+          completed = subprocess.run(
+              [
+                  "python",
+                  "scripts/mcp_probe.py",
+                  "--url",
+                  "https://tinyassets.io/mcp",
+                  "--tool",
+                  "wiki",
+                  "--args",
+                  json.dumps(args),
+              ],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          )
+          open(proof_path, "w", encoding="utf-8").write(completed.stdout)
+          PY
+          python - "$proof_file" "$WIKI_PATH" <<'PY' >> "$GITHUB_OUTPUT"
+          import hashlib
+          import json
+          import sys
+
+          proof_path, wiki_path = sys.argv[1], sys.argv[2]
+          payload = json.loads(open(proof_path, encoding="utf-8").read())
+          proof = payload.get("source_read_proof")
+          if not isinstance(proof, dict):
+              raise SystemExit("live wiki read response did not include source_read_proof")
+          path = str(proof.get("path") or "")
+          sha256 = str(proof.get("sha256") or "")
+          if path != wiki_path:
+              raise SystemExit(f"unexpected source proof path: {path!r}; expected {wiki_path!r}")
+          if len(sha256) != 64:
+              raise SystemExit("live source_read_proof sha256 is missing or malformed")
+          compact = {
+              "endpoint": "https://tinyassets.io/mcp",
+              "tool": "wiki",
+              "action": "read",
+              "path": path,
+              "sha256": sha256,
+              "title": proof.get("title") or "",
+              "updated": proof.get("updated") or "",
+          }
+          digest = hashlib.sha256(json.dumps(compact, sort_keys=True).encode()).hexdigest()
+          print(f"path={path}")
+          print(f"sha256={sha256}")
+          print(f"receipt_sha256={digest}")
+          print("receipt_json=" + json.dumps(compact, sort_keys=True))
+          PY
+
+      - name: Mark wiki-origin request blocked on live source-read proof
+        if: >
+          steps.check-disabled.outputs.disabled == 'false' &&
+          steps.auth.outputs.mode == 'codex_subscription' &&
+          steps.live-brain-source-read.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = Number('${{ matrix.issue.issue_number }}');
+            const wikiPath = '${{ steps.meta.outputs.wiki_path }}' || 'not declared';
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['needs-human', 'auto-fix-reviewed', 'needs_source_read'],
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '**Auto-fix blocked on live MCP source-read proof**',
+                '',
+                `The Codex writer produced a terminal path, but the workflow could not read \`${wikiPath}\` through \`https://tinyassets.io/mcp\` and validate a matching \`source_read_proof\`.`,
+                'The issue was left open and no auto-change PR was marked `ready_for_checker`.',
+              ].join('\n'),
+            });
+
       - name: Create Codex PR
         id: codex-pr-create
         if: >
           steps.check-disabled.outputs.disabled == 'false' &&
           steps.auth.outputs.mode == 'codex_subscription' &&
-          steps.codex-subscription.outputs.changed == 'true'
+          steps.codex-subscription.outputs.changed == 'true' &&
+          steps.live-brain-source-read.outputs.sha256 != ''
         uses: actions/github-script@v7
         env:
           CODEX_BRANCH: ${{ steps.codex-subscription.outputs.branch }}
@@ -1027,6 +1141,9 @@ jobs:
           ISSUE_LINK_LINE: ${{ steps.meta.outputs.issue_link_line }}
           WIKI_PATH: ${{ steps.meta.outputs.wiki_path }}
           EXPECTED_BRANCH_TASK: ${{ steps.meta.outputs.expected_branch_task }}
+          LIVE_BRAIN_PROOF_PATH: ${{ steps.live-brain-source-read.outputs.path }}
+          LIVE_BRAIN_PROOF_SHA256: ${{ steps.live-brain-source-read.outputs.sha256 }}
+          LIVE_BRAIN_PROOF_RECEIPT_SHA256: ${{ steps.live-brain-source-read.outputs.receipt_sha256 }}
         with:
           # PAT-created PRs fire pull_request checks; GITHUB_TOKEN-created PRs do not.
           github-token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
@@ -1038,6 +1155,9 @@ jobs:
             const branchPrefix = '${{ steps.meta.outputs.branch_prefix }}';
             const wikiPath = process.env.WIKI_PATH || 'not declared';
             const expectedBranchTask = process.env.EXPECTED_BRANCH_TASK || `${branchPrefix}issue-${issueNumber}`;
+            const liveBrainProofPath = process.env.LIVE_BRAIN_PROOF_PATH || '';
+            const liveBrainProofSha256 = process.env.LIVE_BRAIN_PROOF_SHA256 || '';
+            const liveBrainReceiptSha256 = process.env.LIVE_BRAIN_PROOF_RECEIPT_SHA256 || '';
             async function selfReviewLoopPr(pr) {
               const failures = [];
               const headRef = pr.head?.ref || '';
@@ -1123,6 +1243,14 @@ jobs:
                     `- GitHub issue: #${issueNumber}`,
                     `- Branch task: \`${expectedBranchTask}\``,
                     '- PR artifact: this PR',
+                    '',
+                    '## Live MCP brain source-read proof',
+                    '',
+                    '- Endpoint: `https://tinyassets.io/mcp`',
+                    `- Tool call: \`wiki action=read page=${wikiPath}\``,
+                    `- Source path: \`${liveBrainProofPath}\``,
+                    `- Source sha256: \`${liveBrainProofSha256}\``,
+                    `- Receipt sha256: \`${liveBrainReceiptSha256}\``,
                     '',
                     'Writer family: Codex',
                     'Required checker family: Claude',
@@ -1281,10 +1409,15 @@ jobs:
           steps.check-disabled.outputs.disabled == 'false' &&
           steps.auth.outputs.mode == 'codex_subscription' &&
           steps.codex-subscription.outputs.changed == 'false' &&
-          steps.codex-subscription.outputs.no_change_reason == 'already_fixed'
+          steps.codex-subscription.outputs.no_change_reason == 'already_fixed' &&
+          steps.live-brain-source-read.outputs.sha256 != ''
         uses: actions/github-script@v7
         env:
           CODEX_LAST_MESSAGE: ${{ steps.codex-subscription.outputs.last_message }}
+          WIKI_PATH: ${{ steps.meta.outputs.wiki_path }}
+          LIVE_BRAIN_PROOF_PATH: ${{ steps.live-brain-source-read.outputs.path }}
+          LIVE_BRAIN_PROOF_SHA256: ${{ steps.live-brain-source-read.outputs.sha256 }}
+          LIVE_BRAIN_PROOF_RECEIPT_SHA256: ${{ steps.live-brain-source-read.outputs.receipt_sha256 }}
         with:
           script: |
             const issueNumber = Number('${{ matrix.issue.issue_number }}');
@@ -1317,12 +1450,23 @@ jobs:
             });
             const finalMessage = (process.env.CODEX_LAST_MESSAGE || '(Codex left no final message.)')
               .slice(0, 3500);
+            const liveBrainProofPath = process.env.LIVE_BRAIN_PROOF_PATH || '';
+            const liveBrainProofSha256 = process.env.LIVE_BRAIN_PROOF_SHA256 || '';
+            const liveBrainReceiptSha256 = process.env.LIVE_BRAIN_PROOF_RECEIPT_SHA256 || '';
+            const wikiPath = process.env.WIKI_PATH || 'not declared';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
               body: [
                 '**Auto-fix closed as already fixed** - the subscription-backed Codex writer inspected the request and found no repository change was needed.',
+                '',
+                'Live MCP brain source-read proof:',
+                '- Endpoint: `https://tinyassets.io/mcp`',
+                `- Tool call: \`wiki action=read page=${wikiPath}\``,
+                `- Source path: \`${liveBrainProofPath}\``,
+                `- Source sha256: \`${liveBrainProofSha256}\``,
+                `- Receipt sha256: \`${liveBrainReceiptSha256}\``,
                 '',
                 'Codex final message:',
                 '```text',

@@ -474,6 +474,98 @@ def test_already_fixed_no_change_closes_issue(wf):
     assert "auto-fix-already-fixed" in script
 
 
+def test_live_brain_source_read_required_before_codex_pr_or_issue_close(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    proof_step = next(
+        (s for s in steps if s.get("id") == "live-brain-source-read"),
+        None,
+    )
+    blocked_step = next(
+        (
+            s
+            for s in steps
+            if s.get("name")
+            == "Mark wiki-origin request blocked on live source-read proof"
+        ),
+        None,
+    )
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    close_step = next(
+        (
+            s
+            for s in steps
+            if s.get("name")
+            == "Close already-fixed issue when no repo change is needed"
+        ),
+        None,
+    )
+    assert proof_step is not None, "Must prove live MCP brain source-read"
+    assert blocked_step is not None, "Must leave a non-closing source-read handoff"
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+    assert close_step is not None, "Must close stale/already-fixed requests"
+    assert proof_step.get("continue-on-error") is True
+
+    proof_script = str(proof_step.get("run", ""))
+    assert "https://tinyassets.io/mcp" in proof_script
+    assert '"--tool"' in proof_script
+    assert '"wiki"' in proof_script
+    assert '"page": wiki_path' in proof_script
+    assert "source_read_proof" in proof_script
+    assert "path != wiki_path" in proof_script
+    assert "len(sha256) != 64" in proof_script
+    assert "receipt_sha256" in proof_script
+
+    codex_condition = str(codex_pr_step.get("if", ""))
+    close_condition = str(close_step.get("if", ""))
+    assert "steps.live-brain-source-read.outputs.sha256 != ''" in codex_condition
+    assert "steps.live-brain-source-read.outputs.sha256 != ''" in close_condition
+
+    blocked_condition = str(blocked_step.get("if", ""))
+    blocked_script = str(blocked_step.get("with", {}).get("script", ""))
+    assert "steps.live-brain-source-read.outcome == 'failure'" in blocked_condition
+    assert "needs_source_read" in blocked_script
+    assert "state: 'closed'" not in blocked_script
+    assert "ready_for_checker" in blocked_script
+
+
+def test_codex_pr_body_includes_live_brain_source_read_receipt(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
+    assert codex_pr_step is not None, "Must create a PR for Codex-authored changes"
+    script = str(codex_pr_step.get("with", {}).get("script", ""))
+    env = codex_pr_step.get("env", {})
+    assert env.get("LIVE_BRAIN_PROOF_SHA256") == (
+        "${{ steps.live-brain-source-read.outputs.sha256 }}"
+    )
+    assert "## Live MCP brain source-read proof" in script
+    assert "wiki action=read page=${wikiPath}" in script
+    assert "Source sha256" in script
+    assert "Receipt sha256" in script
+
+
+def test_already_fixed_close_comment_includes_live_brain_source_read_receipt(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    close_step = next(
+        (
+            s
+            for s in steps
+            if s.get("name")
+            == "Close already-fixed issue when no repo change is needed"
+        ),
+        None,
+    )
+    assert close_step is not None, "Must close stale/already-fixed requests"
+    script = str(close_step.get("with", {}).get("script", ""))
+    env = close_step.get("env", {})
+    assert env.get("LIVE_BRAIN_PROOF_SHA256") == (
+        "${{ steps.live-brain-source-read.outputs.sha256 }}"
+    )
+    assert "Live MCP brain source-read proof:" in script
+    assert "wiki action=read page=${wikiPath}" in script
+    assert "Source sha256" in script
+    assert "Receipt sha256" in script
+
+
 def test_codex_pr_gets_cross_family_checker(wf):
     steps = wf["jobs"]["fix"]["steps"]
     codex_pr_step = next((s for s in steps if s.get("id") == "codex-pr-create"), None)
@@ -598,6 +690,15 @@ def test_stale_gate_label_is_defined(wf):
     script = str(labels_step.get("with", {}).get("script", ""))
     assert "auto-fix-stale-gate" in script
     assert "blocking the gated queue" in script
+
+
+def test_needs_source_read_label_is_defined(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    labels_step = next((s for s in steps if s.get("name") == "Ensure automation labels"), None)
+    assert labels_step is not None, "Must define automation labels"
+    script = str(labels_step.get("with", {}).get("script", ""))
+    assert "needs_source_read" in script
+    assert "live MCP wiki source-read" in script
 
 
 def test_branch_naming_convention(wf):
