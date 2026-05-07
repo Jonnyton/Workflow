@@ -88,6 +88,20 @@ def test_slugify_title_truncates_and_handles_empty():
     assert _slugify_title("!!!") == "untitled"
 
 
+def test_slugify_title_truncates_at_word_boundary_when_possible():
+    title = (
+        "Wiki slug generation truncates mid-word instead of at word boundaries"
+    )
+
+    assert _slugify_title(title, max_len=60) == (
+        "wiki-slug-generation-truncates-mid-word-instead-of-at-word"
+    )
+
+
+def test_slugify_title_hard_truncates_single_overlong_word():
+    assert _slugify_title("x" * 100, max_len=20) == "x" * 20
+
+
 def test_parse_frontmatter_roundtrip():
     raw = "---\ntitle: Foo\ntype: note\n---\nbody here\n"
     meta, body = _parse_frontmatter(raw)
