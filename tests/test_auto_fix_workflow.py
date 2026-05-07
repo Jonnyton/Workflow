@@ -138,6 +138,9 @@ def test_discover_prioritizes_permission_blocked_before_normal_queue(wf):
 def test_discover_prioritizes_stale_gate_before_normal_queue(wf):
     discover_step = wf["jobs"]["discover"]["steps"][0]
     script = str(discover_step.get("with", {}).get("script", ""))
+    priority_loop_pass = (
+        "await scanAutoLabels({ onlyPriorityLabel: 'priority:loop-discipline' });"
+    )
     stale_gate_pass = "await scanAutoLabels({ onlyStaleGate: true });"
     normal_pass = "await scanAutoLabels();"
     assert "const staleGateLabel = 'auto-fix-stale-gate'" in script
@@ -145,6 +148,7 @@ def test_discover_prioritizes_stale_gate_before_normal_queue(wf):
     assert "retryPermissionBlocked || staleGate" in script
     assert "onlyStaleGate" in script
     assert "Prioritized stale-gate issue before normal queue discovery" in script
+    assert script.index(priority_loop_pass) < script.index(stale_gate_pass)
     assert script.index(stale_gate_pass) < script.index(normal_pass)
 
 
@@ -160,6 +164,24 @@ def test_discover_skips_issues_that_already_have_linked_open_prs(wf):
     assert script.index("const linkedPrNumbers = await linkedOpenPrNumbers(issue);") < (
         script.index("const needsHuman = hasLabel(issue, 'needs-human');")
     )
+
+
+def test_discover_prioritizes_claimable_loop_discipline_before_lower_priority_retries(wf):
+    discover_step = wf["jobs"]["discover"]["steps"][0]
+    script = str(discover_step.get("with", {}).get("script", ""))
+    priority_loop_pass = (
+        "await scanAutoLabels({ onlyPriorityLabel: 'priority:loop-discipline' });"
+    )
+    stale_gate_pass = "await scanAutoLabels({ onlyStaleGate: true });"
+    permission_blocked_pass = "await scanAutoLabels({ onlyPermissionBlocked: true });"
+    assert "onlyPriorityLabel" in script
+    assert "labelNames.includes(onlyPriorityLabel)" in script
+    assert (
+        "Prioritized claimable priority:loop-discipline issue before retry queues."
+        in script
+    )
+    assert script.index(priority_loop_pass) < script.index(stale_gate_pass)
+    assert script.index(priority_loop_pass) < script.index(permission_blocked_pass)
 
 
 def test_discover_respects_priority_and_skip_labels(wf):

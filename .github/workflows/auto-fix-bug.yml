@@ -298,7 +298,11 @@ jobs:
               async function scanAutoLabels(options = {}) {
                 const onlyPermissionBlocked = options.onlyPermissionBlocked || false;
                 const onlyStaleGate = options.onlyStaleGate || false;
+                const onlyPriorityLabel = options.onlyPriorityLabel || '';
                 async function scanLabelQuery(labelNames) {
+                  if (onlyPriorityLabel && !labelNames.includes(onlyPriorityLabel)) {
+                    return false;
+                  }
                   const issues = await github.paginate(github.rest.issues.listForRepo, {
                     owner,
                     repo,
@@ -342,7 +346,13 @@ jobs:
                 }
               }
 
-              await scanAutoLabels({ onlyStaleGate: true });
+              await scanAutoLabels({ onlyPriorityLabel: 'priority:loop-discipline' });
+              if (rows.length >= maxIssues) {
+                core.info('Prioritized claimable priority:loop-discipline issue before retry queues.');
+              }
+              if (rows.length < maxIssues) {
+                await scanAutoLabels({ onlyStaleGate: true });
+              }
               if (rows.length >= maxIssues) {
                 core.info('Prioritized stale-gate issue before normal queue discovery.');
               }
