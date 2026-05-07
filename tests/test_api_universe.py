@@ -71,6 +71,7 @@ def test_module_exposes_expected_public_names() -> None:
         "_action_subscribe_goal", "_action_unsubscribe_goal",
         "_action_list_subscriptions", "_action_post_to_goal_pool",
         "_action_submit_node_bid", "_action_community_change_context",
+        "_action_continuity_audit",
         "_action_give_direction",
         "_action_query_world", "_action_read_premise",
         "_action_set_premise", "_action_add_canon",
@@ -221,7 +222,7 @@ def test_universe_impl_dispatch_table_has_known_actions() -> None:
     "set_tier_config", "queue_cancel",
     "subscribe_goal", "unsubscribe_goal", "list_subscriptions",
     "post_to_goal_pool", "submit_node_bid", "community_change_context",
-    "give_direction",
+    "continuity_audit", "give_direction",
     "query_world", "read_premise", "set_premise", "add_canon",
     "add_canon_from_path", "list_canon", "read_canon",
     "list_sources", "read_source",
@@ -247,6 +248,60 @@ def test_every_universe_action_dispatches(action: str, monkeypatch) -> None:
     assert sentinel not in out, (
         f"action {action!r} dropped from _universe_impl dispatch table"
     )
+
+
+def test_continuity_audit_requires_prose_text() -> None:
+    out = json.loads(univ_mod._universe_impl(action="continuity_audit", text=""))
+
+    assert "error" in out
+    assert "text" in out["error"]
+
+
+def test_continuity_audit_reports_canon_and_wiki_evidence(
+    tmp_path, monkeypatch,
+) -> None:
+    base = tmp_path / "data"
+    wiki_root = tmp_path / "wiki"
+    universe_id = "story"
+    canon = base / universe_id / "canon"
+    sources = canon / "sources"
+    sources.mkdir(parents=True)
+    wiki_page_dir = wiki_root / "pages" / "concepts"
+    wiki_page_dir.mkdir(parents=True)
+
+    (canon / "characters.md").write_text(
+        "# Characters\n\nRyn has blue eyes and carries the moon key.\n",
+        encoding="utf-8",
+    )
+    (sources / "style.md").write_text(
+        "# Style\n\nNever use portal dreams to solve danger.\n",
+        encoding="utf-8",
+    )
+    (wiki_page_dir / "continuity-rules.md").write_text(
+        "---\ntitle: Continuity Rules\ntype: constraint\n---\n"
+        "# Continuity Rules\n\nAvoid portal dreams. The moon key is unique.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(base))
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(wiki_root))
+    monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", universe_id)
+
+    out = json.loads(univ_mod._universe_impl(
+        action="continuity_audit",
+        text="Ryn opens a portal dream while holding the moon key.",
+        limit=10,
+    ))
+
+    assert out["universe_id"] == universe_id
+    assert out["status"] == "attention"
+    assert out["canon_evidence_count"] >= 1
+    assert out["wiki_evidence_count"] >= 1
+    assert any("moon" in term for item in out["canon_evidence"] for term in item["matched_terms"])
+    assert any(
+        warning["source"] == "wiki" and "portal dreams" in warning["rule"].lower()
+        for warning in out["constraint_warnings"]
+    )
+    assert out["caveats"]
 
 
 def test_community_change_context_overview(monkeypatch) -> None:

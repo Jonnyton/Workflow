@@ -65,9 +65,12 @@ from typing import Any
 from workflow.api.helpers import (
     _base_path,
     _default_universe,
+    _find_all_pages,
     _read_json,
     _read_text,
     _universe_dir,
+    _wiki_drafts_dir,
+    _wiki_pages_dir,
 )
 from workflow.catalog import list_unreconciled_writes
 
@@ -3882,6 +3885,224 @@ def _action_read_canon(
         return json.dumps({"error": f"Failed to read canon file: {exc}"})
 
 
+_AUDIT_STOP_WORDS = frozenset(
+    "the a an and or but if then else when at by for with about against between "
+    "through during before after above below to from in on of that this these "
+    "those it its is are was were be been being have has had do does did will "
+    "would could should may might can must never avoid not no use uses using "
+    "rule rules constraint constraints canon continuity".split()
+)
+
+_CONSTRAINT_LINE_RE = re.compile(
+    r"\b(avoid|banned|forbidden|must not|never|do not|cannot|can't|"
+    r"prohibited|constraint|rule)\b",
+    re.IGNORECASE,
+)
+
+
+def _audit_terms(text: str) -> set[str]:
+    terms: set[str] = set()
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", text.lower()):
+        token = raw.strip("'-")
+        if token.endswith("s") and len(token) > 4:
+            token = token[:-1]
+        if token and token not in _AUDIT_STOP_WORDS:
+            terms.add(token)
+    return terms
+
+
+def _audit_excerpt(text: str, terms: set[str], *, width: int = 180) -> str:
+    lower = text.lower()
+    positions = [lower.find(term) for term in terms if lower.find(term) >= 0]
+    if positions:
+        start = max(0, min(positions) - width // 2)
+    else:
+        start = 0
+    excerpt = re.sub(r"\s+", " ", text[start:start + width]).strip()
+    if start > 0:
+        excerpt = f"...{excerpt}"
+    if start + width < len(text):
+        excerpt = f"{excerpt}..."
+    return excerpt
+
+
+def _audit_doc_entry(
+    *,
+    source: str,
+    path: Path,
+    root: Path,
+    content: str,
+    fragment_terms: set[str],
+) -> dict[str, Any] | None:
+    doc_terms = _audit_terms(content)
+    matched_terms = sorted(fragment_terms & doc_terms)
+    if not matched_terms:
+        return None
+    try:
+        rel_path = path.relative_to(root).as_posix()
+    except ValueError:
+        rel_path = path.as_posix()
+    score = round(len(matched_terms) / max(len(fragment_terms), 1), 4)
+    return {
+        "source": source,
+        "path": rel_path,
+        "matched_terms": matched_terms[:12],
+        "score": score,
+        "excerpt": _audit_excerpt(content, set(matched_terms)),
+    }
+
+
+def _audit_constraint_warnings(
+    *,
+    source: str,
+    path: str,
+    content: str,
+    fragment_terms: set[str],
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for line in content.splitlines():
+        rule = line.strip(" -*\t")
+        if not rule or not _CONSTRAINT_LINE_RE.search(rule):
+            continue
+        rule_terms = _audit_terms(rule)
+        matched = sorted(fragment_terms & rule_terms)
+        if matched:
+            warnings.append({
+                "source": source,
+                "path": path,
+                "rule": rule,
+                "matched_terms": matched[:12],
+            })
+    return warnings
+
+
+def _continuity_audit_canon_docs(canon_dir: Path) -> list[Path]:
+    docs: list[Path] = []
+    for directory in (canon_dir, canon_dir / "sources"):
+        if directory.is_dir():
+            docs.extend(
+                p for p in sorted(directory.iterdir())
+                if p.is_file() and not p.name.startswith(".")
+            )
+    return docs
+
+
+def _action_continuity_audit(
+    universe_id: str = "",
+    text: str = "",
+    limit: int = 30,
+    **_kwargs: Any,
+) -> str:
+    """Check a prose fragment against stored canon and wiki constraints.
+
+    This is a deterministic evidence gatherer for author-facing review. It
+    surfaces overlapping canon/wiki references and rule-like lines that the
+    fragment appears to touch; it does not claim a final continuity verdict.
+    """
+    fragment = text.strip()
+    if not fragment:
+        return json.dumps({
+            "error": "text is required: pass the prose fragment to audit.",
+        })
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    canon_dir = udir / "canon"
+    limit = min(max(int(limit or 30), 1), 50)
+    fragment_terms = _audit_terms(fragment)
+    if not fragment_terms:
+        return json.dumps({
+            "universe_id": uid,
+            "status": "insufficient_text",
+            "canon_evidence": [],
+            "wiki_evidence": [],
+            "constraint_warnings": [],
+            "caveats": [
+                "The prose fragment did not contain enough searchable terms "
+                "for a useful continuity audit.",
+            ],
+        })
+
+    canon_evidence: list[dict[str, Any]] = []
+    wiki_evidence: list[dict[str, Any]] = []
+    constraint_warnings: list[dict[str, Any]] = []
+    caveats = [
+        "Continuity audit is heuristic: it reports matching evidence and "
+        "rule-touch points, not a final contradiction verdict.",
+    ]
+
+    for path in _continuity_audit_canon_docs(canon_dir):
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        entry = _audit_doc_entry(
+            source="canon",
+            path=path,
+            root=canon_dir,
+            content=content,
+            fragment_terms=fragment_terms,
+        )
+        if entry is not None:
+            canon_evidence.append(entry)
+            constraint_warnings.extend(_audit_constraint_warnings(
+                source="canon",
+                path=entry["path"],
+                content=content,
+                fragment_terms=fragment_terms,
+            ))
+
+    wiki_root = _wiki_pages_dir().parent
+    wiki_paths = _find_all_pages(_wiki_pages_dir()) + _find_all_pages(_wiki_drafts_dir())
+    for path in wiki_paths:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        entry = _audit_doc_entry(
+            source="wiki",
+            path=path,
+            root=wiki_root,
+            content=content,
+            fragment_terms=fragment_terms,
+        )
+        if entry is not None:
+            wiki_evidence.append(entry)
+            constraint_warnings.extend(_audit_constraint_warnings(
+                source="wiki",
+                path=entry["path"],
+                content=content,
+                fragment_terms=fragment_terms,
+            ))
+
+    canon_evidence.sort(key=lambda item: (-item["score"], item["path"]))
+    wiki_evidence.sort(key=lambda item: (-item["score"], item["path"]))
+    status = "attention" if constraint_warnings else "clear"
+    if not canon_evidence and not wiki_evidence:
+        caveats.append(
+            "No overlapping canon or wiki evidence was found. This does not "
+            "prove the fragment is continuity-safe; the relevant facts may be "
+            "absent from stored canon/wiki pages.",
+        )
+
+    return json.dumps({
+        "universe_id": uid,
+        "status": status,
+        "fragment_terms": sorted(fragment_terms)[:30],
+        "canon_evidence": canon_evidence[:limit],
+        "canon_evidence_count": len(canon_evidence),
+        "wiki_evidence": wiki_evidence[:limit],
+        "wiki_evidence_count": len(wiki_evidence),
+        "constraint_warnings": constraint_warnings[:limit],
+        "constraint_warning_count": len(constraint_warnings),
+        "caveats": caveats,
+        "next_action_hint": (
+            "Review the excerpts and warnings with the author before asking "
+            "the daemon to rewrite or accept the fragment."
+        ),
+    })
+
+
 def _action_control_daemon(
     universe_id: str = "",
     text: str = "",
@@ -4275,6 +4496,7 @@ def _universe_impl(
         "read_canon": _action_read_canon,
         "list_sources": _action_list_sources,
         "read_source": _action_read_source,
+        "continuity_audit": _action_continuity_audit,
         "control_daemon": _action_control_daemon,
         "switch_universe": _action_switch_universe,
         "create_universe": _action_create_universe,
