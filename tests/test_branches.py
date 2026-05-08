@@ -121,6 +121,7 @@ class TestNodeDefinition:
             model_hint="fast",
             tools_allowed=["story_search"],
             dependencies=["requests"],
+            compliance_tags=["gdpr", "soc2"],
             timeout_seconds=60.0,
             retry_policy={"max_retries": 2, "backoff_seconds": 5.0},
             evaluation_criteria=[
@@ -138,6 +139,7 @@ class TestNodeDefinition:
         assert n2.prompt_template == n.prompt_template
         assert n2.model_hint == n.model_hint
         assert n2.tools_allowed == n.tools_allowed
+        assert n2.compliance_tags == n.compliance_tags
         assert n2.timeout_seconds == n.timeout_seconds
         assert n2.retry_policy == n.retry_policy
         assert n2.evaluation_criteria == n.evaluation_criteria
@@ -195,6 +197,16 @@ class TestNodeDefinition:
             "extra_field": True,
         })
         assert n.node_id == "x"
+
+    def test_from_dict_preserves_compliance_tags(self):
+        n = NodeDefinition.from_dict({
+            "node_id": "review",
+            "display_name": "Policy Review",
+            "compliance_tags": ["hipaa", "gdpr"],
+        })
+
+        assert n.compliance_tags == ["hipaa", "gdpr"]
+        assert n.to_dict()["compliance_tags"] == ["hipaa", "gdpr"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

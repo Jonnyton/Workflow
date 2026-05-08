@@ -300,6 +300,7 @@ class NodeDefinition:
     model_hint: str = ""
     tools_allowed: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
+    compliance_tags: list[str] = field(default_factory=list)
     # #61: dense LLM calls (legal research, long summaries) regularly
     # take 90s+ on local models. 300s default matches
     # workflow.providers.base.ProviderConfig.timeout so a node timeout
@@ -407,7 +408,7 @@ class NodeDefinition:
         # character-by-character, silently corrupting sandbox/state
         # handling. Per Hard Rule #8, we'd rather fail to load than
         # accept malformed data.
-        for field_name in ("input_keys", "output_keys"):
+        for field_name in ("input_keys", "output_keys", "compliance_tags"):
             value = getattr(self, field_name)
             if not isinstance(value, list):
                 raise NodeDefinitionValidationError(

@@ -353,6 +353,35 @@ def test_describe_branch_returns_mermaid_flowchart(branch_env):
     assert "```mermaid" in described["summary"]
 
 
+def test_describe_branch_renders_compliance_overlay(branch_env):
+    us, _ = branch_env
+    bid = _call(us, "create_branch", name="Compliance map")["branch_def_id"]
+    _call(
+        us,
+        "add_node",
+        branch_def_id=bid,
+        node_id="privacy_review",
+        display_name="Privacy review",
+        prompt_template="review {draft}",
+        compliance_tags="gdpr, hipaa",
+    )
+    _call(us, "set_entry_point", branch_def_id=bid, node_id="privacy_review")
+
+    described = _call(us, "describe_branch", branch_def_id=bid)
+
+    assert described["compliance_tags_by_node"] == [
+        {
+            "node_id": "privacy_review",
+            "display_name": "Privacy review",
+            "compliance_tags": ["gdpr", "hipaa"],
+        }
+    ]
+    assert 'privacy_review["Privacy review [gdpr, hipaa]"]' in described["mermaid"]
+    assert "class privacy_review compliance" in described["mermaid"]
+    assert "classDef compliance" in described["mermaid"]
+    assert "compliance: gdpr, hipaa" in described["summary"]
+
+
 def test_describe_empty_branch_still_emits_mermaid(branch_env):
     """Even a zero-node branch returns a valid mermaid skeleton (START+END)."""
     us, _ = branch_env

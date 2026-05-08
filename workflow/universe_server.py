@@ -488,6 +488,7 @@ def extensions(
     from_node: str = "",
     to_node: str = "",
     prompt_template: str = "",
+    compliance_tags: str = "",
     field_name: str = "",
     field_type: str = "",
     reducer: str = "",
@@ -622,6 +623,9 @@ def extensions(
     - Provenance: fork_tree.
 
     Args: pass `action` plus the matching ids or JSON payload fields.
+    For compliance diagrams, call `describe_branch`; nodes may carry
+    `compliance_tags`, and describe_branch returns a Mermaid compliance
+    overlay plus structured tag metadata.
     """
     return _extensions_impl(
         action=action,
@@ -641,6 +645,7 @@ def extensions(
         from_node=from_node,
         to_node=to_node,
         prompt_template=prompt_template,
+        compliance_tags=compliance_tags,
         field_name=field_name,
         field_type=field_type,
         reducer=reducer,

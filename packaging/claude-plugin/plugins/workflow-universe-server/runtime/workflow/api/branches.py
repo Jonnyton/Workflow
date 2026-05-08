@@ -462,6 +462,7 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "output_keys": kwargs.get("output_keys", ""),
         "source_code": kwargs.get("source_code", ""),
         "prompt_template": kwargs.get("prompt_template", ""),
+        "compliance_tags": kwargs.get("compliance_tags", ""),
         "author": kwargs.get("author") or _current_actor(),
     }
     if "node_ref" in kwargs:
@@ -752,10 +753,19 @@ def _branch_mermaid(branch: Any) -> str:
     lines.append('    START(["START"])')
     lines.append('    END(["END"])')
 
+    compliance_node_ids: list[str] = []
     for node in branch.node_defs:
         nid = _mermaid_node_id(node.node_id)
-        label = _mermaid_label(node.display_name or node.node_id)
+        compliance_tags = [
+            str(tag).strip()
+            for tag in (getattr(node, "compliance_tags", []) or [])
+            if str(tag).strip()
+        ]
+        tag_suffix = f" [{', '.join(compliance_tags)}]" if compliance_tags else ""
+        label = _mermaid_label((node.display_name or node.node_id) + tag_suffix)
         lines.append(f'    {nid}["{label}"]')
+        if compliance_tags:
+            compliance_node_ids.append(nid)
 
     # Include graph_nodes that weren't also declared as node_defs.
     defined_ids = {_mermaid_node_id(n.node_id) for n in branch.node_defs}
@@ -783,6 +793,14 @@ def _branch_mermaid(branch: Any) -> str:
             lines.append(
                 "    classDef entry stroke:#4a90e2,stroke-width:3px"
             )
+
+    if compliance_node_ids:
+        lines.append(
+            "    classDef compliance stroke:#b7791f,stroke-width:2px,"
+            "stroke-dasharray:4 2,fill:#fff7ed"
+        )
+        for nid in compliance_node_ids:
+            lines.append(f"    class {nid} compliance")
 
     lines.append("```")
     return "\n".join(lines)
@@ -899,11 +917,36 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         if nd.get("source_code") and not nd.get("approved", False)
     ]
 
-    node_lines = [
-        f"  - {n.node_id}: {n.display_name}"
-        + (f" ({n.phase})" if n.phase != "custom" else "")
+    compliance_tags_by_node = [
+        {
+            "node_id": n.node_id,
+            "display_name": n.display_name,
+            "compliance_tags": [
+                str(tag).strip()
+                for tag in (getattr(n, "compliance_tags", []) or [])
+                if str(tag).strip()
+            ],
+        }
         for n in branch.node_defs
-    ] or ["  (no nodes yet)"]
+        if getattr(n, "compliance_tags", None)
+    ]
+
+    node_lines = []
+    for n in branch.node_defs:
+        tags = [
+            str(tag).strip()
+            for tag in (getattr(n, "compliance_tags", []) or [])
+            if str(tag).strip()
+        ]
+        node_line = (
+            f"  - {n.node_id}: {n.display_name}"
+            + (f" ({n.phase})" if n.phase != "custom" else "")
+        )
+        if tags:
+            node_line += f" compliance: {', '.join(tags)}"
+        node_lines.append(node_line)
+    if not node_lines:
+        node_lines = ["  (no nodes yet)"]
 
     edge_lines = [
         f"  - {e.from_node} -> {e.to_node}" for e in branch.edges
@@ -990,6 +1033,7 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "error_count": len(errors),
         "runnable": not errors and not unapproved_sc,
         "unapproved_source_code_nodes": unapproved_sc,
+        "compliance_tags_by_node": compliance_tags_by_node,
         "fork_from": fork_from,
         "fork_descendants": fork_descendants,
         "related_wiki_pages": related["items"],
@@ -1301,6 +1345,11 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
     out_keys, err = _coerce_node_keys(raw.get("output_keys"), "output_keys")
     if err:
         return err
+    compliance_tags, err = _coerce_node_keys(
+        raw.get("compliance_tags"), "compliance_tags"
+    )
+    if err:
+        return err
     # BUG-045: thread the three sub-branch / sibling-run spec fields. The
     # compiler reads them (workflow/graph_compiler.py:_build_invoke_branch /
     # invoke_branch_version / await_run callables) and NodeDefinition
@@ -1325,6 +1374,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             phase=phase,
             input_keys=in_keys,
             output_keys=out_keys,
+            compliance_tags=compliance_tags,
             source_code=source_code,
             prompt_template=prompt_template,
             author=raw.get("author") or _current_actor(),
