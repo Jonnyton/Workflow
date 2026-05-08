@@ -351,6 +351,23 @@ absent. Bare CLI use should start with the default limit for a broad sweep,
 use `--limit 10` for compact hook-like triage, and use `--limit 200` when
 auditing whether a category is absent.
 
+### Cross-AI shared-goal discovery
+
+When a page, design note, patch request, worktree purpose, or node body names a
+shared Goal or cross-provider topic, leave a stable pointer other AIs can find
+on resume. The canonical proposal is
+`docs/design-notes/proposed/2026-05-08-cross-ai-shared-goal-auto-discovery.md`.
+
+- **Topic aggregation page:** durable shared-goal summaries belong in wiki or
+  docs pages with stable links, not only in chat or provider-private memory.
+- **Page-write trigger:** after writing a durable page that introduces or
+  materially changes a shared Goal, add or update the related aggregation
+  pointer in the same change when it is safe to do so.
+- **Read-on-resume node body:** if a task/node/worktree expects another AI to
+  resume it, include a compact `Read on resume:` line with the aggregation
+  page, source issue, relevant `PLAN.md` section, and active `STATUS.md` row or
+  branch. Session-start readers should read those links before coding.
+
 ### Work-table row schema
 
 Every row must have:
