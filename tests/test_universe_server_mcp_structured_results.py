@@ -33,3 +33,43 @@ def test_mcp_tool_result_has_structured_content_and_text_content() -> None:
     assert result.content
     assert result.content[0].type == "text"
     assert json.loads(result.content[0].text)["schema_version"] == 1
+
+
+def test_bug_070_wiki_and_change_context_mcp_results_are_structured(
+    monkeypatch,
+) -> None:
+    """BUG-070: read aliases must match get_status' MCP response contract."""
+    from workflow import universe_server as us
+    from workflow.api import universe as universe_api
+
+    def _fake_github_read(path, params=None):
+        if path.endswith("/actions/workflows/auto-fix-bug.yml/runs"):
+            return {"workflow_runs": []}, None
+        return [], None
+
+    monkeypatch.setattr(universe_api, "_github_read", _fake_github_read)
+
+    async def _call_tools():
+        return {
+            "wiki": await us.mcp.call_tool("wiki", {"action": "list"}),
+            "community_change_context": await us.mcp.call_tool(
+                "community_change_context",
+                {"filter_text": "queue", "limit": 1},
+            ),
+        }
+
+    results = asyncio.run(_call_tools())
+
+    wiki_result = results["wiki"]
+    assert isinstance(wiki_result.structured_content, dict)
+    assert "promoted_count" in wiki_result.structured_content
+    assert wiki_result.content
+    assert wiki_result.content[0].type == "text"
+    assert "promoted_count" in json.loads(wiki_result.content[0].text)
+
+    context_result = results["community_change_context"]
+    assert isinstance(context_result.structured_content, dict)
+    assert context_result.structured_content["kind"] == "community_change_context"
+    assert context_result.content
+    assert context_result.content[0].type == "text"
+    assert json.loads(context_result.content[0].text)["kind"] == "community_change_context"
