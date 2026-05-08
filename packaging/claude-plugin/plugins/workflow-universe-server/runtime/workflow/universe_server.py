@@ -922,6 +922,7 @@ def wiki(
     filename: str = "",
     content: str = "",
     log_entry: str = "",
+    write_mode: str = "replace",
     old_text: str = "",
     new_text: str = "",
     expected_sha256: str = "",
@@ -974,6 +975,8 @@ def wiki(
         changed_since: Optional ISO timestamp for action="read" ambient feed
             and required ISO timestamp for action="since"; only pages updated
             after this timestamp are returned.
+        write_mode: For action="write"; replace (default), append_chunk, or
+            final_commit for large pages that need multiple MCP calls.
     """
     return _wiki_impl(
         action=action,
@@ -983,6 +986,7 @@ def wiki(
         filename=filename,
         content=content,
         log_entry=log_entry,
+        write_mode=write_mode,
         old_text=old_text,
         new_text=new_text,
         expected_sha256=expected_sha256,

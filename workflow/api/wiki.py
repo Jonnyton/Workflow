@@ -689,10 +689,20 @@ def _wiki_write(
     filename: str = "",
     content: str = "",
     log_entry: str = "",
+    write_mode: str = "replace",
     **_kwargs: Any,
 ) -> str:
-    if not filename or not content:
-        return json.dumps({"error": "filename and content are required."})
+    mode = (write_mode or "replace").strip().lower().replace("-", "_")
+    valid_modes = {"replace", "append", "append_chunk", "final_commit"}
+    if mode not in valid_modes:
+        return json.dumps({
+            "error": f"Invalid write_mode '{write_mode}'.",
+            "valid": sorted(valid_modes),
+        })
+    if not filename:
+        return json.dumps({"error": "filename parameter is required."})
+    if not content and mode != "final_commit":
+        return json.dumps({"error": "content parameter is required."})
     if category not in _WIKI_CATEGORIES:
         return json.dumps({
             "error": f"Invalid category '{category}'.",
@@ -700,6 +710,43 @@ def _wiki_write(
         })
 
     slug = _sanitize_slug(filename)
+    if mode in {"append", "append_chunk", "final_commit"}:
+        draft_path = _wiki_drafts_dir() / category / (slug + ".md")
+        try:
+            draft_path.parent.mkdir(parents=True, exist_ok=True)
+            existed = draft_path.exists()
+            if content:
+                with open(draft_path, "a", encoding="utf-8") as f:
+                    f.write(content)
+            if not draft_path.exists():
+                return json.dumps({
+                    "error": "No draft chunks found to finalize.",
+                    "hint": "Call wiki write with write_mode=append_chunk first.",
+                })
+            assembled = _read_text(draft_path)
+            status = "finalized_draft" if mode == "final_commit" else "chunk_appended"
+            action_word = "finalize" if mode == "final_commit" else (
+                "chunk-start" if not existed else "chunk-append"
+            )
+            _append_wiki_log(
+                f"{action_word} | drafts/{category}/{slug} | "
+                f"{log_entry or 'chunked wiki write'}"
+            )
+            return json.dumps({
+                "path": f"drafts/{category}/{slug}.md",
+                "status": status,
+                "mode": mode,
+                "total_chars": len(assembled),
+                "sha256": hashlib.sha256(assembled.encode("utf-8")).hexdigest(),
+                "note": (
+                    "Chunk persisted. Call write_mode=final_commit after the last "
+                    "chunk." if mode != "final_commit"
+                    else "Draft finalized. Call wiki promote to move to pages/."
+                ),
+            })
+        except OSError as exc:
+            return json.dumps({"error": f"Failed to write draft chunk: {exc}"})
+
     promoted_path = _wiki_pages_dir() / category / (slug + ".md")
 
     # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
@@ -1965,6 +2012,7 @@ def wiki(
     filename: str = "",
     content: str = "",
     log_entry: str = "",
+    write_mode: str = "replace",
     old_text: str = "",
     new_text: str = "",
     expected_sha256: str = "",
@@ -2061,6 +2109,7 @@ def wiki(
         "filename": filename,
         "content": content,
         "log_entry": log_entry,
+        "write_mode": write_mode,
         "old_text": old_text,
         "new_text": new_text,
         "expected_sha256": expected_sha256,

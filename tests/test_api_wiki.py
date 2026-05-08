@@ -391,6 +391,69 @@ def test_wiki_write_drafts_then_promote_roundtrip(wiki_env):
     assert "pages/notes/my-note.md" in promoted["path"]
 
 
+def test_wiki_write_chunked_final_commit_persists_large_linked_draft(wiki_env):
+    linked_target = (
+        "---\ntitle: Target Note\ntype: note\nsources: [same-turn]\n---\n\n"
+        "This target is filed in the same turn and has enough body text to be "
+        "a valid page when promoted. It links back to [[index]].\n"
+    )
+    json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="target-note",
+            content=linked_target,
+        )
+    )
+
+    chunk_1 = (
+        "---\ntitle: Large Linked Note\ntype: note\nsources: [same-turn]\n---\n\n"
+        "This large page references [[target-note]] before that target is "
+        "promoted, so write must persist chunks without resolving links first.\n"
+    )
+    chunk_2 = ("chunk body " * 1800) + "\n"
+    final_chunk = "Final paragraph after the large chunk.\n"
+
+    first = json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="large-linked-note",
+            content=chunk_1,
+            write_mode="append_chunk",
+        )
+    )
+    assert first["status"] == "chunk_appended"
+    partial_path = wiki_env / "drafts" / "notes" / "large-linked-note.md"
+    assert partial_path.read_text(encoding="utf-8") == chunk_1
+
+    second = json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="large-linked-note",
+            content=chunk_2,
+            write_mode="append_chunk",
+        )
+    )
+    assert second["total_chars"] > 15000
+
+    final = json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="large-linked-note",
+            content=final_chunk,
+            write_mode="final_commit",
+        )
+    )
+
+    assert final["status"] == "finalized_draft"
+    assembled = partial_path.read_text(encoding="utf-8")
+    assert assembled == chunk_1 + chunk_2 + final_chunk
+    assert final["sha256"] == hashlib.sha256(assembled.encode("utf-8")).hexdigest()
+
+
 def test_wiki_patch_updates_long_page_without_full_replace(wiki_env):
     path = wiki_env / "pages" / "notes" / "long-note.md"
     original = (
