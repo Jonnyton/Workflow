@@ -333,6 +333,7 @@ def universe(
     enabled: bool = False,
     tag: str = "",
     anchor_json: str = "",
+    artifact_format: str = "markdown",
 ) -> str:
     """Inspect and steer a workflow's universe.
 
@@ -349,7 +350,7 @@ def universe(
             get_activity, get_recent_events, get_ledger, read_premise,
             list_canon, read_canon, list_sources, read_source; writes: submit_request,
             give_direction, set_premise, add_canon, add_canon_from_path,
-            create_universe, switch_universe; queue: queue_list,
+            render_artifact, create_universe, switch_universe; queue: queue_list,
             queue_cancel; subscriptions: subscribe_goal, unsubscribe_goal,
             list_subscriptions; goal-pool: post_to_goal_pool,
             submit_node_bid; community review: community_change_context;
@@ -366,6 +367,7 @@ def universe(
         pickup_incentive/directed_daemon_id: Optional patch-request pickup
             signals; these do not affect acceptance, release, or merge odds.
         filename/provenance_tag/limit/tag: Optional read/write filters.
+        artifact_format: For render_artifact, one of markdown, docx, or pdf.
         anchor_json: Optional JSON object for `give_direction` line/span notes.
     """
     return _universe_impl(
@@ -397,6 +399,7 @@ def universe(
         enabled=enabled,
         tag=tag,
         anchor_json=anchor_json,
+        artifact_format=artifact_format,
     )
 
 

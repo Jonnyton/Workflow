@@ -37,6 +37,7 @@ def test_module_exposes_expected_public_names() -> None:
         "_extract_submit_request", "_extract_give_direction",
         "_extract_set_premise", "_extract_add_canon",
         "_extract_add_canon_from_path", "_extract_control_daemon",
+        "_extract_render_artifact",
         "_extract_switch_universe", "_extract_create_universe",
         "_extract_queue_cancel", "_extract_subscribe_goal",
         "_extract_unsubscribe_goal", "_extract_post_to_goal_pool",
@@ -58,6 +59,7 @@ def test_module_exposes_expected_public_names() -> None:
         # universe-tool action handlers
         "_action_list_universes", "_action_inspect_universe",
         "_action_read_output", "_action_submit_request",
+        "_action_render_artifact",
         "_action_queue_list", "_action_daemon_overview",
         "_action_daemon_list", "_action_daemon_get",
         "_action_daemon_create", "_action_daemon_summon",
@@ -88,9 +90,9 @@ def test_module_exposes_expected_public_names() -> None:
     )
 
 
-def test_write_actions_table_has_24_entries() -> None:
+def test_write_actions_table_has_25_entries() -> None:
     """WRITE_ACTIONS dict literal includes daemon create/summon/banish writes."""
-    assert len(univ_mod.WRITE_ACTIONS) == 24
+    assert len(univ_mod.WRITE_ACTIONS) == 25
 
 
 def test_write_actions_entries_are_extractor_gate_tuples() -> None:
@@ -213,6 +215,7 @@ def test_universe_impl_dispatch_table_has_known_actions() -> None:
 
 @pytest.mark.parametrize("action", [
     "list", "inspect", "read_output", "submit_request", "queue_list",
+    "render_artifact",
     "daemon_overview", "daemon_list", "daemon_get", "daemon_create",
     "daemon_summon", "daemon_pause", "daemon_resume", "daemon_restart",
     "daemon_banish", "daemon_update_behavior", "daemon_control_status",
@@ -247,6 +250,69 @@ def test_every_universe_action_dispatches(action: str, monkeypatch) -> None:
     assert sentinel not in out, (
         f"action {action!r} dropped from _universe_impl dispatch table"
     )
+
+
+@pytest.mark.parametrize(
+    ("artifact_format", "suffix", "signature"),
+    [
+        ("markdown", ".md", b"# Shareable Universe Export"),
+        (
+            "docx",
+            ".docx",
+            b"PK",
+        ),
+        ("pdf", ".pdf", b"%PDF-1.4"),
+    ],
+)
+def test_render_artifact_writes_shareable_formats(
+    tmp_path, monkeypatch, artifact_format: str, suffix: str, signature: bytes,
+) -> None:
+    """Universe contents can be rendered to a shareable file artifact."""
+    universe_dir = tmp_path / "u1"
+    (universe_dir / "canon").mkdir(parents=True)
+    (universe_dir / "output").mkdir()
+    (universe_dir / "PROGRAM.md").write_text("# Premise\n\nBuild a city.", encoding="utf-8")
+    (universe_dir / "canon" / "places.md").write_text("## Places\n\n- Harbor", encoding="utf-8")
+    (universe_dir / "output" / "chapter.md").write_text("Chapter draft.", encoding="utf-8")
+    monkeypatch.setattr(univ_mod, "_default_universe", lambda: "u1")
+    monkeypatch.setattr(univ_mod, "_universe_dir", lambda uid: tmp_path / uid)
+
+    out = json.loads(univ_mod._universe_impl(
+        action="render_artifact",
+        universe_id="u1",
+        artifact_format=artifact_format,
+        filename=f"share{suffix}",
+    ))
+
+    assert out["status"] == "ok"
+    assert out["format"] == artifact_format
+    assert out["path"] == f"shareable-artifacts/share{suffix}"
+    artifact = universe_dir / "output" / out["path"]
+    assert artifact.exists()
+    assert artifact.read_bytes().startswith(signature)
+    assert out["bytes"] == artifact.stat().st_size
+    assert out["source_counts"]["premise"] == 1
+    assert out["source_counts"]["canon"] == 1
+    assert out["source_counts"]["output"] == 1
+
+
+def test_render_artifact_rejects_path_traversal_filename(tmp_path, monkeypatch) -> None:
+    """Shareable artifacts must stay under output/shareable-artifacts."""
+    universe_dir = tmp_path / "u1"
+    universe_dir.mkdir()
+    monkeypatch.setattr(univ_mod, "_default_universe", lambda: "u1")
+    monkeypatch.setattr(univ_mod, "_universe_dir", lambda uid: tmp_path / uid)
+
+    out = json.loads(univ_mod._universe_impl(
+        action="render_artifact",
+        universe_id="u1",
+        artifact_format="markdown",
+        filename="../leak.md",
+    ))
+
+    assert out["status"] == "rejected"
+    assert out["error"] == "invalid_filename"
+    assert not (universe_dir / "output" / "leak.md").exists()
 
 
 def test_community_change_context_overview(monkeypatch) -> None:

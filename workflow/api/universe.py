@@ -57,10 +57,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape
 
 from workflow.api.helpers import (
     _base_path,
@@ -165,6 +167,23 @@ def _extract_add_canon_from_path(
             "source_path": kwargs.get("path", ""),
             "bytes": bytes_written,
             "synthesis_signal": result.get("synthesis_signal_emitted", False),
+        },
+    )
+
+
+def _extract_render_artifact(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    path = str(result.get("path") or "")
+    artifact_format = str(result.get("format") or kwargs.get("artifact_format") or "")
+    return (
+        path,
+        _truncate(f"render {artifact_format} artifact {path}"),
+        {
+            "format": artifact_format,
+            "bytes": result.get("bytes", 0),
+            "source_counts": result.get("source_counts", {}),
         },
     )
 
@@ -476,6 +495,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "set_premise": (_extract_set_premise, None),
     "add_canon": (_extract_add_canon, None),
     "add_canon_from_path": (_extract_add_canon_from_path, None),
+    "render_artifact": (_extract_render_artifact, None),
     "control_daemon": (_extract_control_daemon, {"pause", "resume"}),
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
@@ -1078,6 +1098,330 @@ def _action_read_output(universe_id: str = "", path: str = "", **_kwargs: Any) -
         "path": path,
         "content": content,
         "truncated": False,
+    })
+
+
+_RENDER_ARTIFACT_MAX_SOURCE_BYTES = 250_000
+_RENDER_ARTIFACT_FORMATS = {
+    "markdown": {
+        "extension": ".md",
+        "mime_type": "text/markdown; charset=utf-8",
+    },
+    "docx": {
+        "extension": ".docx",
+        "mime_type": (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    },
+    "pdf": {
+        "extension": ".pdf",
+        "mime_type": "application/pdf",
+    },
+}
+_RENDER_TEXT_SUFFIXES = {".md", ".txt"}
+
+
+def _safe_render_artifact_filename(filename: str, artifact_format: str) -> str | None:
+    requested = filename.strip()
+    extension = _RENDER_ARTIFACT_FORMATS[artifact_format]["extension"]
+    if not requested:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        requested = f"universe-export-{stamp}{extension}"
+    if "/" in requested or "\\" in requested:
+        return None
+    name = Path(requested).name
+    if name in {"", ".", ".."} or Path(name).is_absolute():
+        return None
+    if name != requested:
+        return None
+    if not name.lower().endswith(extension):
+        name = f"{name}{extension}"
+    return name
+
+
+def _read_render_text_file(path: Path, *, remaining_bytes: int) -> tuple[str, bool, int]:
+    raw = path.read_bytes()
+    truncated = len(raw) > remaining_bytes
+    chunk = raw[:max(0, remaining_bytes)]
+    return chunk.decode("utf-8", errors="replace"), truncated, len(chunk)
+
+
+def _render_source_section(title: str, rel_path: str, content: str) -> str:
+    fenced = content.rstrip()
+    return f"\n## {title}: `{rel_path}`\n\n{fenced}\n"
+
+
+def _collect_universe_render_markdown(
+    udir: Path,
+    *,
+    output_path_filter: str = "",
+) -> tuple[str, dict[str, int], bool, int]:
+    sections = ["# Shareable Universe Export\n"]
+    source_counts = {"premise": 0, "canon": 0, "output": 0}
+    truncated = False
+    consumed = 0
+
+    def remaining() -> int:
+        return max(0, _RENDER_ARTIFACT_MAX_SOURCE_BYTES - consumed)
+
+    premise_path = udir / "PROGRAM.md"
+    if premise_path.is_file() and remaining() > 0:
+        text, did_truncate, used = _read_render_text_file(
+            premise_path, remaining_bytes=remaining(),
+        )
+        consumed += used
+        truncated = truncated or did_truncate
+        source_counts["premise"] += 1
+        sections.append(_render_source_section("Premise", "PROGRAM.md", text))
+
+    canon_dir = udir / "canon"
+    if canon_dir.is_dir():
+        for path in sorted(canon_dir.rglob("*")):
+            if remaining() <= 0:
+                truncated = True
+                break
+            if not path.is_file() or path.suffix.lower() not in _RENDER_TEXT_SUFFIXES:
+                continue
+            text, did_truncate, used = _read_render_text_file(path, remaining_bytes=remaining())
+            consumed += used
+            truncated = truncated or did_truncate
+            source_counts["canon"] += 1
+            sections.append(
+                _render_source_section(
+                    "Canon",
+                    str(path.relative_to(udir)),
+                    text,
+                ),
+            )
+
+    output_dir = udir / "output"
+    output_root = output_dir
+    if output_path_filter:
+        output_root = (output_dir / output_path_filter).resolve()
+        if not output_root.is_relative_to(output_dir.resolve()):
+            raise ValueError("Path traversal not allowed.")
+    if output_root.exists():
+        output_files = [output_root] if output_root.is_file() else sorted(output_root.rglob("*"))
+        for path in output_files:
+            if remaining() <= 0:
+                truncated = True
+                break
+            if not path.is_file() or path.suffix.lower() not in _RENDER_TEXT_SUFFIXES:
+                continue
+            rel = path.relative_to(output_dir)
+            if rel.parts and rel.parts[0] == "shareable-artifacts":
+                continue
+            text, did_truncate, used = _read_render_text_file(path, remaining_bytes=remaining())
+            consumed += used
+            truncated = truncated or did_truncate
+            source_counts["output"] += 1
+            sections.append(
+                _render_source_section(
+                    "Output",
+                    f"output/{rel}",
+                    text,
+                ),
+            )
+
+    if sum(source_counts.values()) == 0:
+        sections.append("\n_No premise, canon, or markdown/text output found._\n")
+    if truncated:
+        sections.append(
+            "\n## Export Note\n\n"
+            f"Source content was truncated at {_RENDER_ARTIFACT_MAX_SOURCE_BYTES} bytes.\n"
+        )
+    return "\n".join(sections).rstrip() + "\n", source_counts, truncated, consumed
+
+
+def _markdown_to_docx_bytes(markdown: str) -> bytes:
+    from io import BytesIO
+
+    paragraphs = []
+    for line in markdown.splitlines():
+        if not line.strip():
+            paragraphs.append("<w:p/>")
+            continue
+        escaped = _xml_escape(line)
+        paragraphs.append(
+            "<w:p><w:r><w:t xml:space=\"preserve\">"
+            f"{escaped}"
+            "</w:t></w:r></w:p>"
+        )
+    document = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+        "<w:body>"
+        f"{''.join(paragraphs)}"
+        "<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/>"
+        "<w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/>"
+        "</w:sectPr></w:body></w:document>"
+    )
+    content_types = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+        "<Default Extension=\"rels\" "
+        "ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+        "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+        "<Override PartName=\"/word/document.xml\" "
+        "ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+        "</Types>"
+    )
+    rels = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        "<Relationship Id=\"rId1\" "
+        "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/"
+        "relationships/officeDocument\" "
+        "Target=\"word/document.xml\"/>"
+        "</Relationships>"
+    )
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("word/document.xml", document)
+    return buf.getvalue()
+
+
+def _pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _markdown_to_pdf_bytes(markdown: str) -> bytes:
+    lines: list[str] = []
+    for raw_line in markdown.splitlines():
+        line = raw_line.rstrip()
+        if not line:
+            lines.append("")
+            continue
+        while len(line) > 92:
+            lines.append(line[:92])
+            line = line[92:]
+        lines.append(line)
+    pages = [lines[i:i + 50] for i in range(0, max(1, len(lines)), 50)]
+
+    objects: list[bytes] = []
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    page_refs = " ".join(f"{3 + i * 2} 0 R" for i in range(len(pages)))
+    objects.append(f"<< /Type /Pages /Kids [{page_refs}] /Count {len(pages)} >>".encode())
+    for index, page_lines in enumerate(pages):
+        page_obj_id = 3 + index * 2
+        content_obj_id = page_obj_id + 1
+        objects.append(
+            (
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                "/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 "
+                "/BaseFont /Helvetica >> >> >> "
+                f"/Contents {content_obj_id} 0 R >>"
+            ).encode()
+        )
+        text_ops = ["BT", "/F1 10 Tf", "50 760 Td", "14 TL"]
+        for line in page_lines:
+            text_ops.append(f"({_pdf_escape(line)}) Tj")
+            text_ops.append("T*")
+        text_ops.append("ET")
+        stream = "\n".join(text_ops).encode("latin-1", errors="replace")
+        objects.append(
+            b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n"
+            + stream + b"\nendstream"
+        )
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj_id, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{obj_id} 0 obj\n".encode())
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+    xref_at = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode())
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_at}\n%%EOF\n"
+        ).encode()
+    )
+    return bytes(pdf)
+
+
+def _action_render_artifact(
+    universe_id: str = "",
+    artifact_format: str = "markdown",
+    filename: str = "",
+    path: str = "",
+    **_kwargs: Any,
+) -> str:
+    """Render universe contents to a shareable artifact under output/."""
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    if not udir.is_dir():
+        return json.dumps({"error": f"Universe '{uid}' not found."})
+
+    fmt = (artifact_format or "markdown").strip().lower()
+    if fmt == "md":
+        fmt = "markdown"
+    if fmt not in _RENDER_ARTIFACT_FORMATS:
+        return json.dumps({
+            "universe_id": uid,
+            "status": "rejected",
+            "error": "unsupported_format",
+            "supported_formats": sorted(_RENDER_ARTIFACT_FORMATS),
+        })
+
+    safe_name = _safe_render_artifact_filename(filename, fmt)
+    if safe_name is None:
+        return json.dumps({
+            "universe_id": uid,
+            "status": "rejected",
+            "error": "invalid_filename",
+            "hint": "filename must be a plain file name, not a path.",
+        })
+
+    try:
+        markdown, source_counts, truncated, source_bytes = _collect_universe_render_markdown(
+            udir,
+            output_path_filter=path.strip(),
+        )
+    except ValueError as exc:
+        return json.dumps({
+            "universe_id": uid,
+            "status": "rejected",
+            "error": str(exc),
+        })
+
+    if fmt == "markdown":
+        artifact_bytes = markdown.encode("utf-8")
+    elif fmt == "docx":
+        artifact_bytes = _markdown_to_docx_bytes(markdown)
+    else:
+        artifact_bytes = _markdown_to_pdf_bytes(markdown)
+
+    artifact_dir = (udir / "output" / "shareable-artifacts").resolve()
+    target = (artifact_dir / safe_name).resolve()
+    if not target.is_relative_to(artifact_dir):
+        return json.dumps({
+            "universe_id": uid,
+            "status": "rejected",
+            "error": "invalid_filename",
+        })
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(artifact_bytes)
+
+    rel_path = target.relative_to(udir / "output")
+    format_info = _RENDER_ARTIFACT_FORMATS[fmt]
+    return json.dumps({
+        "universe_id": uid,
+        "status": "ok",
+        "format": fmt,
+        "mime_type": format_info["mime_type"],
+        "path": str(rel_path),
+        "bytes": len(artifact_bytes),
+        "source_bytes": source_bytes,
+        "source_counts": source_counts,
+        "truncated": truncated,
     })
 
 
@@ -4252,6 +4596,7 @@ def _universe_impl(
     enabled: bool = False,
     tag: str = "",
     anchor_json: str = "",
+    artifact_format: str = "markdown",
 ) -> str:
     """Pattern A2 body — see ``workflow.universe_server.universe`` for the
     chatbot-facing docstring. Behavior is identical; the decorator wrapper
@@ -4261,6 +4606,7 @@ def _universe_impl(
         "list": _action_list_universes,
         "inspect": _action_inspect_universe,
         "read_output": _action_read_output,
+        "render_artifact": _action_render_artifact,
         "query_world": _action_query_world,
         "get_activity": _action_get_activity,
         "get_recent_events": _action_get_recent_events,
@@ -4342,6 +4688,7 @@ def _universe_impl(
         "enabled": enabled,
         "tag": tag,
         "anchor_json": anchor_json,
+        "artifact_format": artifact_format,
     }
 
     # All WRITE actions are funneled through the ledger wrapper. READ actions
