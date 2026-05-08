@@ -48,6 +48,12 @@ class TestMCPServerSetup:
     def test_server_name(self):
         assert mcp.name == "workflow"
 
+    def test_reuses_universe_server_surface(self):
+        from workflow import mcp_server, universe_server
+
+        assert mcp_server.mcp is universe_server.mcp
+        assert mcp_server.main is universe_server.main
+
 
 class TestUniverseDirResolution:
     """_universe_dir() resolves paths without cwd-relative landmines."""
@@ -91,13 +97,29 @@ class TestUniverseDirResolution:
         tools = asyncio.run(mcp.list_tools())
         tool_names = {t.name for t in tools}
         expected = {
-            "get_status", "add_note", "get_premise", "set_premise",
-            "get_progress", "get_chapter", "get_activity",
-            "pause", "resume", "add_canon",
-            "get_work_targets", "get_review_state",
+            "universe",
+            "extensions",
+            "goals",
+            "gates",
+            "wiki",
+            "get_status",
         }
         assert expected.issubset(tool_names)
-        assert "steer" not in tool_names
+        legacy_tools = {
+            "add_note",
+            "get_premise",
+            "set_premise",
+            "get_progress",
+            "get_chapter",
+            "get_activity",
+            "pause",
+            "resume",
+            "add_canon",
+            "get_work_targets",
+            "get_review_state",
+            "steer",
+        }
+        assert tool_names.isdisjoint(legacy_tools)
 
 
 # ---------------------------------------------------------------------------
