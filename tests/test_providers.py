@@ -157,6 +157,32 @@ class TestProviderRouterCall:
         assert resp.text == "codex-resp"
 
     @pytest.mark.asyncio
+    async def test_writer_falls_back_on_empty_response(self):
+        providers = _make_providers(
+            **{"claude-code": FakeProvider("claude-code", "anthropic", "   ")}
+        )
+        router = ProviderRouter(providers=providers)
+
+        resp = await router.call("writer", "write prose", "system")
+        assert resp.provider == "codex"
+        assert resp.text == "codex-resp"
+
+    @pytest.mark.asyncio
+    async def test_writer_raises_when_all_responses_empty(self):
+        providers = {
+            name: FakeProvider(name, "x", "")
+            for name in FALLBACK_CHAINS["writer"]
+        }
+        router = ProviderRouter(providers=providers)
+
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            await router.call("writer", "prompt", "system")
+
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["claude-code"].skip_class == "empty_response"
+        assert attempts["ollama-local"].skip_class == "empty_response"
+
+    @pytest.mark.asyncio
     async def test_writer_falls_to_ollama(self):
         failing = {
             "claude-code": FakeProvider("claude-code", "anthropic", fail_with=ProviderError("x")),

@@ -74,8 +74,9 @@ _API_KEY_PROVIDERS: frozenset[str] = frozenset(
     {"gemini-free", "groq-free", "grok-free"}
 )
 
-# BUG-029 Part B: number of consecutive empty-prose responses from a local
-# provider (when chain-drained) before raising AllProvidersExhaustedError.
+# Legacy constructor default retained for callers that still pass the BUG-029
+# knob. BUG-039 tightened the invariant: empty output is always a failed
+# provider attempt, so the router no longer waits for repeated local empties.
 _CHAIN_DRAIN_EMPTY_THRESHOLD: int = 2
 
 
@@ -90,9 +91,8 @@ class ProviderRouter:
     quota : QuotaTracker | None
         Shared quota tracker.  A default is created if not supplied.
     chain_drain_empty_threshold : int
-        Consecutive empty-prose responses from a local provider (when all
-        API providers are in cooldown) before raising
-        AllProvidersExhaustedError.  Default: 2.
+        Legacy BUG-029 knob retained for compatibility. Empty provider output
+        now fails immediately so graph execution never consumes blank text.
     """
 
     def __init__(
@@ -104,7 +104,7 @@ class ProviderRouter:
         self._providers: dict[str, BaseProvider] = providers or {}
         self._quota = quota or QuotaTracker()
         self._chain_drain_empty_threshold = chain_drain_empty_threshold
-        # {provider_name: consecutive_empty_count} — reset on non-empty response.
+        # Retained for older callers that may inspect router state.
         self._consecutive_empty: dict[str, int] = {}
 
     # ------------------------------------------------------------------
@@ -320,7 +320,6 @@ class ProviderRouter:
             logger.info("Trying provider %s for role=%s", provider_name, role)
             try:
                 resp = await provider.complete(prompt, system, cfg)
-                self._quota.record_success(provider_name)
             except ProviderUnavailableError as exc:
                 self._quota.cooldown(provider_name, COOLDOWN_UNAVAILABLE)
                 logger.warning(
@@ -367,29 +366,23 @@ class ProviderRouter:
                 ))
                 continue
 
-            # Successful call — apply BUG-029 Part B: track consecutive empty
-            # responses from local providers when chain-drained.
-            is_local = provider_name in _LOCAL_PROVIDERS
             response_empty = not (resp.text or "").strip()
-            if is_local and response_empty:
-                count = self._consecutive_empty.get(provider_name, 0) + 1
-                self._consecutive_empty[provider_name] = count
-                drained = self._quota.all_api_providers_in_cooldown(
-                    chain, local_providers=_LOCAL_PROVIDERS
+            if response_empty:
+                self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                logger.warning(
+                    "Provider %s returned empty response, cooldown %ds",
+                    provider_name, COOLDOWN_OTHER,
                 )
-                if drained and count >= self._chain_drain_empty_threshold:
-                    logger.warning(
-                        "CHAIN_DRAINED + %s empty x%d: raising "
-                        "AllProvidersExhaustedError to force backoff (BUG-029)",
-                        provider_name, count,
-                    )
-                    raise AllProvidersExhaustedError(
-                        f"Chain drained (all API providers in cooldown) and "
-                        f"{provider_name!r} returned empty prose {count} consecutive "
-                        f"time(s). Daemon should back off rather than commit empty output."
-                    )
-            else:
-                self._consecutive_empty.pop(provider_name, None)
+                attempts.append(ProviderAttemptDiagnostic(
+                    provider=provider_name,
+                    status="failed",
+                    skip_class="empty_response",
+                    detail="provider returned empty text",
+                ))
+                continue
+
+            self._quota.record_success(provider_name)
+            self._consecutive_empty.pop(provider_name, None)
             return resp
 
         # All providers exhausted.
@@ -548,6 +541,13 @@ class ProviderRouter:
             )
             try:
                 resp = await provider.complete(prompt, system, cfg)
+                if not (resp.text or "").strip():
+                    self._quota.cooldown(provider_name, COOLDOWN_OTHER)
+                    logger.warning(
+                        "Policy provider %s returned empty response, cooldown %ds",
+                        provider_name, COOLDOWN_OTHER,
+                    )
+                    continue
                 self._quota.record_success(provider_name)
                 return resp.text, provider_name
             except ProviderUnavailableError:
@@ -721,6 +721,9 @@ class ProviderRouter:
         ) -> ProviderResponse | None:
             try:
                 resp = await provider.complete(prompt, system, cfg)
+                if not (resp.text or "").strip():
+                    self._quota.cooldown(name, COOLDOWN_OTHER)
+                    return None
                 self._quota.record_success(name)
                 return resp
             except ProviderUnavailableError:

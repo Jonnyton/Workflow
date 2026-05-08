@@ -1,8 +1,8 @@
-"""Tests for BUG-029: thundering-herd chain-drain detection + backoff.
+"""Tests for BUG-029/BUG-039: chain-drain detection + empty-response backoff.
 
 Part A: QuotaTracker.all_api_providers_in_cooldown + get_status exposure.
-Part B: ProviderRouter raises AllProvidersExhaustedError when chain-drained
-        and local provider returns empty prose N consecutive times.
+Part B: ProviderRouter treats empty provider output as a failed attempt,
+        falling back when possible and exhausting loudly when not.
 """
 from __future__ import annotations
 
@@ -117,30 +117,32 @@ class TestChainDrainBackoff:
         resp = _run(router.call("writer", "p", "s"))
         assert resp.text == "real content"
 
-    def test_first_empty_local_does_not_raise(self):
-        """First empty response: threshold=2, no raise yet."""
+    def test_first_empty_local_raises_when_chain_drained(self):
+        """Empty local output is not a successful router response."""
         router, _, _ = _router_with_local(local_text="", threshold=2)
-        resp = _run(router.call("writer", "p", "s"))
-        assert resp.text == ""
-
-    def test_second_empty_local_raises_when_chain_drained(self):
-        """Second consecutive empty from local when all APIs in cooldown raises."""
-        router, _, _ = _router_with_local(local_text="", threshold=2)
-        _run(router.call("writer", "p", "s"))  # first empty — no raise
-        with pytest.raises(AllProvidersExhaustedError, match="empty prose"):
-            _run(router.call("writer", "p", "s"))
-
-    def test_raise_message_includes_provider_name_and_count(self):
-        router, _, _ = _router_with_local(local_text="", threshold=2)
-        _run(router.call("writer", "p", "s"))
         with pytest.raises(AllProvidersExhaustedError) as exc_info:
             _run(router.call("writer", "p", "s"))
-        msg = str(exc_info.value)
-        assert "ollama-local" in msg
-        assert "2" in msg
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["ollama-local"].skip_class == "empty_response"
 
-    def test_empty_counter_resets_on_non_empty_response(self):
-        """After a non-empty response, the counter resets; no raise on next empty."""
+    def test_empty_local_cooldown_skips_next_call(self):
+        router, _, _ = _router_with_local(local_text="", threshold=2)
+        with pytest.raises(AllProvidersExhaustedError):
+            _run(router.call("writer", "p", "s"))
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            _run(router.call("writer", "p", "s"))
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["ollama-local"].skip_class == "quota_or_cooldown"
+
+    def test_empty_response_diagnostic_includes_provider_name(self):
+        router, _, _ = _router_with_local(local_text="", threshold=2)
+        with pytest.raises(AllProvidersExhaustedError) as exc_info:
+            _run(router.call("writer", "p", "s"))
+        attempts = {attempt.provider: attempt for attempt in exc_info.value.attempts}
+        assert attempts["ollama-local"].provider == "ollama-local"
+        assert attempts["ollama-local"].detail == "provider returned empty text"
+
+    def test_non_empty_response_returned_before_later_empty_exhausts(self):
         quota = QuotaTracker()
         call_num = 0
 
@@ -166,30 +168,28 @@ class TestChainDrainBackoff:
             quota=quota,
             chain_drain_empty_threshold=2,
         )
-        _run(router.call("writer", "p", "s"))   # empty (count=1)
-        _run(router.call("writer", "p", "s"))   # content (reset)
-        # Next empty is count=1 again — no raise
-        resp = _run(router.call("writer", "p", "s"))
-        assert resp.text == ""
+        with pytest.raises(AllProvidersExhaustedError):
+            _run(router.call("writer", "p", "s"))   # empty
+        quota._cooldowns.clear()
+        resp = _run(router.call("writer", "p", "s"))   # content
+        assert resp.text == "content"
+        with pytest.raises(AllProvidersExhaustedError):
+            _run(router.call("writer", "p", "s"))   # empty
 
     def test_threshold_1_raises_on_first_empty(self):
         router, _, _ = _router_with_local(local_text="", threshold=1)
         with pytest.raises(AllProvidersExhaustedError):
             _run(router.call("writer", "p", "s"))
 
-    def test_no_raise_when_api_provider_available(self):
-        """Empty local response does NOT raise when an API provider is available."""
+    def test_empty_api_response_falls_back_to_local(self):
         quota = QuotaTracker()
-        local = _FakeProvider("ollama-local", text="")
+        local = _FakeProvider("ollama-local", text="local content")
         api = _FakeProvider("claude-code", text="")
         router = ProviderRouter(
             providers={"claude-code": api, "ollama-local": local},
             quota=quota,
             chain_drain_empty_threshold=2,
         )
-        # claude-code is available (not in cooldown). It should be tried first.
-        # Even if it returns empty, chain is NOT drained, so no raise.
         resp = _run(router.call("writer", "p", "s"))
-        assert resp.text == ""
-        resp = _run(router.call("writer", "p", "s"))
-        assert resp.text == ""
+        assert resp.provider == "ollama-local"
+        assert resp.text == "local content"

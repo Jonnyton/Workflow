@@ -202,6 +202,29 @@ def test_call_with_policy_filters_policy_attempt_order_by_allowlist(
         assert providers[n].call_count == 0
 
 
+def test_call_with_policy_falls_back_on_empty_policy_response(
+    isolated_universe_config,
+):
+    """Empty policy provider output must not bypass fallback handling."""
+    runtime.universe_config = UniverseConfig(allowed_providers=None)
+    providers = {
+        "claude-code": _FakeProvider("claude-code", text=""),
+        "ollama-local": _FakeProvider("ollama-local", text="local content"),
+    }
+    router = ProviderRouter(providers=providers, quota=QuotaTracker())
+    policy = {
+        "preferred": {"provider": "claude-code"},
+        "fallback_chain": [{"provider": "ollama-local"}],
+    }
+
+    text, provider = _run(router.call_with_policy("writer", "p", "s", policy))
+
+    assert provider == "ollama-local"
+    assert text == "local content"
+    assert providers["claude-code"].call_count == 1
+    assert providers["ollama-local"].call_count == 1
+
+
 # ---------------------------------------------------------------------------
 # 6. WORKFLOW_PIN_WRITER × allowlist: pin in allowlist -> works
 # ---------------------------------------------------------------------------
