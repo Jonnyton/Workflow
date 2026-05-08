@@ -1,12 +1,28 @@
 ---
-status: active
+status: historical
+superseded_by:
+  - PLAN.md#scoping-rules
+  - docs/design-notes/2026-04-27-host-resident-private-data-design.md
+  - docs/design-notes/proposed/2026-05-08-privacy-mode-design-time-selection.md
 ---
 
 # Private Universes: Payload-Redacted Enforcement Under Claude.ai Chat
 
+**HISTORICAL FRAMING - superseded in part.** This note predates the 2026-04-26
+minimal-primitives/community-build/privacy-via-composition scoping rules and
+the 2026-04-27 commons-first host-resident private-data design. Do not dispatch
+the broad `sensitivity_tier` / `private_output` / response-redactor package as
+a platform privacy-mode primitive from this note alone. Use the current rule:
+privacy policy is composed by the chatbot and community templates; platform
+work is limited to concrete enforcement boundaries such as host-resident
+storage, provider routing, path admission, access grants, and audit evidence.
+See `docs/design-notes/proposed/2026-05-08-privacy-mode-design-time-selection.md`
+for the Issue #442 reframe.
+
 **Date:** 2026-04-18
 **Author:** navigator
-**Status:** Decision-oriented design note. Becomes STATUS.md concern on land.
+**Status:** Historical design note. Useful as threat-model background, not
+current implementation authority for a broad privacy-mode primitive.
 **Relates to:** Allied Residential AP workflows (HUD/LIHTC, vendor invoices). Strategic posture for any non-fiction domain.
 
 **Constraint:** The chat interface is Claude.ai webchat. Not optional. Local-chatbot alternatives are out of scope for this design.
