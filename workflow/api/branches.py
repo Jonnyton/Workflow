@@ -664,8 +664,64 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
     from workflow.daemon_server import get_branch_definition
 
     bid = kwargs.get("branch_def_id", "").strip()
-    if not bid:
-        return json.dumps({"error": "branch_def_id is required."})
+    raw_spec = (kwargs.get("spec_json") or "").strip()
+    if not bid and not raw_spec:
+        return json.dumps({"error": "branch_def_id or spec_json is required."})
+    if bid and raw_spec:
+        return json.dumps({
+            "error": "Pass either branch_def_id or spec_json, not both.",
+        })
+    if raw_spec:
+        try:
+            spec = json.loads(raw_spec)
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "source": "spec_json",
+                "draft": True,
+                "valid": False,
+                "error": f"spec_json is not valid JSON: {exc}",
+                "errors": [f"spec_json is not valid JSON: {exc}"],
+                "suggestions": [{
+                    "issue": "spec_json did not parse.",
+                    "proposed_fix": "Validate JSON shape before sending.",
+                }],
+            })
+        if not isinstance(spec, dict):
+            return json.dumps({
+                "source": "spec_json",
+                "draft": True,
+                "valid": False,
+                "error": "spec_json must decode to a JSON object.",
+                "errors": ["spec_json must decode to a JSON object."],
+                "suggestions": [{
+                    "issue": "Top-level spec is not an object.",
+                    "proposed_fix": "Wrap the spec in { ... }.",
+                }],
+                "attempted_spec": spec,
+            })
+
+        branch, staging_errors = _staged_branch_from_spec(
+            spec,
+            check_standalone_collisions=False,
+        )
+        errors = staging_errors + branch.validate()
+        return json.dumps({
+            "source": "spec_json",
+            "draft": True,
+            "valid": not errors,
+            "errors": errors,
+            "suggestions": _errors_to_suggestions(branch, errors),
+            "attempted_spec": spec,
+            "branch_summary": {
+                "name": branch.name,
+                "node_count": len(branch.node_defs),
+                "edge_count": len(branch.edges),
+                "conditional_edge_count": len(branch.conditional_edges),
+                "state_field_count": len(branch.state_schema),
+                "entry_point": branch.entry_point,
+            },
+        })
+
     try:
         source_dict = get_branch_definition(_base_path(), branch_def_id=bid)
     except KeyError:
@@ -709,9 +765,12 @@ def _ext_branch_validate(kwargs: dict[str, Any]) -> str:
         pass
 
     return json.dumps({
+        "source": "branch_def_id",
+        "draft": False,
         "branch_def_id": bid,
         "valid": not errors,
         "errors": errors,
+        "suggestions": _errors_to_suggestions(branch, errors),
         "runnable": not errors and not unapproved_sc,
         "unapproved_source_code_nodes": unapproved_sc,
         "sandbox_warnings": sandbox_warnings,
@@ -1115,6 +1174,8 @@ def _errors_to_suggestions(
 
 def _resolve_node_spec(
     raw: dict[str, Any],
+    *,
+    check_standalone_collisions: bool = True,
 ) -> tuple[dict[str, Any] | None, str]:
     """Resolve a raw node spec that may contain ``node_ref`` or just a
     ``node_id`` that collides with an existing standalone/branch node.
@@ -1181,7 +1242,7 @@ def _resolve_node_spec(
     # No explicit ref — fall back to raw. If the node_id shadows a
     # standalone registration, demand explicit intent so the caller
     # cannot silently create a hollow clone.
-    if nid and intent != "copy":
+    if nid and intent != "copy" and check_standalone_collisions:
         try:
             standalone = _load_nodes()
         except Exception:
@@ -1272,11 +1333,19 @@ def _lookup_node_body(
     )
 
 
-def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
+def _apply_node_spec(
+    branch: Any,
+    raw: dict[str, Any],
+    *,
+    check_standalone_collisions: bool = True,
+) -> str:
     from workflow.api.engine_helpers import _current_actor
     from workflow.branches import GraphNodeRef, NodeDefinition
 
-    resolved, err = _resolve_node_spec(raw)
+    resolved, err = _resolve_node_spec(
+        raw,
+        check_standalone_collisions=check_standalone_collisions,
+    )
     if err:
         return err
     raw = resolved  # resolved may be the same dict, or a merged copy
@@ -1419,6 +1488,8 @@ def _apply_state_field_spec(branch: Any, raw: dict[str, Any]) -> str:
 
 def _staged_branch_from_spec(
     spec: dict[str, Any],
+    *,
+    check_standalone_collisions: bool = True,
 ) -> tuple[Any, list[str]]:
     from workflow.api.engine_helpers import _current_actor
     from workflow.branches import BranchDefinition, normalize_branch_skill_snapshots
@@ -1441,7 +1512,11 @@ def _staged_branch_from_spec(
         errors.append(str(exc))
 
     for idx, raw in enumerate(spec.get("node_defs") or spec.get("nodes") or []):
-        err = _apply_node_spec(branch, raw)
+        err = _apply_node_spec(
+            branch,
+            raw,
+            check_standalone_collisions=check_standalone_collisions,
+        )
         if err:
             errors.append(f"node[{idx}]: {err}")
 
@@ -2727,6 +2802,9 @@ extensions action=build_branch spec_json='{
 
 If validation fails, `build_branch` returns concrete `suggestions` with
 proposed fixes — apply them and retry. No partial branch is ever visible.
+To check a draft before saving it, call
+`extensions action=validate_branch spec_json='...'`; this returns the
+same staged errors and suggestions without creating a branch.
 
 ## Branch skills
 
