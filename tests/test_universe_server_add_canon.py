@@ -47,6 +47,7 @@ def _call(action: str, **kwargs) -> dict:
     dispatch = {
         "add_canon": us._action_add_canon,
         "add_canon_from_path": us._action_add_canon_from_path,
+        "import": us._action_import,
     }
     handler = dispatch[action]
     return json.loads(us._dispatch_with_ledger(action, handler, base_kwargs))
@@ -325,6 +326,116 @@ class TestSourceInspection:
 
         assert "error" in out
         assert "list_sources" in out["error"]
+
+
+class TestGeneralImport:
+    def test_import_text_records_source_and_emits_signal(
+        self, universe: str,
+    ) -> None:
+        out = _call(
+            "import",
+            category="voice",
+            filename="session-transcript.txt",
+            text="Voice note\\nThe tower has three bells.",
+            provenance_tag="dictation",
+        )
+
+        assert out["filename"] == "session-transcript.txt"
+        assert out["source_kind"] == "voice"
+        assert out["bytes_written"] == len(
+            "Voice note\nThe tower has three bells.".encode("utf-8"),
+        )
+        assert out["synthesis_signal_emitted"] is True
+        assert out["preview_first_200_chars"].startswith("Voice note\n")
+
+        udir = us._base_path() / universe
+        dest = udir / "canon" / "sources" / "session-transcript.txt"
+        assert dest.read_text(encoding="utf-8").startswith("Voice note\n")
+
+        meta = json.loads(
+            (udir / "canon" / ".session-transcript.txt.meta.json")
+            .read_text(encoding="utf-8"),
+        )
+        assert meta["source_kind"] == "voice"
+        assert meta["provenance"] == "dictation"
+
+    def test_import_file_accepts_binary_audio(
+        self, universe: str, tmp_path: Path,
+    ) -> None:
+        src = tmp_path / "note.wav"
+        src.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt ")
+
+        out = _call("import", path=str(src), category="file")
+
+        assert "error" not in out
+        assert out["filename"] == "note.wav"
+        assert out["source_kind"] == "file"
+        assert out["file_type"] == "audio"
+        assert out["mime_type"] == "audio/wav"
+        assert out["bytes_written"] == src.stat().st_size
+
+    def test_import_url_ingests_http_source(
+        self, universe: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, _limit):
+                return b"# Remote Lore\n\nFetched from URL."
+
+        seen = {}
+
+        def fake_urlopen(request, timeout):
+            seen["url"] = request.full_url
+            seen["timeout"] = timeout
+            return FakeResponse()
+
+        monkeypatch.setattr(
+            us,
+            "_validate_import_url_endpoint",
+            lambda _parsed: None,
+        )
+        monkeypatch.setattr(us.urllib.request, "urlopen", fake_urlopen)
+
+        out = _call(
+            "import",
+            path="https://example.test/lore/remote.md",
+            category="url",
+        )
+
+        assert out["filename"] == "remote.md"
+        assert out["source_kind"] == "url"
+        assert out["source_ref"] == "https://example.test/lore/remote.md"
+        assert out["preview_first_200_chars"].startswith("# Remote Lore")
+        assert seen == {
+            "url": "https://example.test/lore/remote.md",
+            "timeout": 10,
+        }
+
+    def test_import_url_rejects_localhost(
+        self, universe: str,
+    ) -> None:
+        out = _call(
+            "import",
+            path="http://localhost/private.md",
+            category="url",
+        )
+
+        assert "error" in out
+        assert "localhost" in out["error"].lower()
+
+    def test_import_missing_source_rejected_without_ledger(
+        self, universe: str,
+    ) -> None:
+        out = _call("import")
+
+        assert "error" in out
+        assert "provide text" in out["error"].lower()
+        assert not (us._base_path() / universe / "ledger.json").exists()
 
 
 # ─── add_canon_from_path rejects bad input ─────────────────────────────

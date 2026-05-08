@@ -349,7 +349,7 @@ def universe(
             get_activity, get_recent_events, get_ledger, read_premise,
             list_canon, read_canon, list_sources, read_source; writes: submit_request,
             give_direction, set_premise, add_canon, add_canon_from_path,
-            create_universe, switch_universe; queue: queue_list,
+            import, create_universe, switch_universe; queue: queue_list,
             queue_cancel; subscriptions: subscribe_goal, unsubscribe_goal,
             list_subscriptions; goal-pool: post_to_goal_pool,
             submit_node_bid; community review: community_change_context;
@@ -361,7 +361,8 @@ def universe(
             daemon_memory_search, daemon_memory_list, daemon_memory_review,
             daemon_memory_promote, daemon_memory_status; config: set_tier_config;
         universe_id: Target universe. Defaults to the active universe.
-        text/path/filter_text: Action-specific content, file path, or filter.
+        text/path/filter_text: Action-specific content, absolute file path,
+            http(s) URL for `import`, or filter.
         branch_id/request_type: Request routing fields.
         pickup_incentive/directed_daemon_id: Optional patch-request pickup
             signals; these do not affect acceptance, release, or merge odds.

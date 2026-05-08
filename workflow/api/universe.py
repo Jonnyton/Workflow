@@ -49,10 +49,12 @@ to ``workflow.api.engine_helpers``.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -163,6 +165,26 @@ def _extract_add_canon_from_path(
             "filename": name,
             "provenance": provenance,
             "source_path": kwargs.get("path", ""),
+            "bytes": bytes_written,
+            "synthesis_signal": result.get("synthesis_signal_emitted", False),
+        },
+    )
+
+
+def _extract_import(
+    kwargs: dict[str, Any], result: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from workflow.api.engine_helpers import _truncate
+    name = result.get("filename", "") or kwargs.get("filename", "")
+    source_kind = result.get("source_kind", "") or kwargs.get("category", "")
+    bytes_written = result.get("bytes_written", 0)
+    return (
+        f"canon/sources/{name}",
+        _truncate(f"{name} ({source_kind or 'auto'}, {bytes_written} bytes)"),
+        {
+            "filename": name,
+            "source_kind": source_kind or "auto",
+            "source_ref": result.get("source_ref", ""),
             "bytes": bytes_written,
             "synthesis_signal": result.get("synthesis_signal_emitted", False),
         },
@@ -476,6 +498,7 @@ WRITE_ACTIONS: dict[str, Any] = {
     "set_premise": (_extract_set_premise, None),
     "add_canon": (_extract_add_canon, None),
     "add_canon_from_path": (_extract_add_canon_from_path, None),
+    "import": (_extract_import, None),
     "control_daemon": (_extract_control_daemon, {"pause", "resume"}),
     "switch_universe": (_extract_switch_universe, None),
     "create_universe": (_extract_create_universe, None),
@@ -3640,6 +3663,216 @@ def _action_add_canon_from_path(
         return json.dumps({"error": f"Failed to ingest file: {exc}"})
 
 
+_IMPORT_URL_MAX_BYTES = 10 * 1024 * 1024
+_IMPORT_SOURCE_KINDS = {"auto", "file", "url", "text", "voice", "stream"}
+
+
+def _import_source_kind(category: str, *, path: str, text: str) -> str:
+    requested = (category or "auto").strip().lower()
+    if requested not in _IMPORT_SOURCE_KINDS:
+        requested = "auto"
+    if requested != "auto":
+        return requested
+    parsed = urllib.parse.urlparse(path)
+    if parsed.scheme in {"http", "https"}:
+        return "url"
+    if path:
+        return "file"
+    if text:
+        return "text"
+    return "auto"
+
+
+def _default_import_filename(source_kind: str, source_ref: str, data: bytes) -> str:
+    if source_kind == "url":
+        parsed = urllib.parse.urlparse(source_ref)
+        name = Path(urllib.parse.unquote(parsed.path)).name
+        if name:
+            return name
+    if source_kind == "file":
+        name = Path(source_ref).name
+        if name:
+            return name
+    suffix = ".txt" if source_kind in {"text", "voice", "stream"} else ".bin"
+    digest = sha256(data).hexdigest()[:12]
+    return f"{source_kind or 'import'}-{digest}{suffix}"
+
+
+def _validate_import_url_endpoint(parsed: urllib.parse.ParseResult) -> None:
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL imports require a hostname.")
+    if hostname.lower() in {"localhost", "localhost.localdomain"}:
+        raise ValueError("URL imports cannot target localhost.")
+
+    try:
+        addr_infos = socket.getaddrinfo(hostname, parsed.port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"URL hostname could not be resolved: {hostname}") from exc
+
+    for *_, sockaddr in addr_infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ValueError(
+                "URL imports cannot target private, loopback, link-local, "
+                f"reserved, multicast, or unspecified addresses: {ip}",
+            )
+
+
+def _read_import_url(url: str) -> bytes:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("URL imports require http:// or https://.")
+    _validate_import_url_endpoint(parsed)
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Workflow-Universe-Importer/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        data = response.read(_IMPORT_URL_MAX_BYTES + 1)
+    if len(data) > _IMPORT_URL_MAX_BYTES:
+        raise ValueError("URL import exceeded 10 MiB limit.")
+    return data
+
+
+def _read_import_path(path: str) -> bytes:
+    from workflow.api.engine_helpers import _upload_whitelist_prefixes
+
+    src = Path(path)
+    if not src.is_absolute():
+        raise ValueError(
+            "path must be an absolute server-side path or an http(s) URL.",
+        )
+
+    whitelist = _upload_whitelist_prefixes()
+    if whitelist is not None:
+        try:
+            resolved = src.resolve(strict=False)
+        except OSError as exc:
+            raise ValueError(f"Failed to resolve path: {exc}") from exc
+        if not any(resolved.is_relative_to(prefix) for prefix in whitelist):
+            raise ValueError(
+                "Path is not under any WORKFLOW_UPLOAD_WHITELIST prefix. "
+                f"Resolved={resolved!s}, "
+                f"allowed_prefixes={[str(p) for p in whitelist]}.",
+            )
+
+    if not src.exists():
+        raise ValueError(f"File not found: {path}")
+    if not src.is_file():
+        raise ValueError(f"Not a regular file: {path}")
+    try:
+        return src.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Failed to read file: {exc}") from exc
+
+
+def _action_import(
+    universe_id: str = "",
+    text: str = "",
+    path: str = "",
+    category: str = "auto",
+    filename: str = "",
+    provenance_tag: str = "",
+    **_kwargs: Any,
+) -> str:
+    """General import port for file, URL, voice transcript, and stream text."""
+    from workflow.api.engine_helpers import _current_actor
+    from workflow.ingestion.core import ingest_file
+
+    source_kind = _import_source_kind(category, path=path, text=text)
+    source_ref = path if path else source_kind
+
+    try:
+        if source_kind == "url":
+            data = _read_import_url(path)
+            source_ref = path
+        elif source_kind == "file":
+            data = _read_import_path(path)
+            source_ref = path
+        elif source_kind in {"text", "voice", "stream"}:
+            if not text:
+                return json.dumps({
+                    "error": f"text is required for {source_kind} import.",
+                })
+            data = _normalize_escaped_text(text).encode("utf-8")
+            source_ref = source_kind
+        else:
+            return json.dumps({
+                "error": (
+                    "Provide text, an absolute server-side path, or an "
+                    "http(s) URL for import."
+                ),
+            })
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return json.dumps({"error": f"Import failed: {exc}"})
+
+    safe_name = Path(filename).name if filename else _default_import_filename(
+        source_kind, source_ref, data,
+    )
+    if not safe_name:
+        return json.dumps({"error": "Invalid filename."})
+
+    uid = universe_id or _default_universe()
+    udir = _universe_dir(uid)
+    canon_dir = udir / "canon"
+
+    try:
+        canon_dir.mkdir(parents=True, exist_ok=True)
+        source_operation = _canon_source_operation(canon_dir, safe_name, data)
+        result = ingest_file(
+            canon_dir=canon_dir,
+            filename=safe_name,
+            data=data,
+            universe_path=udir,
+            user_upload=True,
+        )
+
+        tag = provenance_tag or source_kind
+        meta_path = canon_dir / f".{safe_name}.meta.json"
+        meta = {
+            "provenance": tag,
+            "source_kind": source_kind,
+            "source_ref": source_ref,
+            "added": datetime.now(timezone.utc).isoformat(),
+            "source": _current_actor(),
+        }
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        return json.dumps({
+            "universe_id": uid,
+            "filename": safe_name,
+            "canonical_path": str(canon_dir / "sources" / safe_name),
+            "bytes_written": result.byte_count,
+            "sha256": result.sha256,
+            "file_type": result.file_type.value,
+            "mime_type": result.mime_type,
+            "synthesis_signal_emitted": result.signal_emitted,
+            "routed_to": result.routed_to,
+            "source_kind": source_kind,
+            "source_ref": source_ref,
+            "provenance": tag,
+            "source_operation": source_operation,
+            "version_semantics": _canon_version_semantics(
+                safe_name, result.routed_to,
+            ),
+            "preview_first_200_chars": data.decode("utf-8", errors="replace")[:200],
+            "note": (
+                "Import ingested into canon/sources. The daemon will pick up "
+                "the synthesize_source signal on its next cycle."
+            ),
+        })
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to import source: {exc}"})
+
+
 def _action_list_canon(
     universe_id: str = "",
     **_kwargs: Any,
@@ -4272,6 +4505,7 @@ def _universe_impl(
         "set_premise": _action_set_premise,
         "add_canon": _action_add_canon,
         "add_canon_from_path": _action_add_canon_from_path,
+        "import": _action_import,
         "list_canon": _action_list_canon,
         "read_canon": _action_read_canon,
         "list_sources": _action_list_sources,
