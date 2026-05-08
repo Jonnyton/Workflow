@@ -17,6 +17,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -53,6 +54,7 @@ AUTH_MISSING_LABEL = "auto-fix-auth-missing"
 CLAUDE_SUBSCRIPTION_MISSING_LABEL = "auto-fix-claude-subscription-missing"
 CODEX_SUBSCRIPTION_MISSING_LABEL = "auto-fix-codex-subscription-missing"
 PROVIDER_EXHAUSTED_LABEL = "auto-fix-provider-exhausted"
+READY_FOR_CHECKER_LABEL = "ready_for_checker"
 REVIEWED_LABEL = "auto-fix-reviewed"
 ALREADY_FIXED_LABEL = "auto-fix-already-fixed"
 BLOCKED_REVIEWED_LABEL = "auto-fix-blocked"
@@ -69,6 +71,10 @@ TERMINAL_REVIEW_LABELS = frozenset(
 )
 
 STATUS_RANK = {"green": 0, "yellow": 1, "red": 2}
+CLOSING_ISSUE_RE = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(?P<number>\d+)\b",
+    re.IGNORECASE,
+)
 
 
 class WatchError(Exception):
@@ -155,6 +161,34 @@ def _gh_get(
         raise WatchError(f"GitHub response was not JSON for {path}: {exc}") from exc
 
 
+def _gh_get_paginated(
+    path: str,
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+    params: dict[str, str | int] | None = None,
+    max_pages: int = 10,
+) -> list[dict[str, Any]]:
+    base_params: dict[str, str | int] = dict(params or {})
+    per_page = int(base_params.get("per_page", 100))
+    items: list[dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        data = _gh_get(
+            path,
+            api=api,
+            token=token,
+            timeout=timeout,
+            params={**base_params, "page": page},
+        )
+        if not isinstance(data, list):
+            raise WatchError(f"GitHub paginated response for {path} was not a list")
+        items.extend(data)
+        if len(data) < per_page:
+            break
+    return items
+
+
 def _labels(issue: dict[str, Any]) -> set[str]:
     result = set()
     for label in issue.get("labels", []):
@@ -167,6 +201,12 @@ def _labels(issue: dict[str, Any]) -> set[str]:
 
 def _is_pr(issue: dict[str, Any]) -> bool:
     return "pull_request" in issue
+
+
+def _closing_issue_numbers(text: str | None) -> set[int]:
+    if not text:
+        return set()
+    return {int(match.group("number")) for match in CLOSING_ISSUE_RE.finditer(text)}
 
 
 def _stage(
@@ -419,7 +459,7 @@ def list_open_issues_by_label(
     token: str | None,
     timeout: float,
 ) -> list[dict[str, Any]]:
-    data = _gh_get(
+    data = _gh_get_paginated(
         f"/repos/{repo}/issues",
         api=api,
         token=token,
@@ -429,6 +469,33 @@ def list_open_issues_by_label(
     if not isinstance(data, list):
         raise WatchError(f"GitHub issues response for {label!r} was not a list")
     return [issue for issue in data if not _is_pr(issue)]
+
+
+def list_open_prs_by_closing_issue(
+    repo: str,
+    issue_numbers: set[int],
+    *,
+    api: str,
+    token: str | None,
+    timeout: float,
+) -> dict[int, list[dict[str, Any]]]:
+    if not issue_numbers:
+        return {}
+    data = _gh_get_paginated(
+        f"/repos/{repo}/issues",
+        api=api,
+        token=token,
+        timeout=timeout,
+        params={"state": "open", "per_page": 100},
+    )
+    result: dict[int, list[dict[str, Any]]] = {number: [] for number in issue_numbers}
+    for item in data:
+        if not _is_pr(item):
+            continue
+        for issue_number in _closing_issue_numbers(str(item.get("body") or "")):
+            if issue_number in result:
+                result[issue_number].append(item)
+    return {number: prs for number, prs in result.items() if prs}
 
 
 def list_loop_issues(
@@ -459,6 +526,22 @@ def queue_stage(
     max_pending_age_min: int,
 ) -> dict[str, Any]:
     issues = list_loop_issues(repo, api=api, token=token, timeout=timeout)
+    attempted_issue_numbers = {
+        issue["number"]
+        for issue in issues
+        if isinstance(issue.get("number"), int)
+        and ATTEMPTED_LABEL in _labels(issue)
+        and COMPLETE_LABEL not in _labels(issue)
+        and _labels(issue).isdisjoint(TERMINAL_REVIEW_LABELS)
+        and AWAIT_PRIMITIVE_LAYER_LABEL not in _labels(issue)
+    }
+    linked_open_prs_by_issue = list_open_prs_by_closing_issue(
+        repo,
+        attempted_issue_numbers,
+        api=api,
+        token=token,
+        timeout=timeout,
+    )
     needs_human: list[dict[str, Any]] = []
     missing_subscription: list[dict[str, Any]] = []
     missing_codex_subscription: list[dict[str, Any]] = []
@@ -468,6 +551,7 @@ def queue_stage(
     branch_push_blocked: list[dict[str, Any]] = []
     reviewed_terminal: list[dict[str, Any]] = []
     stale_gate: list[dict[str, Any]] = []
+    attempted_with_open_pr: list[dict[str, Any]] = []
     attempted: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     old_pending: list[dict[str, Any]] = []
@@ -505,6 +589,15 @@ def queue_stage(
             await_primitive_layer.append(issue)
         elif ATTEMPTED_LABEL in labels:
             attempted.append(issue)
+            linked_prs = linked_open_prs_by_issue.get(issue.get("number"), [])
+            if linked_prs:
+                attempted_with_open_pr.append(
+                    {
+                        "issue": issue,
+                        "prs": linked_prs,
+                    }
+                )
+                continue
             age = _age_min(issue.get("created_at"), now)
             if STALE_GATE_LABEL in labels or age is None or age > max_pending_age_min:
                 stale_gate.append(issue)
@@ -548,6 +641,18 @@ def queue_stage(
         "reviewed_terminal": [issue.get("number") for issue in reviewed_terminal],
         "stale_gate": [issue.get("number") for issue in stale_gate],
         "attempted": [issue.get("number") for issue in attempted],
+        "attempted_with_open_pr": [
+            {
+                "issue": item["issue"].get("number"),
+                "prs": [pr.get("number") for pr in item["prs"]],
+                "ready_for_checker": [
+                    pr.get("number")
+                    for pr in item["prs"]
+                    if READY_FOR_CHECKER_LABEL in _labels(pr)
+                ],
+            }
+            for item in attempted_with_open_pr
+        ],
         "request_labels": list(REQUEST_LABELS),
     }
 
@@ -623,6 +728,36 @@ def queue_stage(
                 f"(apply {STALE_GATE_LABEL} while triaging)"
             ),
             url=first.get("html_url"),
+            details=details,
+        )
+    if attempted_with_open_pr:
+        first = attempted_with_open_pr[0]
+        first_issue = first["issue"]
+        first_prs = first["prs"]
+        ready_prs = [
+            pr.get("number")
+            for item in attempted_with_open_pr
+            for pr in item["prs"]
+            if READY_FOR_CHECKER_LABEL in _labels(pr)
+        ]
+        ready_clause = (
+            f"; {len(ready_prs)} PR(s) are {READY_FOR_CHECKER_LABEL}"
+            if ready_prs
+            else ""
+        )
+        return _stage(
+            "Writer queue",
+            "yellow",
+            (
+                f"{len(attempted_with_open_pr)} attempted loop request(s) "
+                f"already have linked open PRs awaiting review/precheck"
+                f"{ready_clause}"
+            ),
+            evidence=(
+                f"issue #{first_issue.get('number')} is linked to open PR(s) "
+                f"{', '.join('#' + str(pr.get('number')) for pr in first_prs)}"
+            ),
+            url=first_prs[0].get("html_url") or first_issue.get("html_url"),
             details=details,
         )
     if legacy_priority_migrations:

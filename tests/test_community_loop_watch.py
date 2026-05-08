@@ -55,6 +55,48 @@ def test_github_token_returns_none_when_gh_cli_unavailable(monkeypatch):
     assert watch._github_token(argparse.Namespace(token=None)) is None
 
 
+def test_closing_issue_numbers_accepts_common_closing_keywords():
+    assert watch._closing_issue_numbers("Fixes #568\nCloses #12; resolves #7") == {
+        568,
+        12,
+        7,
+    }
+
+
+def test_list_open_prs_by_closing_issue_maps_linked_prs(monkeypatch):
+    def fake_gh_get(path, **kwargs):
+        assert path == "/repos/owner/repo/issues"
+        assert kwargs["params"]["state"] == "open"
+        return [
+            {
+                "number": 598,
+                "body": "Fixes #568",
+                "html_url": "https://example.test/pull/598",
+                "pull_request": {},
+                "labels": [{"name": watch.READY_FOR_CHECKER_LABEL}],
+            },
+            {
+                "number": 568,
+                "body": "Bug body mentioning Fixes #999 should not count",
+                "html_url": "https://example.test/issues/568",
+                "labels": [{"name": "daemon-request"}],
+            },
+        ]
+
+    monkeypatch.setattr(watch, "_gh_get", fake_gh_get)
+
+    result = watch.list_open_prs_by_closing_issue(
+        "owner/repo",
+        {568, 999},
+        api="https://api.github.test",
+        token=None,
+        timeout=1,
+    )
+
+    assert list(result) == [568]
+    assert result[568][0]["number"] == 598
+
+
 def test_workflow_stage_ignores_neutral_skipped_runs(monkeypatch):
     now = dt.datetime(2026, 5, 1, 5, 10, tzinfo=dt.timezone.utc)
 
@@ -483,6 +525,7 @@ def test_queue_stage_treats_attempted_loop_smoke_as_not_waiting(monkeypatch):
         ]
 
     monkeypatch.setattr(watch, "list_loop_issues", fake_list_loop_issues)
+    monkeypatch.setattr(watch, "list_open_prs_by_closing_issue", lambda *_, **__: {})
 
     stage = watch.queue_stage(
         "owner/repo",
@@ -519,6 +562,7 @@ def test_queue_stage_marks_old_attempted_without_terminal_review_red(monkeypatch
         ]
 
     monkeypatch.setattr(watch, "list_loop_issues", fake_list_loop_issues)
+    monkeypatch.setattr(watch, "list_open_prs_by_closing_issue", lambda *_, **__: {})
 
     stage = watch.queue_stage(
         "owner/repo",
@@ -533,6 +577,58 @@ def test_queue_stage_marks_old_attempted_without_terminal_review_red(monkeypatch
     assert stage["details"]["attempted"] == [589]
     assert stage["details"]["stale_gate"] == [589]
     assert watch.STALE_GATE_LABEL in stage["evidence"]
+
+
+def test_queue_stage_treats_attempted_with_open_pr_as_review_waiting(monkeypatch):
+    now = dt.datetime(2026, 5, 8, 3, 30, tzinfo=dt.timezone.utc)
+
+    def fake_list_loop_issues(*_args, **_kwargs):
+        return [
+            {
+                "number": 568,
+                "title": "Attempted request with linked PR",
+                "created_at": "2026-05-07T23:00:00Z",
+                "html_url": "https://example.test/issues/568",
+                "labels": [
+                    {"name": "daemon-request"},
+                    {"name": "auto-change"},
+                    {"name": watch.ATTEMPTED_LABEL},
+                    {"name": watch.STALE_GATE_LABEL},
+                ],
+            }
+        ]
+
+    def fake_open_prs_by_issue(*_args, **_kwargs):
+        return {
+            568: [
+                {
+                    "number": 598,
+                    "html_url": "https://example.test/pull/598",
+                    "labels": [{"name": watch.READY_FOR_CHECKER_LABEL}],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(watch, "list_loop_issues", fake_list_loop_issues)
+    monkeypatch.setattr(watch, "list_open_prs_by_closing_issue", fake_open_prs_by_issue)
+
+    stage = watch.queue_stage(
+        "owner/repo",
+        api="https://api.github.test",
+        token=None,
+        timeout=1,
+        now=now,
+        max_pending_age_min=45,
+    )
+
+    assert stage["status"] == "yellow"
+    assert stage["details"]["attempted"] == [568]
+    assert stage["details"]["stale_gate"] == []
+    assert stage["details"]["attempted_with_open_pr"] == [
+        {"issue": 568, "prs": [598], "ready_for_checker": [598]}
+    ]
+    assert "linked open PRs" in stage["summary"]
+    assert stage["url"] == "https://example.test/pull/598"
 
 
 def test_queue_stage_treats_await_primitive_layer_as_deferred_not_stuck(
