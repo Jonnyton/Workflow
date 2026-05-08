@@ -457,6 +457,7 @@ def _ext_branch_add_node(kwargs: dict[str, Any]) -> str:
         "node_id": nid,
         "display_name": kwargs.get("display_name", "").strip(),
         "description": kwargs.get("description", ""),
+        "maintainer_notes": kwargs.get("maintainer_notes", ""),
         "phase": kwargs.get("phase", "") or "custom",
         "input_keys": kwargs.get("input_keys", ""),
         "output_keys": kwargs.get("output_keys", ""),
@@ -1258,6 +1259,7 @@ def _lookup_node_body(
                 "node_id": nd.get("node_id", node_id),
                 "display_name": nd.get("display_name", node_id),
                 "description": nd.get("description", ""),
+                "maintainer_notes": nd.get("maintainer_notes", ""),
                 "phase": nd.get("phase", "custom"),
                 "input_keys": list(nd.get("input_keys") or []),
                 "output_keys": list(nd.get("output_keys") or []),
@@ -1322,6 +1324,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             node_id=nid,
             display_name=display,
             description=raw.get("description", ""),
+            maintainer_notes=raw.get("maintainer_notes", ""),
             phase=phase,
             input_keys=in_keys,
             output_keys=out_keys,
@@ -1685,6 +1688,8 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.display_name = op["display_name"]
                 if "description" in op:
                     n.description = op["description"]
+                if "maintainer_notes" in op:
+                    n.maintainer_notes = op["maintainer_notes"]
                 if "prompt_template" in op:
                     n.prompt_template = op["prompt_template"]
                 if "source_code" in op:
@@ -2011,8 +2016,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
         })
 
     # Accept updates as a JSON blob (changes_json) OR as individual
-    # kwargs (display_name, description, phase, prompt_template,
-    # source_code, input_keys, output_keys). Individual kwargs are
+    # kwargs (display_name, description, maintainer_notes, phase,
+    # prompt_template, source_code, input_keys, output_keys). Individual kwargs are
     # the phone-friendly shape; changes_json is for scripts batching.
     changes_raw = (kwargs.get("changes_json") or "").strip()
     updates: dict[str, Any] = {}
@@ -2033,7 +2038,7 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
     else:
         # Pull supported fields from the top-level kwargs.
         for field in (
-            "display_name", "description", "phase",
+            "display_name", "description", "maintainer_notes", "phase",
             "prompt_template", "source_code",
         ):
             if kwargs.get(field):
@@ -2078,8 +2083,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": (
                 "No fields to update. Pass one or more of "
-                "display_name / description / phase / prompt_template / "
-                "source_code / input_keys / output_keys, or a "
+                "display_name / description / maintainer_notes / phase / "
+                "prompt_template / source_code / input_keys / output_keys, or a "
                 "changes_json object."
             ),
         })
@@ -2120,6 +2125,8 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             target_node.display_name = updates["display_name"]
         if "description" in updates:
             target_node.description = updates["description"]
+        if "maintainer_notes" in updates:
+            target_node.maintainer_notes = updates["maintainer_notes"]
         if "phase" in updates:
             # NodeDefinition.__post_init__ guards valid phases, so we
             # validate here too.
@@ -2705,7 +2712,8 @@ extensions action=build_branch spec_json='{
   ],
   "node_defs": [
     {"node_id": "capture", "display_name": "Capture raw recipe",
-     "prompt_template": "Read the user's message and extract recipe name."},
+     "prompt_template": "Read the user's message and extract recipe name.",
+     "maintainer_notes": "Builder-only context for future editors."},
     {"node_id": "categorize", "display_name": "Categorize recipe",
      "prompt_template": "Classify by cuisine and meal type."},
     {"node_id": "archive", "display_name": "Archive to library",
@@ -2764,6 +2772,9 @@ per-turn tool-call budget is not at risk:
 
 - `create_branch name="..." description="..."`
 - `add_node branch_def_id=... node_id=... display_name=... prompt_template=...`
+- `maintainer_notes` is optional on node specs and updates. Use it for
+  builder-to-builder notes that should persist with the node body but should
+  not be read as daemon instructions.
 - `connect_nodes branch_def_id=... from_node=... to_node=...`
 - `set_entry_point branch_def_id=... node_id=...`
 - `add_state_field branch_def_id=... field_name=... field_type=...`

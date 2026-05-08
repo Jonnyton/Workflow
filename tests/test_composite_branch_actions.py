@@ -97,6 +97,31 @@ def test_build_branch_persists(comp_env):
     assert got["name"] == "Recipe tracker"
 
 
+def test_build_branch_persists_maintainer_notes(comp_env):
+    us, _ = comp_env
+    spec = {
+        **RECIPE_SPEC,
+        "node_defs": [
+            {
+                **RECIPE_SPEC["node_defs"][0],
+                "maintainer_notes": (
+                    "Builder note: extraction examples are intentionally terse."
+                ),
+            },
+            *RECIPE_SPEC["node_defs"][1:],
+        ],
+    }
+
+    built = _call(us, "build_branch", spec_json=json.dumps(spec))
+    assert built["status"] == "built", built
+
+    got = _call(us, "get_branch", branch_def_id=built["branch_def_id"])
+    capture = next(n for n in got["node_defs"] if n["node_id"] == "capture")
+    assert capture["maintainer_notes"] == (
+        "Builder note: extraction examples are intentionally terse."
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AC #2 — strict-with-suggestions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,6 +244,32 @@ def test_patch_branch_batch_succeeds(comp_env):
 
     got = _call(us, "get_branch", branch_def_id=bid)
     assert any(n["node_id"] == "novelty_check" for n in got["node_defs"])
+
+
+def test_patch_branch_update_node_persists_maintainer_notes(comp_env):
+    us, _ = comp_env
+    built = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    bid = built["branch_def_id"]
+
+    result = _call(
+        us,
+        "patch_branch",
+        branch_def_id=bid,
+        changes_json=json.dumps([
+            {
+                "op": "update_node",
+                "node_id": "capture",
+                "maintainer_notes": "Keep parser expectations here, not in prompt.",
+            }
+        ]),
+    )
+    assert result["status"] == "patched", result
+
+    got = _call(us, "get_branch", branch_def_id=bid)
+    capture = next(n for n in got["node_defs"] if n["node_id"] == "capture")
+    assert capture["maintainer_notes"] == (
+        "Keep parser expectations here, not in prompt."
+    )
 
 
 def test_patch_branch_rollback_on_any_op_failure(comp_env):
@@ -513,6 +564,72 @@ def test_update_node_via_changes_json(comp_env):
     capture = next(n for n in got["node_defs"] if n["node_id"] == "capture")
     assert capture["description"] == "Updated via JSON"
     assert capture["display_name"] == "Label"
+
+
+def test_update_node_via_changes_json_persists_maintainer_notes(comp_env):
+    us, _ = comp_env
+    built = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    bid = built["branch_def_id"]
+
+    changes = {"maintainer_notes": "Tune examples before changing outputs."}
+    upd = _call(
+        us,
+        "update_node",
+        branch_def_id=bid,
+        node_id="capture",
+        changes_json=json.dumps(changes),
+    )
+    assert upd["status"] == "updated"
+    assert upd["changed_fields"] == ["maintainer_notes"]
+
+    got = _call(us, "get_branch", branch_def_id=bid)
+    capture = next(n for n in got["node_defs"] if n["node_id"] == "capture")
+    assert capture["maintainer_notes"] == (
+        "Tune examples before changing outputs."
+    )
+
+
+def test_update_node_kwarg_persists_maintainer_notes(comp_env):
+    us, _ = comp_env
+    built = _call(us, "build_branch", spec_json=json.dumps(RECIPE_SPEC))
+    bid = built["branch_def_id"]
+
+    upd = _call(
+        us,
+        "update_node",
+        branch_def_id=bid,
+        node_id="capture",
+        maintainer_notes="Top-level field works for chatbot callers.",
+    )
+    assert upd["status"] == "updated"
+
+    got = _call(us, "get_branch", branch_def_id=bid)
+    capture = next(n for n in got["node_defs"] if n["node_id"] == "capture")
+    assert capture["maintainer_notes"] == (
+        "Top-level field works for chatbot callers."
+    )
+
+
+def test_add_node_persists_maintainer_notes(comp_env):
+    us, _ = comp_env
+    bid = _call(us, "create_branch", name="Notes branch")["branch_def_id"]
+
+    result = _call(
+        us,
+        "add_node",
+        branch_def_id=bid,
+        node_id="noted",
+        display_name="Noted",
+        prompt_template="do work",
+        maintainer_notes="Reviewers: this node assumes clean source text.",
+    )
+    assert "error" not in result
+
+    got = _call(us, "get_branch", branch_def_id=bid)
+    noted = next(n for n in got["node_defs"] if n["node_id"] == "noted")
+    assert noted["maintainer_notes"] == (
+        "Reviewers: this node assumes clean source text."
+    )
 
 
 def test_update_node_rejects_missing_node(comp_env):

@@ -880,3 +880,15 @@ class TestNodeDefinitionStrictKeysValidation:
         restored = NodeDefinition.from_dict(node.to_dict())
         assert restored.input_keys == ["alpha", "beta"]
         assert restored.output_keys == ["gamma"]
+
+    def test_to_dict_round_trip_preserves_maintainer_notes(self):
+        """Builder-to-builder notes need a durable node-local home."""
+        node = NodeDefinition(
+            node_id="x",
+            display_name="X",
+            maintainer_notes="Prefer small examples; avoid benchmark claims.",
+        )
+        restored = NodeDefinition.from_dict(node.to_dict())
+        assert restored.maintainer_notes == (
+            "Prefer small examples; avoid benchmark claims."
+        )

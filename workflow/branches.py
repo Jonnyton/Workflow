@@ -280,6 +280,7 @@ class NodeDefinition:
     node_id: str
     display_name: str
     description: str = ""
+    maintainer_notes: str = ""
     phase: str = "custom"
 
     # State contract
