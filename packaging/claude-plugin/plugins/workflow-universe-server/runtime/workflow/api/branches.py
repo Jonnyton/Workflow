@@ -738,7 +738,52 @@ def _mermaid_label(text: str) -> str:
     return text.replace('"', "'").replace("\n", " ")
 
 
-def _branch_mermaid(branch: Any) -> str:
+_METADATA_OVERLAY_COLORS = (
+    "#dbeafe", "#dcfce7", "#fef3c7", "#fee2e2",
+    "#ede9fe", "#ccfbf1", "#fce7f3", "#e5e7eb",
+)
+
+
+def _metadata_lookup(metadata: dict[str, Any], key_path: str) -> Any:
+    """Return a nested metadata value for ``key`` or ``a.b`` paths."""
+    current: Any = metadata
+    for part in key_path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _metadata_color_legend(
+    branch: Any,
+    color_by_metadata: str,
+) -> tuple[dict[str, dict[str, str]], dict[str, str]]:
+    key_path = color_by_metadata.strip()
+    if not key_path:
+        return {}, {}
+
+    node_values: dict[str, str] = {}
+    ordered_values: list[str] = []
+    for node in branch.node_defs:
+        value = _metadata_lookup(getattr(node, "metadata", {}) or {}, key_path)
+        if value in (None, ""):
+            continue
+        value_text = str(value)
+        node_values[node.node_id] = value_text
+        if value_text not in ordered_values:
+            ordered_values.append(value_text)
+
+    legend: dict[str, dict[str, str]] = {}
+    for idx, value_text in enumerate(ordered_values):
+        class_name = f"metadata_{idx}"
+        legend[value_text] = {
+            "class": class_name,
+            "fill": _METADATA_OVERLAY_COLORS[idx % len(_METADATA_OVERLAY_COLORS)],
+        }
+    return legend, node_values
+
+
+def _branch_mermaid(branch: Any, *, color_by_metadata: str = "") -> str:
     """Render a BranchDefinition as a Mermaid ``flowchart LR`` block.
 
     Claude.ai and many markdown clients auto-render fenced ``mermaid``
@@ -775,6 +820,25 @@ def _branch_mermaid(branch: Any) -> str:
         for label, target in cedge.conditions.items():
             dst = _mermaid_node_id(target)
             lines.append(f"    {src} -.{_mermaid_label(label)}.-> {dst}")
+
+    if color_by_metadata:
+        legend, node_values = _metadata_color_legend(branch, color_by_metadata)
+        for value_text, item in legend.items():
+            fill = item["fill"]
+            class_name = item["class"]
+            lines.append(
+                f"    classDef {class_name} fill:{fill},stroke:#334155,stroke-width:2px"
+            )
+            lines.append(
+                f"    %% metadata {color_by_metadata}={_mermaid_label(value_text)}"
+            )
+        for node in branch.node_defs:
+            value_text = node_values.get(node.node_id)
+            if value_text is None:
+                continue
+            lines.append(
+                f"    class {_mermaid_node_id(node.node_id)} {legend[value_text]['class']}"
+            )
 
     if branch.entry_point:
         entry_id = _mermaid_node_id(branch.entry_point)
@@ -928,7 +992,16 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         else ["  (none — structure is valid)"]
     )
 
-    mermaid = _branch_mermaid(branch)
+    color_by_metadata = (
+        kwargs.get("color_by_metadata")
+        or kwargs.get("metadata_key")
+        or kwargs.get("color_by")
+        or ""
+    ).strip()
+    metadata_color_legend, metadata_node_values = _metadata_color_legend(
+        branch, color_by_metadata,
+    )
+    mermaid = _branch_mermaid(branch, color_by_metadata=color_by_metadata)
 
     summary_parts = [
         f"Branch: {branch.name or '(unnamed)'}  [{branch.branch_def_id}]",
@@ -994,6 +1067,9 @@ def _ext_branch_describe(kwargs: dict[str, Any]) -> str:
         "fork_descendants": fork_descendants,
         "related_wiki_pages": related["items"],
         "related_wiki_pages_truncated": related["truncated_count"],
+        "metadata_color_by": color_by_metadata,
+        "metadata_color_legend": metadata_color_legend,
+        "metadata_color_nodes": metadata_node_values,
     })
 
 
@@ -1173,6 +1249,7 @@ def _resolve_node_spec(
         for field_key in (
             "display_name", "description", "phase", "input_keys",
             "output_keys", "source_code", "prompt_template", "author",
+            "metadata",
         ):
             if field_key in raw and raw[field_key] not in (None, ""):
                 merged[field_key] = raw[field_key]
@@ -1236,6 +1313,7 @@ def _lookup_node_body(
             "output_keys": list(hit.get("output_keys") or []),
             "source_code": hit.get("source_code", ""),
             "prompt_template": hit.get("prompt_template", ""),
+            "metadata": dict(hit.get("metadata") or {}),
             "author": hit.get("author", ""),
             "approved": bool(hit.get("approved", False)),
         }, ""
@@ -1263,6 +1341,7 @@ def _lookup_node_body(
                 "output_keys": list(nd.get("output_keys") or []),
                 "source_code": nd.get("source_code", ""),
                 "prompt_template": nd.get("prompt_template", ""),
+                "metadata": dict(nd.get("metadata") or {}),
                 "author": nd.get("author", ""),
                 "approved": bool(nd.get("approved", False)),
             }, ""
@@ -1317,6 +1396,9 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
         invoke_branch_version if isinstance(invoke_branch_version, dict) else None
     )
     await_run_arg = await_run if isinstance(await_run, dict) else None
+    metadata = raw.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return f"node '{nid}' metadata must be an object"
     try:
         node = NodeDefinition(
             node_id=nid,
@@ -1332,6 +1414,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
             invoke_branch_spec=invoke_branch_arg,
             invoke_branch_version_spec=invoke_branch_version_arg,
             await_run_spec=await_run_arg,
+            metadata=dict(metadata),
         )
     except ValueError as exc:
         return str(exc)
@@ -1689,6 +1772,11 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.prompt_template = op["prompt_template"]
                 if "source_code" in op:
                     n.source_code = op["source_code"]
+                if "metadata" in op:
+                    metadata = op.get("metadata") or {}
+                    if not isinstance(metadata, dict):
+                        return "update_node metadata must be an object"
+                    n.metadata = dict(metadata)
                 if "input_keys" in op:
                     keys, err = _coerce_node_keys(
                         op["input_keys"], "input_keys",
@@ -1705,6 +1793,27 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.output_keys = keys
                 return ""
         return f"update_node: node '{nid}' not found"
+    if name in {"set_node_metadata", "merge_node_metadata", "delete_node_metadata"}:
+        nid = (op.get("node_id") or "").strip()
+        if not nid:
+            return f"{name} requires node_id"
+        target = next((n for n in branch.node_defs if n.node_id == nid), None)
+        if target is None:
+            return f"{name}: node '{nid}' not found"
+        if name == "delete_node_metadata":
+            key = (op.get("key") or "").strip()
+            if not key:
+                return "delete_node_metadata requires key"
+            target.metadata.pop(key, None)
+            return ""
+        metadata = op.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            return f"{name} requires metadata object"
+        if name == "set_node_metadata":
+            target.metadata = dict(metadata)
+        else:
+            target.metadata.update(metadata)
+        return ""
     if name == "add_skill":
         from workflow.branches import normalize_branch_skill_snapshot
 
@@ -2755,6 +2864,21 @@ extensions action=patch_branch branch_def_id=... changes_json='[
    "skill": {"name": "Review checklist",
              "body": "Check tests, code shape, and live proof."}}
 ]'
+```
+
+Per-node metadata is a generic annotation bag for domain facts, review
+state, ownership, risk, or later overlays. Keep keys domain-neutral when
+the value may be reused across branches:
+
+```
+extensions action=patch_branch branch_def_id=... changes_json='[
+  {"op": "set_node_metadata", "node_id": "novelty_check",
+   "metadata": {"risk": "high", "owner": "checker-daemon"}},
+  {"op": "merge_node_metadata", "node_id": "archive",
+   "metadata": {"stage": "publish"}},
+  {"op": "delete_node_metadata", "node_id": "archive", "key": "stage"}
+]'
+extensions action=describe_branch branch_def_id=... color_by_metadata="risk"
 ```
 
 ## Atomic actions (single-item surgery only)

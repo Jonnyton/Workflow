@@ -20,6 +20,7 @@ def _make_node(node_id="n1", display_name="My Node", source_code="", approved=Fa
         "author": "anon",
         "registered_at": "",
         "enabled": True,
+        "metadata": {},
     }
 
 
@@ -55,7 +56,7 @@ def _call_validate_real(branch_dict):
     return json.loads(result)
 
 
-def _call_describe(branch_dict, validate_errors=None):
+def _call_describe(branch_dict, validate_errors=None, **kwargs):
     from workflow.api.branches import _ext_branch_describe
 
     if validate_errors is None:
@@ -72,7 +73,10 @@ def _call_describe(branch_dict, validate_errors=None):
         patch("workflow.daemon_server.list_branch_definitions", return_value=[]),
         patch("workflow.branches.BranchDefinition.validate", return_value=validate_errors),
     ):
-        result = _ext_branch_describe({"branch_def_id": branch_dict["branch_def_id"]})
+        result = _ext_branch_describe({
+            "branch_def_id": branch_dict["branch_def_id"],
+            **kwargs,
+        })
     return json.loads(result)
 
 
@@ -184,6 +188,36 @@ class TestDescribeBranchApproval:
         ids = {n["node_id"] for n in result["unapproved_source_code_nodes"]}
         assert ids == {"n1", "n3"}
         assert "n2" not in str(result["unapproved_source_code_nodes"])
+
+    def test_color_by_metadata_adds_mermaid_overlay(self):
+        nodes = [
+            {
+                **_make_node(node_id="n1", display_name="Intake"),
+                "metadata": {"risk": "high"},
+            },
+            {
+                **_make_node(node_id="n2", display_name="Review"),
+                "metadata": {"risk": "low"},
+            },
+        ]
+        branch = _make_branch_dict(node_defs=nodes)
+        result = _call_describe(branch, validate_errors=[])
+
+        assert "classDef metadata_" not in result["mermaid"]
+        assert result["metadata_color_by"] == ""
+        assert result["metadata_color_legend"] == {}
+
+        colored = _call_describe(
+            branch,
+            validate_errors=[],
+            color_by_metadata="risk",
+        )
+        assert colored["metadata_color_by"] == "risk"
+        assert set(colored["metadata_color_legend"]) == {"high", "low"}
+        assert colored["metadata_color_nodes"] == {"n1": "high", "n2": "low"}
+        assert "classDef metadata_0" in colored["mermaid"]
+        assert "class n1 metadata_0" in colored["mermaid"]
+        assert "class n2 metadata_1" in colored["mermaid"]
 
 
 # ---------------------------------------------------------------------------

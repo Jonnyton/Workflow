@@ -344,6 +344,10 @@ class NodeDefinition:
 
     # Quality
     evaluation_criteria: list[dict[str, str]] = field(default_factory=list)
+    # User/domain-authored per-node annotations. This is intentionally
+    # generic so overlays and later primitives can compose without baking
+    # one domain's vocabulary into NodeDefinition.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Sub-branch invocation (invoke_branch node kind).
     # When set this node spawns a child branch run rather than executing an
@@ -422,6 +426,11 @@ class NodeDefinition:
                         f"[{idx}] must be a string, got "
                         f"{type(item).__name__}",
                     )
+        if not isinstance(self.metadata, dict):
+            raise NodeDefinitionValidationError(
+                "metadata",
+                f"must be a dict, got {type(self.metadata).__name__}",
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -448,6 +457,7 @@ class NodeDefinition:
             "output_keys": self.output_keys,
             "source_code": self.source_code,
             "dependencies": self.dependencies,
+            "metadata": self.metadata,
             "author": self.author,
             "registered_at": self.registered_at,
             "enabled": self.enabled,

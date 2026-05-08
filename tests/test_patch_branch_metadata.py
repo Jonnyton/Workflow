@@ -171,6 +171,92 @@ class TestPatchBranchMetadataOps:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# per-node generic metadata
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPatchBranchNodeMetadata:
+
+    def test_build_branch_persists_node_metadata(self, ext_env):
+        us, base = ext_env
+        spec = {
+            "name": "metadata-build",
+            "entry_point": "review",
+            "node_defs": [{
+                "node_id": "review",
+                "display_name": "Review",
+                "prompt_template": "review {x}",
+                "metadata": {"risk": "high", "owner": "checker"},
+            }],
+            "edges": [
+                {"from": "START", "to": "review"},
+                {"from": "review", "to": "END"},
+            ],
+            "state_schema": [{"name": "x", "type": "str"}],
+        }
+        res = _call(us, "extensions", "build_branch", spec_json=json.dumps(spec))
+        assert res["status"] == "built", res
+        loaded = _load(us, base, res["branch_def_id"])
+        assert loaded["node_defs"][0]["metadata"] == {
+            "risk": "high",
+            "owner": "checker",
+        }
+
+    def test_set_merge_delete_node_metadata_round_trips(self, ext_env):
+        us, base = ext_env
+        bid = _build(us)
+        res = _patch(us, bid, [
+            {
+                "op": "set_node_metadata",
+                "node_id": "capture",
+                "metadata": {"risk": "medium"},
+            },
+            {
+                "op": "merge_node_metadata",
+                "node_id": "capture",
+                "metadata": {"owner": "daemon-a"},
+            },
+            {
+                "op": "delete_node_metadata",
+                "node_id": "capture",
+                "key": "risk",
+            },
+        ])
+        assert res.get("status") == "patched", res
+        loaded = _load(us, base, bid)
+        assert loaded["node_defs"][0]["metadata"] == {"owner": "daemon-a"}
+
+    def test_node_metadata_patch_is_transactional(self, ext_env):
+        us, base = ext_env
+        bid = _build(us)
+        res = _patch(us, bid, [
+            {
+                "op": "set_node_metadata",
+                "node_id": "capture",
+                "metadata": {"risk": "high"},
+            },
+            {
+                "op": "merge_node_metadata",
+                "node_id": "missing",
+                "metadata": {"owner": "daemon-a"},
+            },
+        ])
+        assert res.get("status") == "rejected"
+        loaded = _load(us, base, bid)
+        assert loaded["node_defs"][0].get("metadata", {}) == {}
+
+    def test_node_metadata_rejects_non_object(self, ext_env):
+        us, _ = ext_env
+        bid = _build(us)
+        res = _patch(us, bid, [{
+            "op": "set_node_metadata",
+            "node_id": "capture",
+            "metadata": "risk=high",
+        }])
+        assert res.get("status") == "rejected"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Identity preservation + combined batches
 # ─────────────────────────────────────────────────────────────────────────────
 
