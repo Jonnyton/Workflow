@@ -99,6 +99,7 @@ class TestProbeSandboxAvailable:
         assert result["bwrap_available"] is True
         assert result.get("reason") is None
         assert run_mock.call_count == 2
+        assert "--unshare-user" in run_mock.call_args_list[1].args[0]
 
     def test_bwrap_launch_fails_returns_unavailable(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")

@@ -140,6 +140,7 @@ class TestDetectBwrap:
         assert status.bwrap_path == "/usr/bin/bwrap"
         assert status.version == "bwrap 0.6.0"
         assert status.reason is None
+        assert "--unshare-user" in run_mock.call_args_list[1].args[0]
         assert run_mock.call_count == 2
 
     def test_bwrap_launch_failure_returns_unavailable(self, monkeypatch):

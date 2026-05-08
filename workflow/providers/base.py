@@ -166,7 +166,18 @@ def probe_sandbox_available() -> dict[str, object]:
             }
 
         launch_result = _subprocess.run(
-            [bwrap_path, "--ro-bind", "/", "/", "/bin/sh", "-c", "true"],
+            [
+                bwrap_path,
+                "--unshare-user",
+                "--uid",
+                "0",
+                "--gid",
+                "0",
+                "--ro-bind",
+                "/",
+                "/",
+                "/bin/true",
+            ],
             capture_output=True, text=True, check=False, timeout=5,
         )
         if launch_result.returncode == 0:

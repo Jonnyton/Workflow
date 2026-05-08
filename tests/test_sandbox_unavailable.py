@@ -156,6 +156,7 @@ class TestProbeSandboxAvailable:
         assert result["bwrap_available"] is True
         assert result["reason"] is None
         assert run_mock.call_count == 2
+        assert "--unshare-user" in run_mock.call_args_list[1].args[0]
 
     def test_returns_unavailable_when_bwrap_launch_nonzero(self):
         version_result = MagicMock()

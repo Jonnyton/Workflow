@@ -121,7 +121,18 @@ def detect_bwrap() -> SandboxStatus:
 
     try:
         launch_result = subprocess.run(
-            [bwrap_path, "--ro-bind", "/", "/", "/bin/sh", "-c", "true"],
+            [
+                bwrap_path,
+                "--unshare-user",
+                "--uid",
+                "0",
+                "--gid",
+                "0",
+                "--ro-bind",
+                "/",
+                "/",
+                "/bin/true",
+            ],
             capture_output=True,
             text=True,
             timeout=5,
