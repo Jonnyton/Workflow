@@ -213,6 +213,74 @@ def test_wiki_search_requires_query(wiki_env):
 def test_wiki_search_no_results_returns_empty_list(wiki_env):
     res = json.loads(wiki(action="search", query="zzz_nothing_should_match"))
     assert res["results"] == []
+    assert res["search_complete"] is False
+    assert "action=since" in res["completeness_warning"]
+
+
+def test_wiki_search_returns_completeness_warning_with_matches(wiki_env):
+    page = wiki_env / "pages" / "notes" / "search-target.md"
+    page.write_text(
+        "---\n"
+        "title: Search Target\n"
+        "type: note\n"
+        "updated: 2026-05-06T12:00:00Z\n"
+        "---\n\n"
+        "This page mentions cross AI discovery gaps.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    res = json.loads(wiki(action="search", query="discovery"))
+
+    assert res["count"] == 1
+    assert res["search_complete"] is False
+    assert "lexical" in res["completeness_warning"]
+    assert "action=since" in res["completeness_warning"]
+
+
+def test_wiki_since_returns_pages_updated_after_timestamp(wiki_env):
+    fresh_dir = wiki_env / "pages" / "patch-requests"
+    fresh_dir.mkdir(parents=True)
+    fresh = fresh_dir / "fresh-patch.md"
+    fresh.write_text(
+        "---\n"
+        "title: Fresh Patch\n"
+        "type: patch_request\n"
+        "updated: 2026-05-06T12:00:00Z\n"
+        "---\n\n"
+        "Fresh patch request content.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    older = wiki_env / "pages" / "notes" / "older-note.md"
+    older.write_text(
+        "---\n"
+        "title: Older Note\n"
+        "type: note\n"
+        "updated: 2026-05-01T12:00:00Z\n"
+        "---\n\n"
+        "Older note content.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    res = json.loads(
+        wiki(action="since", changed_since="2026-05-05T00:00:00Z")
+    )
+
+    assert res["changed_since"] == "2026-05-05T00:00:00Z"
+    assert res["count"] == 1
+    assert res["results"][0]["path"] == "pages/patch-requests/fresh-patch.md"
+    assert res["results"][0]["title"] == "Fresh Patch"
+    assert res["results"][0]["updated"] == "2026-05-06T12:00:00Z"
+
+
+def test_wiki_since_requires_valid_changed_since(wiki_env):
+    missing = json.loads(wiki(action="since"))
+    invalid = json.loads(wiki(action="since", changed_since="not-a-date"))
+
+    assert "changed_since parameter is required" in missing["error"]
+    assert "valid ISO" in invalid["error"]
 
 
 def test_wiki_read_requires_page(wiki_env):

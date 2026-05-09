@@ -63,6 +63,13 @@ _STOP_WORDS = frozenset(
     "on of that this these those it its not no nor so very just also".split()
 )
 
+_WIKI_SEARCH_COMPLETENESS_WARNING = (
+    "wiki action=search is lexical best-effort, not a complete discovery or "
+    "change-feed proof. For recent changes use wiki action=since with "
+    "changed_since=<ISO timestamp>; for authoritative content read candidate "
+    "pages with action=read."
+)
+
 
 _logger_wiki = logging.getLogger("universe_server.wiki")
 
@@ -285,6 +292,14 @@ def _coerce_feed_limit(value: Any) -> int:
     except (TypeError, ValueError):
         raw = 10
     return max(0, min(raw, 20))
+
+
+def _coerce_result_limit(value: Any) -> int:
+    try:
+        raw = int(value or 0)
+    except (TypeError, ValueError):
+        raw = 10
+    return max(1, min(raw, 100))
 
 
 def _ambient_relevance_feed(
@@ -564,8 +579,74 @@ def _wiki_search(query: str = "", max_results: int = 10, **_kwargs: Any) -> str:
     top = scored[:max_results]
 
     if not top:
-        return json.dumps({"results": [], "note": f"No results for: {query}"})
-    return json.dumps({"query": query, "results": top, "count": len(top)})
+        return json.dumps({
+            "results": [],
+            "note": f"No results for: {query}",
+            "search_complete": False,
+            "completeness_warning": _WIKI_SEARCH_COMPLETENESS_WARNING,
+        })
+    return json.dumps({
+        "query": query,
+        "results": top,
+        "count": len(top),
+        "search_complete": False,
+        "completeness_warning": _WIKI_SEARCH_COMPLETENESS_WARNING,
+    })
+
+
+def _wiki_result_item(path: Path, *, is_draft: bool) -> dict[str, Any]:
+    raw = _read_text(path)
+    meta, body = _parse_frontmatter(raw)
+    updated_at = _page_updated_at(path, meta)
+    return {
+        "path": _page_rel_path(path),
+        "title": meta.get("title") or path.stem,
+        "type": meta.get("type", "unknown"),
+        "updated": updated_at.isoformat().replace("+00:00", "Z"),
+        "is_draft": is_draft,
+        "excerpt": body.replace("\n", " ").strip()[:220],
+    }
+
+
+def _wiki_since(
+    changed_since: str = "",
+    max_results: int = 10,
+    **_kwargs: Any,
+) -> str:
+    if not changed_since.strip():
+        return json.dumps({
+            "error": "changed_since parameter is required for action=since.",
+            "hint": "Pass an ISO timestamp, for example 2026-05-06T00:00:00Z.",
+        })
+    since = _parse_wiki_timestamp(changed_since)
+    if since is None:
+        return json.dumps({
+            "error": "changed_since must be a valid ISO timestamp.",
+            "changed_since": changed_since,
+        })
+
+    candidates: list[dict[str, Any]] = []
+    for path in _find_all_pages(_wiki_pages_dir()):
+        item = _wiki_result_item(path, is_draft=False)
+        updated_at = _parse_wiki_timestamp(item["updated"])
+        if updated_at is not None and updated_at > since:
+            candidates.append(item)
+    for path in _find_all_pages(_wiki_drafts_dir()):
+        item = _wiki_result_item(path, is_draft=True)
+        updated_at = _parse_wiki_timestamp(item["updated"])
+        if updated_at is not None and updated_at > since:
+            candidates.append(item)
+
+    candidates.sort(key=lambda item: (item["updated"], item["path"]), reverse=True)
+    limit = _coerce_result_limit(max_results)
+    results = candidates[:limit]
+    return json.dumps({
+        "changed_since": changed_since.strip(),
+        "results": results,
+        "count": len(results),
+        "total_matches": len(candidates),
+        "truncated_count": max(0, len(candidates) - len(results)),
+    })
 
 
 def _wiki_list(**_kwargs: Any) -> str:
@@ -1952,6 +2033,7 @@ def wiki(
     dispatch = {
         "read": _wiki_read,
         "search": _wiki_search,
+        "since": _wiki_since,
         "list": _wiki_list,
         "lint": _wiki_lint,
         "write": _wiki_write,
