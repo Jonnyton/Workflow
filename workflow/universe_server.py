@@ -163,8 +163,7 @@ _LANDING_HTML = """<!doctype html>
 </head>
 <body>
 <h1>Workflow Server</h1>
-<p class="tag">A goal-agnostic daemon engine. You summon it, bind it to a
-domain, and let it drive.</p>
+<p class="tag">A goal-agnostic daemon engine. Bind it to a domain and let it run.</p>
 
 <p>This is the public surface of a local-first platform for building
 custom multi-step AI workflows &mdash; typed state, registered nodes,
