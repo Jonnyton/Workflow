@@ -979,13 +979,17 @@ def wiki(
     it returns status="similar_found" with the existing match.
 
     Args:
-        action: One of — reads: read, search, list, lint;
+        action: One of — reads: read, search, since, list, lint;
             writes: write, patch, consolidate, promote, ingest, supersede,
             sync_projects, file_bug, cosign_bug.
+            `search` is lexical best-effort, not a completeness proof; use
+            `since` with `changed_since` to review pages updated after a known
+            timestamp, then `read` the candidate pages.
         old_text/new_text: For action="patch", exact text to replace server-side.
         expected_sha256: Optional full-page hash guard for action="patch".
-        changed_since: Optional ISO timestamp for action="read" ambient feed;
-            only pages updated after this timestamp are returned as feed items.
+        changed_since: Optional ISO timestamp for action="read" ambient feed
+            and required ISO timestamp for action="since"; only pages updated
+            after this timestamp are returned.
     """
     return _wiki_impl(
         action=action,
