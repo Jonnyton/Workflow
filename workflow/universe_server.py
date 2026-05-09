@@ -36,6 +36,9 @@ import uvicorn
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import HTMLResponse
 
 from workflow.api.branches import _branch_design_guide_prompt
 from workflow.api.engine_helpers import _warn_if_no_upload_whitelist
@@ -189,11 +192,31 @@ Workflow &middot; open collaborative design commons &middot; 2026
 """
 
 
+def _accepts_discovery_html(accept: str) -> bool:
+    """Return true for browser-style discovery requests, not MCP streams."""
+    media_ranges = {
+        part.split(";", 1)[0].strip().lower()
+        for part in accept.split(",")
+    }
+    return "text/html" in media_ranges and "text/event-stream" not in media_ranges
+
+
+class _McpDiscoveryHtmlMiddleware(BaseHTTPMiddleware):
+    """Serve static discovery HTML for browser GETs on MCP endpoint paths."""
+
+    async def dispatch(self, request, call_next):  # type: ignore[no-untyped-def]
+        if (
+            request.method == "GET"
+            and request.url.path in {"/mcp", "/mcp-directory"}
+            and _accepts_discovery_html(request.headers.get("accept", ""))
+        ):
+            return HTMLResponse(_LANDING_HTML)
+        return await call_next(request)
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def _landing_index(request):  # type: ignore[no-untyped-def]
     """Serve a minimal HTML landing page at the server root."""
-    from starlette.responses import HTMLResponse
-
     return HTMLResponse(_LANDING_HTML)
 
 
@@ -1116,6 +1139,7 @@ def create_streamable_http_app() -> Starlette:
     app = Starlette(
         routes=[*legacy_app.routes, *directory_app.routes],
         lifespan=lifespan,
+        middleware=[Middleware(_McpDiscoveryHtmlMiddleware)],
     )
     app.state.path = "/mcp,/mcp-directory"
     app.state.transport_type = "streamable-http"
