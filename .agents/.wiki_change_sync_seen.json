@@ -123,6 +123,7 @@
     "pages/patch-requests/pr-077-pr-077-writer-pool-should-detect-multi-phase-patch-requests-.md",
     "pages/patch-requests/pr-079-patch-request-dispatch-must-reconcile-wiki-page-github-issue.md",
     "pages/patch-requests/pr-080-patch-request-write-action-recovery-receipts-for-chatbot-vis.md",
+    "pages/patch-requests/pr-081-add-mcp-get-discovery-html-for-non-mcp-client-requests-multi.md",
     "pages/plans/chatbot-builder-behaviors.md",
     "pages/plans/composition-patterns.md",
     "pages/plans/design-validate-branch-collision-admission-test.md",
