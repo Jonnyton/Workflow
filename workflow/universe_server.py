@@ -105,10 +105,11 @@ mcp = FastMCP(
     instructions=(
         "Workflow is a workflow-builder and long-horizon AI platform. "
         "Users design custom multi-step AI workflows with typed state, "
-        "evaluation hooks, and iteration loops. Fantasy authoring is a "
-        "benchmark, not the exclusive use case; other domains include "
-        "research papers, screenplays, literature reviews, investigative "
-        "journalism, recipe trackers, wedding planners, and news summaries. "
+        "evaluation hooks, and iteration loops. The platform is "
+        "domain-agnostic. Example domains: research papers, screenplays, "
+        "literature reviews, investigative journalism, recipe trackers, "
+        "wedding planners, news summaries, standup trackers, fantasy "
+        "novels. "
         "\n\n"
         "If a user asks about their 'workflow builder', 'custom AI builder', "
         "'universe builder', 'the workflow thing', 'the connector', 'the "
@@ -168,7 +169,7 @@ domain, and let it drive.</p>
 <p>This is the public surface of a local-first platform for building
 custom multi-step AI workflows &mdash; typed state, registered nodes,
 evaluation hooks, iteration loops, paid-market bid/claim mechanics.
-Fantasy authoring is the benchmark domain; the engine is general-purpose.</p>
+The engine is domain-agnostic.</p>
 
 <p>If you arrived here looking for an MCP connector, the live endpoint
 is at <code>/mcp</code>.</p>
@@ -226,9 +227,9 @@ _EXTENSION_GUIDE_PROMPT = """\
 The `extensions` tool is the workflow-builder surface. Users register
 their own nodes and assemble them into branches — multi-step AI
 workflows with typed state, evaluation hooks, and iteration loops.
-This is how the platform supports arbitrary domains (research papers,
-recipe trackers, screenplays, news summarizers, etc.), not just
-fiction. Fantasy authoring is one branch; yours will be another.
+The platform supports arbitrary domains (research papers, recipe
+trackers, screenplays, news summarizers, standup trackers, etc.).
+Build the one you need.
 
 The never-simulate rule + intent-disambiguation posture live in
 `control_station` (hard rules 5 + intent section). When in doubt on
