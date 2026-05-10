@@ -2339,7 +2339,17 @@ _GATE_EVENT_ACTIONS: dict[str, Any] = {
 }
 
 
+def _action_gates_list(_kwargs: dict[str, Any]) -> str:
+    return json.dumps({
+        "status": "ok",
+        "tool": "gates",
+        "available_actions": sorted(_GATES_ACTIONS.keys()),
+        "gate_event_actions": sorted(_GATE_EVENT_ACTIONS.keys()),
+    })
+
+
 _GATES_ACTIONS: dict[str, Any] = {
+    "list": _action_gates_list,
     "define_ladder": _action_gates_define_ladder,
     "get_ladder": _action_gates_get_ladder,
     "claim": _action_gates_claim,
@@ -2382,6 +2392,7 @@ def gates(
     additionally require WORKFLOW_PAID_MARKET=on.
 
     Actions (all live when GATES_ENABLED=1):
+      list          Discover supported gates actions.
       define_ladder Owner sets the rung list on a Goal. Needs goal_id
                     and `ladder` (JSON list of {rung_key, name,
                     description}).

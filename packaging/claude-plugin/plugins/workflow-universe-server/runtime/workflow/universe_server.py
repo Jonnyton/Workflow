@@ -870,6 +870,7 @@ def gates(
     additionally require WORKFLOW_PAID_MARKET=on.
 
     Actions (all live when GATES_ENABLED=1):
+      list          Discover supported gates actions.
       define_ladder Owner sets the rung list on a Goal. Needs goal_id
                     and `ladder` (JSON list of {rung_key, name,
                     description}).
