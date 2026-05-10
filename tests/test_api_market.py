@@ -180,13 +180,13 @@ def test_goals_unknown_action_lists_directory_aliases():
 # ── _GATES_ACTIONS dispatch table ───────────────────────────────────────────
 
 
-def test_gates_actions_table_has_9_handlers():
-    assert len(_GATES_ACTIONS) == 9
+def test_gates_actions_table_has_10_handlers():
+    assert len(_GATES_ACTIONS) == 10
 
 
 def test_gates_actions_keys():
     expected = {
-        "define_ladder", "get_ladder", "claim", "retract",
+        "define_ladder", "get_ladder", "claim", "retract", "list",
         "list_claims", "leaderboard",
         "stake_bonus", "unstake_bonus", "release_bonus",
     }
@@ -266,6 +266,17 @@ def test_gates_when_flag_off_returns_not_available(monkeypatch):
     monkeypatch.delenv("GATES_ENABLED", raising=False)
     out = json.loads(gates(action="claim"))
     assert out["status"] == "not_available"
+
+
+def test_gates_list_returns_discovery_payload(monkeypatch):
+    monkeypatch.setenv("GATES_ENABLED", "1")
+
+    out = json.loads(gates(action="list"))
+
+    assert out["status"] == "ok"
+    assert out["tool"] == "gates"
+    assert "list" in out["available_actions"]
+    assert "list_claims" in out["available_actions"]
 
 
 def test_gates_enabled_default_off(monkeypatch):
