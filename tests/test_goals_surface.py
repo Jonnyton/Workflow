@@ -98,6 +98,34 @@ def test_list_returns_proposed_goals(p5_env):
     assert "- `" in result["text"]
 
 
+def test_list_can_filter_to_production_goals(p5_env):
+    us, _ = p5_env
+    _call(us, "goals", "propose", name="Real workflow goal", tags="research")
+    _call(us, "goals", "propose", name="Smoke probe goal", tags="smoke")
+    _call(us, "goals", "propose", name="Disposable scout goal", tags="disposable")
+    _call(us, "goals", "propose", name="RETRACTED old goal", tags="research")
+    _call(us, "goals", "propose", name="Private real goal", visibility="private")
+
+    result = _call(us, "goals", "list", production_only=True)
+
+    assert result["count"] == 1
+    assert result["production_only"] is True
+    assert result["excluded_count"] == 4
+    assert [g["name"] for g in result["goals"]] == ["Real workflow goal"]
+    assert "production" in result["text"].lower()
+
+
+def test_list_production_filter_applies_before_limit(p5_env):
+    us, _ = p5_env
+    _call(us, "goals", "propose", name="Real workflow goal", tags="research")
+    _call(us, "goals", "propose", name="Smoke probe goal", tags="smoke")
+
+    result = _call(us, "goals", "list", production_only=True, limit=1)
+
+    assert result["count"] == 1
+    assert [g["name"] for g in result["goals"]] == ["Real workflow goal"]
+
+
 def test_get_returns_full_goal_with_branches(p5_env):
     us, _ = p5_env
     gid = _call(us, "goals", "propose", name="Test")["goal"]["goal_id"]

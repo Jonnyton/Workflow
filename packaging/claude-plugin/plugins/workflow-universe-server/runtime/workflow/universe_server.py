@@ -754,6 +754,7 @@ def goals(
     author: str = "",
     limit: int = 50,
     scope: str = "",
+    production_only: bool = False,
     force: bool = False,
 ) -> str:
     """Goals — first-class shared primitives above workflow Branches.
@@ -770,7 +771,8 @@ def goals(
                    unbind. Needs branch_def_id.
       set_canonical Mark a branch_version_id as the Goal's canonical
                    branch. Author-only or host-only.
-      list         Browse Goals. Optional author, tags, limit.
+      list         Browse Goals. Optional author, tags, limit,
+                   production_only.
       get          Full Goal view + bound Branches. Needs goal_id.
       search       LIKE-based substring search over name, description,
                    tags. Needs query.
@@ -793,6 +795,7 @@ def goals(
         author=author,
         limit=limit,
         scope=scope,
+        production_only=production_only,
         force=force,
     )
 
