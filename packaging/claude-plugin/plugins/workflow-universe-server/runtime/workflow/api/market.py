@@ -634,6 +634,31 @@ def _format_goal_catalog_line(g: dict[str, Any]) -> str:
     )
 
 
+_PRODUCTION_ONLY_EXCLUDED_TAGS = {"retracted", "smoke", "disposable"}
+_PRODUCTION_ONLY_EXCLUDED_TEXT = ("retracted", "smoke", "disposable")
+
+
+def _truthy_tool_arg(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_production_goal(g: dict[str, Any]) -> bool:
+    if (g.get("visibility") or "public") != "public":
+        return False
+    tags = {str(tag).strip().lower() for tag in (g.get("tags") or [])}
+    if tags & _PRODUCTION_ONLY_EXCLUDED_TAGS:
+        return False
+    text = " ".join([
+        str(g.get("name") or ""),
+        str(g.get("description") or ""),
+    ]).lower()
+    return not any(marker in text for marker in _PRODUCTION_ONLY_EXCLUDED_TEXT)
+
+
 def _action_goal_propose(kwargs: dict[str, Any]) -> str:
     from workflow.api.branches import (
         _ensure_workflow_db,
@@ -888,14 +913,21 @@ def _action_goal_list(kwargs: dict[str, Any]) -> str:
     from workflow.daemon_server import list_goals
 
     _ensure_workflow_db()
+    requested_limit = max(1, int(kwargs.get("limit", 50) or 50))
+    production_only = _truthy_tool_arg(kwargs.get("production_only", False))
+    fetch_limit = max(requested_limit * 10, 100) if production_only else requested_limit
     rows = list_goals(
         _base_path(),
         author=kwargs.get("author", ""),
         tag=(_split_csv(kwargs.get("tags", ""))[:1] or [""])[0],
-        limit=int(kwargs.get("limit", 50) or 50),
+        limit=fetch_limit,
     )
+    unfiltered_count = len(rows)
+    if production_only:
+        rows = [g for g in rows if _is_production_goal(g)][:requested_limit]
     if rows:
-        lines = [f"**{len(rows)} Goal(s):**", ""]
+        label = "production Goal(s)" if production_only else "Goal(s)"
+        lines = [f"**{len(rows)} {label}:**", ""]
         for g in rows[:12]:
             lines.append(_format_goal_catalog_line(g))
         if len(rows) > 12:
@@ -910,6 +942,8 @@ def _action_goal_list(kwargs: dict[str, Any]) -> str:
         "text": text,
         "goals": rows,
         "count": len(rows),
+        "production_only": production_only,
+        "excluded_count": unfiltered_count - len(rows),
     }, default=str)
 
 
@@ -1476,6 +1510,7 @@ def goals(
     author: str = "",
     limit: int = 50,
     scope: str = "",
+    production_only: bool = False,
     force: bool = False,
 ) -> str:
     """Goals — first-class shared primitives above workflow Branches.
@@ -1497,7 +1532,9 @@ def goals(
                    (best-known) branch. Author-only or host-only.
                    Pass branch_version_id="" to unset.
       list         Browse Goals. Optional author, tags (CSV first
-                   value only), limit. Soft-deleted Goals hidden.
+                   value only), limit, production_only. Soft-deleted
+                   Goals hidden. production_only keeps public Goals
+                   and filters RETRACTED/smoke/disposable entries.
       get          Full Goal view + bound Branches. Needs goal_id.
       search       LIKE-based substring search over name, description,
                    tags. Needs query.
@@ -1527,6 +1564,8 @@ def goals(
       min_branches: common_nodes cutoff (default 2).
       scope: common_nodes aggregation. 'this_goal' (default) restricts
         to one Goal; 'all' aggregates cross-Goal.
+      production_only: list filter for fresh-user discovery. Keeps
+        public Goals and filters RETRACTED/smoke/disposable entries.
       author: list filter.
       limit: cap on returned rows.
       force: override `local_edit_conflict` refusal on propose/update/bind
@@ -1551,6 +1590,7 @@ def goals(
         "author": author,
         "limit": limit,
         "scope": scope,
+        "production_only": production_only,
         "force": force,
     }
     canonical_action = _canonical_goal_action(action)
