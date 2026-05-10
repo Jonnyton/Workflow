@@ -461,6 +461,76 @@ def test_build_status_downgrades_stale_writer_schedule_when_workflow_run_succeed
     assert writer_stage["details"]["fallback_event"] == "workflow_run"
 
 
+def test_build_status_downgrades_stale_observation_schedule_when_workflow_run_succeeds(
+    monkeypatch,
+):
+    now = dt.datetime(2026, 5, 10, 5, 55, tzinfo=dt.timezone.utc)
+
+    stale_observation_schedule = {
+        "id": 44,
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-05-10T04:12:04Z",
+        "updated_at": "2026-05-10T04:12:30Z",
+        "event": "schedule",
+        "html_url": "https://example.test/uptime-schedule",
+    }
+    recent_workflow_run = {
+        "id": 45,
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-05-10T05:50:30Z",
+        "updated_at": "2026-05-10T05:50:57Z",
+        "event": "workflow_run",
+        "html_url": "https://example.test/uptime-workflow-run",
+    }
+    fresh_schedule = {
+        "id": 46,
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-05-10T05:40:00Z",
+        "updated_at": "2026-05-10T05:40:30Z",
+        "event": "schedule",
+        "html_url": "https://example.test/other-schedule",
+    }
+
+    def fake_recent_workflow_runs(_repo, workflow_id, **kwargs):
+        if workflow_id == watch.WORKFLOWS["observation"]:
+            if kwargs.get("event") == "schedule":
+                return [stale_observation_schedule]
+            return [recent_workflow_run, stale_observation_schedule]
+        return [fresh_schedule]
+
+    monkeypatch.setattr(watch, "_recent_workflow_runs", fake_recent_workflow_runs)
+    monkeypatch.setattr(watch, "list_loop_issues", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(watch, "list_open_issues_by_label", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(watch, "_github_token", lambda _args: None)
+
+    status = watch.build_status(
+        argparse.Namespace(
+            repo="owner/repo",
+            api="https://api.github.test",
+            token=None,
+            timeout=1,
+            max_sync_age_min=90,
+            max_writer_age_min=90,
+            max_observation_age_min=90,
+            max_pending_age_min=45,
+        ),
+        now=now,
+    )
+
+    observation_stage = [
+        stage for stage in status["stages"] if stage["name"] == "Observation canary"
+    ][0]
+    assert status["overall"] == "yellow"
+    assert observation_stage["status"] == "yellow"
+    assert observation_stage["details"]["run_id"] == 44
+    assert observation_stage["details"]["required_success_event"] == "schedule"
+    assert observation_stage["details"]["fallback_run_id"] == 45
+    assert observation_stage["details"]["fallback_event"] == "workflow_run"
+
+
 def test_build_status_downgrades_stale_writer_schedule_when_queue_has_only_deferrals(
     monkeypatch,
 ):
