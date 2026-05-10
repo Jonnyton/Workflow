@@ -134,6 +134,7 @@
     "pages/patch-requests/pr-089-marketing-site-at-has-empty-body-until-js-hydrates-ai-fetche.md",
     "pages/patch-requests/pr-090-gates-tool-rejects-action-list-with-unknown-action-list-whil.md",
     "pages/patch-requests/pr-091-universe-cycle-wrapper-polls-every-22-seconds-when-no-active.md",
+    "pages/patch-requests/pr-092-canary-stages-in-community-loop-watch-py-should-accept-workf.md",
     "pages/plans/chatbot-builder-behaviors.md",
     "pages/plans/composition-patterns.md",
     "pages/plans/design-validate-branch-collision-admission-test.md",
