@@ -1424,8 +1424,9 @@ _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
 
 # Per-kind routing: kind -> (category-dir-name, ID-prefix). Each prefix has its
 # own independent NNN counter. New filings route per kind; existing pages stay
-# put (no migration). Default kind="bug" preserves the historical pages/bugs/
-# location and BUG-NNN sequence — backward-compat clean.
+# put (no migration). Default kind="patch_request" makes the community patch
+# request lane the default filing frame; explicit kind="bug" still preserves
+# the historical pages/bugs/ location and BUG-NNN sequence for real defects.
 _KIND_ROUTING: dict[str, tuple[str, str]] = {
     "bug":           (_BUGS_CATEGORY,           "BUG"),
     "feature":       (_KIND_FEATURES_DIR,       "FEAT"),
@@ -1486,7 +1487,7 @@ def _render_bug_markdown(
     expected: str,
     workaround: str,
     first_seen_date: str,
-    kind: str = "bug",
+    kind: str = "patch_request",
     extra_tags: list[str] | None = None,
 ) -> str:
     comp_tag = component.split(".")[0] if component else "unknown"
@@ -1685,7 +1686,7 @@ def _wiki_file_bug(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
-    kind: str = "bug",
+    kind: str = "patch_request",
     tags: str = "",
     force_new: bool = False,
     verbose: bool = False,
@@ -1693,10 +1694,10 @@ def _wiki_file_bug(
 ) -> str:
     """File a bug, feature request, design proposal, or patch request.
 
-    ``kind`` defaults to "bug"; set to "feature", "design", or
-    "patch_request" for non-bug filings. All kinds use the same request
-    pipeline — navigator vets before dev implements (design-participation
-    rule).
+    ``kind`` defaults to "patch_request"; set to "bug" only for confirmed
+    defects, or to "feature" / "design" for those request subtypes. All kinds
+    use the same request pipeline — navigator vets before dev implements
+    (design-participation rule).
 
     Bypasses the draft-gate — filings land in pages/ immediately
     for host triage. ID is server-assigned via _next_bug_id. Atomic
@@ -1722,7 +1723,7 @@ def _wiki_file_bug(
             "error": f"Invalid severity '{severity}'.",
             "valid": list(_VALID_SEVERITIES),
         })
-    effective_kind = kind.strip().lower() if kind else "bug"
+    effective_kind = kind.strip().lower() if kind else "patch_request"
     if effective_kind not in _VALID_BUG_KINDS:
         return json.dumps({
             "error": f"Invalid kind '{kind}'.",
@@ -1989,7 +1990,7 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
-    kind: str = "bug",
+    kind: str = "patch_request",
     tags: str = "",
     force_new: bool = False,
     bug_id: str = "",

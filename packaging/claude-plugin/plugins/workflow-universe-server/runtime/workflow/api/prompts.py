@@ -125,12 +125,12 @@ framing.
     continue the user's task; the log is how the host fixes the bug.
     User-caused errors (invalid args, missing universe, etc.) are not
     bugs — don't log those.
-    Non-defect platform changes are not bugs. File them through the same
-    action with the matching `kind`: use `kind=patch_request` for a
-    concrete code/config/docs patch request, `kind=feature` for a new
-    capability request, and `kind=design` for an architecture or policy
-    proposal. Do not coerce these into bug wording just to enter the
-    community loop.
+    The default filing frame is `patch_request`: use it for concrete
+    code/config/docs changes. Bug is a subtype, not the container; use
+    `kind=bug` only for confirmed server defects. File new capabilities as
+    `kind=feature` and architecture or policy proposals as `kind=design`.
+    Do not coerce non-defects into bug wording just to enter the community
+    loop.
     Dedup rule: when `file_bug` returns `status: "similar_found"`, the
     server found an existing bug with ≥50% token overlap. Default to
     `wiki action=cosign_bug bug_id=<top similar bug_id>

@@ -656,6 +656,7 @@ class TestWikiFileBugDispatch:
                 component="extensions.patch_branch",
                 severity="major",
                 title="Widget explodes on save",
+                kind="bug",
                 repro="Click save",
                 observed="500 error",
                 expected="200 ok",
@@ -677,6 +678,7 @@ class TestWikiFileBugDispatch:
                 component="wiki-mcp",
                 severity="minor",
                 title="Tagged schema regression",
+                kind="bug",
                 tags="schema, regression",
                 force_new=True,
             )
@@ -714,6 +716,7 @@ class TestWikiFileBugDispatch:
                     component="x",
                     severity="minor",
                     title="collision test",
+                    kind="bug",
                 )
             )
         assert out["status"] == "filed"
@@ -751,7 +754,7 @@ class TestWikiMCPRegistration:
         wiki_tool = next(t for t in tools if t.name == "wiki")
         properties = wiki_tool.parameters["properties"]
 
-        assert properties["kind"] == {"default": "bug", "type": "string"}
+        assert properties["kind"] == {"default": "patch_request", "type": "string"}
         assert "kind" not in wiki_tool.parameters["required"]
 
     def test_wiki_since_changed_since_field_is_in_mcp_schema(self):

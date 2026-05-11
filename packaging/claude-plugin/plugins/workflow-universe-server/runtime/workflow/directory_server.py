@@ -406,7 +406,7 @@ def write_page(
     new_text: str = "",
     expected_sha256: str = "",
     title: str = "",
-    kind: str = "",
+    kind: str = "patch_request",
     component: str = "",
     severity: str = "",
     repro: str = "",
@@ -430,7 +430,8 @@ def write_page(
         new_text: Replacement text for a targeted page patch.
         expected_sha256: Optional full-page hash guard for patches.
         title: Filing title when creating a bug, patch, feature, or design page.
-        kind: Filing kind: bug, patch_request, feature, or design.
+        kind: Filing kind: bug, patch_request, feature, or design. Defaults
+            to patch_request; pass bug only for confirmed defects.
         component: Optional affected component for filed issues.
         severity: Optional severity for filed issues.
         repro: Optional reproduction notes for filed issues.

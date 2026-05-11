@@ -553,6 +553,22 @@ def test_wiki_file_bug_rejects_invalid_severity(wiki_env):
     assert set(res["valid"]) == set(_VALID_SEVERITIES)
 
 
+def test_wiki_file_bug_defaults_to_patch_request_surface(wiki_env):
+    res = json.loads(
+        wiki(
+            action="file_bug",
+            component="community.filing",
+            severity="minor",
+            title="Default filing frame is patch request",
+            force_new=True,
+        )
+    )
+    assert res["status"] == "filed"
+    assert res["kind"] == "patch_request"
+    assert res["bug_id"].startswith("PR-")
+    assert res["path"].startswith("pages/patch-requests/")
+
+
 def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
     res = json.loads(
         wiki(
@@ -560,6 +576,7 @@ def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
             component="universe.inspect",
             severity="minor",
             title="A unique never-seen title aardvark zeppelin",
+            kind="bug",
             observed="aardvark",
             expected="zeppelin",
             force_new=True,
@@ -587,6 +604,7 @@ def test_wiki_file_bug_queued_investigation_returns_branch_task_lease_shape(
             component="loop",
             severity="major",
             title="Lease metadata response shape",
+            kind="bug",
             observed="queued task lacks visible lease metadata",
             force_new=True,
             verbose=True,
@@ -609,6 +627,7 @@ def test_wiki_file_bug_dedup_returns_similar_found(wiki_env):
         severity="minor",
         title="Connector returns wrong universe id on inspect",
         observed="inspect returned the wrong universe id under load",
+        kind="bug",
     )
     json.loads(wiki(**base, force_new=True))
     dup = json.loads(wiki(**base))  # no force_new — should dedup
@@ -644,6 +663,7 @@ def test_wiki_cosign_bug_appends_to_existing_filing(wiki_env):
             severity="minor",
             title="The cosign smoke test bug uniquely worded",
             observed="something broke uniquely",
+            kind="bug",
             force_new=True,
         )
     )

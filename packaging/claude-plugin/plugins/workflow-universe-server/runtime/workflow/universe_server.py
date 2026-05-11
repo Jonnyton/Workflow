@@ -940,7 +940,7 @@ def wiki(
     observed: str = "",
     expected: str = "",
     workaround: str = "",
-    kind: str = "bug",
+    kind: str = "patch_request",
     tags: str = "",
     force_new: bool = False,
     bug_id: str = "",
@@ -957,7 +957,9 @@ def wiki(
 
     When the user asks to file a bug, patch request, feature request, or
     design proposal, call `file_bug` directly with the matching `kind`
-    (`bug`, `patch_request`, `feature`, or `design`). `file_bug` already
+    (`bug`, `patch_request`, `feature`, or `design`). The default filing
+    frame is `patch_request`; use `kind="bug"` only for confirmed defects.
+    `file_bug` already
     does Jaccard duplicate detection server-side; you do NOT need to search/list/read
     the wiki before filing. Before filing, check current repo/PLAN.md
     context via `community_change_context` or direct repo browsing; the
