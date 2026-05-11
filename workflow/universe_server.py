@@ -589,6 +589,7 @@ def extensions(
     ship_class: str = "",
     changed_paths_json: str = "",
     stable_evidence_handle: str = "",
+    return_release_gate_result: bool = False,
 ) -> str:
     """Workflow-builder surface: design, edit, run, judge custom AI graphs.
 
@@ -721,6 +722,7 @@ def extensions(
         ship_class=ship_class,
         changed_paths_json=changed_paths_json,
         stable_evidence_handle=stable_evidence_handle,
+        return_release_gate_result=return_release_gate_result,
     )
 
 

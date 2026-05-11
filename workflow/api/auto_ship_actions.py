@@ -21,9 +21,11 @@ Sequencing:
   action that takes an existing passed ledger row and opens a PR from an
   ``auto-change/*`` branch only when ``WORKFLOW_AUTO_SHIP_PR_CREATE_ENABLED``
   is explicitly enabled. It does not auto-merge.
-- A future loop-content PR (Mark's lane) updates change_loop_v1's
-  release_safety_gate to call this action with ``record_in_ledger=true``
-  and emit APPROVE_AUTO_SHIP only when ``would_open_pr`` is True.
+- PR-103a / Mark's lane slice 1 lets change_loop_v1's release_safety_gate
+  call this action in dry-run mode with ``return_release_gate_result=true``.
+  That returns a structured ``release_gate_result`` verdict without recording
+  to the ledger or opening a PR. A later slice can opt into
+  ``record_in_ledger=true``.
 
 Phase 2A is wrapper only — no behavior change to any current path until
 a caller opts in. The action exists; nothing in the loop or substrate
@@ -118,6 +120,12 @@ def _action_validate_ship_packet(kwargs: dict[str, Any]) -> str:
             new row's id) and, on write failure, a ``ledger_error`` field
             describing what went wrong. The validator decision is
             returned regardless of ledger outcome.
+        return_release_gate_result (optional, default False): when truthy,
+            augment the dry-run response with a release-gate verdict derived
+            from validation: ``APPROVE_AUTO_SHIP`` when the packet passed and
+            would open a PR, otherwise ``HOLD``. This is for release_safety_gate
+            callers that need to return a structured ``release_gate_result``
+            while still leaving ledger recording and PR creation disabled.
         universe_id (optional): when ``record_in_ledger`` is truthy,
             the universe whose data dir to write to. Defaults to
             ``_default_universe()``.
@@ -170,10 +178,21 @@ def _action_validate_ship_packet(kwargs: dict[str, Any]) -> str:
             "exception_class": type(exc).__name__,
         })
 
-    # Phase 2A behavior preserved: when ledger recording is not requested,
+    # Phase 2A behavior preserved: when no opt-in sidecar fields are requested,
     # the response is exactly the validator's decision dict, byte-for-byte
     # identical to PR #224.
     if not _record_in_ledger_enabled(kwargs.get("record_in_ledger")):
+        if _record_in_ledger_enabled(kwargs.get("return_release_gate_result")):
+            augmented = dict(decision)
+            augmented["release_gate_result"] = (
+                "APPROVE_AUTO_SHIP"
+                if (
+                    decision.get("validation_result") == "passed"
+                    and decision.get("would_open_pr") is True
+                )
+                else "HOLD"
+            )
+            return json.dumps(augmented)
         return json.dumps(decision)
 
     # Resolve call-site context for the ledger row. All optional with

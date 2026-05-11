@@ -348,6 +348,7 @@ def _extensions_impl(
     ship_class: str = "",
     changed_paths_json: str = "",
     stable_evidence_handle: str = "",
+    return_release_gate_result: bool = False,
 ) -> str:
     """Pattern A2 body — see ``workflow.universe_server.extensions`` for the
     chatbot-facing docstring. Behavior is identical; the decorator wrapper
@@ -580,6 +581,7 @@ def _extensions_impl(
             "ship_class": ship_class,
             "changed_paths_json": changed_paths_json,
             "stable_evidence_handle": stable_evidence_handle,
+            "return_release_gate_result": return_release_gate_result,
             "ship_attempt_id": ship_attempt_id,
             "head_branch": head_branch,
             "title": title,

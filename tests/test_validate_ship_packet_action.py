@@ -70,6 +70,73 @@ class TestHandlerLayer:
         assert result["dry_run"] is True
         assert result["ship_status"] == "skipped"
 
+    def test_release_gate_result_mode_returns_dry_run_verdict_without_side_effects(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        from workflow.auto_ship_ledger import read_attempts
+
+        monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("UNIVERSE_SERVER_DEFAULT_UNIVERSE", "test-uni")
+        universe = tmp_path / "test-uni"
+        universe.mkdir()
+        packet = {
+            "release_gate_result": "APPROVE_AUTO_SHIP",
+            "ship_class": "docs_canary",
+            "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
+            "child_score": 9.5,
+            "risk_level": "low",
+            "blocked_execution_record": {},
+            "stable_evidence_handle": "child_run:b:r",
+            "automation_claim_status": "child_attached_with_handle",
+            "rollback_plan": "Revert commit <sha>",
+            "changed_paths": ["docs/autoship-canaries/x.md"],
+            "diff": "+ added\n",
+        }
+
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(packet),
+            "return_release_gate_result": True,
+        }))
+
+        assert result["validation_result"] == "passed"
+        assert result["release_gate_result"] == "APPROVE_AUTO_SHIP"
+        assert result["would_open_pr"] is True
+        assert result["dry_run"] is True
+        assert "ship_attempt_id" not in result
+        assert read_attempts(universe) == []
+
+    def test_release_gate_result_mode_holds_blocked_dry_run(self):
+        packet = {
+            "release_gate_result": "APPROVE_AUTO_SHIP",
+            "ship_class": "docs_canary",
+            "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
+            "child_score": 9.5,
+            "risk_level": "low",
+            "blocked_execution_record": {},
+            "stable_evidence_handle": "child_run:b:r",
+            "automation_claim_status": "child_attached_with_handle",
+            "rollback_plan": "Revert commit <sha>",
+            "changed_paths": ["workflow/api/unsafe.py"],
+            "diff": "+ unsafe\n",
+        }
+
+        result = json.loads(_action_validate_ship_packet({
+            "body_json": json.dumps(packet),
+            "return_release_gate_result": True,
+        }))
+
+        assert result["validation_result"] == "blocked"
+        assert result["release_gate_result"] == "HOLD"
+        assert result["would_open_pr"] is False
+        assert any(
+            violation["rule_id"] == "changed_path_forbidden_prefix"
+            for violation in result["violations"]
+        )
+
     def test_blocked_packet_returns_decision_dict_with_violations(self):
         packet = {
             "release_gate_result": "HOLD",  # NOT approved
@@ -108,6 +175,7 @@ class TestDispatchIntegration:
             "ship_class",
             "changed_paths_json",
             "stable_evidence_handle",
+            "return_release_gate_result",
         ):
             assert name in params
 
@@ -132,6 +200,31 @@ class TestDispatchIntegration:
         )
         result = json.loads(result_str)
         assert result["validation_result"] == "passed"
+
+    def test_action_dispatch_forwards_release_gate_result_mode(self):
+        packet = {
+            "release_gate_result": "APPROVE_AUTO_SHIP",
+            "ship_class": "docs_canary",
+            "child_keep_reject_decision": "KEEP",
+            "coding_packet": {"status": "KEEP_READY"},
+            "child_score": 9.5,
+            "risk_level": "low",
+            "blocked_execution_record": {},
+            "stable_evidence_handle": "child_run:b:r",
+            "automation_claim_status": "child_attached_with_handle",
+            "rollback_plan": "Revert commit <sha>",
+            "changed_paths": ["docs/autoship-canaries/x.md"],
+            "diff": "+ x\n",
+        }
+        result_str = _extensions_impl(
+            action="validate_ship_packet",
+            body_json=json.dumps(packet),
+            return_release_gate_result=True,
+        )
+        result = json.loads(result_str)
+        assert result["validation_result"] == "passed"
+        assert result["release_gate_result"] == "APPROVE_AUTO_SHIP"
+        assert "ship_attempt_id" not in result
 
     def test_action_with_no_body_json_routes_and_errors_at_handler(self):
         result_str = _extensions_impl(action="validate_ship_packet")
