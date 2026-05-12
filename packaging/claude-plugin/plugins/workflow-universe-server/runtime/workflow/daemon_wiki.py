@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-VALID_SIGNAL_SOURCES = {"node", "gate", "manual"}
 VALID_SIGNAL_OUTCOMES = {"passed", "failed", "blocked", "cancelled", "unknown"}
 
 
@@ -25,6 +24,13 @@ def _utc_now() -> datetime:
 def _safe_slug(value: str, *, fallback: str = "item") -> str:
     slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip()).strip("-._").lower()
     return slug[:96] or fallback
+
+
+def _normalize_source_kind(source_kind: str) -> str:
+    kind = _safe_slug(source_kind, fallback="")
+    if not kind:
+        raise ValueError("source_kind is required")
+    return kind
 
 
 def daemon_wiki_root(base_path: str | Path, daemon_id: str) -> Path:
@@ -84,8 +90,9 @@ evidence, and more reliable across nodes and gates.
 ## Layers
 
 - `raw/signals/`: immutable records from passed, failed, blocked, or cancelled
-  nodes and gates. Do not edit these files after recording; the memory governor
-  may compact older raw signals after they have been summarized.
+  graph source handlers, including nodes and gates. Do not edit these files
+  after recording; the memory governor may compact older raw signals after they
+  have been summarized.
 - `pages/`: maintained synthesis pages. Update these when new signals change
   what the daemon has learned.
 - `pages/brain/review.md`: curated review of promoted mini-brain entries.
@@ -388,12 +395,10 @@ def record_daemon_signal(
     metadata: dict[str, Any] | None = None,
     recorded_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Record an immutable learning signal from a node, gate, or manual note."""
+    """Record an immutable learning signal from any graph source handler."""
     from workflow.daemon_registry import get_daemon
 
-    kind = source_kind.strip().lower()
-    if kind not in VALID_SIGNAL_SOURCES:
-        raise ValueError(f"source_kind must be one of {sorted(VALID_SIGNAL_SOURCES)}")
+    kind = _normalize_source_kind(source_kind)
     normalized_outcome = outcome.strip().lower() or "unknown"
     if normalized_outcome not in VALID_SIGNAL_OUTCOMES:
         raise ValueError(

@@ -81,6 +81,32 @@ def test_record_daemon_signal_writes_raw_signal_digest_and_log(tmp_path) -> None
     assert "signal | node:node-123 | failed" in log.read_text(encoding="utf-8")
 
 
+def test_record_daemon_signal_accepts_forkable_source_handler_node(tmp_path) -> None:
+    daemon = _soul_daemon(tmp_path)
+
+    signal = daemon_wiki.record_daemon_signal(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        source_kind="Import.Fetch URL",
+        source_id="handler/node 42",
+        outcome="passed",
+        summary="Imported a source through a forkable handler node.",
+    )
+
+    raw_path = Path(signal["signal_path"])
+    root = daemon_wiki.daemon_wiki_root(tmp_path, daemon["daemon_id"])
+    digest = root / "pages" / "signals" / "learning-signals.md"
+
+    assert signal["source_kind"] == "import.fetch-url"
+    assert raw_path.name.endswith("-import.fetch-url-handler-node-42-passed.md")
+    raw_text = raw_path.read_text(encoding="utf-8")
+    assert "source_kind: import.fetch-url" in raw_text
+    assert "Import.Fetch URL" not in raw_text
+    assert "import.fetch-url | passed | handler/node 42" in digest.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_record_daemon_signal_rejects_soulless_daemon(tmp_path) -> None:
     daemon = daemon_registry.create_daemon(
         tmp_path,
