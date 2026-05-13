@@ -460,25 +460,62 @@ def _first_usable_input(page):
 
 
 def _read_last_assistant_text(page) -> str:
-    """Return the inner_text of the most recent assistant message, or ''."""
-    best_text = ""
-    for sel in ASSISTANT_MSG_SELECTORS:
-        try:
-            loc = page.locator(sel)
-            n = loc.count()
-        except Exception:
-            continue
-        for i in range(n - 1, -1, -1):
-            try:
-                node = loc.nth(i)
-                if not node.is_visible():
-                    continue
-                text = (node.inner_text() or "").strip()
-                if text:
-                    return text
-            except Exception:
-                continue
-    return best_text
+    """Return the assistant text of the MOST RECENT conversation turn only.
+
+    ChatGPT splits a single logical reply into multiple
+    [data-message-author-role="assistant"] nodes when tool calls happen
+    mid-response. A naive "return first match" loses everything after the
+    last tool call; a naive "concatenate all matches" duplicates older
+    turns into the current read.
+
+    Correct shape: find the latest `[data-testid^="conversation-turn"]`
+    container and return the concatenated inner_text of all
+    `[data-message-author-role="assistant"]` elements INSIDE THAT TURN
+    only. Fall back to "last single assistant node" if the turn-container
+    selector doesn't match (older ChatGPT DOM revisions).
+    """
+    parts = page.evaluate(
+        """
+        () => {
+          const turns = document.querySelectorAll(
+            '[data-testid^="conversation-turn"]'
+          );
+          if (turns.length > 0) {
+            // Walk backwards to find the most recent turn that contains
+            // an assistant-role child (the latest user turn is the last
+            // overall, but it's a user message, not assistant).
+            for (let i = turns.length - 1; i >= 0; i--) {
+              const turn = turns[i];
+              const assistants = turn.querySelectorAll(
+                '[data-message-author-role="assistant"]'
+              );
+              if (assistants.length === 0) continue;
+              const out = [];
+              for (const a of assistants) {
+                const r = a.getBoundingClientRect();
+                if (r.width === 0 || r.height === 0) continue;
+                const t = (a.innerText || '').trim();
+                if (t) out.push(t);
+              }
+              if (out.length) return out;
+            }
+          }
+          // Fallback: last visible assistant-role node anywhere on page.
+          const all = document.querySelectorAll(
+            '[data-message-author-role="assistant"]'
+          );
+          for (let i = all.length - 1; i >= 0; i--) {
+            const n = all[i];
+            const r = n.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            const t = (n.innerText || '').trim();
+            if (t) return [t];
+          }
+          return [];
+        }
+        """
+    ) or []
+    return "\n\n".join(parts)
 
 
 def _wait_for_response_complete(page, prev_text: str, *, timeout_s: int = 180):
@@ -613,16 +650,48 @@ def cmd_ask(message: str) -> int:
         _type_multiline(page, message)
         # Defensive: wait briefly for the composer to register the typed
         # text and for the send button to become enabled before clicking,
-        # so we don't fire on a half-typed message.
+        # so we don't fire on a half-typed message. Force the click in
+        # case Playwright considers the button non-interactable for layout
+        # reasons (observed once — button visible+enabled per DOM but the
+        # Playwright .click() returned without firing the action).
         send = _wait_for_send_button_ready(page, timeout_s=10)
+        sent = False
         if send is not None:
-            send.click()
-        else:
-            # Last-resort fallback: use the platform's "send" keystroke.
-            # ChatGPT respects Ctrl/Cmd+Enter on long messages even when
-            # the visible button isn't found.
-            modifier = "Meta" if sys.platform == "darwin" else "Control"
-            page.keyboard.press(f"{modifier}+Enter")
+            try:
+                send.click(force=True)
+                sent = True
+            except Exception:
+                # Fall through to DOM-direct click + keyboard fallback.
+                pass
+        if not sent:
+            # DOM-direct click on the canonical send button id; safer than
+            # Ctrl+Enter (which ChatGPT does NOT treat as Send).
+            try:
+                clicked = page.evaluate(
+                    """
+                    () => {
+                      const b = document.querySelector(
+                        'button[data-testid="send-button"]'
+                      );
+                      if (b && !b.disabled
+                          && b.getAttribute('aria-disabled') !== 'true') {
+                        b.click();
+                        return true;
+                      }
+                      return false;
+                    }
+                    """
+                )
+                sent = bool(clicked)
+            except Exception:
+                pass
+        if not sent:
+            # Last resort: plain Enter. After _type_multiline finished its
+            # last keyboard.type, the composer focus is in compose-mode
+            # with the message visible — plain Enter at this point fires
+            # Send on ChatGPT. Ctrl/Cmd+Enter is NOT a documented send
+            # shortcut on chatgpt.com, so we avoid that.
+            page.keyboard.press("Enter")
 
         _append_trace("USER -> CHATGPT", message)
         response, timed_out = _wait_for_response_complete(page, prev)
