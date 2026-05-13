@@ -74,22 +74,32 @@ class TestForkFromField:
             update_branch_definition(tmp_path, branch_def_id="b3", updates={"fork_from": bvid2})
 
     def test_build_branch_with_fork_from_roundtrips(self, tmp_path, monkeypatch):
+        """fork_from is preserved in the built branch's record.
+
+        Move A (PR-110, 2026-05-13) changed fork_from semantics: it
+        now ALSO inherits the parent's topology (node_defs / edges /
+        state_schema / entry_point) — fork_from is no longer metadata-
+        only. This test asserts both the lineage record AND the
+        inheritance: an empty fork yields a branch with parent's nodes.
+        """
         from workflow.api.branches import _ext_branch_build
 
         monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
         _seed_branch(tmp_path, "b1")
         bvid = _publish(tmp_path, "b1")
 
+        # Empty fork — Move A inherits parent's topology from the
+        # published version; the caller doesn't have to re-author n1.
         spec = json.dumps({
             "name": "Forked Branch",
             "fork_from": bvid,
-            "node_defs": [{"node_id": "n1", "display_name": "N1", "prompt_template": "hi"}],
-            "edges": [{"from_node": "n1", "to_node": "END"}],
-            "entry_point": "n1",
         })
         result = json.loads(_ext_branch_build({"spec_json": spec, "verbose": "true"}))
-        assert result["status"] == "built"
+        assert result["status"] == "built", result
         assert result["branch"]["fork_from"] == bvid
+        # Inherited the parent's n1 node + n1->END edge.
+        assert len(result["branch"]["node_defs"]) == 1
+        assert result["branch"]["node_defs"][0]["node_id"] == "n1"
 
     def test_build_branch_invalid_fork_from_rejected(self, tmp_path, monkeypatch):
         from workflow.api.branches import _ext_branch_build

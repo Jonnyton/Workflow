@@ -1445,7 +1445,97 @@ def _staged_branch_from_spec(
     except ValueError as exc:
         errors.append(str(exc))
 
+    # Move A — clone-with-inherit (PR-110). When `fork_from` points at a
+    # published `branch_version_id`, seed the staging branch from the
+    # parent version's snapshot first. The user then applies overrides
+    # via `node_overrides` (dict[node_id, partial_node_def]) and/or
+    # top-level keys that REPLACE inherited fields. This is the "users
+    # have primitives to build from scratch when needed but rarely do
+    # so because they can always grab something similar-shaped to start
+    # with" promise that slice-0 found unreachable without this fix.
+    parent_snapshot: dict[str, Any] | None = None
+    if branch.fork_from:
+        from workflow.branch_versions import get_branch_version
+
+        # If parent_version is None, the caller's downstream fork_from
+        # validator (in _ext_branch_build) will surface the error —
+        # we don't double-flag here. Only seed staging when we have a
+        # real parent to inherit from.
+        parent_version = get_branch_version(_base_path(), branch.fork_from)
+        if parent_version is not None:
+            parent_snapshot = parent_version.snapshot or {}
+
+    if parent_snapshot:
+        # Seed staging with parent's topology. Each helper handles
+        # its own dedup, so re-applying later from spec.node_defs is
+        # blocked (the caller must use node_overrides for changes
+        # to existing nodes).
+        for raw in parent_snapshot.get("node_defs") or []:
+            err = _apply_node_spec(branch, raw)
+            if err:
+                errors.append(f"parent_node_def[{raw.get('node_id', '?')}]: {err}")
+        for raw in parent_snapshot.get("edges") or []:
+            err = _apply_edge_spec(branch, raw)
+            if err:
+                errors.append(f"parent_edge[{raw.get('from', '?')}->{raw.get('to', '?')}]: {err}")
+        for raw in parent_snapshot.get("conditional_edges") or []:
+            err = _apply_conditional_edge_spec(branch, raw)
+            if err:
+                errors.append(f"parent_conditional_edge[{raw.get('from', '?')}]: {err}")
+        for raw in parent_snapshot.get("state_schema") or []:
+            err = _apply_state_field_spec(branch, raw)
+            if err:
+                errors.append(f"parent_state_field[{raw.get('name', '?')}]: {err}")
+        parent_entry = (parent_snapshot.get("entry_point") or "").strip()
+        if parent_entry:
+            branch.entry_point = parent_entry
+
+    # node_overrides: dict[node_id, partial_node_def]. For each entry,
+    # find the matching parent-inherited node_def and apply the
+    # override fields on top. Only valid when fork_from inherited a
+    # parent — overriding a node that wasn't inherited is a spec error.
+    overrides = spec.get("node_overrides") or {}
+    if overrides and not isinstance(overrides, dict):
+        errors.append(
+            "node_overrides must be a JSON object "
+            "{node_id: {field: value, ...}}"
+        )
+        overrides = {}
+    for node_id, override_fields in overrides.items():
+        if not isinstance(override_fields, dict):
+            errors.append(
+                f"node_overrides[{node_id!r}]: value must be an object"
+            )
+            continue
+        target = next(
+            (n for n in branch.node_defs if n.node_id == node_id), None
+        )
+        if target is None:
+            errors.append(
+                f"node_overrides[{node_id!r}]: no inherited node with "
+                f"that id; add a new node via node_defs instead"
+            )
+            continue
+        for field_name, value in override_fields.items():
+            # Skip fields that would invalidate identity.
+            if field_name == "node_id":
+                continue
+            if hasattr(target, field_name):
+                setattr(target, field_name, value)
+
     for idx, raw in enumerate(spec.get("node_defs") or spec.get("nodes") or []):
+        # If we've inherited from parent, new node_defs are ADDITIVE —
+        # they cannot collide with parent nodes (use node_overrides for
+        # changes to inherited nodes).
+        nid = (raw.get("node_id") or raw.get("id") or "").strip()
+        if parent_snapshot and nid and any(
+            n.node_id == nid for n in branch.node_defs
+        ):
+            errors.append(
+                f"node[{idx}] ({nid!r}): already inherited from parent; "
+                f"use node_overrides to amend an inherited node"
+            )
+            continue
         err = _apply_node_spec(branch, raw)
         if err:
             errors.append(f"node[{idx}]: {err}")
@@ -1461,6 +1551,9 @@ def _staged_branch_from_spec(
             errors.append(f"conditional_edge[{idx}]: {err}")
 
     for idx, raw in enumerate(spec.get("state_schema") or []):
+        # When inheriting from parent, parent's state_schema already
+        # populated branch.state_schema; new state fields are additive
+        # and dedup is enforced inside _apply_state_field_spec.
         err = _apply_state_field_spec(branch, raw)
         if err:
             errors.append(f"state_schema[{idx}]: {err}")
