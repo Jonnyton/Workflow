@@ -42,7 +42,7 @@ Format for future entries:
 - Branch: codex/pr828-skill-sync-refactor
 - Lane state: Active lane
 - Worktree: C:\Users\Jonathan\Projects\wf-pr828-skill-sync-refactor
-- STATUS/Issue/PR: GitHub issue #826; closed PR #828; new PR pending
+- STATUS/Issue/PR: GitHub issue #826; closed PR #828; PR #837
 - PLAN refs: Scoping Rules; Harness And Coordination; Retrieval And Memory; State And Artifacts
 - Purpose: replace rejected PR #828 design-note output with loop writer routing, prompt, and guardrail fixes.
 - _PURPOSE.md: C:\Users\Jonathan\Projects\wf-pr828-skill-sync-refactor\_PURPOSE.md
