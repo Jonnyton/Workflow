@@ -98,7 +98,11 @@ def test_list_branches_scope_published_filters_on_published_versions(branch_env)
     us, _ = branch_env
     versioned = _call(us, "build_branch", spec_json=json.dumps(_build_basic_spec("Versioned")))
     _call(us, "create_branch", name="Probe draft")
-    legacy_flagged = _call(us, "build_branch", spec_json=json.dumps(_build_basic_spec("Legacy flag only")))
+    legacy_flagged = _call(
+        us,
+        "build_branch",
+        spec_json=json.dumps(_build_basic_spec("Legacy flag only")),
+    )
     patched = _call(
         us,
         "patch_branch",
