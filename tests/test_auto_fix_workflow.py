@@ -848,6 +848,20 @@ def test_writer_prompts_include_recent_feedback_and_focused_verification(wf):
         assert "focused tests" in prompt
 
 
+def test_writer_prompts_keep_autonomous_spend_logged_proposed_only(wf):
+    steps = wf["jobs"]["fix"]["steps"]
+    oauth_step = next((s for s in steps if s.get("id") == "claude-oauth"), None)
+    codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
+    assert oauth_step is not None, "Must have a Claude OAuth step"
+    assert codex_step is not None, "Must have a Codex subscription step"
+    oauth_prompt = str(oauth_step.get("with", {}).get("prompt", ""))
+    codex_prompt = str(codex_step.get("run", ""))
+    for prompt in (oauth_prompt, codex_prompt):
+        assert "autonomous spend" in prompt.lower()
+        assert "logged/proposed-only" in prompt
+        assert "Do not add or activate real billing" in prompt
+
+
 def test_codex_step_enforces_post_generation_verification(wf):
     steps = wf["jobs"]["fix"]["steps"]
     codex_step = next((s for s in steps if s.get("id") == "codex-subscription"), None)
