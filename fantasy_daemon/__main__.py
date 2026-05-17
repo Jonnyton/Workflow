@@ -354,6 +354,7 @@ def _try_dispatcher_pick(
         from workflow.branch_tasks import claim_task
         from workflow.dispatcher import (
             dispatcher_enabled,
+            load_daemon_dispatch_profile,
             load_dispatcher_config,
             select_next_task,
         )
@@ -363,7 +364,15 @@ def _try_dispatcher_pick(
         if not _workflow_unified_execution_enabled():
             return None, {}
         cfg = load_dispatcher_config(universe_path)
-        picked = select_next_task(universe_path, config=cfg)
+        profile = load_daemon_dispatch_profile(
+            universe_path.parent,
+            daemon_id=daemon_id,
+        )
+        picked = select_next_task(
+            universe_path,
+            config=cfg,
+            daemon_profile=profile,
+        )
         if picked is None:
             return None, {}
         claimed = claim_task(universe_path, picked.branch_task_id, daemon_id)

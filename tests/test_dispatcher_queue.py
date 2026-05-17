@@ -44,8 +44,10 @@ from workflow.branch_tasks import (
     recover_claimed_tasks,
 )
 from workflow.dispatcher import (
+    DaemonDispatchProfile,
     DispatcherConfig,
     dispatcher_enabled,
+    load_daemon_dispatch_profile,
     load_dispatcher_config,
     score_task,
     select_next_task,
@@ -84,6 +86,7 @@ def _make_task(
         queued_at=queued_at or datetime.now(timezone.utc).isoformat(),
         status=status,
         claimed_by=extra.get("claimed_by", ""),
+        request_type=extra.get("request_type", "branch_run"),
     )
 
 
@@ -255,6 +258,99 @@ def test_dispatcher_determinism(universe_dir):
 def test_select_next_empty_queue_returns_none(universe_dir):
     cfg = DispatcherConfig()
     assert select_next_task(universe_dir, config=cfg) is None
+
+
+def test_select_next_task_skips_directed_task_for_wrong_daemon(universe_dir):
+    cfg = DispatcherConfig()
+    directed = _make_task(
+        trigger_source="owner_queued",
+        branch_task_id="directed-task",
+    )
+    directed.directed_daemon_id = "daemon::alice"
+    append_task(universe_dir, directed)
+    append_task(
+        universe_dir,
+        _make_task(trigger_source="user_request", branch_task_id="open-task"),
+    )
+
+    selected = select_next_task(
+        universe_dir,
+        config=cfg,
+        daemon_profile=DaemonDispatchProfile(daemon_id="daemon::bob"),
+    )
+
+    assert selected is not None
+    assert selected.branch_task_id == "open-task"
+
+
+def test_select_next_task_uses_soul_policy_request_type_bonus(universe_dir):
+    cfg = DispatcherConfig()
+    now = datetime.now(timezone.utc).isoformat()
+    append_task(
+        universe_dir,
+        _make_task(
+            trigger_source="user_request",
+            request_type="general",
+            branch_task_id="general-task",
+            queued_at=now,
+        ),
+    )
+    append_task(
+        universe_dir,
+        _make_task(
+            trigger_source="user_request",
+            request_type="branch_proposal",
+            branch_task_id="proposal-task",
+            queued_at=now,
+        ),
+    )
+
+    selected = select_next_task(
+        universe_dir,
+        config=cfg,
+        now_iso=now,
+        daemon_profile=DaemonDispatchProfile(
+            daemon_id="daemon::proposal-runner",
+            has_soul=True,
+            preferred_request_types=("branch_proposal",),
+        ),
+    )
+
+    assert selected is not None
+    assert selected.branch_task_id == "proposal-task"
+
+
+def test_load_daemon_dispatch_profile_reads_soul_behavior_policy(tmp_path):
+    from workflow import daemon_registry
+
+    daemon = daemon_registry.create_daemon(
+        tmp_path,
+        display_name="Patch Proposal Runner",
+        created_by="host",
+        soul_text="Prefer patch proposal work and preserve requester boundaries.",
+        domain_claims=["patches", "workflow-platform"],
+    )
+    daemon_registry.update_daemon_behavior(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        actor_id="host",
+        behavior_update={
+            "preferred_request_types": ["branch_proposal"],
+            "preferred_domains": ["patches"],
+        },
+        apply_now=True,
+    )
+
+    profile = load_daemon_dispatch_profile(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+    )
+
+    assert profile.daemon_id == daemon["daemon_id"]
+    assert profile.has_soul is True
+    assert profile.domain_claims == ("patches", "workflow-platform")
+    assert profile.preferred_request_types == ("branch_proposal",)
+    assert profile.preferred_domains == ("patches",)
 
 
 # ───────────────────────────────────────────────────────────────────────

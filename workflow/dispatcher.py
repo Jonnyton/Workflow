@@ -60,6 +60,7 @@ class DispatcherConfig:
     bid_term_cap: float = 30.0
     goal_affinity_coefficient: float = 0.0
     cost_penalty_coefficient: float = 0.0
+    soul_request_type_bonus: float = 15.0
     served_llm_type: str = ""
 
     def tier_enabled(self, trigger_source: str) -> bool:
@@ -93,6 +94,90 @@ class DispatcherConfig:
                 "live" if self.allow_opportunistic else "stubbed"
             ),
         }
+
+
+@dataclass(frozen=True)
+class DaemonDispatchProfile:
+    """Read-only daemon identity hints used while selecting queue work."""
+
+    daemon_id: str = ""
+    has_soul: bool = False
+    soul_hash: str = ""
+    domain_claims: tuple[str, ...] = ()
+    preferred_request_types: tuple[str, ...] = ()
+    preferred_domains: tuple[str, ...] = ()
+
+
+def _clean_string_tuple(raw: Any) -> tuple[str, ...]:
+    if isinstance(raw, str):
+        values = raw.split(",")
+    elif isinstance(raw, (list, tuple)):
+        values = raw
+    else:
+        return ()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        value = str(item).strip()
+        if not value or value in seen:
+            continue
+        cleaned.append(value)
+        seen.add(value)
+    return tuple(cleaned)
+
+
+def _profile_from_daemon(daemon: dict[str, Any]) -> DaemonDispatchProfile:
+    metadata = daemon.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    behavior = metadata.get("behavior_policy")
+    if not isinstance(behavior, dict):
+        behavior = {}
+    preferred_request_types = _clean_string_tuple(
+        behavior.get("preferred_request_types")
+        or metadata.get("preferred_request_types"),
+    )
+    preferred_domains = _clean_string_tuple(
+        behavior.get("preferred_domains")
+        or metadata.get("preferred_domains"),
+    )
+    return DaemonDispatchProfile(
+        daemon_id=str(daemon.get("daemon_id") or ""),
+        has_soul=bool(daemon.get("has_soul")),
+        soul_hash=str(daemon.get("soul_hash") or ""),
+        domain_claims=_clean_string_tuple(daemon.get("domain_claims")),
+        preferred_request_types=preferred_request_types,
+        preferred_domains=preferred_domains,
+    )
+
+
+def load_daemon_dispatch_profile(
+    base_path: str | Path,
+    *,
+    daemon_id: str,
+) -> DaemonDispatchProfile:
+    """Load soul-bearing daemon dispatch hints from the daemon registry.
+
+    Missing or invalid daemon ids degrade to an empty profile so callers
+    keep the existing dispatcher behavior.
+    """
+    clean_id = str(daemon_id or "").strip()
+    if not clean_id:
+        return DaemonDispatchProfile()
+    try:
+        from workflow.daemon_registry import get_daemon
+
+        daemon = get_daemon(base_path, daemon_id=clean_id, include_soul=True)
+    except KeyError:
+        return DaemonDispatchProfile(daemon_id=clean_id)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "dispatcher: failed to load daemon dispatch profile for %s",
+            clean_id,
+            exc_info=True,
+        )
+        return DaemonDispatchProfile(daemon_id=clean_id)
+    return _profile_from_daemon(daemon)
 
 
 def dispatcher_enabled() -> bool:
@@ -182,6 +267,22 @@ def score_task(
     return tier + recency + boost + pickup_signal + bid_term + goal_term + cost_term
 
 
+def _soul_guidance_bonus(
+    task: BranchTask,
+    *,
+    profile: DaemonDispatchProfile | None,
+    config: DispatcherConfig,
+) -> float:
+    if profile is None or not profile.has_soul:
+        return 0.0
+    if (
+        profile.preferred_request_types
+        and task.request_type in profile.preferred_request_types
+    ):
+        return max(0.0, float(config.soul_request_type_bonus))
+    return 0.0
+
+
 def run_branch_task_producers_into_queue(
     universe_path: Path,
     *,
@@ -242,6 +343,7 @@ def select_next_task(
     *,
     config: DispatcherConfig,
     now_iso: str | None = None,
+    daemon_profile: DaemonDispatchProfile | None = None,
 ) -> BranchTask | None:
     """Read queue, filter to pending + tier-enabled, return top score.
 
@@ -255,6 +357,12 @@ def select_next_task(
     eligible: list[tuple[float, BranchTask]] = []
     for task in queue:
         if task.status != "pending":
+            continue
+        if (
+            task.directed_daemon_id
+            and daemon_profile is not None
+            and task.directed_daemon_id != daemon_profile.daemon_id
+        ):
             continue
         if not config.tier_enabled(task.trigger_source):
             continue
@@ -271,6 +379,11 @@ def select_next_task(
         if not prefers_request_type(task.request_type):
             continue
         s = score_task(task, now_iso=now, config=config)
+        s += _soul_guidance_bonus(
+            task,
+            profile=daemon_profile,
+            config=config,
+        )
         eligible.append((s, task))
     if not eligible:
         return None
@@ -321,6 +434,7 @@ def load_dispatcher_config(universe_path: Path) -> DispatcherConfig:
         "recency_half_life_seconds", "bid_coefficient",
         "bid_term_cap",
         "goal_affinity_coefficient", "cost_penalty_coefficient",
+        "soul_request_type_bonus",
         "served_llm_type",
     ):
         if key in data:
