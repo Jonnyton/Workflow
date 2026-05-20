@@ -32,6 +32,7 @@ MEMORY_KIND_REGISTRY = {
     "contradiction": "Conflicting claims or evidence that require reconciliation.",
     "soul_proposal": "Candidate change to the daemon's identity or role contract.",
     "session_trace_summary": "Reviewed narrative summary of one session (run/mission/cadence); references raw artifacts, not raw payloads.",
+    "experience_lesson": "Typed lesson learned from one run; carries lineage, lesson_kind, observed_delta, and evidence_refs. Atom of cross-branch group evolution.",
 }
 VALID_MEMORY_KINDS = frozenset(MEMORY_KIND_REGISTRY)
 DEFAULT_MEMORY_KIND = "semantic"
