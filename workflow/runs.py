@@ -2114,6 +2114,20 @@ def _invoke_graph(
             detail=stats,
         ))
 
+    # PR-122 Phase 1 — external-write effectors.
+    # After a successful run, walk node_defs that declared an ``effects``
+    # list and route their outputs to the matching effector (today only
+    # github_pull_request via ``gh pr create``). Errors are surfaced into
+    # the run output's ``external_write_errors`` metadata; they never
+    # raise into the user-facing run status. Hard-rule #8 (fail loudly)
+    # is satisfied by the structured error fields on each evidence entry.
+    external_write_evidence = _run_external_write_effectors(branch, output)
+    if external_write_evidence:
+        output.setdefault("external_write_results", external_write_evidence)
+        errors = _collect_external_write_errors(external_write_evidence)
+        if errors:
+            output.setdefault("external_write_errors", errors)
+
     update_run_status(
         base_path, run_id,
         status=RUN_STATUS_COMPLETED,
@@ -2125,6 +2139,52 @@ def _invoke_graph(
         run_id=run_id, status=RUN_STATUS_COMPLETED,
         output=output, error="",
     )
+
+
+def _run_external_write_effectors(
+    branch: BranchDefinition, run_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Dispatch external-write effectors for ``branch`` against ``run_state``.
+
+    Never raises — all errors are folded into the returned evidence map.
+    Returns ``{}`` when no node declares any ``effects``.
+    """
+    try:
+        from workflow.effectors import run_effects_for_branch
+    except Exception:  # pragma: no cover — defensive import guard
+        logger.exception("failed to import workflow.effectors")
+        return {}
+    try:
+        return run_effects_for_branch(branch=branch, run_state=run_state)
+    except Exception:  # pragma: no cover — effectors are no-raise
+        logger.exception("external-write effector dispatch crashed")
+        return {}
+
+
+def _collect_external_write_errors(
+    evidence_map: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Flatten the per-node evidence into a list of error rows.
+
+    Each row: ``{"node_id": ..., "sink": ..., "error": ..., "error_kind": ...}``.
+    Used to populate ``output['external_write_errors']`` for downstream
+    observers (run snapshot, get_run, debugging).
+    """
+    errors: list[dict[str, Any]] = []
+    for node_id, per_node in (evidence_map or {}).items():
+        if not isinstance(per_node, dict):
+            continue
+        for sink, ev in per_node.items():
+            if not isinstance(ev, dict):
+                continue
+            if ev.get("error"):
+                errors.append({
+                    "node_id": node_id,
+                    "sink": sink,
+                    "error": ev.get("error"),
+                    "error_kind": ev.get("error_kind") or "unknown",
+                })
+    return errors
 
 
 def _is_cancel_exception(exc: BaseException) -> bool:
@@ -2862,6 +2922,15 @@ def _invoke_graph_resume(
         )
 
     output = dict(result) if isinstance(result, dict) else {}
+    # PR-122 Phase 1 — also fire external-write effectors on resume
+    # completion so a re-run that finishes via resume_run still emits
+    # declared PR sinks. Same no-raise contract as the primary path.
+    external_write_evidence = _run_external_write_effectors(branch, output)
+    if external_write_evidence:
+        output.setdefault("external_write_results", external_write_evidence)
+        errors = _collect_external_write_errors(external_write_evidence)
+        if errors:
+            output.setdefault("external_write_errors", errors)
     update_run_status(
         base_path, run_id,
         status=RUN_STATUS_COMPLETED,
