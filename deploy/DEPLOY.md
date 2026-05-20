@@ -114,58 +114,45 @@ ls -la /etc/workflow/env
 If ownership/mode differs, re-run the bootstrap — it resets to
 `root:workflow 640`.
 
-## Step 3b — Provision the codex auth volume (~30 sec, one-time)
+## Step 3b — Codex auth persistent volume (no host action needed)
 
 Codex CLI uses single-use OAuth refresh tokens that rotate in-place
-during normal operation. The compose stack now persists Codex's auth
-state across container restarts via a bind mount at
+during normal operation. The compose stack persists Codex's auth state
+across container restarts via a bind mount at
 `/var/lib/workflow-codex` → `/app/.codex` (see `deploy/compose.yml`).
 Without this, every restart throws away rotated tokens and the next
-refresh attempt fails with `refresh_token_reused`, killing every codex
-call until the host re-seeds `WORKFLOW_CODEX_AUTH_JSON_B64` manually.
-Documented design source:
+refresh attempt fails with `refresh_token_reused`. Design source:
 <https://developers.openai.com/codex/auth/ci-cd-auth>.
 
-One-time prep BEFORE the first start of this revision:
+**The deploy workflow handles the volume + migration automatically.**
+`.github/workflows/deploy-prod.yml` has a `Prepare codex auth
+persistent volume` step that runs on every deploy. It is idempotent:
 
-```bash
-# Create the persistent volume directory owned by the in-container UID
-# (workflow user is uid 1001 per Dockerfile).
-sudo install -d -m 700 -o 1001 -g 1001 /var/lib/workflow-codex
+- Creates `/var/lib/workflow-codex` (mode 700, owner uid 1001) when
+  missing; no-ops when present.
+- On the very first deploy onto a pre-existing live droplet, copies
+  the rotated `auth.json` out of the running `workflow-worker`
+  container into the new volume so the post-restart container
+  preserves the live refresh chain.
+- After that, every subsequent deploy is a complete no-op for this
+  section — the volume + `auth.json` are already in place and the
+  entrypoint preserves the file on restart.
 
-# Seed it with the current rotated auth.json so the new container
-# preserves a known-good auth from the very first start. Two paths:
-#
-# Path A — copy the live container's auth.json before the upgrade:
-sudo docker cp workflow-daemon:/app/.codex/auth.json /tmp/codex-auth.json
-sudo install -m 600 -o 1001 -g 1001 /tmp/codex-auth.json \
-    /var/lib/workflow-codex/auth.json
-sudo shred -u /tmp/codex-auth.json
-#
-# Path B — decode WORKFLOW_CODEX_AUTH_JSON_B64 from /etc/workflow/env
-# (use this if the live container is already dead):
-sudo bash -c '
-    set -euo pipefail
-    src=$(grep -E "^WORKFLOW_CODEX_AUTH_JSON_B64=" /etc/workflow/env | cut -d= -f2-)
-    [[ -n "$src" ]] || { echo "env var empty"; exit 1; }
-    printf "%s" "$src" | base64 -d > /var/lib/workflow-codex/auth.json
-    chmod 600 /var/lib/workflow-codex/auth.json
-    chown 1001:1001 /var/lib/workflow-codex/auth.json
-'
-```
+**Host action is only needed in two rare cases:**
 
-Verify:
+1. **Brand-new droplet, no live container to migrate from.** The
+   workflow step creates the empty volume; the new container then
+   seeds `auth.json` from `WORKFLOW_CODEX_AUTH_JSON_B64` (GitHub
+   Actions secret) on first boot. Host action: keep
+   `WORKFLOW_CODEX_AUTH_JSON_B64` rotated in GitHub secrets so a
+   fresh-droplet bootstrap has a known-good seed available.
+2. **Persistent volume wiped (disaster recovery).** Same as case 1:
+   the entrypoint reseeds from the env-var on the next boot. Host
+   action: same — keep the GitHub Actions secret fresh.
 
-```bash
-sudo ls -la /var/lib/workflow-codex/
-# expect:  -rw-------  1 1001 1001  ...  auth.json
-```
-
-After this prep, the entrypoint preserves `auth.json` on every restart
-instead of overwriting it. The `WORKFLOW_CODEX_AUTH_JSON_B64` env var
-is still read as a fallback for first-boot / volume-recovery cases, so
-it can remain set in `/etc/workflow/env`; it just stops getting applied
-on every restart.
+In normal steady-state operation (volume intact, container restarts
+for image bumps), Codex's in-place refresh chain survives indefinitely
+with no host intervention.
 
 ## Step 4 — Start the daemon (~30 sec)
 
