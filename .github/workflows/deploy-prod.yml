@@ -275,13 +275,20 @@ jobs:
           WORKFLOW_UID=1001
           WORKFLOW_GID=1001
 
-          # Idempotent: create the directory with right ownership if missing.
+          # Create the directory if missing. mkdir -p is itself a no-op
+          # when the path already exists.
           if [ ! -d "$VOLUME_DIR" ]; then
             echo "creating codex auth persistent volume at $VOLUME_DIR"
             mkdir -p "$VOLUME_DIR"
-            chown "$WORKFLOW_UID:$WORKFLOW_GID" "$VOLUME_DIR"
-            chmod 700 "$VOLUME_DIR"
           fi
+
+          # Ownership + mode are repaired UNCONDITIONALLY every deploy.
+          # If a prior attempt left the dir root-owned (e.g. docker bind
+          # auto-create races the create-with-chown branch), this heals
+          # the posture so uid 1001 can write. Both chown and chmod are
+          # themselves idempotent — no-op when state already matches.
+          chown "$WORKFLOW_UID:$WORKFLOW_GID" "$VOLUME_DIR"
+          chmod 700 "$VOLUME_DIR"
 
           # Migration: if the volume is empty but a workflow-worker container is
           # currently running with a /app/.codex/auth.json inside it (= we're rolling

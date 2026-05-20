@@ -128,8 +128,11 @@ refresh attempt fails with `refresh_token_reused`. Design source:
 `.github/workflows/deploy-prod.yml` has a `Prepare codex auth
 persistent volume` step that runs on every deploy. It is idempotent:
 
-- Creates `/var/lib/workflow-codex` (mode 700, owner uid 1001) when
-  missing; no-ops when present.
+- Creates `/var/lib/workflow-codex` when missing (`mkdir -p`); repairs
+  ownership (`uid 1001:1001`) and mode (`700`) unconditionally every
+  deploy so a root-owned dir left by a docker-bind auto-create or a
+  failed earlier attempt gets healed back to a state uid 1001 can
+  write.
 - On the very first deploy onto a pre-existing live droplet, copies
   the rotated `auth.json` out of the running `workflow-worker`
   container into the new volume so the post-restart container
@@ -137,6 +140,17 @@ persistent volume` step that runs on every deploy. It is idempotent:
 - After that, every subsequent deploy is a complete no-op for this
   section — the volume + `auth.json` are already in place and the
   entrypoint preserves the file on restart.
+
+The auth file is shared across the `workflow-daemon` and
+`workflow-worker` containers (both call `codex exec`: the daemon's
+in-process executor handles `run_branch` MCP calls; the worker's
+`fantasy_daemon` subprocess handles queued BranchTasks). Concurrent
+refresh attempts are serialized by `/usr/local/bin/codex` (which is
+`deploy/codex-flock-wrapper.sh`, installed by the Dockerfile in place
+of the bare codex symlink) — it takes an exclusive `flock -x` on
+`/app/.codex/.lock` before every invocation. This mitigates the
+`refresh_token_reused` race that Codex's official CI/CD auth guide
+warns about for shared-auth scenarios (Codex Issue #10332).
 
 **Host action is only needed in two rare cases:**
 
