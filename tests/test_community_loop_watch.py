@@ -9,6 +9,14 @@ from typing import Any
 from scripts import community_loop_watch as watch
 
 
+def test_exhausted_label_is_terminal_review():
+    """auto-fix-exhausted (applied by retry-budget exhaustion in auto-fix-bug.yml) must be
+    recognized by the watcher as a terminal review state so exhausted issues drop out of the
+    Writer queue's active accounting."""
+    assert watch.EXHAUSTED_LABEL == "auto-fix-exhausted"
+    assert watch.EXHAUSTED_LABEL in watch.TERMINAL_REVIEW_LABELS
+
+
 def test_github_token_prefers_explicit_argument(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "env-token")
 
