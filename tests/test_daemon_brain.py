@@ -248,6 +248,75 @@ def test_session_trace_summary_is_recognized_kind_with_full_lifecycle(
     assert result["promoted_count"] == 1
 
 
+def test_experience_lesson_is_recognized_kind_with_full_lifecycle(
+    tmp_path: Path,
+) -> None:
+    """Slice 2 of ExperiencePool (per docs/design-notes/2026-05-02-experience-pool-and-group-evolution.md).
+
+    Verifies experience_lesson is a recognized memory_kind that moves
+    through the existing promotion state machine: candidate (capture) →
+    accepted (review) → promoted (publish to wiki).
+
+    Per the audit verdict, experience_lesson reuses the existing memory_kind
+    substrate verbatim — no new typed surface, no schema migration, no
+    parallel evidence shape (evidence_refs point at existing EvalResult IDs).
+    """
+    daemon = _create_daemon(tmp_path, "Lesson Daemon")
+
+    entry = capture_daemon_memory(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        memory_kind="experience_lesson",
+        content=(
+            "When the simulator placeholder check fails, adding a "
+            "validation gate before the simulator step caught 3 prior "
+            "false-passes in retrospective evaluation."
+        ),
+        source_type="run",
+        source_id="run-markovic-2026-05-15-abc",
+        reliability="host_observed",
+        language_type="lesson",
+        visibility="borrowable_role_context",
+        metadata={
+            "source_run_id": "run:markovic-2026-05-15-abc",
+            "goal_id": "goal:markovic-publication",
+            "branch_id": "branch:markovic_fingerprint_rd_v3",
+            "lesson_kind": "intervention",
+            "intervention": {
+                "description": "Add placeholder-validation gate before simulator step",
+                "change_kind": "add",
+                "applied_to": "branch:markovic_fingerprint_rd_v3",
+            },
+            "observed_delta": (
+                "3 prior runs would have been caught at the new gate; "
+                "new gate produces FAILED early with typed failure_mode."
+            ),
+            "evidence_refs": [
+                "evalresult://run-markovic-2026-05-15-abc",
+            ],
+            "confidence": 0.8,
+        },
+    )
+    assert entry["memory_kind"] == "experience_lesson"
+    assert entry["promotion_state"] == "candidate"
+
+    review_daemon_memory(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        entry_id=entry["entry_id"],
+        decision="accept",
+        note="Lesson reviewed; intervention pattern is generalizable.",
+    )
+
+    result = promote_daemon_memory_to_wiki(
+        tmp_path,
+        daemon_id=daemon["daemon_id"],
+        entry_ids=[entry["entry_id"]],
+        summary="Experience lesson promotion sanity check.",
+    )
+    assert result["promoted_count"] == 1
+
+
 def test_daemon_memory_cost_ledger_is_read_only_status(tmp_path: Path) -> None:
     ada = _create_daemon(tmp_path, "Cost Ada")
     capture_daemon_memory(
