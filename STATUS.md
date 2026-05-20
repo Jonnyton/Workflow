@@ -38,7 +38,6 @@ universe_server.py: 14012 → 972 LOC live in main. PLAN.md restructured 30→11
 | **#24 Arc C** — env-var deprecation aliases (UNIVERSE_SERVER_BASE, WIKI_PATH) | workflow/storage/__init__.py | #25 | dev-ready |
 | **Phase 6** — `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump | workflow/storage/__init__.py + plugin mirror, tests/ | #24 | dev-ready |
 | `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28) | workflow/api/runs.py, tests/ | #23 | dev-ready |
-| Site wiki+loop lane — PR #158 was CLOSED not merged; site-wiki-live-lens branch work orphan; /loop redesign unbuilt | WebSite/site/src/routes/wiki/+page.svelte, WebSite/site/src/routes/loop/+page.svelte | - | dev-ready |
 | Windows full-suite backup.sh path fix | tests/test_backup_script.py | #18,#23 | dev-ready |
 | Clean-clone MCP config test mismatch | tests/test_mcp_server.py, .mcp.example.json | #18,#23 | dev-ready |
 | Card-matcher cleanup vs legacy-connector fallback contract | scripts/claude_chat.py, tests/test_claude_chat_inline_dismiss.py | - | dev-ready |
