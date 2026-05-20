@@ -27,10 +27,29 @@ drafts/concepts/external-write-packet-shape.md):
 Authentication: re-uses the host's existing ``gh`` CLI credentials.
 No new credential resolver in this slice (see PR-122 follow-ons).
 
-Dry-run: when ``WORKFLOW_EXTERNAL_WRITE_DRY_RUN`` is truthy OR the
-caller passes ``dry_run=True``, ``gh`` is NOT invoked. The function
-returns the parsed intent so authors can validate the packet shape
-before allowing real writes.
+Safety defaults (PR-122 Phase 1, round-2 response to Codex review of
+PR #955):
+
+- **Default is dry-run.** The effector only invokes ``gh pr create``
+  when ``WORKFLOW_EXTERNAL_WRITE_ENABLED`` is truthy. Without that
+  explicit opt-in, the effector returns the parsed intent and never
+  shells out. This satisfies the consent-gate requirement: an
+  out-of-the-box install can have a branch declare
+  ``effects=["github_pull_request"]`` and the operator will see the
+  intent in run output without any risk of an accidental PR.
+- ``WORKFLOW_EXTERNAL_WRITE_DRY_RUN`` (the legacy env) is still
+  honored as a back-compat alias: when truthy it forces dry-run
+  regardless of the enable flag. Since dry-run is now the safe default
+  the alias is essentially a no-op for new installs, but it preserves
+  intent for any operator that set it explicitly.
+- The caller can also pass ``dry_run=True``; that wins over both env
+  vars.
+- Even when ``WORKFLOW_EXTERNAL_WRITE_ENABLED`` is set, the effector
+  refuses to call ``gh`` unless the packet includes
+  ``idempotency_ack='caller_handled_externally_phase_1_temporary_unsafe'``.
+  Phase 1 ships no real idempotency check; the ack phrase makes the
+  caller name the risk before duplicate-PR potential is enabled.
+  Phase 2 replaces this guard with a real dedupe layer.
 
 Errors are captured and returned in the evidence map; the function
 never raises to the run-completion path. Hard-rule #8 (fail loudly)
@@ -52,16 +71,39 @@ logger = logging.getLogger(__name__)
 
 EXTERNAL_WRITE_SINK_GITHUB_PR = "github_pull_request"
 _DRY_RUN_ENV = "WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
+_ENABLE_ENV = "WORKFLOW_EXTERNAL_WRITE_ENABLED"
 _GH_TIMEOUT_SECONDS = 60.0
+
+# Phase 1 explicit-acknowledgement phrase. The caller must opt into
+# the duplicate-PR risk by hand until Phase 2 lands real idempotency.
+PHASE_1_IDEMPOTENCY_ACK = "caller_handled_externally_phase_1_temporary_unsafe"
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 _PR_URL_RE = re.compile(r"https?://[^\s]+/pull/(\d+)")
 
 
-def _dry_run_from_env() -> bool:
-    val = os.environ.get(_DRY_RUN_ENV, "")
+def _env_truthy(name: str) -> bool:
+    val = os.environ.get(name, "")
     return val.strip().lower() in _TRUTHY
+
+
+def _dry_run_from_env() -> bool:
+    """Return True when the environment requests dry-run mode.
+
+    Dry-run is the safe default. The effector only goes live when
+    ``WORKFLOW_EXTERNAL_WRITE_ENABLED`` is truthy AND
+    ``WORKFLOW_EXTERNAL_WRITE_DRY_RUN`` is NOT truthy (the legacy alias
+    still wins so an operator that explicitly set it keeps their
+    intent). Returning ``True`` here means "force dry-run".
+    """
+    # Legacy dry-run alias always forces dry-run when set.
+    if _env_truthy(_DRY_RUN_ENV):
+        return True
+    # New default: dry-run unless explicit enable.
+    if not _env_truthy(_ENABLE_ENV):
+        return True
+    return False
 
 
 def _parse_packet(value: Any) -> dict[str, Any] | None:
@@ -232,11 +274,42 @@ def run_github_pr_effector(
     if dry_run:
         return {
             "dry_run": True,
+            "enabled_explicit": _env_truthy(_ENABLE_ENV),
+            "intent": packet,
+            "matched_output_key": matched_key,
+            "reason": (
+                "WORKFLOW_EXTERNAL_WRITE_ENABLED not set"
+                if not _env_truthy(_ENABLE_ENV)
+                else "dry_run forced by caller or WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
+            ),
+        }
+    # Phase 1 idempotency guard. Even when the operator has explicitly
+    # enabled real writes via WORKFLOW_EXTERNAL_WRITE_ENABLED, we
+    # refuse to call ``gh pr create`` unless the packet contains a
+    # specific acknowledgement phrase that names the duplicate-PR risk.
+    # Phase 2 replaces this guard with real dedupe (idempotency_hint
+    # derivation + existing-PR lookup + run-evidence consultation).
+    ack = packet.get("idempotency_ack")
+    if ack != PHASE_1_IDEMPOTENCY_ACK:
+        return {
+            "node_id": node_id,
+            "sink": EXTERNAL_WRITE_SINK_GITHUB_PR,
+            "dry_run": True,
+            "error": "idempotency_not_implemented",
+            "error_kind": "idempotency_phase_1_guard",
+            "message": (
+                "Phase 1 has no idempotency check. Pass "
+                f"idempotency_ack={PHASE_1_IDEMPOTENCY_ACK!r} in the "
+                "packet to acknowledge the duplicate-PR risk and "
+                "proceed. Real idempotency derivation lands in a "
+                "follow-on PR."
+            ),
             "intent": packet,
             "matched_output_key": matched_key,
         }
     evidence = _invoke_gh_pr_create(packet)
     evidence["matched_output_key"] = matched_key
+    evidence["enabled_explicit"] = True
     return evidence
 
 
