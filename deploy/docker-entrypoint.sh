@@ -76,10 +76,27 @@ else
 fi
 
 # Codex stores auth in ~/.codex/auth.json relative to the running user.
+#
+# Codex CLI uses OAuth single-use refresh tokens — it rotates them
+# in-container during normal operation, writing the new token back to
+# auth.json. Overwriting that file on every container start throws away
+# rotated tokens, so the next refresh attempt sends a token that's
+# already been used -> `refresh_token_reused` error -> codex calls die.
+#
+# Fix per OpenAI's official Codex CI/CD auth guide
+# (https://developers.openai.com/codex/auth/ci-cd-auth): seed auth.json
+# only when missing, and persist it across container restarts via a
+# volume mount on the parent directory (deploy/compose.yml binds
+# /app/.codex to a host path so the in-place refresh chain survives).
+#
+# Three branches:
+#   1. env set, file missing  -> seed (first boot / volume recovery)
+#   2. env set, file present  -> preserve (in-place refresh chain alive)
+#   3. env unset, file present -> preserve (volume-only operation)
 CODEX_AUTH_FILE="${HOME:-/app}/.codex/auth.json"
 
-if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" ]]; then
-    echo "[entrypoint] installing codex subscription auth bundle"
+if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" && ! -f "${CODEX_AUTH_FILE}" ]]; then
+    echo "[entrypoint] seeding codex auth.json (first boot / volume recovery)"
     CODEX_AUTH_DIR="$(dirname "${CODEX_AUTH_FILE}")"
     mkdir -p "${CODEX_AUTH_DIR}"
     CODEX_AUTH_TMP="$(mktemp "${CODEX_AUTH_DIR}/auth.json.XXXXXX")"
@@ -91,8 +108,10 @@ if [[ -n "${WORKFLOW_CODEX_AUTH_JSON_B64:-}" ]]; then
         echo "[entrypoint] failed to decode WORKFLOW_CODEX_AUTH_JSON_B64" >&2
         exit 1
     fi
-    unset WORKFLOW_CODEX_AUTH_JSON_B64
+elif [[ -f "${CODEX_AUTH_FILE}" ]]; then
+    echo "[entrypoint] preserving existing codex auth.json (in-place refresh chain)"
 fi
+unset WORKFLOW_CODEX_AUTH_JSON_B64
 
 _workflow_bash_path() {
     local _path="${1:-}"

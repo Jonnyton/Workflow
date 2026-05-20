@@ -114,6 +114,59 @@ ls -la /etc/workflow/env
 If ownership/mode differs, re-run the bootstrap — it resets to
 `root:workflow 640`.
 
+## Step 3b — Provision the codex auth volume (~30 sec, one-time)
+
+Codex CLI uses single-use OAuth refresh tokens that rotate in-place
+during normal operation. The compose stack now persists Codex's auth
+state across container restarts via a bind mount at
+`/var/lib/workflow-codex` → `/app/.codex` (see `deploy/compose.yml`).
+Without this, every restart throws away rotated tokens and the next
+refresh attempt fails with `refresh_token_reused`, killing every codex
+call until the host re-seeds `WORKFLOW_CODEX_AUTH_JSON_B64` manually.
+Documented design source:
+<https://developers.openai.com/codex/auth/ci-cd-auth>.
+
+One-time prep BEFORE the first start of this revision:
+
+```bash
+# Create the persistent volume directory owned by the in-container UID
+# (workflow user is uid 1001 per Dockerfile).
+sudo install -d -m 700 -o 1001 -g 1001 /var/lib/workflow-codex
+
+# Seed it with the current rotated auth.json so the new container
+# preserves a known-good auth from the very first start. Two paths:
+#
+# Path A — copy the live container's auth.json before the upgrade:
+sudo docker cp workflow-daemon:/app/.codex/auth.json /tmp/codex-auth.json
+sudo install -m 600 -o 1001 -g 1001 /tmp/codex-auth.json \
+    /var/lib/workflow-codex/auth.json
+sudo shred -u /tmp/codex-auth.json
+#
+# Path B — decode WORKFLOW_CODEX_AUTH_JSON_B64 from /etc/workflow/env
+# (use this if the live container is already dead):
+sudo bash -c '
+    set -euo pipefail
+    src=$(grep -E "^WORKFLOW_CODEX_AUTH_JSON_B64=" /etc/workflow/env | cut -d= -f2-)
+    [[ -n "$src" ]] || { echo "env var empty"; exit 1; }
+    printf "%s" "$src" | base64 -d > /var/lib/workflow-codex/auth.json
+    chmod 600 /var/lib/workflow-codex/auth.json
+    chown 1001:1001 /var/lib/workflow-codex/auth.json
+'
+```
+
+Verify:
+
+```bash
+sudo ls -la /var/lib/workflow-codex/
+# expect:  -rw-------  1 1001 1001  ...  auth.json
+```
+
+After this prep, the entrypoint preserves `auth.json` on every restart
+instead of overwriting it. The `WORKFLOW_CODEX_AUTH_JSON_B64` env var
+is still read as a fallback for first-boot / volume-recovery cases, so
+it can remain set in `/etc/workflow/env`; it just stops getting applied
+on every restart.
+
 ## Step 4 — Start the daemon (~30 sec)
 
 ```bash

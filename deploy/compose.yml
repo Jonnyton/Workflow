@@ -54,6 +54,14 @@ services:
       - /etc/workflow/env
     volumes:
       - workflow-data:/data
+      # Persist codex OAuth state across container restarts. Codex CLI
+      # rotates single-use refresh tokens in-place; without persistence,
+      # every restart throws away the rotated token and the next refresh
+      # hits `refresh_token_reused`. Shared bind so `daemon` + `worker`
+      # see the same auth.json. Host one-time prep is documented in
+      # deploy/DEPLOY.md (create /var/lib/workflow-codex chown'd to
+      # uid 1001 before first start of this revision).
+      - /var/lib/workflow-codex:/app/.codex
     healthcheck:
       # Use the same canary shape as Layer-1 / tier-3 / docker-build
       # CI. Python already in the image.
@@ -159,6 +167,11 @@ services:
       - /etc/workflow/env
     volumes:
       - workflow-data:/data
+      # Same shared codex auth bind as `daemon`. The worker is the
+      # process that actually invokes `codex exec` for node execution,
+      # so persistence here is what keeps node execution alive across
+      # restarts.
+      - /var/lib/workflow-codex:/app/.codex
     depends_on:
       daemon:
         condition: service_healthy
