@@ -26,6 +26,7 @@ Design rules (from `docs/specs/community_branches_phase3.md`):
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import json
 import logging
 import operator
@@ -583,6 +584,54 @@ def _state_type_map(state_schema: list[dict[str, Any]]) -> dict[str, str]:
     return types
 
 
+def _state_schema_defaults(
+    state_schema: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Extract ``{field_name: default_value}`` for every state_schema entry
+    that carries a non-None ``default_value``.
+
+    BUG-085 M3: state_schema fields with declared defaults must be
+    available to strict-isolation prompt placeholders even when the
+    caller didn't pass them in ``inputs``. Callers merge this dict UNDER
+    user-provided inputs so explicit caller values still win.
+
+    Codex checker finding 2: each call returns FRESH deepcopies of the
+    default values so mutable defaults (``[]``, ``{}``) cannot leak
+    mutation across runs. This makes ``_state_schema_defaults`` the
+    canonical "fresh defaults" entry point.
+    """
+    defaults: dict[str, Any] = {}
+    for field in state_schema or []:
+        if not isinstance(field, dict):
+            continue
+        name = (field.get("name") or "").strip()
+        if not name:
+            continue
+        if "default_value" not in field:
+            continue
+        value = field.get("default_value")
+        if value is None:
+            continue
+        defaults[name] = copy.deepcopy(value)
+    return defaults
+
+
+def seed_initial_state(
+    inputs: dict[str, Any],
+    state_schema: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Return a fresh dict with state_schema defaults merged UNDER inputs.
+
+    BUG-085 M3 — used at branch invocation to pre-populate the runtime
+    state with any state_schema field that carries a ``default_value``.
+    Explicit caller-provided ``inputs`` always win; defaults only fill
+    keys the caller did not pass.
+    """
+    seeded = dict(_state_schema_defaults(state_schema))
+    seeded.update(inputs or {})
+    return seeded
+
+
 def _needs_json_contract(
     node: NodeDefinition, state_types: dict[str, str],
 ) -> bool:
@@ -733,6 +782,14 @@ def _build_prompt_template_node(
     timeout_s = float(node.timeout_seconds or 300.0)
     strict_isolation = bool(getattr(node, "strict_input_isolation", True))
     declared_inputs = list(node.input_keys)
+    # BUG-085 (Codex checker finding 1): state_schema fields carrying a
+    # default_value count as effectively-declared input. Without this,
+    # the strict render filter drops seeded defaults when the node
+    # declares any explicit input_keys, and the truly_outside partition
+    # falsely flags defaulted-but-referenced keys as isolation
+    # violations. Compute the union ONCE at closure-build time.
+    schema_defaulted_keys = set(_state_schema_defaults(state_schema).keys())
+    effective_declared = set(declared_inputs) | schema_defaulted_keys
     state_types = _state_type_map(state_schema or [])
     needs_json = _needs_json_contract(node, state_types)
     json_suffix = _json_contract_suffix(node, state_types) if needs_json else ""
@@ -758,8 +815,11 @@ def _build_prompt_template_node(
         # placeholders then trip the missing-state-keys check below
         # and raise CompilerError — never silently read leaked state.
         if strict_isolation and declared_inputs:
+            # BUG-085: include state_schema-defaulted keys in the render
+            # allow-list so seeded defaults are visible to the prompt
+            # even when not duplicated into the node's input_keys.
             render_state: dict[str, Any] = {
-                k: state[k] for k in declared_inputs if k in state
+                k: state[k] for k in effective_declared if k in state
             }
         else:
             render_state = state
@@ -789,14 +849,57 @@ def _build_prompt_template_node(
         missing = _missing_state_keys(template, render_state)
         if missing:
             if strict_isolation:
-                # Distinguish the isolation-specific failure so the
-                # operator sees WHY the key was unavailable (filtered
-                # out, not absent from state).
+                # BUG-085: partition the missing keys into two categories
+                # so the operator sees the ACTUAL failure mode, not a
+                # contradictory "outside declared input_keys" message for
+                # keys that ARE in the declared list but simply aren't in
+                # state yet (upstream node hasn't produced them, or a
+                # state_schema default wasn't seeded).
+                # state_schema-defaulted keys count as effectively-declared
+                # (Codex checker finding 1) — a referenced default key
+                # that simply isn't in state at execution time is NOT an
+                # isolation violation, it's an unavailability problem.
+                truly_outside = [
+                    k for k in missing if k not in effective_declared
+                ]
+                declared_but_unavailable = [
+                    k for k in missing if k in effective_declared
+                ]
+                # Prioritize the actionable "outside" diagnosis when both
+                # categories are present — that's the real isolation
+                # violation; the unavailable-declared keys are noted as
+                # secondary context so the operator gets the whole picture.
+                if truly_outside and declared_but_unavailable:
+                    raise CompilerError(
+                        f"Node '{node.node_id}' (strict_input_isolation=true) "
+                        f"prompt references state keys {truly_outside} "
+                        f"outside declared input_keys "
+                        f"{sorted(declared_inputs)!r}. "
+                        f"Add the keys to input_keys or clear the flag. "
+                        f"Additionally, declared input_keys "
+                        f"{declared_but_unavailable} are not present in "
+                        f"state at execution time — likely an upstream "
+                        f"node did not produce them, or a state_schema "
+                        f"default was not initialized."
+                    )
+                if truly_outside:
+                    raise CompilerError(
+                        f"Node '{node.node_id}' (strict_input_isolation=true) "
+                        f"prompt references state keys {truly_outside} "
+                        f"outside declared input_keys "
+                        f"{sorted(declared_inputs)!r}. "
+                        f"Add the keys to input_keys or clear the flag."
+                    )
+                # All missing keys ARE declared — the failure is that
+                # state didn't contain them at execution time.
                 raise CompilerError(
                     f"Node '{node.node_id}' (strict_input_isolation=true) "
-                    f"prompt references state keys {missing} outside "
-                    f"declared input_keys {sorted(declared_inputs)!r}. "
-                    f"Add the keys to input_keys or clear the flag."
+                    f"prompt references declared input_keys "
+                    f"{declared_but_unavailable} that are not present in "
+                    f"state at execution time. "
+                    f"Likely cause: an upstream node did not produce these "
+                    f"keys, or a state_schema field default was not "
+                    f"initialized into the run's initial state."
                 )
             raise CompilerError(
                 f"Node '{node.node_id}' prompt references missing "
