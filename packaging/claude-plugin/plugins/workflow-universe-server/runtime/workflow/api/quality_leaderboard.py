@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -346,7 +347,9 @@ def _run_stats(base_path: str | Path, branch_def_id: str) -> dict[str, Any]:
         "total": int(row["total"] or 0),
         "completed": int(row["completed"] or 0),
         "failed": int(row["failed"] or 0),
-        "last_successful_run_at": float(row["last_successful_run_at"] or 0.0),
+        "last_successful_run_at": _timestamp_to_epoch(
+            row["last_successful_run_at"],
+        ),
     }
 
 
@@ -561,9 +564,39 @@ def _entry_sort_key(entry: dict[str, Any]) -> tuple:
     signals = entry.get("signals") or {}
     return (
         float(entry.get("score") or 0.0),
-        float(signals.get("last_successful_run_at") or 0.0),
-        float(entry.get("created_at") or 0.0),
+        _timestamp_to_epoch(signals.get("last_successful_run_at")),
+        _timestamp_to_epoch(entry.get("created_at")),
     )
+
+
+def _timestamp_to_epoch(raw: Any) -> float:
+    """Return epoch seconds for numeric or ISO timestamps.
+
+    Branch metadata has historically stored ``created_at`` as both Unix
+    seconds and ISO strings. Leaderboard sort keys must tolerate both
+    because one malformed legacy value should not make parent selection
+    fail for the whole Goal.
+    """
+    if raw is None:
+        return 0.0
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        value = raw.strip()
+        if not value:
+            return 0.0
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    return 0.0
 
 
 # ---------------------------------------------------------------------------

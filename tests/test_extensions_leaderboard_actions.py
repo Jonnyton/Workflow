@@ -193,6 +193,46 @@ def test_recommended_parent_empty_goal_text_carries_rationale(us_env):
     assert result["text"] == result["rationale"]
 
 
+def test_recommended_parent_tolerates_iso_created_at(us_env):
+    us, base = us_env
+    from workflow.daemon_server import save_branch_definition, save_goal
+
+    save_goal(
+        base,
+        goal=dict(
+            goal_id="g-iso", name="ISO", description="", author="h",
+            tags=[], visibility="public",
+        ),
+    )
+    for bid, created_at in (
+        ("b-old", "2026-05-15T05:53:29.558425+00:00"),
+        ("b-new", "2026-05-16T05:53:29.558425+00:00"),
+    ):
+        save_branch_definition(
+            base,
+            branch_def=dict(
+                branch_def_id=bid,
+                name=f"Branch {bid}",
+                description="t",
+                author="alice",
+                tags=[],
+                graph_nodes=[],
+                edges=[],
+                state_schema=[],
+                entry_point="",
+                published=True,
+                goal_id="g-iso",
+                created_at=created_at,
+                updated_at=created_at,
+            ),
+        )
+
+    result = _call(us, "recommended_parent_for_fork", goal_id="g-iso")
+
+    assert "error" not in result
+    assert result["recommended_parent"]["branch_def_id"] == "b-new"
+
+
 # ---------------------------------------------------------------------------
 # Tool surface stability — the action names are listed under
 # `available_actions` in the unknown-action error so the chatbot can
