@@ -66,6 +66,7 @@ from workflow.api.evaluation import (
     _JUDGMENT_ACTIONS,
     _dispatch_judgment_action,
 )
+from workflow.api.extensions_leaderboard_actions import _LEADERBOARD_ACTIONS
 from workflow.api.helpers import _base_path, _read_json
 from workflow.api.market import (
     _ATTRIBUTION_ACTIONS,
@@ -635,6 +636,22 @@ def _extensions_impl(
         }
         return attribution_handler(attr_kwargs)
 
+    # ── Quality leaderboard / parent selection (PR-123 substrate M2) ───────
+    leaderboard_handler = _LEADERBOARD_ACTIONS.get(action)
+    if leaderboard_handler is not None:
+        lb_kwargs: dict[str, Any] = {
+            "goal_id": goal_id,
+            "author": author,
+            "force": force,
+        }
+        # ``author`` carries the optional viewer override; ``force`` is
+        # the include_private flag (host / internal callers only).
+        # Field reuse keeps the extensions() tool signature stable —
+        # no new kwargs added in this slice.
+        lb_kwargs["viewer"] = author or ""
+        lb_kwargs["include_private"] = force
+        return leaderboard_handler(lb_kwargs)
+
     return json.dumps({
         "error": f"Unknown action '{action}'.",
         "available_actions": [
@@ -665,6 +682,7 @@ def _extensions_impl(
             "pause_schedule", "unpause_schedule", "list_scheduler_subscriptions",
             "record_outcome", "list_outcomes", "get_outcome",
             "record_remix", "get_provenance",
+            "quality_leaderboard", "recommended_parent_for_fork",
         ],
     })
 
