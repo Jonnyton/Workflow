@@ -2595,19 +2595,39 @@ def set_canonical_branch(
     canonical_branch_history before the new value is written.
     Raises KeyError if goal_id not found.
     Raises ValueError if branch_version_id is provided but does not exist
-        in branch_versions table (not a published version).
+        in branch_versions table (not a published version), OR if the
+        supplied version's status is not 'active' (PR-127 round 2 P1.1
+        defense-in-depth — rolled_back / superseded versions cannot be
+        promoted to canonical even if a caller bypasses the auto-refresh
+        filter in :func:`workflow.api.canonical_dispatch._latest_published_version_id`).
     """
     initialize_author_server(base_path)
     now = _now()
     goal = get_goal(base_path, goal_id=goal_id)
 
     if branch_version_id is not None:
-        # Validate that it's a real published version.
+        # Validate that it's a real published version AND that it has
+        # not been rolled back / superseded. The active-only check is
+        # the round-2 P1.1 defense-in-depth: the auto-refresh path
+        # already filters via `_latest_published_version_id`, but a
+        # second guard at the write site means a rolled-back version
+        # cannot become canonical via any code path (manual MCP call,
+        # auto-refresh bug, host script, etc.).
         from workflow.branch_versions import get_branch_version
-        if get_branch_version(base_path, branch_version_id) is None:
+        version = get_branch_version(base_path, branch_version_id)
+        if version is None:
             raise ValueError(
                 f"branch_version_id {branch_version_id!r} not found "
                 "in branch_versions — only published versions may be canonical."
+            )
+        version_status = getattr(version, "status", "active") or "active"
+        if version_status != "active":
+            raise ValueError(
+                f"branch_version_id {branch_version_id!r} has "
+                f"status={version_status!r}; only versions with "
+                "status='active' may be promoted to canonical. "
+                "Re-publish a fresh version or restore the rolled-back "
+                "one before retrying."
             )
 
     # Build history entry for previous canonical (if any).

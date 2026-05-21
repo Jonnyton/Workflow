@@ -29,6 +29,20 @@ No new substrate primitives — pure orchestration over existing
 storage. The env-var fallback path (read by
 ``_maybe_enqueue_investigation``) stays in place until the observation
 window closes; cutover plan Step 5/6 removes the env in a follow-on PR.
+
+**Auth-boundary contract (PR-127 round 2 — Codex P1 findings):**
+
+* ``_latest_published_version_id`` filters to ``status='active'``
+  versions only. Rolled-back / superseded versions can NEVER become
+  the auto-refresh target. Defense in depth:
+  ``workflow.daemon_server.set_canonical_branch`` also rejects
+  non-active versions at the write site, so a bug in this filter
+  alone cannot promote a dead version (P1.1).
+* The auto-refresh leaderboard query is ALWAYS computed against
+  ``viewer=""`` (strictly-public). The caller-supplied viewer is
+  retained for log telemetry only; private branches authored by
+  the calling actor cannot become the Goal's global canonical via
+  auto-refresh (P1.2).
 """
 
 from __future__ import annotations
@@ -254,13 +268,42 @@ def _refresh_via_leaderboard(
 
     The function NEVER raises; storage / leaderboard failures collapse
     to a fall-back path with the original stored canonical (if any).
+
+    Round-2 P1.2 fix (Codex round-1 finding on PR #979): the auto-
+    refresh decision MUST be computed against a strictly-public
+    leaderboard view, regardless of which actor invoked
+    ``run_canonical``. The round-1 path forwarded the caller's
+    ``viewer`` (== ``_current_actor()``) into the leaderboard, which
+    intentionally surfaces private branches authored by that viewer
+    (PR-970's auth-boundary contract). The auto-refresh then wrote
+    that private branch as the Goal's **global** canonical via
+    ``set_canonical_branch``, exposing per-viewer private content to
+    every other actor as the default dispatch target.
+
+    Fix: hard-code the leaderboard query's viewer to ``""`` (strictly
+    public) here. The caller's ``viewer`` parameter is retained for
+    log telemetry — it identifies which actor triggered the refresh —
+    but never reaches the leaderboard write decision.
     """
     goal_id = goal["goal_id"]
     from workflow.api.quality_leaderboard import build_quality_leaderboard
 
+    if viewer:
+        # Telemetry only — record which actor's run_canonical call
+        # triggered this refresh, but do NOT scope the leaderboard
+        # query to their viewer. Canonical is global by definition.
+        logger.info(
+            "canonical_refresh | goal=%s | triggered_by=%s | "
+            "using_viewer='' for global decision",
+            goal_id, viewer,
+        )
+
     try:
         board = build_quality_leaderboard(
-            base_path, goal_id=goal_id, viewer=viewer, now=now,
+            # P1.2 fix: hard-coded empty viewer so private branches
+            # cannot become the global canonical. The caller-supplied
+            # viewer is intentionally ignored at this seam.
+            base_path, goal_id=goal_id, viewer="", now=now,
         )
     except Exception:
         logger.exception(
@@ -518,24 +561,50 @@ def _attempt_set_canonical(
 def _latest_published_version_id(
     base_path: str | Path, *, branch_def_id: str,
 ) -> str | None:
-    """Return the newest published ``branch_version_id`` for the def,
-    or None when no published version exists."""
+    """Return the newest **active** ``branch_version_id`` for the def,
+    or None when no active published version exists.
+
+    Round-2 P1.1 fix (Codex round-1 finding on PR #979): the round-1
+    implementation returned ``versions[0].branch_version_id`` for the
+    most recently published version regardless of status, which let a
+    rolled-back version become the auto-refresh target. The repro:
+    publish a version, roll it back, give the underlying branch_def
+    enough leaderboard signal to rank first, call run_canonical with
+    auto_canonical_via_leaderboard=true -> the rolled-back version
+    was selected (source=leaderboard_refreshed).
+
+    Fix: filter the version list to ``status == 'active'`` so rolled-
+    back / superseded versions are NEVER returned to the auto-refresh
+    path. Defense in depth: :func:`workflow.daemon_server.set_canonical_branch`
+    also rejects non-active versions, so a bug in this filter alone
+    can't promote a dead version.
+    """
     if not branch_def_id:
         return None
     from workflow.branch_versions import list_branch_versions
 
     try:
+        # Pull a window of recent versions and filter for status='active'
+        # in Python — list_branch_versions does not expose a status
+        # filter today, and adding one would require touching its
+        # signature which is out of scope for this round. A small
+        # constant window (default-50 of the helper) covers the
+        # realistic case where the latest few versions include at most
+        # a handful of rolled-back rows.
         versions = list_branch_versions(
-            base_path, branch_def_id=branch_def_id, limit=1,
+            base_path, branch_def_id=branch_def_id, limit=50,
         )
     except Exception:  # pragma: no cover — defensive
         logger.exception(
             "list_branch_versions crashed for %s", branch_def_id,
         )
         return None
-    if not versions:
-        return None
-    return versions[0].branch_version_id or None
+    for version in versions:
+        if getattr(version, "status", "active") == "active":
+            bvid = version.branch_version_id or ""
+            if bvid:
+                return bvid
+    return None
 
 
 def _split_version_id(version_id: str) -> tuple[str, str]:
