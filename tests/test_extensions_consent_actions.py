@@ -214,10 +214,17 @@ def test_grant_and_revoke_visible_to_effector(us_env, monkeypatch):
     effector's consent check, and a subsequent revoke must close it."""
     us, base = us_env
     from workflow.effectors import EXTERNAL_WRITE_SINK_GITHUB_PR
-    from workflow.effectors.github_pr import run_github_pr_effector
+    from workflow.effectors.github_pr import (
+        _CAPABILITIES_ENV,
+        run_github_pr_effector,
+    )
 
+    # Round-2 P1.2 — capability lookup is via the JSON-map env. Set a
+    # map containing only the destination under test so the lookup
+    # resolves to ``tok``.
     monkeypatch.setenv(
-        "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW", "tok",
+        _CAPABILITIES_ENV,
+        json.dumps({"Jonnyton/Workflow": "tok"}),
     )
     universe_dir = base
     packet = {

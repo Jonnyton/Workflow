@@ -1,4 +1,4 @@
-"""PR-122 Phase 2 Slice 1 — three-gate authority for the GitHub PR effector.
+"""PR-122 Phase 2 — three-gate authority for the GitHub PR effector.
 
 Covers:
   - Each gate failure case independently:
@@ -10,15 +10,21 @@ Covers:
     receipt recorded
   - Concurrent retries with the same idempotency_hint -> second call
     returns dedup hit without re-invoking gh
-  - Capability env-key derivation for multiple destinations
+  - JSON-map capability lookup (round-2 P1.2 fix) — distinct
+    destinations with punctuation that collided under the round-1
+    encoding now resolve to distinct tokens
   - Subprocess is fully mocked; no test touches real GitHub
   - Failure paths (gh exit nonzero / missing / timeout / no-URL-in-stdout)
-    do NOT record receipts
+    do NOT leave terminal-succeeded receipts; the reserved row is
+    released to status=failed so a retry can re-reserve
+
+Round-2 atomicity tests live in tests/test_external_write_phase_2_atomicity.py.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -28,18 +34,21 @@ import pytest
 from workflow.branches import NodeDefinition
 from workflow.effectors import EXTERNAL_WRITE_SINK_GITHUB_PR
 from workflow.effectors.github_pr import (
-    _capability_env_key,
+    _CAPABILITIES_ENV,
+    _read_capability,
     run_effects_for_branch,
     run_github_pr_effector,
 )
 from workflow.storage.effector_consents import grant_consent
 from workflow.storage.external_write_receipts import (
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_SUCCEEDED,
     lookup_receipt,
     record_receipt,
 )
 
 _DESTINATION = "Jonnyton/Workflow"
-_CAPABILITY_ENV = "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW"
 _HEAD_BRANCH = "auto/loop-2/cycle-001"
 
 
@@ -79,49 +88,113 @@ def universe_dir(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _clean_capability_env(monkeypatch):
-    """Strip any capability env vars the host shell may have set."""
-    for name in list(__import__("os").environ.keys()):
+    """Strip host-shell capability env state for isolated tests.
+
+    Both the round-2 JSON-map env and any stale round-1 per-destination
+    suffix env vars are cleared so test outcomes don't depend on the
+    developer's shell state.
+    """
+    monkeypatch.delenv(_CAPABILITIES_ENV, raising=False)
+    for name in list(os.environ.keys()):
         if name.startswith("WORKFLOW_GITHUB_PR_CAPABILITY_REPO_"):
             monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("WORKFLOW_EXTERNAL_WRITE_ENABLED", raising=False)
     monkeypatch.delenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", raising=False)
 
 
+def _set_capability(monkeypatch, destination: str, token: str) -> None:
+    """Set the JSON-map capability env to ``{destination: token}``."""
+    existing_raw = os.environ.get(_CAPABILITIES_ENV, "").strip()
+    cap_map: dict[str, str] = {}
+    if existing_raw:
+        try:
+            parsed = json.loads(existing_raw)
+            if isinstance(parsed, dict):
+                cap_map = {
+                    k: v for k, v in parsed.items()
+                    if isinstance(k, str) and isinstance(v, str)
+                }
+        except ValueError:
+            cap_map = {}
+    cap_map[destination] = token
+    monkeypatch.setenv(_CAPABILITIES_ENV, json.dumps(cap_map))
+
+
 # ---------------------------------------------------------------------------
-# Capability env-key derivation
+# Capability lookup — JSON-map (round-2 P1.2 fix)
 # ---------------------------------------------------------------------------
 
 
-def test_capability_env_key_for_simple_destination():
-    assert _capability_env_key("Jonnyton/Workflow") == (
-        "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW"
-    )
-
-
-def test_capability_env_key_collapses_punctuation():
-    # Dots and dashes -> single underscore, uppercased.
-    assert _capability_env_key("acme-inc/my.tool-repo") == (
-        "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_ACME_INC_MY_TOOL_REPO"
-    )
-
-
-def test_capability_env_key_empty_destination_is_bare_prefix_strip():
-    # Empty input produces just the prefix (without trailing _), which
-    # cannot collide with any real lookup.
-    assert _capability_env_key("") == "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_"
-
-
-def test_capability_env_keys_distinct_for_two_destinations(monkeypatch):
+def test_read_capability_via_json_map(monkeypatch):
     monkeypatch.setenv(
-        "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW", "tok-A"
+        _CAPABILITIES_ENV,
+        json.dumps({"Jonnyton/Workflow": "tok-A"}),
     )
-    monkeypatch.setenv(
-        "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_OTHER_OWNER_OTHER_REPO", "tok-B"
-    )
-    from workflow.effectors.github_pr import _read_capability
     assert _read_capability("Jonnyton/Workflow") == "tok-A"
-    assert _read_capability("other-owner/other-repo") == "tok-B"
     assert _read_capability("never-set/repo") == ""
+
+
+def test_read_capability_distinguishes_punctuation_variants(monkeypatch):
+    """Round-2 P1.2 regression guard. Under the round-1 suffix encoding
+    `octo/my.repo`, `octo/my_repo`, and `octo/my-repo` collapsed to
+    `WORKFLOW_GITHUB_PR_CAPABILITY_REPO_OCTO_MY_REPO` and shared one
+    token. The JSON-map keys are the raw destination strings, so each
+    variant maps to its own token."""
+    monkeypatch.setenv(
+        _CAPABILITIES_ENV,
+        json.dumps({
+            "octo/my.repo": "tok-dot",
+            "octo/my_repo": "tok-under",
+            "octo/my-repo": "tok-dash",
+        }),
+    )
+    assert _read_capability("octo/my.repo") == "tok-dot"
+    assert _read_capability("octo/my_repo") == "tok-under"
+    assert _read_capability("octo/my-repo") == "tok-dash"
+    # Lookups for destinations not in the map return empty.
+    assert _read_capability("octo/MY.REPO") == ""
+
+
+def test_read_capability_empty_destination_returns_empty():
+    assert _read_capability("") == ""
+
+
+def test_read_capability_unset_env_returns_empty():
+    """No env set -> empty token -> missing_capability dry-run."""
+    # _clean_capability_env autouse already cleared the env.
+    assert _read_capability("Jonnyton/Workflow") == ""
+
+
+def test_read_capability_malformed_json_logs_and_returns_empty(monkeypatch):
+    """Malformed JSON is logged loudly (the operator sees the warning)
+    but never raises — the lookup collapses to missing_capability."""
+    monkeypatch.setenv(_CAPABILITIES_ENV, "{not valid json}")
+    assert _read_capability("Jonnyton/Workflow") == ""
+
+
+def test_read_capability_non_object_json_returns_empty(monkeypatch):
+    """The env value must decode to a JSON object. A list, scalar, or
+    null all collapse to no-capability rather than crashing."""
+    for value in ("[\"Jonnyton/Workflow\"]", "\"tok\"", "null", "42"):
+        monkeypatch.setenv(_CAPABILITIES_ENV, value)
+        assert _read_capability("Jonnyton/Workflow") == ""
+
+
+def test_read_capability_strips_empty_token_entries(monkeypatch):
+    """Whitespace-only or empty-string values are treated as "not
+    configured" so a half-filled map doesn't accidentally grant
+    capability for a placeholder entry."""
+    monkeypatch.setenv(
+        _CAPABILITIES_ENV,
+        json.dumps({
+            "Jonnyton/Workflow": "",
+            "octo/other": "   ",
+            "octo/real": "tok-real",
+        }),
+    )
+    assert _read_capability("Jonnyton/Workflow") == ""
+    assert _read_capability("octo/other") == ""
+    assert _read_capability("octo/real") == "tok-real"
 
 
 # ---------------------------------------------------------------------------
@@ -146,14 +219,20 @@ def test_destination_present_capability_missing_returns_dry_run(universe_dir):
     assert result["phase"] == "phase_2"
     assert result["reason"] == "missing_capability"
     assert result["destination"] == _DESTINATION
-    assert result["capability_env_key"] == _CAPABILITY_ENV
+    # Round-2 fix — evidence names the JSON-map env var and the literal
+    # destination key the host needs to add, never a collision-prone
+    # uppercased suffix.
+    assert result["capability_env_var"] == _CAPABILITIES_ENV
+    assert result["capability_lookup_failed_for"] == _DESTINATION
+    assert _CAPABILITIES_ENV in result["hint"]
+    assert _DESTINATION in result["hint"]
 
 
 def test_capability_token_never_echoed_into_evidence(universe_dir, monkeypatch):
     """The token MUST NOT appear in any returned evidence shape — that's
     the core invariant separating Phase 2 from the Phase-1 self-mintable
     ack."""
-    monkeypatch.setenv(_CAPABILITY_ENV, "super-secret-pat-DO-NOT-LEAK")
+    _set_capability(monkeypatch, _DESTINATION, "super-secret-pat-DO-NOT-LEAK")
     # No consent grant -> closes at gate 2; evidence should not include
     # the capability token.
     packet = _make_packet()
@@ -178,7 +257,7 @@ def test_capability_token_never_echoed_into_evidence(universe_dir, monkeypatch):
 def test_capability_present_consent_missing_returns_dry_run(
     universe_dir, monkeypatch,
 ):
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     packet = _make_packet()
     with patch(
         "workflow.effectors.github_pr.subprocess.run"
@@ -202,7 +281,7 @@ def test_capability_present_consent_missing_returns_dry_run(
 
 def test_consent_destination_must_match_exactly(universe_dir, monkeypatch):
     """A grant for repo A must NOT authorize writes to repo B."""
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     grant_consent(
         universe_dir,
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
@@ -225,21 +304,21 @@ def test_consent_destination_must_match_exactly(universe_dir, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Gate 3 — idempotency dedup
+# Gate 3 — idempotency dedup (terminal-succeeded row dedup-hits)
 # ---------------------------------------------------------------------------
 
 
 def test_idempotency_hit_returns_recorded_evidence_no_subprocess(
     universe_dir, monkeypatch,
 ):
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     grant_consent(
         universe_dir,
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
         destination=_DESTINATION,
         granted_by="host",
     )
-    # Pre-seed a receipt.
+    # Pre-seed a terminal-succeeded receipt (legacy round-1 shape).
     record_receipt(
         universe_dir,
         idempotency_hint="loop-2-cycle-001",
@@ -273,7 +352,7 @@ def test_idempotency_hit_returns_recorded_evidence_no_subprocess(
 def test_idempotency_miss_when_hint_omitted(universe_dir, monkeypatch):
     """A packet without ``idempotency_hint`` is treated as 'always miss'
     so the caller can opt out of dedup. The real-write path then fires."""
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     grant_consent(
         universe_dir,
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
@@ -308,12 +387,12 @@ def test_idempotency_miss_when_hint_omitted(universe_dir, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Happy path — all three gates open -> real invocation
+# Happy path — all three gates open -> real invocation + terminal receipt
 # ---------------------------------------------------------------------------
 
 
 def _open_all_gates(universe_dir, monkeypatch):
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     grant_consent(
         universe_dir,
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
@@ -368,7 +447,7 @@ def test_all_gates_open_invokes_gh_and_records_receipt(
     # Capability token must NOT be in the result.
     assert "tok" not in json.dumps(result)
 
-    # Receipt recorded.
+    # Receipt is in the terminal `succeeded` state with the PR evidence.
     receipt = lookup_receipt(
         universe_dir,
         idempotency_hint="loop-2-cycle-001",
@@ -377,6 +456,7 @@ def test_all_gates_open_invokes_gh_and_records_receipt(
     assert receipt is not None
     assert receipt["run_id"] == "run-1"
     assert receipt["evidence"]["pr_number"] == 1234
+    assert receipt["status"] == STATUS_SUCCEEDED
 
 
 def test_second_run_with_same_hint_is_dedup_hit(universe_dir, monkeypatch):
@@ -415,11 +495,11 @@ def test_second_run_with_same_hint_is_dedup_hit(universe_dir, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Failure paths — no receipt is recorded on failure
+# Failure paths — reservation released to status=failed; no terminal receipt
 # ---------------------------------------------------------------------------
 
 
-def test_gh_nonzero_exit_returns_error_and_no_receipt(
+def test_gh_nonzero_exit_releases_reservation_to_failed(
     universe_dir, monkeypatch,
 ):
     _open_all_gates(universe_dir, monkeypatch)
@@ -442,12 +522,16 @@ def test_gh_nonzero_exit_returns_error_and_no_receipt(
         )
     assert result["error_kind"] == "gh_nonzero_exit"
     assert "exit 2" in result["error"]
-    # No receipt should have been recorded.
-    assert lookup_receipt(
+    assert result.get("reservation_released") is True
+    # The reservation row exists but is now status=failed, so a retry
+    # under the same hint can re-reserve.
+    receipt = lookup_receipt(
         universe_dir,
         idempotency_hint="loop-2-cycle-001",
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
-    ) is None
+    )
+    assert receipt is not None
+    assert receipt["status"] == STATUS_FAILED
 
 
 def test_gh_not_installed_returns_structured_error(universe_dir, monkeypatch):
@@ -509,12 +593,14 @@ def test_gh_returns_zero_but_no_pr_url_returns_error(
             run_id="run-1",
         )
     assert result["error_kind"] == "gh_nonzero_exit"
-    # No receipt recorded.
-    assert lookup_receipt(
+    # The reservation is released to failed so a retry can re-reserve.
+    receipt = lookup_receipt(
         universe_dir,
         idempotency_hint="loop-2-cycle-001",
         sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
-    ) is None
+    )
+    assert receipt is not None
+    assert receipt["status"] == STATUS_FAILED
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +647,7 @@ def test_run_effects_for_branch_passes_base_path_and_run_id(
     )
     assert receipt is not None
     assert receipt["run_id"] == "dispatch-run"
+    assert receipt["status"] == STATUS_SUCCEEDED
 
 
 # ---------------------------------------------------------------------------
@@ -590,8 +677,6 @@ def test_packet_without_destination_returns_phase_1_evidence(
     mock_run.assert_not_called()
     assert result["dry_run"] is True
     assert result["phase"] == "phase_1"
-    # Mode reflects the WORKFLOW_EXTERNAL_WRITE_ENABLED env (which is
-    # unset here per the autouse fixture).
     assert result["mode"] == "dry_run_default"
     assert result["enabled_explicit"] is False
     assert result["intent"]["sink"] == EXTERNAL_WRITE_SINK_GITHUB_PR
@@ -617,11 +702,6 @@ def test_phase_2_dry_run_does_not_carry_phase_1_mode_keys(
     assert "enabled_explicit" not in result
 
 
-# ---------------------------------------------------------------------------
-# No base_path -> Phase-2 packets degrade to consent-missing dry-run safely
-# ---------------------------------------------------------------------------
-
-
 def test_phase_2_packet_with_capability_but_no_base_path_is_dry_run(
     monkeypatch,
 ):
@@ -629,7 +709,7 @@ def test_phase_2_packet_with_capability_but_no_base_path_is_dry_run(
     caller), Phase-2-shaped packets still cannot mint a real write.
     Capability env can be read, but consent lookup has nowhere to look,
     so we must fall back to ``missing_consent`` dry-run."""
-    monkeypatch.setenv(_CAPABILITY_ENV, "tok")
+    _set_capability(monkeypatch, _DESTINATION, "tok")
     packet = _make_packet()
     with patch(
         "workflow.effectors.github_pr.subprocess.run"
@@ -644,3 +724,56 @@ def test_phase_2_packet_with_capability_but_no_base_path_is_dry_run(
     mock_run.assert_not_called()
     assert result["dry_run"] is True
     assert result["reason"] == "missing_consent"
+
+
+# ---------------------------------------------------------------------------
+# Pending-state sanity: a reserved-but-not-finalized row blocks duplicates
+# ---------------------------------------------------------------------------
+
+
+def test_existing_pending_reservation_blocks_concurrent_in_flight(
+    universe_dir, monkeypatch,
+):
+    """A non-stale pending reservation held by ANOTHER run is reported
+    as concurrent_in_flight — the current call must dry-run rather than
+    fire a duplicate. (Atomicity tests in
+    test_external_write_phase_2_atomicity.py exercise the race more
+    thoroughly; this is the in-isolation smoke check.)"""
+    _open_all_gates(universe_dir, monkeypatch)
+    # Manually drop a pending row into the store, simulating another
+    # worker holding the reservation.
+    import time as _time
+
+    from workflow.storage.external_write_receipts import (
+        _connect,
+        initialize_receipts_db,
+    )
+    initialize_receipts_db(universe_dir)
+    with _connect(universe_dir) as conn:
+        conn.execute(
+            "INSERT INTO external_write_receipts ("
+            "  idempotency_hint, sink, evidence_json, run_id, "
+            "  created_at, status"
+            ") VALUES (?, ?, '{}', ?, ?, ?)",
+            (
+                "loop-2-cycle-001", EXTERNAL_WRITE_SINK_GITHUB_PR,
+                "other-worker-run", _time.time(), STATUS_PENDING,
+            ),
+        )
+        conn.commit()
+
+    packet = _make_packet()
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run"
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="my-run",
+        )
+    mock_run.assert_not_called()
+    assert result["dry_run"] is True
+    assert result["reason"] == "concurrent_in_flight"
+    assert result["held_by_run_id"] == "other-worker-run"

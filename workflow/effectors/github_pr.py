@@ -25,18 +25,19 @@ drafts/concepts/external-write-packet-shape.md):
       "expected_evidence_keys": ["pr_number", "pr_url"]
     }
 
-Authority model (Phase 2 Slice 1)
----------------------------------
+Authority model (Phase 2)
+-------------------------
 
 A real write fires only when ALL THREE gates are open:
 
-1. **Capability token (env-sourced, daemon-side).** A per-destination
-   env var is set on the daemon: ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<OWNER>_<REPO>``.
-   The token is read at invocation time and is never echoed into
-   run state the branch can observe — a branch-authored "ack" string
-   cannot mint authority. Per the design stub §1, this is Option A
-   (env-sourced). Option B (per-run controller-minted) is a future
-   migration target.
+1. **Capability token (env-sourced, daemon-side).** The host sets
+   ``WORKFLOW_GITHUB_PR_CAPABILITIES`` to a JSON map of
+   ``{"<owner>/<repo>": "<token>"}`` (round-2 fix for Codex P1.2 —
+   the round-1 ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<OWNER>_<REPO>``
+   suffix encoding collapsed ``my.repo`` / ``my_repo`` / ``my-repo``
+   to the same env key and therefore the same token). The token is
+   read at invocation time and is never echoed into branch-visible
+   state.
 
 2. **Per-destination consent grant.** A row in the per-universe
    ``effector_consents`` table with ``(sink, destination, revoked_at
@@ -44,11 +45,18 @@ A real write fires only when ALL THREE gates are open:
    ``extensions action=grant_effector_consent`` call; the daemon
    records the grant.
 
-3. **Idempotency receipt.** No prior ``external_write_receipts`` row
-   for ``(idempotency_hint, sink)``. A receipt hit returns the recorded
-   evidence with ``idempotency_dedup_hit=true`` instead of firing
-   again. The store is per-universe SQLite; the receipt is
-   system-authoritative.
+3. **Idempotency receipt — atomic reservation.** Round-2 fix for
+   Codex P1.1: round-1's lookup → invoke → write sequence was
+   non-atomic; two concurrent run threads could both observe "no
+   receipt" and both invoke ``gh pr create``. Round-2 uses the
+   ``try_reserve_receipt`` / ``finalize_receipt`` pair from
+   ``workflow.storage.external_write_receipts`` — the reservation is
+   atomic via SQLite's row-level lock, so a concurrent thread sees
+   either ``duplicate`` (a terminal-succeeded row exists; dedup-hit)
+   or ``in_flight`` (another worker has the pending reservation;
+   this run dry-runs with ``reason=concurrent_in_flight``).
+   ``database is locked`` errors are NOT silently treated as a miss
+   — they surface as ``error_kind=receipt_store_locked`` evidence.
 
 If any gate is closed AND the packet supplied a ``destination``, the
 effector returns Phase-2-shaped dry-run evidence naming the closed
@@ -68,6 +76,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -81,7 +90,13 @@ _ENABLE_ENV = "WORKFLOW_EXTERNAL_WRITE_ENABLED"
 # Legacy env name retained only as recognized-input — has no effect on
 # the gate-orchestrated path.
 _DRY_RUN_ENV = "WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
-_CAPABILITY_ENV_PREFIX = "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_"
+# Round-2 P1.2 fix: capability tokens come from a single JSON-map env
+# var keyed by the literal ``owner/repo`` destination string. The
+# round-1 ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<...>`` suffix encoding
+# collapsed distinct destinations (e.g. ``octo/my.repo`` and
+# ``octo/my_repo``) into the same env-var name; the JSON map keys by
+# the raw destination so two distinct destinations cannot collide.
+_CAPABILITIES_ENV = "WORKFLOW_GITHUB_PR_CAPABILITIES"
 _GH_PR_TIMEOUT_S = 60.0
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
@@ -123,32 +138,64 @@ def _parse_packet(value: Any) -> dict[str, Any] | None:
     return packet
 
 
-def _capability_env_key(destination: str) -> str:
-    """Return the env-var name a daemon sets to grant capability for ``destination``.
+def _load_capability_map() -> dict[str, str]:
+    """Parse ``WORKFLOW_GITHUB_PR_CAPABILITIES`` as a JSON object.
 
-    Shape: ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<OWNER>_<REPO>`` with
-    every non-alphanumeric char in the destination collapsed to ``_``
-    and uppercased. Example: ``Jonnyton/Workflow`` ->
-    ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW``.
+    Returns an empty dict when the env is unset, empty, or malformed.
+    Malformed JSON is logged loudly so the host can spot a typo, but
+    the function never raises — a parse failure means "no capability
+    configured" which collapses to the dry-run path.
 
-    The single env-key shape lets host configure multiple repos in
-    one ``/etc/workflow/env`` file without a JSON map. Migrate to
-    Option B (controller-minted scoped tokens) when paid-market /
-    multi-tenant capacity grants make per-run scoping load-bearing.
+    The map's keys are matched against the packet's ``destination``
+    field exactly (case-sensitive, whitespace-stripped). Two distinct
+    destinations therefore cannot share a token unless the host wires
+    both keys to the same value in the JSON map — explicit, audited
+    behavior, never silent collision.
     """
-    cleaned = re.sub(r"[^A-Za-z0-9]+", "_", destination or "").strip("_")
-    return _CAPABILITY_ENV_PREFIX + cleaned.upper()
+    raw = os.environ.get(_CAPABILITIES_ENV, "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "%s is set but not valid JSON: %s. No capability tokens "
+            "will be available; all destination lookups will return "
+            "missing_capability. Fix the env var to enable real writes.",
+            _CAPABILITIES_ENV, exc,
+        )
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "%s must decode to a JSON object (mapping destination -> "
+            "token); got %s. No capability tokens available.",
+            _CAPABILITIES_ENV, type(parsed).__name__,
+        )
+        return {}
+    # Strip values; drop empties so a host with placeholder keys does
+    # not accidentally grant capability for a destination they meant
+    # to leave inert.
+    cleaned: dict[str, str] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        token = value.strip()
+        if not token:
+            continue
+        cleaned[key.strip()] = token
+    return cleaned
 
 
 def _read_capability(destination: str) -> str:
     """Return the capability token for ``destination`` (empty string if missing).
 
-    Never echoed into branch-visible state. Callers must NOT include
-    this value in returned evidence.
+    Looked up by exact match against the JSON-map keys. Never echoed
+    into branch-visible state. Callers must NOT include this value in
+    returned evidence.
     """
     if not destination:
         return ""
-    return os.environ.get(_capability_env_key(destination), "").strip()
+    return _load_capability_map().get(destination, "")
 
 
 def _resolve_universe_dir(base_path: str | Path | None) -> Path | None:
@@ -189,43 +236,75 @@ def _check_consent(
         return False
 
 
-def _lookup_idempotency(
-    universe_dir: Path | None, idempotency_hint: str,
-) -> dict[str, Any] | None:
+def _is_lock_error(exc: BaseException) -> bool:
+    """True iff ``exc`` looks like a SQLite "database is locked" class.
+
+    SQLite raises :class:`sqlite3.OperationalError` for several
+    distinct conditions (locked, busy, disk full, malformed schema).
+    Round-2 P1.1 contract: locked/busy means "another writer is
+    holding the file; we MUST NOT silently treat this as a miss." We
+    surface it as a structured ``receipt_store_locked`` evidence record
+    so the caller sees the lock state explicitly rather than firing a
+    duplicate side-effect.
+
+    Other ``OperationalError`` variants (disk full, malformed schema)
+    also fall under "fail loudly" — we surface them the same way.
+    """
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in ("locked", "busy", "deadlock", "timeout")
+    )
+
+
+def _try_reserve(
+    universe_dir: Path | None,
+    *,
+    idempotency_hint: str,
+    run_id: str,
+) -> dict[str, Any]:
+    """Atomically reserve a receipt slot, or report the collision shape.
+
+    Returns the storage helper's verbatim payload (see
+    :func:`workflow.storage.external_write_receipts.try_reserve_receipt`),
+    or an ``{"status": "no_hint"}`` shape when the packet didn't supply
+    a hint. Raises :class:`sqlite3.OperationalError` on lock timeout
+    — the caller must surface it as a structured error rather than
+    treating it as a miss.
+    """
     if universe_dir is None or not idempotency_hint:
-        return None
-    try:
-        from workflow.storage.external_write_receipts import lookup_receipt
-    except Exception:  # pragma: no cover
-        logger.exception("failed to import external_write_receipts")
-        return None
-    try:
-        return lookup_receipt(
-            universe_dir,
-            idempotency_hint=idempotency_hint,
-            sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
-        )
-    except Exception:  # pragma: no cover
-        logger.exception("receipt lookup crashed for %s", idempotency_hint)
-        return None
+        return {"status": "no_hint"}
+    from workflow.storage.external_write_receipts import try_reserve_receipt
+    return try_reserve_receipt(
+        universe_dir,
+        idempotency_hint=idempotency_hint,
+        sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+        run_id=run_id or "",
+    )
 
 
-def _record_idempotency(
+def _finalize_receipt(
     universe_dir: Path | None,
     *,
     idempotency_hint: str,
     evidence: dict[str, Any],
     run_id: str,
-) -> None:
+) -> bool:
+    """Mark the reserved row as ``succeeded`` with final evidence.
+
+    Returns True when the update landed. Receipt finalization is
+    best-effort AFTER the side-effect already ran — a crash here must
+    NOT mask the successful PR. We log loudly per hard rule #8 and
+    return False so the caller can include a ``receipt_finalize_failed``
+    flag in the evidence for the operator.
+    """
     if universe_dir is None or not idempotency_hint:
-        return
+        return False
     try:
-        from workflow.storage.external_write_receipts import record_receipt
-    except Exception:  # pragma: no cover
-        logger.exception("failed to import external_write_receipts")
-        return
-    try:
-        record_receipt(
+        from workflow.storage.external_write_receipts import finalize_receipt
+        return finalize_receipt(
             universe_dir,
             idempotency_hint=idempotency_hint,
             sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
@@ -233,11 +312,42 @@ def _record_idempotency(
             run_id=run_id or "",
         )
     except Exception:
-        # Receipt writes are best-effort during a run — a crash here
-        # must NOT mask the real write that already succeeded. Log
-        # loudly per hard rule #8 and continue.
         logger.exception(
-            "failed to record receipt for %s/%s",
+            "failed to finalize receipt for %s/%s",
+            idempotency_hint, EXTERNAL_WRITE_SINK_GITHUB_PR,
+        )
+        return False
+
+
+def _release_reservation(
+    universe_dir: Path | None,
+    *,
+    idempotency_hint: str,
+    run_id: str,
+) -> None:
+    """Mark a reserved row ``failed`` so a retry can re-reserve.
+
+    Called after ``gh pr create`` returned an error. Best-effort —
+    failure to release means the next retry under the same hint has
+    to wait for the stale-pending threshold (default 10 min) before
+    re-acquiring. Log loudly so the operator can spot stuck rows.
+    """
+    if universe_dir is None or not idempotency_hint:
+        return
+    try:
+        from workflow.storage.external_write_receipts import (
+            release_reservation,
+        )
+        release_reservation(
+            universe_dir,
+            idempotency_hint=idempotency_hint,
+            sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+            run_id=run_id or "",
+            mark_failed=True,
+        )
+    except Exception:
+        logger.exception(
+            "failed to release reservation for %s/%s",
             idempotency_hint, EXTERNAL_WRITE_SINK_GITHUB_PR,
         )
 
@@ -487,6 +597,10 @@ def run_github_pr_effector(
     universe_dir = _resolve_universe_dir(base_path)
 
     # ── Gate 1: capability env ─────────────────────────────────────────
+    # Round-2 P1.2: lookup is by exact destination string against the
+    # JSON map. The dry-run evidence names the destination the host
+    # needs to add to the JSON map (the literal key) — never the
+    # collision-prone uppercased suffix.
     capability = _read_capability(destination)
     if not capability:
         return {
@@ -494,7 +608,13 @@ def run_github_pr_effector(
             "phase": "phase_2",
             "reason": "missing_capability",
             "destination": destination,
-            "capability_env_key": _capability_env_key(destination),
+            "capability_env_var": _CAPABILITIES_ENV,
+            "capability_lookup_failed_for": destination,
+            "hint": (
+                f"Add an entry to the {_CAPABILITIES_ENV} JSON map "
+                f'keyed by "{destination}". Example: '
+                f'{_CAPABILITIES_ENV}={{"{destination}":"<token>"}}'
+            ),
             "intent": packet,
             "matched_output_key": matched_key,
         }
@@ -515,19 +635,98 @@ def run_github_pr_effector(
             ),
         }
 
-    # ── Gate 3: idempotency receipt ────────────────────────────────────
-    receipt = _lookup_idempotency(universe_dir, idempotency_hint)
-    if receipt is not None:
+    # ── Gate 3: idempotency receipt (atomic reservation) ───────────────
+    # Round-2 P1.1: the round-1 sequence (lookup → invoke → record)
+    # was non-atomic. Two concurrent threads could both observe "no
+    # receipt" and both invoke ``gh pr create``. We now reserve the
+    # row BEFORE invoking, using SQLite's row-level lock on the unique
+    # (idempotency_hint, sink) key. The reservation either succeeds
+    # (proceed), finds a terminal succeeded row (dedup-hit), or finds
+    # a pending row owned by another writer (dry-run with
+    # concurrent_in_flight).
+    try:
+        reservation = _try_reserve(
+            universe_dir,
+            idempotency_hint=idempotency_hint,
+            run_id=run_id,
+        )
+    except sqlite3.OperationalError as exc:
+        # Lock / busy timeout or other SQLite error. Per P1.1 contract:
+        # NEVER silently treat as a miss. Surface as a structured
+        # error so the run output records exactly what happened.
+        return {
+            "error": (
+                "receipt store unavailable; refusing to invoke "
+                f"gh pr create to avoid duplicate writes: {exc}"
+            ),
+            "error_kind": (
+                "receipt_store_locked"
+                if _is_lock_error(exc) else "receipt_store_error"
+            ),
+            "phase": "phase_2",
+            "destination": destination,
+            "idempotency_hint": idempotency_hint,
+            "matched_output_key": matched_key,
+        }
+
+    reservation_status = reservation.get("status")
+    if reservation_status == "duplicate":
+        # A terminal-succeeded row already exists — dedup hit. Return
+        # the SAME evidence shape as round-1 so existing consumers
+        # see no behavior change for the dedup path.
+        recorded = reservation.get("row") or {}
         return {
             "idempotency_dedup_hit": True,
             "phase": "phase_2",
             "destination": destination,
             "matched_output_key": matched_key,
-            "evidence": receipt.get("evidence") or {},
-            "recorded_run_id": receipt.get("run_id"),
-            "recorded_at": receipt.get("created_at"),
+            "evidence": recorded.get("evidence") or {},
+            "recorded_run_id": recorded.get("run_id"),
+            "recorded_at": recorded.get("created_at"),
             "idempotency_hint": idempotency_hint,
         }
+    if reservation_status == "in_flight":
+        # Another writer holds a non-stale pending reservation. Dry
+        # run rather than firing a duplicate side-effect. The caller
+        # can retry later; once the in-flight writer finalizes the
+        # row, our next attempt sees "duplicate" and returns the
+        # recorded evidence.
+        held = reservation.get("row") or {}
+        return {
+            "dry_run": True,
+            "phase": "phase_2",
+            "reason": "concurrent_in_flight",
+            "destination": destination,
+            "idempotency_hint": idempotency_hint,
+            "matched_output_key": matched_key,
+            "held_by_run_id": held.get("run_id"),
+            "reservation_created_at": held.get("created_at"),
+            "hint": (
+                "Another worker is currently invoking gh pr create "
+                "under the same idempotency_hint. Retry after it "
+                "settles (or wait for the stale-pending threshold)."
+            ),
+            "intent": packet,
+        }
+    if reservation_status not in (
+        "reserved", "reserved_after_stale",
+        "reserved_after_failed", "no_hint",
+    ):
+        # Defensive — unknown reservation shape. Treat conservatively
+        # as in-flight so we don't fire a duplicate.
+        return {
+            "dry_run": True,
+            "phase": "phase_2",
+            "reason": "reservation_unknown_state",
+            "destination": destination,
+            "idempotency_hint": idempotency_hint,
+            "matched_output_key": matched_key,
+            "reservation_status": str(reservation_status),
+            "intent": packet,
+        }
+
+    # We hold the reservation (or there was no hint so we proceed
+    # without one). Invoke the side-effect.
 
     # ── Real write ─────────────────────────────────────────────────────
     payload = packet.get("payload") or {}
@@ -536,11 +735,20 @@ def run_github_pr_effector(
         destination=destination,
     )
     if "error" in invocation:
-        # Don't record a receipt on failure; a future retry should be
-        # allowed to attempt the write again.
+        # Release the reservation so a retry can re-acquire under the
+        # same hint. Skipped when there was no hint (nothing to
+        # release).
+        _release_reservation(
+            universe_dir,
+            idempotency_hint=idempotency_hint,
+            run_id=run_id,
+        )
         invocation.setdefault("matched_output_key", matched_key)
         invocation.setdefault("destination", destination)
         invocation.setdefault("phase", "phase_2")
+        if idempotency_hint:
+            invocation.setdefault("idempotency_hint", idempotency_hint)
+            invocation.setdefault("reservation_released", True)
         return invocation
 
     evidence: dict[str, Any] = {
@@ -554,12 +762,25 @@ def run_github_pr_effector(
     }
     if idempotency_hint:
         evidence["idempotency_hint"] = idempotency_hint
-    _record_idempotency(
-        universe_dir,
-        idempotency_hint=idempotency_hint,
-        evidence=evidence,
-        run_id=run_id,
-    )
+    # Reservation status is surfaced so a downstream auditor can see
+    # whether this run reclaimed a stale row.
+    if reservation_status in (
+        "reserved_after_stale", "reserved_after_failed",
+    ):
+        evidence["reservation_origin"] = reservation_status
+    if idempotency_hint:
+        finalized = _finalize_receipt(
+            universe_dir,
+            idempotency_hint=idempotency_hint,
+            evidence=evidence,
+            run_id=run_id,
+        )
+        if not finalized:
+            # The reservation row we held was rewritten by another
+            # writer between our reserve and our finalize. The PR
+            # already exists; flag the inconsistency so the operator
+            # can spot it without us masking the successful write.
+            evidence["receipt_finalize_failed"] = True
     return evidence
 
 

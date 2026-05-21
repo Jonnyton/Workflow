@@ -27,18 +27,31 @@ embedded in run state is therefore equivalent to no key at all.
 
 Two viable shapes for Phase 2:
 
-### Option A — daemon-side env-sourced token
+### Option A — daemon-side env-sourced token (JSON map)
 
-The host configures `WORKFLOW_GITHUB_PR_CAPABILITY` (or similar) at
-daemon startup. The token is read by the effector at the moment of
-invocation and is **never** echoed into the merged run state the branch
-sees. The branch knows that effects=[github_pull_request] *requests* a
-write; whether the daemon honors it depends on host config the branch
-cannot observe.
+The host configures a single env var
+``WORKFLOW_GITHUB_PR_CAPABILITIES`` containing a JSON map of
+``{"<owner>/<repo>": "<token>"}``. The effector reads the map at
+invocation time and looks up the destination by exact string match.
+The token is **never** echoed into the merged run state the branch
+sees. The branch knows that ``effects=[github_pull_request]``
+*requests* a write; whether the daemon honors it depends on host
+config the branch cannot observe.
 
-Pros: simple, consistent with existing env-driven provider auth.
-Cons: per-destination scope is awkward (one token for all repos),
-revocation requires daemon restart.
+Round-2 refinement (Codex P1.2): an earlier shape used a
+per-destination suffix env name
+(``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<OWNER>_<REPO>`` with non-alnum
+runs collapsed to ``_``). That encoding collapsed distinct repos —
+``octo/my.repo`` and ``octo/my_repo`` and ``octo/my-repo`` all
+mapped to the same env name and therefore the same token. The JSON
+map keys the lookup by the literal destination string, so distinct
+destinations cannot collide unless the host explicitly wires the
+same value to both keys.
+
+Pros: simple, single env var, host can audit the map at a glance,
+collision-free.
+Cons: per-destination scope across many repos requires re-rendering
+the map; revocation requires daemon restart.
 
 ### Option B — per-run capability minted by the run controller
 
@@ -73,12 +86,41 @@ Before invoking `gh pr create`, the effector must answer:
    ``pr_url`` / ``pr_number`` from the prior run.
 
 Storage: a per-universe SQLite table `external_write_receipts` with
-columns ``(idempotency_hint, sink, evidence_json, run_id, created_at)``.
-Indexed on `(idempotency_hint, sink)`.
+columns ``(idempotency_hint, sink, evidence_json, run_id,
+created_at, status)``. Primary key ``(idempotency_hint, sink)``;
+secondary index on ``(status, created_at)``.
 
-Mutation contract: writes are **append-only with last-write-wins on
-the same hint** so retried runs can update if a stale receipt is
-detected. Reads return the most recent receipt.
+Round-2 atomic-reservation contract (Codex P1.1):
+
+The round-1 sequence ``lookup → invoke → write`` was non-atomic; two
+concurrent threads could both observe "no receipt" and both invoke
+``gh pr create``. Round-2 requires every writer to call
+:func:`try_reserve_receipt` BEFORE invoking the external side-effect.
+The reservation uses ``INSERT … ON CONFLICT DO NOTHING`` so SQLite's
+row-level lock answers "is anyone else doing this right now?" in one
+round-trip. The reservation lives in a ``status`` column with values:
+
+* ``pending``   — reservation held; the external write is in flight.
+* ``succeeded`` — receipt is final; future calls dedup-hit.
+* ``failed``    — invocation failed; the row remains so the caller
+                  can decide whether to retry under the same hint.
+
+After the side-effect lands the writer calls
+:func:`finalize_receipt` to update the row to ``succeeded`` with
+final evidence. On failure the writer calls
+:func:`release_reservation` so a retry can re-acquire the hint.
+
+Stale ``pending`` reservations (writer died mid-flight, never
+finalized) are auto-reclaimed by :func:`try_reserve_receipt` after a
+configurable threshold (default 10 min). After that, any retry under
+the same hint can re-reserve; worst case is one duplicate PR if the
+prior PR actually landed before the writer crashed.
+
+``database is locked`` / ``OperationalError`` from SQLite is NEVER
+silently treated as a miss — round-1 did that and it compounded the
+duplicate-PR leak. Round-2 surfaces it as a structured
+``error_kind="receipt_store_locked"`` evidence record so the operator
+sees the lock state explicitly rather than firing duplicates.
 
 ## 3. Per-destination consent surface
 
@@ -108,11 +150,14 @@ Slice-1 status (all checked items shipped in this slice):
 
 - [x] Re-introduce `_invoke_gh_pr_create` in
       ``workflow/effectors/github_pr.py``.
-- [x] Add the capability-token check (**Option A — env-sourced**; the
-      per-destination env-key shape is
-      ``WORKFLOW_GITHUB_PR_CAPABILITY_REPO_<OWNER>_<REPO>`` with
-      non-alphanumeric runs collapsed to ``_`` and uppercased).
-- [x] Add the idempotency-store check before any `gh pr create` call.
+- [x] Add the capability-token check (**Option A — env-sourced JSON
+      map**; the env var is ``WORKFLOW_GITHUB_PR_CAPABILITIES``
+      decoded as ``{"<owner>/<repo>": "<token>"}``). Round-2
+      replaced the round-1 per-destination suffix encoding to close
+      the punctuation-collision finding (Codex P1.2).
+- [x] Add the idempotency-store check before any `gh pr create` call,
+      using the atomic ``try_reserve_receipt`` / ``finalize_receipt``
+      / ``release_reservation`` seam (round-2 fix for Codex P1.1).
       Storage: ``workflow/storage/external_write_receipts.py``.
 - [x] Add the `effector_consents` table + migration. Storage:
       ``workflow/storage/effector_consents.py``.
