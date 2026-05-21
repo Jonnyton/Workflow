@@ -370,3 +370,143 @@ def test_deploy_requires_llm_binding_even_without_visible_deploy_secret():
     assert "--retries 12" in run_script
     assert "--retry-delay 10" in run_script
     assert "::warning::No deploy-visible WORKFLOW_CODEX_AUTH_JSON_B64" not in run_script
+
+
+# ---------------------------------------------------------------------------
+# Codex auth persistent volume (PR #965) — idempotence + ownership repair
+# ---------------------------------------------------------------------------
+
+
+def _codex_volume_step(wf: dict) -> dict:
+    step = next(
+        (
+            s for s in _steps(wf)
+            if s.get("name") == "Prepare codex auth persistent volume"
+        ),
+        None,
+    )
+    assert step is not None, (
+        "deploy must include a 'Prepare codex auth persistent volume' "
+        "step that provisions /var/lib/workflow-codex on every deploy "
+        "(Forever Rule — no host-action required)"
+    )
+    return step
+
+
+def test_codex_volume_step_runs_before_deploy():
+    wf = _load()
+    steps = _steps(wf)
+    names = [s.get("name", "") for s in steps]
+    volume_idx = names.index("Prepare codex auth persistent volume")
+    deploy_idx = next(
+        i for i, step in enumerate(steps)
+        if step.get("id") == "deploy"
+    )
+    assert volume_idx < deploy_idx, (
+        "Codex auth volume must be provisioned BEFORE the daemon "
+        "container restarts; otherwise the first restart would not "
+        "see the persistent bind mount populated."
+    )
+
+
+def test_codex_volume_step_chown_is_unconditional():
+    """Regression guard for Codex round-2 Finding 2.
+
+    Round-1 placed `chown` inside the `if [ ! -d "$VOLUME_DIR" ]` branch.
+    If a prior deploy attempt left the dir root-owned, subsequent
+    deploys silently skipped the ownership repair and uid 1001 couldn't
+    write. Fix: run chown unconditionally every deploy.
+    """
+    wf = _load()
+    step = _codex_volume_step(wf)
+    run_script = step.get("run", "") or ""
+
+    # Extract the heredoc body so we can reason about block structure.
+    # The heredoc starts after `<<'SH'` and ends at a line containing `SH`.
+    lines = run_script.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.endswith("<<'SH'")),
+        None,
+    )
+    end = next(
+        (i for i, line in enumerate(lines[start + 1:], start=start + 1)
+         if line.strip() == "SH"),
+        None,
+    ) if start is not None else None
+    assert start is not None and end is not None, (
+        "Could not locate heredoc body in 'Prepare codex auth persistent volume'"
+    )
+    body = lines[start + 1: end]
+
+    chown_line_idx = next(
+        (i for i, line in enumerate(body)
+         if line.strip().startswith('chown "$WORKFLOW_UID:$WORKFLOW_GID" "$VOLUME_DIR"')),
+        None,
+    )
+    chmod_line_idx = next(
+        (i for i, line in enumerate(body)
+         if line.strip().startswith('chmod 700 "$VOLUME_DIR"')),
+        None,
+    )
+    assert chown_line_idx is not None, "chown on $VOLUME_DIR must be present"
+    assert chmod_line_idx is not None, "chmod 700 on $VOLUME_DIR must be present"
+
+    # Walk backwards from each line; the most recent unmatched `if [` must
+    # NOT be the `[ ! -d "$VOLUME_DIR" ]` branch. Track indent depth via
+    # leading whitespace as a coarse signal — both unconditional lines
+    # should sit at the heredoc's base indent.
+    def _indent(line: str) -> int:
+        return len(line) - len(line.lstrip(" "))
+
+    base_indent = min(
+        (_indent(line) for line in body if line.strip()),
+        default=0,
+    )
+    chown_indent = _indent(body[chown_line_idx])
+    chmod_indent = _indent(body[chmod_line_idx])
+    assert chown_indent == base_indent, (
+        f"chown line must sit at heredoc base indent ({base_indent}); "
+        f"got indent {chown_indent}. Being nested inside `if [ ! -d ]` "
+        "is exactly the Finding-2 regression we are guarding against."
+    )
+    assert chmod_indent == base_indent, (
+        f"chmod line must sit at heredoc base indent ({base_indent}); "
+        f"got indent {chmod_indent}."
+    )
+
+
+def test_codex_volume_step_creates_dir_idempotently():
+    wf = _load()
+    step = _codex_volume_step(wf)
+    run_script = step.get("run", "") or ""
+    assert 'mkdir -p "$VOLUME_DIR"' in run_script, (
+        "directory creation must use `mkdir -p` so re-running the step "
+        "is a no-op when the dir already exists"
+    )
+    assert 'if [ ! -d "$VOLUME_DIR" ]' in run_script, (
+        "dir-create branch must be guarded by an existence check so the "
+        "create-log line is skipped when the dir already exists"
+    )
+
+
+def test_codex_volume_step_migrates_from_running_container_once():
+    """First deploy after PR #965 onto a live droplet must copy the
+    rotated auth.json out of the running workflow-worker into the
+    persistent volume. Subsequent deploys skip (auth.json already
+    present). No-op when no live source container exists.
+    """
+    wf = _load()
+    step = _codex_volume_step(wf)
+    run_script = step.get("run", "") or ""
+    assert 'if [ ! -f "$VOLUME_DIR/auth.json" ]' in run_script, (
+        "migration branch must be guarded so it fires exactly once"
+    )
+    assert "docker inspect workflow-worker" in run_script, (
+        "migration must check workflow-worker presence before docker cp"
+    )
+    assert 'docker exec workflow-worker test -f /app/.codex/auth.json' in run_script, (
+        "migration must confirm the live container has an auth.json before copying"
+    )
+    assert "docker cp workflow-worker:/app/.codex/auth.json" in run_script
+    assert 'chown "$WORKFLOW_UID:$WORKFLOW_GID" "$VOLUME_DIR/auth.json"' in run_script
+    assert 'chmod 600 "$VOLUME_DIR/auth.json"' in run_script
