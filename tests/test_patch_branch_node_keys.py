@@ -266,7 +266,7 @@ class TestPatchBranchUpdateNodeKeys:
         assert node["model_hint"] == "checker"
         assert node["llm_policy"] == policy
 
-    def test_update_node_rejects_invalid_llm_policy(self, ext_env):
+    def test_update_node_patch_op_rejects_invalid_llm_policy(self, ext_env):
         us, _ = ext_env
         bid = _build(us)
 
@@ -379,6 +379,42 @@ class TestAddNodeSpecKeys:
         node = _node(_load(us, base, res["branch_def_id"]), "capture")
         assert node["model_hint"] == "writer"
         assert node["llm_policy"] == policy
+
+    def test_build_branch_rejects_invalid_llm_policy(self, ext_env):
+        us, _ = ext_env
+        spec = {
+            "name": "b",
+            "entry_point": "capture",
+            "node_defs": [{
+                "node_id": "capture",
+                "display_name": "Capture",
+                "prompt_template": "cap: {x}",
+                "input_keys": ["x"],
+                "llm_policy": {"preferred": {}},
+            }],
+            "edges": [
+                {"from": "START", "to": "capture"},
+                {"from": "capture", "to": "END"},
+            ],
+            "state_schema": [{"name": "x", "type": "str"}],
+        }
+
+        res = _call(us, "extensions", "build_branch",
+                    spec_json=json.dumps(spec))
+
+        assert res["status"] == "rejected", res
+        assert "provider" in json.dumps(res)
+
+    def test_add_node_rejects_invalid_llm_policy(self, ext_env):
+        us, _ = ext_env
+        bid = _build(us)
+        ops = self._add_scribe_ops(input_keys=["x"], output_keys=["draft"])
+        ops[0]["llm_policy"] = {"preferred": {}}
+
+        res = _patch(us, bid, ops)
+
+        assert res.get("status") == "rejected", res
+        assert "provider" in json.dumps(res)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

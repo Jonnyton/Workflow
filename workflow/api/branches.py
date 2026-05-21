@@ -1347,7 +1347,7 @@ def _apply_node_spec(branch: Any, raw: dict[str, Any]) -> str:
     if err:
         return err
     llm_policy, err = _coerce_llm_policy_update(
-        raw.get("llm_policy"), "llm_policy",
+        raw.get("llm_policy"), f"node '{nid}' llm_policy",
     )
     if err:
         return err
@@ -1508,8 +1508,8 @@ def _coerce_llm_policy_update(
     if raw is None:
         return None, ""
     if isinstance(raw, dict):
-        return raw, ""
-    if isinstance(raw, str):
+        policy = raw
+    elif isinstance(raw, str):
         value = raw.strip()
         if not value or value == "null":
             return None, ""
@@ -1520,8 +1520,18 @@ def _coerce_llm_policy_update(
         if decoded is None:
             return None, ""
         if isinstance(decoded, dict):
-            return decoded, ""
-    return None, f"{field} must be a JSON object or null."
+            policy = decoded
+        else:
+            return None, f"{field} must be a JSON object or null."
+    else:
+        return None, f"{field} must be a JSON object or null."
+
+    from workflow.branches import _validate_llm_policy_shape
+
+    errors = _validate_llm_policy_shape(policy, context=field)
+    if errors:
+        return None, "; ".join(errors)
+    return policy, ""
 
 
 def _staged_branch_from_spec(
@@ -1865,7 +1875,7 @@ def _apply_patch_op(branch: Any, op: dict[str, Any]) -> str:
                     n.model_hint = model_hint
                 if "llm_policy" in op:
                     llm_policy, err = _coerce_llm_policy_update(
-                        op["llm_policy"], "llm_policy",
+                        op["llm_policy"], f"node '{nid}' llm_policy",
                     )
                     if err:
                         return err
@@ -2397,21 +2407,10 @@ def _ext_branch_update_node(kwargs: dict[str, Any]) -> str:
             target_node.model_hint = model_hint
         if "llm_policy" in updates:
             llm_policy, err = _coerce_llm_policy_update(
-                updates["llm_policy"], "llm_policy",
+                updates["llm_policy"], f"node '{nid}' llm_policy",
             )
             if err:
                 return json.dumps({"status": "rejected", "error": err})
-            if llm_policy is not None:
-                from workflow.branches import _validate_llm_policy_shape
-
-                errors = _validate_llm_policy_shape(
-                    llm_policy, context=f"node '{nid}' llm_policy",
-                )
-                if errors:
-                    return json.dumps({
-                        "status": "rejected",
-                        "error": "; ".join(errors),
-                    })
             target_node.llm_policy = llm_policy
         if "input_keys" in updates:
             keys, err = _coerce_node_keys(
