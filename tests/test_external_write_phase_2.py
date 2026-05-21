@@ -777,3 +777,182 @@ def test_existing_pending_reservation_blocks_concurrent_in_flight(
     assert result["dry_run"] is True
     assert result["reason"] == "concurrent_in_flight"
     assert result["held_by_run_id"] == "other-worker-run"
+
+
+# ---------------------------------------------------------------------------
+# Operator kill switch (round-3 P1 fix for Codex round-2 on PR #969)
+# ---------------------------------------------------------------------------
+
+
+def test_kill_switch_bypasses_all_gates_when_truthy(
+    universe_dir, monkeypatch,
+):
+    """``WORKFLOW_EXTERNAL_WRITE_DRY_RUN=1`` is the operator
+    panic-button override. Round-1 of Phase 2 inadvertently left this
+    env recognized-but-ignored; Codex round-2 caught the
+    documentation/behavior drift and asked for the override to be
+    restored as a documented kill switch.
+
+    Contract: even with ALL three gates wide open (capability set,
+    consent granted, idempotency clean), a truthy DRY_RUN env must
+    short-circuit to dry-run evidence and never invoke ``gh``.
+    """
+    _open_all_gates(universe_dir, monkeypatch)
+    monkeypatch.setenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", "1")
+    packet = _make_packet()
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run"
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-killed",
+        )
+    mock_run.assert_not_called()
+    assert result["dry_run"] is True
+    assert result["phase"] == "phase_2"
+    assert result["reason"] == "operator_kill_switch_active"
+    assert result["kill_switch_env"] == "WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
+    assert result["matched_output_key"] == "pr_packet"
+    hint_lc = result["hint"].lower()
+    assert (
+        "panic-button" in result["hint"]
+        or "kill switch" in hint_lc
+        or "override" in hint_lc
+    )
+    # Make absolutely sure no reservation was written either — the kill
+    # switch fires before the reservation path, so the store stays clean.
+    assert lookup_receipt(
+        universe_dir,
+        idempotency_hint="loop-2-cycle-001",
+        sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+    ) is None
+
+
+@pytest.mark.parametrize("value", ["1", "true", "True", "yes", "ON"])
+def test_kill_switch_truthy_variants(universe_dir, monkeypatch, value):
+    """All truthy spellings (matching the existing ``_TRUTHY`` set) must
+    activate the override."""
+    _open_all_gates(universe_dir, monkeypatch)
+    monkeypatch.setenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", value)
+    packet = _make_packet()
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run"
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-killed",
+        )
+    mock_run.assert_not_called()
+    assert result["reason"] == "operator_kill_switch_active"
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off"])
+def test_kill_switch_falsy_variants_do_not_override(
+    universe_dir, monkeypatch, value,
+):
+    """Falsy / empty values leave the gates governing the outcome —
+    a truthy capability+consent+no-receipt combo must produce a real
+    invocation (the mocked gh subprocess fires once)."""
+    _open_all_gates(universe_dir, monkeypatch)
+    monkeypatch.setenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", value)
+    packet = _make_packet()
+    fake = SimpleNamespace(
+        returncode=0,
+        stdout="https://github.com/Jonnyton/Workflow/pull/4242\n",
+        stderr="",
+    )
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run",
+        return_value=fake,
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-real",
+        )
+    mock_run.assert_called_once()
+    assert result["pr_number"] == 4242
+    assert result.get("reason") != "operator_kill_switch_active"
+
+
+def test_kill_switch_unset_does_not_override(universe_dir, monkeypatch):
+    """Unset env (autouse fixture clears it) leaves gates governing —
+    the normal real-write path fires."""
+    _open_all_gates(universe_dir, monkeypatch)
+    # autouse _clean_capability_env already cleared DRY_RUN; confirm.
+    import os as _os
+    assert "WORKFLOW_EXTERNAL_WRITE_DRY_RUN" not in _os.environ
+    packet = _make_packet()
+    fake = SimpleNamespace(
+        returncode=0,
+        stdout="https://github.com/Jonnyton/Workflow/pull/4242\n",
+        stderr="",
+    )
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run",
+        return_value=fake,
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-real",
+        )
+    mock_run.assert_called_once()
+    assert result["pr_number"] == 4242
+
+
+def test_kill_switch_bypasses_phase_1_path_too(universe_dir, monkeypatch):
+    """Phase-1-shaped packets (no ``destination``) must also honor the
+    kill switch — the override fires at the top of the effector,
+    BEFORE the Phase-1 / Phase-2 branch."""
+    monkeypatch.setenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", "1")
+    packet = _make_packet(destination=None)
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run"
+    ) as mock_run:
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-killed",
+        )
+    mock_run.assert_not_called()
+    assert result["dry_run"] is True
+    assert result["reason"] == "operator_kill_switch_active"
+
+
+def test_kill_switch_evidence_never_leaks_capability_token(
+    universe_dir, monkeypatch,
+):
+    """When the kill switch fires alongside a configured capability map,
+    the dry-run evidence must NOT contain the token — same invariant
+    as the rest of Phase 2."""
+    _set_capability(monkeypatch, _DESTINATION, "super-secret-pat-no-leak")
+    grant_consent(
+        universe_dir,
+        sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+        destination=_DESTINATION,
+        granted_by="host",
+    )
+    monkeypatch.setenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", "1")
+    packet = _make_packet()
+    result = run_github_pr_effector(
+        node_id="emit",
+        output_keys=["pr_packet"],
+        run_state={"pr_packet": packet},
+        base_path=universe_dir,
+        run_id="run-1",
+    )
+    assert result["reason"] == "operator_kill_switch_active"
+    assert "super-secret-pat-no-leak" not in json.dumps(result)

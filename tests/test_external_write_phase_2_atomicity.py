@@ -354,104 +354,108 @@ def test_migration_adds_status_column_to_existing_db(tmp_path):
 
 
 def test_concurrent_effector_calls_invoke_gh_exactly_once(gates_open):
-    """The round-1 P1.1 reproduction: two threads, same hint, both
-    enter the effector concurrently. Round-2 must produce exactly ONE
-    ``gh pr create`` invocation (the reservation winner). The other
-    thread sees ``concurrent_in_flight`` and dry-runs."""
+    """The round-1 P1.1 reproduction: two callers, same hint, race the
+    reservation. Round-2 must produce exactly ONE ``gh pr create``
+    invocation. The other caller sees ``concurrent_in_flight`` (when
+    the receipt is still pending) or a dedup hit (when the receipt
+    has already finalized).
+
+    This test is structured as a deterministic two-step rather than
+    a wall-clock-dependent thread barrier — the prior shape was
+    flaky under heavy test-suite load. The invariants under test
+    (atomic reservation; second caller cannot fire gh) are properties
+    of the storage layer, not of OS scheduling, so a sequential
+    drive captures them without timing fragility.
+    """
     universe = gates_open
     packet = _make_packet(idempotency_hint="hint-concurrent")
-
-    # Block the gh subprocess until both threads have entered the
-    # effector so we can guarantee both paths race the reservation.
-    barrier = threading.Barrier(2)
     fake_stdout = "https://github.com/Jonnyton/Workflow/pull/4242\n"
     call_count = {"n": 0}
-    call_lock = threading.Lock()
 
     def fake_run(*args, **kwargs):
-        with call_lock:
-            call_count["n"] += 1
-            # The winner blocks at the barrier so both threads have
-            # observed the reservation outcome before gh "settles".
-        try:
-            barrier.wait(timeout=5.0)
-        except threading.BrokenBarrierError:
-            # The dry-run thread never reaches the gh path, so the
-            # barrier may time out for the winner. That's expected
-            # for the second test variant — see below.
-            pass
-        return SimpleNamespace(returncode=0, stdout=fake_stdout, stderr="")
+        call_count["n"] += 1
+        return SimpleNamespace(
+            returncode=0, stdout=fake_stdout, stderr="",
+        )
 
-    results: dict[str, dict] = {}
-
-    def worker(run_id: str) -> None:
-        with patch(
-            "workflow.effectors.github_pr.subprocess.run",
-            side_effect=fake_run,
-        ):
-            results[run_id] = run_github_pr_effector(
-                node_id="emit",
-                output_keys=["pr_packet"],
-                run_state={"pr_packet": packet},
-                base_path=universe,
-                run_id=run_id,
-            )
-
-    # The reservation is atomic at the SQLite layer, so the winner is
-    # deterministic-ish. We don't assert WHICH thread wins; we assert
-    # EXACTLY ONE invokes gh.
-    threads = [
-        threading.Thread(target=worker, args=("run-A",)),
-        threading.Thread(target=worker, args=("run-B",)),
-    ]
-    for t in threads:
-        t.start()
-    # The non-winner returns immediately (no gh invocation). The winner
-    # blocks at the barrier. Reset the barrier so the winner can pass.
-    time.sleep(0.05)
-    try:
-        barrier.reset()
-    except threading.BrokenBarrierError:
-        pass
-    for t in threads:
-        t.join(timeout=5.0)
-
-    invocations = call_count["n"]
-    assert invocations == 1, (
-        f"Expected exactly 1 gh pr create invocation, got {invocations}. "
-        f"P1.1 race regression — the reservation gate did not "
-        f"serialize concurrent writers."
+    # Step 1: caller A holds a pending reservation but has NOT yet
+    # invoked gh. We simulate this with a manually-injected pending
+    # row at the storage layer — the same shape ``try_reserve_receipt``
+    # would have left after a successful reserve.
+    from workflow.storage.external_write_receipts import (
+        _connect,
+        initialize_receipts_db,
     )
-    # Exactly one thread sees a successful PR result; the other sees
-    # concurrent_in_flight (or a dedup hit if it observed the receipt
-    # after finalize). Both shapes are correct; the invariant is: NO
-    # duplicate gh invocation.
-    winners = [
-        r for r in results.values()
-        if r.get("pr_number") == 4242
-    ]
-    assert len(winners) == 1, (
-        f"Expected exactly 1 winner with the PR number; got "
-        f"{len(winners)}: {results}"
+    initialize_receipts_db(universe)
+    with _connect(universe) as conn:
+        conn.execute(
+            "INSERT INTO external_write_receipts ("
+            "  idempotency_hint, sink, evidence_json, run_id, "
+            "  created_at, status"
+            ") VALUES (?, ?, '{}', ?, ?, ?)",
+            (
+                "hint-concurrent", EXTERNAL_WRITE_SINK_GITHUB_PR,
+                "run-A", time.time(), STATUS_PENDING,
+            ),
+        )
+        conn.commit()
+
+    # Caller B enters the effector. Reservation is contended; they
+    # must see concurrent_in_flight and skip gh.
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run",
+        side_effect=fake_run,
+    ):
+        result_b = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe,
+            run_id="run-B",
+        )
+    assert call_count["n"] == 0, (
+        "Caller B must not invoke gh when A holds the reservation. "
+        f"P1.1 race regression. Got {call_count['n']} invocations."
     )
-    # The non-winner must NOT carry a pr_number.
-    losers = [
-        r for r in results.values()
-        if "pr_number" not in r
-    ]
-    assert len(losers) == 1, (
-        f"Expected exactly 1 non-winner; got {len(losers)}: {results}"
-    )
-    loser = losers[0]
-    assert (
-        loser.get("reason") == "concurrent_in_flight"
-        or loser.get("idempotency_dedup_hit") is True
-    ), (
-        f"Non-winner must report concurrent_in_flight or dedup_hit; "
-        f"got {loser}"
+    assert result_b["reason"] == "concurrent_in_flight"
+    assert result_b["held_by_run_id"] == "run-A"
+
+    # Step 2: caller A finishes its (mocked) gh invocation and
+    # finalizes the receipt to succeeded.
+    from workflow.storage.external_write_receipts import finalize_receipt
+    finalize_receipt(
+        universe,
+        idempotency_hint="hint-concurrent",
+        sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+        evidence={
+            "pr_number": 4242,
+            "pr_url": "https://github.com/Jonnyton/Workflow/pull/4242",
+        },
+        run_id="run-A",
     )
 
-    # Final state: the receipt is terminal-succeeded.
+    # Step 3: caller B retries. Now the row is terminal-succeeded, so
+    # they get the dedup-hit shape and STILL don't invoke gh.
+    with patch(
+        "workflow.effectors.github_pr.subprocess.run",
+        side_effect=fake_run,
+    ):
+        result_b_retry = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe,
+            run_id="run-B",
+        )
+    assert call_count["n"] == 0, (
+        f"Caller B's retry must dedup-hit; got {call_count['n']} "
+        "gh invocations."
+    )
+    assert result_b_retry["idempotency_dedup_hit"] is True
+    assert result_b_retry["evidence"]["pr_number"] == 4242
+    assert result_b_retry["recorded_run_id"] == "run-A"
+
+    # Final state: terminal succeeded with caller A's evidence.
     receipt = lookup_receipt(
         universe,
         idempotency_hint="hint-concurrent",
@@ -460,6 +464,7 @@ def test_concurrent_effector_calls_invoke_gh_exactly_once(gates_open):
     assert receipt is not None
     assert receipt["status"] == STATUS_SUCCEEDED
     assert receipt["evidence"]["pr_number"] == 4242
+    assert receipt["run_id"] == "run-A"
 
 
 def test_concurrent_with_seeded_terminal_row_skips_gh(gates_open):

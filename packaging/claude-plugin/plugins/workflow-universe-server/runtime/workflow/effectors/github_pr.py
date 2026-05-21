@@ -87,8 +87,16 @@ logger = logging.getLogger(__name__)
 
 EXTERNAL_WRITE_SINK_GITHUB_PR = "github_pull_request"
 _ENABLE_ENV = "WORKFLOW_EXTERNAL_WRITE_ENABLED"
-# Legacy env name retained only as recognized-input — has no effect on
-# the gate-orchestrated path.
+# Round-3 P1 fix (Codex round-2 verdict on PR #969): this env is the
+# **operator panic-button kill switch**. When truthy, the effector
+# ALWAYS returns dry-run evidence regardless of capability / consent /
+# idempotency-reservation state. The host can flip it on a live
+# daemon to disable all real writes without going through consent
+# revocation. Round-2 erroneously left this env recognized-but-ignored;
+# Codex caught the documentation/behavior drift and asked for it to be
+# restored as a documented override. Implementation:
+# :func:`run_github_pr_effector` checks it before any gate, including
+# Phase-1 backward-compat packets.
 _DRY_RUN_ENV = "WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
 # Round-2 P1.2 fix: capability tokens come from a single JSON-map env
 # var keyed by the literal ``owner/repo`` destination string. The
@@ -563,6 +571,29 @@ def run_github_pr_effector(
                 "with sink='github_pull_request'"
             ),
             "error_kind": "no_matching_packet",
+        }
+
+    # ── Operator kill switch (round-3 P1 fix for Codex round-2) ────────
+    # ``WORKFLOW_EXTERNAL_WRITE_DRY_RUN`` is a hard override. When
+    # truthy, the effector ALWAYS returns dry-run evidence regardless
+    # of capability / consent / idempotency-reservation state. This is
+    # the documented panic-button path — host flips the env on a live
+    # daemon to disable all real writes without revoking consent or
+    # rotating capability tokens. Defense-in-depth control.
+    if _env_truthy(_DRY_RUN_ENV):
+        return {
+            "dry_run": True,
+            "phase": "phase_2",
+            "reason": "operator_kill_switch_active",
+            "kill_switch_env": _DRY_RUN_ENV,
+            "intent": packet,
+            "matched_output_key": matched_key,
+            "hint": (
+                f"{_DRY_RUN_ENV} is set on the daemon environment, "
+                "which is the operator panic-button override. No real "
+                "writes will fire for this sink until the env is "
+                "unset (or set to a falsy value)."
+            ),
         }
 
     destination_raw = packet.get("destination", "")

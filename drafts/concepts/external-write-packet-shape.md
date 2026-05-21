@@ -110,13 +110,21 @@ Evidence (Phase 2 dry-run from a closed gate):
 {
   "dry_run": true,
   "phase": "phase_2",
-  "reason": "missing_capability" | "missing_consent",
+  "reason": "missing_capability" | "missing_consent" | "concurrent_in_flight" | "operator_kill_switch_active",
   "destination": "Jonnyton/Workflow",
-  "capability_env_key": "WORKFLOW_GITHUB_PR_CAPABILITY_REPO_JONNYTON_WORKFLOW",
+  "capability_env_var": "WORKFLOW_GITHUB_PR_CAPABILITIES",
+  "capability_lookup_failed_for": "Jonnyton/Workflow",
   "intent": <packet>,
   "matched_output_key": "..."
 }
 ```
+
+`capability_env_var` + `capability_lookup_failed_for` are present only
+when the reason is `missing_capability`. Round-2 (Codex P1.2) replaced
+the round-1 per-destination suffix env (which collapsed `octo/my.repo`
+and `octo/my_repo` to the same env name) with the JSON-map
+`WORKFLOW_GITHUB_PR_CAPABILITIES` env; the dry-run evidence names the
+literal destination string the host needs to add to that map.
 
 Evidence (Phase 2 idempotency dedup hit):
 
@@ -133,13 +141,33 @@ Evidence (Phase 2 idempotency dedup hit):
 }
 ```
 
-## Dry run
+## Operator kill switch
 
-When `WORKFLOW_EXTERNAL_WRITE_DRY_RUN` is truthy in the daemon's env,
-the effector logs the intended write and returns
-`{"dry_run": true, "intent": <packet>, "matched_output_key": "..."}`
-instead of invoking `gh`. Useful for safe defaults during early
-adoption and for end-to-end tests that should never touch GitHub.
+`WORKFLOW_EXTERNAL_WRITE_DRY_RUN` is the operator panic-button
+override. When truthy on the daemon's env, the effector **always**
+returns dry-run evidence — ALL gates (capability + consent +
+idempotency reservation) are bypassed; no real write fires for this
+sink. The host flips the env on a live daemon to disable all real
+writes without revoking consent or rotating capability tokens.
+
+The dry-run evidence shape under this override:
+
+```json
+{
+  "dry_run": true,
+  "phase": "phase_2",
+  "reason": "operator_kill_switch_active",
+  "kill_switch_env": "WORKFLOW_EXTERNAL_WRITE_DRY_RUN",
+  "intent": <packet>,
+  "matched_output_key": "..."
+}
+```
+
+Round-3 contract (Codex round-2 verdict on PR #969): round-2
+inadvertently left this env recognized-but-ignored on the gate-
+orchestrated path while these docs still claimed it was a working
+kill switch. The fix restores it as a hard override at the top of
+`run_github_pr_effector`, before any of the three gates run.
 
 ## Where the evidence lands
 
