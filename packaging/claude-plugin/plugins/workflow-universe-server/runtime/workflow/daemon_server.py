@@ -461,6 +461,26 @@ def initialize_author_server(base_path: str | Path) -> Path:
                 "ALTER TABLE goals ADD COLUMN canonical_branch_history_json "
                 "TEXT NOT NULL DEFAULT '[]'"
             )
+        # PR-127 (M6 cutover Steps 4 + 7) — leaderboard-driven canonical
+        # selection. ``auto_canonical_via_leaderboard``: when set, every
+        # ``goals action=run_canonical`` call first re-queries
+        # ``recommended_parent_for_fork`` and updates the stored
+        # ``canonical_branch_version_id`` to the freshest top-ranked
+        # entry before dispatching. Default OFF so existing Goals are
+        # opt-in. ``min_completed_runs_for_canonical``: security gate
+        # against a malicious branch ranking high with zero actual
+        # runs; default 5. Both columns are stored as integers (SQLite
+        # has no native BOOLEAN).
+        if "auto_canonical_via_leaderboard" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN auto_canonical_via_leaderboard "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        if "min_completed_runs_for_canonical" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE goals ADD COLUMN min_completed_runs_for_canonical "
+                "INTEGER NOT NULL DEFAULT 5"
+            )
         # Variant canonicals (Task #61 Step 1) — backfill canonical_bindings
         # from existing goals.canonical_branch_version_id. INSERT OR IGNORE
         # makes the migration idempotent: re-running on an already-backfilled
@@ -2420,6 +2440,17 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         canonical_history_raw = row["canonical_branch_history_json"]
     except (IndexError, KeyError):
         canonical_history_raw = "[]"
+    # PR-127 — leaderboard-driven canonical selection. Defaults match
+    # the schema (auto OFF, threshold 5) so pre-migration rows behave
+    # as if they were freshly created.
+    try:
+        auto_flag = int(row["auto_canonical_via_leaderboard"] or 0)
+    except (IndexError, KeyError, TypeError, ValueError):
+        auto_flag = 0
+    try:
+        min_runs = int(row["min_completed_runs_for_canonical"] or 5)
+    except (IndexError, KeyError, TypeError, ValueError):
+        min_runs = 5
     return {
         "goal_id": row["goal_id"],
         "name": row["name"],
@@ -2434,6 +2465,8 @@ def _goal_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "canonical_branch_history": _json_loads(
             canonical_history_raw or "[]", []
         ),
+        "auto_canonical_via_leaderboard": bool(auto_flag),
+        "min_completed_runs_for_canonical": min_runs,
     }
 
 
@@ -2496,7 +2529,9 @@ def update_goal(
 ) -> dict[str, Any]:
     """Patch mutable fields on a Goal. Returns the updated row.
 
-    Supported fields: name, description, tags, visibility. Author is
+    Supported fields: name, description, tags, visibility,
+    auto_canonical_via_leaderboard (bool — PR-127), and
+    min_completed_runs_for_canonical (int — PR-127). Author is
     immutable; timestamps are server-managed.
     """
     initialize_author_server(base_path)
@@ -2512,6 +2547,24 @@ def update_goal(
     if "tags" in updates:
         sets.append("tags_json = ?")
         params.append(_json_dumps(list(updates["tags"] or [])))
+    # PR-127 — leaderboard-driven canonical opt-in + threshold knob.
+    # Booleans land as 0/1 to match the SQLite INTEGER column.
+    if "auto_canonical_via_leaderboard" in updates:
+        sets.append("auto_canonical_via_leaderboard = ?")
+        params.append(1 if updates["auto_canonical_via_leaderboard"] else 0)
+    if "min_completed_runs_for_canonical" in updates:
+        try:
+            threshold = int(updates["min_completed_runs_for_canonical"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "min_completed_runs_for_canonical must be an integer"
+            ) from exc
+        if threshold < 0:
+            raise ValueError(
+                "min_completed_runs_for_canonical must be >= 0"
+            )
+        sets.append("min_completed_runs_for_canonical = ?")
+        params.append(threshold)
     params.append(goal_id)
     with _connect(base_path) as conn:
         conn.execute(
@@ -2542,19 +2595,39 @@ def set_canonical_branch(
     canonical_branch_history before the new value is written.
     Raises KeyError if goal_id not found.
     Raises ValueError if branch_version_id is provided but does not exist
-        in branch_versions table (not a published version).
+        in branch_versions table (not a published version), OR if the
+        supplied version's status is not 'active' (PR-127 round 2 P1.1
+        defense-in-depth — rolled_back / superseded versions cannot be
+        promoted to canonical even if a caller bypasses the auto-refresh
+        filter in :func:`workflow.api.canonical_dispatch._latest_published_version_id`).
     """
     initialize_author_server(base_path)
     now = _now()
     goal = get_goal(base_path, goal_id=goal_id)
 
     if branch_version_id is not None:
-        # Validate that it's a real published version.
+        # Validate that it's a real published version AND that it has
+        # not been rolled back / superseded. The active-only check is
+        # the round-2 P1.1 defense-in-depth: the auto-refresh path
+        # already filters via `_latest_published_version_id`, but a
+        # second guard at the write site means a rolled-back version
+        # cannot become canonical via any code path (manual MCP call,
+        # auto-refresh bug, host script, etc.).
         from workflow.branch_versions import get_branch_version
-        if get_branch_version(base_path, branch_version_id) is None:
+        version = get_branch_version(base_path, branch_version_id)
+        if version is None:
             raise ValueError(
                 f"branch_version_id {branch_version_id!r} not found "
                 "in branch_versions — only published versions may be canonical."
+            )
+        version_status = getattr(version, "status", "active") or "active"
+        if version_status != "active":
+            raise ValueError(
+                f"branch_version_id {branch_version_id!r} has "
+                f"status={version_status!r}; only versions with "
+                "status='active' may be promoted to canonical. "
+                "Re-publish a fresh version or restore the rolled-back "
+                "one before retrying."
             )
 
     # Build history entry for previous canonical (if any).
