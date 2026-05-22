@@ -422,6 +422,36 @@ def _sanitize_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", clean.lower()).strip("-")
 
 
+def _wiki_write_slug(category: str, filename: str) -> tuple[str, str | None]:
+    """Normalize action=write filename input to a page slug.
+
+    Chat surfaces sometimes pass the wiki-relative path returned by an earlier
+    write/read call. Treat those as pointing at the final basename instead of
+    folding the path prefix into the slug.
+    """
+    requested = filename.strip().replace("\\", "/")
+    if requested.startswith("/"):
+        return "", "filename must be relative to the wiki root."
+
+    parts = requested.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        return "", "filename must not contain empty, current, or parent path parts."
+
+    if len(parts) == 3 and parts[0] in {"pages", "drafts"}:
+        if parts[1] != category:
+            return "", (
+                f"filename category '{parts[1]}' does not match category '{category}'."
+            )
+        requested = parts[2]
+    elif len(parts) == 2 and parts[0] == category:
+        requested = parts[1]
+
+    slug = _sanitize_slug(requested)
+    if not slug:
+        return "", "filename must resolve to a non-empty slug."
+    return slug, None
+
+
 def _resolve_bugs_canonical(parent: Path, slug: str) -> Path | None:
     """Find the canonical bugs/<slug>.md path, preferring uppercase + trailing-hyphen variants.
 
@@ -699,7 +729,9 @@ def _wiki_write(
             "valid": list(_WIKI_CATEGORIES),
         })
 
-    slug = _sanitize_slug(filename)
+    slug, slug_error = _wiki_write_slug(category, filename)
+    if slug_error:
+        return json.dumps({"error": slug_error})
     promoted_path = _wiki_pages_dir() / category / (slug + ".md")
 
     # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
