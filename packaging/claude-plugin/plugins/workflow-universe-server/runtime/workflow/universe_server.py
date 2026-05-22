@@ -531,6 +531,9 @@ def extensions(
     filters_json: str = "",
     select: str = "",
     aggregate_json: str = "",
+    receipt_type: str = "",
+    payload_json: str = "",
+    subject_id: str = "",
     branch_spec_json: str = "",
     from_run_id: str = "",
     to_node_id: str = "",
@@ -601,8 +604,12 @@ def extensions(
 
     Core actions include build_branch, patch_branch, list_branches,
     describe_branch, get_branch, run_branch, get_run, wait_for_run,
-    judge_run, publish_version, schedule_branch, fork_tree, and search_nodes.
+    judge_run, publish_version, schedule_branch, fork_tree, search_nodes,
+    record_run_receipt, and list_run_receipts.
     Pass `action` plus the matching ids or JSON payload fields.
+    Receipt actions use `run_id`, `receipt_type`, `payload_json`, and optional
+    `node_id` / `subject_id` to preserve source acquisition, claim lineage,
+    and revision evidence for later gates and runs.
     Use `scope` with list_branches to filter the result:
     `"published"` (default) = only Branches that have a published version
     snapshot — production-ready entries, drafts hidden;
@@ -666,6 +673,9 @@ def extensions(
         filters_json=filters_json,
         select=select,
         aggregate_json=aggregate_json,
+        receipt_type=receipt_type,
+        payload_json=payload_json,
+        subject_id=subject_id,
         branch_spec_json=branch_spec_json,
         from_run_id=from_run_id,
         to_node_id=to_node_id,
