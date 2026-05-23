@@ -315,6 +315,18 @@ def ensure_default_selector_published(base_path: str | Path) -> str:
             return v.branch_version_id
 
     # No active version — publish v1.
+    #
+    # P1 (DESIGN-008 round 5): ``publish_branch_version`` is deterministic
+    # in ``(branch_def_id, content_hash)``. When an operator has rolled
+    # back the platform default (every existing version's status flipped
+    # to ``rolled_back``), the re-publish call returns the same existing
+    # rolled-back row (workflow/branch_versions.py:267-273) rather than
+    # minting a fresh active one. Without the post-publish status check
+    # below, ``ensure_default_selector_published`` would silently hand
+    # back a rolled-back branch_version_id, and ``dispatch_selector``
+    # would execute it — defeating the rollback. Fail closed instead:
+    # return empty so the caller (``resolve_selector_branch_version_id``)
+    # surfaces ``default_selector_unavailable``.
     branch_dict = _build_default_selector_branch_dict()
     version = publish_branch_version(
         base_path,
@@ -333,6 +345,20 @@ def ensure_default_selector_published(base_path: str | Path) -> str:
             "publish_branch_version reported success but the row is "
             "not readable post-write."
         )
+    status = getattr(persisted, "status", "active") or "active"
+    if status != "active":
+        logger.warning(
+            "ensure_default_selector_published | publish_branch_version "
+            "returned existing branch_version_id=%r with status=%r "
+            "(deterministic re-publish hit a rolled-back row). Cannot "
+            "dispatch a rolled-back default selector. Operator: "
+            "republish the platform default branch with a content "
+            "change (so a fresh content_hash mints a new active row), "
+            "or bind a custom selector to the affected Goal via "
+            "goals action=set_selector.",
+            persisted.branch_version_id, status,
+        )
+        return ""
     return persisted.branch_version_id
 
 
@@ -614,6 +640,40 @@ def dispatch_selector(
                 "branch_versions."
             ),
             "branch_version_id": bvid,
+        }
+
+    # P1 (DESIGN-008 round 5) — dispatch-time status guard. The
+    # resolve-time check in ``resolve_selector_branch_version_id`` +
+    # the fail-closed semantics in ``ensure_default_selector_published``
+    # cover the normal lifecycle, but a final ``status='active'`` check
+    # here closes any race between resolve and dispatch (TOCTOU) and
+    # protects callers that thread their own ``branch_version_id``
+    # straight in without going through ``resolve_selector_branch_version_id``.
+    # Cheap (one already-loaded attribute read) and idempotent.
+    bv_status = getattr(bv, "status", "active") or "active"
+    if bv_status != "active":
+        logger.warning(
+            "selector dispatch | branch_version_id=%r resolved to "
+            "status=%r at dispatch time (active-only required). "
+            "Refusing to execute a rolled-back / superseded selector.",
+            bvid, bv_status,
+        )
+        return {
+            "ok": False,
+            "error_kind": "selector_version_inactive_at_dispatch",
+            "error": (
+                f"selector branch_version_id {bvid!r} resolved to "
+                f"status={bv_status!r} at dispatch time. The "
+                "selector binding is stale or the platform default "
+                "was rolled back without a fresh active replacement. "
+                "Operator: bind a different active selector via "
+                "goals action=set_selector, unbind to fall back to "
+                "the platform default, or republish the platform "
+                "default with new content so a fresh active version "
+                "is minted."
+            ),
+            "branch_version_id": bvid,
+            "status": bv_status,
         }
 
     snapshot = dict(bv.snapshot or {})

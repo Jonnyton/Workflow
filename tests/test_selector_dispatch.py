@@ -817,3 +817,179 @@ def test_dispatch_threads_fallback_diagnostic_to_caller(base_path):
     assert result["fellback_from"]["status"] == "rolled_back"
 
 
+# ---------------------------------------------------------------------------
+# Round-5 P1 — platform default rolled back must fail closed
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_default_returns_empty_when_existing_default_rolled_back(
+    base_path,
+):
+    """Round-5 P1 — ``publish_branch_version`` is deterministic in
+    ``(branch_def_id, content_hash)``. If an operator rolls back the
+    platform default selector (every existing default version's
+    status flipped to ``rolled_back``), a subsequent
+    ``ensure_default_selector_published`` call would hit the
+    deterministic re-publish path and get back the SAME rolled-back
+    row. ``ensure_default_selector_published`` must detect that and
+    return empty so callers surface ``default_selector_unavailable``
+    rather than silently dispatching a rolled-back selector.
+    """
+    from workflow.api.selector_dispatch import (
+        DEFAULT_SELECTOR_BRANCH_DEF_ID,
+        ensure_default_selector_published,
+    )
+
+    # First call mints the active default.
+    bvid = ensure_default_selector_published(base_path)
+    assert bvid.startswith(DEFAULT_SELECTOR_BRANCH_DEF_ID + "@")
+
+    # Operator-style rollback: flip every existing default's status.
+    _flip_branch_version_status(base_path, bvid, "rolled_back")
+
+    # Second call sees no active version, calls publish_branch_version
+    # (deterministic) which returns the existing rolled-back row.
+    # ensure_default_selector_published must NOT return that bvid.
+    second = ensure_default_selector_published(base_path)
+    assert second == "", (
+        "ensure_default_selector_published returned %r for a "
+        "rolled-back default — expected '' so the caller surfaces "
+        "default_selector_unavailable" % (second,)
+    )
+
+
+def test_resolve_surfaces_default_unavailable_when_default_rolled_back(
+    base_path,
+):
+    """Round-5 P1 — when ``ensure_default_selector_published`` returns
+    empty (rolled-back default), ``resolve_selector_branch_version_id``
+    must surface a structured ``default_selector_unavailable`` error
+    to the leaderboard caller rather than crashing or dispatching."""
+    _make_goal(base_path, "g-default-rolled-back")
+    from workflow.api.selector_dispatch import (
+        ensure_default_selector_published,
+        resolve_selector_branch_version_id,
+    )
+
+    bvid = ensure_default_selector_published(base_path)
+    _flip_branch_version_status(base_path, bvid, "rolled_back")
+
+    result = resolve_selector_branch_version_id(
+        base_path, goal_id="g-default-rolled-back",
+    )
+    assert result["ok"] is False, result
+    assert result["error_kind"] == "default_selector_unavailable"
+
+
+def test_dispatch_selector_rejects_inactive_at_dispatch_time(
+    base_path, monkeypatch,
+):
+    """Round-5 P1 — dispatch-time status guard. The resolve-time
+    check + ``ensure_default_selector_published`` fail-closed cover
+    the normal lifecycle, but the dispatch path must ALSO re-check
+    ``status='active'`` immediately before ``_execute_branch_core``
+    to close the resolve-then-rollback TOCTOU race + defend against
+    any future caller that threads a branch_version_id past the
+    resolve helper.
+
+    We exercise the guard specifically by monkeypatching the resolve
+    helper to return a (rolled-back) branch_version_id so the
+    resolve-time check is bypassed and the dispatch-time guard is
+    the only thing standing between caller and ``_execute_branch_core``.
+    """
+    _make_goal(base_path, "g-dispatch-guard")
+    custom_bvid = _publish_custom_selector(
+        base_path, branch_def_id="custom_dispatch_guard_selector",
+    )
+    _flip_branch_version_status(base_path, custom_bvid, "rolled_back")
+
+    # Force resolve to return the rolled-back bvid (bypass its own
+    # status re-check). The dispatch-time guard is the only defense
+    # left.
+    from workflow.api import selector_dispatch as sd
+
+    def _fake_resolve(base_path, *, goal_id):
+        return {
+            "ok": True,
+            "branch_version_id": custom_bvid,
+            "source": "goal_binding",
+        }
+
+    monkeypatch.setattr(
+        sd, "resolve_selector_branch_version_id", _fake_resolve,
+    )
+
+    candidates = [{
+        "branch_def_id": "b1",
+        "branch_version_id": "",
+        "name": "b1",
+        "author": "alice",
+        "description": "",
+        "signals": {},
+    }]
+    blocked = sd.dispatch_selector(
+        base_path,
+        goal_id="g-dispatch-guard",
+        candidate_branches=candidates,
+        provider_call=_selector_stub_provider(candidate_ids=["b1"]),
+    )
+    assert blocked["ok"] is False, blocked
+    assert blocked["error_kind"] == "selector_version_inactive_at_dispatch"
+    assert blocked["branch_version_id"] == custom_bvid
+    assert blocked["status"] == "rolled_back"
+
+
+def test_quality_leaderboard_unavailable_when_default_rolled_back(base_path):
+    """Round-5 P1 — build_quality_leaderboard end-to-end. Roll back
+    every default-selector version, then call the leaderboard with no
+    explicit binding. The leaderboard must surface a structured error
+    indicating the selector is unavailable rather than silently
+    dispatching the rolled-back row (which was the Codex round-4
+    reproduction).
+    """
+    from workflow.api.quality_leaderboard import build_quality_leaderboard
+    from workflow.api.selector_dispatch import (
+        ensure_default_selector_published,
+    )
+    from workflow.daemon_server import save_branch_definition, save_goal
+
+    save_goal(
+        base_path,
+        goal=dict(
+            goal_id="g-leader-default-rolled",
+            name="g-leader",
+            description="",
+            author="host",
+            tags=[],
+            visibility="public",
+        ),
+    )
+    save_branch_definition(
+        base_path,
+        branch_def=dict(
+            branch_def_id="b-leader",
+            name="b-leader",
+            description="",
+            author="alice",
+            tags=[],
+            graph_nodes=[],
+            edges=[],
+            state_schema=[],
+            entry_point="",
+            published=True,
+            goal_id="g-leader-default-rolled",
+        ),
+    )
+
+    bvid = ensure_default_selector_published(base_path)
+    _flip_branch_version_status(base_path, bvid, "rolled_back")
+
+    result = build_quality_leaderboard(
+        base_path,
+        goal_id="g-leader-default-rolled",
+        viewer="",
+    )
+    # The leaderboard surfaces the substrate failure, not the rolled-
+    # back selector's stale ranking.
+    assert result.get("ok") is False, result
+    assert result.get("error_kind") == "default_selector_unavailable"
