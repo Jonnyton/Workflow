@@ -466,6 +466,56 @@ def test_runs_external_write_results_overwrites_quarantined_value():
     assert output["_branch_authored_external_write_errors"] == [{"fake": "row"}]
 
 
+def test_get_run_snapshot_surfaces_system_external_write_receipts(monkeypatch):
+    """The compact get_run snapshot must still expose system write receipts."""
+    from workflow.api.runs import _compose_run_snapshot
+    from workflow.effectors import EXTERNAL_WRITE_SINK_GITHUB_PR
+
+    def _missing_branch(*args, **kwargs):
+        raise KeyError("branch-1")
+
+    monkeypatch.setattr(
+        "workflow.daemon_server.get_branch_definition",
+        _missing_branch,
+    )
+    external_write_results = {
+        "draft": {
+            EXTERNAL_WRITE_SINK_GITHUB_PR: {
+                "dry_run": True,
+                "receipt_path": "receipts/draft.json",
+            },
+        },
+    }
+    external_write_errors = [{
+        "node_id": "draft",
+        "sink": EXTERNAL_WRITE_SINK_GITHUB_PR,
+        "error": "dry run only",
+        "error_kind": "dry_run",
+    }]
+    snapshot = _compose_run_snapshot(
+        {
+            "run_id": "run-1",
+            "branch_def_id": "branch-1",
+            "status": "completed",
+            "actor": "tester",
+            "output": {
+                "external_write_results": external_write_results,
+                "external_write_errors": external_write_errors,
+                "_branch_authored_external_write_results": {"fake": "receipt"},
+            },
+            "error": "",
+            "last_node_id": "",
+            "started_at": 1.0,
+            "finished_at": 2.0,
+        },
+        [],
+    )
+
+    assert snapshot["external_write_results"] == external_write_results
+    assert snapshot["external_write_errors"] == external_write_errors
+    assert "_branch_authored_external_write_results" not in snapshot
+
+
 # ─── 8. BranchDefinition node_defs roundtrip through full to_dict path ────
 
 
