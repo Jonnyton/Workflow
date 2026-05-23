@@ -426,6 +426,7 @@ def _extensions_impl(
         "inputs_json": inputs_json,
         "run_name": run_name,
         "resume_from": resume_from,
+        "node_id": node_id,
         "status": status,
         "since_step": since_step,
         "max_wait_s": max_wait_s,

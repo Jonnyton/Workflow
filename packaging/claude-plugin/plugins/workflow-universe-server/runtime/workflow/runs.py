@@ -567,6 +567,10 @@ def _normalize_receipt_payload(
                 "not_searched cannot be combined with fetched, viewed, "
                 "verified, or snapshotted"
             )
+        if normalized["not_searched"] and normalized["unavailable"]:
+            raise ValueError(
+                "not_searched cannot be combined with unavailable"
+            )
         if normalized["unavailable"] and any(
             normalized[flag] for flag in acquired_flags
         ):

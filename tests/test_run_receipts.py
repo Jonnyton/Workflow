@@ -191,6 +191,28 @@ def test_source_receipt_rejects_contradictory_not_searched_state(
         raise AssertionError("contradictory source flags should be rejected")
 
 
+def test_source_receipt_rejects_not_searched_and_unavailable(
+    tmp_path: Path,
+) -> None:
+    run_id = _seed_run(tmp_path)
+
+    try:
+        record_run_receipt(
+            tmp_path,
+            run_id=run_id,
+            receipt_type="source_acquisition_receipt",
+            payload={
+                "source_ref": "source-a",
+                "not_searched": True,
+                "unavailable": True,
+            },
+        )
+    except ValueError as exc:
+        assert "not_searched cannot be combined with unavailable" in str(exc)
+    else:
+        raise AssertionError("not_searched and unavailable should conflict")
+
+
 def test_list_run_receipts_filters_by_run_and_type(tmp_path: Path) -> None:
     run_a = _seed_run(tmp_path)
     run_b = create_run(
@@ -236,6 +258,7 @@ def test_mcp_actions_record_and_list_run_receipts(
         action="record_run_receipt",
         run_id=run_id,
         receipt_type="source_acquisition_receipt",
+        node_id="search-node",
         payload_json=json.dumps({
             "source_ref": "local:file.txt",
             "not_searched": True,
@@ -250,5 +273,7 @@ def test_mcp_actions_record_and_list_run_receipts(
 
     assert recorded["status"] == "recorded"
     assert listed["count"] == 1
+    assert recorded["receipt"]["node_id"] == "search-node"
+    assert listed["receipts"][0]["node_id"] == "search-node"
     assert listed["receipts"][0]["payload"]["source_ref"] == "local:file.txt"
     assert listed["receipts"][0]["payload"]["not_searched"] is True
