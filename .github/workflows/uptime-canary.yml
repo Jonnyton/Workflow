@@ -50,7 +50,6 @@ env:
 
 jobs:
   probe:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -422,18 +421,27 @@ jobs:
           OVERALL: ${{ needs.probe.outputs.overall }}
           PROBE_STATUS: ${{ needs.probe.outputs.status }}
           PROBE_MSG: ${{ needs.probe.outputs.msg }}
+          PROBE_RESULT: ${{ needs.probe.result }}
           LABEL: ${{ env.ALARM_ISSUE_LABEL }}
           THRESHOLD: ${{ env.ALARM_THRESHOLD }}
           PROBE_URL: ${{ env.PROBE_URL }}
         with:
           script: |
             const overall = process.env.OVERALL;
+            const probeResult = process.env.PROBE_RESULT || '';
             const label = process.env.LABEL;
             const threshold = parseInt(process.env.THRESHOLD, 10);
-            const probeStatus = process.env.PROBE_STATUS;
-            const probeMsg = process.env.PROBE_MSG || '';
+            let probeStatus = process.env.PROBE_STATUS;
+            let probeMsg = process.env.PROBE_MSG || '';
             const now = new Date().toISOString();
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const effectiveOverall = overall || 'red';
+
+            if (!overall) {
+              core.warning(`Probe job produced no overall output (needs.probe.result=${probeResult || 'unknown'}); treating as red.`);
+              probeStatus = probeStatus || `probe_${probeResult || 'missing'}`;
+              probeMsg = probeMsg || `Probe job produced no overall output. needs.probe.result=${probeResult || 'unknown'}. Treating as red.`;
+            }
 
             // Ensure label exists.
             try {
@@ -508,7 +516,7 @@ jobs:
             core.setOutput('issue_number', '');
             core.setOutput('is_first_alarm', 'false');
 
-            if (overall === 'red') {
+            if (effectiveOverall === 'red') {
               if (openIssue) {
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,

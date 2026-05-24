@@ -232,7 +232,7 @@ def test_uptime_canary_workflow_id_is_literal():
            'workflow_id: "uptime-canary.yml"' in text
 
 
-def test_uptime_canary_runs_after_successful_deploy():
+def test_uptime_canary_runs_after_completed_deploy():
     wf = _load(_UPTIME_WF)
     triggers = _triggers(wf)
     workflow_run = triggers.get("workflow_run", {})
@@ -241,10 +241,9 @@ def test_uptime_canary_runs_after_successful_deploy():
         "fresh observation evidence without waiting for cron/manual dispatch"
     )
     assert "completed" in workflow_run.get("types", [])
-    assert (
-        _jobs(wf)["probe"].get("if")
-        == "github.event_name != 'workflow_run' || "
-           "github.event.workflow_run.conclusion == 'success'"
+    assert "if" not in _jobs(wf)["probe"], (
+        "failed deploy-prod runs still need a real endpoint probe; skipping "
+        "the probe leaves alarm-sink with empty outputs and can report a false green"
     )
 
 
