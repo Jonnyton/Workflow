@@ -46,6 +46,7 @@ universe_server.py: 14012 → 972 LOC live in main. PLAN.md restructured 30→11
 | **#24 Arc C** — env-var deprecation aliases (UNIVERSE_SERVER_BASE, WIKI_PATH) | workflow/storage/__init__.py | #25 | dev-ready |
 | **Phase 6** — `.workflow.db`, `db_path()` fn, Option A migration, 30s restart, plugin minor-bump | workflow/storage/__init__.py + plugin mirror, tests/ | #24 | dev-ready |
 | `run_branch resume_from=<run_id>` param (F2 ACCEPTED 2026-04-28) | workflow/api/runs.py, tests/ | #23 | dev-ready |
+| #961 branch-authoring batch receipts — PR #1093; additive receipt metadata for build_branch/patch_branch; no trust-session/auth bypass | workflow/api/branches.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/branches.py, workflow/api/extensions.py, packaging/claude-plugin/plugins/workflow-universe-server/runtime/workflow/api/extensions.py, tests/test_composite_branch_actions.py, tests/test_universe_server_framing.py, .agents/worktrees.md, _PURPOSE.md | rebase if #1045 lands first | dev-ready |
 | Site wiki+loop lane — PR #158 was CLOSED not merged; site-wiki-live-lens branch work orphan; /loop redesign unbuilt | WebSite/site/src/routes/wiki/+page.svelte, WebSite/site/src/routes/loop/+page.svelte | - | dev-ready |
 | Windows full-suite backup.sh path fix | tests/test_backup_script.py | #18,#23 | dev-ready |
 | Clean-clone MCP config test mismatch | tests/test_mcp_server.py, .mcp.example.json | #18,#23 | dev-ready |
