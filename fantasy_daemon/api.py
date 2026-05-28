@@ -219,6 +219,10 @@ def _require_bearer_token(request: Request) -> dict[str, Any]:
     return actor
 
 
+def _actor_type(actor: dict[str, Any]) -> str:
+    return "operator" if actor.get("token_type") == "master_api_key" else "user"
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -279,6 +283,10 @@ class CreateUniverseBody(BaseModel):
     name: str | None = Field(
         None,
         description="Human-readable display name (auto-generated if omitted)",
+    )
+    branch_def_id: str | None = Field(
+        None,
+        description="Optional workflow loop branch declared in the new universe soul.",
     )
 
 
@@ -777,7 +785,12 @@ def create_universe(
 
     try:
         udir.mkdir(parents=True, exist_ok=True)
-        soul = ensure_universe_soul(udir)
+        soul = ensure_universe_soul(
+            udir,
+            loop_branch_def_id=(
+                body.branch_def_id if body and body.branch_def_id else ""
+            ),
+        )
         (udir / "canon").mkdir(exist_ok=True)
         (udir / "output").mkdir(exist_ok=True)
         (udir / "universe.json").write_text(
@@ -2104,7 +2117,6 @@ def get_current_user(
         "username": actor.get("username"),
         "display_name": actor.get("display_name"),
         "capabilities": actor.get("capabilities", []),
-        "is_host": actor.get("is_host", False),
     }
 
 
@@ -2207,9 +2219,11 @@ def resolve_vote(
     """Resolve a vote window (host-only)."""
     from workflow import daemon_server as author_server
 
-    # Only host can resolve votes
-    if not actor.get("is_host"):
-        raise HTTPException(status_code=403, detail="Only host can resolve votes")
+    if not author_server.actor_has_capability(actor, author_server.CAP_RESOLVE_VOTE):
+        raise HTTPException(
+            status_code=403,
+            detail="Missing capability: resolve_vote",
+        )
 
     try:
         base = _base()
@@ -2244,7 +2258,7 @@ def create_branch(
         author_server.record_action(
             base,
             universe_id=universe_id,
-            actor_type="host" if actor.get("is_host") else "user",
+            actor_type=_actor_type(actor),
             actor_id=actor["user_id"],
             action_type="create_branch",
             target_type="branch",
@@ -2301,7 +2315,7 @@ def create_request(
         author_server.record_action(
             base,
             universe_id=universe_id,
-            actor_type="host" if actor.get("is_host") else "user",
+            actor_type=_actor_type(actor),
             actor_id=actor["user_id"],
             action_type="submit_request",
             target_type="user_request",
@@ -2343,9 +2357,14 @@ def spawn_runtime(
     """Spawn a runtime instance for an author in a universe."""
     from workflow import daemon_server as author_server
 
-    # Only host can spawn runtimes
-    if not actor.get("is_host"):
-        raise HTTPException(status_code=403, detail="Only host can spawn runtimes")
+    if not author_server.actor_has_capability(
+        actor,
+        author_server.CAP_SPAWN_RUNTIME_CAPACITY,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Missing capability: spawn_runtime_capacity",
+        )
 
     try:
         base = _base()
@@ -2361,7 +2380,7 @@ def spawn_runtime(
         author_server.record_action(
             base,
             universe_id=universe_id,
-            actor_type="host" if actor.get("is_host") else "user",
+            actor_type=_actor_type(actor),
             actor_id=actor["user_id"],
             action_type="spawn_runtime_capacity",
             target_type="runtime_instance",

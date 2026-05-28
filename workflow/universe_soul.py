@@ -6,6 +6,7 @@ mirror while introducing ``soul.md`` as the durable universe-intent artifact.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -16,6 +17,8 @@ LEGACY_PREMISE_FILENAME = "PROGRAM.md"
 SOUL_SCHEMA_VERSION = 1
 DEFAULT_DOMAIN_SHAPE = "general"
 DEFAULT_EDIT_AUTHORITY = "soul.edit"
+NO_LOOP_DECLARED = ""
+NO_LOOP_MARKER = "_None recorded._"
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class UniverseSoul:
     domain_shape: str = DEFAULT_DOMAIN_SHAPE
     lineage: str = "template"
     edit_authority: str = DEFAULT_EDIT_AUTHORITY
+    loop_branch_def_id: str = NO_LOOP_DECLARED
 
     def summary(self) -> dict[str, object]:
         return {
@@ -38,7 +42,41 @@ class UniverseSoul:
             "domain_shape": self.domain_shape,
             "lineage": self.lineage,
             "edit_authority": self.edit_authority,
+            "loop_branch_def_id": self.loop_branch_def_id,
             "versions_dir": SOUL_VERSIONS_DIR,
+        }
+
+
+@dataclass(frozen=True)
+class PinnedUniverseSoul:
+    soul: UniverseSoul
+    content: str
+    version_id: str
+    content_sha256: str
+
+    def context(self, *, max_chars: int = 4000) -> dict[str, object]:
+        content = self.content[:max_chars].rstrip()
+        truncated = len(self.content) > max_chars
+        return {
+            "path": SOUL_FILENAME,
+            "version_id": self.version_id,
+            "content_sha256": self.content_sha256,
+            "schema_version": self.soul.schema_version,
+            "purpose": self.soul.purpose,
+            "why": self.soul.why,
+            "hard_lines": list(self.soul.hard_lines),
+            "soft_preferences": list(self.soul.soft_preferences),
+            "open_to_contributors": list(self.soul.open_to_contributors),
+            "domain_shape": self.soul.domain_shape,
+            "lineage": self.soul.lineage,
+            "edit_authority": self.soul.edit_authority,
+            "loop_branch_def_id": self.soul.loop_branch_def_id,
+            "identity_boundary": (
+                "Universe soul guides this context only; it does not change "
+                "the actor identity or user memory scope."
+            ),
+            "content": content,
+            "truncated": truncated,
         }
 
 
@@ -62,6 +100,7 @@ def render_soul_markdown(soul: UniverseSoul) -> str:
         f"- Domain shape: {soul.domain_shape}",
         f"- Lineage: {soul.lineage}",
         f"- Edit authority: {soul.edit_authority}",
+        f"- Loop branch: {soul.loop_branch_def_id or NO_LOOP_MARKER}",
         "",
         "## Purpose",
         "",
@@ -112,6 +151,30 @@ def read_universe_soul(universe_dir: Path) -> UniverseSoul | None:
             _read_section(text, "Edit Authority")
             or _read_meta(text, "Edit authority", DEFAULT_EDIT_AUTHORITY)
         ),
+        loop_branch_def_id=_read_loop_branch_meta(text),
+    )
+
+
+def read_pinned_universe_soul(universe_dir: Path) -> PinnedUniverseSoul | None:
+    soul = read_universe_soul(universe_dir)
+    if soul is None:
+        return None
+
+    try:
+        content = soul_path(universe_dir).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    version_id = _matching_soul_version_id(universe_dir, content)
+    if version_id is None:
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        version_id = f"{SOUL_FILENAME}@sha256:{digest[:12]}"
+
+    return PinnedUniverseSoul(
+        soul=soul,
+        content=content,
+        version_id=version_id,
+        content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
     )
 
 
@@ -126,6 +189,7 @@ def write_universe_soul(
     domain_shape: str = DEFAULT_DOMAIN_SHAPE,
     lineage: str = "template",
     edit_authority: str = DEFAULT_EDIT_AUTHORITY,
+    loop_branch_def_id: str = NO_LOOP_DECLARED,
 ) -> UniverseSoul:
     universe_dir.mkdir(parents=True, exist_ok=True)
     existing = read_universe_soul(universe_dir)
@@ -143,6 +207,7 @@ def write_universe_soul(
             domain_shape=domain_shape.strip() or DEFAULT_DOMAIN_SHAPE,
             lineage=lineage.strip() or "template",
             edit_authority=edit_authority.strip() or DEFAULT_EDIT_AUTHORITY,
+            loop_branch_def_id=loop_branch_def_id.strip(),
         )
     else:
         soul = replace(
@@ -164,6 +229,9 @@ def write_universe_soul(
             domain_shape=domain_shape.strip() or existing.domain_shape,
             lineage=lineage.strip() or existing.lineage,
             edit_authority=edit_authority.strip() or existing.edit_authority,
+            loop_branch_def_id=(
+                loop_branch_def_id.strip() or existing.loop_branch_def_id
+            ),
         )
 
     rendered = render_soul_markdown(soul)
@@ -172,14 +240,23 @@ def write_universe_soul(
     return soul
 
 
-def ensure_universe_soul(universe_dir: Path, *, purpose: str = "") -> UniverseSoul:
+def ensure_universe_soul(
+    universe_dir: Path,
+    *,
+    purpose: str = "",
+    loop_branch_def_id: str = NO_LOOP_DECLARED,
+) -> UniverseSoul:
     existing = read_universe_soul(universe_dir)
-    if existing is not None and (existing.purpose or not purpose.strip()):
+    if existing is not None and (
+        (existing.purpose or not purpose.strip())
+        and (existing.loop_branch_def_id or not loop_branch_def_id.strip())
+    ):
         return existing
     return write_universe_soul(
         universe_dir,
         purpose=purpose,
         lineage="created-from-premise" if purpose.strip() else "template",
+        loop_branch_def_id=loop_branch_def_id,
     )
 
 
@@ -195,6 +272,11 @@ def read_legacy_premise(universe_dir: Path) -> str:
 def premise_from_soul(universe_dir: Path) -> str:
     soul = read_universe_soul(universe_dir)
     return soul.purpose if soul is not None else ""
+
+
+def loop_branch_from_soul(universe_dir: Path) -> str:
+    soul = read_universe_soul(universe_dir)
+    return soul.loop_branch_def_id if soul is not None else NO_LOOP_DECLARED
 
 
 def _render_list(items: tuple[str, ...]) -> str:
@@ -222,6 +304,19 @@ def _write_soul_version(universe_dir: Path, rendered: str) -> None:
     (versions_dir / f"{next_number:04d}.md").write_text(rendered, encoding="utf-8")
 
 
+def _matching_soul_version_id(universe_dir: Path, content: str) -> str | None:
+    versions_dir = universe_dir / SOUL_VERSIONS_DIR
+    if not versions_dir.is_dir():
+        return None
+    for path in sorted(versions_dir.glob("[0-9][0-9][0-9][0-9].md"), reverse=True):
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                return f"{SOUL_VERSIONS_DIR}/{path.name}"
+        except OSError:
+            continue
+    return None
+
+
 def _read_meta(text: str, key: str, default: str) -> str:
     pattern = rf"(?im)^-\s*{re.escape(key)}:\s*(.+?)\s*$"
     match = re.search(pattern, text)
@@ -236,6 +331,13 @@ def _read_int_meta(text: str, key: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _read_loop_branch_meta(text: str) -> str:
+    raw = _read_meta(text, "Loop branch", NO_LOOP_DECLARED)
+    if raw in {NO_LOOP_MARKER, "none", "None", "NONE"}:
+        return NO_LOOP_DECLARED
+    return raw
 
 
 def _read_section(text: str, heading: str) -> str:
