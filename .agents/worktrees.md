@@ -546,6 +546,17 @@ Notes:
 - Ship condition: focused tests pass, ruff passes, PR opened for Claude/Cowork
   review.
 
+## PR #975 Tools-Allowed Repair - 2026-05-24
+
+- 2026-05-24 create `../wf-pr975-tools-allowed-repair` on
+  `codex/pr975-tools-allowed-repair` by codex-gpt5-desktop-checker-pr975.
+- Source: `outputs/pr-inventory-2026-05-23/checker-batches-2026-05-24.md`
+  repair lane for dirty/conflicted PR #975 / GH issue #974.
+- Purpose: port the #975 runtime MCP affordance onto current main without
+  touching unrelated checker/repair lanes.
+- Ship condition: focused branch-runner/API tests pass and PR/handoff goes to
+  Claude-family checker because original writer family is Codex.
+
 ## BUG-106 Wiki Read Truncation - 2026-05-27
 
 - 2026-05-27 create `../wf-bug106-wiki-read-truncation` on
@@ -579,3 +590,26 @@ Notes:
 - PR: #1093.
 - Ship condition: focused composite-action tests pass, mirror parity passes,
   PR opened for checker review.
+
+## PR-139 Soul From Premise - 2026-05-27
+
+- 2026-05-27 create `../wf-pr139-soul` on `codex/pr139-soul` by
+  codex-gpt5-desktop.
+- Source: live wiki PR-139 souled-universe consolidation program; host key
+  now approved for all PR-139 slices.
+- Purpose: implement build-order step 3 only: generalize `soul.md` from the
+  current premise mechanism.
+- Ship condition: focused soul/premise tests pass, branch pushed, PR opened
+  for opposite-family checker review.
+
+## PR-139 Permission Consolidation - 2026-05-27
+
+- 2026-05-27 create `../wf-pr139-permission` on `codex/pr139-permission` by
+  codex-gpt5-desktop.
+- Source: live wiki PR-139 souled-universe consolidation program; slice 4
+  coordination marker filed in the live wiki.
+- Purpose: implement build-order step 4 only: CHILD-3 permission consolidation
+  through a test-universe `.can(action, scope, context)` path, resolver-decision
+  fixture handle, and legacy `is_host` equivalence evidence.
+- Ship condition: focused permission/auth/universe tests pass, branch pushed,
+  PR opened for opposite-family checker review.
