@@ -1301,6 +1301,69 @@ def _action_query_runs(kwargs: dict[str, Any]) -> str:
     return json.dumps(result, default=str)
 
 
+def _action_record_run_receipt(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import record_run_receipt
+
+    run_id = (kwargs.get("run_id") or "").strip()
+    receipt_type = (kwargs.get("receipt_type") or "").strip()
+    node_id = (kwargs.get("node_id") or "").strip()
+    payload_raw = kwargs.get("payload_json", "") or kwargs.get("payload", "") or ""
+    if not run_id:
+        return json.dumps({"error": "run_id is required."})
+    if not receipt_type:
+        return json.dumps({"error": "receipt_type is required."})
+    if not payload_raw:
+        return json.dumps({"error": "payload_json is required."})
+
+    try:
+        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    except (json.JSONDecodeError, TypeError) as exc:
+        return json.dumps({"error": f"payload_json is not valid JSON: {exc}"})
+    if not isinstance(payload, dict):
+        return json.dumps({"error": "payload_json must decode to a JSON object."})
+
+    try:
+        receipt = record_run_receipt(
+            _base_path(),
+            run_id=run_id,
+            receipt_type=receipt_type,
+            node_id=node_id,
+            payload=payload,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+
+    return json.dumps({
+        "status": "recorded",
+        "receipt": receipt,
+    }, default=str)
+
+
+def _action_list_run_receipts(kwargs: dict[str, Any]) -> str:
+    from workflow.runs import list_run_receipts
+
+    raw_limit = kwargs.get("limit", _DEFAULT_QUERY_LIMIT) or _DEFAULT_QUERY_LIMIT
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = _DEFAULT_QUERY_LIMIT
+    try:
+        receipts = list_run_receipts(
+            _base_path(),
+            run_id=(kwargs.get("run_id") or "").strip(),
+            receipt_type=(kwargs.get("receipt_type") or "").strip(),
+            subject_id=(kwargs.get("subject_id") or "").strip(),
+            limit=limit,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+
+    return json.dumps({
+        "receipts": receipts,
+        "count": len(receipts),
+    }, default=str)
+
+
 _DEFAULT_QUERY_LIMIT = 100
 
 
@@ -1658,6 +1721,8 @@ _RUN_ACTIONS: dict[str, Any] = {
     "resume_run": _action_resume_run,
     "estimate_run_cost": _action_estimate_run_cost,
     "query_runs": _action_query_runs,
+    "record_run_receipt": _action_record_run_receipt,
+    "list_run_receipts": _action_list_run_receipts,
     "get_routing_evidence": _action_run_routing_evidence,
     "get_memory_scope_status": _action_get_memory_scope_status,
     "rollback_merge": _action_rollback_merge,
@@ -1666,7 +1731,7 @@ _RUN_ACTIONS: dict[str, Any] = {
 
 _RUN_WRITE_ACTIONS: frozenset[str] = frozenset(
     {"run_branch", "run_branch_version", "cancel_run", "resume_run",
-     "rollback_merge", "attach_existing_child_run"}
+     "rollback_merge", "attach_existing_child_run", "record_run_receipt"}
 )
 
 
