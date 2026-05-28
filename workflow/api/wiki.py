@@ -1918,6 +1918,7 @@ def _wiki_file_bug(
     workaround: str = "",
     kind: str = "bug",
     tags: str = "",
+    cross_reference_count: int = 0,
     force_new: bool = False,
     verbose: bool = False,
     **_kwargs: Any,
@@ -1976,6 +1977,7 @@ def _wiki_file_bug(
         expected=expected,
         workaround=workaround,
         tags=tags,
+        cross_reference_count=cross_reference_count,
     )
     effort_dispatch_route = filing_effort_dispatch_route(effort_classification)
 
@@ -2293,6 +2295,7 @@ def wiki(
     workaround: str = "",
     kind: str = "bug",
     tags: str = "",
+    cross_reference_count: int = 0,
     force_new: bool = False,
     bug_id: str = "",
     reporter_context: str = "",
@@ -2378,6 +2381,7 @@ def wiki(
         "workaround": workaround,
         "kind": kind,
         "tags": tags,
+        "cross_reference_count": cross_reference_count,
         "force_new": force_new,
         "bug_id": bug_id,
         "reporter_context": reporter_context,
