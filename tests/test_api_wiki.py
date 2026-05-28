@@ -478,6 +478,24 @@ def test_wiki_write_drafts_then_promote_roundtrip(wiki_env):
     assert "pages/notes/my-note.md" in promoted["path"]
 
 
+def test_wiki_write_accepts_wiki_relative_draft_filename(wiki_env):
+    res = json.loads(
+        wiki(
+            action="write",
+            category="notes",
+            filename="drafts/notes/path-note.md",
+            content="body",
+        )
+    )
+
+    assert res["status"] == "drafted"
+    assert res["path"] == "drafts/notes/path-note.md"
+    assert (wiki_env / "drafts" / "notes" / "path-note.md").read_text(
+        encoding="utf-8"
+    ) == "body"
+    assert not (wiki_env / "drafts" / "notes" / "drafts-notes-path-note.md").exists()
+
+
 def test_wiki_patch_updates_long_page_without_full_replace(wiki_env):
     path = wiki_env / "pages" / "notes" / "long-note.md"
     original = (
