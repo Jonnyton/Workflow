@@ -1062,6 +1062,7 @@ def wiki(
             ),
         ),
     ] = "",
+    universe_id: str = "",
 ) -> str:
     """Read, write, and manage the cross-project knowledge wiki.
 
@@ -1094,6 +1095,8 @@ def wiki(
             after this timestamp are returned.
         offset/max_chars: For action="read", read a bounded character window
             from large pages. Truncated responses include `next_offset`.
+        universe_id: Optional target universe page substrate. Omit to use the
+            shared Workflow wiki.
     """
     return _wiki_impl(
         action=action,
@@ -1129,6 +1132,7 @@ def wiki(
         bug_id=bug_id,
         reporter_context=reporter_context,
         changed_since=changed_since,
+        universe_id=universe_id,
     )
 
 

@@ -281,6 +281,55 @@ def test_directory_write_page_drafts_temp_wiki_page(monkeypatch, tmp_path) -> No
     ).read_text(encoding="utf-8") == "# Directory page smoke\n"
 
 
+def test_directory_write_page_honors_target_universe(monkeypatch, tmp_path) -> None:
+    """A writer scoped to a universe writes to that universe's page substrate."""
+    shared_wiki = tmp_path / "shared-wiki"
+    monkeypatch.setenv("WORKFLOW_WIKI_PATH", str(shared_wiki))
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+
+    drafted = json.loads(
+        write_page(
+            universe_id="splitroot",
+            category="plans",
+            filename="archon-telemetry-contract",
+            content="# Archon telemetry contract\n",
+            log_entry="splitroot writer target",
+        )
+    )
+
+    assert drafted["status"] == "drafted"
+    assert drafted["universe_id"] == "splitroot"
+    assert drafted["path"] == "drafts/plans/archon-telemetry-contract.md"
+    target = (
+        tmp_path
+        / "splitroot"
+        / "wiki"
+        / "drafts"
+        / "plans"
+        / "archon-telemetry-contract.md"
+    )
+    assert target.read_text(encoding="utf-8") == "# Archon telemetry contract\n"
+    assert not (
+        shared_wiki / "drafts" / "plans" / "archon-telemetry-contract.md"
+    ).exists()
+
+
+def test_directory_write_page_rejects_dot_universe(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
+
+    result = json.loads(
+        write_page(
+            universe_id=".",
+            category="plans",
+            filename="bad-target",
+            content="# Bad target\n",
+        )
+    )
+
+    assert "Invalid universe_id" in result["error"]
+    assert not (tmp_path / "wiki" / "drafts" / "plans" / "bad-target.md").exists()
+
+
 def test_directory_read_page_changed_since_routes_to_since_feed(
     monkeypatch, tmp_path,
 ) -> None:
