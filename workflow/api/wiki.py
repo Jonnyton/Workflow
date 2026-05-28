@@ -32,6 +32,7 @@ from workflow.api.helpers import (
     _default_universe,
     _find_all_pages,
     _read_text,
+    _scoped_wiki_root,
     _universe_dir,
     _wiki_drafts_dir,
     _wiki_pages_dir,
@@ -1921,6 +1922,7 @@ def _wiki_file_bug(
     cross_reference_count: int = 0,
     force_new: bool = False,
     verbose: bool = False,
+    universe_id: str = "",
     **_kwargs: Any,
 ) -> str:
     """File a bug, feature request, design proposal, or patch request.
@@ -2084,8 +2086,8 @@ def _wiki_file_bug(
             "repro": repro,
             "workaround": workaround,
         }
-        universe_id = _default_universe()
-        universe_path = _universe_dir(universe_id)
+        target_universe_id = universe_id.strip() or _default_universe()
+        universe_path = _universe_dir(target_universe_id)
         # Pre-write trigger receipt (status=pending). Read canonical branch_def_id
         # from env so the receipt records what we *expected* to invoke even if the
         # enqueue helper rejects.
@@ -2111,7 +2113,7 @@ def _wiki_file_bug(
                 bug_id=bug_id,
                 frontmatter=frontmatter,
                 base_path=universe_path,
-                universe_id=universe_id,
+                universe_id=target_universe_id,
             )
         except Exception as _enq_exc:
             # Trigger helper raised. Update receipt then re-raise into the outer
@@ -2245,7 +2247,30 @@ WIKI_WRITE_ACTIONS: frozenset[str] = frozenset({
 })
 
 
-def _dispatch_scope_error(tool: str, action: str) -> str | None:
+def _wiki_root_for_universe(universe_id: str) -> Path:
+    """Return the page-substrate root for a target universe."""
+    uid = universe_id.strip()
+    if not uid:
+        return _wiki_root()
+    if "/" in uid or "\\" in uid or uid.startswith("."):
+        raise ValueError(f"Invalid universe_id: {universe_id}")
+    return (_universe_dir(uid) / "wiki").resolve()
+
+
+def _stamp_universe_id(payload: str, universe_id: str) -> str:
+    if not universe_id:
+        return payload
+    try:
+        decoded = json.loads(payload)
+    except json.JSONDecodeError:
+        return payload
+    if not isinstance(decoded, dict):
+        return payload
+    decoded.setdefault("universe_id", universe_id)
+    return json.dumps(decoded)
+
+
+def _dispatch_scope_error(tool: str, action: str, universe_id: str = "") -> str | None:
     from workflow.auth.middleware import require_action_scope
     from workflow.auth.provider import PermissionScope
 
@@ -2253,7 +2278,11 @@ def _dispatch_scope_error(tool: str, action: str) -> str | None:
         require_action_scope(
             tool,
             action,
-            scope=PermissionScope(resource_type="wiki", resource_id=action),
+            scope=PermissionScope(
+                universe_id=universe_id,
+                resource_type="wiki",
+                resource_id=action,
+            ),
         )
     except PermissionError as exc:
         return json.dumps({
@@ -2301,22 +2330,25 @@ def wiki(
     reporter_context: str = "",
     verbose: bool = False,
     changed_since: str = "",
+    universe_id: str = "",
 ) -> str:
     """Dispatch entry for the wiki MCP tool. See universe_server.py for the
     chatbot-facing docstring; this function is the implementation invoked by
     the @mcp.tool wrapper there.
     """
+    target_universe_id = universe_id.strip()
     try:
-        wiki_root = _wiki_root()
+        wiki_root = _wiki_root_for_universe(target_universe_id)
     except ValueError as exc:
         # _wiki_root() raises when WORKFLOW_WIKI_PATH holds a Windows path on
-        # a POSIX runtime (2026-04-19 container incident).
+        # a POSIX runtime (2026-04-19 container incident). _universe_dir()
+        # raises for invalid universe identifiers.
         return json.dumps({
             "error": str(exc),
             "hint": (
-                "Unset WORKFLOW_WIKI_PATH to use the platform default "
-                "(data_dir()/wiki), or set it to a POSIX absolute path "
-                "like '/data/wiki'."
+                "Unset WORKFLOW_WIKI_PATH to use the platform default, set "
+                "it to a POSIX absolute path like '/data/wiki', or pass a "
+                "safe universe_id without path separators."
             ),
         })
 
@@ -2341,52 +2373,58 @@ def wiki(
             ),
         })
 
-    dispatch = WIKI_ACTIONS
-    handler = dispatch.get(action)
-    if handler is None:
-        return json.dumps({
-            "error": f"Unknown action '{action}'.",
-            "available_actions": sorted(dispatch.keys()),
-        })
-    scope_error = _dispatch_scope_error("wiki", action)
-    if scope_error is not None:
-        return scope_error
+    with _scoped_wiki_root(wiki_root):
+        dispatch = WIKI_ACTIONS
+        handler = dispatch.get(action)
+        if handler is None:
+            return json.dumps({
+                "error": f"Unknown action '{action}'.",
+                "available_actions": sorted(dispatch.keys()),
+            })
+        scope_error = _dispatch_scope_error(
+            "wiki",
+            action,
+            universe_id=target_universe_id,
+        )
+        if scope_error is not None:
+            return _stamp_universe_id(scope_error, target_universe_id)
 
-    kwargs: dict[str, Any] = {
-        "page": page,
-        "query": query,
-        "category": category,
-        "filename": filename,
-        "content": content,
-        "log_entry": log_entry,
-        "old_text": old_text,
-        "new_text": new_text,
-        "expected_sha256": expected_sha256,
-        "source_url": source_url,
-        "old_page": old_page,
-        "new_draft": new_draft,
-        "reason": reason,
-        "similarity_threshold": similarity_threshold,
-        "dry_run": dry_run,
-        "skip_lint": skip_lint,
-        "max_results": max_results,
-        "offset": offset,
-        "max_chars": max_chars,
-        "component": component,
-        "severity": severity,
-        "title": title,
-        "repro": repro,
-        "observed": observed,
-        "expected": expected,
-        "workaround": workaround,
-        "kind": kind,
-        "tags": tags,
-        "cross_reference_count": cross_reference_count,
-        "force_new": force_new,
-        "bug_id": bug_id,
-        "reporter_context": reporter_context,
-        "verbose": verbose,
-        "changed_since": changed_since,
-    }
+        kwargs: dict[str, Any] = {
+            "page": page,
+            "query": query,
+            "category": category,
+            "filename": filename,
+            "content": content,
+            "log_entry": log_entry,
+            "old_text": old_text,
+            "new_text": new_text,
+            "expected_sha256": expected_sha256,
+            "source_url": source_url,
+            "old_page": old_page,
+            "new_draft": new_draft,
+            "reason": reason,
+            "similarity_threshold": similarity_threshold,
+            "dry_run": dry_run,
+            "skip_lint": skip_lint,
+            "max_results": max_results,
+            "offset": offset,
+            "max_chars": max_chars,
+            "component": component,
+            "severity": severity,
+            "title": title,
+            "repro": repro,
+            "observed": observed,
+            "expected": expected,
+            "workaround": workaround,
+            "kind": kind,
+            "tags": tags,
+            "cross_reference_count": cross_reference_count,
+            "force_new": force_new,
+            "bug_id": bug_id,
+            "reporter_context": reporter_context,
+            "verbose": verbose,
+            "changed_since": changed_since,
+            "universe_id": target_universe_id,
+        }
 
-    return handler(**kwargs)
+        return _stamp_universe_id(handler(**kwargs), target_universe_id)

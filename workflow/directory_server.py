@@ -346,6 +346,7 @@ def read_page(
     category: str = "",
     changed_since: str = "",
     max_results: int = 10,
+    universe_id: str = "",
 ) -> str:
     """Read or search Workflow wiki pages.
 
@@ -357,6 +358,7 @@ def read_page(
             With an empty page/query/category, returns pages changed after this
             timestamp.
         max_results: Maximum result count.
+        universe_id: Optional target universe page substrate.
     """
     if page:
         return _wiki_impl(
@@ -365,18 +367,21 @@ def read_page(
             query=query,
             changed_since=changed_since,
             max_results=max_results,
+            universe_id=universe_id,
         )
     if changed_since.strip() and not query.strip() and not category.strip():
         return _wiki_impl(
             action="since",
             changed_since=changed_since,
             max_results=max_results,
+            universe_id=universe_id,
         )
     return _wiki_impl(
         action="search",
         query=query,
         category=category,
         max_results=max_results,
+        universe_id=universe_id,
     )
 
 
@@ -417,10 +422,12 @@ def write_page(
     force_new: bool = False,
     reporter_context: str = "",
     dry_run: bool = True,
+    universe_id: str = "",
 ) -> str:
     """Write, patch, or file a Workflow wiki page.
 
     Args:
+        universe_id: Optional target universe page substrate.
         page: Wiki page slug or path for page writes.
         category: Wiki category for full page writes.
         filename: Wiki filename for full page writes.
@@ -457,6 +464,7 @@ def write_page(
             tags=tags,
             force_new=force_new,
             reporter_context=reporter_context,
+            universe_id=universe_id,
         )
     if old_text or new_text:
         return _wiki_impl(
@@ -467,6 +475,7 @@ def write_page(
             expected_sha256=expected_sha256,
             log_entry=log_entry,
             dry_run=dry_run,
+            universe_id=universe_id,
         )
     write_filename = filename or page
     return _wiki_impl(
@@ -476,6 +485,7 @@ def write_page(
         content=content,
         log_entry=log_entry,
         dry_run=dry_run,
+        universe_id=universe_id,
     )
 
 

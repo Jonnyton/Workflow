@@ -32,10 +32,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+_WIKI_ROOT_OVERRIDE: ContextVar[Path | None] = ContextVar(
+    "workflow_wiki_root_override",
+    default=None,
+)
 
 
 def _base_path() -> Path:
@@ -114,8 +121,22 @@ def _wiki_root() -> Path:
     as the fallback, which broke every non-host deploy. See
     ``workflow.storage.wiki_path`` for the precedence + rationale.
     """
+    override = _WIKI_ROOT_OVERRIDE.get()
+    if override is not None:
+        return override
+
     from workflow.storage import wiki_path
     return wiki_path()
+
+
+@contextmanager
+def _scoped_wiki_root(root: Path) -> Iterator[None]:
+    """Temporarily route wiki helpers to an explicit wiki root."""
+    token = _WIKI_ROOT_OVERRIDE.set(root.resolve())
+    try:
+        yield
+    finally:
+        _WIKI_ROOT_OVERRIDE.reset(token)
 
 
 def _wiki_pages_dir() -> Path:
@@ -139,6 +160,7 @@ __all__ = [
     "_find_all_pages",
     "_read_json",
     "_read_text",
+    "_scoped_wiki_root",
     "_universe_dir",
     "_wiki_drafts_dir",
     "_wiki_pages_dir",
