@@ -79,6 +79,8 @@ import re
 import sqlite3
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +116,7 @@ _DRY_RUN_ENV = "WORKFLOW_EXTERNAL_WRITE_DRY_RUN"
 # the raw destination so two distinct destinations cannot collide.
 _CAPABILITIES_ENV = "WORKFLOW_GITHUB_PR_CAPABILITIES"
 _GH_PR_TIMEOUT_S = 60.0
+_GITHUB_API = "https://api.github.com"
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
@@ -427,6 +430,7 @@ def _invoke_gh_pr_create(
     *,
     payload: dict[str, Any],
     destination: str,
+    capability_token: str,
 ) -> dict[str, Any]:
     """Invoke ``gh pr create`` and return parsed evidence.
 
@@ -464,18 +468,22 @@ def _invoke_gh_pr_create(
             cmd.extend(["--label", label])
 
     try:
+        env = os.environ.copy()
+        env["GH_TOKEN"] = capability_token
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=_GH_PR_TIMEOUT_S,
             check=False,
+            env=env,
         )
     except FileNotFoundError:
-        return {
-            "error": "gh CLI not installed in the daemon environment",
-            "error_kind": "gh_not_installed",
-        }
+        return _invoke_github_api_pr_create(
+            payload=payload,
+            destination=destination,
+            capability_token=capability_token,
+        )
     except subprocess.TimeoutExpired:
         return {
             "error": f"gh pr create exceeded {_GH_PR_TIMEOUT_S}s timeout",
@@ -516,8 +524,121 @@ def _invoke_gh_pr_create(
     return {
         "pr_url": pr_url,
         "pr_number": pr_number,
+        "invocation_mode": "gh",
         "stdout": stdout,
     }
+
+
+def _github_api_request(
+    *,
+    path: str,
+    capability_token: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        f"{_GITHUB_API}{path}",
+        data=data,
+        method="POST",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {capability_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "workflow-github-pr-effector/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=_GH_PR_TIMEOUT_S) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _invoke_github_api_pr_create(
+    *,
+    payload: dict[str, Any],
+    destination: str,
+    capability_token: str,
+) -> dict[str, Any]:
+    """Create a PR through GitHub's REST API when ``gh`` is unavailable."""
+    owner_repo = destination.strip().strip("/")
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", owner_repo):
+        return {
+            "error": f"invalid GitHub repository destination: {destination!r}",
+            "error_kind": "invalid_destination",
+        }
+
+    title = payload["title"].strip()
+    body = payload.get("body", "") or ""
+    base_branch = payload.get("base_branch") or "main"
+    head_branch = payload.get("head_branch") or ""
+    labels = payload.get("labels") or []
+    draft = bool(payload.get("draft", True))
+
+    request_body = {
+        "title": title,
+        "body": body,
+        "base": base_branch,
+        "draft": draft,
+    }
+    if head_branch:
+        request_body["head"] = head_branch
+
+    try:
+        created = _github_api_request(
+            path=f"/repos/{owner_repo}/pulls",
+            capability_token=capability_token,
+            body=request_body,
+        )
+        pr_url = created.get("html_url") if isinstance(created, dict) else ""
+        pr_number = created.get("number") if isinstance(created, dict) else None
+        if not isinstance(pr_url, str) or not pr_url:
+            return {
+                "error": "GitHub API created PR response did not include html_url",
+                "error_kind": "github_api_error",
+            }
+        if not isinstance(pr_number, int):
+            pr_number = None
+        label_error = ""
+        if labels and pr_number is not None:
+            try:
+                _github_api_request(
+                    path=f"/repos/{owner_repo}/issues/{pr_number}/labels",
+                    capability_token=capability_token,
+                    body={"labels": labels},
+                )
+            except (
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                TimeoutError,
+                OSError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                label_error = str(exc)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:400]
+        return {
+            "error": f"GitHub API HTTP {exc.code}: {detail}",
+            "error_kind": "github_api_error",
+        }
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {
+            "error": f"GitHub API request failed: {exc}",
+            "error_kind": "github_api_error",
+        }
+    except (TypeError, ValueError) as exc:
+        return {
+            "error": f"GitHub API response could not be parsed: {exc}",
+            "error_kind": "github_api_error",
+        }
+
+    result: dict[str, Any] = {
+        "pr_url": pr_url,
+        "pr_number": pr_number,
+        "invocation_mode": "github_api",
+    }
+    if label_error:
+        result["label_error"] = label_error
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -800,6 +921,7 @@ def run_github_pr_effector(
     invocation = _invoke_gh_pr_create(
         payload=payload if isinstance(payload, dict) else {},
         destination=destination,
+        capability_token=capability,
     )
     if "error" in invocation:
         # Release the reservation so a retry can re-acquire under the
@@ -824,9 +946,12 @@ def run_github_pr_effector(
         "matched_output_key": matched_key,
         "pr_url": invocation["pr_url"],
         "pr_number": invocation.get("pr_number"),
+        "invocation_mode": invocation.get("invocation_mode", "gh"),
         "stdout": invocation.get("stdout", ""),
         "recorded_at": time.time(),
     }
+    if invocation.get("label_error"):
+        evidence["label_error"] = invocation["label_error"]
     if idempotency_hint:
         evidence["idempotency_hint"] = idempotency_hint
     # Reservation status is surfaced so a downstream auditor can see
