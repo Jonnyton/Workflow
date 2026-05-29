@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import urllib.error
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -534,12 +535,20 @@ def test_gh_nonzero_exit_releases_reservation_to_failed(
     assert receipt["status"] == STATUS_FAILED
 
 
-def test_gh_not_installed_returns_structured_error(universe_dir, monkeypatch):
+def test_gh_not_installed_and_api_unavailable_returns_structured_error(
+    universe_dir, monkeypatch,
+):
     _open_all_gates(universe_dir, monkeypatch)
     packet = _make_packet()
-    with patch(
-        "workflow.effectors.github_pr.subprocess.run",
-        side_effect=FileNotFoundError("gh"),
+    with (
+        patch(
+            "workflow.effectors.github_pr.subprocess.run",
+            side_effect=FileNotFoundError("gh"),
+        ),
+        patch(
+            "workflow.effectors.github_pr.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("offline"),
+        ),
     ):
         result = run_github_pr_effector(
             node_id="emit",
@@ -548,7 +557,83 @@ def test_gh_not_installed_returns_structured_error(universe_dir, monkeypatch):
             base_path=universe_dir,
             run_id="run-1",
         )
-    assert result["error_kind"] == "gh_not_installed"
+    assert result["error_kind"] == "github_api_error"
+    assert "GitHub API request failed" in result["error"]
+
+
+def test_gh_not_installed_falls_back_to_github_api(
+    universe_dir, monkeypatch,
+):
+    _open_all_gates(universe_dir, monkeypatch)
+    packet = _make_packet()
+
+    class FakeResponse:
+        headers = {}
+
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    requests = []
+
+    def fake_urlopen(req, timeout):
+        requests.append((req, timeout, req.data))
+        if req.full_url.endswith("/pulls"):
+            body = json.loads(req.data.decode("utf-8"))
+            assert body["title"] == packet["payload"]["title"]
+            assert body["base"] == "main"
+            assert body["head"] == _HEAD_BRANCH
+            assert body["draft"] is True
+            assert req.headers["Authorization"] == "Bearer tok"
+            return FakeResponse({
+                "html_url": "https://github.com/Jonnyton/Workflow/pull/5678",
+                "number": 5678,
+            })
+        if req.full_url.endswith("/issues/5678/labels"):
+            body = json.loads(req.data.decode("utf-8"))
+            assert body == {"labels": ["writer:loop-2"]}
+            return FakeResponse({"labels": []})
+        raise AssertionError(f"unexpected URL {req.full_url}")
+
+    with (
+        patch(
+            "workflow.effectors.github_pr.subprocess.run",
+            side_effect=FileNotFoundError("gh"),
+        ) as mock_run,
+        patch("workflow.effectors.github_pr.urllib.request.urlopen", fake_urlopen),
+    ):
+        result = run_github_pr_effector(
+            node_id="emit",
+            output_keys=["pr_packet"],
+            run_state={"pr_packet": packet},
+            base_path=universe_dir,
+            run_id="run-1",
+        )
+
+    mock_run.assert_called_once()
+    assert len(requests) == 2
+    assert result["phase"] == "phase_2"
+    assert result["pr_url"] == "https://github.com/Jonnyton/Workflow/pull/5678"
+    assert result["pr_number"] == 5678
+    assert result["invocation_mode"] == "github_api"
+    assert "tok" not in json.dumps(result)
+
+    receipt = lookup_receipt(
+        universe_dir,
+        idempotency_hint="loop-2-cycle-001",
+        sink=EXTERNAL_WRITE_SINK_GITHUB_PR,
+    )
+    assert receipt is not None
+    assert receipt["status"] == STATUS_SUCCEEDED
+    assert receipt["evidence"]["pr_number"] == 5678
 
 
 def test_gh_timeout_returns_structured_error(universe_dir, monkeypatch):
