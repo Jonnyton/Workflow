@@ -1212,6 +1212,19 @@ _NODE_MCP_ACTION_ALIASES: dict[str, tuple[str, str]] = {
     "gates.leaderboard": ("gates", "leaderboard"),
     "gates_leaderboard": ("gates", "leaderboard"),
     "gates.get_ladder": ("gates", "get_ladder"),
+    # Wiki READS only — knowledge-commons consultation (e.g. a driver branch
+    # enumerating the bug/patch backlog). Writes are never aliased in-node; a
+    # node that needs to publish goes through an effect, not invoke_mcp_action.
+    "wiki.read": ("wiki", "read"),
+    "wiki_read": ("wiki", "read"),
+    "wiki.search": ("wiki", "search"),
+    "wiki_search": ("wiki", "search"),
+    "wiki.list": ("wiki", "list"),
+    "wiki_list": ("wiki", "list"),
+    "wiki.since": ("wiki", "since"),
+    "wiki_since": ("wiki", "since"),
+    "wiki.lint": ("wiki", "lint"),
+    "wiki_lint": ("wiki", "lint"),
 }
 
 
@@ -1267,6 +1280,17 @@ def _build_node_mcp_invoker(
             from workflow.api.market import gates
 
             raw = gates(action=action, **kwargs)
+        elif tool_name == "wiki":
+            from workflow.api.wiki import WIKI_WRITE_ACTIONS, wiki
+
+            # Defense-in-depth: the alias map only lists reads, but never let a
+            # write reach the wiki from in-node code even if one is aliased.
+            if action in WIKI_WRITE_ACTIONS:
+                raise CompilerError(
+                    f"Node '{node.node_id}' may call wiki READ actions only; "
+                    f"'{action}' is a write and is not exposed in-node."
+                )
+            raw = wiki(action=action, **kwargs)
         else:  # pragma: no cover - mapping owns the dispatch domains.
             raise CompilerError(
                 f"Node '{node.node_id}' requested unsupported MCP tool "

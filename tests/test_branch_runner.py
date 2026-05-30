@@ -231,6 +231,136 @@ def test_source_code_node_rejects_mcp_action_not_in_tools_allowed(monkeypatch):
     assert "not allowed" in str(exc_info.value)
 
 
+def test_source_code_node_can_call_wiki_read(monkeypatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    import workflow.api.wiki as wiki_mod
+    from workflow.graph_compiler import compile_branch
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_wiki(*, action: str, **kwargs):
+        calls.append((action, kwargs))
+        return json.dumps({"status": "ok", "results": [{"page": "BUG-001"}]})
+
+    monkeypatch.setattr(wiki_mod, "wiki", fake_wiki)
+
+    b = BranchDefinition(name="test", entry_point="only")
+    b.node_defs = [NodeDefinition(
+        node_id="only",
+        display_name="Only",
+        source_code=(
+            "def run(state):\n"
+            "    hits = invoke_mcp_action('wiki.search', query=state['q'])\n"
+            "    return {'n': len(hits['results'])}\n"
+        ),
+        input_keys=["q"],
+        output_keys=["n"],
+        tools_allowed=["wiki.search"],
+        approved=True,
+    )]
+    b.graph_nodes = [GraphNodeRef(id="only", node_def_id="only")]
+    b.edges = [
+        EdgeDefinition(from_node="START", to_node="only"),
+        EdgeDefinition(from_node="only", to_node="END"),
+    ]
+    b.state_schema = [
+        {"name": "q", "type": "str"},
+        {"name": "n", "type": "int"},
+    ]
+    compiled = compile_branch(b)
+    app = compiled.graph.compile(checkpointer=InMemorySaver())
+    result = app.invoke(
+        {"q": "backlog"}, config={"configurable": {"thread_id": "wiki-ok"}},
+    )
+
+    assert result["n"] == 1
+    assert calls == [("search", {"query": "backlog"})]
+
+
+def test_source_code_node_cannot_call_wiki_write(monkeypatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    import workflow.api.wiki as wiki_mod
+    from workflow.graph_compiler import CompilerError, compile_branch
+
+    def fake_wiki(*, action: str, **kwargs):
+        raise AssertionError("wiki write must not dispatch from a node")
+
+    monkeypatch.setattr(wiki_mod, "wiki", fake_wiki)
+
+    b = BranchDefinition(name="test", entry_point="only")
+    b.node_defs = [NodeDefinition(
+        node_id="only",
+        display_name="Only",
+        source_code=(
+            "def run(state):\n"
+            "    invoke_mcp_action('wiki.write', page='X', content='Y')\n"
+            "    return {'out': 'unreachable'}\n"
+        ),
+        output_keys=["out"],
+        tools_allowed=["wiki.write"],
+        approved=True,
+    )]
+    b.graph_nodes = [GraphNodeRef(id="only", node_def_id="only")]
+    b.edges = [
+        EdgeDefinition(from_node="START", to_node="only"),
+        EdgeDefinition(from_node="only", to_node="END"),
+    ]
+    b.state_schema = [{"name": "out", "type": "str"}]
+    compiled = compile_branch(b)
+    app = compiled.graph.compile(checkpointer=InMemorySaver())
+
+    # 'wiki.write' is not in the alias allow-list at all — unsupported action.
+    with pytest.raises(CompilerError) as exc_info:
+        app.invoke({}, config={"configurable": {"thread_id": "wiki-write"}})
+    assert "unsupported MCP action" in str(exc_info.value)
+
+
+def test_node_wiki_dispatch_blocks_write_even_if_aliased(monkeypatch):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    import workflow.api.wiki as wiki_mod
+    import workflow.graph_compiler as gc
+    from workflow.graph_compiler import CompilerError, compile_branch
+
+    def fake_wiki(*, action: str, **kwargs):
+        raise AssertionError("wiki write must not dispatch from a node")
+
+    monkeypatch.setattr(wiki_mod, "wiki", fake_wiki)
+    # Simulate a future mistake: a write action wired into the alias map.
+    # The dispatch-time WIKI_WRITE_ACTIONS guard must still refuse it.
+    monkeypatch.setitem(
+        gc._NODE_MCP_ACTION_ALIASES, "wiki.write", ("wiki", "write"),
+    )
+
+    b = BranchDefinition(name="test", entry_point="only")
+    b.node_defs = [NodeDefinition(
+        node_id="only",
+        display_name="Only",
+        source_code=(
+            "def run(state):\n"
+            "    invoke_mcp_action('wiki.write', page='X', content='Y')\n"
+            "    return {'out': 'unreachable'}\n"
+        ),
+        output_keys=["out"],
+        tools_allowed=["wiki.write"],
+        approved=True,
+    )]
+    b.graph_nodes = [GraphNodeRef(id="only", node_def_id="only")]
+    b.edges = [
+        EdgeDefinition(from_node="START", to_node="only"),
+        EdgeDefinition(from_node="only", to_node="END"),
+    ]
+    b.state_schema = [{"name": "out", "type": "str"}]
+    compiled = compile_branch(b)
+    app = compiled.graph.compile(checkpointer=InMemorySaver())
+
+    with pytest.raises(CompilerError) as exc_info:
+        app.invoke({}, config={"configurable": {"thread_id": "wiki-dd"}})
+    assert "write" in str(exc_info.value)
+
+
 def test_branch_spec_preserves_tools_allowed():
     from workflow.api.branches import _apply_node_spec
 
