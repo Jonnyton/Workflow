@@ -214,6 +214,11 @@ def release_bonus(
 
     claim = GateBonusClaim.from_row(row)
 
+    if claim.is_retracted:
+        return {
+            "status": "rejected",
+            "error": "Cannot release bonus on a retracted claim.",
+        }
     if claim.bonus_stake == 0:
         return {
             "status": "rejected",
