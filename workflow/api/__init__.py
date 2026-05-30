@@ -25,16 +25,26 @@ if TYPE_CHECKING:
 
 
 def create_app(registry: Any | None = None) -> FastAPI:
-    """Return a bare FastAPI app shell.
+    """Build the Workflow Engine API app.
 
-    Once the FastMCP api/* submodules are built (PLAN.md target), this will
-    mount them. Until then it returns an empty app so callers have a stable
-    import surface. fastapi is imported lazily so the MCPB stdio bundle —
-    which doesn't ship fastapi — can import this package.
+    fastapi is imported lazily so the MCPB stdio bundle — which doesn't ship
+    fastapi — can import this package.
     """
     from fastapi import FastAPI
 
-    return FastAPI(title="Workflow Engine API")
+    from workflow.api.branches import router as branches_router
+    from workflow.api.goals import router as goals_router
+    from workflow.api.judgments import router as judgments_router
+    from workflow.api.runs import router as runs_router
+    from workflow.api.wiki import router as wiki_router
+
+    app = FastAPI(title="Workflow Engine API")
+    app.include_router(runs_router)
+    app.include_router(branches_router)
+    app.include_router(judgments_router)
+    app.include_router(goals_router)
+    app.include_router(wiki_router)
+    return app
 
 
 __all__ = [
