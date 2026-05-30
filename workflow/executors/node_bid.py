@@ -143,14 +143,13 @@ def execute_node_bid(
     # Strip producer-internal keys before exposing to node body.
     user_inputs = _strip_producer_keys(dict(bid.inputs or {}))
 
-    # Execute source — define runner, call run(state).
-    local_scope: dict = {}
+    # Execute source — define runner, call run(state). BUG-112: a SINGLE
+    # namespace (globals == locals) so top-level helpers are visible to run();
+    # split globals/locals puts defs in locals but their __globals__ is the
+    # globals dict, so run() can't see sibling helpers -> NameError.
+    namespace: dict = {"__builtins__": __builtins__}
     try:
-        exec(  # noqa: S102 — approved source with expanded pattern scan
-            source,
-            {"__builtins__": __builtins__},
-            local_scope,
-        )
+        exec(source, namespace)  # noqa: S102 — approved source, pattern-scanned
     except Exception as exc:  # noqa: BLE001
         return NodeBidResult(
             node_bid_id=node_bid_id,
@@ -158,7 +157,7 @@ def execute_node_bid(
             error=f"source_load_error: {exc}",
         )
 
-    runner = local_scope.get("run")
+    runner = namespace.get("run")
     if not callable(runner):
         return NodeBidResult(
             node_bid_id=node_bid_id,

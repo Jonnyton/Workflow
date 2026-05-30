@@ -1306,21 +1306,23 @@ def _build_source_code_node(
     timeout_s = float(node.timeout_seconds or 300.0)
     invoke_mcp_action = _build_node_mcp_invoker(node, event_sink=event_sink)
 
-    local_scope: dict[str, Any] = {}
+    # BUG-112: exec into a SINGLE namespace (globals == locals). With split
+    # globals/locals, top-level defs land in locals, but each function's
+    # __globals__ is the globals dict — so run() cannot see a sibling top-level
+    # helper (def _helper) and raises NameError at call time. One namespace
+    # restores module-level semantics: every top-level name is visible to every
+    # other. The injected globals (builtins, invoke_mcp_action) seed it.
+    namespace: dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "invoke_mcp_action": invoke_mcp_action,
+    }
     try:
-        exec(  # noqa: S102
-            src,
-            {
-                "__builtins__": __builtins__,
-                "invoke_mcp_action": invoke_mcp_action,
-            },
-            local_scope,
-        )
+        exec(src, namespace)  # noqa: S102
     except Exception as exc:
         raise CompilerError(
             f"Node '{node.node_id}' source_code failed to load: {exc}"
         ) from exc
-    runner = local_scope.get("run")
+    runner = namespace.get("run")
     if not callable(runner):
         raise CompilerError(
             f"Node '{node.node_id}' source_code must define `def run(state)`."
