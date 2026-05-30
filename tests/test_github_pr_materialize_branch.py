@@ -12,8 +12,6 @@ Codex checker key: PR #1144.
 
 from __future__ import annotations
 
-import pytest
-
 from workflow.effectors import github_pr
 
 _DEST = "Jonnyton/Workflow"
@@ -140,6 +138,64 @@ def test_deletion_emits_null_sha_entry_without_blob(monkeypatch):
     assert tree_call["tree"] == [
         {"path": "old.py", "mode": "100644", "type": "blob", "sha": None}
     ]
+
+
+_MIRROR = "packaging/claude-plugin/plugins/workflow-universe-server/runtime/"
+
+
+def test_mirror_path_for_mapping():
+    assert (
+        github_pr._mirror_path_for("workflow/api/wiki.py")
+        == _MIRROR + "workflow/api/wiki.py"
+    )
+    assert github_pr._mirror_path_for("docs/x.md") is None
+    assert github_pr._mirror_path_for("deploy/compose.yml") is None
+    assert github_pr._mirror_path_for("workflow/x.pyc") is None
+    assert github_pr._mirror_path_for("workflow/__pycache__/x.py") is None
+
+
+def test_workflow_path_is_mirrored_to_plugin_runtime(monkeypatch):
+    fake = _scripted_api(_happy_responses())
+    monkeypatch.setattr(github_pr, "_git_data_api", fake)
+    result = _materialize(changes={"workflow/api/wiki.py": "x = 1\n"})
+    assert result["materialized"] is True
+    tree_call = next(b for m, p, b in fake.calls if p.endswith("/git/trees"))
+    paths = {e["path"] for e in tree_call["tree"]}
+    assert "workflow/api/wiki.py" in paths
+    assert _MIRROR + "workflow/api/wiki.py" in paths
+    # Two blobs created (canonical + mirror), same content.
+    assert sum(1 for _m, p, _b in fake.calls if p.endswith("/git/blobs")) == 2
+
+
+def test_workflow_delete_mirrors_as_delete(monkeypatch):
+    fake = _scripted_api(_happy_responses())
+    monkeypatch.setattr(github_pr, "_git_data_api", fake)
+    _materialize(changes={"workflow/old.py": None})
+    tree_call = next(b for m, p, b in fake.calls if p.endswith("/git/trees"))
+    entries = {e["path"]: e for e in tree_call["tree"]}
+    assert entries["workflow/old.py"]["sha"] is None
+    assert entries[_MIRROR + "workflow/old.py"]["sha"] is None
+    assert not any(p.endswith("/git/blobs") for _m, p, _b in fake.calls)
+
+
+def test_non_workflow_path_not_mirrored(monkeypatch):
+    fake = _scripted_api(_happy_responses())
+    monkeypatch.setattr(github_pr, "_git_data_api", fake)
+    _materialize(changes={"docs/x.md": "y\n"})
+    tree_call = next(b for m, p, b in fake.calls if p.endswith("/git/trees"))
+    assert {e["path"] for e in tree_call["tree"]} == {"docs/x.md"}
+
+
+def test_explicit_mirror_edit_not_overwritten(monkeypatch):
+    fake = _scripted_api(_happy_responses())
+    monkeypatch.setattr(github_pr, "_git_data_api", fake)
+    _materialize(changes={
+        "workflow/a.py": "canonical\n",
+        _MIRROR + "workflow/a.py": "explicit-mirror\n",
+    })
+    blob_bodies = [b["content"] for m, p, b in fake.calls if p.endswith("/git/blobs")]
+    assert "canonical\n" in blob_bodies
+    assert "explicit-mirror\n" in blob_bodies
 
 
 def test_missing_changes_fails_loudly(monkeypatch):

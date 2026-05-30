@@ -730,6 +730,37 @@ def _resolve_edits(
     return resolved, None
 
 
+# Plugin-mirror parity. The repo keeps a generated copy of the live ``workflow/``
+# package at ``packaging/claude-plugin/.../runtime/workflow/`` (build_plugin.py is
+# the generator) and CI rejects any commit where the two drift. A loop/effector
+# PR only names the canonical file, so the effector mirrors each changed
+# ``workflow/`` path to its runtime copy — otherwise every such PR fails the
+# mirror-parity gate and needs a manual ``build_plugin.py`` sync.
+_PLUGIN_MIRROR_PREFIX = (
+    "packaging/claude-plugin/plugins/workflow-universe-server/runtime/"
+)
+_MIRRORED_SOURCE_ROOT = "workflow/"
+# Match build_plugin.py's _TREE_EXCLUDES so we never stage a mirror file the
+# generator would not produce (which would itself break parity).
+_MIRROR_EXCLUDE_SUFFIXES = (".db", ".db-journal", ".log", ".pyc", ".tmp")
+_MIRROR_EXCLUDE_PARTS = ("__pycache__", ".pytest_cache")
+
+
+def _mirror_path_for(path: str) -> str | None:
+    """Return the plugin-runtime mirror path for a canonical ``workflow/`` path.
+
+    None when the path is outside ``workflow/`` (not mirrored) or matches a
+    build_plugin.py exclude (so we don't add a file the generator omits).
+    """
+    if not path.startswith(_MIRRORED_SOURCE_ROOT):
+        return None
+    if any(path.endswith(suffix) for suffix in _MIRROR_EXCLUDE_SUFFIXES):
+        return None
+    if any(part in _MIRROR_EXCLUDE_PARTS for part in path.split("/")):
+        return None
+    return _PLUGIN_MIRROR_PREFIX + path
+
+
 def _materialize_branch(
     *,
     changes_json: Any,
@@ -823,6 +854,16 @@ def _materialize_branch(
             ),
             "error_kind": "missing_changes",
         }
+
+    # Plugin-mirror parity: mirror every changed canonical ``workflow/`` path to
+    # its generated runtime copy so the commit keeps canonical+mirror in sync and
+    # passes the mirror-parity CI gate. A path already named in the packet (an
+    # explicit mirror edit) is never overwritten. Deletes (None) mirror as
+    # deletes. Iterate a snapshot since we mutate ``effective``.
+    for path_key in list(effective.keys()):
+        mirror_key = _mirror_path_for(path_key)
+        if mirror_key is not None and mirror_key not in effective:
+            effective[mirror_key] = effective[path_key]
 
     # Step 1: base ref → base commit sha.
     ref_obj, err = _git_data_api(
