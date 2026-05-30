@@ -356,6 +356,31 @@ def test_execute_succeeds_writes_artifact(tmp_path):
     assert json.loads(artifact.read_text()) == {"echo": 42}
 
 
+def test_execute_run_sees_top_level_helpers(tmp_path):
+    """BUG-112 regression (node_bid exec path): run() must see sibling
+    top-level helpers. Split globals/locals raised NameError; a single
+    exec namespace restores module-level visibility.
+    """
+    node = _make_approved_node(
+        "with_helper",
+        "def _double(n):\n"
+        "    return n * 2\n"
+        "\n"
+        "def run(state):\n"
+        "    return {'echo': _double(state.get('x', 0))}\n",
+    )
+    bid = NodeBid(
+        node_bid_id="nb_helper", node_def_id="with_helper",
+        inputs={"x": 21}, status="open",
+    )
+    result = execute_node_bid(
+        bid, node_lookup_fn=lambda nid: node if nid == "with_helper" else None,
+        output_dir=tmp_path,
+    )
+    assert result.status == "succeeded"
+    assert result.output == {"echo": 42}
+
+
 def test_execute_unknown_node_fails(tmp_path):
     bid = NodeBid(node_bid_id="nb_nf", node_def_id="missing", status="open")
     result = execute_node_bid(

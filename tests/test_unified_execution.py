@@ -126,6 +126,29 @@ def test_opaque_node_resolves_via_registry(clean_registry):
     assert result.get("seen") is True
 
 
+def test_source_code_node_run_sees_top_level_helpers(clean_registry):
+    """BUG-112 regression: a source_code node's run() must see sibling
+    top-level helper functions. Split globals/locals put the defs in
+    locals while run.__globals__ stayed the globals dict, so calling a
+    helper raised NameError (the live `name '_text' is not defined`).
+    A single exec namespace restores module-level visibility.
+    """
+    from workflow.graph_compiler import compile_branch
+
+    src = (
+        "def _text(value):\n"
+        "    return f'helper:{value}'\n"
+        "\n"
+        "def run(state):\n"
+        "    return {'foo': _text(state.get('name', 'n'))}\n"
+    )
+    branch = _minimal_branch(node_body={"source_code": src, "approved": True})
+    compiled = compile_branch(branch)
+    runner = compiled.graph.compile()
+    result = runner.invoke({"name": "Z"})
+    assert result.get("foo") == "helper:Z"
+
+
 def test_unregistered_opaque_node_raises_compiler_error(clean_registry):
     """A body-less node whose (domain_id, node_id) is not in the
     registry raises CompilerError at compile time, not at runtime.
