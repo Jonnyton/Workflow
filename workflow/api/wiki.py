@@ -443,6 +443,35 @@ def _sanitize_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", clean.lower()).strip("-")
 
 
+def _canonical_slug_key(name: str) -> str:
+    """Return the canonical comparison key for wiki filenames and slugs."""
+    return _sanitize_slug(name)
+
+
+def _resolve_existing_write_path(parent: Path, slug: str) -> Path | None:
+    """Resolve an existing page/draft path using canonical slug matching."""
+    if not parent.is_dir():
+        return None
+    if parent.name == _BUGS_CATEGORY:
+        canonical = _resolve_bugs_canonical(parent, slug)
+        if canonical is not None:
+            return canonical
+
+    direct = parent / (slug + ".md")
+    if direct.exists():
+        return direct
+
+    matches = [
+        candidate for candidate in parent.glob("*.md")
+        if _canonical_slug_key(candidate.stem) == slug
+    ]
+    if not matches:
+        return None
+
+    matches.sort(key=lambda p: (0 if p.stem == slug else 1, p.name.lower(), p.name))
+    return matches[0]
+
+
 def _wiki_write_slug(category: str, filename: str) -> tuple[str, str | None]:
     """Normalize action=write filename input to a page slug.
 
@@ -780,58 +809,50 @@ def _wiki_write(
     slug, slug_error = _wiki_write_slug(category, filename)
     if slug_error:
         return json.dumps({"error": slug_error})
-    promoted_path = _wiki_pages_dir() / category / (slug + ".md")
 
-    # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
-    # so a pre-existing lowercase-duplicate (BUG-003) or trailing-hyphen
-    # canonical (BUG-018) cannot bypass canonical-preferring resolution.
-    #
-    # BUG-003: lowercase duplicate already exists alongside an uppercase
-    # canonical → we must prefer the uppercase canonical.
-    # BUG-028: file_bug filename is lowercase but a wrong-case canonical
-    # already exists → resolve to canonical.
-    # BUG-018: canonical filename has a trailing hyphen the slug sanitizer
-    # strips → match a "<slug>-.md" sibling as the canonical.
-    if category == _BUGS_CATEGORY:
-        parent = _wiki_pages_dir() / category
-        if parent.is_dir():
-            canonical = _resolve_bugs_canonical(parent, slug)
-            if canonical is not None and canonical != promoted_path:
-                _logger_wiki.warning(
-                    "wiki write alias: '%s' resolved to canonical '%s'. "
-                    "Rename '%s' → '%s' (or remove duplicate) to eliminate.",
-                    slug + ".md",
-                    canonical.name,
-                    canonical.name if canonical.name != (slug + ".md") else slug,
-                    slug + ".md",
-                )
-                promoted_path = canonical
+    promoted_dir = _wiki_pages_dir() / category
+    promoted_path = _resolve_existing_write_path(promoted_dir, slug)
+    if promoted_path is None:
+        promoted_path = promoted_dir / (slug + ".md")
+
+    if category == _BUGS_CATEGORY and promoted_path.exists() and promoted_path.name != (slug + ".md"):
+        _logger_wiki.warning(
+            "wiki write alias: '%s' resolved to canonical '%s'. "
+            "Rename '%s' → '%s' (or remove duplicate) to eliminate.",
+            slug + ".md",
+            promoted_path.name,
+            promoted_path.name if promoted_path.name != (slug + ".md") else slug,
+            slug + ".md",
+        )
 
     if promoted_path.exists():
         try:
             promoted_path.write_text(content, encoding="utf-8")
             _append_wiki_log(
-                f"update | pages/{category}/{slug} | {log_entry or 'in-place update'}"
+                f"update | {_page_rel_path(promoted_path)} | {log_entry or 'in-place update'}"
             )
             return json.dumps({
-                "path": f"pages/{category}/{slug}.md",
+                "path": _page_rel_path(promoted_path),
                 "status": "updated",
                 "note": "Updated existing promoted page in-place.",
             })
         except OSError as exc:
             return json.dumps({"error": f"Failed to write: {exc}"})
 
-    draft_path = _wiki_drafts_dir() / category / (slug + ".md")
+    draft_dir = _wiki_drafts_dir() / category
+    draft_path = _resolve_existing_write_path(draft_dir, slug)
+    if draft_path is None:
+        draft_path = draft_dir / (slug + ".md")
     try:
         draft_path.parent.mkdir(parents=True, exist_ok=True)
         is_new = not draft_path.exists()
         draft_path.write_text(content, encoding="utf-8")
         action_word = "draft" if is_new else "draft-update"
         _append_wiki_log(
-            f"{action_word} | drafts/{category}/{slug} | {log_entry or 'new draft'}"
+            f"{action_word} | {_page_rel_path(draft_path)} | {log_entry or 'new draft'}"
         )
         return json.dumps({
-            "path": f"drafts/{category}/{slug}.md",
+            "path": _page_rel_path(draft_path),
             "status": "drafted" if is_new else "updated",
             "note": (
                 f"{'Drafted' if is_new else 'Updated draft'}: "
