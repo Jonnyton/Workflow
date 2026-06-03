@@ -412,6 +412,28 @@ class TestBug028SlugCaseRoundtrip:
             "BUG-028: write must update in-place, not create a duplicate."
         )
 
+    def test_write_updates_mixed_case_bug_slug_in_place(self, wiki_dir):
+        """Lowercase bug writes must resolve to the canonical mixed-case page path."""
+        canonical = wiki_dir / "pages" / "bugs" / "BUG-001-mixed-case-bug.md"
+        canonical.write_text("old body\n", encoding="utf-8")
+
+        updated_content = "---\nid: BUG-001\ntitle: Mixed Case Updated\n---\n# Updated\n"
+        write_result = json.loads(wiki(
+            action="write",
+            category="bugs",
+            filename="bug-001-mixed-case-bug.md",
+            content=updated_content,
+        ))
+        assert write_result == {
+            "path": "pages/bugs/BUG-001-mixed-case-bug.md",
+            "status": "updated",
+            "note": "Updated existing promoted page in-place.",
+        }
+        assert canonical.read_text(encoding="utf-8") == updated_content
+        assert not (wiki_dir / "drafts" / "bugs" / "bug-001-mixed-case-bug.md").exists()
+        bug_files = list((wiki_dir / "pages" / "bugs").glob("*.md"))
+        assert [path.name for path in bug_files] == ["BUG-001-mixed-case-bug.md"]
+
     def test_next_bug_id_finds_lowercase_files(self, wiki_dir):
         """_next_bug_id must find lowercase bug-NNN-... files written by file_bug."""
         bugs_dir = wiki_dir / "pages" / "bugs"

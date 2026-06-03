@@ -781,6 +781,7 @@ def _wiki_write(
     if slug_error:
         return json.dumps({"error": slug_error})
     promoted_path = _wiki_pages_dir() / category / (slug + ".md")
+    promoted_rel_path = f"pages/{category}/{slug}.md"
 
     # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
     # so a pre-existing lowercase-duplicate (BUG-003) or trailing-hyphen
@@ -796,25 +797,27 @@ def _wiki_write(
         parent = _wiki_pages_dir() / category
         if parent.is_dir():
             canonical = _resolve_bugs_canonical(parent, slug)
-            if canonical is not None and canonical != promoted_path:
-                _logger_wiki.warning(
-                    "wiki write alias: '%s' resolved to canonical '%s'. "
-                    "Rename '%s' → '%s' (or remove duplicate) to eliminate.",
-                    slug + ".md",
-                    canonical.name,
-                    canonical.name if canonical.name != (slug + ".md") else slug,
-                    slug + ".md",
-                )
+            if canonical is not None:
+                if canonical != promoted_path:
+                    _logger_wiki.warning(
+                        "wiki write alias: '%s' resolved to canonical '%s'. "
+                        "Rename '%s' → '%s' (or remove duplicate) to eliminate.",
+                        slug + ".md",
+                        canonical.name,
+                        canonical.name if canonical.name != (slug + ".md") else slug,
+                        slug + ".md",
+                    )
                 promoted_path = canonical
+                promoted_rel_path = _page_rel_path(canonical)
 
     if promoted_path.exists():
         try:
             promoted_path.write_text(content, encoding="utf-8")
             _append_wiki_log(
-                f"update | pages/{category}/{slug} | {log_entry or 'in-place update'}"
+                f"update | {promoted_rel_path.removesuffix('.md')} | {log_entry or 'in-place update'}"
             )
             return json.dumps({
-                "path": f"pages/{category}/{slug}.md",
+                "path": promoted_rel_path,
                 "status": "updated",
                 "note": "Updated existing promoted page in-place.",
             })
