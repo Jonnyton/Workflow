@@ -1602,6 +1602,20 @@ _KIND_FEATURES_DIR = "feature-requests"
 _KIND_DESIGNS_DIR = "design-proposals"
 _KIND_PATCH_REQUESTS_DIR = "patch-requests"
 _VALID_SEVERITIES = ("critical", "major", "minor", "cosmetic")
+_FILE_BUG_UNSUPPORTED_BODY_KWARGS = frozenset({
+    "body",
+    "body_markdown",
+    "content",
+    "content_markdown",
+    "description",
+    "details",
+    "markdown",
+})
+_FILE_BUG_SUPPORTED_ARGS_HINT = (
+    "Use repro, observed, expected, and workaround for filing details; "
+    "supported metadata args are title, component, severity, kind, tags, "
+    "cross_reference_count, force_new, verbose, and universe_id."
+)
 
 # Per-kind routing: kind -> (category-dir-name, ID-prefix). Each prefix has its
 # own independent NNN counter. New filings route per kind; existing pages stay
@@ -1940,9 +1954,25 @@ def _wiki_file_bug(
     When omitted, a token-overlap similarity score ≥ 0.5 against an existing
     bug's title+body returns {status: "similar_found"} instead of filing.
     """
+    unsupported_body_kwargs = sorted(
+        key for key, value in _kwargs.items()
+        if key in _FILE_BUG_UNSUPPORTED_BODY_KWARGS
+        and value not in ("", None, False)
+    )
+    if unsupported_body_kwargs:
+        return json.dumps({
+            "error": (
+                "Unsupported file_bug body/content argument(s): "
+                + ", ".join(unsupported_body_kwargs)
+                + "."
+            ),
+            "hint": _FILE_BUG_SUPPORTED_ARGS_HINT,
+        })
+
     dropped_kwargs = sorted(
         key for key, value in _kwargs.items()
-        if value not in ("", None, False)
+        if key not in _FILE_BUG_UNSUPPORTED_BODY_KWARGS
+        and value not in ("", None, False)
         and not (
             (key == "dry_run" and value is True)
             or (key == "similarity_threshold" and value == 0.25)
@@ -2217,8 +2247,8 @@ def _wiki_file_bug(
         response_body["warning"] = (
             "Dropped unsupported file_bug field(s): "
             + ", ".join(dropped_kwargs)
-            + ". Use repro, observed, expected, and workaround for the filing body; "
-              "content is only for wiki write/patch actions."
+            + ". "
+            + _FILE_BUG_SUPPORTED_ARGS_HINT
         )
     if trigger_block is not None:
         # FEAT-004: surface the structured trigger receipt so callers (canaries
