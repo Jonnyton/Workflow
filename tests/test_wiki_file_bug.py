@@ -166,6 +166,26 @@ class TestFileBugValidation:
         )
         assert "error" in out
 
+    def test_truthy_content_kwarg_rejected(self, wiki_dir):
+        with pytest.raises(ValueError, match="content"):
+            _wiki_file_bug(
+                component="x",
+                severity="major",
+                title="t",
+                content="ignored body",
+            )
+        assert not list((wiki_dir / "pages" / "bugs").glob("*.md"))
+
+    def test_truthy_body_style_kwarg_rejected(self, wiki_dir):
+        with pytest.raises(ValueError, match="body_markdown"):
+            _wiki_file_bug(
+                component="x",
+                severity="major",
+                title="t",
+                body_markdown="ignored body",
+            )
+        assert not list((wiki_dir / "pages" / "bugs").glob("*.md"))
+
 
 class TestFileBugWrites:
     def test_happy_path_creates_page(self, wiki_dir):
@@ -247,6 +267,17 @@ class TestFileBugViaWikiDispatch:
         )
         assert out["status"] == "filed"
         assert out["bug_id"] == "BUG-001"
+
+    def test_dispatch_rejects_truthy_content_kwarg(self, wiki_dir):
+        with pytest.raises(ValueError, match="content"):
+            wiki(
+                action="file_bug",
+                component="extensions.patch_branch",
+                severity="major",
+                title="Dispatched",
+                content="discarded body",
+            )
+        assert not list((wiki_dir / "pages" / "bugs").glob("*.md"))
 
     def test_bugs_in_valid_categories(self):
         """Smoke test that 'bugs' is registered via patch (a)."""
