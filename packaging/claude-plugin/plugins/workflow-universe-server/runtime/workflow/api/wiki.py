@@ -1738,6 +1738,13 @@ _BUG_DEDUP_MIN_SHARED_TOKENS = 6
 _BUG_DEDUP_SECTION_CHAR_LIMIT = 4000
 
 
+def _has_nonempty_file_bug_body_value(value: Any) -> bool:
+    """Return True only for unsupported body kwargs that should be rejected."""
+    if isinstance(value, str):
+        return value != ""
+    return bool(value)
+
+
 def _bug_token_set(text: str) -> set[str]:
     """Return a lowercase word set from text, ignoring short tokens."""
     return {w for w in re.sub(r"[^a-z0-9]+", " ", text.lower()).split() if len(w) > 2}
@@ -1946,19 +1953,21 @@ def _wiki_file_bug(
     """
     unsupported_body_kwargs = sorted(
         key for key, value in _kwargs.items()
-        if key in _UNSUPPORTED_FILE_BUG_BODY_KWARGS and value not in ("", None, False)
+        if key in _UNSUPPORTED_FILE_BUG_BODY_KWARGS
+        and _has_nonempty_file_bug_body_value(value)
     )
     if unsupported_body_kwargs:
         fields = ", ".join(unsupported_body_kwargs)
         return json.dumps({
             "error": (
                 "Unsupported file_bug field(s): "
-                f"{fields}. file_bug only accepts title plus structured body fields "
-                "(repro, observed, expected, workaround); content/body are not supported here."
+                f"{fields}. file_bug does not accept raw content/body text; "
+                "use title with structured body fields "
+                "(repro, observed, expected, workaround) instead."
             ),
             "hint": (
                 "Use wiki(action=\"file_bug\", title=..., component=..., severity=...) "
-                "and optionally repro/observed/expected/workaround."
+                "plus repro/observed/expected/workaround instead of content/body."
             ),
         })
     dropped_kwargs = sorted(
