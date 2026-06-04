@@ -8,7 +8,10 @@ directly to lock in the canonical implementation surface.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -46,6 +49,20 @@ def wiki_env(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKFLOW_DATA_DIR", str(tmp_path))
     _ensure_wiki_scaffold(wiki_root)
     return wiki_root
+
+
+def _load_wiki_bug_sync_module():
+    script_dir = Path(__file__).resolve().parent.parent / "scripts"
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    spec = importlib.util.spec_from_file_location(
+        "wiki_bug_sync_under_test",
+        script_dir / "wiki_bug_sync.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # ── module surface ──────────────────────────────────────────────────────────
@@ -815,3 +832,132 @@ def test_wiki_cosign_bug_appends_to_existing_filing(wiki_env):
     assert "staging tunnel" in body
     assert "local dev" in body
     _ = filed  # path tracked via bug_id glob above
+
+
+def test_wiki_bug_sync_sync_prefers_structured_payload_for_list_results(tmp_path):
+    mod = _load_wiki_bug_sync_module()
+
+    def post_fn(url, sid, payload, timeout):
+        if payload["method"] == "initialize":
+            return {"result": {"protocolVersion": "2024-11-05"}}, "sid-1"
+        if payload["method"] == "notifications/initialized":
+            return {"result": {}}, "sid-1"
+        assert payload["method"] == "tools/call"
+        assert payload["params"] == {
+            "name": "wiki",
+            "arguments": {"action": "list"},
+        }
+        return {
+            "result": {
+                "content": [{"type": "text", "text": "preview text that is not json"}],
+                "structuredContent": {"promoted": [], "drafts": []},
+            }
+        }, "sid-1"
+
+    exit_code = mod.sync(
+        "https://example.invalid/mcp",
+        1.0,
+        dry_run=True,
+        cursor_path=tmp_path / "cursor",
+        change_seen_path=tmp_path / "seen.json",
+        post_fn=post_fn,
+    )
+
+    assert exit_code == 0
+
+
+
+def test_wiki_bug_sync_sync_falls_back_to_text_json_for_list_results(tmp_path):
+    mod = _load_wiki_bug_sync_module()
+
+    def post_fn(url, sid, payload, timeout):
+        if payload["method"] == "initialize":
+            return {"result": {"protocolVersion": "2024-11-05"}}, "sid-1"
+        if payload["method"] == "notifications/initialized":
+            return {"result": {}}, "sid-1"
+        assert payload["method"] == "tools/call"
+        assert payload["params"] == {
+            "name": "wiki",
+            "arguments": {"action": "list"},
+        }
+        return {
+            "result": {
+                "content": [
+                    {"type": "text", "text": json.dumps({"promoted": [], "drafts": []})}
+                ]
+            }
+        }, "sid-1"
+
+    exit_code = mod.sync(
+        "https://example.invalid/mcp",
+        1.0,
+        dry_run=True,
+        cursor_path=tmp_path / "cursor",
+        change_seen_path=tmp_path / "seen.json",
+        post_fn=post_fn,
+    )
+
+    assert exit_code == 0
+
+
+
+def test_wiki_bug_sync_fetch_wiki_page_detail_prefers_structured_payload():
+    mod = _load_wiki_bug_sync_module()
+    structured_content = "---\ntitle: Structured Title\ntype: note\n---\nStructured body\n"
+
+    def post_fn(url, sid, payload, timeout):
+        assert payload["method"] == "tools/call"
+        assert payload["params"] == {
+            "name": "wiki",
+            "arguments": {"action": "read", "page": "structured-page"},
+        }
+        return {
+            "result": {
+                "content": [{"type": "text", "text": "preview text that is not json"}],
+                "structuredContent": {"content": structured_content},
+            }
+        }, sid
+
+    detail = mod.fetch_wiki_page_detail(
+        "https://example.invalid/mcp",
+        "sid-1",
+        "pages/notes/structured-page.md",
+        1.0,
+        post_fn=post_fn,
+    )
+
+    assert detail["content"] == structured_content
+    assert detail["meta"]["title"] == "Structured Title"
+    assert detail["body"] == "Structured body\n"
+
+
+
+def test_wiki_bug_sync_fetch_wiki_page_detail_falls_back_to_text_json():
+    mod = _load_wiki_bug_sync_module()
+    text_content = "---\ntitle: Text Title\ntype: note\n---\nText body\n"
+
+    def post_fn(url, sid, payload, timeout):
+        assert payload["method"] == "tools/call"
+        assert payload["params"] == {
+            "name": "wiki",
+            "arguments": {"action": "read", "page": "text-page"},
+        }
+        return {
+            "result": {
+                "content": [
+                    {"type": "text", "text": json.dumps({"content": text_content})}
+                ]
+            }
+        }, sid
+
+    detail = mod.fetch_wiki_page_detail(
+        "https://example.invalid/mcp",
+        "sid-1",
+        "pages/notes/text-page.md",
+        1.0,
+        post_fn=post_fn,
+    )
+
+    assert detail["content"] == text_content
+    assert detail["meta"]["title"] == "Text Title"
+    assert detail["body"] == "Text body\n"
