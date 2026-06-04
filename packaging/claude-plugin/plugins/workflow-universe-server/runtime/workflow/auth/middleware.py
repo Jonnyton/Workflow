@@ -2,18 +2,15 @@
 
 Provides request-level auth resolution that works with FastMCP's
 tool execution model. Since FastMCP tools are plain functions (not
-HTTP handlers), auth is resolved via a context pattern rather than
-HTTP middleware.
-
-For now, auth state is set at the module level per-request via
-the transport layer. When FastMCP adds native auth hooks, this
-module will adapt to use them.
+HTTP handlers), auth is resolved via a context pattern set by the
+HTTP transport layer before tool execution.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
+from contextvars import ContextVar, Token
+from typing import Any
 
 from workflow.auth.provider import (
     ANONYMOUS,
@@ -28,8 +25,13 @@ from workflow.auth.provider import (
 
 logger = logging.getLogger("universe_server.auth")
 
-# Thread-local storage for per-request identity
-_local = threading.local()
+# Request-local storage for per-request identity. ContextVar is required
+# because Streamable HTTP handlers run concurrently on the same event-loop
+# thread; thread-local storage would leak actors between async requests.
+_current_identity: ContextVar[Identity | None] = ContextVar(
+    "workflow_current_identity",
+    default=ANONYMOUS,
+)
 
 # Module-level provider (initialized once at startup)
 _provider: AuthProvider | None = None
@@ -64,12 +66,12 @@ def auth_middleware(token: str | None) -> Identity:
         identity = provider.resolve_token(token)
         if identity is None:
             # Invalid token — return None to signal 401
-            _local.identity = None
+            _current_identity.set(None)
             return ANONYMOUS  # Caller should check
     else:
         identity = ANONYMOUS
 
-    _local.identity = identity
+    _current_identity.set(identity)
     return identity
 
 
@@ -79,7 +81,37 @@ def current_identity() -> Identity:
     Call this from within a tool function to know who's calling.
     Returns ANONYMOUS if no auth context has been set.
     """
-    return getattr(_local, "identity", ANONYMOUS)
+    return _current_identity.get() or ANONYMOUS
+
+
+class AuthContextMiddleware:
+    """Resolve bearer auth into request-local identity for MCP tool calls."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.app, name)
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        previous: Token[Identity | None] = _current_identity.set(ANONYMOUS)
+        try:
+            auth_header = ""
+            for key, value in scope.get("headers", []):
+                if key.lower() == b"authorization":
+                    auth_header = value.decode("latin1")
+                    break
+            token = None
+            if auth_header.lower().startswith("bearer "):
+                token = auth_header[7:].strip()
+            auth_middleware(token)
+            await self.app(scope, receive, send)
+        finally:
+            _current_identity.reset(previous)
 
 
 def require_auth(
