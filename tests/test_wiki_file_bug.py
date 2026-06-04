@@ -35,6 +35,7 @@ if _missing:
     )
 
 from workflow.api.wiki import (  # noqa: E402
+    _WIKI_READ_DEFAULT_MAX_CHARS,
     _next_bug_id,
     _render_bug_markdown,
     _slugify_title,
@@ -165,6 +166,38 @@ class TestFileBugValidation:
             _wiki_file_bug(component="x", severity="wombat", title="t")
         )
         assert "error" in out
+
+    @pytest.mark.parametrize("field_name", ["content", "body"])
+    def test_unsupported_truthy_kwargs_rejected_before_write(self, wiki_dir, field_name):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x",
+                severity="major",
+                title="Patch request title only",
+                kind="patch_request",
+                **{field_name: "body text that should be rejected"},
+            )
+        )
+        assert out["error"] == f"Unsupported file_bug field(s): {field_name}."
+        assert out["unsupported_fields"] == [field_name]
+        assert "repro, observed, expected, and workaround" in out["hint"]
+        assert not any((wiki_dir / "pages").rglob("*.md"))
+
+    def test_benign_default_passthrough_kwargs_still_work(self, wiki_dir):
+        out = json.loads(
+            _wiki_file_bug(
+                component="x",
+                severity="major",
+                title="Supported defaults",
+                dry_run=True,
+                similarity_threshold=0.25,
+                max_results=10,
+                offset=0,
+                max_chars=_WIKI_READ_DEFAULT_MAX_CHARS,
+            )
+        )
+        assert out["status"] == "filed"
+        assert (wiki_dir / out["path"]).exists()
 
 
 class TestFileBugWrites:
