@@ -10,25 +10,27 @@ related_run: https://github.com/Jonnyton/Workflow/actions/runs/26605636623
 
 ## Symptoms
 
-Community loop watch issue #1118 stayed red after PR #1125 recovered the public MCP canary. The remaining red intake stage was `wiki-bug-sync.yml` run `26605636623`, which crashed in `scripts/wiki_bug_sync.py` while parsing `wiki action=list`.
+Community loop watch issue #1118 stayed red after PR #1125 recovered the public MCP canary. The remaining red intake stage was `wiki-bug-sync.yml` run `26605636623`, which crashed in `scripts/wiki_bug_sync.py` because the wiki result parser still assumed text-first JSON for `wiki action=list` and `wiki action=read`.
 
 ## Evidence Snapshot
 
 - `wiki-bug-sync.yml` run `26605636623` failed at 2026-05-28T22:20Z.
-- Stack trace: `json.decoder.JSONDecodeError` at `wiki_list = json.loads(_parse_text_result(list_result))`.
+- Stack trace: `json.decoder.JSONDecodeError` at the text-only wiki payload parse path (`wiki_list = json.loads(_parse_text_result(list_result))`), with the read path still carrying the same assumption.
 - The failure class matches PR #1125: MCP tool text is now a short preview and the full payload is in `structuredContent`.
 - Post-#1125 public MCP canary run `26606206467` was green, so the MCP surface itself was healthy.
 - Local live dry-run after this branch's fix: `python scripts/wiki_bug_sync.py --url https://tinyassets.io/mcp --include-community-requests --dry-run` exited 0 and found BUG-109 plus PR-144 without parser failure.
 
 ## Immediate Fix Applied
 
-`scripts/wiki_bug_sync.py` now prefers MCP `structuredContent` for wiki list/read results and keeps the old text JSON fallback. Regression tests cover preview-text plus structuredContent for both `wiki action=list` and `wiki action=read`.
+`scripts/wiki_bug_sync.py` now reuses `_extract_structured_tool_payload` through a local structured-first `_parse_json_result` helper for both wiki list/read results, while keeping text-JSON fallback when preview output still embeds the payload. Regression tests cover preview-text plus `structuredContent` and preview-text plus embedded JSON for both `wiki action=list` and `wiki action=read`.
 
 ## Verification
 
 - Reproduction tests failed before the code fix:
   - `test_sync_no_new_bugs_accepts_structured_content_list_preview`
+  - `test_sync_no_new_bugs_accepts_preview_text_json_list_payload`
   - `test_fetch_wiki_page_detail_accepts_structured_content_preview`
+  - `test_fetch_wiki_page_detail_accepts_preview_text_json_payload`
 - Focused tests after fix: `python -m pytest tests/test_wiki_bug_sync.py tests/test_canary_scripts_import_smoke.py -q` -> 88 passed.
 - Compile check: `python -m compileall -q scripts/wiki_bug_sync.py scripts/_canary_common.py` -> passed.
 - Live dry-run against `https://tinyassets.io/mcp` -> passed.
@@ -44,11 +46,11 @@ Community loop watch already noticed the intake sync stage red, but the failure 
 
 ## How Can The Loop Fix This Break Next Time, Automatically?
 
-All repo-owned MCP client scripts should share one helper for tool-result payload extraction. When one client learns a new response shape, the loop should either run a scanner for remaining text-only parse sites or open a follow-up patch automatically for each affected script.
+All repo-owned MCP client scripts should share one helper for tool-result payload extraction and wrap it with a consistent structured-first parse helper when a script expects JSON. When one client learns a new response shape, the loop should either run a scanner for remaining text-only parse sites or open a follow-up patch automatically for each affected script.
 
 ## How Can The Loop Avoid This Break In The First Place Next Time?
 
-Move `_extract_structured_tool_payload` out of canary-specific naming into a general MCP client utility, then require every script that consumes MCP tool results to use that utility. Add a static test that flags direct `json.loads(_parse_text_result(...))` patterns in MCP clients unless paired with structuredContent handling.
+Keep `_extract_structured_tool_payload` in the shared MCP utility layer and require every script that consumes MCP tool results to route JSON parsing through a structured-first helper like `_parse_json_result`. Add a static test that flags direct `json.loads(_parse_text_result(...))` patterns in MCP clients unless paired with structuredContent handling.
 
 ## Substrate Improvement Filed
 

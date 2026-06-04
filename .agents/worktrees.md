@@ -632,8 +632,10 @@ Notes:
 - Source: community loop watch issue #1118 red; `wiki-bug-sync.yml` run
   26605636623 crashed because `scripts/wiki_bug_sync.py` parsed text only while
   MCP list payload now lives in `structuredContent`.
-- Purpose: port the structuredContent/text-fallback parser pattern from #1125
-  into the intake sync script and prove it with regression coverage.
+- Purpose: port the shared structured-first parser pattern from #1125 into the
+  intake sync script for both `wiki action=list` and `wiki action=read`, and
+  prove it with regression coverage for structuredContent plus preview-text
+  JSON fallback.
 - Ship condition: focused tests pass, branch pushed, PR opened, GitHub
   `wiki-bug-sync.yml` dispatch succeeds, community loop watch recovers or
   residual non-intake blockers are documented.

@@ -76,6 +76,29 @@ def _wiki_list_structured_resp(bugs: list[dict]) -> dict:
     }
 
 
+def _wiki_list_preview_json_resp(bugs: list[dict]) -> dict:
+    """Build a wiki list response with preview text wrapped around JSON."""
+    promoted = [
+        {"path": b["path"], "title": b.get("title", b["path"]), "type": "bug"}
+        for b in bugs
+    ]
+    return {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Tool result preview follows.\n"
+                        + json.dumps({"promoted": promoted, "drafts": []})
+                    ),
+                }
+            ]
+        },
+    }
+
+
 def _wiki_read_resp(meta: dict, body: str = "# Body") -> dict:
     """Build a mock MCP tools/call result for wiki action=read."""
     fm_lines = "\n".join(f"{k}: {v}" for k, v in meta.items())
@@ -106,6 +129,27 @@ def _wiki_read_structured_resp(meta: dict, body: str = "# Body") -> dict:
                 }
             ],
             "structuredContent": {"content": content},
+        },
+    }
+
+
+def _wiki_read_preview_json_resp(meta: dict, body: str = "# Body") -> dict:
+    """Build a wiki read response with preview text wrapped around JSON."""
+    fm_lines = "\n".join(f"{k}: {v}" for k, v in meta.items())
+    content = f"---\n{fm_lines}\n---\n\n{body}"
+    return {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Tool result preview follows.\n"
+                        + json.dumps({"content": content})
+                    ),
+                }
+            ]
         },
     }
 
@@ -694,6 +738,25 @@ def test_fetch_wiki_page_detail_accepts_structured_content_preview():
     assert "Full payload is in structuredContent" not in detail["body"]
 
 
+def test_fetch_wiki_page_detail_accepts_preview_text_json_payload():
+    detail = fetch_wiki_page_detail(
+        "http://fake/mcp",
+        "sid1",
+        "pages/plans/user-buildable-community-change-loop-v0-substrate-readiness-baseline.md",
+        5.0,
+        post_fn=CapturingPost([
+            (_wiki_read_preview_json_resp(
+                {"title": "User-Buildable Community Change Loop"},
+                "## Main finding\n\nPreview text still contains the JSON payload.",
+            ), "sid1"),
+        ]),
+    )
+
+    assert detail["meta"]["title"] == "User-Buildable Community Change Loop"
+    assert "Preview text still contains the JSON payload." in detail["body"]
+    assert "Tool result preview follows." not in detail["body"]
+
+
 def test_format_change_issue_body_includes_bounded_source_context():
     body = format_change_issue_body(
         {"type": "plan"},
@@ -736,6 +799,23 @@ def test_sync_no_new_bugs_accepts_structured_content_list_preview(tmp_path):
         (_INIT_OK, "sid1"),
         (_NOTIF_NONE, "sid1"),
         (_wiki_list_structured_resp([
+            {"path": "bugs/BUG-001-a"},
+            {"path": "bugs/BUG-005-e"},
+        ]), "sid1"),
+    )
+    rc = sync("http://fake/mcp", 5.0, dry_run=True, cursor_path=cursor_path, post_fn=post_fn)
+    assert rc == 0
+    assert read_cursor(cursor_path) == 5
+
+
+def test_sync_no_new_bugs_accepts_preview_text_json_list_payload(tmp_path):
+    cursor_path = tmp_path / "cursor"
+    write_cursor(5, cursor_path)
+
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_wiki_list_preview_json_resp([
             {"path": "bugs/BUG-001-a"},
             {"path": "bugs/BUG-005-e"},
         ]), "sid1"),
