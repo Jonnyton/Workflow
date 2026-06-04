@@ -443,6 +443,28 @@ def _sanitize_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", clean.lower()).strip("-")
 
 
+def _canonical_slug_key(name: str) -> str:
+    """Normalize slugs into the same canonical form for comparisons."""
+    return _sanitize_slug(name)
+
+
+def _find_existing_page_by_slug(parent: Path, slug: str) -> Path | None:
+    """Return an existing page whose slug matches in canonical form."""
+    slug_key = _canonical_slug_key(slug)
+    if not slug_key or not parent.is_dir():
+        return None
+
+    candidates = [
+        candidate for candidate in parent.glob("*.md")
+        if _canonical_slug_key(candidate.stem) == slug_key
+    ]
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda path: (0 if path.stem == slug else 1, path.name.lower(), path.name))
+    return candidates[0]
+
+
 def _wiki_write_slug(category: str, filename: str) -> tuple[str, str | None]:
     """Normalize action=write filename input to a page slug.
 
@@ -494,11 +516,13 @@ def _resolve_bugs_canonical(parent: Path, slug: str) -> Path | None:
     """
     direct = parent / (slug + ".md")
     direct_dash = parent / (slug + "-.md")
+    slug_key = _canonical_slug_key(slug)
+    slug_dash_key = _canonical_slug_key(slug + "-")
 
     candidates: list[Path] = []
     for candidate in parent.glob("*.md"):
-        cstem = candidate.stem
-        if cstem.lower() == slug or cstem.lower() == slug + "-":
+        candidate_key = _canonical_slug_key(candidate.stem)
+        if candidate_key == slug_key or candidate_key == slug_dash_key:
             candidates.append(candidate)
 
     if not candidates:
@@ -780,8 +804,14 @@ def _wiki_write(
     slug, slug_error = _wiki_write_slug(category, filename)
     if slug_error:
         return json.dumps({"error": slug_error})
-    promoted_path = _wiki_pages_dir() / category / (slug + ".md")
+    promoted_parent = _wiki_pages_dir() / category
+    promoted_path = promoted_parent / (slug + ".md")
     promoted_rel_path = f"pages/{category}/{slug}.md"
+
+    existing_promoted = _find_existing_page_by_slug(promoted_parent, slug)
+    if existing_promoted is not None:
+        promoted_path = existing_promoted
+        promoted_rel_path = _page_rel_path(existing_promoted)
 
     # Alias-resolution for the bugs category. Runs BEFORE the .exists() check
     # so a pre-existing lowercase-duplicate (BUG-003) or trailing-hyphen

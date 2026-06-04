@@ -676,6 +676,39 @@ def test_wiki_file_bug_files_clean_when_no_dups(wiki_env):
     assert res["bug_id"].startswith("BUG-")
 
 
+def test_wiki_write_updates_existing_file_bug_page_across_case_normalized_slug_variants(wiki_env):
+    filed = json.loads(
+        wiki(
+            action="file_bug",
+            component="api.wiki",
+            severity="minor",
+            title="Case Normalize Me",
+            observed="original body",
+            expected="updated body",
+            force_new=True,
+        )
+    )
+
+    original_path = wiki_env / filed["path"]
+    legacy_path = original_path.with_name(f"{filed['bug_id']}-Case_Normalize_Me.md")
+    original_path.rename(legacy_path)
+
+    updated = "rewritten body through wiki write\n"
+    res = json.loads(
+        wiki(
+            action="write",
+            category="bugs",
+            filename=filed["path"],
+            content=updated,
+        )
+    )
+
+    assert res["status"] == "updated"
+    assert res["path"] == f"pages/bugs/{legacy_path.name}"
+    assert legacy_path.read_text(encoding="utf-8") == updated
+    assert sorted(p.name for p in (wiki_env / "pages" / "bugs").glob("*.md")) == [legacy_path.name]
+
+
 def test_wiki_file_bug_title_only_path_still_succeeds(wiki_env):
     res = json.loads(
         wiki(
