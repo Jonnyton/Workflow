@@ -1731,7 +1731,20 @@ def _render_bug_markdown(
 
 
 _VALID_BUG_KINDS = frozenset({"bug", "feature", "design", "patch_request"})
+_FILE_BUG_STRUCTURED_BODY_FIELDS = (
+    "repro",
+    "observed",
+    "expected",
+    "workaround",
+)
 _UNSUPPORTED_FILE_BUG_BODY_KWARGS = frozenset({"body", "content"})
+_FILE_BUG_IGNORED_DEFAULT_KWARGS: dict[str, Any] = {
+    "dry_run": True,
+    "similarity_threshold": 0.25,
+    "max_results": 10,
+    "offset": 0,
+    "max_chars": _WIKI_READ_DEFAULT_MAX_CHARS,
+}
 _BUG_DEDUP_THRESHOLD = 0.5
 _BUG_DEDUP_CONTAINMENT_THRESHOLD = 0.8
 _BUG_DEDUP_MIN_SHARED_TOKENS = 6
@@ -1943,6 +1956,8 @@ def _wiki_file_bug(
     ``force_new`` skips the similarity check and always mints a new id.
     When omitted, a token-overlap similarity score ≥ 0.5 against an existing
     bug's title+body returns {status: "similar_found"} instead of filing.
+    `file_bug` only accepts the structured body fields `repro`, `observed`,
+    `expected`, and `workaround`; free-form `body`/`content` kwargs are rejected.
     """
     unsupported_body_kwargs = sorted(
         key for key, value in _kwargs.items()
@@ -1950,28 +1965,25 @@ def _wiki_file_bug(
     )
     if unsupported_body_kwargs:
         fields = ", ".join(unsupported_body_kwargs)
+        structured_fields = ", ".join(_FILE_BUG_STRUCTURED_BODY_FIELDS)
         return json.dumps({
             "error": (
                 "Unsupported file_bug field(s): "
-                f"{fields}. file_bug only accepts title plus structured body fields "
-                "(repro, observed, expected, workaround); content/body are not supported here."
+                f"{fields}. file_bug only accepts title, component, severity, and "
+                f"the structured body fields {structured_fields}; free-form "
+                "body/content is not supported."
             ),
             "hint": (
                 "Use wiki(action=\"file_bug\", title=..., component=..., severity=...) "
-                "and optionally repro/observed/expected/workaround."
+                "and pass body details via the repro, observed, expected, and "
+                "workaround fields."
             ),
         })
     dropped_kwargs = sorted(
         key for key, value in _kwargs.items()
         if value not in ("", None, False)
         and key not in _UNSUPPORTED_FILE_BUG_BODY_KWARGS
-        and not (
-            (key == "dry_run" and value is True)
-            or (key == "similarity_threshold" and value == 0.25)
-            or (key == "max_results" and value == 10)
-            or (key == "offset" and value == 0)
-            or (key == "max_chars" and value == _WIKI_READ_DEFAULT_MAX_CHARS)
-        )
+        and _FILE_BUG_IGNORED_DEFAULT_KWARGS.get(key) != value
     )
     if not title or not component or not severity:
         return json.dumps({

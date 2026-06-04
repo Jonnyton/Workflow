@@ -110,8 +110,11 @@ framing.
     bug via `wiki action=file_bug component=<surface>
     severity=<critical|major|minor|cosmetic> title="<short>"
     repro="<tool call>" observed="<what you saw>"
-    expected="<what you expected>"`. The server assigns the BUG-NNN
-    id — don't invent one. Log it even if you apply a workaround and
+    expected="<what you expected>"`. Do not pass free-form `body` or
+    `content` here; `file_bug` only accepts the structured body fields
+    `repro`, `observed`, `expected`, and `workaround`. The server assigns
+    the BUG-NNN id — don't invent one. Log it even if you apply a
+    workaround and
     continue the user's task; the log is how the host fixes the bug.
     User-caused errors (invalid args, missing universe, etc.) are not
     bugs — don't log those.
