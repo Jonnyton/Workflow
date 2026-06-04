@@ -20,7 +20,8 @@ Public surface (back-compat re-exported via ``workflow.universe_server``):
                                        when the whitelist is unset
 
     Public action ledger trio:
-      _current_actor()               - resolve UNIVERSE_SERVER_USER (default
+      _current_actor()               - resolve request auth identity, falling
+                                       back to UNIVERSE_SERVER_USER (default
                                        'anonymous'); patched 7+ times in tests
       _append_ledger(udir, action, ..) - durable per-universe ledger writer
       _truncate(text, limit=140)     - whitespace-collapsing string truncator
@@ -176,8 +177,18 @@ def _warn_if_no_upload_whitelist() -> None:
 def _current_actor() -> str:
     """Resolve the acting user's identity for ledger attribution.
 
-    Falls back to 'anonymous' when no session identity is available.
+    Authenticated MCP requests use the OAuth subject resolved at request
+    entry. Authless paths and direct tests keep the legacy env-var fallback.
     """
+    try:
+        from workflow.auth.middleware import current_identity
+
+        identity = current_identity()
+        subject = (getattr(identity, "user_id", "") or "").strip()
+        if subject and subject != "anonymous":
+            return subject
+    except Exception:
+        logger.exception("failed to resolve request auth identity")
     return os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
 
 

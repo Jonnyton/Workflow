@@ -1398,7 +1398,9 @@ def create_streamable_http_app() -> Starlette:
     # Substrate-fix #11 / Family A Phase 1.A: serve discovery HTML to
     # browser-style GETs on /mcp + /mcp-directory; pass MCP transport
     # requests through unchanged.
-    app = _MCPDiscoveryMiddleware(app)
+    from workflow.auth.middleware import AuthContextMiddleware
+
+    app = AuthContextMiddleware(_MCPDiscoveryMiddleware(app))
     return app
 
 

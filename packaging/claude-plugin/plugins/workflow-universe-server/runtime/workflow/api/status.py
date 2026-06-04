@@ -808,7 +808,9 @@ def get_status(universe_id: str = "") -> str:
     # Scans the activity.log for any entry within the last 30 days that
     # can be attributed to the current account user. Best-effort; never
     # raises so a log-read error doesn't break the status probe.
-    account_user = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    from workflow.api.engine_helpers import _current_actor
+
+    account_user = _current_actor()
     prior_session_ts: str | None = None
     try:
         if activity_tail:
