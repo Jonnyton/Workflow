@@ -52,7 +52,10 @@ def _wiki_list_resp(bugs: list[dict]) -> dict:
     }
 
 
-def _wiki_list_structured_resp(bugs: list[dict]) -> dict:
+def _wiki_list_structured_resp(
+    bugs: list[dict],
+    preview_text: str | None = None,
+) -> dict:
     """Build a wiki list response with preview text plus structuredContent."""
     promoted = [
         {"path": b["path"], "title": b.get("title", b["path"]), "type": "bug"}
@@ -65,7 +68,8 @@ def _wiki_list_structured_resp(bugs: list[dict]) -> dict:
             "content": [
                 {
                     "type": "text",
-                    "text": (
+                    "text": preview_text
+                    or (
                         "Tool result: promoted=%d; drafts=0. "
                         "Full payload is in structuredContent."
                     ) % len(promoted),
@@ -91,7 +95,11 @@ def _wiki_read_resp(meta: dict, body: str = "# Body") -> dict:
     }
 
 
-def _wiki_read_structured_resp(meta: dict, body: str = "# Body") -> dict:
+def _wiki_read_structured_resp(
+    meta: dict,
+    body: str = "# Body",
+    preview_text: str | None = None,
+) -> dict:
     """Build a wiki read response with preview text plus structuredContent."""
     fm_lines = "\n".join(f"{k}: {v}" for k, v in meta.items())
     content = f"---\n{fm_lines}\n---\n\n{body}"
@@ -102,7 +110,8 @@ def _wiki_read_structured_resp(meta: dict, body: str = "# Body") -> dict:
             "content": [
                 {
                     "type": "text",
-                    "text": "Tool result: content preview. Full payload is in structuredContent.",
+                    "text": preview_text
+                    or "Tool result: content preview. Full payload is in structuredContent.",
                 }
             ],
             "structuredContent": {"content": content},
@@ -745,6 +754,26 @@ def test_sync_no_new_bugs_accepts_structured_content_list_preview(tmp_path):
     assert read_cursor(cursor_path) == 5
 
 
+def test_sync_no_new_bugs_prefers_structured_content_over_preview_text(tmp_path):
+    cursor_path = tmp_path / "cursor"
+    write_cursor(5, cursor_path)
+
+    post_fn = _make_post_fn(
+        (_INIT_OK, "sid1"),
+        (_NOTIF_NONE, "sid1"),
+        (_wiki_list_structured_resp(
+            [
+                {"path": "bugs/BUG-001-a"},
+                {"path": "bugs/BUG-005-e"},
+            ],
+            preview_text="Tool result preview only; not JSON.",
+        ), "sid1"),
+    )
+    rc = sync("http://fake/mcp", 5.0, dry_run=True, cursor_path=cursor_path, post_fn=post_fn)
+    assert rc == 0
+    assert read_cursor(cursor_path) == 5
+
+
 # ---------------------------------------------------------------------------
 # sync() — happy path: one new bug
 # ---------------------------------------------------------------------------
@@ -811,6 +840,56 @@ def test_sync_one_new_bug_updates_cursor(tmp_path):
 
     assert rc == 0
     assert created_issues == ["BUG-003"]
+    assert read_cursor(cursor_path) == 3
+
+
+def test_sync_one_new_bug_prefers_structured_read_payload_over_preview_text(tmp_path):
+    cursor_path = tmp_path / "cursor"
+    write_cursor(2, cursor_path)
+
+    captured = {}
+
+    def _fake_post(url, sid, payload, timeout):
+        method = payload.get("method", "")
+        if method == "initialize":
+            return _INIT_OK, "sid1"
+        if method == "notifications/initialized":
+            return _NOTIF_NONE, "sid1"
+        tool = payload.get("params", {}).get("name")
+        if tool == "wiki":
+            args = payload.get("params", {}).get("arguments", {})
+            if args.get("action") == "list":
+                return _wiki_list_resp([{"path": "bugs/BUG-003-new", "title": "Preview Bug"}]), "sid1"
+            if args.get("action") == "read":
+                return _wiki_read_structured_resp(
+                    {"title": "Structured Bug", "severity": "critical", "component": "wiki"},
+                    "# Body",
+                    preview_text="Tool result preview only; not JSON.",
+                ), "sid1"
+        return None, "sid1"
+
+    def _fake_create_issue(token, repo, bug_id, title, severity, component, body_md,
+                           dry_run=False, gh_api=None, timeout=20.0):
+        captured.update(
+            bug_id=bug_id,
+            title=title,
+            severity=severity,
+            component=component,
+            body_md=body_md,
+        )
+        return "https://github.com/owner/repo/issues/42"
+
+    with patch("wiki_bug_sync.create_gh_issue", side_effect=_fake_create_issue):
+        rc = sync(
+            "http://fake/mcp", 5.0, dry_run=False,
+            token="fake-token", cursor_path=cursor_path, post_fn=_fake_post,
+        )
+
+    assert rc == 0
+    assert captured["bug_id"] == "BUG-003"
+    assert captured["title"] == "Structured Bug"
+    assert captured["severity"] == "critical"
+    assert captured["component"] == "wiki"
     assert read_cursor(cursor_path) == 3
 
 
