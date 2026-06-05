@@ -229,6 +229,8 @@
     "pages/patch-requests/pr-167-add-an-identity-aware-non-gating-auth-mode-resolve-token-if-.md",
     "pages/patch-requests/pr-168-control-daemon-pause-must-stop-the-soul-loop-dispatcher-not-.md",
     "pages/patch-requests/pr-169-dispatcher-must-enforce-carrier-review-before-daemon-pickup-.md",
+    "pages/patch-requests/pr-170-reframe-the-request-surface-from-bug-to-patch-request-throug.md",
+    "pages/patch-requests/pr-171-retire-the-compiled-cheat-writer-pipeline-wiki-bug-sync-py-a.md",
     "pages/plans/archon-fantasy-rts-fps-v0-map-blockout-2026-05-20.md",
     "pages/plans/archon-fantasy-rts-fps-v0-prototype-spec-2026-05-20.md",
     "pages/plans/archon-fantasy-rts-fps-v0-technical-plan-2026-05-20.md",
