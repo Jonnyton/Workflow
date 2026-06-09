@@ -48,6 +48,16 @@ CREATE INDEX IF NOT EXISTS idx_staker_escrow_budget_currency
     ON staker_escrow_budget(currency);
 """
 
+PAYOUT_WALLET_SCHEMA = """
+CREATE TABLE IF NOT EXISTS payout_wallet (
+    actor_id    TEXT NOT NULL,
+    chain_id    INTEGER NOT NULL,
+    address     TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (actor_id, chain_id)
+);
+"""
+
 SETTLEMENT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS escrow_balance (
     escrow_id       TEXT PRIMARY KEY,
@@ -331,4 +341,8 @@ class BatchedTransaction:
 
 def migrate_settlement_schema(conn) -> None:  # type: ignore[no-untyped-def]
     """Create settlement tables if absent. Idempotent."""
-    conn.executescript(STAKER_ESCROW_BUDGET_SCHEMA + "\n" + SETTLEMENT_SCHEMA)
+    conn.executescript(
+        STAKER_ESCROW_BUDGET_SCHEMA + "\n"
+        + PAYOUT_WALLET_SCHEMA + "\n"
+        + SETTLEMENT_SCHEMA
+    )
