@@ -182,6 +182,40 @@ def debit_reserved(
     return _require_balance(conn, staker_id=staker_id, currency=cur)
 
 
+def withdraw_balance(
+    conn: sqlite3.Connection,
+    *,
+    staker_id: str,
+    amount: int,
+    now_iso: str,
+    currency: str = DEFAULT_CURRENCY,
+) -> StakerEscrowBudget:
+    """Remove ``amount`` of spendable balance for an external payout (Slice 1).
+
+    Reduces total (not reserved) — the funds leave the platform. Raises
+    InsufficientFundsError if spendable (total - reserved) is below ``amount``.
+    """
+    if amount < 0:
+        raise FundingError(f"amount must be >= 0, got {amount!r}")
+    cur = canonical_currency(currency)
+    bal = get_balance(conn, staker_id=staker_id, currency=cur)
+    spendable = bal.spendable_amount if bal else 0
+    if spendable < amount:
+        raise InsufficientFundsError(
+            f"Insufficient spendable balance for staker={staker_id!r} "
+            f"currency={cur!r}: need {amount}, have {spendable}."
+        )
+    conn.execute(
+        """
+        UPDATE staker_escrow_budget
+        SET total_amount = total_amount - ?, updated_at = ?
+        WHERE staker_id = ? AND currency = ?
+        """,
+        (amount, now_iso, staker_id, cur),
+    )
+    return _require_balance(conn, staker_id=staker_id, currency=cur)
+
+
 def _require_balance(
     conn: sqlite3.Connection, *, staker_id: str, currency: str
 ) -> StakerEscrowBudget:

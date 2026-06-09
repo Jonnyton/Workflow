@@ -35,9 +35,21 @@ from workflow.payments.funding import (
     get_balance,
     release_reservation,
     reserve,
+    withdraw_balance,
 )
 from workflow.payments.identifiers import SettlementKey
+from workflow.payments.settlement_backend import (
+    BASE_SEPOLIA_CHAIN_ID,
+    SettlementBackendError,
+    get_settlement_backend,
+    new_idempotency_key,
+)
 from workflow.payments.settlement_ledger import record_settlement
+from workflow.payments.wallets import (
+    WalletError,
+    get_payout_wallet,
+    set_payout_wallet,
+)
 
 
 def _now_iso() -> str:
@@ -411,4 +423,124 @@ def action_escrow_balance(
         "total": int(bal.total_amount),
         "reserved": int(bal.reserved_amount),
         "spendable": bal.spendable_amount,
+    }
+
+
+# ── escrow_set_wallet ─────────────────────────────────────────────────────────
+
+def action_escrow_set_wallet(
+    conn: sqlite3.Connection,
+    *,
+    actor_id: str,
+    address: str,
+    chain_id: int = BASE_SEPOLIA_CHAIN_ID,
+) -> dict[str, Any]:
+    """Register the actor's on-chain payout address (where withdrawals land)."""
+    if not actor_id:
+        return {"status": "rejected", "error": "actor_id is required."}
+    try:
+        wallet = set_payout_wallet(
+            conn, actor_id=actor_id, address=address, now_iso=_now_iso(),
+            chain_id=chain_id,
+        )
+    except WalletError as exc:
+        return {"status": "rejected", "error": str(exc)}
+    return {
+        "status": "ok",
+        "actor_id": wallet.actor_id,
+        "chain_id": wallet.chain_id,
+        "address": wallet.address,
+    }
+
+
+# ── escrow_withdraw ───────────────────────────────────────────────────────────
+
+def action_escrow_withdraw(
+    conn: sqlite3.Connection,
+    *,
+    actor_id: str,
+    amount: int,
+    currency: str = "MicroToken",
+    chain_id: int = BASE_SEPOLIA_CHAIN_ID,
+) -> dict[str, Any]:
+    """Withdraw spendable off-chain balance to the actor's payout wallet.
+
+    The off-chain ledger is the source of truth; this settles balance OUT via
+    the configured settlement backend (internal marker, or base_sepolia USDC).
+    Debits spendable balance, then settles; on backend failure the debit is
+    refunded so no funds are lost.
+    """
+    if not actor_id:
+        return {"status": "rejected", "error": "actor_id is required."}
+    if amount <= 0:
+        return {"status": "rejected", "error": f"amount must be > 0, got {amount!r}."}
+    cur = canonical_currency(currency)
+
+    wallet = get_payout_wallet(conn, actor_id=actor_id, chain_id=chain_id)
+    if wallet is None:
+        return {
+            "status": "rejected",
+            "error": (
+                f"No payout wallet registered for actor={actor_id!r} "
+                f"chain_id={chain_id}. Use escrow_set_wallet first."
+            ),
+        }
+
+    # Debit spendable balance first; refund if the backend settlement fails.
+    try:
+        new_bal = withdraw_balance(
+            conn, staker_id=actor_id, amount=amount, now_iso=_now_iso(), currency=cur
+        )
+    except InsufficientFundsError as exc:
+        return {"status": "rejected", "error": str(exc)}
+
+    backend = get_settlement_backend()
+    idempotency_key = new_idempotency_key()
+    try:
+        settlement = backend.settle(
+            recipient_wallet=wallet.address,
+            amount_base_units=amount,
+            currency=cur,
+            idempotency_key=idempotency_key,
+        )
+    except SettlementBackendError as exc:
+        # Settlement failed — restore the debited balance so nothing is lost.
+        credit_balance(
+            conn, staker_id=actor_id, amount=amount, now_iso=_now_iso(), currency=cur
+        )
+        return {"status": "rejected", "error": str(exc)}
+
+    now = _now_iso()
+    tx_ref = settlement["tx_ref"]
+    conn.execute(
+        """
+        INSERT INTO settlement_batch
+            (batch_id, recipient_id, total_amount, total_fee, item_count,
+             status, opened_at, flushed_at)
+        VALUES (?, ?, ?, 0, 1, 'flushed', ?, ?)
+        """,
+        (idempotency_key, actor_id, amount, now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO transaction_log
+            (kind, escrow_id, settlement_id, batch_id, actor_id, amount,
+             recorded_at, note)
+        VALUES ('batch_flush', NULL, NULL, ?, ?, ?, ?, ?)
+        """,
+        (idempotency_key, actor_id, amount, now, f"{settlement['backend']}:{tx_ref}"),
+    )
+
+    return {
+        "status": "ok",
+        "actor_id": actor_id,
+        "currency": cur,
+        "amount": amount,
+        "chain_id": chain_id,
+        "recipient_wallet": wallet.address,
+        "backend": settlement["backend"],
+        "settlement_status": settlement["status"],
+        "tx_ref": tx_ref,
+        "batch_id": idempotency_key,
+        "remaining_spendable": new_bal.spendable_amount,
     }
