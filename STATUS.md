@@ -30,7 +30,6 @@ universe_server.py: 14012 → 972 LOC live in main. PLAN.md restructured 30→11
 
 | Task | Files | Depends | Status |
 |------|-------|---------|--------|
-| **#1307 host merge key** — backup two-tier fix (consistent brain archive + live-tolerant full tar + pruner foreign-file fix); rolled out on droplet + e2e-proven 2026-06-10; offsite starvation since 05-28 closed | deploy/backup.sh, deploy/workflow-backup.timer, scripts/backup_prune.py, docs/ops/backup-restore-runbook.md, tests/test_backup_script.py | - | host-action |
 | **#906 host merge key** — Open-brain v2 slice C cost-ledger READ surface; Claude checker APPROVED 2026-05-19 | workflow/daemon_brain.py, workflow/api/status.py + plugin mirrors | - | host-action |
 | **#907 host merge key** — Bounded autonomous spend CI writer-prompt guardrail; Claude checker APPROVED 2026-05-19 | .github/workflows/auto-fix-bug.yml, docs/ops/auto-fix-runbook.md | - | host-action |
 | **Codex verdict ADAPT** — in-node enqueue #1214 stays dark; before flag flip add current-universe context, queue/lineage cap, branch target validation | workflow/graph_compiler.py, workflow/branch_tasks.py, fantasy_daemon/__main__.py, tests/test_node_enqueue_*.py | verdict filed in `docs/audits/2026-05-30-in-node-enqueue-codex-review.md` | dev-ready |
