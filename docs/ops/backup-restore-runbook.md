@@ -39,6 +39,19 @@ indexes are rebuildable from canon, and run state is resumable. Retention is
 applied **per tier prefix** by `scripts/backup_prune.py`; unrecognized
 filenames at the destination are never pruned.
 
+### Current droplet reality (verified 2026-06-10)
+
+Despite the Hetzner narrative elsewhere in this runbook, the production
+droplet has **`BACKUP_DEST=/var/backups/workflow` — a local directory on the
+same disk as the data it backs up**. No rclone remote was ever configured.
+The **GitHub release assets in `Jonnyton/workflow-backups` are the only true
+offsite copy.** Until a real remote is provisioned (host action: DO Spaces or
+Hetzner Storage Box credentials + `rclone config` on the droplet), treat the
+GH tier as primary offsite, keep `GH_TOKEN` valid in `/etc/workflow/env`, and
+keep local retention tight (`BACKUP_RETAIN_DAILY=3 / WEEKLY=2 / MONTHLY=2`
+set 2026-06-10) so the local mirror cannot fill the 50 GB root disk at
+~1.5 GB/night.
+
 **Retention schedule:**
 
 | Window | Count | Default env var |
