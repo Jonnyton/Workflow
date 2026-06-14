@@ -1,6 +1,6 @@
 <!--
   Footer — bottom chrome.
-  Adds legal link, public build links, and supply boundary.
+  Adds legal link, public build links, builder credit, and supply boundary.
 -->
 <script lang="ts">
   import WorkflowMark from './WorkflowMark.svelte';
@@ -71,6 +71,7 @@
 
   <div class="container footer__bottom">
     <span class="copyright">© {year} Tiny Assets · All rights reserved.</span>
+    <span class="built-by">Built by <a href="https://github.com/Jonnyton" target="_blank" rel="noreferrer">Jonathan Farnsworth</a></span>
     <span class="contact">
       <a href="mailto:{legal.contact.general}">{legal.contact.general}</a> ·
       <a href="mailto:{legal.contact.security}">{legal.contact.security}</a>
@@ -104,6 +105,8 @@
   .supply__more:hover { text-decoration: underline; }
 
   .footer__bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: var(--s-4); font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }
+  .built-by a { color: var(--fg-2); text-decoration: none; }
+  .built-by a:hover { color: var(--ember-600); }
   .contact a { color: var(--fg-2); text-decoration: none; }
   .contact a:hover { color: var(--ember-600); }
 </style>

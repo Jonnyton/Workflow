@@ -1267,6 +1267,7 @@ engine is domain-agnostic.</p>
 <ul>
 <li><a href="/">Workflow landing page</a></li>
 <li><a href="https://github.com/Jonnyton/Workflow">GitHub repository</a></li>
+<li>Built by Jonathan Farnsworth (<a href="https://github.com/Jonnyton">&#64;Jonnyton</a>)</li>
 </ul>
 
 <footer>
@@ -1291,10 +1292,55 @@ _MCP_DISCOVERY_JSON = {
         "protocol_header": "MCP-Protocol-Version: 2025-03-26",
         "method": "POST JSON-RPC initialize, then MCP Streamable HTTP",
     },
+    "built_by": "Jonathan Farnsworth",
     "related": {
         "landing_page": "https://tinyassets.io/",
         "source": "https://github.com/Jonnyton/Workflow",
+        "builder_profile": "https://github.com/Jonnyton",
         "directory_endpoint": "https://tinyassets.io/mcp-directory",
+    },
+}
+
+
+# Real tool/resource catalog returned to plain (non-transport) JSON GETs on
+# /mcp-directory, so a technical evaluator can see what the server exposes
+# WITHOUT connecting an MCP client. Distinct from the /mcp descriptor above.
+# Mirrors the tools/prompts registered on the directory MCP surface; bump
+# alongside DIRECTORY_TOOL_CATALOG_VERSION when the chatbot-visible catalog
+# changes.
+_MCP_DIRECTORY_JSON = {
+    "name": "workflow",
+    "type": "mcp_tool_catalog",
+    "transport": "streamable-http",
+    "built_by": "Jonathan Farnsworth",
+    "description": (
+        "Catalog of the tools and prompts the Workflow MCP server exposes. "
+        "This is a read-only directory view for evaluators; connect an MCP "
+        "client to the endpoint below to actually call them."
+    ),
+    "connect": {
+        "mcp_endpoint": "https://tinyassets.io/mcp",
+        "catalog_path": VERSIONED_DIRECTORY_MCP_PATH,
+    },
+    "tools": [
+        {"name": "universe", "summary": "Inspect and steer a workflow's universe (its self-contained workspace): reads (inspect, read_output, get_activity, get_ledger...), writes (submit_request, give_direction, set_premise, add_canon...), queue control, goal subscriptions, daemon roster/memory, and economy reads."},
+        {"name": "extensions", "summary": "The workflow-builder surface: register custom graph nodes and assemble them into branches — multi-step workflows with typed state, evaluation hooks, and iteration loops; build/patch/fork/validate/run branches."},
+        {"name": "goals", "summary": "Browse and define Goals and their real-world outcome-gate ladders; subscribe to a Goal, post to its pool, and see which branch leads."},
+        {"name": "gates", "summary": "Evidence gates — the rungs a workflow must clear (each backed by an evidence URL) to claim a real-world outcome, so progress is checkable rather than asserted."},
+        {"name": "wiki", "summary": "The searchable shared commons — bugs, plans, concepts, notes, and drafts; file patch requests here. The durable cross-session coordination surface."},
+        {"name": "get_status", "summary": "A factual snapshot of the daemon: identity, routing policy, queue depth/throughput, provider list, sandbox status, and the live deploy receipt (SHA, canary status)."},
+        {"name": "community_change_context", "summary": "Community-review context for a proposed change — proposer, gate state, and the consensus position records."},
+    ],
+    "prompts": [
+        {"name": "control_station", "summary": "The canonical operating guide: routing rules, universe isolation, the collaboration model, and the full tool catalog."},
+        {"name": "extension_guide", "summary": "How to extend the platform with custom graph nodes and branches."},
+        {"name": "branch_design_guide", "summary": "How to design a branch (a graph of typed steps plus evaluation)."},
+    ],
+    "related": {
+        "landing_page": "https://tinyassets.io/",
+        "source": "https://github.com/Jonnyton/Workflow",
+        "builder_profile": "https://github.com/Jonnyton",
+        "mcp_endpoint": "https://tinyassets.io/mcp",
     },
 }
 
@@ -1345,10 +1391,13 @@ class _MCPDiscoveryMiddleware:
             return
         from starlette.responses import HTMLResponse, JSONResponse
 
+        is_directory = path in {"/mcp-directory", "/mcp-directory/"}
         if _wants_discovery_html(request):
             response = HTMLResponse(_MCP_DISCOVERY_HTML)
         else:
-            response = JSONResponse(_MCP_DISCOVERY_JSON)
+            response = JSONResponse(
+                _MCP_DIRECTORY_JSON if is_directory else _MCP_DISCOVERY_JSON
+            )
         await response(scope, receive, send)
 
 
