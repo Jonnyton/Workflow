@@ -12,8 +12,27 @@ from pathlib import Path
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _init(base_path: Path) -> None:
+    import sqlite3
+
     from workflow.daemon_server import initialize_author_server
+    from workflow.payments.funding import credit_balance
+    from workflow.storage import db_path
     initialize_author_server(base_path)
+    # Escrow locks now require a funded staker budget; pre-fund the common test
+    # stakers generously so lock/release/refund flows have spendable budget.
+    conn = sqlite3.connect(db_path(base_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        for staker in ("alice", "bob", "staker-1", "daemon-bob", "anonymous"):
+            credit_balance(
+                conn,
+                staker_id=staker,
+                amount=1_000_000_000,
+                now_iso="2026-06-08T00:00:00+00:00",
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _ext(monkeypatch, tmp_path, *, paid_market: bool = True, user: str = "alice", **kwargs):
@@ -384,12 +403,24 @@ class TestEscrowRoundTrip:
 
 class TestPaymentsActionsUnit:
     def _conn(self, tmp_path):
+        # storage._connect is a context manager (closes on exit); these unit
+        # tests need a connection that stays open across multiple action calls,
+        # so open a raw connection to the same DB path with matching pragmas.
+        import sqlite3
+
         from workflow.daemon_server import initialize_author_server
         from workflow.payments.escrow import migrate_escrow_schema
-        from workflow.storage import _connect
+        from workflow.storage import db_path
         initialize_author_server(tmp_path)
-        conn = _connect(tmp_path)
+        conn = sqlite3.connect(db_path(tmp_path), timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         migrate_escrow_schema(conn)
+        from workflow.payments.funding import credit_balance
+        credit_balance(
+            conn, staker_id="staker-1", amount=1_000_000,
+            now_iso="2026-06-08T00:00:00+00:00",
+        )
         return conn
 
     def test_action_lock_success(self, tmp_path):
