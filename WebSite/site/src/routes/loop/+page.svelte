@@ -631,4 +631,35 @@
   .close__cta--alt { background: var(--bg-1); }
   .close__cta strong { font-family: var(--font-display); font-size: clamp(20px, 2.6vw, 26px); font-weight: 500; letter-spacing: -0.01em; line-height: 1.15; color: var(--fg-1); }
   .close__sub { font-size: 13px; color: var(--fg-2); line-height: 1.5; }
+
+  /* ── Live reading → dark readout: the log above is what Tiny SAYS (paper);
+     this band is what he SHOWS, read live off the instrument. ── */
+  .ch--live { background: var(--panel); border-bottom-color: var(--panel-line); }
+  .ch--live .eyebrow { color: var(--on-panel-soft); }
+  .ch--live h2 { color: var(--on-panel); }
+  .ch--live .refresh { border-color: var(--panel-line); color: var(--on-panel-soft); }
+  .ch--live .refresh:hover:not(:disabled) { border-color: var(--live-bright); background: rgba(70, 180, 131, 0.12); color: var(--on-panel); }
+  .ch--live .state { background: var(--panel-raised); border-color: var(--panel-line); }
+  .ch--live .state--awake { border-color: var(--live-bright); background: rgba(70, 180, 131, 0.10); }
+  .ch--live .state--asleep { border-color: rgba(176, 138, 46, 0.55); background: rgba(176, 138, 46, 0.12); }
+  .ch--live .state--error { border-color: var(--ember-300); background: rgba(233, 138, 160, 0.10); }
+  .ch--live .state__k { color: var(--on-panel); }
+  .ch--live .state__sub { color: var(--on-panel-soft); }
+  .ch--live .state__sub.ev { color: var(--on-panel-soft); opacity: 0.82; }
+  .ch--live .state__moved { color: var(--on-panel-soft); opacity: 0.7; }
+  .ch--live .state a { color: var(--ember-300); }
+  .ch--live .state .dot { background: var(--on-panel-soft); }
+  .ch--live .dot.live { background: var(--live-bright); box-shadow: 0 0 0 3px rgba(70, 180, 131, 0.22); }
+  .ch--live .events { background: var(--panel-raised); border-color: var(--panel-line); }
+  .ch--live .event { border-top-color: var(--panel-line); }
+  .ch--live .event__stage { color: var(--ember-300); }
+  .ch--live .event__title, .ch--live .event__title a { color: var(--on-panel); }
+  .ch--live .event__detail { color: var(--on-panel-soft); }
+  .ch--live .event__at { color: var(--on-panel-soft); opacity: 0.85; }
+  .ch--live .event__raw > summary { color: var(--on-panel-soft); opacity: 0.7; }
+  .ch--live .event__raw > summary:hover { color: var(--ember-300); opacity: 1; }
+  .ch--live .event__rawtext { background: var(--panel); border-color: var(--panel-line); color: var(--on-panel-soft); }
+  .ch--live .events__empty { color: var(--on-panel-soft); }
+  .ch--live .events__empty a, .ch--live .warnings__line a { color: var(--ember-300); }
+  .ch--live .warnings__line { color: var(--on-panel-soft); opacity: 0.8; }
 </style>

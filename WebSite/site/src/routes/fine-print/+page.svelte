@@ -551,4 +551,23 @@
   .close__k { display: block; }
   .close__card strong { font-family: var(--font-display); font-size: clamp(20px, 2.6vw, 26px); font-weight: 500; letter-spacing: -0.015em; line-height: 1.14; color: var(--fg-1); }
   .close__sub { font-size: 13.5px; color: var(--fg-2); }
+
+  /* ── Release receipt → dark readout card: the lede above is the claim (paper);
+     this card is the engine's own evidence, read live. ── */
+  .receipt { background: var(--panel); border-color: var(--panel-line); }
+  .receipt[data-state="error"] { border-color: var(--ember-300); }
+  .receipt__msg { color: var(--on-panel-soft); }
+  .receipt__note { color: var(--on-panel-soft); }
+  .receipt__err { color: var(--ember-300); }
+  .rc-table tr { border-top-color: var(--panel-line); }
+  .rc-table th { color: var(--on-panel-soft); }
+  .rc-table td { color: var(--on-panel); }
+  .rc-table a { color: var(--ember-300); border-bottom-color: rgba(233, 138, 160, 0.5); }
+  .rc-table a:hover { color: var(--on-panel); }
+  .rc-none, .rc-none a { color: var(--on-panel-soft); }
+  .receipt__stamp { color: var(--on-panel-soft); }
+  .receipt__links a { color: var(--ember-300); }
+  .receipt__refresh { border-color: var(--panel-line); color: var(--on-panel-soft); }
+  .receipt__refresh:hover { border-color: var(--live-bright); background: rgba(70, 180, 131, 0.12); color: var(--on-panel); }
+  .receipt .dot.live { background: var(--live-bright); box-shadow: 0 0 0 3px rgba(70, 180, 131, 0.22); }
 </style>
