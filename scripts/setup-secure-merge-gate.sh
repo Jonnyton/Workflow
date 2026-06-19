@@ -13,11 +13,9 @@ if ! command -v gh >/dev/null 2>&1; then
     exit 1
 fi
 
-owner="${REPO%%/*}"
-repo="${REPO#*/}"
-
 IFS=',' read -r -a contexts <<< "$REQUIRED_STATUS_CONTEXTS"
 contexts_json="$(printf '%s\n' "${contexts[@]}" | python3 -c 'import json,sys; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))')"
+protection_url="repos/${REPO}/branches/${BRANCH}/protection"
 
 printf 'Enabling auto-merge for %s...\n' "$REPO"
 gh api --method PATCH "repos/${REPO}" \
@@ -25,7 +23,7 @@ gh api --method PATCH "repos/${REPO}" \
     -f allow_auto_merge=true >/dev/null
 
 printf 'Applying branch protection to %s/%s...\n' "$REPO" "$BRANCH"
-python3 - "$contexts_json" <<'PY' | gh api --method PUT "repos/'"$REPO"'/branches/'"$BRANCH"'/protection" \
+python3 - "$contexts_json" <<'PY' | gh api --method PUT "$protection_url" \
     -H 'Accept: application/vnd.github+json' \
     --input - >/dev/null
 import json
