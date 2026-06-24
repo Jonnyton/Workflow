@@ -40,6 +40,7 @@ import argparse
 import json
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -192,6 +193,37 @@ def assert_five_handles(url: str, timeout: float) -> None:
         )
 
 
+def assert_five_handles_with_retry(
+    url: str,
+    timeout: float,
+    retries: int = 5,
+    delay: float = 3.0,
+    _sleep=time.sleep,
+) -> None:
+    """``assert_five_handles`` with retries for transient blips.
+
+    Wired into the post-deploy gate, where a single transient ``tools/list``
+    failure would otherwise trip a rollback of an otherwise-healthy daemon
+    (a fresh image can briefly serve before the surface fully settles). The
+    last attempt's ``CanaryError`` propagates so a genuine regression still
+    fails the deploy.
+    """
+    attempts = max(1, retries)
+    for attempt in range(1, attempts + 1):
+        try:
+            assert_five_handles(url, timeout)
+            return
+        except CanaryError as exc:
+            if attempt >= attempts:
+                raise
+            print(
+                f"[canary] handle assertion attempt {attempt}/{attempts} "
+                f"failed ({exc.msg}); retrying in {delay}s",
+                file=sys.stderr,
+            )
+            _sleep(delay)
+
+
 def probe_result(url: str, timeout: float) -> None:
     """Run the probe. Return None on success; raise ``CanaryError`` on failure.
 
@@ -265,13 +297,23 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--assert-handles", action="store_true",
                     help="also assert tools/list advertises exactly the five "
                          "canonical handles (PR-178 drift guard, Hard Rule #11)")
+    ap.add_argument("--assert-handles-retries", type=int, default=5,
+                    help="retry the handle assertion N times before failing "
+                         "(default 5) — absorbs transient post-deploy blips")
+    ap.add_argument("--assert-handles-retry-delay", type=float, default=3.0,
+                    help="seconds between handle-assertion retries (default 3)")
     args = ap.parse_args(argv)
 
     probe(args.url, args.timeout)
 
     if args.assert_handles:
         try:
-            assert_five_handles(args.url, args.timeout)
+            assert_five_handles_with_retry(
+                args.url,
+                args.timeout,
+                retries=args.assert_handles_retries,
+                delay=args.assert_handles_retry_delay,
+            )
         except CanaryError as exc:
             _die(exc.code, exc.msg)
 

@@ -76,3 +76,34 @@ def test_advertised_tool_names_round_trips(monkeypatch):
     monkeypatch.setattr(canary, "_post", _scripted_post(_FIVE_PLUS_STATUS))
     names = canary.advertised_tool_names("https://example/mcp", 5.0)
     assert names == set(_FIVE_PLUS_STATUS)
+
+
+def test_retry_recovers_from_transient_blip(monkeypatch):
+    """A transient failure that clears on a later attempt must NOT fail."""
+    good = _scripted_post(_FIVE_PLUS_STATUS)
+    calls = {"n": 0}
+
+    def flaky(url, payload, timeout, session_id=None):
+        if payload.get("method") == "initialize":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise canary.CanaryError(2, "transient unreachable")
+        return good(url, payload, timeout, session_id)
+
+    monkeypatch.setattr(canary, "_post", flaky)
+    # Should pass on the 2nd attempt; no real sleeping.
+    canary.assert_five_handles_with_retry(
+        "https://example/mcp", 5.0, retries=3, delay=0.0, _sleep=lambda _: None
+    )
+
+
+def test_retry_propagates_persistent_drift(monkeypatch):
+    """A genuine, persistent regression still fails after retries exhaust."""
+    monkeypatch.setattr(
+        canary, "_post", _scripted_post(_FIVE_PLUS_STATUS + ["universe"])
+    )
+    with pytest.raises(canary.CanaryError) as exc:
+        canary.assert_five_handles_with_retry(
+            "https://example/mcp", 5.0, retries=3, delay=0.0, _sleep=lambda _: None
+        )
+    assert exc.value.code == 4
