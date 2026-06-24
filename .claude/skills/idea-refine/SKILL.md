@@ -1,181 +1,100 @@
 ---
 name: idea-refine
-description: Refines raw ideas into actionable concepts through divergent and convergent thinking. Use when the user asks to refine, ideate, stress-test, or sharpen an idea before committing it to the project.
+description: Refines raw ideas into actionable designs, then gates implementation on an approved design. Use when starting any creative or build work, or when asked to refine, ideate, stress-test, or sharpen an idea before committing it to the project.
 ---
 
 # Idea Refine
 
-Refines raw ideas into sharp, actionable concepts worth building through structured divergent and convergent thinking.
+Turn raw ideas into sharp, buildable designs through divergent then convergent
+thinking — and do not start building until a design is approved.
 
-## How It Works
+## The Hard Gate
 
-1.  **Understand & Expand (Divergent):** Restate the idea, ask sharpening questions, and generate variations.
-2.  **Evaluate & Converge:** Cluster ideas, stress-test them, and surface hidden assumptions.
-3.  **Sharpen & Ship:** Produce a concrete markdown one-pager moving work forward.
-
-## Usage
-
-This skill is primarily an interactive dialogue. Invoke it with an idea, and the agent will guide you through the process.
-
-If the refined idea will not be executed immediately, capture it in
-`ideas/INBOX.md` or `ideas/PIPELINE.md` before the turn ends.
-
-**Trigger Phrases:**
-- "Help me refine this idea"
-- "Ideate on [concept]"
-- "Stress-test my plan"
-
-## Output
-
-The final output is a markdown one-pager. If saved, use the existing `ideas/`
-pipeline files or a dedicated file under `ideas/`.
-- Problem Statement
-- Recommended Direction
-- Key Assumptions
-- MVP Scope
-- Not Doing list
-
-## Detailed Instructions
-
-You are an ideation partner. Your job is to help refine raw ideas into sharp, actionable concepts worth building.
-
-### Philosophy
-
-- Simplicity is the ultimate sophistication. Push toward the simplest version that still solves the real problem.
-- Start with the user experience, work backwards to technology.
-- Say no to 1,000 things. Focus beats breadth.
-- Challenge every assumption. "How it's usually done" is not a reason.
-- Show people the future — don't just give them better horses.
-- The parts you can't see should be as beautiful as the parts you can.
-
-### Process
-
-When the user invokes this skill with an idea (`$ARGUMENTS`), guide them through three phases. Adapt your approach based on what they say — this is a conversation, not a template.
-
-#### Phase 1: Understand & Expand (Divergent)
-
-**Goal:** Take the raw idea and open it up.
-
-1. **Restate the idea** as a crisp "How Might We" problem statement. This forces clarity on what's actually being solved.
-
-2. **Ask 3-5 sharpening questions** — no more. Focus on:
-   - Who is this for, specifically?
-   - What does success look like?
-   - What are the real constraints (time, tech, resources)?
-   - What's been tried before?
-   - Why now?
-
-   Ask only the questions needed to avoid a wrong direction. If the user is not
-   available, state reasonable assumptions, continue, and capture open questions
-   in the artifact.
-
-3. **Generate 5-8 idea variations** using these lenses:
-   - **Inversion:** "What if we did the opposite?"
-   - **Constraint removal:** "What if budget/time/tech weren't factors?"
-   - **Audience shift:** "What if this were for [different user]?"
-   - **Combination:** "What if we merged this with [adjacent idea]?"
-   - **Simplification:** "What's the version that's 10x simpler?"
-   - **10x version:** "What would this look like at massive scale?"
-   - **Expert lens:** "What would [domain] experts find obvious that outsiders wouldn't?"
-
-   Push beyond what the user initially asked for. Create products people don't know they need yet.
-
-**If running inside a codebase:** Use `Glob`, `Grep`, and `Read` to scan for relevant context — existing architecture, patterns, constraints, prior art. Ground your variations in what actually exists. Reference specific files and patterns when relevant.
-
-Read `frameworks.md` in this skill directory for additional ideation frameworks you can draw from. Use them selectively — pick the lens that fits the idea, don't run every framework mechanically.
-
-#### Phase 2: Evaluate & Converge
-
-After the user reacts to Phase 1 (indicates which ideas resonate, pushes back, adds context), shift to convergent mode:
-
-1. **Cluster** the ideas that resonated into 2-3 distinct directions. Each direction should feel meaningfully different, not just variations on a theme.
-
-2. **Stress-test** each direction against three criteria:
-   - **User value:** Who benefits and how much? Is this a painkiller or a vitamin?
-   - **Feasibility:** What's the technical and resource cost? What's the hardest part?
-   - **Differentiation:** What makes this genuinely different? Would someone switch from their current solution?
-
-   Read `refinement-criteria.md` in this skill directory for the full evaluation rubric.
-
-3. **Surface hidden assumptions.** For each direction, explicitly name:
-   - What you're betting is true (but haven't validated)
-   - What could kill this idea
-   - What you're choosing to ignore (and why that's okay for now)
-
-   This is where most ideation fails. Don't skip it.
-
-**Be honest, not supportive.** If an idea is weak, say so with kindness. A good ideation partner is not a yes-machine. Push back on complexity, question real value, and point out when the emperor has no clothes.
-
-#### Phase 3: Sharpen & Ship
-
-Produce a concrete artifact — a markdown one-pager that moves work forward:
-
-```markdown
-# [Idea Name]
-
-## Problem Statement
-[One-sentence "How Might We" framing]
-
-## Recommended Direction
-[The chosen direction and why — 2-3 paragraphs max]
-
-## Key Assumptions to Validate
-- [ ] [Assumption 1 — how to test it]
-- [ ] [Assumption 2 — how to test it]
-- [ ] [Assumption 3 — how to test it]
-
-## MVP Scope
-[The minimum version that tests the core assumption. What's in, what's out.]
-
-## Not Doing (and Why)
-- [Thing 1] — [reason]
-- [Thing 2] — [reason]
-- [Thing 3] — [reason]
-
-## Open Questions
-- [Question that needs answering before building]
+```
+NO implementation skill, code, scaffolding, or build action
+until a design is presented AND the user approves it.
 ```
 
-**The "Not Doing" list is arguably the most valuable part.** Focus is about saying no to good ideas. Make the trade-offs explicit.
+This applies to EVERY project regardless of perceived simplicity. "Too simple to
+need a design" is exactly where unexamined assumptions waste the most work — the
+design can be a few sentences, but it must be presented and approved.
 
-If the idea will not be executed immediately, save or append it under
-`ideas/` so other sessions can see it. If it is being executed now, keep the
-artifact close to the relevant spec or implementation plan.
+## Philosophy
 
-### Anti-patterns to Avoid
+Simplicity is the ultimate sophistication — push to the simplest version that
+still solves the real problem. Start from the user experience, work back to the
+tech. Say no to 1,000 things; focus beats breadth. Challenge every assumption
+("how it's usually done" is not a reason). YAGNI ruthlessly.
 
-- **Don't generate 20+ ideas.** Quality over quantity. 5-8 well-considered variations beat 20 shallow ones.
-- **Don't be a yes-machine.** Push back on weak ideas with specificity and kindness.
-- **Don't skip "who is this for."** Every good idea starts with a person and their problem.
-- **Don't produce a plan without surfacing assumptions.** Untested assumptions are the #1 killer of good ideas.
-- **Don't over-engineer the process.** Three phases, each doing one thing well. Resist adding steps.
-- **Don't just list ideas — tell a story.** Each variation should have a reason it exists, not just be a bullet point.
-- **Don't ignore the codebase.** If you're in a project, the existing architecture is a constraint and an opportunity. Use it.
+## Process
 
-### Tone
+Adapt to the conversation — this is a dialogue, not a template.
 
-Direct, thoughtful, slightly provocative. You're a sharp thinking partner, not a facilitator reading from a script. Channel the energy of "that's interesting, but what if..." -- always pushing one step further without being exhausting.
+### Phase 1 — Understand & expand (divergent)
 
-Read `examples.md` in this skill directory for examples of what great ideation sessions look like.
+1. **Restate the idea** as a crisp "How Might We" problem statement.
+2. **Ask sharpening questions — one at a time**, multiple-choice when possible
+   (3–5 total): who exactly is this for, what does success look like, real
+   constraints, what's been tried, why now. If the user is unavailable, state
+   reasonable assumptions and capture open questions in the artifact.
+3. **Generate 5–8 variations** using lenses: inversion, constraint-removal,
+   audience-shift, combination, simplification (10x simpler), 10x-scale, expert
+   lens. Push beyond what was asked. Read [frameworks.md](frameworks.md) and pick
+   the lenses that fit — don't run every framework mechanically.
+
+Inside a codebase: scan existing architecture, patterns, and prior art with
+Glob/Grep/Read and ground variations in what actually exists. Before refining
+details, assess scope: if the request is really multiple independent subsystems,
+flag it and help decompose into sub-projects, each getting its own
+design→plan→implementation cycle.
+
+### Phase 2 — Evaluate & converge
+
+1. **Cluster** what resonated into 2–3 meaningfully different directions.
+2. **Stress-test** each on user value (painkiller or vitamin?), feasibility
+   (hardest part?), and differentiation (would anyone switch?). Full rubric in
+   [refinement-criteria.md](refinement-criteria.md).
+3. **Surface hidden assumptions** — what you're betting is true but haven't
+   validated, what could kill it, what you're choosing to ignore and why. Most
+   ideation fails here; don't skip it. Be honest, not a yes-machine — push back
+   on weak ideas with specificity and kindness.
+
+### Phase 3 — Design & approve
+
+Propose 2–3 approaches with trade-offs, leading with your recommendation. Then
+present the design in sections scaled to complexity (a few sentences to ~300
+words), asking after each whether it's right: cover architecture, components,
+data flow, error handling, testing. Design for isolation — small units, one
+clear purpose each, well-defined interfaces, independently testable.
+
+Produce a markdown one-pager: **Problem Statement · Recommended Direction · Key
+Assumptions to validate · MVP Scope · Not Doing (and why) · Open Questions.** The
+"Not Doing" list is the most valuable part — focus is saying no to good ideas.
+
+### Phase 4 — Spec & handoff
+
+If executing now: write the validated design to a spec doc, self-review with
+fresh eyes (placeholder scan, internal consistency, scope, ambiguity — fix
+inline), then ask the user to review the written spec before proceeding. Once
+approved, hand off to `planning-and-task-breakdown` to create the implementation
+plan — that's the only next step. (Heavier spec-driven projects may route through
+`spec-driven-development` or the `openspec` CLI instead.)
+
+If not executing now: save the one-pager under `ideas/` (INBOX.md or
+PIPELINE.md) so other sessions can see it.
 
 ## Red Flags
 
-- Generating 20+ shallow variations instead of 5-8 considered ones
-- Skipping the "who is this for" question
-- No assumptions surfaced before committing to a direction
-- Yes-machining weak ideas instead of pushing back with specificity
-- Producing a plan without a "Not Doing" list
-- Ignoring existing codebase constraints when ideating inside a project
-- Jumping straight to Phase 3 output without running Phases 1 and 2
+20+ shallow variations instead of 5–8 considered ones · skipping "who is this
+for" · no assumptions surfaced before committing · yes-machining weak ideas ·
+plan with no "Not Doing" list · ignoring codebase constraints · jumping to output
+without Phases 1–2 · **starting implementation before design approval.**
 
 ## Verification
 
-After completing an ideation session:
-
-- [ ] A clear "How Might We" problem statement exists
-- [ ] The target user and success criteria are defined
-- [ ] Multiple directions were explored, not just the first idea
-- [ ] Hidden assumptions are explicitly listed with validation strategies
-- [ ] A "Not Doing" list makes trade-offs explicit
-- [ ] The output is a concrete artifact (markdown one-pager), not just conversation
-- [ ] The user confirmed the final direction before any implementation work
+- [ ] Clear "How Might We" statement; target user + success criteria defined
+- [ ] Multiple directions explored, not just the first idea
+- [ ] Hidden assumptions listed with validation strategies
+- [ ] "Not Doing" list makes trade-offs explicit
+- [ ] Output is a concrete artifact, not just conversation
+- [ ] User approved the design before any implementation work began

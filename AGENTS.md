@@ -189,6 +189,22 @@ provider-specific files. Claude Code also wires
 `.claude/hooks/cross_provider_drift_guard.py` as a PostToolUse hook for
 `Write`, `Edit`, and `MultiEdit` on the developer teammate.
 
+### Skill methodology [all providers]
+
+The project skills bake in a complete, self-enforcing development methodology
+(merged from obra/superpowers, DietrichGebert/ponytail, and Fission-AI/OpenSpec
+into the native skills). The governing discipline lives in `using-agent-skills`:
+**if there is even a ~1% chance a skill applies, invoke it before responding or
+acting** — including before clarifying questions; user instructions in
+`AGENTS.md` / `CLAUDE.md` always override a skill where they conflict. Core dev
+loop: `idea-refine` (design-approval gate) -> `planning-and-task-breakdown` ->
+`test-driven-development` / `debugging-and-error-recovery` ->
+`code-review-and-quality` (evidence-before-completion gate) ->
+`git-workflow-and-versioning` -> `shipping-and-launch`;
+`subagent-driven-development` runs it via fresh per-task subagents.
+`code-simplification` carries the write-the-least-code ladder. All skills mirror
+into `.claude/skills/` and `.codex/skills/`.
+
 ### Multi-Session Steering
 
 - The user may steer multiple live sessions across different providers at once.

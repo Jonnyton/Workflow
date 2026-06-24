@@ -1,223 +1,136 @@
 ---
 name: planning-and-task-breakdown
-description: Breaks work into ordered tasks. Use when you have a spec or clear requirements and need to break work into implementable tasks. Use when a task feels too large to start, when you need to estimate scope, or when parallel work is possible.
+description: Breaks work into ordered, bite-sized tasks and executes them. Use when you have a spec or clear requirements, when a task feels too large or vague to start, when work can be parallelized, or when you have a written plan to execute.
 ---
 
 # Planning and Task Breakdown
 
 ## Overview
 
-Decompose work into small, verifiable tasks with explicit acceptance criteria. Good task breakdown is the difference between an agent that completes work reliably and one that produces a tangled mess. Every task should be small enough to implement, test, and verify in a single focused session.
+Decompose work into small, independently verifiable tasks with explicit
+acceptance criteria, then execute them one at a time with checkpoints. Good
+breakdown is the difference between reliable completion and a tangled mess.
+Planning *is* the task — implementation without a plan is just typing.
 
 ## When to Use
 
-- You have a spec and need to break it into implementable units
-- A task feels too large or vague to start
-- Work needs to be parallelized across multiple agents or sessions
-- You need to communicate scope to a human
-- The implementation order isn't obvious
+You have a spec to turn into tasks · a task feels too large/vague · work spans
+multiple sessions or agents · you have a written plan to execute. **Skip for**
+single-file changes with obvious scope.
 
-**When NOT to use:** Single-file changes with obvious scope, or when the spec already contains well-defined tasks.
+---
 
-## The Planning Process
+## Part 1 — Writing the plan
 
-### Step 1: Enter Plan Mode
+### Plan first (read-only)
 
-Before writing any code, operate in read-only mode:
+Before writing code, read the spec and relevant code, identify existing patterns
+and conventions, map dependencies, note risks and unknowns. The output is a plan
+document, not implementation.
 
-- Read the spec and relevant codebase sections
-- Identify existing patterns and conventions
-- Map dependencies between components
-- Note risks and unknowns
+### Map the dependency graph and slice vertically
 
-**Do NOT write code during planning.** The output is a plan document, not implementation.
+Order follows the dependency graph bottom-up (schema → models → endpoints →
+client → UI). But slice work **vertically** — one complete feature path at a
+time ("user can register" = schema+API+UI) rather than horizontally ("all
+schema, then all API"). Each vertical slice delivers working, testable
+functionality.
 
-### Step 2: Identify the Dependency Graph
+### Decide file structure
 
-Map what depends on what:
+Map which files each task creates/modifies and what each is responsible for —
+one clear responsibility per file, files that change together live together
+(split by responsibility, not technical layer). Prefer smaller focused files. In
+existing codebases, follow established patterns; don't unilaterally restructure.
 
-```
-Database schema
-    │
-    ├── API models/types
-    │       │
-    │       ├── API endpoints
-    │       │       │
-    │       │       └── Frontend API client
-    │       │               │
-    │       │               └── UI components
-    │       │
-    │       └── Validation logic
-    │
-    └── Seed data / migrations
-```
+### Right-size tasks, write bite-sized steps
 
-Implementation order follows the dependency graph bottom-up: build foundations first.
+A **task** is the smallest unit that carries its own test cycle and is worth a
+fresh reviewer's gate — it ends with an independently testable deliverable. Fold
+setup/config/scaffolding/docs into the task whose deliverable needs them; split
+only where a reviewer could reject one task while approving its neighbor.
 
-### Step 3: Slice Vertically
+Within a task, each **step** is one 2–5 minute action:
+write the failing test → run it, watch it fail → write minimal code → run it,
+watch it pass → commit.
 
-Instead of building all the database, then all the API, then all the UI — build one complete feature path at a time:
+| Size | Files | Break down if… |
+|------|-------|----------------|
+| XS–S | 1–2 | — |
+| M | 3–5 | sweet spot for an agent |
+| L | 5–8 | borderline — prefer splitting |
+| XL | 8+ | **too large, always break down** |
 
-**Bad (horizontal slicing):**
-```
-Task 1: Build entire database schema
-Task 2: Build all API endpoints
-Task 3: Build all UI components
-Task 4: Connect everything
-```
+Break a task down further when it needs >1 focused session, can't be described
+in ≤3 acceptance bullets, touches 2+ independent subsystems, or has "and" in its
+title.
 
-**Good (vertical slicing):**
-```
-Task 1: User can create an account (schema + API + UI for registration)
-Task 2: User can log in (auth schema + API + UI for login)
-Task 3: User can create a task (task schema + API + UI for creation)
-Task 4: User can view task list (query + API + UI for list view)
-```
-
-Each vertical slice delivers working, testable functionality.
-
-### Step 4: Write Tasks
-
-Each task follows this structure:
+### Task structure
 
 ```markdown
-## Task [N]: [Short descriptive title]
-
-**Description:** One paragraph explaining what this task accomplishes.
-
-**Acceptance criteria:**
-- [ ] [Specific, testable condition]
-- [ ] [Specific, testable condition]
-
-**Verification:**
-- [ ] Tests pass: `npm test -- --grep "feature-name"`
-- [ ] Build succeeds: `npm run build`
-- [ ] Manual check: [description of what to verify]
-
-**Dependencies:** [Task numbers this depends on, or "None"]
-
-**Files likely touched:**
-- `src/path/to/file.ts`
-- `tests/path/to/test.ts`
-
-**Estimated scope:** [Small: 1-2 files | Medium: 3-5 files | Large: 5+ files]
+### Task N: [Component]
+**Files:** Create/Modify (exact paths + line ranges) / Test
+**Interfaces:** Consumes (signatures from earlier tasks) · Produces (exact
+  names/types later tasks rely on — the implementer sees only their own task)
+- [ ] Step 1: write failing test (actual test code)
+- [ ] Step 2: run it, expect FAIL with <reason>
+- [ ] Step 3: minimal implementation (actual code)
+- [ ] Step 4: run it, expect PASS
+- [ ] Step 5: commit
+**Acceptance:** specific, testable conditions
+**Verification:** exact commands + expected output
 ```
 
-### Step 5: Order and Checkpoint
+### No placeholders
 
-Arrange tasks so that:
+Every step contains the actual content needed. These are plan failures: "TBD /
+TODO / implement later", "add appropriate error handling", "write tests for the
+above" (without the test code), "similar to Task N" (repeat the code — tasks may
+be read out of order), references to types/functions not defined in any task.
 
-1. Dependencies are satisfied (build foundation first)
-2. Each task leaves the system in a working state
-3. Verification checkpoints occur after every 2-3 tasks
-4. High-risk tasks are early (fail fast)
+### Self-review before handoff
 
-Add explicit checkpoints:
+With fresh eyes against the spec: (1) **coverage** — every requirement maps to a
+task; (2) **placeholder scan** — fix any; (3) **type consistency** — names and
+signatures used in later tasks match earlier definitions. Fix inline.
 
-```markdown
-## Checkpoint: After Tasks 1-3
-- [ ] All tests pass
-- [ ] Application builds without errors
-- [ ] Core user flow works end-to-end
-- [ ] Review with human before proceeding
-```
+---
 
-## Task Sizing Guidelines
+## Part 2 — Executing the plan
 
-| Size | Files | Scope | Example |
-|------|-------|-------|---------|
-| **XS** | 1 | Single function or config change | Add a validation rule |
-| **S** | 1-2 | One component or endpoint | Add a new API endpoint |
-| **M** | 3-5 | One feature slice | User registration flow |
-| **L** | 5-8 | Multi-component feature | Search with filtering and pagination |
-| **XL** | 8+ | **Too large — break it down further** | — |
+1. **Load and review critically.** Raise concerns before starting. Create todos
+   from the plan items.
+2. **Execute task-by-task.** Mark in-progress, follow each step exactly, run the
+   specified verifications, mark complete. Don't skip verifications.
+3. **Checkpoint every 2–3 tasks** — tests pass, build clean, core flow works
+   end-to-end, review before proceeding. Keep the system in a working state
+   after every task; do high-risk tasks early (fail fast).
+4. **Stop and ask, don't guess,** on any blocker: missing dependency, repeated
+   verification failure, unclear instruction, critical plan gap. Never start
+   implementation on main/master without explicit consent.
 
-If a task is L or larger, it should be broken into smaller tasks. An agent performs best on S and M tasks.
+Where subagents are available, dispatch a fresh one per task with review between
+tasks (`subagent-driven-development`) for higher quality; otherwise execute
+inline in batches. Isolate the work in a worktree (`git-workflow-and-versioning`)
+and complete via the finish/merge flow in that same skill.
 
-**When to break a task down further:**
-- It would take more than one focused session (roughly 2+ hours of agent work)
-- You cannot describe the acceptance criteria in 3 or fewer bullet points
-- It touches two or more independent subsystems (e.g., auth and billing)
-- You find yourself writing "and" in the task title (a sign it is two tasks)
+## Parallelization
 
-## Plan Document Template
-
-```markdown
-# Implementation Plan: [Feature/Project Name]
-
-## Overview
-[One paragraph summary of what we're building]
-
-## Architecture Decisions
-- [Key decision 1 and rationale]
-- [Key decision 2 and rationale]
-
-## Task List
-
-### Phase 1: Foundation
-- [ ] Task 1: ...
-- [ ] Task 2: ...
-
-### Checkpoint: Foundation
-- [ ] Tests pass, builds clean
-
-### Phase 2: Core Features
-- [ ] Task 3: ...
-- [ ] Task 4: ...
-
-### Checkpoint: Core Features
-- [ ] End-to-end flow works
-
-### Phase 3: Polish
-- [ ] Task 5: ...
-- [ ] Task 6: ...
-
-### Checkpoint: Complete
-- [ ] All acceptance criteria met
-- [ ] Ready for review
-
-## Risks and Mitigations
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| [Risk] | [High/Med/Low] | [Strategy] |
-
-## Open Questions
-- [Question needing human input]
-```
-
-## Parallelization Opportunities
-
-When multiple agents or sessions are available:
-
-- **Safe to parallelize:** Independent feature slices, tests for already-implemented features, documentation
-- **Must be sequential:** Database migrations, shared state changes, dependency chains
-- **Needs coordination:** Features that share an API contract (define the contract first, then parallelize)
-
-## Common Rationalizations
-
-| Rationalization | Reality |
-|---|---|
-| "I'll figure it out as I go" | That's how you end up with a tangled mess and rework. 10 minutes of planning saves hours. |
-| "The tasks are obvious" | Write them down anyway. Explicit tasks surface hidden dependencies and forgotten edge cases. |
-| "Planning is overhead" | Planning is the task. Implementation without a plan is just typing. |
-| "I can hold it all in my head" | Context windows are finite. Written plans survive session boundaries and compaction. |
+Safe to parallelize: independent feature slices, tests for already-built
+features, docs. Sequential only: migrations, shared-state changes, dependency
+chains. Needs coordination: features sharing an API contract — define the
+contract first, then parallelize.
 
 ## Red Flags
 
-- Starting implementation without a written task list
-- Tasks that say "implement the feature" without acceptance criteria
-- No verification steps in the plan
-- All tasks are XL-sized
-- No checkpoints between tasks
-- Dependency order isn't considered
+Starting implementation with no written task list · tasks without acceptance
+criteria or verification · all tasks XL-sized · no checkpoints · dependency order
+ignored · forcing through a blocker instead of asking.
 
 ## Verification
 
-Before starting implementation, confirm:
-
-- [ ] Every task has acceptance criteria
-- [ ] Every task has a verification step
-- [ ] Task dependencies are identified and ordered correctly
-- [ ] No task touches more than ~5 files
-- [ ] Checkpoints exist between major phases
-- [ ] The human has reviewed and approved the plan
+- [ ] Every task has acceptance criteria and a verification step
+- [ ] No task touches more than ~5 files; steps are bite-sized
+- [ ] Dependencies ordered correctly; checkpoints between phases
+- [ ] No placeholders; types consistent across tasks
+- [ ] Human reviewed/approved the plan before execution
