@@ -312,3 +312,204 @@ def test_universe_read_source_rejects_traversal(tmp_path, monkeypatch):
     # ``..`` is stripped by Path(...).name first, but assert no leak regardless.
     res = json.loads(uni._action_read_source(universe_id=uid, filename="../outside.txt"))
     assert "OUTSIDE" not in json.dumps(res)
+
+
+def test_universe_read_source_legit_file_still_works(tmp_path, monkeypatch):
+    """A real ``canon/sources/<name>`` file must still be readable after the
+    containment-root fix (no regression of the happy path)."""
+    from workflow.api import universe as uni
+
+    uid, udir = _setup_universe(tmp_path, monkeypatch)
+    monkeypatch.setattr(uni, "_default_universe", lambda: uid)
+    monkeypatch.setattr(uni, "_universe_dir", lambda _id: udir)
+
+    sources = udir / "canon" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.txt").write_text("REAL SOURCE BODY", encoding="utf-8")
+
+    res = json.loads(uni._action_read_source(universe_id=uid, filename="doc.txt"))
+    assert res.get("content") == "REAL SOURCE BODY"
+
+
+def test_universe_read_source_rejects_symlinked_sources_dir(tmp_path, monkeypatch):
+    """A *symlinked* ``canon/sources`` directory must not become a trusted root.
+
+    Even when ``read_source`` is asked for a plain basename that exists at the
+    symlink target outside canon, containment is measured against the canon
+    ROOT, so the read is rejected and no external content leaks.
+    """
+    from workflow.api import universe as uni
+
+    uid, udir = _setup_universe(tmp_path, monkeypatch)
+    monkeypatch.setattr(uni, "_default_universe", lambda: uid)
+    monkeypatch.setattr(uni, "_universe_dir", lambda _id: udir)
+
+    canon = udir / "canon"
+    outside = tmp_path / "outside_sources"
+    outside.mkdir()
+    (outside / "leak.txt").write_text("SECRET LEAK", encoding="utf-8")
+    try:
+        (canon / "sources").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:  # pragma: no cover - platform
+        pytest.skip(f"symlink unsupported on this platform: {exc}")
+
+    res = json.loads(uni._action_read_source(universe_id=uid, filename="leak.txt"))
+    assert "error" in res
+    assert "SECRET LEAK" not in json.dumps(res)
+
+
+def test_universe_list_sources_skips_symlinked_sources_dir(tmp_path, monkeypatch):
+    """A symlinked ``canon/sources`` dir must surface no source files."""
+    from workflow.api import universe as uni
+
+    uid, udir = _setup_universe(tmp_path, monkeypatch)
+    monkeypatch.setattr(uni, "_default_universe", lambda: uid)
+    monkeypatch.setattr(uni, "_universe_dir", lambda _id: udir)
+
+    canon = udir / "canon"
+    outside = tmp_path / "outside_sources"
+    outside.mkdir()
+    (outside / "leak.txt").write_text("SECRET LEAK", encoding="utf-8")
+    try:
+        (canon / "sources").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:  # pragma: no cover - platform
+        pytest.skip(f"symlink unsupported on this platform: {exc}")
+
+    listing = json.loads(uni._action_list_sources(universe_id=uid))
+    assert "SECRET LEAK" not in json.dumps(listing)
+    assert listing.get("source_files", []) == []
+
+
+def test_universe_list_sources_legit_files_still_listed(tmp_path, monkeypatch):
+    """Real ``canon/sources/*`` files must still be enumerated (no regression)."""
+    from workflow.api import universe as uni
+
+    uid, udir = _setup_universe(tmp_path, monkeypatch)
+    monkeypatch.setattr(uni, "_default_universe", lambda: uid)
+    monkeypatch.setattr(uni, "_universe_dir", lambda _id: udir)
+
+    sources = udir / "canon" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "one.txt").write_text("one", encoding="utf-8")
+    (sources / "two.txt").write_text("two", encoding="utf-8")
+
+    listing = json.loads(uni._action_list_sources(universe_id=uid))
+    names = {f["filename"] for f in listing["source_files"]}
+    assert names == {"one.txt", "two.txt"}
+
+
+# =====================================================================
+# work_targets.py -- manifest read + manifest-supplied source_path is_file
+# =====================================================================
+
+
+def test_work_targets_manifest_read_rejects_symlink(tmp_path):
+    """A symlinked ``canon/.manifest.json`` pointing outside canon must not be
+    read by the synthesis-signal rehydration path."""
+    from workflow import work_targets
+
+    universe_dir = tmp_path / "u1"
+    canon = universe_dir / "canon"
+    canon.mkdir(parents=True)
+    secret_manifest = tmp_path / "secret_manifest.json"
+    secret_manifest.write_text(
+        json.dumps({"leak.txt": {"routed_to": "sources"}}), encoding="utf-8"
+    )
+    try:
+        (canon / ".manifest.json").symlink_to(secret_manifest)
+    except (OSError, NotImplementedError) as exc:  # pragma: no cover - platform
+        pytest.skip(f"symlink unsupported on this platform: {exc}")
+
+    raw_signals: list = []
+    out = work_targets._rehydrate_missing_synthesis_signals(universe_dir, raw_signals)
+    # Containment escape -> treated as no manifest -> no signals rehydrated.
+    assert out == []
+
+
+def test_work_targets_manifest_read_legit_still_works(tmp_path):
+    """A real ``canon/.manifest.json`` still rehydrates a synthesis signal."""
+    from workflow import work_targets
+
+    universe_dir = tmp_path / "u1"
+    sources = universe_dir / "canon" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.txt").write_text("body", encoding="utf-8")
+    manifest = {
+        "doc.txt": {
+            "filename": "doc.txt",
+            "routed_to": "sources",
+            "source_path": "sources/doc.txt",
+            "file_type": "text",
+            "byte_count": 4,
+        }
+    }
+    (universe_dir / "canon" / ".manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    out = work_targets._rehydrate_missing_synthesis_signals(universe_dir, [])
+    topics = {s.get("source_file") for s in out}
+    assert "doc.txt" in topics
+
+
+def test_work_targets_needs_synthesis_rejects_traversal_source_path(tmp_path):
+    """A manifest ``source_path`` with a traversal must not probe outside canon
+    (runs live on Windows -- no symlink needed)."""
+    from workflow import work_targets
+
+    universe_dir = tmp_path / "u1"
+    (universe_dir / "canon").mkdir(parents=True)
+    (tmp_path / "outside.txt").write_text("OUTSIDE", encoding="utf-8")
+    entry = {
+        "routed_to": "sources",
+        # Collapses to tmp_path/outside.txt -> outside canon -> rejected.
+        "source_path": "sources/../../outside.txt",
+    }
+    assert work_targets._manifest_entry_needs_synthesis(
+        universe_dir, "outside.txt", entry
+    ) is False
+
+
+def test_work_targets_needs_synthesis_legit_source_path(tmp_path):
+    """A real ``sources/<file>`` source_path is detected as present."""
+    from workflow import work_targets
+
+    universe_dir = tmp_path / "u1"
+    sources = universe_dir / "canon" / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.txt").write_text("body", encoding="utf-8")
+    entry = {"routed_to": "sources", "source_path": "sources/doc.txt"}
+    assert work_targets._manifest_entry_needs_synthesis(
+        universe_dir, "doc.txt", entry
+    ) is True
+
+
+# =====================================================================
+# select_task.py -- _count_canon_files enumeration
+# =====================================================================
+
+
+def test_select_task_count_canon_skips_symlink(tmp_path):
+    """``_count_canon_files`` must not count a symlinked ``.md`` escaping canon."""
+    from domains.fantasy_daemon.phases.select_task import _count_canon_files
+
+    canon, _ = _canon_with_escape(tmp_path)
+    state = {"_universe_path": str(tmp_path)}
+    # One legit .md (``real_topic.md``); the escaping symlink is skipped.
+    assert _count_canon_files(state) == 1
+
+
+def test_select_task_count_canon_legit_only(tmp_path):
+    """``_count_canon_files`` counts only legit ``.md`` files (Windows-live,
+    no symlink). Non-md and dotfiles are excluded; the count routes through the
+    guarded chokepoint enumeration rather than a raw ``iterdir`` scan."""
+    from domains.fantasy_daemon.phases.select_task import _count_canon_files
+
+    canon = tmp_path / "canon"
+    canon.mkdir()
+    (canon / "a.md").write_text("a", encoding="utf-8")
+    (canon / "b.md").write_text("b", encoding="utf-8")
+    (canon / "notes.txt").write_text("x", encoding="utf-8")
+    (canon / ".manifest.json").write_text("{}", encoding="utf-8")
+    state = {"_universe_path": str(tmp_path)}
+    assert _count_canon_files(state) == 2

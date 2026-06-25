@@ -4119,11 +4119,16 @@ def _action_list_sources(
 
     manifest = _manifest_data(canon_dir)
     source_files: list[dict[str, Any]] = []
-    # Enumeration is routed through ``iter_canon_files`` rooted at the
-    # ``sources/`` subdir so each entry is resolved + contained before
-    # ``stat``; a symlinked source file escaping ``sources/`` is skipped.
+    # Enumeration is routed through ``iter_canon_files`` with the canon ROOT as
+    # the containment root and ``subdir="sources"`` as the listing target, so
+    # the ``sources/`` dir is itself resolved + contained first. A *symlinked*
+    # ``sources/`` (or a symlinked source file inside it) that escapes canon is
+    # rejected; rooting containment at ``sources/`` directly would let a
+    # symlinked subdir become its own trusted root.
     try:
-        for path in iter_canon_files(sources_dir, include_hidden=False):
+        for path in iter_canon_files(
+            canon_dir, subdir="sources", include_hidden=False
+        ):
             source_files.append(_source_file_entry(path, canon_dir, manifest))
     except OSError as exc:
         return json.dumps({"error": f"Failed to list source files: {exc}"})
@@ -4145,7 +4150,6 @@ def _action_read_source(
     uid = universe_id or _default_universe()
     udir = _universe_dir(uid)
     canon_dir = udir / "canon"
-    sources_dir = canon_dir / "sources"
 
     safe_name = Path(filename).name
     if not safe_name or safe_name != filename:
@@ -4153,10 +4157,15 @@ def _action_read_source(
             "error": "Filename required. Use list_sources to see available files.",
         })
 
-    # Resolve + contain under the ``sources/`` subdir before any stat/read so
-    # a ``../`` traversal or symlinked source entry cannot read outside it.
+    # Resolve + contain against the canon ROOT (not the ``sources/`` subdir) so
+    # a symlinked ``sources/`` directory cannot become its own trusted root and
+    # expose files outside canon. ``sources/<name>`` round-trips through the
+    # containment check against ``canon_dir``; a ``../`` traversal or a
+    # symlinked ``sources/`` / source entry that escapes canon is rejected.
     try:
-        target = safe_canon_path(sources_dir, safe_name, kind="source file")
+        target = safe_canon_path(
+            canon_dir, f"sources/{safe_name}", kind="source file"
+        )
     except ValueError:
         return json.dumps({"error": "Path traversal not allowed."})
     if not target.is_file():

@@ -56,6 +56,7 @@ def iter_canon_files(
     canon_dir: Path,
     suffix: str | tuple[str, ...] | None = None,
     *,
+    subdir: str | None = None,
     recursive: bool = False,
     include_hidden: bool = True,
     kind: str = "existing file",
@@ -72,10 +73,20 @@ def iter_canon_files(
     Parameters
     ----------
     canon_dir:
-        The universe ``canon/`` directory. Missing directories yield nothing.
+        The universe ``canon/`` directory (the canon ROOT). Containment is
+        always measured against this directory's resolved path. Missing
+        directories yield nothing.
     suffix:
         Optional suffix filter, case-insensitive, e.g. ``".md"`` or
         ``(".md", ".txt", ".markdown")``. ``None`` yields every contained file.
+    subdir:
+        Optional canon subdirectory to enumerate (e.g. ``"sources"``). The
+        *containment root stays ``canon_dir``* — the subdir is itself resolved
+        and contained against the canon root before any listing, so a symlinked
+        ``sources/`` whose target lives outside canon is rejected (yields
+        nothing) rather than becoming a trusted root. Passing the subdir as
+        ``canon_dir`` instead would make a symlinked subdir its own root and
+        defeat containment; route subdir enumeration through this parameter.
     recursive:
         When ``True`` walk subdirectories (replaces ``rglob``). Subdirs that
         are legitimate (resolve under canon_root) are descended; symlinked
@@ -94,6 +105,25 @@ def iter_canon_files(
     if not canon_dir.exists():
         return
 
+    # Containment is always measured against the resolved canon ROOT.
+    canon_root = canon_dir.resolve()
+
+    # Resolve the listing directory against the canon ROOT so a symlinked
+    # subdir is caught here rather than silently becoming a trusted root.
+    if subdir is not None:
+        try:
+            listing_dir = resolve_within_canon(canon_dir, subdir, kind="subdir")
+        except ValueError:
+            logger.warning(
+                "Skipping canon subdir escaping canon dir: %s", subdir
+            )
+            return
+    else:
+        listing_dir = canon_root
+
+    if not listing_dir.exists():
+        return
+
     suffixes: tuple[str, ...] | None
     if suffix is None:
         suffixes = None
@@ -102,19 +132,22 @@ def iter_canon_files(
     else:
         suffixes = tuple(s.lower() for s in suffix)
 
-    raw_iter = canon_dir.rglob("*") if recursive else canon_dir.iterdir()
+    raw_iter = listing_dir.rglob("*") if recursive else listing_dir.iterdir()
 
     contained: list[Path] = []
     for entry in raw_iter:
         if not include_hidden and entry.name.startswith("."):
             continue
-        # Build the name relative to canon_dir so recursive subdir entries
-        # (e.g. ``sources/foo.txt``) round-trip through the containment check.
+        # Build the name relative to the resolved canon ROOT so every entry
+        # (including subdir entries like ``sources/foo.txt``) round-trips
+        # through the containment check against the canon root rather than
+        # the subdir. ``listing_dir`` is already resolved + contained, so its
+        # children are descendants of ``canon_root``.
         try:
-            rel = entry.relative_to(canon_dir)
+            rel = entry.relative_to(canon_root)
         except ValueError:
-            # ``rglob`` only yields descendants, so this should not happen;
-            # treat any non-descendant as an escape.
+            # The listing dir is itself contained, so its children are
+            # descendants of canon_root; treat any non-descendant as an escape.
             logger.warning("Skipping canon entry outside canon dir: %s", entry)
             continue
         try:

@@ -241,3 +241,66 @@ class TestIterCanonFiles:
         monkeypatch.setattr(Path, "iterdir", _fake_iterdir)
         names = [p.name for p in iter_canon_files(canon, suffix=".md")]
         assert names == ["real.md"]
+
+
+# =====================================================================
+# iter_canon_files subdir= -- containment stays rooted at the canon ROOT
+# =====================================================================
+
+
+class TestIterCanonFilesSubdir:
+    def test_subdir_yields_legitimate_files(self, tmp_path):
+        canon = tmp_path / "canon"
+        (canon / "sources").mkdir(parents=True)
+        (canon / "sources" / "a.txt").write_text("a", encoding="utf-8")
+        (canon / "sources" / "b.txt").write_text("b", encoding="utf-8")
+        # A top-level file must NOT appear -- only the subdir is enumerated.
+        (canon / "top.md").write_text("top", encoding="utf-8")
+        names = [
+            p.name for p in iter_canon_files(canon, subdir="sources")
+        ]
+        assert names == ["a.txt", "b.txt"]
+
+    def test_missing_subdir_yields_nothing(self, tmp_path):
+        canon = tmp_path / "canon"
+        canon.mkdir()
+        assert list(iter_canon_files(canon, subdir="sources")) == []
+
+    def test_subdir_resolves_outside_is_rejected_live(self, tmp_path):
+        """A ``subdir`` that ``.resolve()`` lands outside canon yields nothing
+        (runs live on Windows -- no symlink needed)."""
+        canon = tmp_path / "canon"
+        canon.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "leak.txt").write_text("LEAK", encoding="utf-8")
+        # ``../outside`` collapses to a sibling of canon -> rejected.
+        results = list(iter_canon_files(canon, subdir="../outside"))
+        assert results == []
+
+    def test_symlinked_subdir_root_is_rejected(self, tmp_path):
+        """A *symlinked* ``sources/`` whose target lives outside canon must not
+        become a trusted root -- its files must not be yielded."""
+        canon = tmp_path / "canon"
+        canon.mkdir()
+        (canon / "real.md").write_text("real", encoding="utf-8")
+        outside = tmp_path / "outside_sources"
+        outside.mkdir()
+        (outside / "leak.txt").write_text("LEAK", encoding="utf-8")
+        _make_symlink(canon / "sources", outside)
+        results = list(iter_canon_files(canon, subdir="sources"))
+        contents = {p.read_text(encoding="utf-8") for p in results}
+        assert "LEAK" not in contents
+        assert results == []
+
+    def test_symlinked_file_inside_legit_subdir_is_skipped(self, tmp_path):
+        """A symlinked file *inside* a legitimate ``sources/`` dir that escapes
+        canon is still skipped while real sibling files are yielded."""
+        canon = tmp_path / "canon"
+        (canon / "sources").mkdir(parents=True)
+        (canon / "sources" / "real.txt").write_text("real", encoding="utf-8")
+        secret = tmp_path / "secret.txt"
+        secret.write_text("SECRET", encoding="utf-8")
+        _make_symlink(canon / "sources" / "evil.txt", secret)
+        names = [p.name for p in iter_canon_files(canon, subdir="sources")]
+        assert names == ["real.txt"]
