@@ -237,8 +237,11 @@ def main() -> int:
                 "Run 'python -m fantasy_daemon serve' separately."
             )
 
-        # Run the daemon
-        return controller.run()
+        # Run the daemon. DaemonController exposes start() (the blocking
+        # daemon loop); there is no run(). start() returns None on clean
+        # shutdown, so main() returns 0.
+        controller.start()
+        return 0
 
     except Exception as e:
         logger.error("Failed to run daemon: %s", e)

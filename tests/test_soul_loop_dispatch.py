@@ -248,8 +248,11 @@ def test_workflow_cli_allows_non_fantasy_domain_for_declared_soul_loop(
         def __init__(self, **kwargs):
             created.append(kwargs)
 
-        def run(self):
-            return 0
+        # Mirror the REAL DaemonController interface: it exposes start()
+        # (blocking daemon loop, returns None), NOT run(). A fake with run()
+        # masked a production AttributeError — keep this matched to reality.
+        def start(self):
+            return None
 
     monkeypatch.setenv("WORKFLOW_SOUL_LOOP_DISPATCH", "on")
     monkeypatch.setattr(
@@ -291,3 +294,17 @@ def test_workflow_cli_allows_non_fantasy_domain_for_declared_soul_loop(
         "no_tray": True,
         "pinned_provider": "codex",
     }]
+
+
+def test_workflow_main_invokes_a_real_daemon_controller_method():
+    """Guard: __main__ must call a method the real DaemonController exposes.
+
+    A fake controller can satisfy main() with any method name, so the
+    monkeypatched test above cannot catch the activated path calling a method
+    the production class lacks. This asserts the real interface directly: the
+    soul-loop entrypoint blocks on start(); there is no run().
+    """
+    from fantasy_daemon.__main__ import DaemonController
+
+    assert hasattr(DaemonController, "start")
+    assert not hasattr(DaemonController, "run")

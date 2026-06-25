@@ -85,7 +85,16 @@ only soul-loop executor used by this branch.
    and empty `effect_authority`.
 3. Run the AGENTS.md Section 14 concurrency/load proof against cloud-worker and
    host-worker overlap, including pending child BranchTasks, producer pumping,
-   restart/backoff behavior, and failure paths.
+   restart/backoff behavior, and failure paths. This proof MUST cover signal
+   handling for the `python -m workflow` subprocess: unlike the legacy
+   `fantasy_daemon` entrypoint (which installs a SIGTERM handler that sets
+   `_stop_event` for a graceful checkpoint flush — `fantasy_daemon/__main__.py`),
+   `workflow/__main__.py` installs no SIGINT/SIGTERM handler. The supervisor
+   stops subprocesses with `proc.terminate()` (SIGTERM) before `proc.kill()`
+   (`cloud_worker.py`), so without a handler a supervisor-initiated restart
+   exits rc=-15, which `SupervisorState.record_exit` counts as a crash
+   (inflated backoff) and skips the graceful flush. Add a SIGTERM handler to
+   the soul-loop entrypoint as part of this gate.
 4. Get opposite-provider review of the code, tests, and the hardening assessment.
 5. Enable the flag for one fresh dry-run universe only.
 6. Run a post-rollout public canary through the real chatbot connector surface
