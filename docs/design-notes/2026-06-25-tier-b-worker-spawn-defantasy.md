@@ -92,9 +92,13 @@ only soul-loop executor used by this branch.
    `workflow/__main__.py` installs no SIGINT/SIGTERM handler. The supervisor
    stops subprocesses with `proc.terminate()` (SIGTERM) before `proc.kill()`
    (`cloud_worker.py`), so without a handler a supervisor-initiated restart
-   exits rc=-15, which `SupervisorState.record_exit` counts as a crash
-   (inflated backoff) and skips the graceful flush. Add a SIGTERM handler to
-   the soul-loop entrypoint as part of this gate.
+   exits rc=-15. The always-true consequence is that the graceful checkpoint
+   flush is skipped — no handler runs before exit. The crash-accounting impact
+   is path-dependent: on a supervisor *queue* restart `cloud_worker.py` forces
+   `returncode = 0`, so `SupervisorState.record_exit` does not count it as a
+   crash there; but on other supervisor-initiated SIGTERM paths the raw rc=-15
+   is recorded as a crash and inflates backoff. Add a SIGTERM handler to the
+   soul-loop entrypoint as part of this gate.
 4. Get opposite-provider review of the code, tests, and the hardening assessment.
 5. Enable the flag for one fresh dry-run universe only.
 6. Run a post-rollout public canary through the real chatbot connector surface
