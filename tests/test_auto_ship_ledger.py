@@ -34,8 +34,91 @@ from workflow.auto_ship_ledger import (
     new_attempt_id,
     read_attempts,
     record_attempt,
+    summarize_rubric_warnings,
     update_attempt,
 )
+
+# ── rubric warn-mode observability ─────────────────────────────────────────
+
+
+def test_attempt_from_decision_persists_rubric_warnings():
+    decision = {
+        "validation_result": "passed",
+        "would_open_pr": True,
+        "violations": [],
+        "rollback_handle": "revert:x",
+        "rubric_warnings": [
+            {"rule_id": "release_evidence_bundle_incomplete", "field": "x"},
+            {"rule_id": "child_run_not_completed_for_keep", "field": "y"},
+        ],
+    }
+    row = attempt_from_decision(decision=decision, request_id="r1")
+    parsed = json.loads(row.rubric_warnings_json)
+    assert {w["rule_id"] for w in parsed} == {
+        "release_evidence_bundle_incomplete",
+        "child_run_not_completed_for_keep",
+    }
+
+
+def test_attempt_from_decision_empty_warnings_default():
+    row = attempt_from_decision(
+        decision={"validation_result": "passed", "would_open_pr": True},
+        request_id="r2",
+    )
+    assert row.rubric_warnings_json == "[]"
+
+
+def test_from_dict_defaults_rubric_warnings_for_old_rows():
+    old = {
+        "ship_attempt_id": "ship_20260101_aaaaaaaa",
+        "created_at": "t",
+        "updated_at": "t",
+        "ship_status": "skipped",
+    }
+    assert ShipAttempt.from_dict(old).rubric_warnings_json == ""
+
+
+def test_summarize_rubric_warnings_aggregates(tmp_path):
+    warn_sets = [
+        [{"rule_id": "release_evidence_bundle_incomplete"}],
+        [
+            {"rule_id": "release_evidence_bundle_incomplete"},
+            {"rule_id": "child_run_not_completed_for_keep"},
+        ],
+        [],
+    ]
+    for i, warns in enumerate(warn_sets):
+        dec = {
+            "validation_result": "passed",
+            "would_open_pr": True,
+            "rubric_warnings": warns,
+        }
+        record_attempt(tmp_path, attempt_from_decision(decision=dec, request_id=f"r{i}"))
+    summary = summarize_rubric_warnings(tmp_path)
+    assert summary["total_attempts"] == 3
+    assert summary["attempts_with_warnings"] == 2
+    assert summary["rule_id_counts"]["release_evidence_bundle_incomplete"] == 2
+    assert summary["rule_id_counts"]["child_run_not_completed_for_keep"] == 1
+
+
+def test_summarize_rubric_warnings_robust_to_malformed(tmp_path):
+    # empty ledger -> zeros, no side effects, no crash
+    assert summarize_rubric_warnings(tmp_path) == {
+        "total_attempts": 0,
+        "attempts_with_warnings": 0,
+        "rule_id_counts": {},
+    }
+    # a row whose rubric_warnings_json is valid JSON but NOT a list is skipped
+    row = attempt_from_decision(
+        decision={"validation_result": "passed", "would_open_pr": True},
+        request_id="rx",
+    )
+    row.rubric_warnings_json = "1"  # valid JSON, not a list
+    record_attempt(tmp_path, row)
+    summary = summarize_rubric_warnings(tmp_path)
+    assert summary["total_attempts"] == 1
+    assert summary["attempts_with_warnings"] == 0
+
 
 # ── ID generation ─────────────────────────────────────────────────────────
 

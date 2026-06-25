@@ -128,6 +128,11 @@ class ShipAttempt:
     # empty as "no rollback PR yet."
     rollback_pr_number: str = ""
     rollback_pr_url: str = ""
+    # Rubric warn-mode observability: JSON list of rubric-only warnings recorded
+    # on a PASSED row when WORKFLOW_AUTO_SHIP_RUBRIC_MODE=warn (see auto_ship.py).
+    # Forward-compat-safe like the Slice C fields above — from_dict ignores
+    # unknown keys, so older runtimes still read newer rows and vice versa.
+    rubric_warnings_json: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -306,6 +311,48 @@ def find_attempt(
     return None
 
 
+def summarize_rubric_warnings(
+    universe_path: Path, *, limit: int | None = None,
+) -> dict:
+    """Read-only observability for the rubric warn-mode period.
+
+    Aggregates ``rubric_warnings_json`` across recorded attempts so the host can
+    see the real rubric failure rate BEFORE flipping
+    ``WORKFLOW_AUTO_SHIP_RUBRIC_MODE=enforce`` (see
+    docs/design-notes/2026-06-24-coding-loop-eval-gate-wiring.md S2). Returns the
+    total attempts scanned, how many carried rubric warnings, and per-``rule_id``
+    counts (descending). Reads via the standard locked read path; does not mutate
+    any ledger row. Robust to hand-edited/corrupt rows (non-list or unparseable
+    ``rubric_warnings_json`` is skipped, never raises).
+    """
+    if not ledger_path(universe_path).exists():
+        return {"total_attempts": 0, "attempts_with_warnings": 0, "rule_id_counts": {}}
+    attempts = read_attempts(universe_path, limit=limit)
+    rule_counts: dict[str, int] = {}
+    warned = 0
+    for attempt in attempts:
+        raw = attempt.rubric_warnings_json or ""
+        if not raw:
+            continue
+        try:
+            warns = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(warns, list) or not warns:
+            continue
+        warned += 1
+        for w in warns:
+            rid = w.get("rule_id", "?") if isinstance(w, dict) else "?"
+            rule_counts[rid] = rule_counts.get(rid, 0) + 1
+    return {
+        "total_attempts": len(attempts),
+        "attempts_with_warnings": warned,
+        "rule_id_counts": dict(
+            sorted(rule_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ),
+    }
+
+
 def record_attempt(universe_path: Path, attempt: ShipAttempt) -> None:
     """File-locked append. Validates ``ship_status``; stamps timestamps
     if missing.
@@ -450,4 +497,7 @@ def attempt_from_decision(
         would_open_pr=bool(decision.get("would_open_pr")),
         error_class=error_class,
         error_message=error_message,
+        rubric_warnings_json=json.dumps(
+            decision.get("rubric_warnings") or [], default=str
+        ),
     )
