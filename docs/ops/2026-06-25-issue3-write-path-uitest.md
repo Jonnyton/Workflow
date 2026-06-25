@@ -81,7 +81,15 @@ changes.
 
 But if the B-run **confirms** that flipping `openWorldHint` to `false` is what
 clears the bare "No approval received" gate, then `write_page` is exposed to the
-exact same failure and MUST get the same flip (canonical + plugin mirror +
-`chatgpt-app-submission.json` + `test_universe_server_five_handles.py`),
+exact same failure and MUST get the same flip across **every surface that
+advertises the handle**, not just the universe server:
+
+- `workflow/universe_server.py` (canonical) + its plugin mirror
+- `workflow/directory_server.py` (the directory/discovery MCP surface) + its
+  plugin mirror — this is the surface the prior reviewer flagged as easy to miss
+- `chatgpt-app-submission.json`
+- `tests/test_universe_server_five_handles.py` **and**
+  `tests/test_directory_server.py`
+
 followed by the same post-deploy `--assert-handles` canary. Do not close Issue 3
 as fully fixed until `write_page`'s status is resolved one way or the other.
