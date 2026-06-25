@@ -56,6 +56,15 @@ services:
       # Fleet activation only. Goal-pool/marketplace economy stays dark
       # until the PR-177 follow-on intentionally unstubs it.
       WORKFLOW_GOAL_POOL: "off"
+      # Coding-lane eval gates (S2 output-rubric + S3 trajectory) — ENFORCE.
+      # Host-approved flip 2026-06-25: the auto-ship MCP action
+      # (validate_ship_packet) now BLOCKS on a conclusive rubric/trajectory FAIL
+      # instead of warn-only. Both default `warn` in code; set here to make
+      # enforce the deployed default. NOT exercised by the autonomous loop — only
+      # by explicit ship-validation calls — so the flip cannot wedge the loop.
+      # Rollback: set to "warn" (or revert this line) + recreate the daemon.
+      WORKFLOW_AUTO_SHIP_RUBRIC_MODE: "enforce"
+      WORKFLOW_AUTO_SHIP_TRAJECTORY_MODE: "enforce"
       # Pass through anything in the env file.
       WORKFLOW_MCP_CANARY_URL: ${WORKFLOW_MCP_CANARY_URL:-https://tinyassets.io/mcp}
     env_file:

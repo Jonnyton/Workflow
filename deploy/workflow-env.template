@@ -90,6 +90,23 @@ WORKFLOW_GOAL_POOL=off
 # user can write it and both services see the same durable posts.
 WORKFLOW_REPO_ROOT=/data/community-pool
 
+
+# ---------------------------------------------------------------------
+# Coding-lane eval gates (auto-ship MCP action)
+# ---------------------------------------------------------------------
+
+# The auto-ship MCP action (validate_ship_packet) runs two eval gates:
+# S2 output-rubric and S3 trajectory. Each is off | warn (default) | enforce.
+# Host-approved flip 2026-06-25: ENFORCE. On a conclusive rubric / path-quality
+# FAIL the gate BLOCKS the ship instead of only annotating warnings.
+# Setting these here (in /etc/workflow/env) is the live-apply path for a droplet
+# whose compose.yml predates the compose-level default; compose `environment:`
+# also pins enforce for clean deploys. NOT exercised by the autonomous loop —
+# only explicit ship-validation calls — so the flip cannot wedge the loop.
+# Rollback: set either back to `warn` and recreate the daemon container.
+WORKFLOW_AUTO_SHIP_RUBRIC_MODE=enforce
+WORKFLOW_AUTO_SHIP_TRAJECTORY_MODE=enforce
+
 # Optional base64-encoded auth.json produced by a subscription login:
 #   codex login
 #   base64 -w0 ~/.codex/auth.json
