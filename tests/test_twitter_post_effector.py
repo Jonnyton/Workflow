@@ -227,6 +227,96 @@ def test_twitter_post_derives_idempotency_hint_when_omitted(
     assert result["post_id"] == "derived"
 
 
+def test_twitter_post_rejects_payload_handle_mismatch_with_destination(
+    tmp_path, monkeypatch,
+):
+    """A packet consented for destination 'x:self' must not be able to post
+    from a different account by supplying payload.handle='@other'.
+
+    Even with full authority + active consent for the authorized destination
+    AND daemon-env credentials present for the @other account, the divergent
+    payload handle must be REJECTED and no post attempted. This is the
+    PR-1374 authorization-bypass regression guard.
+    """
+    monkeypatch.delenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", raising=False)
+    # Active consent + authority for the authorized destination only.
+    grant_consent(
+        tmp_path,
+        sink=EXTERNAL_WRITE_SINK_TWITTER_POST,
+        destination="x:self",
+        granted_by="tester",
+    )
+    monkeypatch.setattr(
+        "workflow.effectors.twitter_post.resolve_soul_effect_authority",
+        lambda *_args, **_kwargs: "undeclared",
+    )
+    # Daemon env carries valid per-handle credentials for the @other account
+    # — the exact precondition that made the bypass postable before the fix.
+    monkeypatch.setenv("TWITTER_OTHER_API_KEY", "other-api-key")
+    monkeypatch.setenv("TWITTER_OTHER_API_SECRET", "other-api-secret")
+    monkeypatch.setenv("TWITTER_OTHER_ACCESS_TOKEN", "other-access-token")
+    monkeypatch.setenv("TWITTER_OTHER_ACCESS_TOKEN_SECRET", "other-access-secret")
+
+    post = Mock()
+    monkeypatch.setattr("workflow.effectors.twitter_post._post_tweet", post)
+
+    packet = _packet(payload={"handle": "@other"})
+    result = run_twitter_post_effector(
+        node_id="emit",
+        output_keys=["packet"],
+        run_state={"packet": packet},
+        base_path=tmp_path,
+        run_id="run-handle-mismatch",
+    )
+
+    # No post attempted, structured rejection naming both accounts.
+    post.assert_not_called()
+    assert result.get("error_kind") == "handle_authority_mismatch"
+    assert result["authorized_handle"] == "@kwisatzh4derach"
+    assert result["requested_handle"] == "@other"
+    assert result["destination"] == "x:self"
+    # No success receipt was minted for the mismatched attempt.
+    assert lookup_receipt(
+        tmp_path,
+        idempotency_hint="twitter-post-run-1",
+        sink=EXTERNAL_WRITE_SINK_TWITTER_POST,
+    ) is None
+
+
+def test_twitter_post_payload_handle_matching_destination_is_allowed(
+    tmp_path, monkeypatch,
+):
+    """A payload handle that resolves to the SAME account as the authorized
+    destination is fine — the binding check only blocks divergence, not a
+    redundant restatement of the authorized account."""
+    monkeypatch.delenv("WORKFLOW_EXTERNAL_WRITE_DRY_RUN", raising=False)
+    _set_credentials(monkeypatch)
+    grant_consent(
+        tmp_path,
+        sink=EXTERNAL_WRITE_SINK_TWITTER_POST,
+        destination="x:self",
+        granted_by="tester",
+    )
+    monkeypatch.setattr(
+        "workflow.effectors.twitter_post._post_tweet",
+        lambda **_kwargs: {"data": {"id": "match-ok"}},
+    )
+
+    # 'x:self' normalizes to the default handle; restate it explicitly.
+    packet = _packet(payload={"handle": "@kwisatzh4derach"})
+    result = run_twitter_post_effector(
+        node_id="emit",
+        output_keys=["packet"],
+        run_state={"packet": packet},
+        base_path=tmp_path,
+        run_id="run-handle-match",
+    )
+
+    assert result.get("error_kind") != "handle_authority_mismatch"
+    assert result["post_id"] == "match-ok"
+    assert result["sink_handle"] == "@kwisatzh4derach"
+
+
 def test_branch_dispatch_routes_twitter_post_sink(tmp_path):
     branch = SimpleNamespace(
         node_defs=[

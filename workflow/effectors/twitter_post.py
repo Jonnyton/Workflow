@@ -125,16 +125,37 @@ def _normalize_handle(value: str) -> str:
     return raw
 
 
-def _sink_handle(packet: dict[str, Any]) -> str:
+def _authorized_handle(packet: dict[str, Any]) -> str:
+    """Account/handle the post will use — DERIVED FROM ``destination`` only.
+
+    Authority, consent, and credential resolution all key off the
+    authorized ``destination``. The account actually posted-from is bound
+    to that same destination, never to an arbitrary payload-supplied
+    handle. A packet whose payload names a *different* account is rejected
+    upstream by :func:`_packet_handle_override` rather than silently
+    honored, so authority+consent can never cover one account while the
+    real write lands on another.
+    """
+    destination = _destination(packet)
+    if destination:
+        return _normalize_handle(destination)
+    return _DEFAULT_HANDLE
+
+
+def _packet_handle_override(packet: dict[str, Any]) -> str:
+    """Return any payload/packet-supplied handle, normalized; "" if none.
+
+    Unlike :func:`_authorized_handle` this does NOT fall back to
+    ``destination`` — it surfaces only an explicit caller-supplied handle so
+    the effector can detect (and reject) a handle that disagrees with the
+    authorized destination.
+    """
     payload = _payload(packet)
     for key in ("sink_handle", "handle", "account_handle"):
         value = payload.get(key) or packet.get(key)
         if isinstance(value, str) and value.strip():
             return _normalize_handle(value)
-    destination = _destination(packet)
-    if destination:
-        return _normalize_handle(destination)
-    return _DEFAULT_HANDLE
+    return ""
 
 
 def _env_suffix(value: str) -> str:
@@ -470,7 +491,12 @@ def run_twitter_post_effector(
         }
 
     destination = _destination(packet)
-    handle = _sink_handle(packet)
+    # SECURITY INVARIANT: the account actually posted-from is bound to the
+    # authorized ``destination``, never to an arbitrary payload handle.
+    # Authority, consent, and credential resolution all key off this same
+    # destination-derived handle.
+    handle = _authorized_handle(packet)
+    override_handle = _packet_handle_override(packet)
     text = _text(packet)
     universe_dir = _universe_dir(base_path)
     idempotency_hint = _derive_idempotency_hint(
@@ -485,6 +511,24 @@ def run_twitter_post_effector(
             "error": "packet.destination is required for twitter_post",
             "error_kind": "invalid_destination",
             "phase": "phase_2",
+            "matched_output_key": matched_key,
+        }
+    if override_handle and override_handle != handle:
+        # The payload named an account that does not match the account the
+        # authorized destination resolves to. Authority + consent only cover
+        # the destination-derived account, so honoring this override would
+        # post from an account that was never authorized. Reject, never post.
+        return {
+            "error": (
+                "packet payload handle resolves to a different account than "
+                "the authorized destination; refusing twitter_post to avoid "
+                "posting from an unauthorized account"
+            ),
+            "error_kind": "handle_authority_mismatch",
+            "phase": "phase_2",
+            "destination": destination,
+            "authorized_handle": handle,
+            "requested_handle": override_handle,
             "matched_output_key": matched_key,
         }
     if not text:
