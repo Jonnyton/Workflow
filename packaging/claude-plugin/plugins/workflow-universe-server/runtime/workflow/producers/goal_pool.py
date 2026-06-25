@@ -186,6 +186,20 @@ def _accessible_branch_slugs(repo_root: Path, universe_path: Path | None = None)
 
     Per R9: subscriber's accessible Branches = public (in
     ``<repo_root>/branches/*.yaml``) plus subscriber-local.
+
+    Domain branch slugs (e.g. the fantasy loop wrapper) are added only via
+    ``registered_domain_branch_slugs()``, which a domain populates as an
+    import-time side effect. Per the engine-is-infrastructure principle
+    (``workflow/domain_registry.py``) the engine never imports a specific
+    domain, so this set is **process-dependent by design**: a process that has
+    not loaded a domain (the cloud-worker producer pump, the plugin runtime)
+    will not see that domain's slugs, and a goal-pool task targeting one is
+    skipped here. That is not a lost task — the domain's own daemon, which
+    imports its registrations, still scans the pool at graph-start. Re-injecting
+    a hardcoded domain slug to "fix" this divergence would re-couple the engine
+    to a domain and is explicitly not wanted. See
+    ``test_goal_pool_skips_fantasy_seed_when_unregistered`` /
+    ``test_goal_pool_accepts_registered_fantasy_seed`` which pin both halves.
     """
     from workflow.domain_registry import registered_domain_branch_slugs
 

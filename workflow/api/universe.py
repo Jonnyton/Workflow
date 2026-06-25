@@ -354,7 +354,10 @@ def _universe_loop_dispatch(udir: Path) -> tuple[str, dict[str, Any]]:
             "caveat": (
                 "Legacy universe has PROGRAM.md but no soul.md; keeping the "
                 "fantasy loop as an explicit compatibility path only until "
-                "the universe is migrated to a soul-declared loop."
+                "the universe is migrated to a soul-declared loop. Scheduled "
+                "for removal once PROGRAM.md-only universes are migrated; "
+                "tracked under the de-fantasy audit "
+                "docs/audits/2026-06-24-fantasy-architecture-residue-audit.md."
             ),
         }
     branch_def_id = soul.loop_branch_def_id.strip()

@@ -397,6 +397,34 @@ def test_goal_pool_accepts_registered_fantasy_seed(repo_root, universe_dir):
     assert out[0].branch_def_id == "fantasy_author:universe_cycle_wrapper"
 
 
+def test_goal_pool_skips_fantasy_seed_when_unregistered(repo_root, universe_dir):
+    """Pin the process-dependent de-fantasy divergence.
+
+    In a process that has NOT loaded the fantasy domain (the cloud-worker
+    producer pump, the plugin runtime), ``registered_domain_branch_slugs()`` is
+    empty, so a goal-pool task targeting the fantasy wrapper is skipped here.
+    This is the intended engine-is-infrastructure contract, not a silent
+    regression: the fantasy daemon (which imports its registrations) still
+    scans the pool at graph-start. The complement of
+    ``test_goal_pool_accepts_registered_fantasy_seed`` — together they make the
+    divergence an explicit, tested contract instead of a hidden one.
+    """
+    from workflow.domain_registry import clear_domain_branch_slugs
+
+    clear_domain_branch_slugs()  # simulate a process without the fantasy domain
+    # A real repo has public branches, so the accessible-slug filter is active
+    # (it is fail-open only when the subscriber can reach NO slugs at all). The
+    # fantasy wrapper is simply absent from the accessible set in this process.
+    (repo_root / "branches" / "public_branch.yaml").write_text("{}", encoding="utf-8")
+    _write_pool_yaml(repo_root, "maintenance", "unregistered_fantasy_seed")
+
+    out = GoalPoolProducer().produce(
+        universe_dir, subscribed_goals=["maintenance"],
+    )
+
+    assert out == []
+
+
 def test_goal_pool_mtime_cache_invalidation(repo_root, universe_dir):
     """R3: mtime-based cache. Adding a file invalidates."""
     _write_pool_yaml(repo_root, "maintenance", "first")
