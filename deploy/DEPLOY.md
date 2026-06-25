@@ -327,6 +327,93 @@ Storage Box provisioning (host does this when ready):
 **Restore runbook:** `deploy/RESTORE.md` covers full-volume restore
 from a specific tarball. Estimated 5-15 min depending on archive size.
 
+## Operator access to the live droplet + config/env changes
+
+Day-2 ops on the **already-running** prod droplet — distinct from Step 1
+(new-box provisioning) and Row M (CI *image* deploy). This section exists
+because a session burned time here on 2026-06-25 mistaking a key-name problem
+for "no access".
+
+### SSH access — the deploy key is non-default-named
+
+The operator deploy key is **`~/.ssh/workflow_deploy_ed25519`** (pubkey comment
+`workflow-deploy@…`). It is NOT one of ssh's default names (`id_rsa` /
+`id_ed25519`) and there is usually no `~/.ssh/config` entry, so a bare
+`ssh root@161.35.237.133` never offers it and fails with
+**`Permission denied (publickey)`**. That is NOT "no access" — ssh just didn't
+try the right key. Connect explicitly:
+
+```bash
+chmod 600 ~/.ssh/workflow_deploy_ed25519   # ssh refuses a world-readable key
+ssh -i ~/.ssh/workflow_deploy_ed25519 -o IdentitiesOnly=yes root@161.35.237.133
+```
+
+Add a `~/.ssh/config` entry once so `ssh workflow-droplet` Just Works:
+
+```
+Host workflow-droplet
+    HostName 161.35.237.133
+    User root
+    IdentityFile ~/.ssh/workflow_deploy_ed25519
+    IdentitiesOnly yes
+```
+
+Easiest — the repo wraps this in a **read-only** helper that auto-selects the
+key, fixes perms, and never mutates the daemon:
+
+```bash
+python scripts/droplet.py status   # container names + daemon health
+python scripts/droplet.py env      # auto-ship + writer/provider env in the daemon
+python scripts/droplet.py canary   # loopback MCP probe from inside the daemon
+python scripts/droplet.py ssh -- <cmd>   # one-off remote command
+```
+
+### Two deploy paths — image vs config/env
+
+| Change | How it reaches the live daemon |
+|---|---|
+| **New image** (code merged to `main`) | Automatic: `build-image.yml` → `deploy-prod.yml` (Row M) pins the tag, pulls, restarts, canaries, auto-rolls-back. |
+| **Config / env flag** (eval-gate flip, feature flag) | **Manual** — a config commit does NOT trigger a deploy. Apply on the droplet (below). |
+
+### Drift trap — read before editing compose on the droplet
+
+systemd runs `ExecStart=docker compose -f `**`/opt/workflow/compose.yml`**` up` —
+the **repo-root** compose file, which is **hand-maintained on the droplet and
+drifts from the repo's `deploy/compose.yml`** (the `/opt/workflow` checkout is
+stale + dirty; 2026-06-10 STATUS concern). Therefore:
+
+- Editing the repo's `deploy/compose.yml` and merging does **not** change the
+  live daemon. The live source of truth is the droplet's
+  `/opt/workflow/compose.yml` + `/etc/workflow/env`. Keep them in sync by hand.
+- Do **not** `git pull` in `/opt/workflow` to "sync" — it drags local edits
+  live. Reconciling the drift is a deliberate host task.
+
+### Applying a config/env change to the live daemon
+
+`environment:` in `/opt/workflow/compose.yml` overrides `env_file`
+(`/etc/workflow/env`) for the same key; pick whichever already carries similar
+config.
+
+```bash
+ssh workflow-droplet   # (or the -i form above)
+# Option A — env file (flags shared by daemon + workers):
+printf '\nWORKFLOW_SOME_FLAG=value\n' >> /etc/workflow/env
+# Option B — daemon-only: edit services.daemon.environment in /opt/workflow/compose.yml
+
+# Recreate ONLY the daemon so it re-reads env (brief MCP-surface blip):
+systemctl restart workflow-daemon
+docker exec workflow-daemon printenv | grep WORKFLOW_SOME_FLAG   # confirm it took
+```
+
+Then, from the operator box, confirm the public surface is green (Hard Rule #11):
+`python scripts/droplet.py canary` (loopback) **and**
+`python scripts/mcp_public_canary.py --url https://tinyassets.io/mcp`.
+Rollback: revert the edit + `systemctl restart workflow-daemon`.
+
+Worked example — the 2026-06-25 auto-ship enforce flip set
+`WORKFLOW_AUTO_SHIP_{RUBRIC,TRAJECTORY}_MODE=enforce` exactly this way (durable
+in `/opt/workflow/compose.yml`, verified across a restart).
+
 ## Row M — CI deploy pipeline (GitHub Actions)
 
 `.github/workflows/deploy-prod.yml` auto-deploys the freshly-published
