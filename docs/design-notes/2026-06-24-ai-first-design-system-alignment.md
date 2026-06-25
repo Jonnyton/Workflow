@@ -114,6 +114,35 @@ remaining product call is **cadence**: build the React DS package now (recommend
 do we ever want the existing Svelte marketing site fully migrated to React, or does it stay Svelte
 as a human-owned surface indefinitely?
 
+## Build status (2026-06-24)
+
+**Stage 1+2 DONE + verified + committed** (`WebSite/design-system/`, branch
+`worktree-design-system-alignment`, commit 41904b1a):
+- DTCG 2025.10 tokens generated from canonical CSS (123 tokens), exact var names preserved.
+- React primitives ported faithfully: Button, StatusPill, RitualLabel.
+- `dist/` builds: `index.js` (ESM) + `styles.css` (12.4kb) + `index.d.ts` + `manifest.json`.
+- Storybook 10 (React+Vite) builds clean. DESIGN.md + per-component schema/prompt docs.
+- Live Svelte site untouched; nothing deployed.
+
+## Phase B — site migration plan (the large remaining track)
+
+Honest scope: **23 routes**, and they are NOT standalone. Inventory of shared
+dependencies that must port first (each is real work):
+- **Live MCP data layer** — `$lib/mcp/live.ts` (`fetchLive`/`fetchVitals`) + `$lib/fmt.ts`. Client-side fetch against `https://tinyassets.io/mcp`. → port to framework-neutral TS (no Svelte) — reusable as-is.
+- **Shell** — `+layout.svelte`, `TopNav`, `Footer`, `TinyBot` (chat widget), `WorkflowMark` (SVG). Uses `$app/state` for active-route → Next `usePathname`.
+- **Shared components** — VitalSigns, Ladder, Tick, Term, ChatDemo, Playground (MCP playground), ChapterFolio, LiveBadge, LiveSourceBar, MoodPill, TokenDisclaimer (~14 components).
+- **Special-hard routes** — `graph` (d3-force whole-brain graph), `notebook`/`playground` (MCP playground), i18n (`$lib/i18n`), `goals/[id]` (dynamic).
+
+Recommended execution:
+1. **Scaffold** `WebSite/site-react/` — Next App Router, depends on `@tiny/design-system` (file:). Port the data layer (`live.ts`,`fmt.ts`) + shell first. Verify `next build`.
+2. **Prove the slice** — port the home page (660 lines, ~6 deps) end-to-end; this de-risks the pattern.
+3. **Fan out** the remaining 22 routes in batches via parallel `developer` subagents, each given the Svelte source + the established React/DS conventions, each verified to `next build`. Static-content routes (legal, fine-print, patterns, proof, soul, host, alliance, contribute, economy, commons, connect, build, start) are mostly mechanical. Data/interactive routes (graph, loop, status, goals, notebook, catalog, wiki) are the hard tail.
+4. **Cutover** — only after the React site is visually verified against the live Svelte site, host approves; the GH Pages deploy target swaps. Never auto-deploy.
+
+Effort estimate: shell+home ~half a session; the 22 routes are several sessions
+of agent time (the d3 graph + MCP playground are the long poles). This is why
+it is staged and host-resourced rather than claimed done in one pass.
+
 ## Sources
 
 DTCG `2025.10` stable (w3.org/community/design-tokens); Style Dictionary v5 DTCG default
