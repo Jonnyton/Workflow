@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from domains.fantasy_daemon.phases.world_state_db import connect, get_all_facts, init_db
+from workflow.ingestion.canon_names import (
+    resolve_within_canon as _resolve_within_canon,
+)
 from workflow.ingestion.canon_names import safe_canon_filename, safe_canon_slug
 from workflow.universe_soul import (
     premise_from_soul,
@@ -273,8 +276,21 @@ def _maybe_generate_premise(state: dict[str, Any]) -> str:
     try:
         for f in sorted(canon_dir.iterdir()):
             if f.is_file() and f.suffix == ".md" and not f.name.startswith("."):
+                # Containment before read: ``f.read_text`` follows symlinks, so
+                # a symlinked canon ``.md`` pointing outside canon_dir would
+                # leak external content into the premise prompt. Resolve and
+                # reject escapes before any read.
                 try:
-                    sample = f.read_text(encoding="utf-8")[:500]
+                    filepath = _resolve_within_canon(
+                        canon_dir, f.name, kind="existing file"
+                    )
+                except ValueError:
+                    logger.warning(
+                        "Skipping canon file escaping canon dir: %s", f.name
+                    )
+                    continue
+                try:
+                    sample = filepath.read_text(encoding="utf-8")[:500]
                     canon_files.append((f.name, sample))
                 except OSError:
                     canon_files.append((f.name, ""))
@@ -670,8 +686,20 @@ def _handle_synthesize_source(
 
     Returns True if synthesis produced at least one document.
     """
-    sources_dir = canon_dir / "sources"
-    source_path = sources_dir / source_file
+    # Containment before read: ``source_file`` is signal-controlled, so a
+    # ``../`` traversal or a symlinked ``canon/sources`` / source entry could
+    # read a file outside canon_dir and feed it into synthesis. Resolve the
+    # path under canon_dir (subdirs like ``sources/`` are legitimate; only
+    # escapes are rejected) before any filesystem I/O.
+    try:
+        source_path = _resolve_within_canon(
+            canon_dir, f"sources/{source_file}", kind="source file"
+        )
+    except ValueError:
+        logger.warning(
+            "Source file escapes canon dir, refusing to read: %s", source_file
+        )
+        return False
     if not source_path.exists():
         logger.warning("Source file not found: %s", source_path)
         return False
@@ -770,7 +798,17 @@ def _record_synthesis_failure(canon_dir: Path, source_file: str) -> None:
     This is the only place synthesis_attempts should be incremented —
     the API re-emit path reads the count but never changes it.
     """
-    manifest_path = canon_dir / ".manifest.json"
+    # Containment before read/write: the manifest is read AND written through
+    # ``canon_dir / .manifest.json``; a symlinked marker pointing outside
+    # canon_dir would let both the read and the clobbering write escape.
+    # Resolve and reject escapes before any I/O.
+    try:
+        manifest_path = _resolve_within_canon(
+            canon_dir, ".manifest.json", kind="manifest"
+        )
+    except ValueError:
+        logger.warning("Manifest escapes canon dir, refusing to update")
+        return
     manifest: dict[str, Any] = {}
     try:
         if manifest_path.exists():
@@ -885,8 +923,13 @@ def _generate_canon_documents(state: dict[str, Any]) -> list[str]:
                 from domains.fantasy_daemon.phases._provider_stub import last_provider
                 filename = safe_canon_filename(topic)
                 _write_canon_file(canon_dir, filename, content, model=last_provider)
-                # Verify the file actually exists on disk
-                written_path = (canon_dir / filename).resolve()
+                # Verify the file actually exists on disk. ``filename`` already
+                # passed ``safe_canon_filename`` + ``_write_canon_file``
+                # containment; route the existence check through the same
+                # helper so no raw ``canon_dir / ...`` resolve remains.
+                written_path = _resolve_within_canon(
+                    canon_dir, filename, kind="filename"
+                )
                 if written_path.exists():
                     generated.append(filename)
                     logger.info(
@@ -952,6 +995,18 @@ def _scan_existing_canon(canon_dir: Path) -> set[str]:
     try:
         for f in canon_dir.iterdir():
             if f.is_file() and f.suffix == ".md":
+                # Containment: ``f.is_file()`` follows symlinks, so a symlinked
+                # ``.md`` pointing outside canon_dir would register a spurious
+                # topic and suppress legitimate (re)generation. Skip entries
+                # that escape canon_dir.
+                try:
+                    _resolve_within_canon(canon_dir, f.name, kind="existing file")
+                except ValueError:
+                    logger.warning(
+                        "Skipping canon file escaping canon dir in scan: %s",
+                        f.name,
+                    )
+                    continue
                 slug = f.stem.lower().replace("-", "_").replace(" ", "_")
                 existing.add(slug)
     except OSError:
@@ -1038,23 +1093,6 @@ def _mock_worldbuild_response(topic: str) -> str:
     )
 
 
-def _resolve_within_canon(canon_dir: Path, name: str, kind: str = "path") -> Path:
-    """Resolve ``name`` inside ``canon_dir`` and enforce containment.
-
-    Returns the resolved absolute path. ``.resolve()`` follows symlinks, so
-    a symlinked canon file or marker that points outside ``canon_dir`` is
-    rejected here before any read or write. This is the single containment
-    primitive reused by every canon write path (new files, contradiction /
-    expansion overwrites, and provenance markers). ``kind`` only shapes the
-    error message ("filename", "marker", "existing file") for debuggability.
-    """
-    canon_root = canon_dir.resolve()
-    resolved = (canon_dir / name).resolve()
-    if not resolved.is_relative_to(canon_root):
-        raise ValueError(f"canon {kind} escapes canon directory: {name!r}")
-    return resolved
-
-
 def _write_canon_file(
     canon_dir: Path, filename: str, content: str, model: str = "",
 ) -> None:
@@ -1137,8 +1175,22 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
         for f in sorted(canon_dir.iterdir()):
             if not f.is_file() or f.suffix != ".md" or f.name.startswith("."):
                 continue
+            # Containment before read: ``f.read_text`` follows symlinks, so a
+            # symlinked canon ``.md`` pointing outside canon_dir would leak
+            # external content into the KG/vector index. Resolve and reject
+            # escapes before any read.
             try:
-                text = f.read_text(encoding="utf-8")
+                filepath = _resolve_within_canon(
+                    canon_dir, f.name, kind="existing file"
+                )
+            except ValueError:
+                logger.warning(
+                    "Skipping canon file escaping canon dir for index: %s",
+                    f.name,
+                )
+                continue
+            try:
+                text = filepath.read_text(encoding="utf-8")
                 if not text.strip():
                     continue
                 stats = index_text(

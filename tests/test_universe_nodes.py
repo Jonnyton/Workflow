@@ -38,11 +38,15 @@ from domains.fantasy_daemon.phases.worldbuild import (
     WORLDBUILD_TOPICS,
     _handle_contradiction,
     _handle_expansion,
+    _handle_synthesize_source,
     _identify_gaps,
+    _maybe_generate_premise,
     _mock_worldbuild_response,
     _read_direction_notes,
     _read_premise,
+    _record_synthesis_failure,
     _scan_existing_canon,
+    _trigger_kg_reindex,
     _write_canon_file,
     _write_canon_marker,
     worldbuild,
@@ -681,6 +685,159 @@ class TestWorldbuildCanonGeneration:
                 canon_dir, "magic_system", "detail", "premise", {}
             )
         assert outside.read_text(encoding="utf-8") == "# Outside secret"
+
+    # ------------------------------------------------------------------
+    # Round-2 containment: every canon READ path resolves + contains the
+    # path BEFORE filesystem I/O (a symlinked file can leak outside content
+    # into the LLM prompt / index / overwrite-guard). Codex round-2 finding.
+    # ------------------------------------------------------------------
+
+    def test_handle_synthesize_source_rejects_symlinked_source(self, tmp_path):
+        """A signal-controlled ``source_file`` symlink out of canon is rejected.
+
+        ``_handle_synthesize_source`` joins ``source_file`` under
+        ``canon/sources`` and reads it. ``read_bytes`` follows symlinks, so a
+        symlinked source entry pointing outside canon_dir would feed external
+        content into synthesis. Containment must reject it before any read,
+        so synthesis reports no documents (the read never happens).
+        """
+        canon_dir = tmp_path / "canon"
+        sources_dir = canon_dir / "sources"
+        sources_dir.mkdir(parents=True)
+        outside = tmp_path / "secret.txt"
+        outside.write_text("EXTERNAL SECRET", encoding="utf-8")
+        try:
+            (sources_dir / "evil.txt").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+
+        # Returns False (refused) and never reads the symlink target.
+        assert _handle_synthesize_source(canon_dir, "evil.txt", "premise", {}) is False
+        assert outside.read_text(encoding="utf-8") == "EXTERNAL SECRET"
+
+    def test_handle_synthesize_source_rejects_traversal_source(self, tmp_path):
+        """A ``../`` traversal in ``source_file`` is rejected on any platform.
+
+        No symlink privilege needed: ``.resolve()`` collapses the ``..`` and
+        the containment check lands the path outside canon_dir.
+        """
+        canon_dir = tmp_path / "canon"
+        (canon_dir / "sources").mkdir(parents=True)
+        outside = tmp_path / "secret.txt"
+        outside.write_text("EXTERNAL SECRET", encoding="utf-8")
+
+        assert (
+            _handle_synthesize_source(canon_dir, "../../secret.txt", "premise", {})
+            is False
+        )
+        assert outside.read_text(encoding="utf-8") == "EXTERNAL SECRET"
+
+    def test_record_synthesis_failure_rejects_symlinked_manifest(self, tmp_path):
+        """A symlinked ``.manifest.json`` must not redirect the read/write out.
+
+        ``_record_synthesis_failure`` reads and then rewrites the manifest;
+        both follow symlinks. Containment must reject the escape before any
+        I/O so the outside target is left untouched.
+        """
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        outside = tmp_path / "manifest-outside.json"
+        try:
+            (canon_dir / ".manifest.json").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+
+        # No raise: the function logs + returns; the escape must not be written.
+        _record_synthesis_failure(canon_dir, "source.pdf")
+        assert not outside.exists()
+
+    def test_maybe_generate_premise_skips_symlinked_canon(self, tmp_path):
+        """A symlinked canon ``.md`` must not leak into the premise prompt.
+
+        ``_maybe_generate_premise`` reads a 500-char sample of each canon
+        ``.md``; ``read_text`` follows symlinks. With ONLY an escaping symlink
+        present, the file is skipped, ``canon_files`` is empty, and the
+        function returns "" without ever invoking the provider.
+        """
+        universe_dir = tmp_path / "universe"
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir(parents=True)
+        outside = tmp_path / "secret.md"
+        outside.write_text("EXTERNAL SECRET PREMISE SOURCE", encoding="utf-8")
+        try:
+            (canon_dir / "leak.md").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+
+        called = {"provider": False}
+
+        def _fail_provider(*args, **kwargs):  # pragma: no cover - must not run
+            called["provider"] = True
+            return "should not happen"
+
+        with patch(
+            "domains.fantasy_daemon.phases._provider_stub.call_provider",
+            _fail_provider,
+        ):
+            result = _maybe_generate_premise(
+                {"_universe_path": str(universe_dir), "world_state_version": 0}
+            )
+        assert result == ""
+        assert called["provider"] is False
+
+    def test_trigger_kg_reindex_skips_symlinked_canon(self, tmp_path):
+        """A symlinked canon ``.md`` must not be read into the KG/vector index.
+
+        ``_trigger_kg_reindex`` reads each canon ``.md`` and passes the text to
+        ``index_text``. ``read_text`` follows symlinks, so an escaping symlink
+        would index external content. Containment skips it: with only an
+        escaping symlink present, ``index_text`` is never called.
+        """
+        from workflow import runtime_singletons as runtime
+
+        universe_dir = tmp_path / "universe"
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir(parents=True)
+        outside = tmp_path / "secret.md"
+        outside.write_text("EXTERNAL SECRET TO INDEX", encoding="utf-8")
+        try:
+            (canon_dir / "leak.md").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+
+        indexed = {"count": 0}
+
+        def _fake_index_text(*args, **kwargs):  # pragma: no cover - must not run
+            indexed["count"] += 1
+            return {"entities": 0, "edges": 0, "facts": 0, "chunks_indexed": 0}
+
+        # Provide a non-None backend so the early "no backends" return is skipped.
+        sentinel = object()
+        with patch.object(runtime, "knowledge_graph", sentinel), \
+                patch.object(runtime, "vector_store", sentinel), \
+                patch.object(runtime, "embed_fn", None), \
+                patch(
+                    "workflow.ingestion.indexer.index_text", _fake_index_text
+                ):
+            _trigger_kg_reindex({"_universe_path": str(universe_dir)})
+        assert indexed["count"] == 0
+
+    def test_scan_existing_canon_skips_symlinked_escape(self, tmp_path):
+        """A symlinked canon ``.md`` escaping canon_dir is not counted.
+
+        Without the guard, a symlinked ``magic_system.md -> /outside`` would
+        register a spurious covered topic and suppress legitimate regeneration.
+        """
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        outside = tmp_path / "magic_system.md"
+        outside.write_text("# Outside", encoding="utf-8")
+        try:
+            (canon_dir / "magic_system.md").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+
+        assert _scan_existing_canon(canon_dir) == set()
 
     def test_mock_worldbuild_response_has_content(self):
         """Mock response should produce valid markdown."""
