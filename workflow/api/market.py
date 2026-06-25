@@ -407,6 +407,49 @@ def normalize_patch_request_incentive(
 
 # ── Escrow MCP handlers ────────────────────────────────────────────────────────
 
+
+def _escrow_host_user() -> str:
+    """The host identity allowed to act on behalf of other actors' escrow."""
+    return (os.environ.get("UNIVERSE_SERVER_HOST_USER") or "host").strip()
+
+
+def _resolve_escrow_actor(
+    kwargs: dict[str, Any], *, payload_key: str = "staker_id"
+) -> tuple[str | None, str | None]:
+    """Resolve the actor a money-escrow action operates on, from auth context.
+
+    Financial-integrity rule (slice1a review CRITICAL 1): money actions
+    (fund / set_wallet / withdraw) act on the AUTHENTICATED actor, never a
+    caller-supplied identity, so a caller cannot fund/withdraw/redirect another
+    actor's escrow. A caller-supplied ``staker_id`` is only honored when it
+    matches the authenticated actor, or when the authenticated actor is the
+    configured host (``UNIVERSE_SERVER_HOST_USER``) acting on behalf of another.
+
+    Returns ``(actor, None)`` on success, or ``(None, error_message)`` when a
+    cross-actor attempt is rejected.
+    """
+    from workflow.api.engine_helpers import _current_actor
+
+    authed = (_current_actor() or "").strip()
+    requested = (kwargs.get(payload_key) or "").strip()
+
+    if not requested or requested == authed:
+        return (authed, None)
+
+    if authed == _escrow_host_user():
+        # Host may act on behalf of another actor's escrow explicitly.
+        return (requested, None)
+
+    return (
+        None,
+        (
+            f"Cross-actor escrow is not permitted: authenticated actor "
+            f"{authed!r} cannot act on {payload_key}={requested!r}. Money "
+            f"actions operate on your own escrow only."
+        ),
+    )
+
+
 def _action_escrow_lock(kwargs: dict[str, Any]) -> str:
     """Lock escrow for a node request. Requires WORKFLOW_PAID_MARKET=on."""
     from workflow.payments.actions import action_escrow_lock
@@ -419,8 +462,12 @@ def _action_escrow_lock(kwargs: dict[str, Any]) -> str:
             "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
         })
 
+    from workflow.api.engine_helpers import _current_actor
+
     node_id = (kwargs.get("node_id") or "").strip()
-    claimer = os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
+    # Lock reserves the caller's OWN funded budget — always the authenticated
+    # actor, never a caller-supplied identity (slice1a review CRITICAL 1).
+    claimer = (_current_actor() or "").strip() or "anonymous"
     currency = (kwargs.get("currency") or "MicroToken").strip()
     raw_amount = kwargs.get("amount", 0)
     try:
@@ -444,6 +491,7 @@ def _action_escrow_lock(kwargs: dict[str, Any]) -> str:
 
 def _action_escrow_release(kwargs: dict[str, Any]) -> str:
     """Release locked escrow to a recipient on completion verdict."""
+    from workflow.api.engine_helpers import _current_actor
     from workflow.payments.actions import action_escrow_release
     from workflow.producers.node_bid import paid_market_enabled
     from workflow.storage import _connect
@@ -457,6 +505,9 @@ def _action_escrow_release(kwargs: dict[str, Any]) -> str:
     lock_id = (kwargs.get("lock_id") or "").strip()
     recipient_id = (kwargs.get("recipient_id") or "").strip()
     evidence = (kwargs.get("evidence") or "").strip()
+    # Only the lock's staker (or host) may release it — pass the authenticated
+    # actor so action_escrow_release can authorize ownership (CRITICAL 1).
+    caller_id = (_current_actor() or "").strip() or "anonymous"
 
     if not recipient_id:
         return json.dumps({
@@ -470,6 +521,8 @@ def _action_escrow_release(kwargs: dict[str, Any]) -> str:
             lock_id=lock_id,
             recipient_id=recipient_id,
             evidence=evidence,
+            caller_id=caller_id,
+            host_id=_escrow_host_user(),
         )
     return json.dumps(result)
 
@@ -510,8 +563,9 @@ def _action_escrow_inspect(kwargs: dict[str, Any]) -> str:
 def _action_escrow_fund(kwargs: dict[str, Any]) -> str:
     """Credit a staker's escrow budget (off-chain / testnet faucet).
 
-    Requires WORKFLOW_PAID_MARKET=on. Defaults to funding the calling user's
-    own budget; pass staker_id to fund another.
+    Requires WORKFLOW_PAID_MARKET=on. Funds the authenticated actor's own
+    budget; a supplied staker_id is honored only when it is the authenticated
+    actor (or the host acting on behalf of another).
     """
     from workflow.payments.actions import action_escrow_fund
     from workflow.producers.node_bid import paid_market_enabled
@@ -523,9 +577,9 @@ def _action_escrow_fund(kwargs: dict[str, Any]) -> str:
             "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
         })
 
-    staker_id = (
-        kwargs.get("staker_id") or os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
-    ).strip()
+    staker_id, err = _resolve_escrow_actor(kwargs, payload_key="staker_id")
+    if err is not None:
+        return json.dumps({"status": "rejected", "error": err})
     currency = (kwargs.get("currency") or "MicroToken").strip()
     raw_amount = kwargs.get("amount", 0)
     try:
@@ -561,7 +615,10 @@ def _action_escrow_balance(kwargs: dict[str, Any]) -> str:
 def _action_escrow_set_wallet(kwargs: dict[str, Any]) -> str:
     """Register an actor's on-chain payout address (where withdrawals land).
 
-    Requires WORKFLOW_PAID_MARKET=on. Defaults to the calling user.
+    Requires WORKFLOW_PAID_MARKET=on. Operates on the authenticated actor; a
+    supplied staker_id is honored only when it is the authenticated actor (or
+    the host acting on behalf of another) — a caller cannot redirect another
+    actor's payout address (slice1a review CRITICAL 1).
     """
     from workflow.payments.actions import action_escrow_set_wallet
     from workflow.payments.settlement_backend import BASE_SEPOLIA_CHAIN_ID
@@ -574,9 +631,9 @@ def _action_escrow_set_wallet(kwargs: dict[str, Any]) -> str:
             "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
         })
 
-    actor_id = (
-        kwargs.get("staker_id") or os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
-    ).strip()
+    actor_id, err = _resolve_escrow_actor(kwargs, payload_key="staker_id")
+    if err is not None:
+        return json.dumps({"status": "rejected", "error": err})
     address = (kwargs.get("wallet_address") or "").strip()
     raw_chain = kwargs.get("chain_id") or BASE_SEPOLIA_CHAIN_ID
     try:
@@ -608,9 +665,11 @@ def _action_escrow_withdraw(kwargs: dict[str, Any]) -> str:
             "error": "Escrow actions require WORKFLOW_PAID_MARKET=on.",
         })
 
-    actor_id = (
-        kwargs.get("staker_id") or os.environ.get("UNIVERSE_SERVER_USER", "anonymous")
-    ).strip()
+    # Withdraw moves funds OUT — only against the authenticated actor's own
+    # balance/wallet (slice1a review CRITICAL 1).
+    actor_id, err = _resolve_escrow_actor(kwargs, payload_key="staker_id")
+    if err is not None:
+        return json.dumps({"status": "rejected", "error": err})
     currency = (kwargs.get("currency") or "MicroToken").strip()
     raw_amount = kwargs.get("amount", 0)
     raw_chain = kwargs.get("chain_id") or BASE_SEPOLIA_CHAIN_ID
@@ -628,11 +687,14 @@ def _action_escrow_withdraw(kwargs: dict[str, Any]) -> str:
             "status": "rejected",
             "error": f"chain_id must be an integer, got {raw_chain!r}.",
         })
+    # Optional client-supplied idempotency key — a retry MUST reuse the same key
+    # so the withdrawal is not paid out twice (slice1a review HIGH 4).
+    idempotency_key = (kwargs.get("idempotency_key") or "").strip() or None
 
     with _connect(_base_path()) as conn:
         result = action_escrow_withdraw(
             conn, actor_id=actor_id, amount=amount, currency=currency,
-            chain_id=chain_id,
+            chain_id=chain_id, idempotency_key=idempotency_key,
         )
     return json.dumps(result)
 

@@ -339,8 +339,107 @@ class BatchedTransaction:
 
 # ── Migration ─────────────────────────────────────────────────────────────────
 
+# New (soft-ref) shape for pending_settlement — no hard FK on escrow_id, since
+# settlements originate from multiple lock sources (escrow_locks, gate_claims,
+# paid bids), not just escrow_balance. Used by the rebuild migration below.
+_PENDING_SETTLEMENT_NEW_DDL = """
+CREATE TABLE pending_settlement (
+    settlement_id   TEXT PRIMARY KEY,
+    escrow_id       TEXT NOT NULL,
+    recipient_id    TEXT NOT NULL,
+    amount          INTEGER NOT NULL CHECK (amount >= 0),
+    treasury_fee    INTEGER NOT NULL DEFAULT 0 CHECK (treasury_fee >= 0),
+    net_amount      INTEGER NOT NULL DEFAULT 0 CHECK (net_amount >= 0),
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','batched','settled','cancelled')),
+    event_type      TEXT NOT NULL DEFAULT 'completion',
+    settlement_key  TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL,
+    settled_at      TEXT,
+    batch_id        TEXT
+);
+"""
+
+_PENDING_SETTLEMENT_COLUMNS = (
+    "settlement_id", "escrow_id", "recipient_id", "amount", "treasury_fee",
+    "net_amount", "status", "event_type", "settlement_key", "created_at",
+    "settled_at", "batch_id",
+)
+
+
+def _pending_settlement_has_stale_fk(conn) -> bool:  # type: ignore[no-untyped-def]
+    """True when an existing pending_settlement carries the legacy hard FK on
+    escrow_id (``REFERENCES escrow_balance(escrow_id)``).
+
+    DBs created before the soft-ref migration keep this FK, which rejects
+    soft-ref settlement rows (lock_id / claim_id origins) under
+    ``PRAGMA foreign_keys = ON``. Returns False if the table is absent.
+    """
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='pending_settlement'"
+    ).fetchone()
+    if not exists:
+        return False
+    for fk in conn.execute("PRAGMA foreign_key_list(pending_settlement)").fetchall():
+        # PRAGMA foreign_key_list columns: id, seq, table, from, to, ...
+        # Index 3 == 'from' (local column), index 2 == referenced table.
+        if (fk[3] == "escrow_id") or (fk[2] == "escrow_balance"):
+            return True
+    return False
+
+
+def _rebuild_pending_settlement(conn) -> None:  # type: ignore[no-untyped-def]
+    """Migrate an existing pending_settlement off the legacy hard FK.
+
+    SQLite cannot drop a column-level FK in place, so this does the standard
+    create-new + copy + drop + rename rebuild. Foreign keys are toggled off for
+    the swap (SQLite requires FKs disabled to rename/drop a referenced table
+    safely) and restored afterward. Wrapped in a transaction so it is atomic.
+    """
+    prev_fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    # foreign_keys cannot be changed inside a transaction; toggle outside.
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        with conn:  # atomic: commit on success, rollback on error
+            conn.execute("DROP TABLE IF EXISTS pending_settlement_new")
+            conn.executescript(
+                _PENDING_SETTLEMENT_NEW_DDL.replace(
+                    "CREATE TABLE pending_settlement",
+                    "CREATE TABLE pending_settlement_new",
+                )
+            )
+            cols = ", ".join(_PENDING_SETTLEMENT_COLUMNS)
+            conn.execute(
+                f"INSERT INTO pending_settlement_new ({cols}) "
+                f"SELECT {cols} FROM pending_settlement"
+            )
+            conn.execute("DROP TABLE pending_settlement")
+            conn.execute(
+                "ALTER TABLE pending_settlement_new RENAME TO pending_settlement"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_settlement_escrow "
+                "ON pending_settlement(escrow_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_settlement_status "
+                "ON pending_settlement(status)"
+            )
+    finally:
+        conn.execute(f"PRAGMA foreign_keys = {'ON' if prev_fk else 'OFF'}")
+
+
 def migrate_settlement_schema(conn) -> None:  # type: ignore[no-untyped-def]
-    """Create settlement tables if absent. Idempotent."""
+    """Create settlement tables if absent, and migrate legacy schemas. Idempotent.
+
+    Safe on both fresh DBs (creates everything) and existing DBs (rebuilds a
+    legacy pending_settlement that still carries the hard escrow_id FK so it
+    accepts soft-ref rows — slice1a review HIGH 3).
+    """
+    # Rebuild a legacy pending_settlement BEFORE the CREATE-IF-NOT-EXISTS run,
+    # since the IF NOT EXISTS would otherwise leave the stale-FK table in place.
+    if _pending_settlement_has_stale_fk(conn):
+        _rebuild_pending_settlement(conn)
     conn.executescript(
         STAKER_ESCROW_BUDGET_SCHEMA + "\n"
         + PAYOUT_WALLET_SCHEMA + "\n"

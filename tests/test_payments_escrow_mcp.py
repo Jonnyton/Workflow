@@ -399,6 +399,99 @@ class TestEscrowRoundTrip:
         assert inspect["lock"]["status"] == "refunded"
 
 
+# ── Cross-actor authorization (slice1a review CRITICAL 1) ──────────────────────
+
+class TestCrossActorAuthorization:
+    """Money escrow actions must act on the authenticated actor only — a caller
+    cannot fund / set-wallet / withdraw against, or release, another actor's
+    escrow by supplying a foreign staker_id / lock_id."""
+
+    ADDR = "0x" + "a" * 40
+
+    def test_fund_rejects_cross_actor_staker(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        # alice authenticated, tries to fund bob's budget — rejected.
+        result = _ext(monkeypatch, tmp_path, user="alice",
+                      action="escrow_fund", escrow_amount=5000,
+                      escrow_staker_id="bob")
+        assert result["status"] == "rejected"
+        assert "cross-actor" in result["error"].lower()
+        # bob's budget is untouched.
+        bob_bal = _ext(monkeypatch, tmp_path, user="bob",
+                       action="escrow_balance")
+        assert bob_bal["total"] == 1_000_000_000  # only the _init pre-fund
+
+    def test_fund_own_staker_allowed(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        # Supplying your OWN id is fine (matches authenticated actor).
+        result = _ext(monkeypatch, tmp_path, user="alice",
+                      action="escrow_fund", escrow_amount=5000,
+                      escrow_staker_id="alice")
+        assert result["status"] == "ok"
+        assert result["staker_id"] == "alice"
+
+    def test_set_wallet_rejects_cross_actor(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        result = _ext(monkeypatch, tmp_path, user="alice",
+                      action="escrow_set_wallet",
+                      escrow_wallet_address=self.ADDR,
+                      escrow_staker_id="bob")
+        assert result["status"] == "rejected"
+        assert "cross-actor" in result["error"].lower()
+
+    def test_withdraw_rejects_cross_actor(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        # bob registers a wallet + has funds; alice tries to withdraw bob's.
+        _ext(monkeypatch, tmp_path, user="bob", action="escrow_set_wallet",
+             escrow_wallet_address=self.ADDR)
+        result = _ext(monkeypatch, tmp_path, user="alice",
+                      action="escrow_withdraw", escrow_amount=1000,
+                      escrow_staker_id="bob")
+        assert result["status"] == "rejected"
+        assert "cross-actor" in result["error"].lower()
+        # bob's balance untouched.
+        bob_bal = _ext(monkeypatch, tmp_path, user="bob",
+                       action="escrow_balance")
+        assert bob_bal["total"] == 1_000_000_000
+
+    def test_release_rejects_non_owner(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        # alice locks escrow on node-x; bob (not the staker) tries to release
+        # it to himself — rejected, alice's funds are not redirected.
+        lock = _ext(monkeypatch, tmp_path, user="alice",
+                    action="escrow_lock", node_id="node-x", escrow_amount=1000)
+        assert lock["status"] == "ok"
+        result = _ext(monkeypatch, tmp_path, user="bob",
+                      action="escrow_release", lock_id=lock["lock_id"],
+                      escrow_recipient_id="bob")
+        assert result["status"] == "rejected"
+        assert "release" in result["error"].lower()
+        # Lock is still locked — not redirected.
+        inspect = _ext(monkeypatch, tmp_path, user="alice",
+                       action="escrow_inspect", lock_id=lock["lock_id"])
+        assert inspect["lock"]["status"] == "locked"
+
+    def test_release_owner_allowed(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        lock = _ext(monkeypatch, tmp_path, user="alice",
+                    action="escrow_lock", node_id="node-y", escrow_amount=1000)
+        result = _ext(monkeypatch, tmp_path, user="alice",
+                      action="escrow_release", lock_id=lock["lock_id"],
+                      escrow_recipient_id="daemon-bob")
+        assert result["status"] == "ok"
+        assert result["disposition"] == "released"
+
+    def test_host_may_act_cross_actor(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        # The configured host identity is allowed to fund another actor.
+        monkeypatch.setenv("UNIVERSE_SERVER_HOST_USER", "platform-host")
+        result = _ext(monkeypatch, tmp_path, user="platform-host",
+                      action="escrow_fund", escrow_amount=5000,
+                      escrow_staker_id="bob")
+        assert result["status"] == "ok"
+        assert result["staker_id"] == "bob"
+
+
 # ── Pure business logic unit tests ────────────────────────────────────────────
 
 class TestPaymentsActionsUnit:

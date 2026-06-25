@@ -341,6 +341,7 @@ def _extensions_impl(
     escrow_staker_id: str = "",
     escrow_wallet_address: str = "",
     escrow_chain_id: int = 0,
+    escrow_idempotency_key: str = "",
     event_id: str = "",
     event_type: str = "",
     event_date: str = "",
@@ -576,6 +577,7 @@ def _extensions_impl(
             "staker_id": escrow_staker_id,
             "wallet_address": escrow_wallet_address,
             "chain_id": escrow_chain_id,
+            "idempotency_key": escrow_idempotency_key,
         }
         return escrow_handler(escrow_kwargs)
 

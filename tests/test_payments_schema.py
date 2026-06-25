@@ -390,6 +390,132 @@ class TestMigrateSettlementSchema:
         assert len(tables) >= 4
 
 
+# Legacy pending_settlement DDL — the pre-soft-ref shape with a HARD FK on
+# escrow_id (REFERENCES escrow_balance). Used to reproduce slice1a review HIGH 3.
+_LEGACY_PENDING_SETTLEMENT_DDL = """
+CREATE TABLE escrow_balance (
+    escrow_id       TEXT PRIMARY KEY,
+    node_id         TEXT NOT NULL,
+    run_id          TEXT NOT NULL,
+    staker_id       TEXT NOT NULL,
+    total_amount    INTEGER NOT NULL,
+    released_amount INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'locked',
+    locked_at       TEXT NOT NULL,
+    resolved_at     TEXT,
+    UNIQUE (node_id, run_id, staker_id)
+);
+CREATE TABLE pending_settlement (
+    settlement_id   TEXT PRIMARY KEY,
+    escrow_id       TEXT NOT NULL REFERENCES escrow_balance(escrow_id),
+    recipient_id    TEXT NOT NULL,
+    amount          INTEGER NOT NULL CHECK (amount >= 0),
+    treasury_fee    INTEGER NOT NULL DEFAULT 0,
+    net_amount      INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    event_type      TEXT NOT NULL DEFAULT 'completion',
+    settlement_key  TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL,
+    settled_at      TEXT,
+    batch_id        TEXT
+);
+"""
+
+
+class TestLegacyFkMigration:
+    """slice1a review HIGH 3: a DB created before the soft-ref change keeps the
+    hard escrow_id FK, which rejects soft-ref settlement rows (lock_id / claim_id
+    origins). migrate_settlement_schema must rebuild the table off the FK."""
+
+    def _legacy_conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(_LEGACY_PENDING_SETTLEMENT_DDL)
+        # Seed one valid (escrow-backed) row so we can verify data is preserved.
+        conn.execute(
+            "INSERT INTO escrow_balance "
+            "(escrow_id, node_id, run_id, staker_id, total_amount, locked_at) "
+            "VALUES ('e1','n1','r1','s1',1000,'2026-06-08T00:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO pending_settlement "
+            "(settlement_id, escrow_id, recipient_id, amount, treasury_fee, "
+            " net_amount, status, event_type, settlement_key, created_at) "
+            "VALUES ('s-old','e1','r1',1000,10,990,'settled','completion',"
+            "'old-key','2026-06-08T00:00:00Z')"
+        )
+        return conn
+
+    def test_legacy_db_rejects_soft_ref_before_migration(self):
+        """Baseline: the legacy FK blocks a soft-ref row (proves the bug)."""
+        conn = self._legacy_conn()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO pending_settlement "
+                "(settlement_id, escrow_id, recipient_id, amount, treasury_fee, "
+                " net_amount, status, event_type, settlement_key, created_at) "
+                "VALUES ('s-soft','lock-abc','r2',500,5,495,'settled',"
+                "'escrow_release','soft-key','2026-06-08T00:00:00Z')"
+            )
+
+    def test_migration_drops_stale_fk_and_accepts_soft_ref(self):
+        conn = self._legacy_conn()
+        migrate_settlement_schema(conn)
+        # FK is gone — a soft-ref row (escrow_id not in escrow_balance) inserts.
+        conn.execute(
+            "INSERT INTO pending_settlement "
+            "(settlement_id, escrow_id, recipient_id, amount, treasury_fee, "
+            " net_amount, status, event_type, settlement_key, created_at) "
+            "VALUES ('s-soft','lock-abc','r2',500,5,495,'settled',"
+            "'escrow_release','soft-key','2026-06-08T00:00:00Z')"
+        )
+        row = conn.execute(
+            "SELECT * FROM pending_settlement WHERE settlement_id='s-soft'"
+        ).fetchone()
+        assert row is not None
+        assert row["escrow_id"] == "lock-abc"
+
+    def test_migration_preserves_existing_rows(self):
+        conn = self._legacy_conn()
+        migrate_settlement_schema(conn)
+        row = conn.execute(
+            "SELECT * FROM pending_settlement WHERE settlement_id='s-old'"
+        ).fetchone()
+        assert row is not None
+        assert row["amount"] == 1000
+        assert row["net_amount"] == 990
+        assert row["settlement_key"] == "old-key"
+
+    def test_migration_idempotent_on_already_migrated_db(self):
+        conn = self._legacy_conn()
+        migrate_settlement_schema(conn)
+        # Second call must be a no-op (no stale FK left to rebuild) and keep data.
+        migrate_settlement_schema(conn)
+        rows = conn.execute(
+            "SELECT COUNT(*) AS c FROM pending_settlement"
+        ).fetchone()
+        assert rows["c"] == 1
+
+    def test_migration_noop_on_fresh_db(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        # Fresh DB — migration creates everything, then a soft-ref row inserts.
+        migrate_settlement_schema(conn)
+        conn.execute(
+            "INSERT INTO pending_settlement "
+            "(settlement_id, escrow_id, recipient_id, amount, treasury_fee, "
+            " net_amount, status, event_type, settlement_key, created_at) "
+            "VALUES ('s1','lock-x','r1',100,1,99,'settled','escrow_release',"
+            "'k1','2026-06-08T00:00:00Z')"
+        )
+        row = conn.execute(
+            "SELECT * FROM pending_settlement WHERE settlement_id='s1'"
+        ).fetchone()
+        assert row is not None
+
+
 # ── DDL integration ───────────────────────────────────────────────────────────
 
 class TestDDLIntegration:

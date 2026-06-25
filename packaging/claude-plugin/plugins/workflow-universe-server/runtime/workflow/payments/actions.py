@@ -42,7 +42,7 @@ from workflow.payments.settlement_backend import (
     BASE_SEPOLIA_CHAIN_ID,
     SettlementBackendError,
     get_settlement_backend,
-    new_idempotency_key,
+    stable_idempotency_key,
 )
 from workflow.payments.settlement_ledger import record_settlement
 from workflow.payments.wallets import (
@@ -162,10 +162,19 @@ def action_escrow_release(
     lock_id: str,
     recipient_id: str,
     evidence: str = "",
+    caller_id: str | None = None,
+    host_id: str | None = None,
 ) -> dict[str, Any]:
     """Release escrow to recipient_id on completion verdict.
 
     Only works on locks in 'locked' status. One-way transition.
+
+    Financial-integrity rule (slice1a review CRITICAL 1): a release moves the
+    staker's locked funds to a recipient. Only the staker who owns the lock
+    (or the configured host acting on their behalf) may release it — an
+    arbitrary caller cannot release another actor's lock or redirect the funds.
+    Pass ``caller_id`` (the authenticated actor) to enforce this; when
+    ``caller_id`` is None the check is skipped (pure-unit / internal callers).
     """
     ensure_escrow_schema(conn)
 
@@ -173,6 +182,29 @@ def action_escrow_release(
         return {"status": "rejected", "error": "lock_id is required."}
     if not recipient_id:
         return {"status": "rejected", "error": "recipient_id is required."}
+
+    # Authorization: resolve the lock first so we can check ownership before any
+    # state transition. release_bonus would also raise on a missing lock, but we
+    # need the staker_id here to authorize.
+    if caller_id is not None:
+        existing = get_lock(conn, lock_id)
+        if existing is None:
+            return {
+                "status": "rejected",
+                "error": f"No escrow lock with lock_id={lock_id!r}.",
+            }
+        owner = (existing.staker_id or "").strip()
+        caller = (caller_id or "").strip()
+        host = (host_id or "").strip()
+        if caller != owner and (not host or caller != host):
+            return {
+                "status": "rejected",
+                "error": (
+                    f"Cross-actor escrow release is not permitted: caller "
+                    f"{caller!r} does not own lock {lock_id!r} (staker "
+                    f"{owner!r}). Only the staker (or host) may release it."
+                ),
+            }
 
     try:
         lock = release_bonus(
@@ -455,6 +487,48 @@ def action_escrow_set_wallet(
 
 # ── escrow_withdraw ───────────────────────────────────────────────────────────
 
+def _withdraw_result_from_batch(
+    conn: sqlite3.Connection,
+    *,
+    idempotency_key: str,
+    actor_id: str,
+    currency: str,
+    chain_id: int,
+    wallet_address: str,
+) -> dict[str, Any] | None:
+    """Reconstruct a prior withdrawal result from a recorded batch + tx log.
+
+    Returns None if no flushed batch with this key exists yet.
+    """
+    row = conn.execute(
+        "SELECT total_amount, status FROM settlement_batch WHERE batch_id = ?",
+        (idempotency_key,),
+    ).fetchone()
+    if row is None or (dict(row).get("status") != "flushed"):
+        return None
+    rec = dict(row)
+    log = conn.execute(
+        "SELECT note FROM transaction_log "
+        "WHERE batch_id = ? AND kind = 'batch_flush' ORDER BY tx_id LIMIT 1",
+        (idempotency_key,),
+    ).fetchone()
+    note = dict(log).get("note", "") if log else ""
+    backend_name, _, tx_ref = note.partition(":")
+    return {
+        "status": "ok",
+        "actor_id": actor_id,
+        "currency": currency,
+        "amount": int(rec["total_amount"]),
+        "chain_id": chain_id,
+        "recipient_wallet": wallet_address,
+        "backend": backend_name,
+        "settlement_status": "settled",
+        "tx_ref": tx_ref,
+        "batch_id": idempotency_key,
+        "idempotent_replay": True,
+    }
+
+
 def action_escrow_withdraw(
     conn: sqlite3.Connection,
     *,
@@ -462,13 +536,19 @@ def action_escrow_withdraw(
     amount: int,
     currency: str = "MicroToken",
     chain_id: int = BASE_SEPOLIA_CHAIN_ID,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Withdraw spendable off-chain balance to the actor's payout wallet.
 
     The off-chain ledger is the source of truth; this settles balance OUT via
     the configured settlement backend (internal marker, or base_sepolia USDC).
-    Debits spendable balance, then settles; on backend failure the debit is
-    refunded so no funds are lost.
+
+    Retry-idempotent (slice1a review HIGH 4): the idempotency key is derived
+    deterministically from the request (or supplied by the client), and the
+    batch row is reserved BEFORE the debit. A retry after an unknown result
+    therefore detects the prior operation and returns it unchanged instead of
+    debiting/paying out a second time. On backend failure the debit is refunded
+    AND the reservation is released so a genuine retry can proceed.
     """
     if not actor_id:
         return {"status": "rejected", "error": "actor_id is required."}
@@ -486,40 +566,102 @@ def action_escrow_withdraw(
             ),
         }
 
-    # Debit spendable balance first; refund if the backend settlement fails.
+    key = stable_idempotency_key(
+        actor_id=actor_id,
+        amount=amount,
+        currency=cur,
+        chain_id=chain_id,
+        recipient_wallet=wallet.address,
+        client_key=idempotency_key,
+    )
+
+    # Replay detection BEFORE any debit: a flushed batch with this key means the
+    # withdrawal already completed — return the prior result, do not double-pay.
+    prior = _withdraw_result_from_batch(
+        conn,
+        idempotency_key=key,
+        actor_id=actor_id,
+        currency=cur,
+        chain_id=chain_id,
+        wallet_address=wallet.address,
+    )
+    if prior is not None:
+        bal = get_balance(conn, staker_id=actor_id, currency=cur)
+        prior["remaining_spendable"] = bal.spendable_amount if bal else 0
+        return prior
+
+    # Reserve the idempotency key by claiming the batch row in 'open' state
+    # BEFORE debiting. A concurrent/duplicate in-flight call hits the PK
+    # conflict here and is treated as a replay — no second debit.
+    now = _now_iso()
+    try:
+        conn.execute(
+            """
+            INSERT INTO settlement_batch
+                (batch_id, recipient_id, total_amount, total_fee, item_count,
+                 status, opened_at, flushed_at)
+            VALUES (?, ?, ?, 0, 1, 'open', ?, NULL)
+            """,
+            (key, actor_id, amount, now),
+        )
+    except sqlite3.IntegrityError:
+        # An in-flight or completed withdrawal already reserved this key.
+        replay = _withdraw_result_from_batch(
+            conn,
+            idempotency_key=key,
+            actor_id=actor_id,
+            currency=cur,
+            chain_id=chain_id,
+            wallet_address=wallet.address,
+        )
+        if replay is not None:
+            bal = get_balance(conn, staker_id=actor_id, currency=cur)
+            replay["remaining_spendable"] = bal.spendable_amount if bal else 0
+            return replay
+        return {
+            "status": "rejected",
+            "error": (
+                "A withdrawal with this idempotency key is already in flight; "
+                "retry once it completes."
+            ),
+        }
+
+    # Debit spendable balance; refund + release the reservation on any failure.
     try:
         new_bal = withdraw_balance(
-            conn, staker_id=actor_id, amount=amount, now_iso=_now_iso(), currency=cur
+            conn, staker_id=actor_id, amount=amount, now_iso=now, currency=cur
         )
     except InsufficientFundsError as exc:
+        conn.execute("DELETE FROM settlement_batch WHERE batch_id = ?", (key,))
         return {"status": "rejected", "error": str(exc)}
 
     backend = get_settlement_backend()
-    idempotency_key = new_idempotency_key()
     try:
         settlement = backend.settle(
             recipient_wallet=wallet.address,
             amount_base_units=amount,
             currency=cur,
-            idempotency_key=idempotency_key,
+            idempotency_key=key,
         )
     except SettlementBackendError as exc:
-        # Settlement failed — restore the debited balance so nothing is lost.
+        # Settlement failed — restore the debited balance and release the
+        # reservation so a genuine retry can proceed.
         credit_balance(
             conn, staker_id=actor_id, amount=amount, now_iso=_now_iso(), currency=cur
         )
+        conn.execute("DELETE FROM settlement_batch WHERE batch_id = ?", (key,))
         return {"status": "rejected", "error": str(exc)}
 
     now = _now_iso()
     tx_ref = settlement["tx_ref"]
+    # Finalize the reserved batch row to 'flushed'.
     conn.execute(
         """
-        INSERT INTO settlement_batch
-            (batch_id, recipient_id, total_amount, total_fee, item_count,
-             status, opened_at, flushed_at)
-        VALUES (?, ?, ?, 0, 1, 'flushed', ?, ?)
+        UPDATE settlement_batch
+        SET status = 'flushed', flushed_at = ?
+        WHERE batch_id = ?
         """,
-        (idempotency_key, actor_id, amount, now, now),
+        (now, key),
     )
     conn.execute(
         """
@@ -528,7 +670,7 @@ def action_escrow_withdraw(
              recorded_at, note)
         VALUES ('batch_flush', NULL, NULL, ?, ?, ?, ?, ?)
         """,
-        (idempotency_key, actor_id, amount, now, f"{settlement['backend']}:{tx_ref}"),
+        (key, actor_id, amount, now, f"{settlement['backend']}:{tx_ref}"),
     )
 
     return {
@@ -541,6 +683,7 @@ def action_escrow_withdraw(
         "backend": settlement["backend"],
         "settlement_status": settlement["status"],
         "tx_ref": tx_ref,
-        "batch_id": idempotency_key,
+        "batch_id": key,
+        "idempotent_replay": False,
         "remaining_spendable": new_bal.spendable_amount,
     }

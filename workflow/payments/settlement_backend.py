@@ -180,3 +180,32 @@ def get_settlement_backend() -> SettlementBackend:
 def new_idempotency_key() -> str:
     """Generate a settlement idempotency key (also the withdrawal/batch id)."""
     return f"wd-{uuid.uuid4().hex}"
+
+
+def stable_idempotency_key(
+    *,
+    actor_id: str,
+    amount: int,
+    currency: str,
+    chain_id: int,
+    recipient_wallet: str,
+    client_key: str | None = None,
+) -> str:
+    """Derive a STABLE withdrawal idempotency key from the request.
+
+    A retry of an unknown-result withdrawal must map to the SAME key so a
+    second debit/payout is detected and skipped (slice1a review HIGH 4). When
+    the client supplies its own ``client_key`` (the recommended path), that is
+    namespaced and used directly so distinct withdrawals of the same shape stay
+    distinct. Without one, the key is derived deterministically from the request
+    shape — same-shape requests are treated as the same operation, which is the
+    safe default for "retry after I don't know if it landed".
+    """
+    if client_key:
+        material = f"client:{client_key}"
+    else:
+        material = (
+            f"{actor_id}|{amount}|{currency}|{chain_id}|{recipient_wallet}"
+        )
+    digest = hashlib.sha256(material.encode()).hexdigest()
+    return f"wd-{digest[:48]}"

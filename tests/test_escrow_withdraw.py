@@ -93,3 +93,89 @@ class TestWithdrawE2E:
         out = _ext(monkeypatch, tmp_path, paid_market=False,
                    action="escrow_withdraw", escrow_amount=100)
         assert out["status"] == "not_available"
+
+
+class TestWithdrawIdempotency:
+    """slice1a review HIGH 4: a retry of a withdrawal (same idempotency key)
+    must NOT debit balance or pay out twice."""
+
+    def _count_batches(self, tmp_path, monkeypatch, batch_id):
+        import sqlite3
+
+        from workflow.storage import db_path
+        conn = sqlite3.connect(str(db_path(tmp_path)))
+        try:
+            return conn.execute(
+                "SELECT COUNT(*) FROM settlement_batch WHERE batch_id = ?",
+                (batch_id,),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_retry_with_client_key_does_not_double_pay(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        _ext(monkeypatch, tmp_path, action="escrow_set_wallet",
+             escrow_wallet_address=ADDR)
+        _ext(monkeypatch, tmp_path, action="escrow_fund", escrow_amount=1_000_000)
+
+        first = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                     escrow_amount=600_000, escrow_idempotency_key="req-42")
+        assert first["status"] == "ok"
+        assert first.get("idempotent_replay") is False
+        assert first["amount"] == 600_000
+
+        bal_after_first = _ext(monkeypatch, tmp_path, action="escrow_balance")
+        assert bal_after_first["total"] == 400_000
+
+        # Client retries the SAME request (didn't see the first result).
+        retry = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                     escrow_amount=600_000, escrow_idempotency_key="req-42")
+        assert retry["status"] == "ok"
+        assert retry["idempotent_replay"] is True
+        assert retry["batch_id"] == first["batch_id"]
+        assert retry["tx_ref"] == first["tx_ref"]
+
+        # Balance debited exactly ONCE; one batch row only.
+        bal_after_retry = _ext(monkeypatch, tmp_path, action="escrow_balance")
+        assert bal_after_retry["total"] == 400_000
+        assert self._count_batches(tmp_path, monkeypatch, first["batch_id"]) == 1
+
+    def test_retry_without_client_key_dedups_same_shape(self, tmp_path, monkeypatch):
+        """Without an explicit key, a same-shape retry (same actor/amount/
+        wallet/chain) still maps to the same operation — the safe default."""
+        _init(tmp_path)
+        _ext(monkeypatch, tmp_path, action="escrow_set_wallet",
+             escrow_wallet_address=ADDR)
+        _ext(monkeypatch, tmp_path, action="escrow_fund", escrow_amount=1_000_000)
+
+        first = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                     escrow_amount=250_000)
+        assert first["status"] == "ok"
+        assert first.get("idempotent_replay") is False
+
+        retry = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                     escrow_amount=250_000)
+        assert retry["idempotent_replay"] is True
+        assert retry["batch_id"] == first["batch_id"]
+
+        bal = _ext(monkeypatch, tmp_path, action="escrow_balance")
+        # Debited once (1_000_000 - 250_000), not twice.
+        assert bal["total"] == 750_000
+
+    def test_distinct_client_keys_allow_separate_withdrawals(self, tmp_path, monkeypatch):
+        _init(tmp_path)
+        _ext(monkeypatch, tmp_path, action="escrow_set_wallet",
+             escrow_wallet_address=ADDR)
+        _ext(monkeypatch, tmp_path, action="escrow_fund", escrow_amount=1_000_000)
+
+        a = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                 escrow_amount=200_000, escrow_idempotency_key="wd-a")
+        b = _ext(monkeypatch, tmp_path, action="escrow_withdraw",
+                 escrow_amount=200_000, escrow_idempotency_key="wd-b")
+        assert a["status"] == "ok" and b["status"] == "ok"
+        assert a["batch_id"] != b["batch_id"]
+        assert b["idempotent_replay"] is False
+
+        bal = _ext(monkeypatch, tmp_path, action="escrow_balance")
+        # Two distinct withdrawals both debited.
+        assert bal["total"] == 600_000
