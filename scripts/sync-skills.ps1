@@ -2,6 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $root ".agents\\skills"
+# Claude Code is the only mirror target. Codex + project-visible agents read
+# `.agents/skills/` directly (AGENTS.md "Project Skills"), so there is no
+# `.codex/skills` mirror by design -- do not add one here.
 $targets = @(
     (Join-Path $root ".claude\\skills")
 )

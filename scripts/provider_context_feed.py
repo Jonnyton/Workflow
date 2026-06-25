@@ -261,22 +261,31 @@ def _parse_worktree_branches(porcelain: str) -> dict[Path, str]:
     return out
 
 
-def _branch_is_merged_to(branch: str, root: Path, base: str = "origin/main") -> bool:
-    """True iff `branch` is fully an ancestor of `base` (no unmerged commits ahead).
+def _merged_branch_set(root: Path, base: str = "origin/main") -> set[str] | None:
+    """Short names of local branches fully merged into `base`, via ONE git call.
 
-    Used to identify dead lanes — a worktree whose branch is already merged into main is
-    not a place for the lead to look for new work. Returns False on any error so the feed
-    defaults to surfacing candidates rather than silently hiding them.
+    Replaces a per-branch `git merge-base --is-ancestor` loop (one subprocess
+    spawn per worktree branch) with a single `git branch --merged`. The old shape
+    grew O(N) subprocess spawns with worktree count and pushed the SessionStart
+    feed toward its hook timeout exactly when the repo was busiest (most lanes).
+
+    Used to identify dead lanes — a worktree whose branch is already an ancestor
+    of `base` is landed work, not a place to look for new work. Returns None on
+    any git error so callers fail safe (surface candidates rather than hide them).
     """
     try:
         result = subprocess.run(
-            ["git", "-C", str(root), "merge-base", "--is-ancestor", branch, base],
+            ["git", "-C", str(root), "branch", "--merged", base,
+             "--format=%(refname:short)"],
             capture_output=True,
-            timeout=3,
+            text=True,
+            timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0
+        return None
+    if result.returncode != 0:
+        return None
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
 def _drop_dead_lane_purposes(
@@ -301,13 +310,15 @@ def _drop_dead_lane_purposes(
         return paths
     if not branch_map:
         return paths
-    dead_worktrees: set[Path] = set()
-    merge_cache: dict[str, bool] = {}
-    for worktree_path, branch in branch_map.items():
-        if branch not in merge_cache:
-            merge_cache[branch] = _branch_is_merged_to(branch, root)
-        if merge_cache[branch]:
-            dead_worktrees.add(worktree_path)
+    merged = _merged_branch_set(root)
+    if merged is None:
+        # git failed -> fail safe: surface everything rather than hide live lanes.
+        return paths
+    dead_worktrees = {
+        worktree_path
+        for worktree_path, branch in branch_map.items()
+        if branch in merged
+    }
     if not dead_worktrees:
         return paths
     live: list[Path] = []

@@ -68,6 +68,8 @@ All landed on branch `worktree-sdlc-best-practices-adoption`, ruff-clean, verifi
 3. **provider_context_feed timing** — widened the hook's inner subprocess timeout 8→9 s and switched to `sys.executable`, so a slow feed fails safe instead of timing out the whole hook. (Deeper fix — caching the git porcelain/merge-base calls — routed below.)
 4. **Skill residue** — rewrote infra-ops references that named the deleted `godaddy-ops`/`cloudflare-ops` skills to point within infra-ops; skills still validate.
 5. **Wove Codex-via-MCP into Claude behavior** — `CLAUDE.md §"Calling Codex via MCP"` documents that `mcp__codex__codex` is a second model family in the harness (opposite-provider review, adversarial/second-opinion, diverse judging, fresh-eyes-when-stuck) with discipline. Demonstrated it by running the **R1 opposite-provider review through Codex** — which caught a real factual error in the design note (wrong wiring point) and returned ADAPT. That is the SDLC research's harness/orchestration + diverse-verification practice, live.
+6. **provider_context_feed O(N)→O(1) (R10)** — replaced the per-branch `merge-base --is-ancestor` loop with one `git branch --merged` (`_merged_branch_set`). Measured **~6 s → 0.88 s**; 20 tests pass. The deeper fix behind the interim timeout-widen.
+7. **Skills sync-target clarity (R9.2)** — documented in `scripts/sync-skills.ps1` that `.claude` is the sole mirror target (Codex reads `.agents/` directly), so no future session re-introduces a `.codex` mirror.
 
 ---
 
@@ -85,8 +87,8 @@ Tracker for the remaining items. None are autonomous-only; each names its blocke
 | R6 | **Reflection Stop/SessionEnd hook** — automate the continuous-learning norm | host-decision (what/where it writes) | Depends on R5 for shared registration. |
 | R7 | **PostToolUse ruff hook** — deterministic format/lint on edit instead of CI-only | host-decision | Depends on R5. |
 | R8 | **ui-test re-run** — fresh live-connector proof; promote to a scored scenario (ties to R1) | host (needs live tunnel + human-driven chatbot) | ~36 days stale. |
-| R9 | **`ui-test/SKILL.md` split** (419 ln) + `SKILLS_AUDIT.md` disposition + `.codex` in sync targets | autonomous (small) | Low risk; not yet done. |
-| R10 | **provider_context_feed caching** — cache git porcelain/merge-base so it stays under budget as worktrees grow | autonomous | Timeout widened as interim; caching is the real fix. |
+| R9 | `.codex` sync-target — **DONE** (documented why `.claude` is sole target; AGENTS.md says Codex reads `.agents/` directly). `ui-test/SKILL.md` split + `SKILLS_AUDIT.md` disposition still open. | navigator / owner | `ui-test` split is **riskier than first rated** — 30+ sections are `## CRITICAL` always-visible operational rules; moving them to load-on-demand refs would hide critical rules. Needs a careful owner-aware pass, not a blind split. |
+| R10 | provider_context_feed git-call cost — **DONE**. Replaced the per-branch `merge-base --is-ancestor` loop (O(N) subprocess spawns) with one `git branch --merged`. Measured **~6 s → 0.88 s**; 20 feed tests pass. Silent-degradation risk resolved. | — | Landed (`_merged_branch_set`). |
 
 ### Confirmed non-goals (won't-do unless a norm is reopened)
 - **Cost-based model routing** — conflicts with the ratified, hook-enforced always-latest-model norm. Would require relaxing `latest_model_guard.py` / `roster_model_audit.py` first.

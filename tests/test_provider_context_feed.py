@@ -382,10 +382,11 @@ def test_drop_dead_lane_purposes_filters_merged_branches(
         live_wt.resolve(): "codex/live-lane",
     }
 
-    def fake_is_merged(branch: str, root: Path, base: str = "origin/main") -> bool:
-        return branch == "codex/dead-lane"
-
-    monkeypatch.setattr(provider_context_feed, "_branch_is_merged_to", fake_is_merged)
+    monkeypatch.setattr(
+        provider_context_feed,
+        "_merged_branch_set",
+        lambda *_a, **_kw: {"codex/dead-lane"},
+    )
 
     kept = provider_context_feed._drop_dead_lane_purposes(
         [dead_purpose, live_purpose],
@@ -408,7 +409,7 @@ def test_drop_dead_lane_purposes_passes_through_when_env_flag_set(
     branch_map = {dead_wt.resolve(): "codex/dead-lane"}
 
     monkeypatch.setattr(
-        provider_context_feed, "_branch_is_merged_to", lambda *_a, **_kw: True
+        provider_context_feed, "_merged_branch_set", lambda *_a, **_kw: {"codex/dead-lane"}
     )
     monkeypatch.setenv("WORKFLOW_FEED_INCLUDE_DEAD_LANES", "1")
 
@@ -438,7 +439,7 @@ def test_drop_dead_lane_purposes_keeps_paths_outside_any_worktree(
     branch_map = {dead_wt.resolve(): "codex/dead-lane"}
 
     monkeypatch.setattr(
-        provider_context_feed, "_branch_is_merged_to", lambda *_a, **_kw: True
+        provider_context_feed, "_merged_branch_set", lambda *_a, **_kw: {"codex/dead-lane"}
     )
 
     kept = provider_context_feed._drop_dead_lane_purposes(
