@@ -1170,7 +1170,7 @@ class TestListCanonSources:
         assert data["pending_synthesis"] == 1
 
         # Verify the signal was written to disk
-        signals_file = universe_dir / "worldbuild_signals.json"
+        signals_file = universe_dir / "enrichment_signals.json"
         assert signals_file.exists()
         signals = json.loads(signals_file.read_text(encoding="utf-8"))
         synth_signals = [
