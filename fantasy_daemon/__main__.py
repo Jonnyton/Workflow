@@ -88,7 +88,12 @@ def _first_trace(output: dict[str, Any]) -> dict[str, Any]:
 
 def _build_provider_router() -> ProviderRouter:
     """Instantiate a ProviderRouter with all available providers."""
-    router = ProviderRouter()
+    from workflow.providers.base import subscription_auth_health
+
+    # Inject the subscription-login probe so the router skips dead-auth
+    # providers in fallback (and fails a dead pinned writer loud) instead of
+    # burning failed attempts — 2026-06-25 loop-wedge follow-up.
+    router = ProviderRouter(auth_health=subscription_auth_health)
 
     # Subprocess providers — skip registration when the binary is absent
     # (cloud hosts). Constructors never raise; binary probe happens here
