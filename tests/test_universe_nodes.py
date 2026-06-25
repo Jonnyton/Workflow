@@ -839,6 +839,187 @@ class TestWorldbuildCanonGeneration:
 
         assert _scan_existing_canon(canon_dir) == set()
 
+    # ------------------------------------------------------------------
+    # Round-3 containment ORDERING: containment must run BEFORE the
+    # ``f.is_file()`` stat. ``Path.is_file()`` follows symlinks (it calls
+    # ``os.stat`` on the target), so an entry that is itself an escaping
+    # symlink must be resolved + rejected *before* any stat touches the
+    # external target. Codex round-3 finding. These tests patch the
+    # module-level ``_resolve_within_canon`` to reject one specific
+    # filename, then assert ``Path.is_file`` is never invoked for that
+    # rejected entry — proving the resolve-first ordering. No symlink
+    # privilege is required, so they run live on Windows too.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ordering_spy(reject_name: str):
+        """Build (patched resolve, is_file spy, events) for ordering proof.
+
+        ``events`` records ``("resolve", name)`` and ``("is_file", name)`` in
+        call order. The patched resolver raises ``ValueError`` for
+        ``reject_name`` (simulating an escaping entry) and resolves everything
+        else normally.
+        """
+        from workflow.ingestion.canon_names import (
+            resolve_within_canon as _real_resolve,
+        )
+
+        events: list[tuple[str, str]] = []
+
+        def fake_resolve(canon_dir, name, kind="path"):
+            events.append(("resolve", name))
+            if name == reject_name:
+                raise ValueError(f"canon {kind} escapes canon directory: {name!r}")
+            return _real_resolve(canon_dir, name, kind=kind)
+
+        real_is_file = Path.is_file
+
+        def spy_is_file(self):
+            events.append(("is_file", self.name))
+            return real_is_file(self)
+
+        return fake_resolve, spy_is_file, events
+
+    def test_scan_existing_canon_resolves_before_stat(self, tmp_path):
+        """``_scan_existing_canon`` resolves containment before ``is_file``.
+
+        Runs live on Windows: a rejected entry must never reach ``is_file``,
+        and a legitimate sibling must still be counted.
+        """
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "escape.md").write_text("# stand-in for escaping entry", encoding="utf-8")
+        (canon_dir / "magic_system.md").write_text("# Magic", encoding="utf-8")
+
+        fake_resolve, spy_is_file, events = self._ordering_spy("escape.md")
+        with patch(
+            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            fake_resolve,
+        ), patch.object(Path, "is_file", spy_is_file):
+            existing = _scan_existing_canon(canon_dir)
+
+        # The rejected entry is dropped; the legitimate sibling survives.
+        assert "magic_system" in existing
+        assert "escape" not in existing
+        # No ``is_file`` for the rejected entry, and for it ``resolve`` precedes
+        # any stat (the entry is skipped before any stat).
+        assert ("is_file", "escape.md") not in events
+        assert ("resolve", "escape.md") in events
+        # For the legitimate entry, resolve precedes its is_file.
+        ri = events.index(("resolve", "magic_system.md"))
+        fi = events.index(("is_file", "magic_system.md"))
+        assert ri < fi
+
+    def test_maybe_generate_premise_resolves_before_stat(self, tmp_path):
+        """``_maybe_generate_premise`` resolves containment before ``is_file``."""
+        universe_dir = tmp_path / "universe"
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir(parents=True)
+        (canon_dir / "escape.md").write_text("EXTERNAL", encoding="utf-8")
+        (canon_dir / "world.md").write_text("A realm of glass.", encoding="utf-8")
+
+        fake_resolve, spy_is_file, events = self._ordering_spy("escape.md")
+
+        def _fail_provider(*args, **kwargs):  # provider may or may not run
+            return "premise"
+
+        with patch(
+            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            fake_resolve,
+        ), patch.object(Path, "is_file", spy_is_file), patch(
+            "domains.fantasy_daemon.phases._provider_stub.call_provider",
+            _fail_provider,
+        ):
+            _maybe_generate_premise(
+                {"_universe_path": str(universe_dir), "world_state_version": 0}
+            )
+
+        assert ("is_file", "escape.md") not in events
+        assert ("resolve", "escape.md") in events
+        ri = events.index(("resolve", "world.md"))
+        fi = events.index(("is_file", "world.md"))
+        assert ri < fi
+
+    def test_trigger_kg_reindex_resolves_before_stat(self, tmp_path):
+        """``_trigger_kg_reindex`` resolves containment before ``is_file``."""
+        from workflow import runtime_singletons as runtime
+
+        universe_dir = tmp_path / "universe"
+        canon_dir = universe_dir / "canon"
+        canon_dir.mkdir(parents=True)
+        (canon_dir / "escape.md").write_text("EXTERNAL", encoding="utf-8")
+        (canon_dir / "world.md").write_text("Lore to index.", encoding="utf-8")
+
+        fake_resolve, spy_is_file, events = self._ordering_spy("escape.md")
+        indexed_names: list[str] = []
+
+        def _fake_index_text(*args, **kwargs):
+            indexed_names.append(kwargs.get("source_id", ""))
+            return {"entities": 0, "edges": 0, "facts": 0, "chunks_indexed": 0}
+
+        sentinel = object()
+        with patch.object(runtime, "knowledge_graph", sentinel), \
+                patch.object(runtime, "vector_store", sentinel), \
+                patch.object(runtime, "embed_fn", None), \
+                patch(
+                    "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+                    fake_resolve,
+                ), \
+                patch.object(Path, "is_file", spy_is_file), \
+                patch("workflow.ingestion.indexer.index_text", _fake_index_text):
+            _trigger_kg_reindex({"_universe_path": str(universe_dir)})
+
+        # Escaping entry never stat'd nor indexed; legitimate entry indexed.
+        assert ("is_file", "escape.md") not in events
+        assert ("resolve", "escape.md") in events
+        assert "world" in indexed_names
+        assert "escape" not in indexed_names
+
+    def test_handle_contradiction_resolves_before_stat(self, tmp_path):
+        """``_handle_contradiction`` resolves containment before ``is_file``.
+
+        The escaping entry's slug also matches the topic; the resolve-first
+        guard must skip it (no stat, no read) and fall through to new-element
+        handling rather than reading the escaping target.
+        """
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "magic_system.md").write_text("# real canon", encoding="utf-8")
+
+        fake_resolve, spy_is_file, events = self._ordering_spy("magic_system.md")
+        with patch(
+            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            fake_resolve,
+        ), patch.object(Path, "is_file", spy_is_file), patch(
+            "domains.fantasy_daemon.phases.worldbuild._handle_new_element",
+        ) as new_el:
+            _handle_contradiction(canon_dir, "magic_system", "detail", "premise", {})
+
+        # The escaping match was skipped before any stat, so no canon content
+        # was found and the new-element path ran instead.
+        assert ("is_file", "magic_system.md") not in events
+        assert ("resolve", "magic_system.md") in events
+        new_el.assert_called_once()
+
+    def test_handle_expansion_resolves_before_stat(self, tmp_path):
+        """``_handle_expansion`` resolves containment before ``is_file``."""
+        canon_dir = tmp_path / "canon"
+        canon_dir.mkdir()
+        (canon_dir / "magic_system.md").write_text("# real canon", encoding="utf-8")
+
+        fake_resolve, spy_is_file, events = self._ordering_spy("magic_system.md")
+        with patch(
+            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            fake_resolve,
+        ), patch.object(Path, "is_file", spy_is_file), patch(
+            "domains.fantasy_daemon.phases.worldbuild._handle_new_element",
+        ) as new_el:
+            _handle_expansion(canon_dir, "magic_system", "detail", "premise", {})
+
+        assert ("is_file", "magic_system.md") not in events
+        assert ("resolve", "magic_system.md") in events
+        new_el.assert_called_once()
+
     def test_mock_worldbuild_response_has_content(self):
         """Mock response should produce valid markdown."""
         content = _mock_worldbuild_response("magic_system")

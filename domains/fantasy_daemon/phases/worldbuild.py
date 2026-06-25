@@ -275,20 +275,26 @@ def _maybe_generate_premise(state: dict[str, Any]) -> str:
     canon_files: list[tuple[str, str]] = []
     try:
         for f in sorted(canon_dir.iterdir()):
-            if f.is_file() and f.suffix == ".md" and not f.name.startswith("."):
-                # Containment before read: ``f.read_text`` follows symlinks, so
-                # a symlinked canon ``.md`` pointing outside canon_dir would
-                # leak external content into the premise prompt. Resolve and
-                # reject escapes before any read.
-                try:
-                    filepath = _resolve_within_canon(
-                        canon_dir, f.name, kind="existing file"
-                    )
-                except ValueError:
-                    logger.warning(
-                        "Skipping canon file escaping canon dir: %s", f.name
-                    )
-                    continue
+            # Containment BEFORE stat: ``f.is_file()`` / ``f.read_text`` follow
+            # symlinks, so an entry that is itself a symlink pointing outside
+            # canon_dir would be stat-followed (and its content leaked into the
+            # premise prompt) if checked first. Resolve and reject escapes
+            # before any ``is_file`` / ``suffix`` / read, and use the contained
+            # path for the stat and read.
+            try:
+                filepath = _resolve_within_canon(
+                    canon_dir, f.name, kind="existing file"
+                )
+            except ValueError:
+                logger.warning(
+                    "Skipping canon file escaping canon dir: %s", f.name
+                )
+                continue
+            if (
+                filepath.is_file()
+                and filepath.suffix == ".md"
+                and not f.name.startswith(".")
+            ):
                 try:
                     sample = filepath.read_text(encoding="utf-8")[:500]
                     canon_files.append((f.name, sample))
@@ -549,17 +555,22 @@ def _handle_contradiction(
     topic_slug = safe_canon_slug(topic)
 
     # Find the relevant canon file. Enforce canon-directory containment
-    # before reading: ``f.is_file()`` / ``read_text`` follow symlinks, so a
+    # BEFORE stat: ``f.is_file()`` / ``read_text`` follow symlinks, so a
     # symlinked ``.md`` whose target lives outside ``canon_dir`` must be
-    # rejected here (same guard as ``_write_canon_file``).
+    # resolved and rejected before any ``is_file`` / slug compare / read
+    # (same guard as ``_write_canon_file``).
     canon_content = ""
     canon_filename = ""
     if canon_dir.exists():
         for f in canon_dir.iterdir():
-            if f.is_file() and f.suffix == ".md":
+            try:
+                filepath = _resolve_within_canon(canon_dir, f.name, kind="existing file")
+            except ValueError:
+                logger.warning("Skipping canon file escaping canon dir: %s", f.name)
+                continue
+            if filepath.is_file() and filepath.suffix == ".md":
                 slug = f.stem.lower().replace("-", "_").replace(" ", "_")
                 if slug == topic_slug or topic_slug in slug or slug in topic_slug:
-                    filepath = _resolve_within_canon(canon_dir, f.name, kind="existing file")
                     canon_content = filepath.read_text(encoding="utf-8")
                     canon_filename = f.name
                     break
@@ -621,17 +632,22 @@ def _handle_expansion(
     topic_slug = safe_canon_slug(topic)
 
     # Find the relevant canon file. Enforce canon-directory containment
-    # before reading: ``f.is_file()`` / ``read_text`` follow symlinks, so a
+    # BEFORE stat: ``f.is_file()`` / ``read_text`` follow symlinks, so a
     # symlinked ``.md`` whose target lives outside ``canon_dir`` must be
-    # rejected here (same guard as ``_write_canon_file``).
+    # resolved and rejected before any ``is_file`` / slug compare / read
+    # (same guard as ``_write_canon_file``).
     canon_content = ""
     canon_filename = ""
     if canon_dir.exists():
         for f in canon_dir.iterdir():
-            if f.is_file() and f.suffix == ".md":
+            try:
+                filepath = _resolve_within_canon(canon_dir, f.name, kind="existing file")
+            except ValueError:
+                logger.warning("Skipping canon file escaping canon dir: %s", f.name)
+                continue
+            if filepath.is_file() and filepath.suffix == ".md":
                 slug = f.stem.lower().replace("-", "_").replace(" ", "_")
                 if slug == topic_slug or topic_slug in slug or slug in topic_slug:
-                    filepath = _resolve_within_canon(canon_dir, f.name, kind="existing file")
                     canon_content = filepath.read_text(encoding="utf-8")
                     canon_filename = f.name
                     break
@@ -994,19 +1010,22 @@ def _scan_existing_canon(canon_dir: Path) -> set[str]:
     existing: set[str] = set()
     try:
         for f in canon_dir.iterdir():
-            if f.is_file() and f.suffix == ".md":
-                # Containment: ``f.is_file()`` follows symlinks, so a symlinked
-                # ``.md`` pointing outside canon_dir would register a spurious
-                # topic and suppress legitimate (re)generation. Skip entries
-                # that escape canon_dir.
-                try:
-                    _resolve_within_canon(canon_dir, f.name, kind="existing file")
-                except ValueError:
-                    logger.warning(
-                        "Skipping canon file escaping canon dir in scan: %s",
-                        f.name,
-                    )
-                    continue
+            # Containment BEFORE stat: ``f.is_file()`` follows symlinks, so a
+            # symlinked entry pointing outside canon_dir would be stat-followed
+            # and register a spurious topic (suppressing legitimate
+            # (re)generation) if checked first. Resolve and reject escapes
+            # before any ``is_file`` / ``suffix``.
+            try:
+                filepath = _resolve_within_canon(
+                    canon_dir, f.name, kind="existing file"
+                )
+            except ValueError:
+                logger.warning(
+                    "Skipping canon file escaping canon dir in scan: %s",
+                    f.name,
+                )
+                continue
+            if filepath.is_file() and filepath.suffix == ".md":
                 slug = f.stem.lower().replace("-", "_").replace(" ", "_")
                 existing.add(slug)
     except OSError:
@@ -1173,12 +1192,11 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
 
     try:
         for f in sorted(canon_dir.iterdir()):
-            if not f.is_file() or f.suffix != ".md" or f.name.startswith("."):
-                continue
-            # Containment before read: ``f.read_text`` follows symlinks, so a
-            # symlinked canon ``.md`` pointing outside canon_dir would leak
-            # external content into the KG/vector index. Resolve and reject
-            # escapes before any read.
+            # Containment BEFORE stat: ``f.is_file()`` / ``f.read_text`` follow
+            # symlinks, so a symlinked entry pointing outside canon_dir would be
+            # stat-followed and its external content leaked into the KG/vector
+            # index if checked first. Resolve and reject escapes before any
+            # ``is_file`` / ``suffix`` / read, and use the contained path.
             try:
                 filepath = _resolve_within_canon(
                     canon_dir, f.name, kind="existing file"
@@ -1188,6 +1206,12 @@ def _trigger_kg_reindex(state: dict[str, Any]) -> None:
                     "Skipping canon file escaping canon dir for index: %s",
                     f.name,
                 )
+                continue
+            if (
+                not filepath.is_file()
+                or filepath.suffix != ".md"
+                or f.name.startswith(".")
+            ):
                 continue
             try:
                 text = filepath.read_text(encoding="utf-8")
