@@ -124,7 +124,26 @@ as a human-owned surface indefinitely?
 - Storybook 10 (React+Vite) builds clean. DESIGN.md + per-component schema/prompt docs.
 - Live Svelte site untouched; nothing deployed.
 
-## Phase B — site migration plan (the large remaining track)
+## Phase B — site migration DONE (2026-06-24)
+
+All 23 routes migrated Svelte→React/Next; final integrated `next build` green
+(28 static pages, types+lint clean). Commits: 05efea5a (shell+home), aedeb5af
+(20 routes wave 1), eca44d9b (graph+loop). Executed via parallel fan-out:
+2 Codex sessions + 2 dev agents, conventions in `WebSite/site-react/PORTING.md`.
+- Shell + home + VitalSigns/Ladder/Tick/Term; 9 redirect stubs + account;
+  legal/fine-print/build/alliance/soul/host/start/commons/goals/goals[id];
+  graph (d3-force) + loop (patch-loop feed).
+
+**Remaining before cutover (host-gated):**
+- TinyBot (1466-line chat widget) still stubbed — port it.
+- Visual diff each React route against the live Svelte site (fidelity gate).
+- goals/[id] static-export: only the 3 home-page ids are prerendered shells;
+  arbitrary ids rely on SPA-fallback (same as the original ssr=false page).
+- Dedupe any co-located `_components` that duplicate shared components.
+- Decide GH Pages deploy swap (site/ → site-react/) — production-impacting,
+  needs host approval + public-surface canary.
+
+## Phase B — original site migration plan (superseded by DONE above)
 
 Honest scope: **23 routes**, and they are NOT standalone. Inventory of shared
 dependencies that must port first (each is real work):
