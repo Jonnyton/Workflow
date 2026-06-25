@@ -59,6 +59,35 @@ production-path; get sign-off (host + Codex) on fixing vs. preserving.
 the fantasy functions; have them `from workflow.providers.call import call_provider`
 and read force-mock via `is_force_mock()` (not the old module global).
 
+**⚠ True consumer surface is ~35 files, not 8 (corrected after full-repo grep —
+the audit + first Codex pass undercounted the fantasy-domain side).** Removing
+`last_provider` / `_FORCE_MOCK` / `_real_router` / `_call_router_with_retry`
+from the old module is **ATOMIC** — `from X import name` binds a snapshot, so
+there is no safe partial; every consumer of a removed symbol must move in the
+same commit. `call_provider` / `call_for_*` callers can keep importing from
+`phases._provider_stub` (it legitimately re-imports `call_provider` for its own
+use and keeps `call_for_*`), but ENGINE `call_provider` imports must still move
+to `workflow.providers.call` to satisfy the de-fantasy goal + import guard.
+
+Removed-symbol consumers that MUST move atomically:
+- `last_provider` -> `get_last_provider()`:
+  `domains/fantasy_daemon/phases/worldbuild.py:489,539,608,909`,
+  `workflow/ingestion/extractors.py:260/315`,
+  `fantasy_daemon/__main__.py:1962` (via nodes shim).
+- `_FORCE_MOCK` -> `is_force_mock()` / `set_force_mock()`:
+  `workflow/memory/reflexion.py:205,260`,
+  `workflow/retrieval/agentic_search.py:381`, `tests/conftest.py:19`, and the
+  test files below.
+- Daemon injection `fantasy_daemon/__main__.py:1176-1178` ->
+  `set_provider_router(self._router)` (fixes bug #1).
+- Delete `fantasy_daemon/nodes/_provider_stub.py` (star-import shim);
+  repoint its importers (`fantasy_daemon/__main__.py:1962,2227`).
+- `scripts/rebuild_sporemarch_kg.py:92` (`call_provider`).
+- Domain `call_provider` importers (`commit,consolidate,reflect,worldbuild,
+  writer_tools`) — repoint to `workflow.providers.call` for cleanliness
+  (optional for correctness since phases re-exports, required for the guard if
+  the guard ever covers `domains/`).
+
 **Daemon injection:** `fantasy_daemon/__main__.py:1176-1178` →
 `from workflow.providers.call import set_provider_router; set_provider_router(self._router)`
 (fixes bug #1). Remove/repoint `fantasy_daemon/nodes/_provider_stub.py` (the
