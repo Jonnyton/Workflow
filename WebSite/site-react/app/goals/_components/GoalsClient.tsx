@@ -17,7 +17,8 @@ import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { callTool } from "../../../lib/live";
 import bakedMcp from "../../../lib/mcp-snapshot.json";
-import { fmtDate, fmtRel } from "../../../lib/fmt";
+import { fmtDate, fmtDateStable, fmtRel } from "../../../lib/fmt";
+import { useMounted } from "../../../lib/useMounted";
 import Ladder from "../../../components/Ladder";
 import Term from "../../../components/Term";
 import Tick from "../../../components/Tick";
@@ -143,7 +144,8 @@ export default function GoalsClient() {
   // First paint: baked, stamped with the snapshot's own fetched date. The
   // page is never blank-without-JS — these render server-side. The stamp goes
   // through $lib/fmt so it reads in the visitor's own local time.
-  const bakedStampDate = fmtDate((bakedMcp as any).fetched_at);
+  const mounted = useMounted();
+  const bakedStampDate = mounted ? fmtDate((bakedMcp as any).fetched_at) : fmtDateStable((bakedMcp as any).fetched_at);
   const [goals, setGoals] = useState<BoardGoal[]>(() => normalizeBaked(bakedMcp));
 
   // 'baked' until a live read lands; then 'live' with a read-stamp.

@@ -27,7 +27,8 @@ import type { Simulation } from "d3-force";
 import baked from "../../../lib/mcp-snapshot.json";
 import { fetchLive, liveToSnapshotShape } from "../../../lib/live";
 import type { Snapshot } from "../../../lib/types";
-import { fmtRel, fmtStamp } from "../../../lib/fmt";
+import { fmtCount, fmtRel, fmtStamp, fmtStampStable } from "../../../lib/fmt";
+import { useMounted } from "../../../lib/useMounted";
 import Tick from "../../../components/Tick";
 import {
   buildAtlas,
@@ -75,6 +76,7 @@ function truncate(s: string, max: number): string {
 
 export default function GraphClient() {
   const router = useRouter();
+  const mounted = useMounted();
 
   // First paint from the baked snapshot; Refresh MCP swaps in a live re-read
   // of the exact same shape, so the whole sky rebuilds against fresh data.
@@ -141,7 +143,9 @@ export default function GraphClient() {
 
   const wikiTotal =
     atlas.counts.patch + atlas.counts.plans + atlas.counts.notes + atlas.counts.concepts + atlas.counts.drafts;
-  const stampLabel = liveStamp ? `live read ${fmtRel(liveStamp)}` : `baked snapshot ${fmtStamp(snapshot.fetched_at)}`;
+  const stampLabel = liveStamp
+    ? `live read ${fmtRel(liveStamp)}`
+    : `baked snapshot ${mounted ? fmtStamp(snapshot.fetched_at) : fmtStampStable(snapshot.fetched_at)}`;
   const universesList = snapshot.universes ?? [];
 
   /* ─────────────────── the canvas force graph ─────────────────── */
@@ -326,7 +330,7 @@ export default function GraphClient() {
       if (dim) continue;
       if (n.kind === "tag" && n.cluster !== "tags") {
         label(
-          `${n.label} · ${n.count?.toLocaleString() ?? ""}`,
+          `${n.label} · ${n.count === undefined ? "" : fmtCount(n.count)}`,
           n.x!,
           n.y! + n.r + 14 / tf.k,
           10.5,
@@ -573,7 +577,7 @@ export default function GraphClient() {
             My head, <em>seen from above</em>.
           </h1>
           <p className="voice cover__lede">
-            Every one of the {wikiTotal.toLocaleString()} pages in my memory is a dot in here, settling around its
+            Every one of the {fmtCount(wikiTotal)} pages in my memory is a dot in here, settling around its
             category the way notes cluster around tags. Goals burn ember; universes drift violet. The bright lines are
             real page-to-page references — {refCount} of them; the faintest spokes are filing and shared-tag clusters,
             and I'll never dress either up as a citation. Hover to light up a neighbourhood, scroll to zoom, drag
@@ -581,7 +585,7 @@ export default function GraphClient() {
           </p>
           <p className="cover__stamp ev" aria-live="polite">
             <span className={liveStamp ? "dot live" : "dot"}></span>
-            {stampLabel} · {dotCount.toLocaleString()} page dots · {atlas.publicGoalCount} goals ·{" "}
+            {stampLabel} · {fmtCount(dotCount)} page dots · {atlas.publicGoalCount} goals ·{" "}
             {atlas.universeCount} universes · {refCount} cross-references
             <button type="button" className="refresh" onClick={refresh} disabled={reading} aria-busy={reading}>
               {reading ? "reading…" : "Refresh MCP"}
@@ -627,7 +631,7 @@ export default function GraphClient() {
                   <h2 className="panel__title">{categoryTitle}</h2>
                   <p className="panel__blurb voice">{CATEGORY_BLURB[selection.id]}</p>
                   <p className="panel__count ev">
-                    showing {Math.min(PER_CATEGORY, categoryPages.length)} of {categoryPages.length.toLocaleString()} ·
+                    showing {Math.min(PER_CATEGORY, categoryPages.length)} of {fmtCount(categoryPages.length)} ·
                     newest first
                   </p>
                 </header>
@@ -675,7 +679,7 @@ export default function GraphClient() {
                   </div>
                   <div>
                     <dt>words</dt>
-                    <dd className="ev">{(selectedUniverse.word_count ?? 0).toLocaleString()}</dd>
+                    <dd className="ev">{fmtCount(selectedUniverse.word_count ?? 0)}</dd>
                   </div>
                   <div>
                     <dt>last activity</dt>
@@ -702,7 +706,7 @@ export default function GraphClient() {
                   <li>
                     <span className="swatch swatch--page"></span>
                     <span>
-                      <strong>pages</strong> — one dot per wiki page, {dotCount.toLocaleString()} of them, sized by how
+                      <strong>pages</strong> — one dot per wiki page, {fmtCount(dotCount)} of them, sized by how
                       often other pages actually reference them. Hover one to see its title; zoom in and titles appear
                       on their own.
                     </span>
@@ -752,7 +756,7 @@ export default function GraphClient() {
           <p className="eyebrow">the same map, read top to bottom</p>
 
           <div className="listmap__group">
-            <h3>wiki — {wikiTotal.toLocaleString()} pages</h3>
+            <h3>wiki — {fmtCount(wikiTotal)} pages</h3>
             <ul className="hublist">
               {atlas.nodes
                 .filter((n) => n.kind === "hub")
