@@ -840,25 +840,30 @@ class TestWorldbuildCanonGeneration:
         assert _scan_existing_canon(canon_dir) == set()
 
     # ------------------------------------------------------------------
-    # Round-3 containment ORDERING: containment must run BEFORE the
-    # ``f.is_file()`` stat. ``Path.is_file()`` follows symlinks (it calls
-    # ``os.stat`` on the target), so an entry that is itself an escaping
-    # symlink must be resolved + rejected *before* any stat touches the
-    # external target. Codex round-3 finding. These tests patch the
-    # module-level ``_resolve_within_canon`` to reject one specific
-    # filename, then assert ``Path.is_file`` is never invoked for that
-    # rejected entry — proving the resolve-first ordering. No symlink
-    # privilege is required, so they run live on Windows too.
+    # Containment ORDERING: containment must run BEFORE the ``is_file``
+    # stat. ``Path.is_file()`` follows symlinks (it calls ``os.stat`` on
+    # the target), so an entry that is itself an escaping symlink must be
+    # resolved + rejected *before* any stat touches the external target.
+    # Every canon enumeration now routes through
+    # ``workflow.ingestion.canon_io.iter_canon_files`` (the chokepoint),
+    # which calls ``resolve_within_canon`` per entry before touching
+    # ``is_file``. These tests patch the chokepoint's resolver to reject one
+    # specific filename, then assert ``Path.is_file`` is never invoked for
+    # that rejected entry — proving the resolve-first ordering through the
+    # shared chokepoint. No symlink privilege is required, so they run live
+    # on Windows too.
     # ------------------------------------------------------------------
 
     @staticmethod
     def _ordering_spy(reject_name: str):
-        """Build (patched resolve, is_file spy, events) for ordering proof.
+        """Build (patch target, is_file spy, events) for the ordering proof.
 
-        ``events`` records ``("resolve", name)`` and ``("is_file", name)`` in
-        call order. The patched resolver raises ``ValueError`` for
-        ``reject_name`` (simulating an escaping entry) and resolves everything
-        else normally.
+        Returns ``(patch_target_ctx, spy_is_file, events)`` where
+        ``patch_target_ctx`` is a callable producing the ``unittest.mock.patch``
+        context manager that swaps the chokepoint resolver. ``events`` records
+        ``("resolve", name)`` and ``("is_file", name)`` in call order. The
+        patched resolver raises ``ValueError`` for ``reject_name`` (simulating
+        an escaping entry) and resolves everything else normally.
         """
         from workflow.ingestion.canon_names import (
             resolve_within_canon as _real_resolve,
@@ -893,7 +898,7 @@ class TestWorldbuildCanonGeneration:
 
         fake_resolve, spy_is_file, events = self._ordering_spy("escape.md")
         with patch(
-            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            "workflow.ingestion.canon_io.resolve_within_canon",
             fake_resolve,
         ), patch.object(Path, "is_file", spy_is_file):
             existing = _scan_existing_canon(canon_dir)
@@ -924,7 +929,7 @@ class TestWorldbuildCanonGeneration:
             return "premise"
 
         with patch(
-            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            "workflow.ingestion.canon_io.resolve_within_canon",
             fake_resolve,
         ), patch.object(Path, "is_file", spy_is_file), patch(
             "domains.fantasy_daemon.phases._provider_stub.call_provider",
@@ -962,7 +967,7 @@ class TestWorldbuildCanonGeneration:
                 patch.object(runtime, "vector_store", sentinel), \
                 patch.object(runtime, "embed_fn", None), \
                 patch(
-                    "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+                    "workflow.ingestion.canon_io.resolve_within_canon",
                     fake_resolve,
                 ), \
                 patch.object(Path, "is_file", spy_is_file), \
@@ -988,7 +993,7 @@ class TestWorldbuildCanonGeneration:
 
         fake_resolve, spy_is_file, events = self._ordering_spy("magic_system.md")
         with patch(
-            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            "workflow.ingestion.canon_io.resolve_within_canon",
             fake_resolve,
         ), patch.object(Path, "is_file", spy_is_file), patch(
             "domains.fantasy_daemon.phases.worldbuild._handle_new_element",
@@ -1009,7 +1014,7 @@ class TestWorldbuildCanonGeneration:
 
         fake_resolve, spy_is_file, events = self._ordering_spy("magic_system.md")
         with patch(
-            "domains.fantasy_daemon.phases.worldbuild._resolve_within_canon",
+            "workflow.ingestion.canon_io.resolve_within_canon",
             fake_resolve,
         ), patch.object(Path, "is_file", spy_is_file), patch(
             "domains.fantasy_daemon.phases.worldbuild._handle_new_element",

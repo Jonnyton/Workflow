@@ -70,6 +70,7 @@ from workflow.api.helpers import (
     _universe_dir,
 )
 from workflow.catalog import list_unreconciled_writes
+from workflow.ingestion.canon_io import iter_canon_files, safe_canon_path
 from workflow.universe_soul import (
     NO_LOOP_DECLARED,
     SOUL_FILENAME,
@@ -3783,7 +3784,11 @@ def _action_add_canon(
         )
 
         if provenance_tag:
-            meta_path = canon_dir / f".{safe_name}.meta.json"
+            # Resolve + contain the sidecar meta path before write so a
+            # crafted ``safe_name`` cannot clobber a file outside canon_dir.
+            meta_path = safe_canon_path(
+                canon_dir, f".{safe_name}.meta.json", kind="meta sidecar"
+            )
             meta = {
                 "provenance": provenance_tag,
                 "added": datetime.now(timezone.utc).isoformat(),
@@ -3933,7 +3938,11 @@ def _action_add_canon_from_path(
         )
 
         tag = provenance_tag or "user_upload"
-        meta_path = canon_dir / f".{safe_name}.meta.json"
+        # Resolve + contain the sidecar meta path before write so a crafted
+        # ``safe_name`` cannot clobber a file outside canon_dir.
+        meta_path = safe_canon_path(
+            canon_dir, f".{safe_name}.meta.json", kind="meta sidecar"
+        )
         meta = {
             "provenance": tag,
             "source_path": str(src),
@@ -3981,29 +3990,46 @@ def _action_list_canon(
         return json.dumps({"universe_id": uid, "canon_files": [], "note": "No canon directory."})
 
     files = []
-    for f in sorted(canon_dir.iterdir()):
-        if f.is_file() and not f.name.startswith("."):
-            entry: dict[str, Any] = {
-                "filename": f.name,
-                "size_bytes": f.stat().st_size,
-            }
-            # Check for provenance metadata
-            meta_path = canon_dir / f".{f.name}.meta.json"
-            if meta_path.exists():
-                try:
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                    entry["provenance"] = meta.get("provenance", "")
-                    entry["added"] = meta.get("added", "")
-                    entry["source"] = meta.get("source", "")
-                except (json.JSONDecodeError, OSError):
-                    pass
+    # Enumeration is routed through ``iter_canon_files`` so each entry is
+    # resolved + contained before ``stat``; a symlinked canon file escaping
+    # canon_dir is skipped. Dotfiles (markers, manifests, meta sidecars) are
+    # excluded from the listing.
+    for f in iter_canon_files(canon_dir, include_hidden=False):
+        entry: dict[str, Any] = {
+            "filename": f.name,
+            "size_bytes": f.stat().st_size,
+        }
+        # Check for provenance metadata. ``f.name`` is a contained basename,
+        # so the sidecar still resolves under canon_dir; contain it anyway.
+        try:
+            meta_path = safe_canon_path(
+                canon_dir, f".{f.name}.meta.json", kind="meta sidecar"
+            )
+        except ValueError:
             files.append(entry)
+            continue
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                entry["provenance"] = meta.get("provenance", "")
+                entry["added"] = meta.get("added", "")
+                entry["source"] = meta.get("source", "")
+            except (json.JSONDecodeError, OSError):
+                pass
+        files.append(entry)
 
     return json.dumps({"universe_id": uid, "canon_files": files, "count": len(files)})
 
 
 def _source_sidecar_meta(canon_dir: Path, filename: str) -> dict[str, Any]:
-    meta_path = canon_dir / f".{filename}.meta.json"
+    # Resolve + contain the sidecar before read so a symlinked ``.meta.json``
+    # (or a crafted ``filename``) cannot leak a file outside canon_dir.
+    try:
+        meta_path = safe_canon_path(
+            canon_dir, f".{filename}.meta.json", kind="meta sidecar"
+        )
+    except ValueError:
+        return {}
     if not meta_path.exists():
         return {}
     try:
@@ -4014,7 +4040,14 @@ def _source_sidecar_meta(canon_dir: Path, filename: str) -> dict[str, Any]:
 
 
 def _manifest_data(canon_dir: Path) -> dict[str, Any]:
-    manifest_path = canon_dir / ".manifest.json"
+    # Resolve + contain the manifest before read so a symlinked
+    # ``.manifest.json`` pointing outside canon_dir is rejected.
+    try:
+        manifest_path = safe_canon_path(
+            canon_dir, ".manifest.json", kind="manifest"
+        )
+    except ValueError:
+        return {}
     if not manifest_path.exists():
         return {}
     try:
@@ -4086,10 +4119,12 @@ def _action_list_sources(
 
     manifest = _manifest_data(canon_dir)
     source_files: list[dict[str, Any]] = []
+    # Enumeration is routed through ``iter_canon_files`` rooted at the
+    # ``sources/`` subdir so each entry is resolved + contained before
+    # ``stat``; a symlinked source file escaping ``sources/`` is skipped.
     try:
-        for path in sorted(sources_dir.iterdir()):
-            if path.is_file() and not path.name.startswith("."):
-                source_files.append(_source_file_entry(path, canon_dir, manifest))
+        for path in iter_canon_files(sources_dir, include_hidden=False):
+            source_files.append(_source_file_entry(path, canon_dir, manifest))
     except OSError as exc:
         return json.dumps({"error": f"Failed to list source files: {exc}"})
 
@@ -4118,8 +4153,11 @@ def _action_read_source(
             "error": "Filename required. Use list_sources to see available files.",
         })
 
-    target = (sources_dir / safe_name).resolve()
-    if not target.is_relative_to(sources_dir.resolve()):
+    # Resolve + contain under the ``sources/`` subdir before any stat/read so
+    # a ``../`` traversal or symlinked source entry cannot read outside it.
+    try:
+        target = safe_canon_path(sources_dir, safe_name, kind="source file")
+    except ValueError:
         return json.dumps({"error": "Path traversal not allowed."})
     if not target.is_file():
         return json.dumps({
@@ -4183,7 +4221,12 @@ def _action_read_canon(
     if not safe_name:
         return json.dumps({"error": "Filename required. Use list_canon to see available files."})
 
-    target = canon_dir / safe_name
+    # Resolve + contain before any ``is_file`` / read so a symlinked canon
+    # file whose target lives outside canon_dir is rejected, not read.
+    try:
+        target = safe_canon_path(canon_dir, safe_name, kind="canon file")
+    except ValueError:
+        return json.dumps({"error": "Path traversal not allowed."})
     if not target.is_file():
         return json.dumps({
             "error": f"Canon file '{safe_name}' not found.",
@@ -4198,8 +4241,14 @@ def _action_read_canon(
             "size_bytes": target.stat().st_size,
             "content": content,
         }
-        # Attach provenance if available
-        meta_path = canon_dir / f".{safe_name}.meta.json"
+        # Attach provenance if available. ``safe_name`` is contained above, so
+        # the sidecar still resolves under canon_dir; contain it anyway.
+        try:
+            meta_path = safe_canon_path(
+                canon_dir, f".{safe_name}.meta.json", kind="meta sidecar"
+            )
+        except ValueError:
+            return json.dumps(entry)
         if meta_path.exists():
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
