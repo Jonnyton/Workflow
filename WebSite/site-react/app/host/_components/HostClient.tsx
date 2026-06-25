@@ -3,7 +3,8 @@
 import * as React from "react";
 import { fetchLive, type LiveResult } from "../../../lib/live";
 import baked from "../../../lib/mcp-snapshot.json";
-import { fmtRel } from "../../../lib/fmt";
+import { fmtCount, fmtRel, fmtStampStable } from "../../../lib/fmt";
+import { useMounted } from "../../../lib/useMounted";
 import Tick from "../../../components/Tick";
 import Term from "../../../components/Term";
 import styles from "../page.module.css";
@@ -36,9 +37,9 @@ function toRow(u: any, fromLive: boolean): Row {
 
 // Viewer-local relative stamps go through the shared fmt module; only the
 // "never moved" empty state is page-specific.
-function rel(s?: string | null): string {
+function rel(s: string | null | undefined, mounted: boolean): string {
   if (!s) return "no recorded activity";
-  return fmtRel(s);
+  return mounted ? fmtRel(s) : fmtStampStable(s);
 }
 
 // Humanize raw daemon status words into plain language for visitors who
@@ -57,13 +58,15 @@ function phaseLabel(phase: string): PhaseLabel {
   return { human, raw };
 }
 
-function quiet(r: Row): boolean {
+function quiet(r: Row, mounted: boolean): boolean {
   if (/idle|paused|asleep|done|complete/i.test(r.phase)) return true;
   if (!r.lastAt) return true;
+  if (!mounted) return true;
   return Date.now() - Date.parse(r.lastAt) > 24 * 60 * 60 * 1000;
 }
 
 export default function HostClient() {
+  const mounted = useMounted();
   const [live, setLive] = React.useState<LiveResult | null>(null);
   const [liveErr, setLiveErr] = React.useState<string | null>(null);
   const [reading, setReading] = React.useState(false);
@@ -296,7 +299,7 @@ export default function HostClient() {
             {rows.length === 0 && reading ? (
               <p className="rooms__state ev">reading the live universe list…</p>
             ) : rows.length === 0 && live ? (
-              <p className="rooms__state ev">quiet right now — no public universes visible at this read ({rel(live.fetchedAt)}).</p>
+              <p className="rooms__state ev">quiet right now — no public universes visible at this read ({rel(live.fetchedAt, mounted)}).</p>
             ) : rows.length === 0 ? (
               <p className="rooms__state ev">no public universes in view.</p>
             ) : (
@@ -304,10 +307,11 @@ export default function HostClient() {
                 <ul className="rooms__list">
                   {rows.map((r) => {
                     const pl = phaseLabel(r.phase);
+                    const rowQuiet = quiet(r, mounted);
                     return (
-                      <li key={r.id} className={`room${quiet(r) ? " room--quiet" : ""}`}>
+                      <li key={r.id} className={`room${rowQuiet ? " room--quiet" : ""}`}>
                         <span className="room__top">
-                          <span className={`dot ${quiet(r) ? "idle" : "live"}`} aria-hidden="true"></span>
+                          <span className={`dot ${rowQuiet ? "idle" : "live"}`} aria-hidden="true"></span>
                           <span className="room__name">{r.id}</span>
                         </span>
                         <span className="room__meta ev">
@@ -315,7 +319,7 @@ export default function HostClient() {
                             <>{pl.human} <code className="room__raw">{pl.raw}</code></>
                           ) : (
                             <code className="room__raw">{pl.raw}</code>
-                          )}{r.words > 0 ? <> · {r.words.toLocaleString()} words</> : null} · {rel(r.lastAt)}
+                          )}{r.words > 0 ? <> · {fmtCount(r.words)} words</> : null} · {rel(r.lastAt, mounted)}
                         </span>
                       </li>
                     );
@@ -324,7 +328,7 @@ export default function HostClient() {
                 <p className="rooms__stamp ev">
                   {live ? (
                     <>
-                      {rows.length} public universes · read live {rel(live.fetchedAt)} ·
+                      {rows.length} public universes · read live {rel(live.fetchedAt, mounted)} ·
                       {" "}<button className="rooms__refresh" onClick={refreshUniverses} disabled={reading}>{reading ? "reading…" : "Refresh MCP"}</button>
                     </>
                   ) : (

@@ -5,6 +5,8 @@ import Term from "../../../components/Term";
 import VitalSigns from "../../../components/VitalSigns";
 import { callTool } from "../../../lib/live";
 import baked from "../../../lib/mcp-snapshot.json";
+import { fmtStampStable } from "../../../lib/fmt";
+import { useMounted } from "../../../lib/useMounted";
 import styles from "../page.module.css";
 
 const GH_ACTIONS = "https://github.com/Jonnyton/Workflow/actions";
@@ -58,6 +60,7 @@ function pick(obj: Record<string, unknown> | null, ...keys: string[]): string | 
 }
 
 export default function FinePrintClient() {
+  const mounted = useMounted();
   const [rcState, setRcState] = React.useState<ReceiptState>("reading");
   const [rcError, setRcError] = React.useState<string | null>(null);
   const [rcFetchedAt, setRcFetchedAt] = React.useState<string | null>(null);
@@ -94,6 +97,7 @@ export default function FinePrintClient() {
   const canaryStatus = pick(release, "canary_bundle_status", "canaryBundleStatus", "canary_status");
   const buildRunUrl = pick(release, "build_run_url", "buildRunUrl", "build_url");
   const deployRunUrl = pick(release, "deploy_run_url", "deployRunUrl", "deploy_url");
+  const bakedStamp = bakedFetchedAt ? (mounted ? stamp(bakedFetchedAt) : fmtStampStable(bakedFetchedAt)) : "";
 
   return (
     <div className={styles.page}>
@@ -112,7 +116,7 @@ export default function FinePrintClient() {
           </p>
           <VitalSigns variant="hero" />
           <p className="cover__stamp ev">
-            first paint seeded from snapshot {stamp(bakedFetchedAt)} · every reading
+            first paint seeded from snapshot {bakedStamp} · every reading
             above is upgraded by a live read on load and carries its own stamp
           </p>
         </div>

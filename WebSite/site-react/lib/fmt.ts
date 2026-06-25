@@ -8,6 +8,31 @@
  * what the visitor's calendar says is the truth they can check.
  */
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** "9 Jun 2026" — deterministic UTC for SSR/client hydration fallbacks. */
+export function fmtDateStable(value: string | number | Date | null | undefined): string {
+  const d = toDate(value);
+  if (!d) return 'unknown';
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** "9 Jun 2026, 21:09 UTC" — deterministic UTC for SSR/client hydration fallbacks. */
+export function fmtStampStable(value: string | number | Date | null | undefined): string {
+  const d = toDate(value);
+  if (!d) return 'unknown';
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+}
+
+/** Locale-stable thousands grouping for text rendered during hydration. */
+export function fmtCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 /** "9 Jun 2026" — viewer-local. */
 export function fmtDate(value: string | number | Date | null | undefined): string {
   const d = toDate(value);
