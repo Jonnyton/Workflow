@@ -27,6 +27,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from workflow.enrichment_signals import (
+    load_enrichment_signals,
+    write_enrichment_signals,
+)
 from workflow.universe_soul import (
     ensure_universe_soul,
     has_soul,
@@ -1013,20 +1017,17 @@ def get_status(uid: str, _user: str = Depends(_require_auth)) -> dict[str, Any]:
 
 
 def _count_pending_synthesis(udir: Path) -> int:
-    """Count pending synthesize_source signals for a universe."""
-    signals_file = udir / "worldbuild_signals.json"
-    if not signals_file.exists():
-        return 0
-    try:
-        signals = json.loads(signals_file.read_text(encoding="utf-8"))
-        if not isinstance(signals, list):
-            return 0
-        return sum(
-            1 for s in signals
-            if isinstance(s, dict) and s.get("type") == "synthesize_source"
-        )
-    except (OSError, json.JSONDecodeError):
-        return 0
+    """Count pending synthesize_source signals for a universe.
+
+    Reads through the enrichment-signals helper so the canonical
+    ``enrichment_signals.json`` is preferred and the legacy
+    ``worldbuild_signals.json`` is still honored during the deprecation window.
+    """
+    signals = load_enrichment_signals(udir)
+    return sum(
+        1 for s in signals
+        if isinstance(s, dict) and s.get("type") == "synthesize_source"
+    )
 
 
 MAX_SYNTHESIS_RETRIES = 3
@@ -1046,7 +1047,6 @@ def _reemit_synthesis_signals(
     """
     from fantasy_daemon.ingestion.core import detect_file_type
 
-    signals_file = udir / "worldbuild_signals.json"
     manifest_path = canon_dir / ".manifest.json"
 
     # Load manifest to track retry counts
@@ -1059,12 +1059,9 @@ def _reemit_synthesis_signals(
 
     reemitted: list[str] = []
     try:
-        existing: list[dict[str, Any]] = []
-        if signals_file.exists():
-            raw = signals_file.read_text(encoding="utf-8")
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                existing = parsed
+        # Canonical ``enrichment_signals.json`` preferred; legacy
+        # ``worldbuild_signals.json`` read as fallback during deprecation.
+        existing: list[dict[str, Any]] = load_enrichment_signals(udir)
 
         # Only add signals for files not already queued
         already_queued = {
@@ -1102,9 +1099,7 @@ def _reemit_synthesis_signals(
             })
             reemitted.append(filename)
 
-        signals_file.write_text(
-            json.dumps(existing, indent=2) + "\n", encoding="utf-8",
-        )
+        write_enrichment_signals(udir, existing)
         if reemitted:
             logger.info(
                 "Re-emitted synthesis signals for %d unsynthesized sources",

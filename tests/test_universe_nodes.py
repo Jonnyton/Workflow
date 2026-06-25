@@ -2404,7 +2404,10 @@ class TestWorldbuildSignalDriven:
             "_universe_path": str(universe_dir),
         }
         worldbuild(state)
-        signals_file = universe_dir / "worldbuild_signals.json"
+        # Signals migrate forward: the daemon reads the legacy file via the
+        # deprecation fallback, then writes the cleared queue to the canonical
+        # enrichment_signals.json (what the next cycle will read).
+        signals_file = universe_dir / "enrichment_signals.json"
         data = json.loads(signals_file.read_text(encoding="utf-8"))
         assert data == []
 
