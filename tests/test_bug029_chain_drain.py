@@ -89,21 +89,34 @@ class TestChainDrainWarning:
         import asyncio
         from unittest.mock import AsyncMock
 
+        from workflow.providers.base import ProviderResponse
         from workflow.providers.quota import QuotaTracker
         from workflow.providers.router import FALLBACK_CHAINS, ProviderRouter
 
         qt = QuotaTracker()
-        # Cool all API providers in the writer chain.
+        providers: dict = {}
+        # Register + cool every API provider in the writer chain. A cooled
+        # provider stays registered, so it survives effective_chain (FEAT-006)
+        # narrowing and reaches the BUG-029 Part A drain check. Registering
+        # only ollama-local while cooling unregistered API names made the drain
+        # check see a local-only chain and never fire (BUG-029 regression).
         for p in FALLBACK_CHAINS["writer"]:
             if p != "ollama-local":
+                cooled = AsyncMock()
+                cooled.name = p
+                cooled.complete.return_value = ProviderResponse(
+                    text="api", provider=p, model="m", family="f", latency_ms=0.0,
+                )
+                providers[p] = cooled
                 qt.cooldown(p, 120)
 
         # Make ollama-local fail too so the chain exhausts (no providers succeed).
         mock_local = AsyncMock()
         mock_local.name = "ollama-local"
         mock_local.complete.side_effect = Exception("local failed")
+        providers["ollama-local"] = mock_local
 
-        router = ProviderRouter(providers={"ollama-local": mock_local}, quota=qt)
+        router = ProviderRouter(providers=providers, quota=qt)
 
         from workflow.exceptions import AllProvidersExhaustedError
         with caplog.at_level(logging.WARNING, logger="workflow.providers.router"):
