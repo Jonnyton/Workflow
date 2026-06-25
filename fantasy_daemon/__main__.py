@@ -820,6 +820,9 @@ def _try_execute_claimed_branch_task(
         from workflow.daemon_server import get_branch_definition
         from workflow.runs import (
             RUN_STATUS_COMPLETED,
+            RUN_STATUS_QUEUED,
+            RUN_STATUS_RESUMED,
+            RUN_STATUS_RUNNING,
             execute_branch,
             latest_run_by_name,
         )
@@ -874,6 +877,28 @@ def _try_execute_claimed_branch_task(
                 claimed_task.branch_task_id,
                 branch_def_id,
                 existing_run["run_id"],
+            )
+            return True, "", metadata
+        active_run_statuses = {
+            RUN_STATUS_QUEUED,
+            RUN_STATUS_RUNNING,
+            RUN_STATUS_RESUMED,
+        }
+        if existing_run and existing_run.get("status") in active_run_statuses:
+            metadata = {
+                "branch_def_id": branch_def_id,
+                "run_id": existing_run["run_id"],
+                "run_status": existing_run["status"],
+                "actor": existing_run.get("actor") or "",
+                "existing_run_in_flight": True,
+            }
+            logger.info(
+                "dispatcher_pick: branch task run already in flight %s "
+                "branch=%s run=%s status=%s",
+                claimed_task.branch_task_id,
+                branch_def_id,
+                existing_run["run_id"],
+                existing_run["status"],
             )
             return True, "", metadata
 

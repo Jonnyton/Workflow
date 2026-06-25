@@ -129,22 +129,46 @@ def test_mark_task_progress_stamps_running_task(tmp_path: Path) -> None:
     assert progressed.last_progress_at
 
 
-def test_recover_claimed_tasks_clears_active_lease_metadata(tmp_path: Path) -> None:
-    task = _task()
-    append_task(tmp_path, task)
-    claim_task(tmp_path, task.branch_task_id, "daemon-a")
-    mark_task_progress(tmp_path, task.branch_task_id, progress_at="2026-05-02T12:00:00+00:00")
+def test_recover_claimed_tasks_preserves_fresh_lease_and_requeues_expired(
+    tmp_path: Path,
+) -> None:
+    fresh = _task("bt_fresh")
+    expired = _task("bt_expired")
+    append_task(tmp_path, fresh)
+    append_task(tmp_path, expired)
+    fresh_claim = claim_task(tmp_path, fresh.branch_task_id, "daemon-a")
+    expired_claim = claim_task(tmp_path, expired.branch_task_id, "daemon-b")
+    assert fresh_claim is not None
+    assert expired_claim is not None
+    mark_task_progress(
+        tmp_path,
+        expired.branch_task_id,
+        progress_at="2026-05-02T12:00:00+00:00",
+    )
+    qp = queue_path(tmp_path)
+    data = json.loads(qp.read_text(encoding="utf-8"))
+    for row in data:
+        if row["branch_task_id"] == expired.branch_task_id:
+            row["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+    qp.write_text(json.dumps(data), encoding="utf-8")
 
     count = recover_claimed_tasks(tmp_path)
 
     assert count == 1
-    recovered = read_queue(tmp_path)[0]
-    assert recovered.status == "pending"
-    assert recovered.claimed_by == ""
-    assert recovered.worker_owner_id == ""
-    assert recovered.lease_expires_at == ""
-    assert recovered.heartbeat_at == ""
-    assert recovered.last_progress_at == "2026-05-02T12:00:00+00:00"
+    by_id = {task.branch_task_id: task for task in read_queue(tmp_path)}
+    fresh_recovered = by_id[fresh.branch_task_id]
+    expired_recovered = by_id[expired.branch_task_id]
+    assert fresh_recovered.status == "running"
+    assert fresh_recovered.claimed_by == "daemon-a"
+    assert fresh_recovered.worker_owner_id == "daemon-a"
+    assert fresh_recovered.lease_expires_at == fresh_claim.lease_expires_at
+    assert fresh_recovered.heartbeat_at == fresh_claim.heartbeat_at
+    assert expired_recovered.status == "pending"
+    assert expired_recovered.claimed_by == ""
+    assert expired_recovered.worker_owner_id == ""
+    assert expired_recovered.lease_expires_at == ""
+    assert expired_recovered.heartbeat_at == ""
+    assert expired_recovered.last_progress_at == "2026-05-02T12:00:00+00:00"
 
 
 def test_mark_status_terminal_finalize_is_idempotent(tmp_path: Path) -> None:

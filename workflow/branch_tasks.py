@@ -512,12 +512,13 @@ def is_task_cancel_requested(universe_path: Path, task_id: str) -> bool:
 
 
 def recover_claimed_tasks(universe_path: Path) -> int:
-    """Restart recovery: reset any ``running`` rows to ``pending``.
+    """Restart recovery: reset stale ``running`` rows to ``pending``.
 
-    Claimed-but-unfinished tasks at daemon startup can't know whether
-    the previous daemon finished them; safest is to re-queue. Returns
-    the count reset.
+    A fresh lease means a peer worker may still own the task, so startup
+    recovery only re-queues pre-lease rows or rows whose lease expired.
+    Returns the count reset.
     """
+    current = datetime.now(timezone.utc)
     qp = queue_path(universe_path)
     if not qp.exists():
         return 0
@@ -525,13 +526,19 @@ def recover_claimed_tasks(universe_path: Path) -> int:
     with _file_lock(universe_path):
         raw = _read_raw(qp)
         for row in raw:
-            if isinstance(row, dict) and row.get("status") == "running":
-                row["status"] = "pending"
-                row["claimed_by"] = ""
-                row["worker_owner_id"] = ""
-                row["lease_expires_at"] = ""
-                row["heartbeat_at"] = ""
-                count += 1
+            if not isinstance(row, dict) or row.get("status") != "running":
+                continue
+            lease_raw = str(row.get("lease_expires_at") or "")
+            if lease_raw:
+                lease_at = _parse_iso_utc(lease_raw)
+                if lease_at is None or lease_at > current:
+                    continue
+            row["status"] = "pending"
+            row["claimed_by"] = ""
+            row["worker_owner_id"] = ""
+            row["lease_expires_at"] = ""
+            row["heartbeat_at"] = ""
+            count += 1
         if count:
             _write_raw(qp, raw)
     if count:
@@ -558,7 +565,8 @@ def reclaim_expired_leases(
     their leases fresh and are never touched. Intended call site is the
     dispatcher claim path, so every claim attempt sweeps first and a
     wedged claim is reaped on the next pick instead of the next daemon
-    restart. Returns the count reclaimed.
+    restart. Missing pre-lease rows are left for startup recovery.
+    Returns the count reclaimed.
     """
     current = now or datetime.now(timezone.utc)
     qp = queue_path(universe_path)

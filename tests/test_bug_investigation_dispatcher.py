@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -418,6 +419,81 @@ class TestBugInvestigationDirectRunRouting:
         assert metadata["run_id"] == run_id
         assert metadata["run_status"] == RUN_STATUS_COMPLETED
         assert metadata["reused_existing_run"] is True
+
+    @pytest.mark.parametrize("active_status", ["queued", "running", "resumed"])
+    def test_direct_run_skips_duplicate_execute_for_active_branch_task_run(
+        self, tmp_path, monkeypatch, active_status
+    ):
+        from fantasy_daemon.__main__ import _try_execute_claimed_branch_task
+        from workflow.runs import (
+            RUN_STATUS_COMPLETED,
+            RUN_STATUS_QUEUED,
+            create_run,
+            update_run_status,
+        )
+
+        monkeypatch.setattr("workflow.storage.data_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            "workflow.api.branches._resolve_branch_id",
+            lambda requested, base_path: "branch-1",
+        )
+        monkeypatch.setattr(
+            "workflow.daemon_server.get_branch_definition",
+            lambda base_path, branch_def_id: {"branch_def_id": branch_def_id},
+        )
+
+        class _Branch:
+            def validate(self):
+                return []
+
+        from workflow.branches import BranchDefinition
+        monkeypatch.setattr(
+            BranchDefinition,
+            "from_dict",
+            classmethod(lambda cls, data: _Branch()),
+        )
+
+        execute_calls = []
+
+        def _record_execute(*args, **kwargs):
+            execute_calls.append(kwargs["run_name"])
+            return SimpleNamespace(
+                run_id="new-run",
+                status=RUN_STATUS_COMPLETED,
+                error="",
+                output={},
+            )
+
+        monkeypatch.setattr("workflow.runs.execute_branch", _record_execute)
+
+        run_id = create_run(
+            tmp_path,
+            branch_def_id="branch-1",
+            thread_id="",
+            inputs={"bug_id": "BUG-127"},
+            run_name="branch-task-bt-active",
+            actor="daemon-a",
+        )
+        if active_status != RUN_STATUS_QUEUED:
+            update_run_status(tmp_path, run_id, status=active_status)
+        task = BranchTask(
+            branch_task_id="bt-active",
+            branch_def_id="branch-1",
+            universe_id="u",
+            inputs={"bug_id": "BUG-127"},
+            request_type=REQUEST_TYPE_BUG_INVESTIGATION,
+        )
+
+        success, error, metadata = _try_execute_claimed_branch_task(
+            tmp_path, task, "daemon-a",
+        )
+
+        assert success is True
+        assert error == ""
+        assert execute_calls == []
+        assert metadata["run_id"] == run_id
+        assert metadata["run_status"] == active_status
+        assert metadata["existing_run_in_flight"] is True
 
 
 class TestBugInvestigationPatchPacketWriteBack:
