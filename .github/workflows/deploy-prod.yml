@@ -75,6 +75,11 @@ jobs:
       # /etc/workflow/env so a fresh /data volume is not left "Not logged in"
       # (the 2026-06-25 loop-wedge root cause). Same secret the CI workers use.
       HAS_CLAUDE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      # Codex-style fallback: base64 of a subscription ~/.claude/.credentials.json.
+      # The entrypoint seeds it to $CLAUDE_CONFIG_DIR/.credentials.json only when
+      # missing. Preferred is CLAUDE_CODE_OAUTH_TOKEN above (rotation-safe); this
+      # is the file path for hosts without a setup-token.
+      HAS_CLAUDE_CREDENTIALS_BUNDLE: ${{ secrets.WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64 != '' }}
       # PR-128 — PR-122 Phase 2 capability map sync. When the
       # WORKFLOW_GITHUB_PR_CAPABILITIES GH Actions secret is set
       # (JSON object keyed by "<owner>/<repo>" -> "<token>"), the
@@ -399,6 +404,7 @@ jobs:
         env:
           WORKFLOW_CODEX_AUTH_JSON_B64: ${{ secrets.WORKFLOW_CODEX_AUTH_JSON_B64 }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64: ${{ secrets.WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64 }}
           # PR-128 — Phase 2 effector capability map. JSON object
           # mapping "<owner>/<repo>" -> "<token>" (round-2 P1.2
           # shape). Read by workflow.effectors.github_pr at
@@ -503,8 +509,13 @@ jobs:
             printf '%s' "${CLAUDE_CODE_OAUTH_TOKEN}" | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
                 "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
                 "sudo bash /tmp/install-workflow-env.sh set CLAUDE_CODE_OAUTH_TOKEN"
+          elif [ "${HAS_CLAUDE_CREDENTIALS_BUNDLE}" = "true" ]; then
+            echo "Deploy-visible WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64 found; syncing claude credentials bundle."
+            printf '%s' "${WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64}" | ssh -i ~/.ssh/do_deploy -o BatchMode=yes \
+                "${DO_SSH_USER}@${DO_DROPLET_HOST}" \
+                "sudo bash /tmp/install-workflow-env.sh set WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64"
           else
-            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN is not visible to deploy; leaving any existing droplet claude auth untouched."
+            echo "::warning::No claude auth (CLAUDE_CODE_OAUTH_TOKEN / WORKFLOW_CLAUDE_CREDENTIALS_JSON_B64) visible to deploy; leaving any existing droplet claude auth untouched."
           fi
           # PR-128 — sync the Phase 2 effector capability map. Same
           # install-workflow-env.sh helper, same atomic write
