@@ -19,6 +19,12 @@ So: the machinery is built and unit-tested; it is the **Phase-2 connections** th
 
 ## Proposed minimal-but-real first slice (for navigator to refine)
 
+**Rubric dimensions (whitepaper p44 — grounds every `evaluator_chain`):** an eval
+without an explicit rubric measures nothing. Score these five, the same way test
+coverage gates a deploy: **task success**, **tool-use quality**, **trajectory
+compliance**, **hallucination**, and **response quality**. The S1 asserts below
+are the `task success` slice; the others are added as the suite grows.
+
 Three connections, each independently shippable, smallest first:
 
 **S1 — Register one runnable AcceptanceScenario in CI (output-eval).**

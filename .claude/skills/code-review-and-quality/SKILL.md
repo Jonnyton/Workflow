@@ -81,6 +81,26 @@ Before adding any dependency: does the existing stack solve it? size, maintenanc
 `npm audit`, license? Prefer stdlib/existing utilities — every dependency is a
 liability.
 
+### AI-generated code — extra scrutiny
+
+Most code here is agent-written, so review for the failure modes *generation*
+introduces, not just human ones (SDLC whitepaper, the "80% problem"):
+
+- **Hallucinated / slopsquatted dependencies.** Every imported package must be
+  real and the *intended* one — AI invents plausible names and attackers squat
+  them. Verify each new import resolves to a known, existing package, not a
+  typo-neighbor. (`check imports for real packages`.)
+- **"Looks right, passes basic tests, still wrong."** The dangerous class is now
+  conceptual, not syntactic: wrong business-logic assumptions, missing edge
+  cases, unstated requirements. Check the change against *intent*, not just green
+  tests.
+- **Skipped-verification trajectory.** Fluent output that quietly skipped a check
+  is worse than a visible error — confirm the claimed evidence is real (ties to
+  the gate above). A second model (`mcp__codex__codex`) is a cheap way to catch
+  what the author's blind spots miss.
+- **Be skeptical of anything that looks clever.** Code the team can't explain is
+  debugging debt it can't afford.
+
 ### Honesty
 
 Don't rubber-stamp ("LGTM" without review), don't soften real issues, quantify
