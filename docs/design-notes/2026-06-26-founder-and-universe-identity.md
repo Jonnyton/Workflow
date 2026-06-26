@@ -71,6 +71,13 @@ server validates it against WorkOS's JWKS. **`sub` = the founder key.**
 - **What `workflow/auth` becomes:** the self-issued anonymous-subject provider
   (`provider.py`) is no longer the production identity source — retire it or demote it to
   local-dev only; production identity comes from WorkOS. (Slice-1 work.)
+- **Implementation recipe → `docs/reference/workos-authkit-integration.md`** (token
+  validation, PRM/RFC 9728, claims, dashboard config, env). Load-bearing: validate via
+  **PyJWT + JWKS** (NOT the sealed-session SDK — that's the web-app pattern); `sub` =
+  founder key (email is custom-claim-only); **dev/staging uses WorkOS's shared Google +
+  GitHub creds → no own OAuth apps needed yet**; the write-gate enforces in the **dispatcher
+  via the scope taxonomy**, the middleware only parses the token. 4 VERIFY-flags to confirm
+  against a live token before shipping.
 
 ### 3.1 Capability model — anonymous reads, OAuth writes (needs a NEW auth mode)
 - **Anonymous = read-only; OAuth = write/create.** Principle fixed.
