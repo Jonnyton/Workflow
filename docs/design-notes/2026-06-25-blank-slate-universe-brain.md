@@ -1,6 +1,6 @@
 # Blank-Slate Universe Brain — every universe starts knowing nothing but the drive to align and learn
 
-- **Status:** Proposed (design). Host-ratified principles 2026-06-25. Opposite-provider review (Codex) = **ADAPT**, folded — see §11. Not build-ready until the §10 self-model store is specified to host's satisfaction.
+- **Status:** Proposed (design). Host-ratified 2026-06-25. Codex review = **ADAPT**, folded (§11). §10 self-model store resolved — OKF-grounded, host-approved 2026-06-25 — build started at Slice 1.
 - **Author:** Claude Code session (host design dialogue 2026-06-25).
 - **Supersedes framing of:** Persona Slices 1–3 (`#1382`, `#1386`, `#1395`) — see §7.
 - **Relates to:** OKF brain foundation (`#1369`), Personification interaction layer (`#1372`), memory-scope model, PLAN.md Brain module (typed/promoted memory; generator/evaluator/Brain separation), `workflow/persona.py`, `workflow/universe_soul.py`, `workflow/api/status.py`.
@@ -131,9 +131,9 @@ re-points identity to "learn from history."
 
 ## 9. Proposed build slices (adapted order — Codex §11: build the replacement before retiring anything)
 
-1. **`UniverseSelfModel` store + signal ingestion** (§10). The blank identity store
-   + the loop that updates it from founder signal + branch history. Pure addition;
-   nothing retired. **Gated on host approval of the §10 schema.**
+1. **OKF self-model bundle + seed (§10).** Stand up the per-universe `self/` OKF
+   bundle with a seed `index.md` (okf_version + the broken-link curiosity questions)
+   + read/write primitives. Pure addition; nothing retired. *(host-approved 2026-06-25)*
 2. **`get_status.persona` = learned self-model, additive/versioned.** Keep
    `name`/`purpose`/`embodied`; add the learned identity + a `learning`/curious
    state. Both-client `ui-test`.
@@ -148,24 +148,36 @@ re-points identity to "learn from history."
 
 Each slice: TDD, opposite-provider review, live chatbot `ui-test` via the CDP route.
 
-## 10. Self-model store — minimum viable (MUST be specified before build; Codex critical)
+## 10. Self-model store — an OKF bundle the brain writes about itself (host-resolved 2026-06-25)
 
-The core mechanism, currently the biggest gap. Must respect PLAN.md Brain memory
-(typed, promoted, generator/evaluator/Brain kept separate). Open for host design:
+Re-reading the OKF spec + README settled this and made it far smaller than first
+drafted. **OKF is intentionally minimal — it imposes no curation, confidence, or
+quality gate (curation is the producer's job); `index.md` is auto-generated
+progressive disclosure.** So the self-model is just an OKF bundle the brain authors
+about itself — no bespoke schema, no evaluator engine.
 
-- **`UniverseSelfModel`** — a brain-owned, per-universe store of *learned identity
-  claims*, distinct from the operational soul. Each claim carries: the assertion
-  (e.g. name="Tiny", "a patch loop runs in me"), **evidence refs** (which signal /
-  which branches), **confidence**, **provenance/source-tier** (founder signal vs
-  observed activity), and timestamps.
-- **Writer cadence** — when the brain updates: per founder interaction, per branch
-  completion, periodic re-assemble? (Decide; default: incremental on signal +
-  branch-complete, with periodic consolidation.)
-- **Evaluator gate** — claims are *promoted* (not raw-appended) so the self-model
-  doesn't hallucinate or drift; contradiction handling when new evidence conflicts.
-- **Cold start** — empty self-model → pure curiosity until signal arrives.
-- **Read path** — `get_status.persona` + the persona voice read the promoted
-  self-model, never the operational premise.
+- **Store** — a per-universe OKF bundle at `self/` (sibling of the operational soul,
+  distinct from its operational fields). One concept `.md` per learned thing
+  (`identity.md`, `founder.md`, `body.md`, `goals.md`, …), each with OKF frontmatter
+  (`type` required) plus extension keys (`confidence`, `provenance:
+  founder-signal | observed-activity`, `timestamp`). Reuses `workflow/wiki/okf_export.py`.
+- **Evidence** — OKF `# Citations`: a claim cites the branch / conversation that
+  taught it. A claim isn't *promoted*, it's *written with its receipt*. That citation
+  discipline is the only gate.
+- **Curiosity = OKF broken links** — a blank brain's `index.md` links to concept
+  files that don't exist yet (OKF: "not-yet-written knowledge"); the gaps *are* its
+  open questions. The seed `index.md` lists the universal questions (identity/name,
+  founder, goals, body, existing-vs-new).
+- **Learning history** — OKF `log.md`: dated entries as the brain updates itself.
+- **Cadence** — not engineered. The brain updates as it interacts / observes (like a
+  person), not on a schedule.
+- **Read path / persona surface** — `get_status.persona` reads the bundle's
+  `index.md` (OKF's native summary), additively, never the operational premise.
+
+**On Codex's "evaluator gate" must-fix:** softened to **test-first**. OKF + host
+direction (don't over-steer; don't assume the model can't curate) say: ship the
+citation discipline, *test whether intent alone produces honest self-modeling*, and
+add a gate only if live testing shows drift/hallucination.
 
 ## 11. Opposite-provider review (Codex, 2026-06-25) = ADAPT — folded
 
