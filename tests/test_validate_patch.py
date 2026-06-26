@@ -1,0 +1,96 @@
+"""validate_patch opaque node — deterministic patch-apply verification.
+
+The loop's first EXECUTABLE check: does the proposed packet's edits_json apply
+to the fetched current contents? No LLM, no network. Catches the dominant
+patch-failure mode (a search string that isn't verbatim-unique) before
+review_gate/open_pr, and emits a concrete reason for a retry.
+"""
+from __future__ import annotations
+
+import json
+
+from workflow.effectors.validate_patch import (
+    DOMAIN_ID,
+    NODE_ID,
+    register_validate_patch,
+    validate_patch,
+)
+
+_FILE = "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n"
+
+
+def _packet(edits):
+    return json.dumps({
+        "sink": "github_pull_request",
+        "destination": "Owner/Repo",
+        "payload": {"title": "t", "edits_json": edits},
+    })
+
+
+def _state(packet, contents):
+    return {
+        "pr_packet_draft": packet,
+        "current_contents_json": json.dumps(contents),
+    }
+
+
+def test_valid_patch_applies_cleanly():
+    edits = {"m.py": [{"search": "return a - b", "replace": "return a - b  # fixed"}]}
+    out = validate_patch(_state(_packet(edits), {"m.py": _FILE}))
+    assert out["patch_validity"] == "VALID", out
+    assert "apply cleanly" in out["patch_validity_detail"]
+
+
+def test_invalid_search_not_found():
+    edits = {"m.py": [{"search": "return a * b", "replace": "x"}]}
+    out = validate_patch(_state(_packet(edits), {"m.py": _FILE}))
+    assert out["patch_validity"] == "INVALID"
+    assert "m.py" in out["patch_validity_detail"]
+
+
+def test_invalid_search_not_unique():
+    # "a, b" occurs in both function signatures -> not unique.
+    edits = {"m.py": [{"search": "a, b", "replace": "a, b, c"}]}
+    out = validate_patch(_state(_packet(edits), {"m.py": _FILE}))
+    assert out["patch_validity"] == "INVALID"
+    assert "unique" in out["patch_validity_detail"].lower()
+
+
+def test_invalid_unfetched_target_path():
+    edits = {"missing.py": [{"search": "x", "replace": "y"}]}
+    out = validate_patch(_state(_packet(edits), {"m.py": _FILE}))
+    assert out["patch_validity"] == "INVALID"
+    assert "missing.py" in out["patch_validity_detail"]
+
+
+def test_malformed_packet_is_invalid_not_crash():
+    out = validate_patch({"pr_packet_draft": "not json {{{", "current_contents_json": "{}"})
+    assert out["patch_validity"] == "INVALID"
+    assert "json" in out["patch_validity_detail"].lower()
+
+
+def test_new_file_only_packet_defers_to_review():
+    # changes_json with a string = new file; no edits_json to verify deterministically.
+    packet = json.dumps({"payload": {"changes_json": {"new.py": "print('hi')\n"}}})
+    out = validate_patch(_state(packet, {}))
+    assert out["patch_validity"] == "VALID"
+
+
+def test_code_fence_wrapped_packet_tolerated():
+    edits = {"m.py": [{"search": "return a - b", "replace": "return b - a"}]}
+    fenced = "```json\n" + _packet(edits) + "\n```"
+    out = validate_patch(_state(fenced, {"m.py": _FILE}))
+    assert out["patch_validity"] == "VALID", out
+
+
+def test_registered_as_opaque_domain_callable():
+    register_validate_patch()
+    from workflow.domain_registry import resolve_domain_callable
+
+    fn = resolve_domain_callable(DOMAIN_ID, NODE_ID)
+    assert fn is validate_patch
+
+
+def test_never_raises_on_empty_state():
+    out = validate_patch({})
+    assert out["patch_validity"] == "INVALID"
