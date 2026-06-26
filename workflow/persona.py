@@ -1,56 +1,100 @@
-"""Persona resolution — the named projection of a universe's whole mind.
+"""Persona resolution — the named projection of a universe's *learned* self.
 
-Spec §3 (universe-personification): every interaction on the Workflow
-connector is the active universe's persona speaking. The persona is the
-*named projection* of the whole mind — its identity (``name``) plus its
-voice (``voice_hard_lines``) and its reason for being (``purpose``). The
-chatbot (the LLM) embodies it and speaks in the first person as it; the
-server only resolves + surfaces the identity and instructs embodiment in
-the prompt/instructions. There is no server-side LLM rewriting.
+Design note: docs/design-notes/2026-06-25-blank-slate-universe-brain.md.
 
-Persona config is ``[composable]`` — it lives on the universe soul
-(``UniverseSoul.name`` carries the identity; ``hard_lines`` carry the
-voice; ``purpose`` carries the reason). The substrate only resolves and
-surfaces it; it does not own or generate it.
+The persona is the universe brain speaking as itself. Its self-understanding
+comes from the brain's **self-model** — a per-universe OKF bundle the brain
+authors about itself (``workflow.universe_self_model``) — NOT from a hand-fed
+``soul.purpose``. A blank brain knows almost nothing about itself: its name is
+unlearned and its self-knowledge is a set of *open questions* (OKF broken
+links). As it learns from its founder + its universe's activity, it writes
+concept files and those questions become *known*.
+
+The soul stays the universe's **operational** state (loop branch, authority,
+the founder's premise/direction). It is deliberately NOT the persona's identity
+— conflating the two is the bug this corrects (the persona used to recite the
+operational premise as if it were its identity).
+
+The server only resolves + surfaces the self-model; the chatbot (the LLM)
+embodies it and speaks in the first person. No server-side LLM rewriting.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from workflow.universe_soul import UniverseSoul
 
 
 @dataclass(frozen=True)
 class Persona:
-    """A universe's named, embodied projection — identity + voice + purpose."""
+    """A universe brain's embodied projection, sourced from its learned self-model.
+
+    ``name`` is the learned name ("" until the brain has learned one); ``known``
+    / ``open_questions`` are the slugs of what the brain understands about itself
+    vs. what it is still curious to learn. ``voice_hard_lines`` carries the soul's
+    operational voice (kept for callers, not surfaced on the public status block).
+    """
 
     name: str
     voice_hard_lines: tuple[str, ...]
-    purpose: str
+    initialized: bool = False
+    known: tuple[str, ...] = ()
+    open_questions: tuple[str, ...] = field(default=())
 
     @property
     def is_named(self) -> bool:
         return bool(self.name)
 
     def summary(self) -> dict[str, object]:
-        # voice_hard_lines is intentionally NOT surfaced: get_status uses this
-        # and is caller-visible without the tier floor (out of scope for Slice
-        # 1). name + purpose are already exposed via `universe inspect`
-        # (soul.summary()); voice surfacing waits for authorization-before-voice.
+        # Additive/versioned shape (Codex 2026-06-25): keep the pinned
+        # name/purpose/embodied keys for cross-client (ChatGPT + Claude) compat,
+        # add the self_model. `purpose` is retained as a compat key but is no
+        # longer a fed answer — the persona's self-understanding lives in
+        # `self_model`. voice_hard_lines stays unsurfaced (tier floor, #1168).
         return {
             "name": self.name,
-            "purpose": self.purpose,
+            "purpose": "",
             "embodied": True,
+            "self_model": {
+                "initialized": self.initialized,
+                "known": list(self.known),
+                "open_questions": list(self.open_questions),
+            },
         }
 
 
-def resolve_persona(soul: UniverseSoul | None) -> Persona:
-    """Project a universe soul onto its embodied persona.
+def resolve_persona(
+    soul: UniverseSoul | None,
+    self_model: dict[str, object] | None = None,
+) -> Persona:
+    """Project a universe's learned self-model (+ operational soul voice) onto its
+    embodied persona.
 
-    No soul → an unnamed persona (the chatbot speaks as the universe's mind
-    plainly and invites the founder to name it).
+    ``self_model`` is the view from ``universe_self_model.read_self_model``. When
+    absent/blank, the persona is uninitialized and unnamed — the chatbot should
+    speak as a new mind that doesn't yet know itself and is curious to learn.
+    The persona's identity NEVER comes from ``soul.purpose`` (operational).
     """
-    if soul is None:
-        return Persona("", (), "")
-    return Persona(soul.name.strip(), soul.hard_lines, soul.purpose)
+    hard_lines = soul.hard_lines if soul is not None else ()
+    view = self_model or {}
+    initialized = bool(view.get("bundle_exists"))
+    known = tuple(
+        str(item.get("slug", ""))
+        for item in view.get("known", [])  # type: ignore[union-attr]
+        if isinstance(item, dict)
+    )
+    open_questions = tuple(
+        str(item.get("slug", ""))
+        for item in view.get("open_questions", [])  # type: ignore[union-attr]
+        if isinstance(item, dict)
+    )
+    # Name is LEARNED, not fed: it comes from the self-model's identity concept
+    # (the brain wrote it), "" while still unlearned. Never from soul.name.
+    return Persona(
+        name=str(view.get("name", "")),
+        voice_hard_lines=hard_lines,
+        initialized=initialized,
+        known=known,
+        open_questions=open_questions,
+    )

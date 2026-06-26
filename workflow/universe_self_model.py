@@ -106,9 +106,33 @@ def read_self_model(universe_dir: Path) -> dict[str, object]:
     return {
         "bundle_exists": True,
         "okf_version": _read_okf_version(index_path.read_text(encoding="utf-8")),
+        # The learned name, if the brain has written an identity concept carrying
+        # one (OKF extension key). "" while still unlearned (Codex 2026-06-25 —
+        # keep name consistent with the `identity` known/open state).
+        "name": _read_concept_name(bundle / "identity.md"),
         "known": known,
         "open_questions": open_questions,
     }
+
+
+def _read_concept_name(path: Path) -> str:
+    """Read a ``name`` frontmatter key from a self-model concept (an OKF
+    extension key). Returns "" if the file/key is absent or unparseable."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    if not text.startswith("---\n"):
+        return ""
+    try:
+        frontmatter, _body = text[4:].split("\n---\n", 1)
+    except ValueError:
+        return ""
+    for line in frontmatter.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key.strip() == "name":
+            return value.strip().strip('"')
+    return ""
 
 
 def _read_okf_version(index_text: str) -> str:

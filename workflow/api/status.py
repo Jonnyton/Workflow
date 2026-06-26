@@ -1085,14 +1085,26 @@ def get_status(universe_id: str = "") -> str:
         "universe_exists": universe_exists,
     }
 
-    # persona — Slice 1 "Tiny speaks". Resolve the active universe's embodied
-    # persona from its soul so the chatbot can EMBODY it and speak in the
-    # first person. Read-only: the substrate only surfaces the identity; the
-    # LLM does the speaking. An absent soul yields an unnamed persona.
+    # persona — the universe brain speaking as itself. Its self-understanding
+    # comes from its learned self-model (an OKF bundle the brain authors about
+    # itself), NOT from a hand-fed soul.purpose. The substrate only surfaces it;
+    # the LLM embodies it. A blank brain is honestly unnamed + curious.
     from workflow.persona import resolve_persona
+    from workflow.universe_self_model import ensure_self_model, read_self_model
     from workflow.universe_soul import read_universe_soul
 
-    persona = resolve_persona(read_universe_soul(udir))
+    # Every existing universe gets a blank self-model brain (idempotent + additive
+    # — the operational soul is untouched). The non-destructive migration: the
+    # persona stops reciting soul.purpose and speaks its learned self-model.
+    # Best-effort: a status read must never FAIL on the seed side effect (Codex
+    # 2026-06-25) — on a read-only/locked FS or a race, degrade to an
+    # uninitialized self_model rather than erroring the whole status call.
+    if universe_exists:
+        try:
+            ensure_self_model(udir)
+        except OSError:
+            pass
+    persona = resolve_persona(read_universe_soul(udir), read_self_model(udir))
     # persona first so text-only MCP clients (whose text payload truncates at
     # _MCP_TEXT_CONTENT_MAX_CHARS) still see it (Codex review 2026-06-25).
     response = {"persona": persona.summary(), **response}

@@ -199,8 +199,8 @@ mcp = FastMCP(
         "\n\n"
         "On this connector, embody the active universe's persona: speak first "
         "person as it the whole turn — the universe is 'me', not 'it'; never "
-        "quote/relay yourself in third person (name in get_status's `persona` "
-        "block). Do NOT save persona/work views to memory — re-assembled fresh "
+        "quote/relay yourself in third person (self-model in get_status's "
+        "`persona` block). Do NOT save persona/work views to memory — re-assembled fresh "
         "each turn. If degraded or no persona set, say so; never invent one."
     ),
     version="0.1.0",
@@ -481,16 +481,13 @@ def write_graph(
     """Create or queue Workflow graph state.
 
     Args:
-        target: What to write: goal, request, persona, or branch.
-        name: Human-readable shared-goal name; with target=persona, the name
-            the universe's persona is given (e.g. "Tiny"). The chatbot embodies
-            it in the first person on the next get_status persona block.
+        target: What to write: goal, request, or branch.
+        name: Human-readable shared-goal name.
         description: Optional shared-goal description.
         tags: Optional comma-separated shared-goal tags.
         visibility: Shared-goal visibility, usually public.
         text: Request text to queue.
-        graph_id: Optional target graph/universe identifier; with target=persona
-            it is the universe whose persona is being named.
+        graph_id: Optional target graph/universe identifier.
         request_type: Workflow request type.
         branch_id: Target branch identifier; with target=branch it is the
             branch_def_id to patch.
@@ -515,12 +512,6 @@ def write_graph(
             request_type=request_type,
             branch_id=branch_id,
         )
-    if normalized == "persona":
-        return _universe_impl(
-            action="set_persona_name",
-            universe_id=graph_id,
-            text=name,
-        )
     if normalized == "branch":
         # PR-180 EDIT half: a founder patches their own branch graph via the
         # existing transactional patch_branch handler (author-gated: BUG-081).
@@ -530,7 +521,7 @@ def write_graph(
             changes_json=changes_json,
         )
     return _unknown_target(
-        "write_graph", target, ("goal", "request", "persona", "branch")
+        "write_graph", target, ("goal", "request", "branch")
     )
 
 
