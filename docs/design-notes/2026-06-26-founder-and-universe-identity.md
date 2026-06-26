@@ -1,6 +1,6 @@
 # Founder & Universe Identity — who a universe belongs to, and which persona a chatbot wears
 
-- **Status:** Proposed (design). Host-ratified principles 2026-06-25/26. Opposite-provider review (Codex) = **ADAPT, blocking** — folded (§8). Not build-ready until the §2 auth-subject reality is resolved.
+- **Status:** Proposed (design). Host-ratified principles 2026-06-25/26. Opposite-provider review (Codex) = **ADAPT, blocking** — folded (§8). **AS provider decided 2026-06-26: WorkOS AuthKit (managed) — §3.0; resolves the §2 auth-subject crux + §6 Q1.** Spec currency: tracks MCP auth **2025-11-25** (DCR→CIMD) + **EMA stable 2026-06-18**, not only the 2025-06-18 revision §1 was first drafted against.
 - **Author:** Claude Code session (host design dialogue 2026-06-26).
 - **Upstream of:** the blank-slate universe brain (`2026-06-25-blank-slate-universe-brain.md`). The persona can only "align with its founder" once a founder identity exists.
 - **Touches:** `workflow/auth/*` (provider, middleware, wellknown), `workflow/api/engine_helpers.py`, `workflow/api/universe.py`, `workflow/api/helpers.py`, `workflow/api/status.py`, `workflow/universe_server.py` (`create_streamable_http_app`), `fantasy_daemon/__main__.py` (the single-universe loop), `deploy/cloudflare-worker/worker.js`.
@@ -38,9 +38,39 @@ is no founder to align with. This is upstream of the persona work.
 
 **Conclusion:** the foundation is *real user authentication in the OAuth flow*, not
 "flip a flag." Until a real human subject lands in the token, none of founder /
-capability / routing can work.
+capability / routing can work. **The mechanism is now decided (§3.0): a managed
+Authorization Server — WorkOS AuthKit — federates upstream to Google/GitHub OIDC and
+issues a token with a real `sub`; our MCP server becomes a pure OAuth 2.1 Resource
+Server that validates it. That is what makes Gap 0 closeable.**
 
 ## 3. The model (host-ratified) — unchanged in intent, corrected in mechanism
+
+### 3.0 The Authorization Server — WorkOS AuthKit (managed; decided 2026-06-26)
+**Decision:** we do NOT self-host an OAuth Authorization Server. Our MCP server is a pure
+**OAuth 2.1 Resource Server**; a **managed AS — WorkOS AuthKit — is the separate
+Authorization Server**, federating upstream to **Sign in with Google / GitHub (OIDC)**.
+The user logs in with an existing account; WorkOS issues a JWT with a stable `sub`; our
+server validates it against WorkOS's JWKS. **`sub` = the founder key.**
+
+- **Why managed, not self-host:** owning an AS forever (PKCE, refresh rotation, upstream-IdP
+  plumbing, SAML/SCIM, the EMA/ID-JAG extension) is a long-term security liability; managed
+  is the industry standard + where it's going, and is *less* code than self-hosting. (Host
+  principle: build the known long-term design, not the easy reuse of the existing
+  `workflow/auth` AS code.)
+- **Why WorkOS (head-to-head 2026-06-25, vs Auth0 + 7 others):** $0 + no credit card now,
+  **1M MAU free incl. social login**, a production "AuthKit for MCP" AS, **CIMD** (the
+  post-DCR client-identity model from the 2025-11-25 spec), SAML/SCIM ready for enterprise
+  "later" (per-connection cost only when an enterprise customer arrives), an ID-JAG/EMA
+  path, independent vendor (low roadmap risk). Auth0 splits *worse on both horizons* for a
+  customer-facing MCP server (DCR friction now; growth-penalty pricing later) — fallback
+  only if a future enterprise customer mandates Okta.
+- **Lock-in posture:** all standards-based (OAuth 2.1 / OIDC / JWKS / PRM discovery), so the
+  Resource Server stays insulated and the AS is swappable later; the only real switching
+  cost is the identity store (`sub`s) — identical for any managed AS, which is why we pick
+  one that covers both horizons up front.
+- **What `workflow/auth` becomes:** the self-issued anonymous-subject provider
+  (`provider.py`) is no longer the production identity source — retire it or demote it to
+  local-dev only; production identity comes from WorkOS. (Slice-1 work.)
 
 ### 3.1 Capability model — anonymous reads, OAuth writes (needs a NEW auth mode)
 - **Anonymous = read-only; OAuth = write/create.** Principle fixed.
@@ -96,7 +126,7 @@ explicitly out of scope for this note's read-side routing.
 
 | Area | Today | Direction |
 |---|---|---|
-| OAuth flow | issues anonymous-subject tokens; routes maybe unmounted | Capture a real user subject (login / upstream IdP); mount + prove discovery/token routes |
+| OAuth flow | issues anonymous-subject tokens; routes maybe unmounted | **WorkOS AuthKit = the AS** (upstream Google/GitHub OIDC → real `sub`); our server = Resource Server validating WorkOS JWTs vs JWKS; retire/demote self-issued anon provider |
 | `workflow/auth` modes | gated (rejects anon) / optional (enforces nothing) | New mode: resolve-always, anon reads, enforce named scopes on writes/costly/admin |
 | Scopes | coarse `read write` | `workflow.universe.read/write/costly` taxonomy + OAuth grants that match |
 | Universe ACL | only private universes gated | Founder field + founder-only-write policy; public reads stay open |
@@ -112,9 +142,9 @@ real-subject-in-token first (with live proof), then the new capability mode behi
 flag, then founder metadata, then routing.
 
 ## 6. Open questions
-1. **How does a real human subject enter the token?** Upstream IdP (Google/GitHub), a
-   login page on the daemon's auth server, or claude.ai-provided identity? This is the
-   crux and is currently unbuilt.
+1. ~~**How does a real human subject enter the token?**~~ **RESOLVED 2026-06-26 (§3.0):**
+   managed AS = **WorkOS AuthKit**, federating upstream to Google/GitHub OIDC → real `sub`.
+   Remaining build detail: wire AuthKit, validate JWTs vs JWKS, map `sub` → founder.
 2. Are the OAuth discovery/token routes actually mounted + reachable live?
 3. Serial-ID format (monotonic vs UUID) + legacy-id compatibility.
 4. Exact read/write/costly capability split.
@@ -122,9 +152,12 @@ flag, then founder metadata, then routing.
 6. Multi-daemon execution (separate note) — does the loop ever need to serve >1 universe?
 
 ## 7. Proposed slices (reordered per Codex — compatibility/identity proof FIRST)
-1. **Auth-subject proof.** Mount + verify the OAuth discovery/token routes; establish
-   how a real human subject is captured and lands in `authorization_codes.user_id` →
-   `resolve_token()` returns a real id. *(Blocks everything; partly a host/IdP decision.)*
+1. **Adopt WorkOS AuthKit as the AS (auth-subject proof).** Integrate WorkOS AuthKit as the
+   separate Authorization Server with upstream Google/GitHub OIDC; make our MCP server a
+   Resource Server that validates AuthKit JWTs against WorkOS's JWKS so `resolve_token()`
+   returns a real `sub`; retire/demote the self-issued anonymous provider in `workflow/auth`.
+   Live proof: an authenticated claude.ai session yields a non-anonymous `account_user`.
+   *(Blocks everything. AS-provider decision made; integration is the build.)*
 2. **New capability mode.** Resolve-always + anonymous-reads + enforce named scopes on
    writes/costly/admin; add the scope taxonomy. Behind a flag.
 3. **Founder metadata + founder-write ACL.** `create_universe` (OAuth-gated) records a
@@ -149,3 +182,9 @@ Each slice: TDD, Codex review, live `ui-test` via the CDP route.
 - **Confirmed:** the Worker forwards `Authorization` (not the gap).
 - Slices reordered: auth-subject proof → capability mode → founder metadata →
   identity→main → serial/routing.
+
+**Post-review AS-provider decision (2026-06-26, host-ratified):** managed AS = **WorkOS
+AuthKit** (head-to-head vs Auth0 + 7 others, §3.0). Resolves §2 Gap 0's "how does a real
+subject enter the token" (§6 Q1) — federate upstream OIDC, validate WorkOS JWTs, `sub` =
+founder. Slice 1 reframed from "prove the self-hosted routes" to "adopt WorkOS AuthKit."
+Spec currency bumped to track 2025-11-25 (CIMD) + EMA-stable 2026-06-18.
