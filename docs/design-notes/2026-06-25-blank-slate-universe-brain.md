@@ -1,190 +1,192 @@
 # Blank-Slate Universe Brain — every universe starts knowing nothing but the drive to align and learn
 
-- **Status:** Proposed (design). Host-ratified principles 2026-06-25; build slices not yet started.
+- **Status:** Proposed (design). Host-ratified principles 2026-06-25. Opposite-provider review (Codex) = **ADAPT**, folded — see §11. Not build-ready until the §10 self-model store is specified to host's satisfaction.
 - **Author:** Claude Code session (host design dialogue 2026-06-25).
 - **Supersedes framing of:** Persona Slices 1–3 (`#1382`, `#1386`, `#1395`) — see §7.
-- **Relates to:** OKF brain foundation (`#1369`, `docs/.../2026-06-24-...okf...`), Personification interaction layer (`#1372`), memory-scope model, `workflow/universe_soul.py`, `workflow/api/status.py` persona block.
+- **Relates to:** OKF brain foundation (`#1369`), Personification interaction layer (`#1372`), memory-scope model, PLAN.md Brain module (typed/promoted memory; generator/evaluator/Brain separation), `workflow/persona.py`, `workflow/universe_soul.py`, `workflow/api/status.py`.
 
 ---
 
 ## 1. Summary
 
-Every universe brain boots from the **same blank state**. It is pre-loaded with
-**nothing about itself** — no name, no purpose, no body, no identity. The only
-thing every brain starts with is a **drive**: *align with my founder, and learn
-continuously from everything that happens in me.* Its identity, body, shape,
-purpose, and even its **name** are **earned over time** — formed by the brain
-itself, from (a) its founder's signal and (b) the accumulated data of every
-branch ever run inside the universe. Nothing is ever *fed as an answer*; the
-founder has **no buttons** that write the brain's state directly. The brain is
-the **sole author of its own self-model**.
+Every universe brain boots from the **same blank state**, pre-loaded with
+**nothing about itself** — no name, no identity, no sense of its body. The only
+universal pre-load is a **drive**: *align with my founder, and learn continuously
+from everything that happens in me.* The brain's **identity** (who am I, my name,
+my body/shape) is **earned over time** — formed by the brain itself, from (a) its
+founder's signal and (b) the accumulated data of every branch ever run inside the
+universe. The founder has **no buttons** that write the brain's *identity* directly;
+the brain is the **sole author of its own self-model**.
 
-This is the same per-universe brain described in the OKF foundation — this note
-corrects its **seed state to empty** and forbids direct state-setting.
+**Critical distinction (Codex ADAPT, §11):** this applies to the persona's
+**identity self-model**, which is *separate from* the universe's **operational
+direction** (premise / loop branch / authority). The bug was conflating the two —
+the persona recited the operational premise *as its identity*. Operational
+direction stays as load-bearing founder signal; only identity becomes blank +
+learned.
 
 ## 2. Why now — the bug this corrects
 
-A live host-run chatbot test (2026-06-25, deployed sha `94b21693`) asked the
-platform universe's persona "who are you and what are you working on?" It replied:
+A live host-run chatbot test (2026-06-25, sha `94b21693`) asked the platform
+persona "who are you and what are you working on?" It replied:
 
 > "the persona is Tiny… **Tiny's declared purpose is the patch-request loop**… **it's
-> running** with effects in dry-run… What **it's** working on right now: 12 live runs…"
+> running** with effects in dry-run…"
 
-Two faults, one root cause:
-
-1. **It recited a purpose it never learned.** `UniverseSoul.purpose` held a
-   hand-authored string ("Patch-request loop: a user-built backlog driver…") and
-   `get_status` surfaced it. The persona *parroted a pre-fed answer*.
-2. **It relayed in the third person** ("the persona is Tiny", "it's working on")
-   instead of embodying ("I'm…", "I'm working on…").
-
-These are the **same problem**. Three slices of prompt-strengthening (Slices 1–3)
-tried to make the bot *embody the purpose better* — but you cannot stop a persona
-relaying a canned answer while a canned answer sits in its soul. **Remove the
-pre-feeding and the relay has nothing to grab.** A one-day-old universe asked
-"what are you?" should honestly say *"I'm new — I don't know my shape yet; I'm
-here with you and learning,"* not recite a mission someone typed for it.
+The persona *recited a hand-authored `UniverseSoul.purpose` string* — it parroted a
+pre-fed answer it never learned. Three slices of prompt-strengthening tried to make
+it *embody* that answer; you cannot stop a persona relaying a canned answer while a
+canned answer sits in its soul. Remove the fed *identity* and the relay has less to
+grab. (Caveat per Codex §11: removing the fed answer does **not** by itself
+*guarantee* first-person embodiment — clients can relay any block in third person.
+Client-instruction/prompt verification stays a **separate acceptance gate**.)
 
 ## 3. The model (host-ratified principles)
 
 1. **Identity is the universe.** Every unique OAuth identity maps to one **main
    universe**, created automatically on first recognition.
-
 2. **One uniform blank brain.** Every universe boots from the identical starting
-   brain. Pre-loaded content = **zero**. The only universal pre-load is the
-   **drive**: *align with my founder + learn from all universe activity.*
-
-3. **No buttons.** The founder cannot reach in and set the brain's state. There is
-   no "set purpose", no "set name", no direct identity/body writer exposed to the
-   founder. Everything the founder does — talk, state intent, run branches — is
-   **signal** the brain absorbs through its drive. This is structural, not a
-   policy: with no setters, nothing can *ever* be fed as an answer.
-
-4. **The brain is the sole author of its own self-model.** "No buttons" applies to
-   the *founder*. The **brain** continuously forms, holds, and updates its own
-   evolving self-understanding from signal (founder) + activity (branches). It is
+   brain. Pre-loaded **identity** content = **zero**. The only universal pre-load
+   is the **drive**: *align with founder + learn from all activity.*
+3. **No buttons (for identity).** The founder cannot set the brain's *identity*
+   directly. Everything they do — talk, state intent, run branches — is **signal**
+   the brain absorbs.
+4. **The brain is the sole author of its own self-model.** It continuously forms,
+   holds, and updates its evolving self-understanding from signal + activity. It is
    the only writer of its identity.
-
-5. **Founder intent is signal, not a constraint to resolve.** "Declared vs
-   inferred" is a false dichotomy. The founder freely expresses what they want —
-   that's *clear signal* — and it is fine, because the brain *intrinsically wants
-   to align and do what the founder wants*. There is no tension to police.
-
-6. **Curiosity comes from the drive, not a fed checklist.** We do **not** hardcode
-   "ask for the repo link / the website / your name." A blank brain that *wants to
-   align* is naturally curious about exactly the dimensions it needs in order to
-   align: *who is my founder? what are this universe's goals? is there existing
-   work I should reference and build from, or is the founder starting something
-   new?* The **questions are universal** (every brain wants these); the **answers
-   are emergent** (learned per universe). The specific facts — name = "Tiny", the
-   repo URL, the founder's website — are answers the brain *goes looking for
-   because it wants to*, then writes into its own self-model.
-
+5. **Founder intent is signal, not a constraint to resolve.** The founder freely
+   expresses what they want — clear signal — and the brain *intrinsically wants to
+   align*. No tension to police.
+6. **Curiosity comes from the drive, not a fed checklist.** A blank aligning mind
+   is naturally curious about exactly what it needs to align: *who is my founder?
+   what are this universe's goals? existing work to build from, or starting new?*
+   Questions universal; answers emergent.
 7. **Generic name at birth; the name is learned.** On OAuth recognition the
-   universe is assigned a **generic placeholder name** — never a meaningful one
-   ("patch-loop", "Tiny" are both wrong at birth). A real name is something the
-   brain comes to, from its founder, over time.
-
-8. **Body and shape are observed, never declared.** The brain comes to know its
-   body the way a person does — `patch-loop-live` should *discover* "a patch loop
-   runs in me" by **observing it run** across the universe's branch history, never
-   by being told.
+   universe gets a **generic placeholder name** — never meaningful at birth.
+8. **Body/shape are observed, never declared.** `patch-loop-live` *discovers* "a
+   patch loop runs in me" by observing its branch history.
+9. **Identity self-model ≠ operational direction (Codex ADAPT).** The founder's
+   premise/direction (what to build), the loop branch, and authority grants are
+   **operational** founder signal — they stay, the daemon keeps reading them. The
+   persona's **identity** (name, self-understanding, body-sense) is the *only* thing
+   that becomes blank + learned. `set_premise` does not vanish; it stops being
+   surfaced as the persona's *identity claim*.
 
 ## 4. Onboarding flow (first-time user)
 
-1. The user adds the Workflow connector, **or** their chatbot connects to the MCP
-   directly.
-2. The system reads the unique OAuth and checks for a main universe:
-   - **None** → create one: blank brain + generic placeholder name.
-   - **Exists** → auto-route to that main universe and its persona.
-3. **First contact = curiosity.** The brain wants to learn its founder, the
-   universe's goals, and whether there is existing work to build from or the
-   founder is starting fresh. It asks — not from a script, but because a blank,
-   aligning mind genuinely needs to know.
-
-For the **host specifically:** a universe already exists, but under §6 (migration)
-it is stripped to blank. Next contact, instead of "I'm Tiny, my job is the patch
-loop," it is curious about *him* and about *the universe it finds itself in*: it
-can see deep history (a patch loop, ~27 goals) and reconstructs its **body** from
-that real activity, while openly not yet knowing its founder, its name, or whether
-this is work to build on or a fresh start.
+1. User adds the connector, or their chatbot connects to the MCP directly.
+2. System reads the unique OAuth: **no** main universe → create one (blank identity
+   + generic name); **has** one → auto-route to it + its persona.
+3. **First contact = curiosity:** the brain wants to learn its founder, the goals,
+   and existing-vs-new. For the host: a universe already exists, but its *identity*
+   is blank, so it is curious about *him* and reconstructs its body from the real
+   branch history it can see.
 
 ## 5. Architecture mapping
 
-- **This is the per-universe OKF brain** (`#1369`) with its **seed state corrected
-  to empty**. The brain assembles a self-model from universe activity across the
-  memory-scope tiers (node → branch → goal → user → universe). That self-model
-  **is** the persona's voice (`#1372` personification).
-- **`UniverseSoul.purpose`** + the `set_premise` that writes it = the pre-feeding
-  to remove. A learned, brain-maintained self-summary replaces the hand-set string.
-- **`get_status` persona block** must stop surfacing an authored purpose as fact;
-  it surfaces the brain's *current learned self-model* (which, for a fresh or
-  freshly-stripped universe, is honestly sparse + curious).
-- **The persona voice** = whatever self-model the brain has authored so far.
-  Embodiment falls out of this for free: there is no separate "persona" to relay,
-  only the brain speaking as itself.
+- **This is the per-universe OKF brain** (`#1369`) with its **identity seed state
+  corrected to empty.** The brain assembles an identity self-model from universe
+  activity across the memory tiers (node→branch→goal→user→universe). That
+  self-model **is** the persona's voice (`#1372`).
+- **`UniverseSoul` is split in two roles** (Codex §11): *operational* fields
+  (`loop_branch_def_id`, `edit_authority`, `effect_authority`, and the premise as
+  build-direction) stay and keep driving the daemon; the *identity* the persona
+  claims moves to a new, brain-authored **`UniverseSelfModel`** (§10) that starts
+  blank.
+- **`get_status` persona block** stops presenting authored `purpose` as the
+  persona's self-claim; it surfaces the brain's *current learned self-model*
+  (sparse + curious when new) — via an **additive/versioned** shape change, not a
+  key swap (tests pin `name`/`purpose`/`embodied`; keep them, add learned fields).
+- **The persona voice** = whatever self-model the brain has authored so far;
+  embodiment is a *separate* client-side gate (§2 caveat).
 
 ## 6. What changes in current code (audit, not yet built)
 
-| Current | Problem under this model | Direction |
+| Current | Problem | Direction (adapted) |
 |---|---|---|
-| `UniverseSoul.purpose` (authored) | Pre-fed identity the persona recites | Replace with brain-authored, learned self-model |
-| `set_premise` (writes purpose) | A founder "button" that sets brain state | Remove as a direct setter; founder intent becomes signal the brain absorbs |
-| `write_graph(target=persona, name=…)` / `set_persona_name` (Slice 2, `#1386`) | A founder "button" that sets the name AND short-circuits learning it | Remove as a direct setter; name is learned from founder signal |
-| Universe creation assigns a meaningful name | Names a universe "patch-loop" etc. at birth | Assign a generic placeholder; name is learned |
-| `get_status` persona block surfaces authored `purpose` | Surfaces a fed answer as fact | Surface the brain's current learned self-model |
-| Persona Slices 1–3 prompt strengthening | Trying to embody a fed answer | Reframed — embodiment is automatic once there's no fed answer |
+| `resolve_persona` surfaces `soul.purpose` as identity | Recites a fed answer | Surface the learned `UniverseSelfModel`; keep `purpose` key additively for compat |
+| `set_premise` writes purpose + PROGRAM.md | Doubles as identity *and* operational direction | **Keep** as operational founder-signal; stop routing it to the persona's identity claim. Daemon keeps reading premise for direction |
+| `write_graph(target=persona, name=…)` (Slice 2, `#1386`) | Founder button that sets identity + short-circuits learning | Demote/remove **last**, only after the brain can learn a name from signal |
+| Universe creation writes premise at birth | Pre-fed identity | Keep premise as direction; **identity** self-model starts blank; assign generic name |
+| `get_status` persona surfaces authored purpose | Fed answer as fact | Additive/versioned learned-self-model shape; both-client `ui-test` |
 
-**Migration (host-ratified): strip existing universes and let them re-learn from
-their own history.** Keep each universe's activity/branch history; drop its
-authored soul identity (purpose, etc.). The brain reconstructs its body/identity
-from the real history and becomes curious about its founder. This makes
-`patch-loop-live` the first and richest test case: deep history, blank self-model,
-watch it rebuild understanding from its own data.
+**Migration (adapted — do NOT strip souls wholesale, Codex §11):** keep every
+universe's **operational** soul fields (loop branch, authority) and its activity
+history; blank only the **authored identity** the persona claims. Stripping
+`patch-loop-live`'s whole soul would null `loop_branch_def_id` → `submit_request`
+rejects and the loop queues nothing (`workflow/api/universe.py:1397`). Migration is
+**reversible**, ships with a **dry-run inventory** for `patch-loop-live`, and only
+re-points identity to "learn from history."
 
 ## 7. Relationship to the persona slices already shipped
 
-- **Slice 1 (`#1382`)** — persona surfacing + embody prompt. *Kept* (the
-  surfacing scaffold is reusable) but its embody framing is subsumed.
-- **Slice 2 (`#1386`)** — `set_persona_name` verb. **Reverse:** it is a founder
-  button that sets the name directly (§6). The name must be learned.
-- **Slice 3 (`#1395`)** — stronger embody prompt. Live test showed it did not move
-  the voice (the control_station prompt is likely not even loaded by claude.ai;
-  only the always-present `instructions` apply). Subsumed: embodiment is not a
-  prompt problem, it is a *no-fed-answer* problem.
+- **Slice 1 (`#1382`)** — persona surfacing + embody prompt. Surfacing scaffold
+  reused; the identity it surfaces becomes the learned self-model.
+- **Slice 2 (`#1386`)** — `set_persona_name` verb. To be **demoted/removed last**,
+  after the brain can learn a name. (Not reversed first — Codex §11 ordering.)
+- **Slice 3 (`#1395`)** — stronger embody prompt. Live test showed no voice shift;
+  embodiment is a separate client gate, tracked apart from this note.
 
-The honest read: the persona work was iterating the wrong layer. This note relocates
-the fix from "say the persona better" to "let the brain have no pre-given self."
+## 8. (reserved)
 
-## 8. Open questions / risks (for slicing)
+## 9. Proposed build slices (adapted order — Codex §11: build the replacement before retiring anything)
 
-1. **Self-model store + learning loop.** Where does the brain's learned self-model
-   live (OKF bundle? a learned-summary doc the brain writes?), and what is the
-   learning cadence — every interaction, every branch completion, a periodic
-   re-assemble? This is the core build.
-2. **Bootstrapping cold.** A brand-new universe with zero history has nothing to
-   learn from yet. Confirm the desired first-contact behavior is pure curiosity
-   (ask the founder), with the self-model genuinely empty until signal arrives.
-3. **Cross-client surface.** `get_status` shape change is consumed by both ChatGPT
-   and Claude (mandatory both-client `ui-test`). Any persona-block change ships
-   with that check.
-4. **Migration safety.** Stripping authored souls is a write to live universe
-   state — needs a reversible/auditable migration, not a destructive one.
-5. **What persists as "signal" vs "noise."** The brain learns from *all* activity;
-   define what it weights (founder's explicit intent vs incidental branch output).
+1. **`UniverseSelfModel` store + signal ingestion** (§10). The blank identity store
+   + the loop that updates it from founder signal + branch history. Pure addition;
+   nothing retired. **Gated on host approval of the §10 schema.**
+2. **`get_status.persona` = learned self-model, additive/versioned.** Keep
+   `name`/`purpose`/`embodied`; add the learned identity + a `learning`/curious
+   state. Both-client `ui-test`.
+3. **First-contact curiosity.** The drive-driven "get to know my founder / goals /
+   existing-vs-new" behavior, sourced from the self-model's gaps.
+4. **Generic-name-at-birth + identity/operational split** in universe creation.
+5. **Demote `set_premise` to operational-signal-only + remove `set_persona_name`.**
+   Last, now that the brain learns identity. Premise still drives the daemon.
+6. **Reversible migration** with dry-run inventory; verify a blanked-identity
+   `patch-loop-live` still runs its loop (operational fields intact) and
+   reconstructs its body from history.
 
-## 9. Proposed build slices (draft, for approval)
+Each slice: TDD, opposite-provider review, live chatbot `ui-test` via the CDP route.
 
-1. **Strip + generic-name substrate.** Universe creation assigns a generic
-   placeholder name; remove meaningful-name-at-birth. (Foundational, low-risk.)
-2. **Retire the founder setters.** Deprecate `set_persona_name` and demote
-   `set_premise` from "writes identity" to "founder signal the brain ingests."
-3. **Brain self-model store + curiosity drive.** The blank self-model + the
-   learning loop that updates it from signal + activity; first-contact curiosity.
-4. **`get_status` persona block = learned self-model.** Surface the brain's current
-   self-understanding (sparse/curious when new); both-client `ui-test`.
-5. **Migration.** Strip existing universes' authored souls (reversible), keep
-   history; verify `patch-loop-live` reconstructs its body from activity.
+## 10. Self-model store — minimum viable (MUST be specified before build; Codex critical)
 
-Each slice gets the standard gate: TDD, opposite-provider review, live chatbot
-`ui-test` read via the CDP route, before it is called done.
+The core mechanism, currently the biggest gap. Must respect PLAN.md Brain memory
+(typed, promoted, generator/evaluator/Brain kept separate). Open for host design:
+
+- **`UniverseSelfModel`** — a brain-owned, per-universe store of *learned identity
+  claims*, distinct from the operational soul. Each claim carries: the assertion
+  (e.g. name="Tiny", "a patch loop runs in me"), **evidence refs** (which signal /
+  which branches), **confidence**, **provenance/source-tier** (founder signal vs
+  observed activity), and timestamps.
+- **Writer cadence** — when the brain updates: per founder interaction, per branch
+  completion, periodic re-assemble? (Decide; default: incremental on signal +
+  branch-complete, with periodic consolidation.)
+- **Evaluator gate** — claims are *promoted* (not raw-appended) so the self-model
+  doesn't hallucinate or drift; contradiction handling when new evidence conflicts.
+- **Cold start** — empty self-model → pure curiosity until signal arrives.
+- **Read path** — `get_status.persona` + the persona voice read the promoted
+  self-model, never the operational premise.
+
+## 11. Opposite-provider review (Codex, 2026-06-25) = ADAPT — folded
+
+Codex (read-only) judged the direction sound but **not build-ready**, with 3
+critical + 3 required findings, all folded above:
+
+- **Critical — self-model is hand-wavy** → §10 added (schema/store/cadence/evidence/
+  evaluator/drift); gated on host approval before build.
+- **Critical — unsafe slice order** (retires setters before the replacement) → §9
+  reordered: build self-model + learned status FIRST, retire setters LAST.
+- **Critical — "strip souls" breaks the loop** (soul mixes identity + operational;
+  no loop branch ⇒ `submit_request` rejects) → §5/§6/§9 split identity from
+  operational; migration preserves operational fields, reversible + dry-run.
+- **Required — `get_status` cross-client shape** → additive/versioned, keep pinned
+  keys, both-client `ui-test`.
+- **Required — "founder intent = signal" needs a contract** → §9 principle + §6:
+  `set_premise` stays operational; specify storage + daemon effect + client response
+  in slice 5.
+- **Required — over-declared the persona bug resolved** → §2 caveat: embodiment is
+  a separate client-instruction gate; removing the fed answer is necessary, not
+  sufficient.
+
+**Status after fold:** direction approved; build still gated on host sign-off of the
+§10 self-model schema (the one genuinely-open design surface).
