@@ -17,12 +17,12 @@ network_type             = "testnet"
 fee_bps                  = 100       # 1% (per project_monetization_crypto_1pct memory)
 settlement_threshold_usd = 1.00      # Per-bid on-chain above, batched below (per project_q10_q11_q12_resolutions Q4-follow-up)
 batch_cadence_hours      = 168       # Weekly
-label                    = "workflow-testnet-treasury-v0"
+label                    = "tinyassets-testnet-treasury-v0"
 created                  = "2026-04-19"
 is_active                = true
 
 # Seed storage location (references only — never values):
-#   Default: ~/.workflow-secrets/base-sepolia-treasury-v0.txt (outside
+#   Default: ~/.tinyassets-secrets/base-sepolia-treasury-v0.txt (outside
 #            the project folder; gitignored by `.secrets/` + `*.seed`
 #            patterns, but stored at a home-dir path to avoid accidental
 #            project-folder backup / rm-rf loss).

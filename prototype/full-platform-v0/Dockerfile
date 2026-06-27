@@ -1,7 +1,7 @@
 # TinyAssets gateway (prototype v0) — FastMCP-over-HTTP on top of the
 # shared Postgres + pgvector migrations in this prototype.
 #
-# Build:   docker build -t workflow-v0-gateway .
+# Build:   docker build -t tinyassets-v0-gateway .
 # Run:     docker compose up -d  (picks this up via docker-compose.yml)
 #
 # Throwaway prototype container; real track-C build pulls from a proper
@@ -24,7 +24,7 @@ COPY gateway.py ./
 
 # Default DSN — compose overrides via env for container-to-container
 # routing (postgres hostname resolves inside the compose network).
-ENV TINYASSETS_V0_DSN="postgresql://workflow:workflow_v0_dev@postgres:5432/workflow_v0"
+ENV TINYASSETS_V0_DSN="postgresql://tinyassets:tinyassets_v0_dev@postgres:5432/tinyassets_v0"
 
 # FastMCP stdio is the default transport; for HTTP / streamable, real
 # track C uses `mcp.run(transport='streamable-http')`. v0 defaults to

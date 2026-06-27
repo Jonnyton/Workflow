@@ -29,7 +29,7 @@ except ImportError:  # live-Postgres deps optional — tests skip if absent
 
 DSN = os.environ.get(
     "TINYASSETS_V0_DSN",
-    "postgresql://workflow:workflow_v0_dev@localhost:5433/workflow_v0",
+    "postgresql://tinyassets:tinyassets_v0_dev@localhost:5433/tinyassets_v0",
 )
 
 

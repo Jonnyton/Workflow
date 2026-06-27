@@ -91,7 +91,7 @@ and if the daemon is running
 Scaffolding is complete + ruff-clean + ready to run. **When Docker Desktop is running**, the full 5-file test suite should exercise end-to-end:
 
 1. `docker compose up -d`
-2. `docker exec -i workflow_v0_postgres psql -U workflow -d workflow_v0 < migrations/001_core_tables.sql` (repeat for 002, 003)
+2. `docker exec -i tinyassets_v0_postgres psql -U tinyassets -d tinyassets_v0 < migrations/001_core_tables.sql` (repeat for 002, 003)
 3. `pytest tests/ -v`
 
 Tests expected green when DB is live: 10 tests across 5 files (schema×3, rls×3, discover×2, cas×2 — test_gateway has 2). Any failure = spec discrepancy worth flagging.

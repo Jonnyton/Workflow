@@ -1,11 +1,11 @@
 services:
   postgres:
     image: pgvector/pgvector:pg15
-    container_name: workflow_v0_postgres
+    container_name: tinyassets_v0_postgres
     environment:
-      POSTGRES_USER: workflow
-      POSTGRES_PASSWORD: workflow_v0_dev
-      POSTGRES_DB: workflow_v0
+      POSTGRES_USER: tinyassets
+      POSTGRES_PASSWORD: tinyassets_v0_dev
+      POSTGRES_DB: tinyassets_v0
     ports:
       - "5433:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
       # if pgdata volume is empty — subsequent restarts preserve state.
       - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U workflow -d workflow_v0"]
+      test: ["CMD-SHELL", "pg_isready -U tinyassets -d tinyassets_v0"]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -24,12 +24,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: workflow_v0_gateway
+    container_name: tinyassets_v0_gateway
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      TINYASSETS_V0_DSN: "postgresql://workflow:workflow_v0_dev@postgres:5432/workflow_v0"
+      TINYASSETS_V0_DSN: "postgresql://tinyassets:tinyassets_v0_dev@postgres:5432/tinyassets_v0"
     # Run gateway in HTTP transport mode for in-container debugging.
     command: >
       python -c "from gateway import mcp; mcp.run(transport='streamable-http', host='0.0.0.0', port=8002)"
