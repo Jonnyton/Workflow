@@ -13,9 +13,9 @@ export function Footer() {
         <div className={styles.brand}>
           <TinyAssetsMark size={22} />
           <p className={styles.namingText}>
-            <strong>Tiny</strong> is the public face of <strong>TinyAssets</strong> — an open-source
-            engine that runs real multi-step work for any goal. He lives at{" "}
-            <span className="ev">tinyassets.io</span>; his code lives on{" "}
+            <strong>TinyAssets</strong> is the platform. <strong>Tiny</strong> is the
+            acting intelligence users and builders meet through it. He lives at{" "}
+            <span className="ev">tinyassets.io</span>; the code lives on{" "}
             <a href="https://github.com/Jonnyton/TinyAssets" target="_blank" rel="noreferrer">GitHub</a>.
           </p>
         </div>

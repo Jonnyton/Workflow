@@ -297,8 +297,8 @@ export default function StartClient() {
           <p className="eyebrow">entry four · other ways in</p>
           <h2 id="oss-title">Or run the engine yourself.</h2>
           <p className="oss__lede">
-            Tiny is the public face of <strong>TinyAssets</strong>, an open-source
-            engine. You don&apos;t need to host anything to use the connector above — but
+            <strong>TinyAssets</strong> is the open-source platform behind Tiny.
+            You don&apos;t need to host anything to use the connector above — but
             if you&apos;d rather run it locally or read the code, both paths are real.
           </p>
           <div className="oss">

@@ -10,13 +10,13 @@ import TinyBot from "../components/TinyBot";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://tinyassets.io"),
-  title: "Tiny — a small living engine that turns chat into finished work",
+  title: "TinyAssets — meet Tiny, the engine that turns chat into finished work",
   description:
-    "Tiny is the public face of TinyAssets — an open-source engine you connect to your chatbot over MCP. Name a goal and it runs real multi-step work, with evidence-gated outcomes and a loop that patches the engine itself.",
+    "TinyAssets is the open-source platform you connect to your chatbot over MCP. Tiny is the acting intelligence inside it: name a goal and he runs real multi-step work, with evidence-gated outcomes and a loop that patches the engine itself.",
   openGraph: {
-    siteName: "Tiny",
+    siteName: "TinyAssets",
     type: "website",
-    title: "Tiny — a small living engine that turns chat into finished work",
+    title: "TinyAssets — meet Tiny, the engine that turns chat into finished work",
     description:
       "Connect your chatbot to one URL. Name a goal. Tiny runs the real, multi-step work — and shows you live, verifiable evidence instead of marketing claims.",
     images: ["/og-image.png"],
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tiny — the engine that shows its work",
+    title: "TinyAssets — the engine that shows its work",
     description:
       "Live, verifiable state on every page: the same MCP endpoint you paste into your chatbot renders this site's numbers.",
     images: ["/og-image.png"],
@@ -47,10 +47,10 @@ const jsonLd = {
       "@type": "WebSite",
       "@id": "https://tinyassets.io/#site",
       url: "https://tinyassets.io/",
-      name: "Tiny",
-      alternateName: "TinyAssets",
+      name: "TinyAssets",
+      alternateName: "Tiny",
       description:
-        "Tiny is the public face of TinyAssets — an open-source engine you connect to your chatbot over MCP.",
+        "TinyAssets is the open-source platform behind Tiny, the personified intelligence users meet through MCP.",
       publisher: { "@id": "https://tinyassets.io/#org" },
     },
   ],
