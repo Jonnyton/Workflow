@@ -149,9 +149,8 @@ export default function HostClient() {
             <a className="btn btn--ghost" href="#run-it">Run it yourself ↓</a>
           </div>
           <p className="cover__naming">
-            <strong>Tiny</strong> is the public face of <strong>TinyAssets</strong>,
-            an open-source engine. Same code whether it runs on the public box or on
-            yours.
+            <strong>TinyAssets</strong> is the platform. <strong>Tiny</strong> is the
+            acting intelligence on the public box; the same code can run on yours.
           </p>
         </div>
       </section>

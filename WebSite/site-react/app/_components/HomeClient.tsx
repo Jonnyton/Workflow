@@ -212,8 +212,8 @@ export default function HomeClient() {
               you'd paste into your chatbot.
             </p>
             <p className="cover__naming">
-              Formally: <strong>Tiny</strong> is the public face of{" "}
-              <strong>TinyAssets</strong>, an open-source engine.
+              Formally: <strong>TinyAssets</strong> is the platform.{" "}
+              <strong>Tiny</strong> is the personified intelligence users and builders meet through it.
             </p>
             <div className="cover__actions">
               <a className="btn btn--primary" href="/start">Put me to work →</a>
