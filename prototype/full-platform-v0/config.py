@@ -20,7 +20,7 @@ def treasury_key_path() -> Path:
 
     Precedence:
         1. TINYASSETS_TREASURY_KEY_PATH env var (explicit override).
-        2. ~/.workflow-secrets/base-sepolia-treasury-v0.txt (default).
+        2. ~/.tinyassets-secrets/base-sepolia-treasury-v0.txt (default).
 
     The file itself is gitignored + lives outside the project folder.
     This function only returns the path; callers are responsible for
@@ -29,7 +29,7 @@ def treasury_key_path() -> Path:
     env = os.environ.get("TINYASSETS_TREASURY_KEY_PATH")
     if env:
         return Path(env).expanduser()
-    return Path.home() / ".workflow-secrets" / "base-sepolia-treasury-v0.txt"
+    return Path.home() / ".tinyassets-secrets" / "base-sepolia-treasury-v0.txt"
 
 
 def treasury_key_exists() -> bool:

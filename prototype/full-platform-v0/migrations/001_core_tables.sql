@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS public.ledger (
   entry_kind       text NOT NULL CHECK (entry_kind IN (
                      'reserve','release','debit','credit','refund','bonus','adjustment')),
   amount           numeric(18,6) NOT NULL,
-  currency         text NOT NULL DEFAULT 'workflow_credit',
+  currency         text NOT NULL DEFAULT 'tinyassets_credit',
   settlement_mode  text NOT NULL DEFAULT 'immediate'
                      CHECK (settlement_mode IN ('immediate','batched')),
   related_request  uuid NULL REFERENCES public.requests(request_id),
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS public.settlements (
   gross_amount     numeric(18,6) NOT NULL,
   platform_fee     numeric(18,6) NOT NULL DEFAULT 0,
   net_amount       numeric(18,6) NOT NULL,
-  currency         text NOT NULL DEFAULT 'workflow_credit',
+  currency         text NOT NULL DEFAULT 'tinyassets_credit',
   mode             text NOT NULL CHECK (mode IN ('immediate','batched')),
   debit_entry_id   bigint NOT NULL REFERENCES public.ledger(entry_id),
   credit_entry_id  bigint NOT NULL REFERENCES public.ledger(entry_id),

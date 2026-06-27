@@ -23,11 +23,11 @@ from pgvector.psycopg import register_vector
 
 DSN = os.environ.get(
     "TINYASSETS_V0_DSN",
-    "postgresql://workflow:workflow_v0_dev@localhost:5433/workflow_v0",
+    "postgresql://tinyassets:tinyassets_v0_dev@localhost:5433/tinyassets_v0",
 )
 
 mcp = FastMCP(
-    "workflow-v0",
+    "tinyassets-v0",
     instructions=(
         "Prototype FastMCP gateway proving #25 schema + #27 gateway compose. "
         "Not for production. Bearer token is the user_id uuid directly; "
