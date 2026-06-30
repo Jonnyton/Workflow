@@ -92,6 +92,12 @@
             "command": "python \"$env:CLAUDE_PROJECT_DIR/.claude/hooks/provider_context_feed_hook.py\"",
             "shell": "powershell",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"$env:CLAUDE_PROJECT_DIR/.claude/hooks/codex_dispatch_nudge.py\"",
+            "shell": "powershell",
+            "timeout": 10
           }
         ]
       }

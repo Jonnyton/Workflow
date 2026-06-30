@@ -112,8 +112,12 @@ def render(label: str, instruction: str) -> str:
 
 def main() -> int:
     try:
-        payload: dict[str, Any] = json.load(sys.stdin)
+        payload: Any = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
+        return 0
+
+    # Valid JSON that isn't an object (e.g. `[]`) would crash payload.get.
+    if not isinstance(payload, dict):
         return 0
 
     if str(payload.get("hook_event_name") or "") != "UserPromptSubmit":
