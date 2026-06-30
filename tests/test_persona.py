@@ -206,14 +206,15 @@ def test_get_status_surfaces_self_model_not_fed_purpose(
     # the fed soul.purpose is NOT surfaced as the persona's identity.
     assert persona["purpose"] == ""
     assert "run the patch loop" not in json.dumps(persona)
-    # get_status seeded a blank self-model → curious, all questions open, unnamed.
+    assert not (udir / "self").exists()
+    # get_status reads the root soul bundle and does not create self/.
     sm = persona["self_model"]
     assert sm["initialized"] is True
     assert sm["known"] == []
     assert set(sm["open_questions"]) == {
         "identity",
         "founder",
-        "goals",
+        "orgchart",
         "body",
         "origin",
     }
@@ -236,7 +237,8 @@ def test_get_status_persona_block_present_when_no_soul(
     assert "persona" in payload
     assert payload["persona"]["name"] == ""
     assert payload["persona"]["embodied"] is True
-    assert payload["persona"]["self_model"]["initialized"] is True
+    assert payload["persona"]["self_model"]["initialized"] is False
+    assert not (tmp_path / uid / "self").exists()
 
 
 # ─────────────────────────────────────────────────────────────────────
