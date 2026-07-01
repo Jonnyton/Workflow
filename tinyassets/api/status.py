@@ -705,6 +705,9 @@ def _resolve_entry_universe(universe_id: str) -> str:
     home = get_founder_home(base, founder)
     if home and (base / home).is_dir():
         return home
+    # A truthy `home` that survived the check above is stale: the binding points
+    # at a universe dir that no longer exists on disk.
+    stale_home = bool(home)
 
     # First contact — only a founder holding create authority births a universe.
     # get_status must NOT be a scope bypass: honor the action-scope gate the
@@ -721,11 +724,24 @@ def _resolve_entry_universe(universe_id: str) -> str:
 
     # Best-effort: never fail a status read if creation errors (e.g. read-only FS).
     try:
-        from tinyassets.api.universe import _action_create_universe
+        # Route through the ledgered dispatch so the durable creation lands in
+        # ledger.json — create_universe is a WRITE_ACTION and calling the handler
+        # directly would silently skip the ledger contract.
+        from tinyassets.api.universe import UNIVERSE_ACTIONS, _dispatch_with_ledger
 
-        result = json.loads(_action_create_universe())
+        result = json.loads(_dispatch_with_ledger(
+            "create_universe", UNIVERSE_ACTIONS["create_universe"], {},
+        ))
         uid = str(result.get("universe_id") or "")
         if uid:
+            if stale_home:
+                # The previously bound home dir was removed; rebind to the new
+                # universe so repeated get_status() calls don't spawn a fresh
+                # serial dir each time (_action_create_universe will not rebind
+                # over a still-present stale founder_home row).
+                from tinyassets.daemon_server import set_founder_home
+
+                set_founder_home(base, founder_sub=founder, universe_id=uid)
             return uid
     except Exception:  # noqa: BLE001
         import logging

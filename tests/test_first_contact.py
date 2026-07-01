@@ -173,6 +173,48 @@ def test_founder_create_does_not_write_active_universe_marker(data_dir):
     assert not (data_dir / ".active_universe").exists()
 
 
+def test_first_contact_create_is_ledgered(data_dir):
+    # First-contact create must go through the ledgered dispatch — the durable
+    # creation lands in the new universe's ledger.json (Codex adapt: direct
+    # _action_create_universe() call skipped the ledger contract).
+    from tinyassets.api.status import _resolve_entry_universe
+    from tinyassets.daemon_server import get_founder_home
+
+    _login("founder-1")
+    _resolve_entry_universe("")
+    home = get_founder_home(data_dir, "founder-1")
+
+    ledger = data_dir / home / "ledger.json"
+    assert ledger.is_file()
+    entries = json.loads(ledger.read_text(encoding="utf-8"))
+    assert any(e.get("action") == "create_universe" for e in entries)
+
+
+def test_stale_founder_home_rebinds_instead_of_looping(data_dir):
+    # If the bound home dir is removed, the next contact must rebind to a single
+    # new home — not spawn a fresh serial dir on every get_status (Codex adapt:
+    # _action_create_universe won't rebind over a stale founder_home row).
+    import shutil
+
+    from tinyassets.api.status import _resolve_entry_universe
+    from tinyassets.daemon_server import get_founder_home
+    from tinyassets.ids import is_universe_serial
+
+    _login("founder-1")
+    _resolve_entry_universe("")
+    home1 = get_founder_home(data_dir, "founder-1")
+    shutil.rmtree(data_dir / home1)  # binding is now stale
+
+    resolved2 = _resolve_entry_universe("")
+    home2 = get_founder_home(data_dir, "founder-1")
+    assert home2 == resolved2 and home2 != home1 and is_universe_serial(home2)
+
+    # A third call returns the SAME rebound home — no further serial dirs.
+    assert _resolve_entry_universe("") == home2
+    serial = [p for p in _universe_dirs(data_dir) if is_universe_serial(p.name)]
+    assert len(serial) == 1
+
+
 def test_authenticated_switch_universe_does_not_write_marker(data_dir):
     # universe-creation spec "Explicit universe selection is not global": an
     # authenticated founder's switch_universe applies to their request scope and

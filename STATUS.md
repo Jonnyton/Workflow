@@ -15,6 +15,7 @@ Live steering only. **Budget 4 KB / 60 lines.** Concerns/Work = one line each; l
 - [filed:2026-06-30 verified:2026-06-30] WorkOS production auth: enforcement + discovery FIXED on `claude/founder-identity-allslices` (resolve-always write gate — anon read-only, founder+grant for write/costly; WorkOS-aware PRM + mounted well-known routes). Residual: (a) per-universe `admin` scope for founders deliberately deferred (needs admin-action ACL coverage — ties to slice-3 F3); (b) live WorkOS rollout still needs canary + chatbot ui-test.
 - [filed:2026-07-01 verified:2026-07-01] `claude/founder-identity-allslices`: query_runs/routing_evidence private-run leaks fixed; broader all-surfaces claim contradicted by Codex review.
 - [filed:2026-07-01 verified:2026-07-01] founder-identity all-slices: get_status/receipts/memory-scope leaks + cross-founder `.active_universe` (create AND switch_universe) fixed; test_api_runs count + workos JWKS doc corrected (Codex-confirmed). Residual (pre-live): under-scoped/missing-token WRITES return tool JSON, not an HTTP 401/403 WWW-Authenticate challenge — required before WorkOS live rollout.
+- [filed:2026-07-01 verified:2026-07-01] founder-identity: first-contact create ledger-bypass + stale founder_home serial-dir loop FIXED (route create via `_dispatch_with_ledger` + result-based ledger target dir; rebind stale home). Daemon-scoped ACL exemption + cross-actor resume test also Codex-reviewed (`docs/audits/2026-07-01-daemon-scoped-acl-exemption-codex-review.md`).
 
 ## Approved Specs
 

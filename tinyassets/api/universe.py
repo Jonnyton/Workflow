@@ -639,15 +639,20 @@ WRITE_ACTIONS: dict[str, Any] = {
 }
 
 
-def _ledger_target_dir(action: str, kwargs: dict[str, Any]) -> Path:
+def _ledger_target_dir(
+    action: str, kwargs: dict[str, Any], result: dict[str, Any] | None = None,
+) -> Path:
     """Resolve which universe directory owns the ledger entry for this action.
 
-    create_universe writes to the newly-created universe's ledger. All others
-    write to the universe whose state they affect (the handler's target uid).
+    create_universe writes to the newly-created universe's ledger. For a
+    server-generated id the kwargs carry no ``universe_id``, so prefer the id in
+    the handler result — otherwise the entry would wrongly land in the default
+    universe's ledger. All others write to the universe whose state they affect.
     """
-    uid = kwargs.get("universe_id", "") or _default_universe()
     if action == "create_universe":
-        return _base_path() / uid
+        created = str((result or {}).get("universe_id") or "") or kwargs.get("universe_id", "")
+        return _base_path() / (created or _default_universe())
+    uid = kwargs.get("universe_id", "") or _default_universe()
     return _universe_dir(uid)
 
 
@@ -734,7 +739,7 @@ def _dispatch_with_ledger(
 
     try:
         target, summary, payload = extractor(kwargs, result)
-        udir = _ledger_target_dir(action, kwargs)
+        udir = _ledger_target_dir(action, kwargs, result)
         _append_ledger(
             udir, action, target=target, summary=summary, payload=payload,
         )
