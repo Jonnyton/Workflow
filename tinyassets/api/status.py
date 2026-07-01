@@ -672,6 +672,53 @@ def _compute_supervisor_liveness(
     return out
 
 
+def _resolve_entry_universe(universe_id: str) -> str:
+    """Resolve the universe for a status entry, birthing the founder's home
+    universe on first contact (D10).
+
+    - An explicit ``universe_id`` always wins.
+    - An anonymous / dev caller uses the legacy default resolution
+      (``.active_universe`` / first dir) and NEVER triggers a create.
+    - An authenticated founder with a bound home returns it. With NO home this
+      is first contact: create a blank seed universe (generated id + OKF bundle,
+      founder admin grant + home binding, via ``_action_create_universe``) and
+      return it. Guarded + idempotent — once a home exists, no further creates.
+    """
+    requested = (universe_id or "").strip()
+    if requested:
+        return requested
+
+    from tinyassets.api import permissions
+
+    if not permissions.is_authenticated_request():
+        return _default_universe()
+
+    base = _base_path()
+    from tinyassets.daemon_server import get_founder_home
+
+    founder = permissions.current_actor_id()
+    home = get_founder_home(base, founder)
+    if home and (base / home).is_dir():
+        return home
+
+    # First contact — birth the founder's home universe. Best-effort: never
+    # fail a status read if creation errors (e.g. read-only FS).
+    try:
+        from tinyassets.api.universe import _action_create_universe
+
+        result = json.loads(_action_create_universe())
+        uid = str(result.get("universe_id") or "")
+        if uid:
+            return uid
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("universe_server.status").warning(
+            "first-contact home-universe create failed", exc_info=True,
+        )
+    return _default_universe()
+
+
 def get_status(universe_id: str = "") -> str:
     """Factual snapshot of the daemon's identity + routing config.
 
@@ -679,7 +726,7 @@ def get_status(universe_id: str = "") -> str:
     ``tinyassets.universe_server`` — this implementation is what the
     decorated tool delegates to.
     """
-    uid = universe_id or _default_universe()
+    uid = _resolve_entry_universe(universe_id)
     udir = _universe_dir(uid)
     universe_exists = udir.is_dir()
     host_id = os.environ.get("UNIVERSE_SERVER_HOST_USER", "host")

@@ -4660,9 +4660,19 @@ def _action_create_universe(
         # visibility: we do NOT touch public_read, so the universe stays
         # publicly readable by default. A dev/no-auth (anonymous) create
         # seeds no grant, so local dev-mode creates keep working.
+        # Register in the universes index so a founder universe has a
+        # universes + universe_rules row (not just an ACL grant) — home
+        # resolution + reset rely on a consistent registry.
+        try:
+            from tinyassets.daemon_server import ensure_universe_registered
+
+            ensure_universe_registered(base, universe_id=uid, universe_path=udir)
+        except Exception:  # noqa: BLE001 - registry is best-effort at create
+            logger.warning("ensure_universe_registered failed for %s", uid, exc_info=True)
+
         founder = permissions.current_actor_id()
         if permissions.is_authenticated_request():
-            from tinyassets.daemon_server import grant_universe_access
+            from tinyassets.daemon_server import grant_universe_access, set_founder_home
 
             grant_universe_access(
                 base,
@@ -4671,6 +4681,13 @@ def _action_create_universe(
                 permission="admin",
                 granted_by=founder,
             )
+            # Bind this as the founder's home when they don't already have one,
+            # so first-contact resolution returns it (D10). Explicit later
+            # creates by a founder with a home do NOT reassign home.
+            from tinyassets.daemon_server import get_founder_home
+
+            if not get_founder_home(base, founder):
+                set_founder_home(base, founder_sub=founder, universe_id=uid)
             result["founder_id"] = founder
         else:
             result["founder_id"] = ""
