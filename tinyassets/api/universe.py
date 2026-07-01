@@ -71,11 +71,12 @@ from tinyassets.api.helpers import (
     _universe_dir,
 )
 from tinyassets.catalog import list_unreconciled_writes
+from tinyassets.ids import new_universe_id
 from tinyassets.ingestion.canon_io import iter_canon_files, safe_canon_path
+from tinyassets.universe_bundle import seed_okf_bundle
 from tinyassets.universe_soul import (
     NO_LOOP_DECLARED,
     SOUL_FILENAME,
-    ensure_universe_soul,
     has_soul,
     legacy_premise_path,
     premise_from_soul,
@@ -4598,11 +4599,11 @@ def _action_create_universe(
     branch_def_id: str = "",
     **_kwargs: Any,
 ) -> str:
-    if not universe_id:
-        return json.dumps({"error": "universe_id is required."})
-
-    uid = universe_id
     base = _base_path()
+    # universe-creation D2: universe_id is optional. When absent, generate one
+    # opaque immutable serial (u- + lowercase ULID). Provided ids are still
+    # accepted (dev / existing-universe operations).
+    uid = (universe_id or "").strip() or new_universe_id()
     udir = base / uid
 
     # Sanitize
@@ -4615,18 +4616,16 @@ def _action_create_universe(
         udir.mkdir(parents=True, exist_ok=True)
         normalized_text = _normalize_escaped_text(text) if text.strip() else ""
         loop_branch_def_id = str(branch_def_id or "").strip()
-        soul = ensure_universe_soul(
+        # universe-creation D4/D5: seed the linked OKF soul bundle. Creation
+        # does NOT write self/, soul/, notes.json, or activity.log.
+        soul = seed_okf_bundle(
             udir,
             purpose=normalized_text,
             loop_branch_def_id=loop_branch_def_id,
         )
-        # Write premise if provided
+        # Write premise mirror if provided
         if normalized_text.strip():
             legacy_premise_path(udir).write_text(normalized_text, encoding="utf-8")
-
-        # Initialize empty state files
-        (udir / "notes.json").write_text("[]", encoding="utf-8")
-        (udir / "activity.log").write_text("", encoding="utf-8")
 
         result: dict[str, Any] = {
             "universe_id": uid,

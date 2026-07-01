@@ -267,9 +267,11 @@ def test_get_ledger_returns_appended_entries(universe: str) -> None:
 
 
 def test_ledger_survives_across_mixed_writes(universe: str) -> None:
+    from tinyassets.universe_soul import ensure_universe_soul
+
     _call("set_premise", text="Premise.")
     _call("give_direction", text="Direction.")
-    us.ensure_universe_soul(
+    ensure_universe_soul(
         us._base_path() / universe,
         loop_branch_def_id="fantasy_author:universe_cycle_wrapper",
     )
