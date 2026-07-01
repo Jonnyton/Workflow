@@ -4582,7 +4582,25 @@ def _action_switch_universe(universe_id: str = "", **_kwargs: Any) -> str:
             ] if _base_path().is_dir() else [],
         })
 
-    # Write the active universe marker — the tray app watches this file
+    # Explicit universe selection is not global (universe-creation spec:
+    # "Explicit universe selection is not global"). An authenticated founder's
+    # switch applies only to the current request/session scope — they select a
+    # universe by passing `universe_id` on each tool call — and must NOT mutate
+    # the host-global `.active_universe` marker that other users resolve through.
+    if permissions.is_authenticated_request():
+        return json.dumps({
+            "universe_id": uid,
+            "status": "selected",
+            "scope": "request",
+            "note": (
+                f"Selected '{uid}' for this session. Pass universe_id on each "
+                "call to act on it; this does not change the daemon's global "
+                "active universe."
+            ),
+        })
+
+    # Anonymous / dev single-tenant: write the active universe marker — the
+    # tray app watches this file to switch the local daemon.
     marker = _base_path() / ".active_universe"
     try:
         marker.write_text(uid, encoding="utf-8")

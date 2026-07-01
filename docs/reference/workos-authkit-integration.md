@@ -92,13 +92,11 @@ reads allowed, writes 401.
 ```python
 import os, jwt
 from jwt import PyJWKClient
-from workos import WorkOSClient
 
-_workos = WorkOSClient(api_key=os.environ.get("WORKOS_API_KEY", ""),
-                       client_id=os.environ["WORKOS_CLIENT_ID"])
-_jwks = PyJWKClient(_workos.user_management.get_jwks_url(os.environ["WORKOS_CLIENT_ID"]))
+_AUTHKIT  = os.environ["WORKOS_AUTHKIT_DOMAIN"]         # e.g. inventive-van-62-staging.authkit.app
+_jwks = PyJWKClient(f"https://{_AUTHKIT}/oauth2/jwks")  # AuthKit AS JWKS — NOT api.workos.com/sso/jwks
 _RESOURCE = os.environ["WORKOS_MCP_RESOURCE"]           # https://tinyassets.io/mcp
-_ISSUER   = f'https://{os.environ["WORKOS_AUTHKIT_DOMAIN"]}'   # VERIFY (flag 1) vs AS metadata
+_ISSUER   = f"https://{_AUTHKIT}"                       # VERIFY (flag 1) vs AS metadata
 
 def validate_bearer(token: str) -> dict:
     key = _jwks.get_signing_key_from_jwt(token)

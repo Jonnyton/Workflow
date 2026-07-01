@@ -173,6 +173,24 @@ def test_founder_create_does_not_write_active_universe_marker(data_dir):
     assert not (data_dir / ".active_universe").exists()
 
 
+def test_authenticated_switch_universe_does_not_write_marker(data_dir):
+    # universe-creation spec "Explicit universe selection is not global": an
+    # authenticated founder's switch_universe applies to their request scope and
+    # must NOT clobber the host-global `.active_universe` marker.
+    from tinyassets.api.universe import (
+        _action_create_universe,
+        _action_switch_universe,
+    )
+
+    _login("founder-A")
+    uid = json.loads(_action_create_universe())["universe_id"]
+
+    out = json.loads(_action_switch_universe(universe_id=uid))
+    assert out["status"] == "selected"
+    assert out.get("scope") == "request"
+    assert not (data_dir / ".active_universe").exists()
+
+
 def test_readonly_founder_omitted_scope_does_not_leak_other_home(data_dir):
     # Codex-reproduced cross-founder leak: founder A first contact births home
     # u-A; founder B (authenticated, read-only, no home) then reads with no
