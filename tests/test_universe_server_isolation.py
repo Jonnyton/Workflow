@@ -821,6 +821,46 @@ class TestRunReadVisibility:
         assert out["error"] == "universe_access_denied"
         assert recorded["v"] is False
 
+    def test_routing_evidence_filters_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_universe(universe_base, "pub")
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.list_recent_runs",
+            lambda base, **kw: [
+                {"run_id": "r-pub", "actor": "universe:pub",
+                 "status": "completed", "caveat": "c"},
+                {"run_id": "r-priv", "actor": "universe:priv",
+                 "status": "completed", "caveat": "c"},
+            ],
+        )
+        out = json.loads(runs._action_run_routing_evidence({}))
+        ids = {r["run_id"] for r in out["runs"]}
+        assert "r-pub" in ids
+        assert "r-priv" not in ids
+
+    def test_query_runs_wires_read_filter(self, universe_base, monkeypatch):
+        from tinyassets.api import runs
+
+        _make_universe(universe_base, "pub")
+        _make_private_universe(universe_base, "priv")
+        captured = {}
+
+        def _fake(base, *, row_filter=None, **kw):
+            captured["f"] = row_filter
+            return {"rows": [], "count": 0}
+
+        monkeypatch.setattr("tinyassets.runs.query_runs", _fake)
+        runs._action_query_runs({})
+        f = captured["f"]
+        assert f is not None
+        assert f({"actor": "universe:pub"}) is True
+        assert f({"actor": "universe:priv"}) is False
+        assert f({"actor": "host"}) is True
+
 
 class TestScopeHeader:
     """#15: the dispatcher wraps every universe-scoped response with a

@@ -1424,6 +1424,9 @@ def _action_query_runs(kwargs: dict[str, Any]) -> str:
         select=select,
         aggregate=aggregate,
         limit=limit,
+        # Exclude runs of a private universe the caller cannot read BEFORE
+        # projection/aggregation, so select/aggregate can't leak private data.
+        row_filter=lambda r: _run_read_allowed({"actor": r["actor"]}),
     )
     return json.dumps(result, default=str)
 
@@ -1527,6 +1530,9 @@ def _action_run_routing_evidence(kwargs: dict[str, Any]) -> str:
         limit = 10
 
     records = list_recent_runs(_base_path(), branch_def_id=bid, limit=limit)
+    # Don't expose routing evidence for runs of a private universe the caller
+    # cannot read.
+    records = [r for r in records if _run_read_allowed(r)]
     return json.dumps({
         "runs": records,
         "count": len(records),
