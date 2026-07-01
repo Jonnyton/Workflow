@@ -2405,6 +2405,26 @@ def wiki(
             ),
         })
 
+    # Universe-scoped ACL gate — runs BEFORE scaffolding so a denied call has
+    # NO filesystem side effect (it must not create the target universe's wiki
+    # dir/anchor files). Covers reads (private-universe visibility via
+    # public_read) and writes (ownership). The root wiki (no target universe)
+    # is a shared surface and is not gated here.
+    if target_universe_id:
+        from tinyassets.api.permissions import (
+            universe_access_allows,
+            universe_access_error,
+        )
+
+        _wiki_write = action in WIKI_WRITE_ACTIONS
+        if not universe_access_allows(target_universe_id, write=_wiki_write):
+            return _stamp_universe_id(json.dumps(universe_access_error(
+                universe_id=target_universe_id,
+                write=_wiki_write,
+                action=action,
+                surface="wiki",
+            )), target_universe_id)
+
     # Task #6 — scaffold the tree on first call so fresh deploys
     # (empty /data/wiki) don't error on read/list/search/lint. Idempotent.
     try:
@@ -2442,19 +2462,7 @@ def wiki(
         if scope_error is not None:
             return _stamp_universe_id(scope_error, target_universe_id)
 
-        if action in WIKI_WRITE_ACTIONS and target_universe_id:
-            from tinyassets.api.permissions import (
-                universe_access_allows,
-                universe_access_error,
-            )
-
-            if not universe_access_allows(target_universe_id, write=True):
-                return _stamp_universe_id(json.dumps(universe_access_error(
-                    universe_id=target_universe_id,
-                    write=True,
-                    action=action,
-                    surface="wiki",
-                )), target_universe_id)
+        # (Universe-scoped ACL is enforced earlier, before scaffolding.)
 
         kwargs: dict[str, Any] = {
             "page": page,

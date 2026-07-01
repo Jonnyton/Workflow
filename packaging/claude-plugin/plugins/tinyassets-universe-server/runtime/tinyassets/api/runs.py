@@ -145,6 +145,32 @@ def _run_read_denied_error(record: dict[str, Any], action: str) -> str:
     ))
 
 
+def _run_write_allowed(record: dict[str, Any]) -> bool:
+    """Whether the current caller may MUTATE a run.
+
+    A universe-bound run may only be mutated (cancel/resume/attach/receipt) by a
+    caller with write access to that universe; runs with no universe binding are
+    not universe-brain state.
+    """
+    uid = _run_universe_id(record)
+    if not uid:
+        return True
+    from tinyassets.api.permissions import universe_access_allows
+
+    return universe_access_allows(uid, write=True)
+
+
+def _run_write_denied_error(record: dict[str, Any], action: str) -> str:
+    from tinyassets.api.permissions import universe_access_error
+
+    return json.dumps(universe_access_error(
+        universe_id=_run_universe_id(record),
+        write=True,
+        action=action,
+        surface="extensions",
+    ))
+
+
 _EMPTY_LLM_RESPONSE_ACTION = (
     "Ask the host to check get_status provider availability/cooldowns and fix "
     "provider credentials or CLI, then rerun; only switch llm_type if get_status "
@@ -906,6 +932,8 @@ def _action_stream_run(kwargs: dict[str, Any]) -> str:
     record = _get_run(_base_path(), rid)
     if record is None:
         return json.dumps({"error": f"Run '{rid}' not found."})
+    if not _run_read_allowed(record):
+        return _run_read_denied_error(record, "stream_run")
 
     since = int(kwargs.get("since_step", -1))
     events = list_events(_base_path(), rid, since_step=since)
@@ -966,6 +994,8 @@ def _action_wait_for_run(kwargs: dict[str, Any]) -> str:
     record = _get_run(_base_path(), rid)
     if record is None:
         return json.dumps({"error": f"Run '{rid}' not found."})
+    if not _run_read_allowed(record):
+        return _run_read_denied_error(record, "wait_for_run")
 
     # Bound max_wait_s to 120s so a broken client can't tie up the
     # server thread forever. Default 60s per spec.
@@ -1040,8 +1070,11 @@ def _action_cancel_run(kwargs: dict[str, Any]) -> str:
     rid = kwargs.get("run_id", "").strip()
     if not rid:
         return json.dumps({"error": "run_id is required."})
-    if _get_run(_base_path(), rid) is None:
+    record = _get_run(_base_path(), rid)
+    if record is None:
         return json.dumps({"error": f"Run '{rid}' not found."})
+    if not _run_write_allowed(record):
+        return _run_write_denied_error(record, "cancel_run")
 
     request_cancel(_base_path(), rid)
     note = (
@@ -1130,6 +1163,12 @@ def _action_attach_existing_child_run(kwargs: dict[str, Any]) -> str:
     child_branch_def_id = kwargs.get("child_branch_def_id", "").strip()
     output_digest = kwargs.get("output_digest", "").strip()
 
+    from tinyassets.runs import get_run as _get_run
+
+    parent_record = _get_run(_base_path(), parent_run_id)
+    if parent_record is not None and not _run_write_allowed(parent_record):
+        return _run_write_denied_error(parent_record, "attach_existing_child_run")
+
     try:
         result = attach_existing_child_run(
             _base_path(),
@@ -1177,6 +1216,12 @@ def _action_resume_run(kwargs: dict[str, Any]) -> str:
     run_id = kwargs.get("run_id", "").strip()
     if not run_id:
         return json.dumps({"error": "run_id is required."})
+
+    from tinyassets.runs import get_run as _get_run
+
+    _resume_record = _get_run(_base_path(), run_id)
+    if _resume_record is not None and not _run_write_allowed(_resume_record):
+        return _run_write_denied_error(_resume_record, "resume_run")
 
     actor = _current_actor()
 
@@ -1404,6 +1449,12 @@ def _action_record_run_receipt(kwargs: dict[str, Any]) -> str:
     if not isinstance(payload, dict):
         return json.dumps({"error": "payload_json must decode to a JSON object."})
 
+    from tinyassets.runs import get_run as _get_run
+
+    _receipt_record = _get_run(_base_path(), run_id)
+    if _receipt_record is not None and not _run_write_allowed(_receipt_record):
+        return _run_write_denied_error(_receipt_record, "record_run_receipt")
+
     try:
         receipt = record_run_receipt(
             _base_path(),
@@ -1423,6 +1474,15 @@ def _action_record_run_receipt(kwargs: dict[str, Any]) -> str:
 
 def _action_list_run_receipts(kwargs: dict[str, Any]) -> str:
     from tinyassets.runs import list_run_receipts
+
+    # When scoped to a specific run, don't expose a private universe's receipts.
+    _lrr_run_id = (kwargs.get("run_id") or "").strip()
+    if _lrr_run_id:
+        from tinyassets.runs import get_run as _get_run
+
+        _lrr_record = _get_run(_base_path(), _lrr_run_id)
+        if _lrr_record is not None and not _run_read_allowed(_lrr_record):
+            return _run_read_denied_error(_lrr_record, "list_run_receipts")
 
     raw_limit = kwargs.get("limit", _DEFAULT_QUERY_LIMIT) or _DEFAULT_QUERY_LIMIT
     try:

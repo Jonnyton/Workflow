@@ -482,6 +482,25 @@ class TestUniverseWriteBoundaryBeyondUniverseTool:
         assert not (
             universe_base / "other" / "wiki" / "drafts" / "notes" / "entry.md"
         ).exists()
+        # A denied write must have NO filesystem side effect — it must not have
+        # scaffolded the target universe's wiki tree.
+        assert not (universe_base / "other" / "wiki").exists()
+
+    def test_wiki_read_of_private_universe_denied_without_scaffold(
+        self, universe_base,
+    ):
+        import tinyassets.api.wiki as wiki_mod
+
+        _make_private_universe(universe_base, "priv")
+        # anonymous read of a private universe's wiki is denied (public_read=False)
+        out = json.loads(wiki_mod.wiki(
+            action="read", universe_id="priv", page="index",
+        ))
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "wiki"
+        assert out["required_permission"] == "read"
+        # denied read must not scaffold the private universe's wiki tree
+        assert not (universe_base / "priv" / "wiki").exists()
 
     def test_authenticated_human_cannot_run_branch_without_universe_context(
         self,
@@ -703,6 +722,104 @@ class TestRunReadVisibility:
         ids = {r["run_id"] for r in out["runs"]}
         assert "r-pub" in ids
         assert "r-priv" not in ids
+
+    def test_stream_and_wait_read_denied_for_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.get_run",
+            lambda base, rid: {
+                "run_id": rid, "actor": "universe:priv", "status": "running",
+            },
+        )
+        for action in (runs._action_stream_run, runs._action_wait_for_run):
+            out = json.loads(action({"run_id": "r1"}))
+            assert out["error"] == "universe_access_denied"
+
+    def test_cancel_run_denied_for_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.get_run",
+            lambda base, rid: {
+                "run_id": rid, "actor": "universe:priv", "status": "running",
+            },
+        )
+        canceled = {"v": False}
+        monkeypatch.setattr(
+            "tinyassets.runs.request_cancel",
+            lambda base, rid: canceled.__setitem__("v", True),
+        )
+        out = json.loads(runs._action_cancel_run({"run_id": "r1"}))
+        assert out["error"] == "universe_access_denied"
+        assert canceled["v"] is False  # mutation blocked
+
+    def test_resume_run_denied_for_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.get_run",
+            lambda base, rid: {
+                "run_id": rid, "actor": "universe:priv", "status": "interrupted",
+            },
+        )
+        out = json.loads(runs._action_resume_run({"run_id": "r1"}))
+        assert out["error"] == "universe_access_denied"
+
+    def test_attach_child_denied_for_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.get_run",
+            lambda base, rid: {"run_id": rid, "actor": "universe:priv"},
+        )
+        attached = {"v": False}
+
+        def _attach(*a, **k):
+            attached["v"] = True
+            return {}
+
+        monkeypatch.setattr("tinyassets.runs.attach_existing_child_run", _attach)
+        out = json.loads(runs._action_attach_existing_child_run(
+            {"run_id": "r1", "child_run_id": "c1"},
+        ))
+        assert out["error"] == "universe_access_denied"
+        assert attached["v"] is False
+
+    def test_record_receipt_denied_for_private_universe(
+        self, universe_base, monkeypatch,
+    ):
+        from tinyassets.api import runs
+
+        _make_private_universe(universe_base, "priv")
+        monkeypatch.setattr(
+            "tinyassets.runs.get_run",
+            lambda base, rid: {"run_id": rid, "actor": "universe:priv"},
+        )
+        recorded = {"v": False}
+
+        def _rec(*a, **k):
+            recorded["v"] = True
+            return {}
+
+        monkeypatch.setattr("tinyassets.runs.record_run_receipt", _rec)
+        out = json.loads(runs._action_record_run_receipt({
+            "run_id": "r1", "receipt_type": "t", "payload_json": "{}",
+        }))
+        assert out["error"] == "universe_access_denied"
+        assert recorded["v"] is False
 
 
 class TestScopeHeader:
