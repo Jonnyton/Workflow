@@ -1930,8 +1930,14 @@ def create_streamable_http_app() -> Starlette:
             )
             yield
 
+    # OAuth discovery (RFC 9728 / 8414) — mounted FIRST so the well-known paths
+    # match before any MCP catch-all route. In WorkOS mode the Protected
+    # Resource Metadata advertises AuthKit as the authorization server.
+    from tinyassets.auth.wellknown import starlette_discovery_routes
+
     app = Starlette(
         routes=[
+            *starlette_discovery_routes(),
             *legacy_app.routes,
             *directory_app.routes,
             *versioned_directory_app.routes,

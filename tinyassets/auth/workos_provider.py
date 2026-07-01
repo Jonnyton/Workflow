@@ -25,12 +25,15 @@ from tinyassets.auth.provider import AuthProvider, Identity
 
 logger = logging.getLogger("universe_server.auth.workos")
 
-# Capabilities granted to ANY authenticated WorkOS user. Founder-scoped write
-# authority (founder == the universe's ``sub``) is layered on in a later slice;
-# for now an authenticated user carries a write-capable base so the capability
-# model (anonymous-read / authenticated-write, slice 2) has a real subject to
-# gate on. Slice 1 itself does not enforce these (see ``is_auth_required``).
-_AUTHENTICATED_CAPABILITIES = ("read", "write", "submit_request", "list")
+# Coarse capabilities granted to ANY authenticated WorkOS founder. The
+# resolve-always scope gate accepts an action's coarse effect grant
+# (read/write/costly), so a founder can create (costly), run (costly), and
+# write their own universe. ``admin`` is deliberately NOT granted here: per-
+# universe admin authority is a follow-up once admin-action ACL coverage is
+# confirmed. The per-universe ACL layer (permissions.universe_access_allows)
+# is what confines a founder to their OWN universe — this gate only asks
+# "may this principal perform this CLASS of action at all".
+_AUTHENTICATED_CAPABILITIES = ("read", "write", "costly", "submit_request", "list")
 
 _ALGORITHMS = ("RS256",)
 
@@ -167,11 +170,16 @@ class WorkOSAuthProvider(AuthProvider):
         )
 
     def is_auth_required(self) -> bool:
-        # Slice 1: resolve-when-present, never reject anonymous. The
-        # anonymous-read / authenticated-write capability gate is layered on in
-        # slice 2. Returning False means gating is UNCHANGED — we only make the
-        # subject real when a valid WorkOS token is presented.
+        # Never reject anonymous outright: anonymous callers may read public
+        # surfaces. Write enforcement is expressed via resolve_always_writes()
+        # so reads stay open (D0b). Keeping this False is intentional.
         return False
+
+    def resolve_always_writes(self) -> bool:
+        # WorkOS is the production resolve-always mode: anonymous reads are
+        # allowed, but create/write/costly/admin require an authenticated
+        # founder holding the action's grant (require_action_scope enforces).
+        return True
 
     # --- OAuth flow: AuthKit's job, not the Resource Server's --------------
 

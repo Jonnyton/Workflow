@@ -279,3 +279,71 @@ def test_middleware_anonymous_without_token(keypair, monkeypatch) -> None:
         assert mw.current_identity().user_id == "anonymous"
     finally:
         mw.set_provider(None)
+
+
+# --- resolve-always write enforcement (P1: anon cannot create/write) -------
+# WorkOS mode is resolve-always: anonymous may read public surfaces, but every
+# write/create/costly/admin action requires an authenticated founder + grant.
+# (The per-universe ACL layer confines a founder to their OWN universe.)
+
+
+@pytest.fixture
+def workos_active(keypair, monkeypatch):
+    from tinyassets.auth import middleware as mw
+
+    monkeypatch.delenv("UNIVERSE_SERVER_USER", raising=False)
+    mw.set_provider(_provider(keypair))
+    try:
+        yield keypair
+    finally:
+        mw.auth_middleware(None)
+        mw.set_provider(None)
+
+
+def test_workos_provider_resolve_always_writes(keypair) -> None:
+    assert _provider(keypair).resolve_always_writes() is True
+    # is_auth_required stays False so anonymous reads are never rejected.
+    assert _provider(keypair).is_auth_required() is False
+
+
+def test_workos_anonymous_cannot_create_universe(workos_active) -> None:
+    from tinyassets.auth.middleware import auth_middleware, require_action_scope
+
+    auth_middleware(None)  # anonymous
+    with pytest.raises(PermissionError):
+        require_action_scope("universe", "create_universe")
+
+
+def test_workos_anonymous_cannot_write_wiki(workos_active) -> None:
+    from tinyassets.auth.middleware import auth_middleware, require_action_scope
+
+    auth_middleware(None)
+    with pytest.raises(PermissionError):
+        require_action_scope("wiki", "write")
+
+
+def test_workos_anonymous_can_read(workos_active) -> None:
+    from tinyassets.auth.middleware import auth_middleware, require_action_scope
+
+    auth_middleware(None)
+    # A read-effect action must NOT raise for anonymous (public read).
+    ident = require_action_scope("wiki", "read")
+    assert ident.user_id == "anonymous"
+
+
+def test_workos_authenticated_founder_can_create(workos_active) -> None:
+    from tinyassets.auth.middleware import auth_middleware, require_action_scope
+
+    keypair = workos_active
+    auth_middleware(_sign(keypair))  # valid founder token
+    ident = require_action_scope("universe", "create_universe")
+    assert ident.user_id == "user_workos_123"
+
+
+def test_workos_authenticated_founder_can_write_wiki(workos_active) -> None:
+    from tinyassets.auth.middleware import auth_middleware, require_action_scope
+
+    keypair = workos_active
+    auth_middleware(_sign(keypair))
+    ident = require_action_scope("wiki", "write")
+    assert ident.user_id == "user_workos_123"

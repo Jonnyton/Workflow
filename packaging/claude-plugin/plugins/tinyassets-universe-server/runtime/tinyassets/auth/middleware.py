@@ -163,19 +163,43 @@ def require_action_scope(
 
     identity = current_identity()
     provider = _get_provider()
-    if not provider.is_auth_required():
+    auth_required = provider.is_auth_required()
+    resolve_always = provider.resolve_always_writes()
+
+    # Dev / optional modes: no scope enforcement (unchanged).
+    if not auth_required and not resolve_always:
         return identity
 
     metadata = action_scope_for(tool, action)
     if metadata is None:
         raise PermissionError(
             f"No action-scope metadata for {tool}.{action}; refusing "
-            "authenticated dispatch."
+            "gated dispatch."
         )
 
-    if provider.is_auth_required() and identity.user_id == "anonymous":
+    # Resolve-always (WorkOS, D0b): anonymous may perform read-effect actions
+    # (public reads). The per-universe ACL layer separately denies reads of a
+    # private universe; this gate only classifies the action.
+    if resolve_always and not auth_required and metadata.effect == "read":
+        return identity
+
+    if identity.user_id == "anonymous":
         raise PermissionError("Authentication required")
 
+    if resolve_always and not auth_required:
+        # Write/costly/admin: an authenticated founder passes when they hold
+        # either the fine-grained action scope or the coarse effect grant
+        # (read/write/costly/admin). Per-universe confinement is the ACL layer.
+        grants = set(identity.capabilities)
+        if metadata.oauth_scope in grants or metadata.effect in grants:
+            return identity
+        raise PermissionError(
+            f"Missing OAuth scope: {metadata.oauth_scope} "
+            f"for action {metadata.action_name} "
+            f"(user={identity.username}, capabilities={identity.capabilities})"
+        )
+
+    # Legacy full-auth (OAuthProvider): exact named-scope check (unchanged).
     verdict = identity.can(
         PermissionAction(
             name=metadata.action_name,

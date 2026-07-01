@@ -685,6 +685,18 @@ class AuthProvider(ABC):
         """Whether this provider requires authentication."""
         ...
 
+    def resolve_always_writes(self) -> bool:
+        """Resolve-always mode (default off).
+
+        When True, anonymous callers may still perform read-effect actions
+        (public reads), but every write/costly/admin action requires an
+        authenticated principal holding the action's grant. This is the WorkOS
+        production model (D0b): the per-universe ACL layer then confines an
+        authenticated founder to their own universe. Providers that leave this
+        False keep their existing gating (dev = fully open; OAuth = all-auth).
+        """
+        return False
+
     @abstractmethod
     def register_client(self, metadata: dict[str, Any]) -> dict[str, Any]:
         """Dynamic Client Registration (RFC 7591).

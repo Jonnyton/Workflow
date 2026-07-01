@@ -65,11 +65,31 @@ def protected_resource_metadata() -> dict[str, Any]:
 
     Served at: /.well-known/oauth-protected-resource
 
-    This tells MCP clients which authorization server protects
-    this resource, so they know where to start the auth flow.
+    This tells MCP clients which authorization server protects this resource,
+    so they know where to start the auth flow. In WorkOS mode the authorization
+    server is AuthKit (not us): we advertise the AuthKit issuer + the registered
+    MCP resource indicator so a client discovers AuthKit and binds tokens to
+    this server. In legacy/OAuth mode we are our own authorization server.
     """
     base = _server_url()
     from tinyassets.auth.provider import supported_oauth_scopes
+
+    auth_mode = os.environ.get("UNIVERSE_SERVER_AUTH", "").strip().lower()
+    if auth_mode == "workos":
+        domain = os.environ.get("WORKOS_AUTHKIT_DOMAIN", "").strip()
+        resource = os.environ.get("WORKOS_MCP_RESOURCE", "").strip() or base
+        authorization_servers = [base]
+        if domain:
+            from tinyassets.auth.workos_provider import derive_endpoints
+
+            issuer, _ = derive_endpoints(domain)
+            authorization_servers = [issuer]
+        return {
+            "resource": resource,
+            "authorization_servers": authorization_servers,
+            "scopes_supported": supported_oauth_scopes(),
+            "bearer_methods_supported": ["header"],
+        }
 
     return {
         "resource": base,
@@ -77,6 +97,35 @@ def protected_resource_metadata() -> dict[str, Any]:
         "scopes_supported": supported_oauth_scopes(),
         "bearer_methods_supported": ["header"],
     }
+
+
+def starlette_discovery_routes() -> list[Any]:
+    """Starlette ``Route`` objects for OAuth discovery, to mount on the HTTP app.
+
+    Serves Protected Resource Metadata at both the root well-known path and the
+    ``/mcp``-prefixed path some MCP clients probe, plus Authorization Server
+    Metadata (used by legacy OAuth mode; in WorkOS mode clients read AuthKit's
+    AS metadata discovered via PRM).
+    """
+    from starlette.routing import Route
+
+    return [
+        Route(
+            "/.well-known/oauth-protected-resource",
+            _handle_protected_resource_metadata,
+            methods=["GET"],
+        ),
+        Route(
+            "/mcp/.well-known/oauth-protected-resource",
+            _handle_protected_resource_metadata,
+            methods=["GET"],
+        ),
+        Route(
+            "/.well-known/oauth-authorization-server",
+            _handle_authz_server_metadata,
+            methods=["GET"],
+        ),
+    ]
 
 
 def create_wellknown_routes() -> list[dict[str, Any]]:
