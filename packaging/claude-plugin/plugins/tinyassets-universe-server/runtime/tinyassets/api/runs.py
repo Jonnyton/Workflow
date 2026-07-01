@@ -67,6 +67,46 @@ def _current_actor_has_capability(action: str) -> bool:
     ).allowed
 
 
+def _run_actor_for_kwargs(kwargs: dict[str, Any]) -> str:
+    from tinyassets.api.permissions import branch_run_actor
+
+    return branch_run_actor(str(kwargs.get("universe_id") or ""))
+
+
+def _branch_run_scope_error(action: str, kwargs: dict[str, Any]) -> str | None:
+    if action not in {"run_branch", "run_branch_version"}:
+        return None
+
+    from tinyassets.api.permissions import (
+        current_request_actor_id,
+        universe_access_allows,
+        universe_access_error,
+    )
+
+    uid = str(kwargs.get("universe_id") or "").strip()
+    if not uid:
+        if current_request_actor_id() != "anonymous":
+            return json.dumps({
+                "error": "branch_run_requires_universe",
+                "action": action,
+                "required": "universe_id",
+                "note": (
+                    "Branches are run by universes. Route the run through "
+                    "the founder's own universe."
+                ),
+            })
+        return None
+
+    if not universe_access_allows(uid, write=True):
+        return json.dumps(universe_access_error(
+            universe_id=uid,
+            write=True,
+            action=action,
+            surface="extensions",
+        ))
+    return None
+
+
 _EMPTY_LLM_RESPONSE_ACTION = (
     "Ask the host to check get_status provider availability/cooldowns and fix "
     "provider credentials or CLI, then rerun; only switch llm_type if get_status "
@@ -437,7 +477,6 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     flip back to ``running``.
     """
     from tinyassets.api.branches import _resolve_branch_id
-    from tinyassets.api.engine_helpers import _current_actor
     from tinyassets.branches import BranchDefinition
     from tinyassets.daemon_server import get_branch_definition
     from tinyassets.runs import (
@@ -451,7 +490,7 @@ def _action_run_branch(kwargs: dict[str, Any]) -> str:
     )
 
     _ensure_runs_recovery()
-    actor = _current_actor()
+    actor = _run_actor_for_kwargs(kwargs)
 
     bid = _resolve_branch_id(kwargs.get("branch_def_id", "").strip(), _base_path())
     if not bid:
@@ -1040,7 +1079,6 @@ def _action_get_run_output(kwargs: dict[str, Any]) -> str:
 
 def _action_attach_existing_child_run(kwargs: dict[str, Any]) -> str:
     """Attach a completed child run receipt to a waiting parent run."""
-    from tinyassets.api.engine_helpers import _current_actor
     from tinyassets.runs import ChildRunAttachmentError, attach_existing_child_run
 
     parent_run_id = kwargs.get("run_id", "").strip()
@@ -1055,7 +1093,7 @@ def _action_attach_existing_child_run(kwargs: dict[str, Any]) -> str:
             child_run_id=child_run_id,
             child_branch_def_id=child_branch_def_id,
             output_digest=output_digest,
-            actor=_current_actor(),
+            actor=_run_actor_for_kwargs(kwargs),
         )
     except ChildRunAttachmentError as exc:
         payload: dict[str, Any] = {
@@ -1487,7 +1525,6 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
     the same async executor pool. Records the ``branch_version_id`` on
     the new ``runs.branch_version_id`` column for attribution.
     """
-    from tinyassets.api.engine_helpers import _current_actor
     from tinyassets.runs import (
         SnapshotSchemaDrift,
         execute_branch_version_async,
@@ -1546,7 +1583,7 @@ def _action_run_branch_version(kwargs: dict[str, Any]) -> str:
             branch_version_id=bvid,
             inputs=inputs,
             run_name=kwargs.get("run_name", ""),
-            actor=_current_actor(),
+            actor=_run_actor_for_kwargs(kwargs),
             provider_call=provider_call,
             recursion_limit_override=recursion_limit_override,
         )
@@ -1747,6 +1784,10 @@ def _dispatch_run_action(
     """
     from tinyassets.api.branches import _append_global_ledger
     from tinyassets.api.engine_helpers import _truncate
+
+    scope_error = _branch_run_scope_error(action, kwargs)
+    if scope_error is not None:
+        return scope_error
 
     result_str = handler(kwargs)
     if action not in _RUN_WRITE_ACTIONS:

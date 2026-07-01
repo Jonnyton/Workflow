@@ -456,6 +456,159 @@ class TestUniverseAclEnforcement:
         assert [row["id"] for row in out["universes"]] == ["public"]
 
 
+class TestUniverseWriteBoundaryBeyondUniverseTool:
+    """Slice 3: the ACL write boundary is enforced on every universe-scoped
+    write surface, not just the `universe` tool. `wiki`, branch runs, and
+    auto-ship ledger/PR writes all delegate to `tinyassets.api.permissions`.
+    """
+
+    def test_wiki_write_to_unowned_universe_is_denied(self, universe_base):
+        import tinyassets.api.wiki as wiki_mod
+
+        _make_universe(universe_base, "other")
+        _authenticate("alice", ["tinyassets.wiki.write"])
+
+        out = json.loads(wiki_mod.wiki(
+            action="write",
+            universe_id="other",
+            category="notes",
+            filename="entry.md",
+            content="should not land",
+        ))
+
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "wiki"
+        assert out["required_permission"] == "write"
+        assert not (
+            universe_base / "other" / "wiki" / "drafts" / "notes" / "entry.md"
+        ).exists()
+
+    def test_authenticated_human_cannot_run_branch_without_universe_context(
+        self,
+        universe_base,
+    ):
+        from tinyassets.api import runs
+
+        _authenticate("alice", ["tinyassets.extensions.costly"])
+
+        out = json.loads(runs._dispatch_run_action(
+            "run_branch",
+            lambda kwargs: json.dumps({
+                "run_id": "should-not-run",
+                "status": "queued",
+                "error": "",
+            }),
+            {"branch_def_id": "branch-1"},
+        ))
+
+        assert out["error"] == "branch_run_requires_universe"
+
+    def test_branch_run_to_unowned_universe_is_denied(self, universe_base):
+        from tinyassets.api import runs
+
+        _make_universe(universe_base, "other")
+        _authenticate("alice", ["tinyassets.extensions.costly"])
+
+        out = json.loads(runs._dispatch_run_action(
+            "run_branch",
+            lambda kwargs: json.dumps({
+                "run_id": "should-not-run",
+                "status": "queued",
+                "error": "",
+            }),
+            {"branch_def_id": "branch-1", "universe_id": "other"},
+        ))
+
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "extensions"
+        assert out["required_permission"] == "write"
+
+    def test_branch_run_with_owned_universe_uses_universe_actor(
+        self,
+        universe_base,
+    ):
+        from tinyassets.api import runs
+
+        _make_universe(universe_base, "mine")
+        grant_universe_access(
+            universe_base,
+            universe_id="mine",
+            actor_id="alice",
+            permission="admin",
+            granted_by="alice",
+        )
+        _authenticate("alice", ["tinyassets.extensions.costly"])
+        seen: dict[str, str] = {}
+
+        def handler(kwargs):
+            seen["actor"] = runs._run_actor_for_kwargs(kwargs)
+            return json.dumps({
+                "run_id": "run-1",
+                "status": "queued",
+                "error": "",
+            })
+
+        out = json.loads(runs._dispatch_run_action(
+            "run_branch",
+            handler,
+            {"branch_def_id": "branch-1", "universe_id": "mine"},
+        ))
+
+        assert out["run_id"] == "run-1"
+        assert seen["actor"] == "universe:mine"
+
+    def test_auto_ship_ledger_write_to_unowned_universe_is_denied(
+        self,
+        universe_base,
+        monkeypatch,
+    ):
+        from tinyassets.api import auto_ship_actions
+
+        _make_universe(universe_base, "other")
+        _authenticate("alice", ["tinyassets.extensions.write"])
+        monkeypatch.setattr(
+            "tinyassets.auto_ship.validate_ship_request",
+            lambda _packet: {
+                "ship_status": "skipped",
+                "would_open_pr": True,
+                "validation_result": "passed",
+                "violations": [],
+                "rollback_handle": "",
+                "dry_run": True,
+            },
+        )
+
+        out = json.loads(auto_ship_actions._action_validate_ship_packet({
+            "body_json": "{}",
+            "record_in_ledger": True,
+            "universe_id": "other",
+        }))
+
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "extensions"
+        assert out["required_permission"] == "write"
+        assert not (universe_base / "other" / "auto_ship_attempts.jsonl").exists()
+
+    def test_auto_ship_pr_open_to_unowned_universe_is_denied(
+        self,
+        universe_base,
+    ):
+        from tinyassets.api import auto_ship_actions
+
+        _make_universe(universe_base, "other")
+        _authenticate("alice", ["tinyassets.extensions.write"])
+
+        out = json.loads(auto_ship_actions._action_open_auto_ship_pr({
+            "ship_attempt_id": "ship_1",
+            "head_branch": "auto-change/test",
+            "universe_id": "other",
+        }))
+
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "extensions"
+        assert out["required_permission"] == "write"
+
+
 class TestScopeHeader:
     """#15: the dispatcher wraps every universe-scoped response with a
     phone-legible `Universe: <id>` `text` lead-in, puts `universe_id`

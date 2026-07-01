@@ -2442,6 +2442,20 @@ def wiki(
         if scope_error is not None:
             return _stamp_universe_id(scope_error, target_universe_id)
 
+        if action in WIKI_WRITE_ACTIONS and target_universe_id:
+            from tinyassets.api.permissions import (
+                universe_access_allows,
+                universe_access_error,
+            )
+
+            if not universe_access_allows(target_universe_id, write=True):
+                return _stamp_universe_id(json.dumps(universe_access_error(
+                    universe_id=target_universe_id,
+                    write=True,
+                    action=action,
+                    surface="wiki",
+                )), target_universe_id)
+
         kwargs: dict[str, Any] = {
             "page": page,
             "query": query,
