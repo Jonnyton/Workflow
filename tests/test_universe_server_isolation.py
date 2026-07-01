@@ -523,6 +523,30 @@ class TestUniverseWriteBoundaryBeyondUniverseTool:
         assert out["surface"] == "extensions"
         assert out["required_permission"] == "write"
 
+    def test_run_branch_via_extensions_forwards_universe_id_to_gate(
+        self,
+        universe_base,
+    ):
+        # Regression: the real MCP route (_extensions_impl) must forward
+        # universe_id into run_kwargs so _branch_run_scope_error can gate it.
+        # If universe_id were dropped, an authenticated caller would get
+        # `branch_run_requires_universe`; asserting universe_access_denied
+        # proves the id reached the gate.
+        from tinyassets.api.extensions import _extensions_impl
+
+        _make_universe(universe_base, "other")
+        _authenticate("alice", ["tinyassets.extensions.costly"])
+
+        out = json.loads(_extensions_impl(
+            action="run_branch",
+            universe_id="other",
+            branch_def_id="branch-1",
+        ))
+
+        assert out["error"] == "universe_access_denied"
+        assert out["surface"] == "extensions"
+        assert out["required_permission"] == "write"
+
     def test_branch_run_with_owned_universe_uses_universe_actor(
         self,
         universe_base,
