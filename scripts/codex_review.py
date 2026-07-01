@@ -88,6 +88,10 @@ def build_cmd(args: argparse.Namespace) -> list[str]:
         "exec",
         "-s",
         "read-only",
+        # Explicit no-approval so a background run can never hang on a prompt.
+        # `exec` has no -a flag; approval is a config key (validated: accepted).
+        "-c",
+        "approval_policy=never",
         "-C",
         args.cwd,
         "-o",
