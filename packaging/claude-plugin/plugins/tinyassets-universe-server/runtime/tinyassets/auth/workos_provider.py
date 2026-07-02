@@ -25,16 +25,20 @@ from tinyassets.auth.provider import AuthProvider, Identity
 
 logger = logging.getLogger("universe_server.auth.workos")
 
-# Base capabilities EVERY authenticated WorkOS founder holds regardless of RBAC:
-# read-only + request/list. Write/costly/admin authority is NOT implicit — per
-# the ratified "requires ... the required action scope" rule (D0b), it must be
-# granted by the token's WorkOS `permissions` (RBAC) claim. A read-only token
-# therefore cannot write/create/run. The per-universe ACL layer
-# (permissions.universe_access_allows) then confines a founder to their OWN
-# universe. Deployments configure the founder role with the app's write/costly
-# scopes — coarse `write`/`costly`/`admin` or fine `tinyassets.<tool>.<effect>`,
-# either of which the resolve-always scope gate accepts.
-_AUTHENTICATED_BASE_CAPABILITIES = ("read", "submit_request", "list")
+# Base capabilities EVERY authenticated founder holds. Per OAuth best practice
+# (tokens/scopes are for authentication + coarse delegation, NOT fine-grained
+# authorization — Curity/Auth0/Aserto) and the multi-tenant "first user owns the
+# tenant" pattern, an authenticated founder can create and write their OWN
+# universe. The REAL authorization boundary is the per-universe ownership ACL
+# (permissions.universe_access_allows), which confines a founder to the universes
+# they own — so granting the coarse delegated `write`/`costly` capabilities here
+# is safe: cross-universe writes are still denied by the ACL. `admin` (platform
+# actions) is NOT implicit; it stays RBAC-gated via the token's `permissions`
+# claim. Finer per-universe collaboration roles layer on top via ACL grants, not
+# OAuth scopes. (Supersedes the earlier D0b RBAC-gated-write model, which broke
+# self-serve first-contact: AuthKit issues only OIDC scopes, so a self-serve
+# founder never received write/costly and could not create their own universe.)
+_AUTHENTICATED_BASE_CAPABILITIES = ("read", "write", "costly", "submit_request", "list")
 
 _ALGORITHMS = ("RS256",)
 

@@ -105,22 +105,26 @@ def test_valid_token_resolves_to_founder_identity(keypair) -> None:
     assert ident.username == "founder@example.com"
     assert ident.metadata["auth_provider"] == "workos"
     assert ident.metadata["email"] == "founder@example.com"
-    # A generic token (no RBAC permissions) grants only the read-only base;
-    # write/costly authority must come from the token's `permissions` claim.
+    # OAuth best practice: the token authenticates; fine-grained authz is the
+    # resource server's per-universe ownership ACL. So an authenticated founder
+    # holds coarse read/write/costly and can create + own their universe (the
+    # ACL confines them to it). `admin` (platform) is NOT implicit — RBAC only.
     assert "read" in ident.capabilities
-    assert "write" not in ident.capabilities
-    assert "costly" not in ident.capabilities
+    assert "write" in ident.capabilities
+    assert "costly" in ident.capabilities
+    assert "admin" not in ident.capabilities
 
 
 def test_token_permissions_become_capabilities(keypair) -> None:
+    # RBAC permissions in the token add capabilities beyond the base — e.g.
+    # platform `admin`, which is never implicit.
     ident = _provider(keypair).resolve_token(
-        _sign(keypair, permissions=["write", "costly"])
+        _sign(keypair, permissions=["admin"])
     )
     assert ident is not None
-    assert "write" in ident.capabilities
-    assert "costly" in ident.capabilities
+    assert "admin" in ident.capabilities
     assert "read" in ident.capabilities  # base still present
-    assert ident.metadata["permissions"] == ["write", "costly"]
+    assert ident.metadata["permissions"] == ["admin"]
 
 
 def test_username_falls_back_to_sub_without_email(keypair) -> None:
@@ -365,17 +369,19 @@ def test_workos_authenticated_founder_can_write_wiki(workos_active) -> None:
     assert ident.user_id == "user_workos_123"
 
 
-def test_workos_founder_without_write_scope_is_denied(workos_active) -> None:
-    # D0b: a valid, authenticated token that does NOT carry a write/costly RBAC
-    # scope cannot write or create — authority is not implicit in being a founder.
+def test_workos_authenticated_founder_passes_write_scope_gate(workos_active) -> None:
+    # OAuth best practice + multi-tenant ownership: the token authenticates; the
+    # scope gate authorizes an authenticated founder for the coarse delegated
+    # write/costly capability, and the REAL boundary is the per-universe ownership
+    # ACL (see test_universe_write_boundary / test_universe_server_isolation) that
+    # confines a founder to universes they own. So being authenticated is enough
+    # to pass the scope gate for write + create_universe.
     from tinyassets.auth.middleware import auth_middleware, require_action_scope
 
     keypair = workos_active
     auth_middleware(_sign(keypair, permissions=["tinyassets.wiki.read"]))
-    with pytest.raises(PermissionError):
-        require_action_scope("wiki", "write")
-    with pytest.raises(PermissionError):
-        require_action_scope("universe", "create_universe")
+    assert require_action_scope("wiki", "write").user_id == "user_workos_123"
+    assert require_action_scope("universe", "create_universe").user_id == "user_workos_123"
 
 
 def test_workos_founder_with_read_scope_can_read(workos_active) -> None:
