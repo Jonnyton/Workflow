@@ -131,6 +131,14 @@ def starlette_discovery_routes() -> list[Any]:
             _handle_authz_server_metadata,
             methods=["GET"],
         ),
+        Route(
+            # Mirror the PRM: in production only /mcp* is routed to the daemon,
+            # so a client probing the apex AS-metadata path would 404 and lose
+            # the AuthKit proxy fallback. Serve the /mcp-prefixed variant too.
+            "/mcp/.well-known/oauth-authorization-server",
+            _handle_authz_server_metadata,
+            methods=["GET"],
+        ),
     ]
 
 

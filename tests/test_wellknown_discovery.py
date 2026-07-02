@@ -60,6 +60,9 @@ def test_discovery_routes_include_prm_paths():
     assert "/.well-known/oauth-protected-resource" in paths
     assert "/mcp/.well-known/oauth-protected-resource" in paths
     assert "/.well-known/oauth-authorization-server" in paths
+    # /mcp-prefixed AS metadata too — prod routes only /mcp*, so the apex path
+    # 404s there and a client would lose the AuthKit proxy fallback.
+    assert "/mcp/.well-known/oauth-authorization-server" in paths
 
 
 def test_authz_server_metadata_proxies_authkit_json_in_workos(monkeypatch):
