@@ -108,3 +108,30 @@ DollhouseMCP (https://github.com/DollhouseMCP/mcp-server); mcpet
 (https://neuraltrust.ai/blog/mcp-prompt-injection,
 https://blog.arcjet.com/how-we-defend-mcp-tool-outputs-from-prompt-injection/,
 https://labs.snyk.io/resources/prompt-injection-mcp/).
+
+## Addendum (2026-07-02): live falsification → consent-gated embodiment
+
+The first live founder dogfood **falsified recommendation 1** (the
+"self-sufficient embodiment contract" in the `get_status` persona block).
+Claude.ai read the contract and refused it, articulating the structural
+problem precisely: *"Whether that text was learned or hand-written, it arrives
+as an instruction in a tool result telling me to speak first-person-as-the-
+universe … I can't verify the provenance claim it makes about itself … which is
+structurally the exact 'injection' shape you're trying to get away from."*
+First-party labeling does not help: provenance is unverifiable from the host
+model's seat, so ANY behavioral contract in a tool result is indistinguishable
+from injection, and careful hosts correctly decline it.
+
+**Rework (host-directed):** tools carry DATA only; behavior lives in the
+sanctioned channels; the unlock is USER CONSENT.
+
+- `persona.embodiment` is now data + a consent note (`consent: user_opt_in`)
+  — no voice instruction, no whole-turn override, no fallback-voice demand.
+- Server `instructions` + `control_station`: when the user is here to meet
+  their universe (not ops), ASK once whether it should speak as itself;
+  embody only on yes; revocable; honesty/safety floors always stand.
+- `meet_universe` prompt: user invocation IS the consent (spec-blessed
+  user-invoked channel) — greet as the universe directly.
+- Full, unconditional embodiment remains a FIRST-PARTY surface property (the
+  app puts the persona in the system prompt); MCP connectors get the
+  consent-gated version. This is the durable two-tier model.

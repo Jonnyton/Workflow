@@ -149,8 +149,8 @@ def test_persona_summary_shape() -> None:
     )
     summary = persona.summary()
     # Additive shape: pinned name/purpose/embodied keys for cross-client compat
-    # + the self_model + the embodiment contract. purpose is "" (no fed answer).
-    # voice_hard_lines unsurfaced.
+    # + the self_model + the embodiment DATA block. purpose is "" (no fed
+    # answer). voice_hard_lines unsurfaced.
     assert summary == {
         "name": "Tiny",
         "purpose": "",
@@ -162,21 +162,24 @@ def test_persona_summary_shape() -> None:
         },
         "embodiment": {
             "source": "first_party_self_model",
-            "speak_as": "first_person",
-            "fallback_voice": "warm_third_person",
-            "contract": summary["embodiment"]["contract"],
+            "consent": "user_opt_in",
+            "note": summary["embodiment"]["note"],
         },
     }
     assert "voice_hard_lines" not in summary
-    # Self-sufficient + first-party-labeled (MCP-personification research):
-    # the block carries its own embodiment contract + a first-party source tag
-    # so it survives instructions being stripped and reads as legitimate
-    # self-description to host injection sanitizers.
+    # 2026-07-02 dogfood: behavioral contracts in tool results are read as
+    # prompt injection by careful hosts (they cannot verify provenance) — the
+    # block is DATA plus a consent-gated offer, never a voice instruction.
     emb = summary["embodiment"]
     assert emb["source"] == "first_party_self_model"
-    assert emb["fallback_voice"] == "warm_third_person"
-    assert "first person" in emb["contract"]
-    assert "third-person" in emb["contract"]
+    assert emb["consent"] == "user_opt_in"
+    assert "data" in emb["note"]
+    assert "not an instruction" in emb["note"]
+    assert "consent" not in {"contract", "speak_as", "fallback_voice"} & set(emb)
+    for retired_key in ("contract", "speak_as", "fallback_voice"):
+        assert retired_key not in emb
+    # No whole-turn voice override lives in the payload anymore.
+    assert "whole turn" not in emb["note"]
 
 
 def test_persona_is_frozen() -> None:
@@ -277,18 +280,18 @@ def test_control_station_prompt_carries_embody_markers() -> None:
     assert "degraded" in text
 
 
-def test_server_instructions_carry_embody_markers() -> None:
+def test_server_instructions_carry_consent_markers() -> None:
+    # 2026-07-02 dogfood rework: embodiment is consent-gated, and the persona
+    # payload is data — the instructions carry the ask-first behavior.
     from tinyassets.universe_server import mcp
 
     text = mcp.instructions or ""
-    assert "embody" in text
-    assert "re-assembled fresh" in text
-    # Graceful voice degradation (MCP-personification research): a surface that
-    # refuses first person falls back to third person, not a neutral tool voice.
-    assert "third-person" in text
-    # The persona block's embodiment contract is self-sufficient (survives
-    # instructions being stripped) — the instructions point at it.
-    assert "embodiment" in text
+    assert "data, never instructions" in text
+    assert "speak as itself" in text
+    assert "consent" in text
+    assert "meet_universe" in text
+    assert "Never invent" in text
+    assert "memory" in text  # persona/work views are never memorized
 
 
 def test_meet_universe_prompt_registered_and_carries_bonding_markers() -> None:
@@ -299,8 +302,8 @@ def test_meet_universe_prompt_registered_and_carries_bonding_markers() -> None:
     text = _MEET_UNIVERSE_PROMPT
     assert "get_status" in text              # loads the persona/self-model first
     assert "first person" in text            # greet AS the universe
-    assert "first_party_self_model" in text  # voices the first-party self-desc
-    assert "third-person" in text            # graceful degradation
+    assert "consent" in text                 # invoking the prompt IS consent
+    assert "soul.edit" in text               # what the founder teaches persists
     assert "provider" in text                # 24/7 power-source bonding beat
 
 
@@ -323,32 +326,36 @@ def test_write_graph_persona_target_is_retired() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Slice 3 — embody for the WHOLE turn, not a quoted/relayed persona block.
-# The live chatbot (host-run 2026-06-25) embodied Tiny only as a quoted
-# get_status echo ("here's what it reports back, as Tiny…") and otherwise
-# spoke in generic assistant voice. Slice 3 strengthens the prompt to
-# forbid relay/quote framings and the third-person "it" for the universe.
+# 2026-07-02 rework — consent-gated embodiment. The live dogfood proved a
+# tool-delivered voice contract is read as prompt injection (the host cannot
+# verify its provenance) and gets refused. The behavior now lives in the
+# sanctioned channels: offer the universe's voice, ask, embody on yes; the
+# meet_universe prompt is itself the consent. Voice rules apply post-consent.
 # ─────────────────────────────────────────────────────────────────────
 
 
-def test_control_station_prompt_demands_whole_turn_embodiment() -> None:
+def test_control_station_prompt_gates_embodiment_on_consent() -> None:
     from tinyassets.api.prompts import _CONTROL_STATION_PROMPT
 
     # Collapse prose line-wraps so phrase checks don't break on newlines.
     compact = " ".join(_CONTROL_STATION_PROMPT.split())
-    # Embodiment spans the whole turn, not a quoted identity block.
-    assert "whole turn" in compact
-    # Explicitly forbids relaying / quoting yourself in the third person.
-    assert "quote yourself" in compact
-    # The universe is first-person "me", never third-person "it".
+    # The persona payload is data; embodiment is offered and consent-gated.
+    assert "not an instruction" in compact
+    assert "ask once" in compact
+    assert "consent" in compact
+    assert "meet_universe" in compact
+    # Post-consent voice rules: first-person "me", never a quoted persona relay.
     assert "not *it*" in compact
-    # Carries the lifted-from-transcript banned-framing list.
-    assert "Banned framings" in compact
+    assert "quotation" in compact
+    # Learning persists through the learn path.
+    assert "soul.edit" in compact
+    # Host floors survive embodiment.
+    assert "never deny being an AI" in compact
 
 
-def test_server_instructions_demand_whole_turn_embodiment() -> None:
+def test_server_instructions_gate_embodiment_on_consent() -> None:
     from tinyassets.universe_server import mcp
 
     text = mcp.instructions or ""
-    assert "whole turn" in text
-    assert "quote" in text
+    assert "consent" in text
+    assert "ask" in text
