@@ -149,6 +149,28 @@ def test_auth_challenge_path_targets_mcp_only():
     assert _auth_challenge_path("/mcp-directory") is False  # sibling public surface
 
 
+def test_challenge_metadata_url_is_routed_in_production(monkeypatch):
+    # In production only /mcp* is proxied to the daemon, so the challenge must
+    # advertise a /mcp-prefixed (routed) PRM, not the apex root path that 404s.
+    from tinyassets.auth.middleware import _challenge_prm_url
+
+    monkeypatch.setenv("WORKOS_MCP_RESOURCE", "https://tinyassets.io/mcp")
+    assert (
+        _challenge_prm_url()
+        == "https://tinyassets.io/mcp/.well-known/oauth-protected-resource"
+    )
+
+
+def test_challenge_header_is_exact(monkeypatch):
+    monkeypatch.setenv("WORKOS_MCP_RESOURCE", "https://tinyassets.io/mcp")
+    set_provider(_ChallengeProvider(challenge=True))
+    sent, _ = _drive("/mcp", token=None)
+    assert _www_authenticate(sent) == (
+        'Bearer resource_metadata='
+        '"https://tinyassets.io/mcp/.well-known/oauth-protected-resource"'
+    )
+
+
 def test_workos_provider_challenge_respects_env(monkeypatch):
     from tinyassets.auth.workos_provider import WorkOSAuthProvider
 

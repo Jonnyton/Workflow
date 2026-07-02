@@ -93,6 +93,27 @@ def _auth_challenge_path(path: str) -> bool:
     return path == "/mcp" or path.startswith("/mcp/")
 
 
+def _challenge_prm_url() -> str:
+    """The ``resource_metadata`` URL to advertise in the 401 challenge.
+
+    It MUST be fetchable by the client, or OAuth discovery never starts. In
+    production only ``/mcp*`` is proxied to the daemon (Cloudflare Worker), so an
+    apex ``/.well-known/oauth-protected-resource`` 404s. When ``WORKOS_MCP_RESOURCE``
+    is set (e.g. ``https://tinyassets.io/mcp``) derive the PRM from it, yielding
+    the routed ``…/mcp/.well-known/oauth-protected-resource`` (the mcp-prefixed
+    variant the server also mounts). Fallback: the server root well-known, which
+    is correct in dev/tunnel where every path routes to the daemon.
+    """
+    import os
+
+    resource = os.environ.get("WORKOS_MCP_RESOURCE", "").strip().rstrip("/")
+    if resource:
+        return f"{resource}/.well-known/oauth-protected-resource"
+    from tinyassets.auth.wellknown import _server_url
+
+    return f"{_server_url()}/.well-known/oauth-protected-resource"
+
+
 async def _send_auth_challenge_401(send: Any, *, invalid_token: bool) -> None:
     """Emit an RFC 9728 ``401`` with a ``WWW-Authenticate`` challenge pointing
     at our Protected Resource Metadata, so clients start/refresh OAuth.
@@ -102,9 +123,7 @@ async def _send_auth_challenge_401(send: Any, *, invalid_token: bool) -> None:
     no error code, per RFC 6750 — used in require-auth mode so an unauthenticated
     client launches the OAuth flow instead of proceeding anonymously.
     """
-    from tinyassets.auth.wellknown import _server_url
-
-    prm = f"{_server_url()}/.well-known/oauth-protected-resource"
+    prm = _challenge_prm_url()
     if invalid_token:
         challenge = f'Bearer error="invalid_token", resource_metadata="{prm}"'
         body = b'{"error":"invalid_token"}'
